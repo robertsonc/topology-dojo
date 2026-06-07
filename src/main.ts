@@ -25,6 +25,16 @@ app.innerHTML = `
       <button class="tbtn on" id="tSnap" title="Toggle snap (G)">⌗ snap</button>
       <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑 delete</button>
       <button class="tbtn" id="tFit" title="Fit view (0)">⤢ fit</button>
+      <span class="align-group" id="alignGroup" hidden>
+        <button class="tbtn ab" data-align="left" title="Align left">⇤</button>
+        <button class="tbtn ab" data-align="centerH" title="Align centers (h)">⇔</button>
+        <button class="tbtn ab" data-align="right" title="Align right">⇥</button>
+        <button class="tbtn ab" data-align="top" title="Align top">⤒</button>
+        <button class="tbtn ab" data-align="middleV" title="Align middles (v)">⇕</button>
+        <button class="tbtn ab" data-align="bottom" title="Align bottom">⤓</button>
+        <button class="tbtn ab" data-dist="h" title="Distribute horizontally" disabled>↔̲</button>
+        <button class="tbtn ab" data-dist="v" title="Distribute vertically" disabled>↕̲</button>
+      </span>
       <span class="hint">click/shift/box select · drag move · wheel zoom · middle-drag pan · ←/→ flip</span>
     </div>
   </header>
@@ -53,7 +63,39 @@ const editor = new Editor(
   overlaySvg,
   doc.pages[current]!,
   renderFilmstrip,
+  onSelectionChange,
 );
+
+/* Align/distribute toolbar — shown when 2+ nodes are selected. */
+const alignGroup = app.querySelector<HTMLElement>('#alignGroup')!;
+function onSelectionChange(count: number): void {
+  alignGroup.hidden = count < 2;
+  alignGroup
+    .querySelectorAll<HTMLButtonElement>('[data-dist]')
+    .forEach((b) => (b.disabled = count < 3));
+}
+alignGroup
+  .querySelectorAll<HTMLButtonElement>('[data-align]')
+  .forEach((b) =>
+    b.addEventListener('click', () =>
+      editor.alignSelection(
+        b.dataset.align as
+          | 'left'
+          | 'centerH'
+          | 'right'
+          | 'top'
+          | 'middleV'
+          | 'bottom',
+      ),
+    ),
+  );
+alignGroup
+  .querySelectorAll<HTMLButtonElement>('[data-dist]')
+  .forEach((b) =>
+    b.addEventListener('click', () =>
+      editor.distributeSelection(b.dataset.dist as 'h' | 'v'),
+    ),
+  );
 
 /* Node palette — click a type to add it at the view center, then drag to place. */
 const PALETTE: { type: string; label: string }[] = [

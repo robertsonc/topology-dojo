@@ -77,6 +77,23 @@
         border-color: rgba(1, 169, 130, 0.5);
         background: rgba(1, 169, 130, 0.12);
       }
+      .tbtn:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .align-group {
+        display: inline-flex;
+        gap: 3px;
+        padding-left: 8px;
+        margin-left: 4px;
+        border-left: 1px solid var(--border);
+      }
+      .align-group[hidden] {
+        display: none;
+      }
+      .ab {
+        padding: 5px 8px;
+      }
 
       .stage {
         position: relative;
