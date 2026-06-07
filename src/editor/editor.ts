@@ -19,7 +19,26 @@ interface DragState {
   startY: number;
   base: Map<string, { x: number; y: number }>;
   moved: boolean;
+  /** The node grabbed (drives alignment/spacing guides). */
+  primary: string;
+  /** Effective (snapped) delta applied to the whole selection. */
+  dx: number;
+  dy: number;
 }
+
+type Guide =
+  | { kind: 'align'; x1: number; y1: number; x2: number; y2: number }
+  | {
+      kind: 'spacing';
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      ticks: { x: number; y: number }[];
+      label: string;
+      labelX: number;
+      labelY: number;
+    };
 
 export class Editor {
   private sel = new Set<string>();
@@ -36,6 +55,8 @@ export class Editor {
   private view = { x: 0, y: 0, w: 1050, h: 700 };
   private pan: { startClientX: number; startClientY: number } | null = null;
   private nodeSeq = 0;
+  /** Smart guides computed during the current drag (alignment + spacing). */
+  private guides: Guide[] = [];
 
   constructor(
     private art: SVGSVGElement,
@@ -43,6 +64,8 @@ export class Editor {
     public page: Page,
     /** Called after any change that should re-sync external UI (e.g. thumbnails). */
     private onChange: () => void = () => {},
+    /** Called whenever the selection size changes (drives the align toolbar). */
+    private onSelect: (count: number) => void = () => {},
   ) {
     this.view = parseViewBox(page.viewBox);
     this.bind();
@@ -61,6 +84,7 @@ export class Editor {
     this.view = parseViewBox(page.viewBox);
     this.renderArt();
     this.renderOverlay();
+    this.fireSelect();
   }
 
   /** Reset pan/zoom to frame the whole page. */
@@ -121,13 +145,29 @@ export class Editor {
 
   private dragGhostSvg(): string {
     if (!this.drag || !this.drag.moved) return '';
-    const d = this.dragDelta();
+    const { dx, dy } = this.drag;
     let out = '';
     for (const [id, base] of this.drag.base) {
       const n = this.page.nodes.find((m) => m.id === id);
       if (!n) continue;
       const h = nodeHalf(n);
-      out += `<rect x="${base.x + d.x - h.w}" y="${base.y + d.y - h.h}" width="${h.w * 2}" height="${h.h * 2}" fill="${ACCENT}" fill-opacity="0.08" stroke="${ACCENT}" stroke-dasharray="4 3" stroke-width="1.5" rx="4"/>`;
+      out += `<rect x="${base.x + dx - h.w}" y="${base.y + dy - h.h}" width="${h.w * 2}" height="${h.h * 2}" fill="${ACCENT}" fill-opacity="0.08" stroke="${ACCENT}" stroke-dasharray="4 3" stroke-width="1.5" rx="4"/>`;
+    }
+    return out;
+  }
+
+  private guidesSvg(): string {
+    if (this.guides.length === 0) return '';
+    let out = '';
+    for (const g of this.guides) {
+      if (g.kind === 'align') {
+        out += `<line x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}" stroke="#ff5db1" stroke-width="1" stroke-dasharray="6 4" opacity="0.9"/>`;
+      } else {
+        out += `<line x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}" stroke="#ff5db1" stroke-width="1" opacity="0.8"/>`;
+        for (const t of g.ticks)
+          out += `<line x1="${t.x - 3}" y1="${t.y - 3}" x2="${t.x + 3}" y2="${t.y + 3}" stroke="#ff5db1" stroke-width="1.2"/><line x1="${t.x - 3}" y1="${t.y + 3}" x2="${t.x + 3}" y2="${t.y - 3}" stroke="#ff5db1" stroke-width="1.2"/>`;
+        out += `<text x="${g.labelX}" y="${g.labelY}" fill="#ff8ccb" font-size="11" font-family="ui-monospace,monospace" text-anchor="middle">${g.label}</text>`;
+      }
     }
     return out;
   }
@@ -141,6 +181,7 @@ export class Editor {
   private renderOverlay(): void {
     this.overlay.innerHTML =
       this.gridSvg() +
+      this.guidesSvg() +
       this.selectionSvg() +
       this.dragGhostSvg() +
       this.marqueeSvg();
@@ -172,6 +213,7 @@ export class Editor {
     this.renderArt();
     this.renderOverlay();
     this.onChange();
+    this.fireSelect();
   }
 
   redo(): void {
@@ -183,6 +225,7 @@ export class Editor {
     this.renderArt();
     this.renderOverlay();
     this.onChange();
+    this.fireSelect();
   }
 
   /* ── mutations ────────────────────────────────────────────────── */
@@ -205,6 +248,7 @@ export class Editor {
     this.renderArt();
     this.renderOverlay();
     this.onChange();
+    this.fireSelect();
   }
 
   deleteSelected(): void {
@@ -223,6 +267,57 @@ export class Editor {
     this.renderArt();
     this.renderOverlay();
     this.onChange();
+    this.fireSelect();
+  }
+
+  /** Align selected nodes' centers. Needs 2+ selected. */
+  alignSelection(
+    mode: 'left' | 'centerH' | 'right' | 'top' | 'middleV' | 'bottom',
+  ): void {
+    const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
+    if (nodes.length < 2) return;
+    this.snapshot();
+    const xs = nodes.map((n) => n.x);
+    const ys = nodes.map((n) => n.y);
+    const minX = Math.min(...xs),
+      maxX = Math.max(...xs),
+      minY = Math.min(...ys),
+      maxY = Math.max(...ys);
+    for (const n of nodes) {
+      if (mode === 'left') n.x = minX;
+      else if (mode === 'right') n.x = maxX;
+      else if (mode === 'centerH') n.x = Math.round((minX + maxX) / 2);
+      else if (mode === 'top') n.y = minY;
+      else if (mode === 'bottom') n.y = maxY;
+      else if (mode === 'middleV') n.y = Math.round((minY + maxY) / 2);
+    }
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /** Distribute selected nodes' centers evenly along an axis. Needs 3+ selected. */
+  distributeSelection(axis: 'h' | 'v'): void {
+    const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
+    if (nodes.length < 3) return;
+    this.snapshot();
+    nodes.sort((a, b) => (axis === 'h' ? a.x - b.x : a.y - b.y));
+    const first = nodes[0]!;
+    const last = nodes[nodes.length - 1]!;
+    const span = axis === 'h' ? last.x - first.x : last.y - first.y;
+    const step = span / (nodes.length - 1);
+    nodes.forEach((n, i) => {
+      const v = Math.round((axis === 'h' ? first.x : first.y) + step * i);
+      if (axis === 'h') n.x = v;
+      else n.y = v;
+    });
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  private fireSelect(): void {
+    this.onSelect(this.sel.size);
   }
 
   /* ── interaction ──────────────────────────────────────────────── */
@@ -231,15 +326,103 @@ export class Editor {
     return this.snap ? Math.round(v / this.grid) * this.grid : Math.round(v);
   }
 
-  private dragDelta(): { x: number; y: number } {
-    if (!this.drag) return { x: 0, y: 0 };
-    return {
-      x: this.cur.x - this.drag.startX,
-      y: this.cur.y - this.drag.startY,
-    };
+  /**
+   * Compute the effective (snapped) drag delta + the guides to draw. Alignment
+   * to other nodes' centers wins over grid snap; spacing guides are advisory
+   * (drawn when the dragged node sits in an equal-gap run, no snap).
+   */
+  private computeSnap(
+    drag: DragState,
+    rawX: number,
+    rawY: number,
+  ): { dx: number; dy: number; guides: Guide[] } {
+    const pb = drag.base.get(drag.primary)!;
+    const projX = pb.x + rawX;
+    const projY = pb.y + rawY;
+    const T = 6; // user-space snap threshold
+
+    let snapX: number | null = null;
+    let snapY: number | null = null;
+    let bestX = T;
+    let bestY = T;
+    for (const n of this.page.nodes) {
+      if (this.sel.has(n.id)) continue; // never align to the moving selection
+      const dxn = Math.abs(n.x - projX);
+      if (dxn <= bestX) {
+        bestX = dxn;
+        snapX = n.x;
+      }
+      const dyn = Math.abs(n.y - projY);
+      if (dyn <= bestY) {
+        bestY = dyn;
+        snapY = n.y;
+      }
+    }
+
+    const finalX = snapX ?? this.snapVal(projX);
+    const finalY = snapY ?? this.snapVal(projY);
+
+    const [vx, vy, vw, vh] = parseVB(this.page.viewBox);
+    const guides: Guide[] = [];
+    if (snapX !== null)
+      guides.push({
+        kind: 'align',
+        x1: finalX,
+        y1: vy,
+        x2: finalX,
+        y2: vy + vh,
+      });
+    if (snapY !== null)
+      guides.push({
+        kind: 'align',
+        x1: vx,
+        y1: finalY,
+        x2: vx + vw,
+        y2: finalY,
+      });
+    guides.push(...this.spacingGuides(finalX, finalY, T, [vx, vy, vw, vh]));
+
+    return { dx: finalX - pb.x, dy: finalY - pb.y, guides };
   }
 
-  private cur = { x: 0, y: 0 };
+  /** Equal-spacing hints: the dragged point + two others evenly spaced on an axis. */
+  private spacingGuides(
+    x: number,
+    y: number,
+    T: number,
+    vb: [number, number, number, number],
+  ): Guide[] {
+    const out: Guide[] = [];
+    const others = this.page.nodes.filter((n) => !this.sel.has(n.id));
+    const cand = { x, y };
+
+    const run = (axis: 'h' | 'v', pts: { x: number; y: number }[]): void => {
+      const ordered = [...pts].sort((a, b) =>
+        axis === 'h' ? a.x - b.x : a.y - b.y,
+      );
+      const c = ordered.map((p) => (axis === 'h' ? p.x : p.y));
+      const gapA = c[1]! - c[0]!;
+      const gapB = c[2]! - c[1]!;
+      if (gapA <= 0 || gapB <= 0 || Math.abs(gapA - gapB) > T) return;
+      out.push(spacingGuide(axis, ordered, (gapA + gapB) / 2, vb));
+    };
+
+    const row = others.filter((p) => Math.abs(p.y - y) <= T);
+    const left = row.filter((p) => p.x < x).sort((a, b) => b.x - a.x);
+    const right = row.filter((p) => p.x > x).sort((a, b) => a.x - b.x);
+    if (left[0] && right[0]) run('h', [left[0], cand, right[0]]);
+    if (left[0] && left[1]) run('h', [left[1], left[0], cand]);
+    if (right[0] && right[1]) run('h', [cand, right[0], right[1]]);
+
+    const col = others.filter((p) => Math.abs(p.x - x) <= T);
+    const above = col.filter((p) => p.y < y).sort((a, b) => b.y - a.y);
+    const below = col.filter((p) => p.y > y).sort((a, b) => a.y - b.y);
+    if (above[0] && below[0]) run('v', [above[0], cand, below[0]]);
+    if (above[0] && above[1]) run('v', [above[1], above[0], cand]);
+    if (below[0] && below[1]) run('v', [cand, below[0], below[1]]);
+
+    return out;
+  }
 
   private bind(): void {
     this.overlay.addEventListener('pointerdown', (e) => this.onDown(e));
@@ -274,7 +457,6 @@ export class Editor {
       return;
     }
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
-    this.cur = p;
     const hit = hitTestNode(this.page, p.x, p.y);
 
     if (hit) {
@@ -292,13 +474,22 @@ export class Editor {
           const n = this.page.nodes.find((m) => m.id === id);
           if (n) base.set(id, { x: n.x, y: n.y });
         }
-        this.drag = { startX: p.x, startY: p.y, base, moved: false };
+        this.drag = {
+          startX: p.x,
+          startY: p.y,
+          base,
+          moved: false,
+          primary: hit,
+          dx: 0,
+          dy: 0,
+        };
       }
     } else {
       if (!e.shiftKey) this.sel.clear();
       this.marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     }
     this.overlay.setPointerCapture(e.pointerId);
+    this.fireSelect();
     this.renderOverlay();
   }
 
@@ -318,10 +509,14 @@ export class Editor {
     }
     if (!this.drag && !this.marquee) return;
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
-    this.cur = p;
     if (this.drag) {
-      const d = this.dragDelta();
-      if (Math.abs(d.x) > 1 || Math.abs(d.y) > 1) this.drag.moved = true;
+      const rawX = p.x - this.drag.startX;
+      const rawY = p.y - this.drag.startY;
+      if (Math.abs(rawX) > 1 || Math.abs(rawY) > 1) this.drag.moved = true;
+      const snap = this.computeSnap(this.drag, rawX, rawY);
+      this.drag.dx = snap.dx;
+      this.drag.dy = snap.dy;
+      this.guides = this.drag.moved ? snap.guides : [];
     } else if (this.marquee) {
       this.marquee.x1 = p.x;
       this.marquee.y1 = p.y;
@@ -338,14 +533,15 @@ export class Editor {
     if (this.drag) {
       if (this.drag.moved) {
         this.snapshot();
-        const d = this.dragDelta();
+        const { dx, dy } = this.drag;
         for (const [id, base] of this.drag.base) {
           const n = this.page.nodes.find((m) => m.id === id);
           if (n) {
-            n.x = this.snapVal(base.x + d.x);
-            n.y = this.snapVal(base.y + d.y);
+            n.x = Math.round(base.x + dx);
+            n.y = Math.round(base.y + dy);
           }
         }
+        this.guides = [];
         this.renderArt();
         this.onChange();
       }
@@ -358,6 +554,7 @@ export class Editor {
       }
       this.marquee = null;
     }
+    this.fireSelect();
     this.renderOverlay();
   }
 
@@ -383,6 +580,51 @@ function parseViewBox(vb: string): {
 } {
   const [x, y, w, h] = vb.split(/\s+/).map(Number);
   return { x: x || 0, y: y || 0, w: w || 1050, h: h || 700 };
+}
+
+function parseVB(vb: string): [number, number, number, number] {
+  const [x, y, w, h] = vb.split(/\s+/).map(Number);
+  return [x || 0, y || 0, w || 1050, h || 700];
+}
+
+/** Build a spacing guide (line + ticks + gap label) for 3 evenly-spaced points. */
+function spacingGuide(
+  axis: 'h' | 'v',
+  pts: { x: number; y: number }[],
+  gap: number,
+  vb: [number, number, number, number],
+): Guide {
+  const label = `${Math.round(gap)}px`;
+  if (axis === 'h') {
+    const xs = pts.map((p) => p.x);
+    const avgY = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+    const gy = avgY - 42 < vb[1] + 12 ? avgY + 42 : avgY - 42;
+    return {
+      kind: 'spacing',
+      x1: Math.min(...xs),
+      y1: gy,
+      x2: Math.max(...xs),
+      y2: gy,
+      ticks: pts.map((p) => ({ x: p.x, y: gy })),
+      label,
+      labelX: (Math.min(...xs) + Math.max(...xs)) / 2,
+      labelY: gy - 7,
+    };
+  }
+  const ys = pts.map((p) => p.y);
+  const avgX = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+  const gx = avgX - 42 < vb[0] + 12 ? avgX + 42 : avgX - 42;
+  return {
+    kind: 'spacing',
+    x1: gx,
+    y1: Math.min(...ys),
+    x2: gx,
+    y2: Math.max(...ys),
+    ticks: pts.map((p) => ({ x: gx, y: p.y })),
+    label,
+    labelX: gx,
+    labelY: (Math.min(...ys) + Math.max(...ys)) / 2,
+  };
 }
 
 function clamp(v: number, lo: number, hi: number): number {
