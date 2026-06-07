@@ -120,9 +120,18 @@ export function renderPageSVG(page: RenderablePage): string {
     focus: [],
     phases: [{ show: ids, diff: '' }],
   });
+  // A trailing empty step we sit ON, so the all-showing step is in the PAST.
+  // The engine then renders every element fully with no entrance animation
+  // (anim only plays for the *current* step) — a static frame that won't replay
+  // fades/draw-ins on each re-render. Important for smooth editing.
+  topo.addStep('end', {
+    act: 'all',
+    name: 'end',
+    focus: [],
+    phases: [{ show: [], diff: '' }],
+  });
   topo._buildIndex();
-  // Step is 1-based; set to the last index so every show-phase is satisfied.
-  topo.step = topo._steps.length;
+  topo.step = topo._steps.length; // sit on the trailing step (within range)
 
   return topo._renderSVG();
 }
