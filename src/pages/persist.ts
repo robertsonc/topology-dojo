@@ -1,0 +1,71 @@
+/**
+ * Document persistence — autosave to localStorage + JSON import/export.
+ *
+ * Pages are already plain JSON, so persistence is just (de)serialization with
+ * defensive normalization on the way in (a corrupt or hand-edited file must
+ * never crash the editor — it falls back to a valid shape or null).
+ */
+import type { TopologyDocument, Page } from './model.js';
+import { newPageId } from './model.js';
+
+const KEY = 'topology-dojo:doc';
+
+export function serializeDoc(doc: TopologyDocument): string {
+  return JSON.stringify({ title: doc.title, pages: doc.pages }, null, 2);
+}
+
+/** Parse + normalize an unknown value into a valid document, or null if hopeless. */
+export function parseDoc(input: unknown): TopologyDocument | null {
+  let data: unknown = input;
+  if (typeof input === 'string') {
+    try {
+      data = JSON.parse(input);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof data !== 'object' || data === null) return null;
+  const d = data as Record<string, unknown>;
+  if (!Array.isArray(d.pages) || d.pages.length === 0) return null;
+
+  const pages: Page[] = [];
+  for (const raw of d.pages) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const p = raw as Record<string, unknown>;
+    pages.push({
+      id: typeof p.id === 'string' ? p.id : newPageId(),
+      name: typeof p.name === 'string' ? p.name : `Frame ${pages.length + 1}`,
+      viewBox: typeof p.viewBox === 'string' ? p.viewBox : '0 0 1050 700',
+      nodes: Array.isArray(p.nodes) ? (p.nodes as Page['nodes']) : [],
+      links: Array.isArray(p.links) ? (p.links as Page['links']) : [],
+      anchors: Array.isArray(p.anchors) ? (p.anchors as Page['anchors']) : [],
+    });
+  }
+  if (pages.length === 0) return null;
+  return { title: typeof d.title === 'string' ? d.title : 'Untitled', pages };
+}
+
+export function saveLocal(doc: TopologyDocument): void {
+  try {
+    localStorage.setItem(KEY, serializeDoc(doc));
+  } catch {
+    // Storage unavailable / quota exceeded — non-fatal.
+  }
+}
+
+export function loadLocal(): TopologyDocument | null {
+  try {
+    const s = localStorage.getItem(KEY);
+    return s ? parseDoc(s) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearLocal(): void {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // ignore
+  }
+}
