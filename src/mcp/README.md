@@ -43,9 +43,16 @@ npx wrangler secret put MCP_API_KEY   # set the shared bearer secret once
 npm run deploy                        # npm run build && wrangler deploy
 ```
 
-The connected Workers Builds Git integration also deploys on push (build command
-`npm run build`). After deploy, connect a client to
-`https://<your-worker-domain>/mcp` with header `Authorization: Bearer <key>`.
+> **Deploy command must be `wrangler deploy`, not `wrangler versions upload`.**
+> This Worker declares a Durable Object **migration** (to create `TopologyMcp`),
+> and migrations can only be applied by a full, non-versioned `wrangler deploy`
+> (`versions upload` fails with error 10211). In the Workers Builds project
+> settings, set the **Deploy command** to `npx wrangler deploy`. (Once the v1
+> migration is applied, the DO class exists; only a _new_ migration would need
+> another full deploy.)
+
+After deploy, connect a client to `https://<your-worker-domain>/mcp` with header
+`Authorization: Bearer <key>`.
 
 > State note: a session's topology lives in the Durable Object's memory for the
 > session's lifetime; export with `get_topology` if you need to persist it. Auth
