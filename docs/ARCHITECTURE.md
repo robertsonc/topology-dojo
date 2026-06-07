@@ -131,7 +131,8 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
 ## Locked decisions
 
 1. **Flipbook over choreography.** Pages are independent full frames; no
-   beat/delta/resolve machinery in the live product.
+   beat/delta/resolve machinery in the live product. (Rationale + revisit
+   triggers: [`decisions/0001-flipbook-vs-beats.md`](decisions/0001-flipbook-vs-beats.md).)
 2. **Vendor the renderer, rebuild the editor.** Reuse the proven engine's visual
    quality; own the interaction layer in TypeScript.
 3. **The document is the complete contract; no UI-only surfaces.** Enforced by

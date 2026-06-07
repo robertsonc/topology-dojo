@@ -79,6 +79,8 @@ public/vendor/ the vendored engine + theme (classic script in the browser, Commo
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the model, the render seam, the
   API surface, the MCP/Worker shape, and the locked decisions.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's built and what's next.
+- [`docs/decisions/`](docs/decisions/) — architecture decision records (ADRs),
+  e.g. [why flipbook over beats/ASP](docs/decisions/0001-flipbook-vs-beats.md).
 - [`src/mcp/README.md`](src/mcp/README.md) — running and deploying the MCP server.
 
 ## Deployment
