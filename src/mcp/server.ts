@@ -5,41 +5,16 @@
  * validate, and render topologies the same way the GUI does. Run with:
  *   npm run mcp        (tsx src/mcp/server.ts)
  *
- * A thin adapter over `createTools`: it registers each tool's zod input shape
- * with the SDK and wraps the handler's return value as MCP text content.
+ * Tool registration is shared with the Cloudflare Worker (`registerTopologyTools`);
+ * this entry just wires the Node renderer and a stdio transport.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { TopologyStore } from './store.js';
-import { createTools } from './tools.js';
+import { renderDocumentToSVG } from '../server/render.js';
+import { registerTopologyTools } from './register.js';
 
-const server = new McpServer({
-  name: 'topology-dojo',
-  version: '0.1.0',
-});
-
-const store = new TopologyStore();
-
-for (const tool of createTools(store)) {
-  server.registerTool(
-    tool.name,
-    { description: tool.description, inputSchema: tool.inputShape },
-    (args: Record<string, unknown>) => {
-      try {
-        const result = tool.handler(args);
-        const text =
-          typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-        return { content: [{ type: 'text' as const, text }] };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [{ type: 'text' as const, text: `Error: ${message}` }],
-        };
-      }
-    },
-  );
-}
+const server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
+registerTopologyTools(server, { renderDocument: renderDocumentToSVG });
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

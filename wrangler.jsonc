@@ -1,14 +1,27 @@
 {
-  // Deploys the built static site (dist/) to Cloudflare Workers via the
-  // connected Git integration (Workers Builds). There is no Worker script —
-  // `assets` with no `main` serves the static build directly.
+  // Cloudflare Worker via the connected Git integration (Workers Builds).
+  // Serves the built SPA (dist/) through the ASSETS binding AND exposes the MCP
+  // server at /mcp (see worker/index.ts). The MCP agent is a Durable Object so
+  // each authoring session keeps its own in-memory topology store.
   //
-  // In the Cloudflare dashboard, the project's build command must be
-  // `npm run build` (which produces dist/); the deploy command is the default
-  // `npx wrangler deploy`.
+  // Dashboard build command stays `npm run build` (produces dist/); deploy is
+  // the default `npx wrangler deploy`. Set the bearer secret once with:
+  //   npx wrangler secret put MCP_API_KEY
   "name": "topology-dojo",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-06-07",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Route /mcp* to the Worker; everything else is served straight from assets
+    // (without /mcp here, the SPA not-found handler could shadow the MCP route).
+    "run_worker_first": ["/mcp", "/mcp/*"],
   },
+  "durable_objects": {
+    "bindings": [{ "name": "MCP_OBJECT", "class_name": "TopologyMcp" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] }],
+  "observability": { "enabled": true },
 }
