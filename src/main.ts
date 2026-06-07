@@ -20,6 +20,7 @@ import {
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
+import { validateDocument } from './api/validate.js';
 
 // Restore the last session from localStorage, else start from the sample.
 const doc: TopologyDocument = loadLocal() ?? sampleDocument();
@@ -147,6 +148,16 @@ fileInput.addEventListener('change', async () => {
   if (!parsed) {
     alert('That file is not a valid Topology Dojo document.');
     return;
+  }
+  const errors = validateDocument(parsed).filter((p) => p.level === 'error');
+  if (errors.length) {
+    alert(
+      `Loaded with ${errors.length} issue(s):\n` +
+        errors
+          .slice(0, 8)
+          .map((p) => `• ${p.where}: ${p.message}`)
+          .join('\n'),
+    );
   }
   loadDoc(parsed);
 });
