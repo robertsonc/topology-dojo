@@ -93,3 +93,64 @@ export function nodesInRect(
     .filter((n) => n.x >= xa && n.x <= xb && n.y >= ya && n.y <= yb)
     .map((n) => n.id);
 }
+
+/** Resolve a node or anchor id to a position (null if unknown). */
+export function resolvePos(
+  page: Page,
+  id: string,
+): { x: number; y: number } | null {
+  const n = page.nodes.find((m) => m.id === id);
+  if (n) return { x: n.x, y: n.y };
+  const a = page.anchors.find((m) => m.id === id);
+  return a ? { x: a.x, y: a.y } : null;
+}
+
+/** The polyline a link follows: from endpoint, waypoints, to endpoint. */
+export function linkPolyline(
+  page: Page,
+  link: { from: string; to: string; waypoints?: { x: number; y: number }[] },
+): { x: number; y: number }[] {
+  const a = resolvePos(page, link.from);
+  const b = resolvePos(page, link.to);
+  if (!a || !b) return [];
+  return [a, ...(link.waypoints ?? []), b];
+}
+
+function distToSegment(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const dx = bx - ax,
+    dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t =
+    len2 === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  const cx = ax + t * dx,
+    cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+/** Topmost link within `pad` user-units of the point (last drawn = on top), else null. */
+export function hitTestLink(
+  page: Page,
+  x: number,
+  y: number,
+  pad = 7,
+): string | null {
+  for (let i = page.links.length - 1; i >= 0; i--) {
+    const link = page.links[i]!;
+    const pts = linkPolyline(page, link);
+    for (let s = 0; s < pts.length - 1; s++) {
+      const a = pts[s]!,
+        b = pts[s + 1]!;
+      if (distToSegment(x, y, a.x, a.y, b.x, b.y) <= pad) return link.id;
+    }
+  }
+  return null;
+}

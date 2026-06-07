@@ -10,9 +10,29 @@
 import { renderPageInto, type NodeConfig } from '../vendor/topology-ds.js';
 import { clientToUser } from './coords.js';
 import type { Page } from '../pages/model.js';
-import { hitTestNode, nodeBounds, nodeHalf, nodesInRect } from './geometry.js';
+import {
+  hitTestLink,
+  hitTestNode,
+  linkPolyline,
+  nodeBounds,
+  nodeHalf,
+  nodesInRect,
+  resolvePos,
+} from './geometry.js';
 
 const ACCENT = '#01a982';
+const LINK_TYPES = [
+  'line',
+  'tunnel',
+  'wireguard',
+  'flow',
+  'wifi',
+  'poe',
+  'optical',
+  'blocked',
+  'packet',
+];
+const LINK_STYLES = ['straight', 'orthogonal', 'curved'];
 
 interface DragState {
   startX: number;
@@ -57,6 +77,12 @@ export class Editor {
   private nodeSeq = 0;
   /** Smart guides computed during the current drag (alignment + spacing). */
   private guides: Guide[] = [];
+  /** Active tool: select/move, or draw-link. */
+  tool: 'select' | 'link' = 'select';
+  private linkStart: string | null = null;
+  private linkCursor: { x: number; y: number } | null = null;
+  private linkSel: string | null = null;
+  private linkSeq = 0;
 
   constructor(
     private art: SVGSVGElement,
@@ -66,6 +92,8 @@ export class Editor {
     private onChange: () => void = () => {},
     /** Called whenever the selection size changes (drives the align toolbar). */
     private onSelect: (count: number) => void = () => {},
+    /** Called when the selected link changes (drives the link toolbar). */
+    private onLinkSelect: (linkId: string | null) => void = () => {},
   ) {
     this.view = parseViewBox(page.viewBox);
     this.bind();
@@ -81,10 +109,13 @@ export class Editor {
     this.redoStack = [];
     this.drag = null;
     this.marquee = null;
+    this.linkSel = null;
+    this.linkStart = null;
     this.view = parseViewBox(page.viewBox);
     this.renderArt();
     this.renderOverlay();
     this.fireSelect();
+    this.fireLinkSelect();
   }
 
   /** Reset pan/zoom to frame the whole page. */
@@ -178,13 +209,35 @@ export class Editor {
     return `<rect x="${Math.min(x0, x1)}" y="${Math.min(y0, y1)}" width="${Math.abs(x1 - x0)}" height="${Math.abs(y1 - y0)}" fill="${ACCENT}" fill-opacity="0.06" stroke="${ACCENT}" stroke-dasharray="5 4" stroke-width="1"/>`;
   }
 
+  private linkSelSvg(): string {
+    if (!this.linkSel) return '';
+    const link = this.page.links.find((l) => l.id === this.linkSel);
+    if (!link) return '';
+    const pts = linkPolyline(this.page, link);
+    if (pts.length < 2) return '';
+    const d = 'M' + pts.map((p) => `${p.x},${p.y}`).join(' L');
+    let out = `<path d="${d}" fill="none" stroke="${ACCENT}" stroke-width="3" opacity="0.5"/>`;
+    for (const p of pts)
+      out += `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${ACCENT}"/>`;
+    return out;
+  }
+
+  private linkPreviewSvg(): string {
+    if (this.tool !== 'link' || !this.linkStart || !this.linkCursor) return '';
+    const a = resolvePos(this.page, this.linkStart);
+    if (!a) return '';
+    return `<line x1="${a.x}" y1="${a.y}" x2="${this.linkCursor.x}" y2="${this.linkCursor.y}" stroke="${ACCENT}" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>`;
+  }
+
   private renderOverlay(): void {
     this.overlay.innerHTML =
       this.gridSvg() +
       this.guidesSvg() +
+      this.linkSelSvg() +
       this.selectionSvg() +
       this.dragGhostSvg() +
-      this.marqueeSvg();
+      this.marqueeSvg() +
+      this.linkPreviewSvg();
   }
 
   /* ── history ──────────────────────────────────────────────────── */
@@ -252,18 +305,25 @@ export class Editor {
   }
 
   deleteSelected(): void {
-    if (this.sel.size === 0) return;
+    if (this.sel.size === 0 && this.linkSel === null) return;
     this.snapshot();
-    this.page.nodes = this.page.nodes.filter((n) => !this.sel.has(n.id));
-    // Cascade: drop links whose endpoints no longer exist.
-    const ids = new Set([
-      ...this.page.nodes.map((n) => n.id),
-      ...this.page.anchors.map((a) => a.id),
-    ]);
-    this.page.links = this.page.links.filter(
-      (l) => ids.has(l.from) && ids.has(l.to),
-    );
-    this.sel.clear();
+    if (this.linkSel !== null) {
+      this.page.links = this.page.links.filter((l) => l.id !== this.linkSel);
+      this.linkSel = null;
+      this.fireLinkSelect();
+    }
+    if (this.sel.size > 0) {
+      this.page.nodes = this.page.nodes.filter((n) => !this.sel.has(n.id));
+      // Cascade: drop links whose endpoints no longer exist.
+      const ids = new Set([
+        ...this.page.nodes.map((n) => n.id),
+        ...this.page.anchors.map((a) => a.id),
+      ]);
+      this.page.links = this.page.links.filter(
+        (l) => ids.has(l.from) && ids.has(l.to),
+      );
+      this.sel.clear();
+    }
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -318,6 +378,66 @@ export class Editor {
 
   private fireSelect(): void {
     this.onSelect(this.sel.size);
+  }
+
+  private fireLinkSelect(): void {
+    this.onLinkSelect(this.linkSel);
+  }
+
+  /* ── links ────────────────────────────────────────────────────── */
+
+  setTool(t: 'select' | 'link'): void {
+    this.tool = t;
+    this.linkStart = null;
+    this.linkCursor = null;
+    this.renderOverlay();
+  }
+
+  private createLink(from: string, to: string): void {
+    this.snapshot();
+    const id = `l${Date.now().toString(36)}${(this.linkSeq++).toString(36)}`;
+    this.page.links.push({ id, type: 'line', from, to });
+    this.sel.clear();
+    this.linkSel = id;
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireSelect();
+    this.fireLinkSelect();
+  }
+
+  /** Current selected link's type + routing style (for the link toolbar). */
+  selectedLinkInfo(): { type: string; style: string } | null {
+    const l = this.page.links.find((m) => m.id === this.linkSel);
+    if (!l) return null;
+    return { type: l.type, style: (l.lineStyle as string) ?? 'straight' };
+  }
+
+  cycleLinkType(): void {
+    const l = this.page.links.find((m) => m.id === this.linkSel);
+    if (!l) return;
+    this.snapshot();
+    const i = LINK_TYPES.indexOf(l.type);
+    l.type = LINK_TYPES[(i + 1) % LINK_TYPES.length]!;
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireLinkSelect();
+  }
+
+  cycleLinkStyle(): void {
+    const l = this.page.links.find((m) => m.id === this.linkSel);
+    if (!l) return;
+    this.snapshot();
+    const cur = (l.lineStyle as string) ?? 'straight';
+    const next =
+      LINK_STYLES[(LINK_STYLES.indexOf(cur) + 1) % LINK_STYLES.length]!;
+    if (next === 'straight') delete l.lineStyle;
+    else l.lineStyle = next as 'orthogonal' | 'curved';
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireLinkSelect();
   }
 
   /* ── interaction ──────────────────────────────────────────────── */
@@ -459,7 +579,27 @@ export class Editor {
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
     const hit = hitTestNode(this.page, p.x, p.y);
 
+    // Link tool: click source node, then target node, to create a link.
+    if (this.tool === 'link') {
+      if (hit) {
+        if (this.linkStart === null) {
+          this.linkStart = hit;
+          this.linkCursor = p;
+        } else if (hit !== this.linkStart) {
+          this.createLink(this.linkStart, hit);
+          this.linkStart = null;
+          this.linkCursor = null;
+        }
+      } else {
+        this.linkStart = null; // click on empty cancels
+      }
+      this.overlay.setPointerCapture(e.pointerId);
+      this.renderOverlay();
+      return;
+    }
+
     if (hit) {
+      this.clearLinkSel();
       if (e.shiftKey) {
         if (this.sel.has(hit)) this.sel.delete(hit);
         else this.sel.add(hit);
@@ -485,12 +625,31 @@ export class Editor {
         };
       }
     } else {
+      // No node — try selecting a link, else start a marquee.
+      const link = hitTestLink(this.page, p.x, p.y);
+      if (link) {
+        this.sel.clear();
+        this.linkSel = link;
+        this.fireSelect();
+        this.fireLinkSelect();
+        this.overlay.setPointerCapture(e.pointerId);
+        this.renderOverlay();
+        return;
+      }
+      this.clearLinkSel();
       if (!e.shiftKey) this.sel.clear();
       this.marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     }
     this.overlay.setPointerCapture(e.pointerId);
     this.fireSelect();
     this.renderOverlay();
+  }
+
+  private clearLinkSel(): void {
+    if (this.linkSel !== null) {
+      this.linkSel = null;
+      this.fireLinkSelect();
+    }
   }
 
   private onMove(e: PointerEvent): void {
@@ -505,6 +664,11 @@ export class Editor {
       this.pan.startClientX = e.clientX;
       this.pan.startClientY = e.clientY;
       this.applyView();
+      return;
+    }
+    if (this.tool === 'link' && this.linkStart) {
+      this.linkCursor = clientToUser(this.overlay, e.clientX, e.clientY);
+      this.renderOverlay();
       return;
     }
     if (!this.drag && !this.marquee) return;
