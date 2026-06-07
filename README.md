@@ -49,5 +49,10 @@ src/
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the model, the resolve seam,
   the locked decisions.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased build plan and open design bets.
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — Cloudflare Pages hosting via
-  GitHub Actions, and the one-time secret setup.
+
+## Deployment
+
+Hosted on **Cloudflare Workers** via the connected Git integration (Workers
+Builds): every push to `main` builds `npm run build` and deploys `dist/` as
+static assets. Config lives in [`wrangler.jsonc`](wrangler.jsonc). No repo
+secrets or CI deploy step — Cloudflare builds from the repo directly.

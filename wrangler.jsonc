@@ -1,0 +1,14 @@
+{
+  // Deploys the built static site (dist/) to Cloudflare Workers via the
+  // connected Git integration (Workers Builds). There is no Worker script —
+  // `assets` with no `main` serves the static build directly.
+  //
+  // In the Cloudflare dashboard, the project's build command must be
+  // `npm run build` (which produces dist/); the deploy command is the default
+  // `npx wrangler deploy`.
+  "name": "topology-dojo",
+  "compatibility_date": "2026-06-07",
+  "assets": {
+    "directory": "./dist",
+  },
+}
