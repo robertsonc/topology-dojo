@@ -26,6 +26,13 @@ interface EngineInstance {
   _renderSVG(): string;
   _steps: unknown[];
   step: number;
+  reducedMotion: boolean;
+}
+
+/** Render options shared by the headless renderers. */
+export interface RenderOptions {
+  /** Calm: suppress animation (flow particles, link dots) in the output. */
+  calm?: boolean;
 }
 interface EngineStatic {
   new (cfg: Record<string, unknown>): EngineInstance;
@@ -66,11 +73,13 @@ function registerCustomTypes(specs: CustomNodeSpec[]): void {
 export function renderPageToSVG(
   page: Page,
   customNodes: CustomNodeSpec[] = [],
+  opts: RenderOptions = {},
 ): string {
   const E = engine();
   registerCustomTypes(customNodes);
 
   const topo = new E({ viewBox: page.viewBox });
+  if (opts.calm) topo.reducedMotion = true;
   for (const a of page.anchors) topo.anchor(a.id, { x: a.x, y: a.y });
   for (const n of page.nodes) {
     const { id, ...cfg } = n;
@@ -130,8 +139,9 @@ export function renderPageToSVG(
 export function renderDocumentToSVG(
   doc: TopologyDocument,
   pageIndex = 0,
+  opts: RenderOptions = {},
 ): string {
   const page = doc.pages[pageIndex];
   if (!page) throw new Error(`page index ${pageIndex} out of range`);
-  return renderPageToSVG(page, doc.customNodes);
+  return renderPageToSVG(page, doc.customNodes, opts);
 }

@@ -4,6 +4,11 @@
  * The shell (header, stage, filmstrip) is built once; the Editor owns the canvas
  * (art + interaction overlay) and the filmstrip is re-rendered on page changes.
  */
+// Self-hosted JetBrains Mono (bundled by Vite — no external font fetch at runtime).
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
+import '@fontsource/jetbrains-mono/600.css';
+import '@fontsource/jetbrains-mono/700.css';
 import { Editor } from './editor/editor.js';
 import {
   blankPage,
@@ -57,6 +62,7 @@ app.innerHTML = `
       <button class="tbtn" id="tLink" title="Draw link tool (L)">🔗 link</button>
       <button class="tbtn on" id="tGrid" title="Toggle grid (R)">▦ grid</button>
       <button class="tbtn on" id="tSnap" title="Toggle snap (G)">⌗ snap</button>
+      <button class="tbtn" id="tCalm" title="Calm canvas — pause animations (C)">◓ calm</button>
       <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑 delete</button>
       <button class="tbtn" id="tFit" title="Fit view (0)">⤢ fit</button>
       <span class="align-group" id="alignGroup" hidden>
@@ -729,6 +735,23 @@ snapBtn.addEventListener('click', () => {
   editor.toggleSnap();
   snapBtn.classList.toggle('on', editor.snap);
 });
+
+/* Calm canvas — pause animations (glow/particles) for a quieter editing view.
+ * A view preference (not document data), persisted across sessions. */
+const calmBtn = app.querySelector<HTMLButtonElement>('#tCalm')!;
+const CALM_KEY = 'topology-dojo:calm';
+function applyCalm(on: boolean): void {
+  editor.setCalm(on);
+  calmBtn.classList.toggle('on', on);
+  try {
+    localStorage.setItem(CALM_KEY, on ? '1' : '0');
+  } catch {
+    // storage unavailable — non-fatal
+  }
+}
+applyCalm(localStorage.getItem(CALM_KEY) === '1');
+calmBtn.addEventListener('click', () => applyCalm(!editor.calm));
+
 app
   .querySelector('#tDelete')
   ?.addEventListener('click', () => editor.deleteSelected());
@@ -756,6 +779,7 @@ window.addEventListener('keydown', (e) => {
     editor.toggleGrid();
     gridBtn.classList.toggle('on', editor.gridVisible);
   }
+  if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
   if (e.key === '0') editor.resetView();
   if (e.key === 'l' || e.key === 'L') setTool('link');
   if (e.key === 'v' || e.key === 'V') setTool('select');
