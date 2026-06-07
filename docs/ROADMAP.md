@@ -3,7 +3,44 @@
 Built methodically, one reviewable phase at a time. Each phase is a PR reviewed
 against [`DESIGN.md`](DESIGN.md).
 
-## Phase 1 — Foundation ✅ (this PR)
+## Direction change — flipbook + vendored editor (current)
+
+The choreography/beat model (below) is **set aside** in favour of a simpler
+**flipbook** model: a document is an ordered list of **pages**, each a complete,
+standalone topology frame (like transparency film). Duplicating a page is a deep,
+independent copy; "animation" is flipping between pages. No deltas, no
+`resolve()`, no tween — you edit frames directly.
+
+We also **vendor the proven legacy Topology Studio renderers + theme** (the
+`TopologyDesigner` engine, `public/vendor/`) and rebuild the editor on top in
+TypeScript, reusing its visual quality while dropping the choreography
+orchestrator and the global-state editor shell.
+
+The beat-model code (`core/resolve`, `core/tween`, `core/edits`, `render-svg`)
+stays in the repo, **dormant**, per the "keep it alongside" decision.
+
+### New phase plan
+
+- **Phase A — Vendor + Pages foundation ✅** _(this PR)_ — vendor the engine +
+  theme behind a typed facade (`src/vendor/topology-ds.ts`); pages document model
+  (`src/pages/model.ts`, independent frames); `renderPage()`; flipbook app shell
+  (render / add / duplicate / flip).
+- **Phase B — Editor core** — select (single / multi / marquee), drag-move,
+  grid + snap, zoom/pan, undo/redo, delete, add-node palette.
+- **Phase C — Smart guides** — alignment + spacing/distribution hints, align /
+  distribute tools (port from the legacy editor).
+- **Phase D — Links** — create, endpoint/port attachment, routing
+  (straight / orthogonal / curved), waypoints, full link-type art + styling.
+- **Phase E — Inspector & polish** — property panels, remaining node types,
+  ambient/theme polish, keyboard shortcuts, context menus.
+- **Phase F — Node Designer** — create/edit custom node types (ports the legacy
+  `node-designer.html` + the engine's `registerNodeType` plugin API).
+
+---
+
+_The original beat-model plan (dormant) is preserved below for reference._
+
+## Phase 1 — Foundation ✅
 
 - Faithful, fully-tested port of the validated beat-model prototype core
   (`model` / `resolve` / `tween`) and the SVG renderer.
