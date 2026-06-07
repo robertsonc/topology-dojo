@@ -28,8 +28,10 @@ These steps require dashboard access and cannot be automated from the repo:
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
 
-Until these exist the Deploy workflow will fail; CI (typecheck/test/lint/build)
-is independent and unaffected.
+Until these exist, the Deploy workflow **skips the deploy step and still passes**
+(it logs a notice instead of failing), so PRs stay green. CI
+(typecheck/test/lint/build) is independent and unaffected either way. Once the
+secrets are set, deploys run automatically.
 
 ## Notes
 
