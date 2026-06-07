@@ -17,6 +17,7 @@ import {
 } from '../vendor/topology-ds.js';
 import { clientToUser } from './coords.js';
 import { tidyPage } from '../api/tidy.js';
+import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
 import type { Page } from '../pages/model.js';
 import {
@@ -142,6 +143,19 @@ export class Editor {
   refresh(): void {
     this.renderArt();
     this.renderOverlay();
+  }
+
+  /** Arrange the current page with a layout algorithm (grid/hierarchical/…). */
+  layout(opts: AutoLayoutOptions): void {
+    this.snapshot();
+    const moved = layoutPage(this.page, opts);
+    if (moved === 0) {
+      this.undoStack.pop();
+      return;
+    }
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
   }
 
   /** Auto-arrange the current page (grid-snap + de-overlap + keep in bounds). */

@@ -25,6 +25,7 @@ import { annotationCatalog, linkCatalog, nodeCatalog } from '../api/catalog.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { tidyDocument } from '../api/tidy.js';
+import { layoutDocument, type LayoutAlgorithm } from '../api/autolayout.js';
 import { POLICY_MARKER_TYPES } from '../api/markers.js';
 import type { RenderOptions } from '../render/core.js';
 import type { TopologyDocument } from '../pages/model.js';
@@ -434,6 +435,32 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           ...(a.keepInBounds !== undefined
             ? { keepInBounds: Boolean(a.keepInBounds) }
             : {}),
+        }),
+    },
+    {
+      name: 'layout_topology',
+      description:
+        'Arrange a topology from scratch with a layout algorithm (unlike tidy, which only de-overlaps existing positions). Use after adding nodes/links when you have not placed them well. Links inform structure. Mutates the stored topology in place; returns how many nodes moved.',
+      inputShape: {
+        topologyId,
+        algorithm: z
+          .enum(['grid', 'hierarchical', 'circular', 'force'])
+          .describe(
+            'hierarchical = layered by link direction; grid; circular; force = force-directed.',
+          ),
+        direction: z
+          .enum(['TB', 'LR'])
+          .optional()
+          .describe('Hierarchical flow direction (default TB).'),
+        spacing: z.number().optional().describe('Gap between nodes in px.'),
+      },
+      handler: (a) =>
+        layoutDocument(store.get(String(a.topologyId)), {
+          algorithm: a.algorithm as LayoutAlgorithm,
+          ...(a.direction !== undefined
+            ? { direction: a.direction as 'TB' | 'LR' }
+            : {}),
+          ...(a.spacing !== undefined ? { spacing: Number(a.spacing) } : {}),
         }),
     },
     {
