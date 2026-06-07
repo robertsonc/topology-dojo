@@ -8,3 +8,4 @@
 export * from './builder.js';
 export * from './validate.js';
 export * from './builtins.js';
+export * from './catalog.js';
