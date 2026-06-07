@@ -66,10 +66,13 @@ describe('capability catalog', () => {
     expect(flow.fields.find((f) => f.key === 'waypoints')?.kind).toBe('refs');
     expect(flow.fields.some((f) => f.animation)).toBe(true);
     const marker = getAnnotationType('policyMarker')!;
-    expect(marker.fields.find((f) => f.key === 'type')?.options).toContain(
-      'deny',
-    );
+    const markerTypes = marker.fields.find((f) => f.key === 'type')?.options;
+    expect(markerTypes).toContain('deny'); // enforcement
+    expect(markerTypes).toContain('windows'); // host OS (SASE)
+    expect(markerTypes).toContain('agentless'); // SSE posture (SASE)
+    expect(markerTypes).toHaveLength(17);
     expect(marker.fields.find((f) => f.key === 'nodeId')?.kind).toBe('ref');
+    expect(marker.fields.some((f) => f.key === 'icon')).toBe(true); // glyph override
   });
 
   it('includes custom node types when provided', () => {

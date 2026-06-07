@@ -8,6 +8,7 @@
  * catalog covers the whole built-in vocabulary, so nothing can be UI-only.
  */
 import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
+import { POLICY_MARKER_TYPES } from './markers.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 
 export type FieldKind =
@@ -309,24 +310,15 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
     fields: [
       {
         key: 'type',
-        label: 'Action',
+        label: 'Type',
         kind: 'enum',
         required: true,
-        options: [
-          'inspect',
-          'allow',
-          'deny',
-          'redirect',
-          'encrypt',
-          'decrypt',
-          'nat',
-          'load-balance',
-          'log',
-        ],
+        options: POLICY_MARKER_TYPES,
       },
       { key: 'nodeId', label: 'On node', kind: 'ref', required: true },
       { key: 'label', label: 'Label', kind: 'string' },
       { key: 'color', label: 'Color', kind: 'color' },
+      { key: 'icon', label: 'Icon (override)', kind: 'string' },
       {
         key: 'align',
         label: 'Placement',

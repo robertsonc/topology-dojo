@@ -149,4 +149,7 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
 - Remote MCP session state lives in the Durable Object's memory for the session
   lifetime; `get_topology` exports the portable JSON to persist it.
 - The vendored engine is treated as an opaque renderer; we drive a small, typed
-  slice of its surface and never edit it.
+  slice of its surface and avoid editing it. The one sanctioned exception so far
+  is a per-marker `icon` override (one line in `public/vendor/topology-ds.js`) so
+  the catalog — not the engine — owns the policy-marker glyph set; new glyphs are
+  added in `src/api/markers.ts`, never in the engine.

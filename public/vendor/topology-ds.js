@@ -3946,7 +3946,7 @@ class TopologyDesigner {
           const p = _markerPos(nodeCfg, m.align, idx);
           const mx = p.x, my = p.y;
           const color = m.color || '#65aef9';
-          const icon = _mIcons[m.type] || '\u2022';
+          const icon = m.icon || _mIcons[m.type] || '\u2022';
           let mSvg = `<circle cx="${mx}" cy="${my}" r="10" fill="rgba(0,0,0,.6)" stroke="${color}" stroke-width="1"/>`;
           mSvg += `<text x="${mx}" y="${my + 4}" text-anchor="middle" fill="${color}" font-size="10" font-weight="700">${icon}</text>`;
           if (m.label) {

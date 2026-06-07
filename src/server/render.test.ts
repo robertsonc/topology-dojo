@@ -69,6 +69,19 @@ describe('headless render (Node, no browser)', () => {
     expect(calm).toContain('data-tds-flowpath="f"'); // route still drawn
   });
 
+  it('renders SASE marker glyphs (host OS) via the per-marker icon path', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'h', type: 'host', x: 200, y: 200, label: 'Laptop' })
+      .node({ id: 'g', type: 'ec', x: 400, y: 200 })
+      .policyMarker({ id: 'm1', nodeId: 'h', type: 'windows' })
+      .policyMarker({ id: 'm2', nodeId: 'g', type: 'inspect', icon: '★' })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    expect(svg).toContain('🪟'); // host-OS glyph from the type default
+    expect(svg).toContain('★'); // explicit per-marker icon override
+  });
+
   it('throws on an out-of-range page index', () => {
     const doc = createDocument().page().build();
     expect(() => renderDocumentToSVG(doc, 5)).toThrow();
