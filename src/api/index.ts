@@ -12,4 +12,5 @@ export * from './markers.js';
 export * from './catalog.js';
 export * from './layout.js';
 export * from './tidy.js';
+export * from './autolayout.js';
 export * from './geometry.js';

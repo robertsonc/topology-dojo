@@ -33,6 +33,7 @@ describe('MCP tools', () => {
         'get_topology',
         'import_topology',
         'layout_guidelines',
+        'layout_topology',
         'list_topologies',
         'render_svg',
         'tidy_topology',
@@ -99,6 +100,27 @@ describe('MCP tools', () => {
     expect(res.after).toBe(0);
     expect(res.movedNodes).toBeGreaterThan(0);
     // the mutation persisted on the stored doc
+    const v = call('validate_topology', { topologyId: id }) as {
+      layoutClean: boolean;
+    };
+    expect(v.layoutClean).toBe(true);
+  });
+
+  it('layout_topology arranges piled-up nodes into a clean layout', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    for (const nid of ['a', 'b', 'c', 'd', 'e', 'f'])
+      call('add_node', {
+        topologyId: id,
+        type: 'ec',
+        x: 200,
+        y: 200,
+        nodeId: nid,
+      });
+    const res = call('layout_topology', {
+      topologyId: id,
+      algorithm: 'grid',
+    }) as { movedNodes: number };
+    expect(res.movedNodes).toBeGreaterThan(0);
     const v = call('validate_topology', { topologyId: id }) as {
       layoutClean: boolean;
     };

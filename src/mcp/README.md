@@ -92,6 +92,7 @@ document's custom node types).
 | `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes) |
 | `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page) |
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds         |
+| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force) |
 | `render_svg`                                           | Render a page to a standalone SVG string                      |
 
 ## Layout quality
@@ -102,6 +103,12 @@ node gap, edge margin, zone padding) plus prose guidance. `validate_topology`
 checks against those same rules and reports any overlapping/crowded nodes,
 labels, or zones and off-page elements as **warnings** (advisory — they never
 block rendering), alongside the semantic checks.
+
+To arrange a topology you haven't placed (or placed badly), **`layout_topology`**
+runs a real algorithm — `hierarchical` (layered by link direction), `grid`,
+`circular`, or `force` (force-directed) — then a tidy finisher. `tidy_topology`
+is the lighter pass that only nudges existing positions. In the editor, the
+**arrange…** dropdown runs the same algorithms.
 
 When a generated layout has issues, **`tidy_topology`** resolves them
 automatically: it snaps nodes to the grid, pushes apart overlapping/crowded

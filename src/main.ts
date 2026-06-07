@@ -68,6 +68,13 @@ app.innerHTML = `
       <button class="tbtn" id="tCalm" title="Calm canvas — pause animations (C)">◓ calm</button>
       <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑 delete</button>
       <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)">✦ tidy</button>
+      <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm">
+        <option value="">⤢ arrange…</option>
+        <option value="hierarchical">hierarchical</option>
+        <option value="grid">grid</option>
+        <option value="circular">circular</option>
+        <option value="force">force-directed</option>
+      </select>
       <button class="tbtn" id="tFit" title="Fit view (0)">⤢ fit</button>
       <span class="align-group" id="alignGroup" hidden>
         <button class="tbtn ab" data-align="left" title="Align left">⇤</button>
@@ -810,6 +817,15 @@ app
   .querySelector('#tDelete')
   ?.addEventListener('click', () => editor.deleteSelected());
 app.querySelector('#tTidy')?.addEventListener('click', () => editor.tidy());
+const layoutSel = app.querySelector<HTMLSelectElement>('#tLayout')!;
+layoutSel.addEventListener('change', () => {
+  const algorithm = layoutSel.value;
+  layoutSel.value = ''; // reset to the placeholder
+  if (algorithm)
+    editor.layout({
+      algorithm: algorithm as 'grid' | 'hierarchical' | 'circular' | 'force',
+    });
+});
 app.querySelector('#tFit')?.addEventListener('click', () => editor.resetView());
 
 /* Keyboard. Shortcuts are suppressed while typing in a form field so they don't
