@@ -1,58 +1,90 @@
 # Topology Dojo
 
-A studio for choreographing **network topology walkthroughs**. You draw a
-topology once, then author a sequence of **beats** — each beat says only what
-_changes_ — and present it as an animated story that tweens between states.
+A studio for designing **network topology diagrams** — built so they are equally
+authorable by **people** (a direct-manipulation canvas editor) and by **agents**
+(a headless API exposed over MCP). Same document, same renderer, same
+capabilities either way.
 
-It replaces the old Acts → Steps → Phases model with a single ordered list of
-beats. One concept instead of three. That is the core bet of this project:
-**reduce what the author has to hold in their head.**
+The long-term aim: one consistent topology framework for everything SASE, where
+every diagram has the same look and feel whether a human drew it or an LLM
+generated it.
 
-## Status
+## The model in one minute
 
-Early. The foundation here is a faithful, fully-tested port of the validated
-[beat-model prototype](reference/topology-studio-prototype.zip). See
-[`docs/ROADMAP.md`](docs/ROADMAP.md) for what's built and what's next.
+- A **document** is an ordered list of **pages** — each page a complete,
+  standalone topology frame (like a sheet of transparency film). Duplicating a
+  page deep-copies it; "animation" is flipping between pages. No deltas, no
+  choreography engine — you edit frames directly. (This "flipbook" model
+  replaced an earlier beat/delta model, whose core still lives in `src/core`,
+  dormant.)
+- A page holds **nodes**, **links**, **anchors**, and an annotation layer of
+  **zones**, **flow paths**, and **policy markers**.
+- The document JSON is the **contract**: everything the GUI can express lives in
+  it, and everything in it is reachable from the headless API — there are no
+  UI-only surfaces.
 
 ## Quick start
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm test           # core model tests
-npm run lint       # eslint + prettier
-npm run build      # type-check + production build
+npm run dev         # app at http://localhost:5173
+npm test            # unit tests (Vitest)
+npm run lint        # eslint + prettier
+npm run build       # typecheck (app + worker) + production build
+npm run mcp         # run the MCP server over stdio
 ```
 
-## The two things to understand
+## Three ways in
 
-1. **Beats are deltas.** A beat stores only the overrides that differ from the
-   beat before it (set-and-hold inheritance). Authoring a beat = toggling what
-   changed, not re-describing the whole scene.
+1. **The editor** — a canvas editor over the vendored rendering engine: select /
+   marquee / drag, smart alignment + spacing guides, grid + snap, links with
+   on-canvas waypoint editing, align / distribute, a calm-canvas toggle, a
+   catalog-driven palette + inspector, a filmstrip of pages, a Node Designer for
+   custom node types, and one-click **Tidy** (auto-layout).
+2. **The headless API** (`src/api`) — build / mutate / validate / lay out /
+   render a document in code, DOM-free. The GUI is just one client of it.
+3. **MCP** (`src/mcp`, `worker/`) — the same API exposed as tools over the Model
+   Context Protocol, both locally (stdio) and hosted on Cloudflare. See
+   [`src/mcp/README.md`](src/mcp/README.md).
 
-2. **`resolve()` is the seam.** `resolve(scene, beatIndex)` turns the document
-   into a concrete `ResolvedScene`. The editor and the presenter both render the
-   output of `resolve()` — there is no separate viewer codebase, and no
-   editor/viewer drift.
+## Layout that holds up for AI
+
+Agent-generated diagrams tend to overlap. The API ships a layout **ground
+truth**: `layoutGuidelines` (machine-readable spacing/grid/zone rules), an
+overlap **analyzer** folded into `validate`, and **`tidy`** auto-layout
+(grid-snap + de-overlap + keep-in-bounds). The agent loop is **discover → build →
+validate → tidy → render**.
+
+## Structure
 
 ```
 src/
-  core/        model · resolve · tween   ← pure, typed, tested. No DOM.
-  render-svg/  render                     ← ResolvedScene → SVG. Knows nothing of beats.
-  main.ts                                 ← app shell: editor + presenter, both call resolve()
+  vendor/      typed facade over the vendored TopologyDesigner engine (the renderer)
+  pages/       the flipbook document model + persistence (autosave / import / export)
+  api/         headless authoring: builder · validate · catalog · layout · tidy · geometry
+  render/      engine-agnostic render core (shared by Node and the Worker)
+  server/      Node headless renderer (loads the engine via createRequire)
+  nodes/       custom node types: spec · interpreter · Node Designer
+  editor/      the canvas editor (selection, drag, guides, links, tidy)
+  mcp/         MCP server: tools · store · auth · registration (used by stdio + worker)
+  core/        the retired beat-model (dormant; kept for reference)
+worker/        Cloudflare Worker: serves the app + /mcp (Durable Object sessions)
+public/vendor/ the vendored engine + theme (classic script in the browser, CommonJS in Node)
 ```
 
 ## Docs
 
-- [`docs/DESIGN.md`](docs/DESIGN.md) — design principles (the "intuitive / low
-  cognitive load" north star) and how they translate to concrete rules.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the model, the resolve seam,
-  the locked decisions.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased build plan and open design bets.
+- [`docs/DESIGN.md`](docs/DESIGN.md) — the north star and the principles every PR
+  is reviewed against.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the model, the render seam, the
+  API surface, the MCP/Worker shape, and the locked decisions.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's built and what's next.
+- [`src/mcp/README.md`](src/mcp/README.md) — running and deploying the MCP server.
 
 ## Deployment
 
 Hosted on **Cloudflare Workers** via the connected Git integration (Workers
-Builds): every push to `main` builds `npm run build` and deploys `dist/` as
-static assets. Config lives in [`wrangler.jsonc`](wrangler.jsonc). No repo
-secrets or CI deploy step — Cloudflare builds from the repo directly.
+Builds): `npm run build` produces `dist/`, and the Worker (`worker/index.ts`)
+serves it as static assets while routing `/mcp` to the MCP server (a Durable
+Object per session, bearer-authenticated). Config is in
+[`wrangler.jsonc`](wrangler.jsonc).
