@@ -11,15 +11,29 @@ import {
   sampleDocument,
   type TopologyDocument,
 } from './pages/model.js';
+import {
+  loadLocal,
+  parseDoc,
+  saveLocal,
+  serializeDoc,
+} from './pages/persist.js';
 
-const doc: TopologyDocument = sampleDocument();
+// Restore the last session from localStorage, else start from the sample.
+const doc: TopologyDocument = loadLocal() ?? sampleDocument();
 let current = 0;
 
 const app = document.getElementById('app')!;
 
 app.innerHTML = `
   <header class="bar">
-    <div class="brand">Topology Dojo</div>
+    <div class="brand">
+      Topology Dojo
+      <button class="tbtn file" id="fNew" title="New document">new</button>
+      <button class="tbtn file" id="fSave" title="Download as JSON">save</button>
+      <button class="tbtn file" id="fOpen" title="Open a JSON file">open</button>
+      <input type="file" id="fInput" accept="application/json,.json" hidden />
+      <span class="saved" id="saved"></span>
+    </div>
     <div class="bar-actions">
       <button class="tbtn on" id="tSelect" title="Select/move tool (V)">⤧ select</button>
       <button class="tbtn" id="tLink" title="Draw link tool (L)">🔗 link</button>
@@ -60,15 +74,70 @@ app.innerHTML = `
 const artSvg = app.querySelector<SVGSVGElement>('#page-canvas')!;
 const overlaySvg = app.querySelector<SVGSVGElement>('#overlay')!;
 const strip = app.querySelector<HTMLElement>('#filmstrip')!;
+const savedEl = app.querySelector<HTMLElement>('#saved')!;
+
+/* Autosave to localStorage (debounced) whenever the document changes. */
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+function markDirty(): void {
+  savedEl.textContent = '…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveLocal(doc);
+    savedEl.textContent = '✓ saved';
+  }, 400);
+}
+function onDocChange(): void {
+  renderFilmstrip();
+  markDirty();
+}
 
 const editor = new Editor(
   artSvg,
   overlaySvg,
   doc.pages[current]!,
-  renderFilmstrip,
+  onDocChange,
   onSelectionChange,
   onLinkSelectChange,
 );
+
+/* Replace the whole document (open / new) and refresh everything. */
+function loadDoc(next: TopologyDocument): void {
+  doc.title = next.title;
+  doc.pages = next.pages;
+  current = 0;
+  editor.setPage(doc.pages[current]!);
+  renderFilmstrip();
+  markDirty();
+}
+
+/* File actions: new / save (download) / open (upload). */
+app.querySelector('#fNew')?.addEventListener('click', () => {
+  if (!confirm('Start a new document? Unsaved changes to this one are lost.'))
+    return;
+  loadDoc({ title: 'Untitled', pages: [blankPage('Frame 1')] });
+});
+app.querySelector('#fSave')?.addEventListener('click', () => {
+  const blob = new Blob([serializeDoc(doc)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+const fileInput = app.querySelector<HTMLInputElement>('#fInput')!;
+app.querySelector('#fOpen')?.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files?.[0];
+  fileInput.value = '';
+  if (!file) return;
+  const parsed = parseDoc(await file.text());
+  if (!parsed) {
+    alert('That file is not a valid Topology Dojo document.');
+    return;
+  }
+  loadDoc(parsed);
+});
 
 /* Tool toggle (select / link) */
 const selectBtn = app.querySelector<HTMLButtonElement>('#tSelect')!;
@@ -309,6 +378,7 @@ function renderFilmstrip(): void {
   strip.querySelector('#addPage')?.addEventListener('click', () => {
     doc.pages.push(blankPage(`Frame ${doc.pages.length + 1}`));
     selectPage(doc.pages.length - 1);
+    markDirty();
   });
   strip.querySelector('#dupPage')?.addEventListener('click', () => {
     doc.pages.splice(
@@ -317,6 +387,7 @@ function renderFilmstrip(): void {
       duplicatePage(doc.pages[current]!, `Frame ${doc.pages.length + 1}`),
     );
     selectPage(current + 1);
+    markDirty();
   });
 }
 
