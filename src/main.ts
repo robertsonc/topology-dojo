@@ -37,11 +37,6 @@ app.innerHTML = `
         <button class="tbtn ab" data-dist="h" title="Distribute horizontally" disabled>↔̲</button>
         <button class="tbtn ab" data-dist="v" title="Distribute vertically" disabled>↕̲</button>
       </span>
-      <span class="align-group" id="linkGroup" hidden>
-        <button class="tbtn ab" id="lkType" title="Cycle link type">type: line</button>
-        <button class="tbtn ab" id="lkStyle" title="Cycle routing">route: straight</button>
-        <button class="tbtn ab" id="lkDel" title="Delete link">🗑</button>
-      </span>
       <span class="hint">click/shift/box select · drag move · wheel zoom · middle-drag pan · ←/→ flip</span>
     </div>
   </header>
@@ -56,6 +51,7 @@ app.innerHTML = `
         </div>
       </div>
     </div>
+    <aside class="inspector" id="inspector" hidden></aside>
   </div>
 
   <footer class="filmstrip" id="filmstrip"></footer>
@@ -85,23 +81,11 @@ function setTool(t: 'select' | 'link'): void {
 selectBtn.addEventListener('click', () => setTool('select'));
 linkBtn.addEventListener('click', () => setTool('link'));
 
-/* Link toolbar — shown when a link is selected. */
-const linkGroup = app.querySelector<HTMLElement>('#linkGroup')!;
-const lkType = app.querySelector<HTMLButtonElement>('#lkType')!;
-const lkStyle = app.querySelector<HTMLButtonElement>('#lkStyle')!;
-function onLinkSelectChange(linkId: string | null): void {
-  const info = editor.selectedLinkInfo();
-  linkGroup.hidden = linkId === null || info === null;
-  if (info) {
-    lkType.textContent = `type: ${info.type}`;
-    lkStyle.textContent = `route: ${info.style}`;
-  }
+/* Inspector — properties of the single selected node or link. */
+const inspector = app.querySelector<HTMLElement>('#inspector')!;
+function onLinkSelectChange(_linkId: string | null): void {
+  renderInspector();
 }
-lkType.addEventListener('click', () => editor.cycleLinkType());
-lkStyle.addEventListener('click', () => editor.cycleLinkStyle());
-app
-  .querySelector('#lkDel')
-  ?.addEventListener('click', () => editor.deleteSelected());
 
 /* Align/distribute toolbar — shown when 2+ nodes are selected. */
 const alignGroup = app.querySelector<HTMLElement>('#alignGroup')!;
@@ -110,6 +94,7 @@ function onSelectionChange(count: number): void {
   alignGroup
     .querySelectorAll<HTMLButtonElement>('[data-dist]')
     .forEach((b) => (b.disabled = count < 3));
+  renderInspector();
 }
 alignGroup
   .querySelectorAll<HTMLButtonElement>('[data-align]')
@@ -133,6 +118,144 @@ alignGroup
       editor.distributeSelection(b.dataset.dist as 'h' | 'v'),
     ),
   );
+
+/* ── Inspector ──────────────────────────────────────────────────── */
+const SWATCHES = [
+  '#01a982',
+  '#05cc93',
+  '#65aef9',
+  '#7764fc',
+  '#deb146',
+  '#fc6161',
+  '#00a4b3',
+  '#d25f4b',
+  '#b1b9be',
+];
+const LINK_TYPES = [
+  'line',
+  'tunnel',
+  'wireguard',
+  'flow',
+  'wifi',
+  'poe',
+  'optical',
+  'blocked',
+  'packet',
+];
+const NODE_TYPE_OPTS = [
+  'ec',
+  'router',
+  'switch',
+  'firewall',
+  'server',
+  'database',
+  'host',
+  'cloud',
+  'saas',
+  'connector',
+  'apps',
+  'ap',
+  'text',
+];
+
+// One snapshot per edit "session": reset on each focus into the inspector.
+let editing = false;
+inspector.addEventListener('focusin', () => (editing = false));
+
+function swatchRow(current: string | undefined): string {
+  return (
+    `<div class="swatches">` +
+    SWATCHES.map(
+      (c) =>
+        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}"></button>`,
+    ).join('') +
+    `</div>`
+  );
+}
+
+function options(list: string[], current: string): string {
+  return list
+    .map(
+      (t) =>
+        `<option value="${t}" ${t === current ? 'selected' : ''}>${t}</option>`,
+    )
+    .join('');
+}
+
+function renderInspector(): void {
+  const link = editor.getSelectedLink();
+  const node = link ? null : editor.getSelectedNode();
+  if (!node && !link) {
+    inspector.hidden = true;
+    inspector.innerHTML = '';
+    return;
+  }
+  inspector.hidden = false;
+
+  if (node) {
+    inspector.innerHTML = `
+      <div class="insp-h">Node</div>
+      <label class="insp-row">Label<input id="i-label" value="${esc(String(node.label ?? ''))}"/></label>
+      <label class="insp-row">Sublabel<input id="i-sub" value="${esc(String(node.sublabel ?? ''))}"/></label>
+      <label class="insp-row">Type<select id="i-type">${options(NODE_TYPE_OPTS.includes(node.type) ? NODE_TYPE_OPTS : [node.type, ...NODE_TYPE_OPTS], node.type)}</select></label>
+      <div class="insp-row col">Color${swatchRow(node.color)}<input id="i-color" class="hex" value="${esc(String(node.color ?? ''))}" placeholder="#rrggbb"/></div>
+    `;
+    bindText('#i-label', (v) => editor.updateNode({ label: v }, !editing));
+    bindText('#i-sub', (v) => editor.updateNode({ sublabel: v }, !editing));
+    bindSelect('#i-type', (v) => editor.updateNode({ type: v }));
+    bindSwatches((c) => editor.updateNode({ color: c }));
+    bindHex('#i-color', (v) => editor.updateNode({ color: v }));
+  } else if (link) {
+    inspector.innerHTML = `
+      <div class="insp-h">Link</div>
+      <label class="insp-row">Label<input id="i-label" value="${esc(String(link.label ?? ''))}"/></label>
+      <label class="insp-row">Type<select id="i-type">${options(LINK_TYPES.includes(link.type) ? LINK_TYPES : [link.type, ...LINK_TYPES], link.type)}</select></label>
+      <label class="insp-row">Route<select id="i-route">${options(['straight', 'orthogonal', 'curved'], (link.lineStyle as string) ?? 'straight')}</select></label>
+      <div class="insp-row col">Color${swatchRow(link.color)}<input id="i-color" class="hex" value="${esc(String(link.color ?? ''))}" placeholder="#rrggbb"/></div>
+    `;
+    bindText('#i-label', (v) => editor.updateLink({ label: v }, !editing));
+    bindSelect('#i-type', (v) => editor.updateLink({ type: v }));
+    bindSelect('#i-route', (v) =>
+      editor.updateLink({
+        lineStyle:
+          v === 'straight' ? undefined : (v as 'orthogonal' | 'curved'),
+      }),
+    );
+    bindSwatches((c) => editor.updateLink({ color: c }));
+    bindHex('#i-color', (v) => editor.updateLink({ color: v }));
+  }
+}
+
+function bindText(sel: string, set: (v: string) => void): void {
+  inspector
+    .querySelector<HTMLInputElement>(sel)
+    ?.addEventListener('input', (e) => {
+      set((e.target as HTMLInputElement).value);
+      editing = true;
+    });
+}
+function bindSelect(sel: string, set: (v: string) => void): void {
+  inspector
+    .querySelector<HTMLSelectElement>(sel)
+    ?.addEventListener('change', (e) =>
+      set((e.target as HTMLSelectElement).value),
+    );
+}
+function bindHex(sel: string, set: (v: string) => void): void {
+  inspector
+    .querySelector<HTMLInputElement>(sel)
+    ?.addEventListener('change', (e) =>
+      set((e.target as HTMLInputElement).value),
+    );
+}
+function bindSwatches(set: (c: string) => void): void {
+  inspector.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
+    b.addEventListener('click', () => {
+      set(b.dataset.color!);
+      renderInspector();
+    }),
+  );
+}
 
 /* Node palette — click a type to add it at the view center, then drag to place. */
 const PALETTE: { type: string; label: string }[] = [
@@ -245,7 +368,10 @@ window.addEventListener('keydown', (e) => {
   if (e.key === '0') editor.resetView();
   if (e.key === 'l' || e.key === 'L') setTool('link');
   if (e.key === 'v' || e.key === 'V') setTool('select');
-  if (e.key === 'Escape') setTool('select');
+  if (e.key === 'Escape') {
+    editor.clearSelection();
+    setTool('select');
+  }
   if (e.key === 'ArrowRight') selectPage(current + 1);
   if (e.key === 'ArrowLeft') selectPage(current - 1);
 });

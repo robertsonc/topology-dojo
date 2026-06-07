@@ -7,7 +7,11 @@
  * selection visuals, the marquee, and drag ghosts — so dragging is smooth
  * without re-rendering the heavy art every frame.
  */
-import { renderPageInto, type NodeConfig } from '../vendor/topology-ds.js';
+import {
+  renderPageInto,
+  type LinkConfig,
+  type NodeConfig,
+} from '../vendor/topology-ds.js';
 import { clientToUser } from './coords.js';
 import type { Page } from '../pages/model.js';
 import {
@@ -328,6 +332,59 @@ export class Editor {
     this.renderOverlay();
     this.onChange();
     this.fireSelect();
+  }
+
+  /** Clear node + link selection (Esc). */
+  clearSelection(): void {
+    const had = this.sel.size > 0 || this.linkSel !== null;
+    this.sel.clear();
+    this.linkSel = null;
+    if (had) {
+      this.renderOverlay();
+      this.fireSelect();
+      this.fireLinkSelect();
+    }
+  }
+
+  /* ── inspector accessors / updaters ───────────────────────────── */
+
+  /** The sole selected node (for the inspector), or null if 0 or >1 selected. */
+  getSelectedNode(): NodeConfig | null {
+    if (this.sel.size !== 1) return null;
+    const id = [...this.sel][0]!;
+    return this.page.nodes.find((n) => n.id === id) ?? null;
+  }
+
+  /** The selected link (for the inspector), or null. */
+  getSelectedLink(): LinkConfig | null {
+    if (!this.linkSel) return null;
+    return this.page.links.find((l) => l.id === this.linkSel) ?? null;
+  }
+
+  /**
+   * Patch the sole selected node. Re-renders the art but NOT the inspector
+   * (so a focused text field keeps focus while typing). Pass `commit=false`
+   * during continuous edits and `true` on the first to snapshot once.
+   */
+  updateNode(patch: Partial<NodeConfig>, commit = true): void {
+    const node = this.getSelectedNode();
+    if (!node) return;
+    if (commit) this.snapshot();
+    Object.assign(node, patch);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /** Patch the selected link (re-renders art, keeps the inspector DOM). */
+  updateLink(patch: Partial<LinkConfig>, commit = true): void {
+    const link = this.getSelectedLink();
+    if (!link) return;
+    if (commit) this.snapshot();
+    Object.assign(link, patch);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
   }
 
   /** Align selected nodes' centers. Needs 2+ selected. */
