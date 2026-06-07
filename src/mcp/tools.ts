@@ -1,0 +1,408 @@
+/**
+ * MCP tool definitions for Topology Dojo.
+ *
+ * Each tool maps directly onto the headless authoring API (`src/api`) + the
+ * headless renderer (`src/server/render`), so everything the GUI can express is
+ * reachable programmatically — no UI-only surfaces. The handlers are pure (they
+ * take parsed args, mutate the store, and return a plain value), which keeps
+ * them unit-testable without an MCP transport; `server.ts` is the thin adapter.
+ *
+ * Return convention: a handler returns either a string (used verbatim as text,
+ * e.g. rendered SVG) or any JSON-serializable value (stringified by the server).
+ */
+import { z } from 'zod';
+import {
+  addAnchor,
+  addFlowPath,
+  addLink,
+  addNode,
+  addPage,
+  addPolicyMarker,
+  addZone,
+  defineNodeType,
+} from '../api/builder.js';
+import { annotationCatalog, linkCatalog, nodeCatalog } from '../api/catalog.js';
+import { validateDocument } from '../api/validate.js';
+import { renderDocumentToSVG } from '../server/render.js';
+import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
+import { TopologyStore } from './store.js';
+
+export interface ToolDef {
+  name: string;
+  description: string;
+  inputShape: z.ZodRawShape;
+  handler: (args: Record<string, unknown>) => unknown;
+}
+
+/* Reusable field fragments ------------------------------------------------- */
+const topologyId = z
+  .string()
+  .describe('Topology id returned by create_topology / import_topology.');
+const pageIndex = z
+  .number()
+  .int()
+  .optional()
+  .describe('0-based page index; defaults to the most recently added page.');
+const extra = z
+  .record(z.string(), z.unknown())
+  .optional()
+  .describe(
+    'Any additional catalog fields for this type (see describe_capabilities).',
+  );
+
+const BORDER = ['dashed', 'solid', 'dotted'] as const;
+const ANIMATION = ['particles', 'dashed', 'pulse'] as const;
+const DIRECTION = ['forward', 'reverse', 'bidirectional'] as const;
+const SPEED = ['slow', 'medium', 'fast'] as const;
+const ALIGN9 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'C'] as const;
+const MARKER = [
+  'inspect',
+  'allow',
+  'deny',
+  'redirect',
+  'encrypt',
+  'decrypt',
+  'nat',
+  'load-balance',
+  'log',
+] as const;
+
+/** Build the full set of tools bound to a store. */
+export function createTools(store: TopologyStore): ToolDef[] {
+  return [
+    {
+      name: 'describe_capabilities',
+      description:
+        'List every node type, link type, and annotation kind with its editable fields. This is the discovery surface: call it first to learn what you can set. Pass a topologyId to include that document’s custom node types.',
+      inputShape: { topologyId: topologyId.optional() },
+      handler: (a) => {
+        const custom = a.topologyId
+          ? store.get(String(a.topologyId)).customNodes
+          : [];
+        return {
+          nodeTypes: nodeCatalog(custom),
+          linkTypes: linkCatalog(),
+          annotations: annotationCatalog(),
+        };
+      },
+    },
+    {
+      name: 'create_topology',
+      description:
+        'Create a new topology document (seeded with one empty page "Frame 1"). Returns its id; pass that id to subsequent tools.',
+      inputShape: { title: z.string().optional() },
+      handler: (a) => {
+        const { id, document } = store.create(
+          a.title ? String(a.title) : undefined,
+        );
+        return { id, title: document.title, pages: document.pages.length };
+      },
+    },
+    {
+      name: 'list_topologies',
+      description: 'List all topologies currently held by the server.',
+      inputShape: {},
+      handler: () => store.list(),
+    },
+    {
+      name: 'get_topology',
+      description:
+        'Return the full document JSON for a topology (the canonical, portable contract).',
+      inputShape: { topologyId },
+      handler: (a) => store.get(String(a.topologyId)),
+    },
+    {
+      name: 'import_topology',
+      description:
+        'Load a topology from document JSON (a string or object). Returns the new id.',
+      inputShape: {
+        json: z
+          .union([z.string(), z.record(z.string(), z.unknown())])
+          .describe('Document JSON as a string or object.'),
+        title: z.string().optional(),
+      },
+      handler: (a) => {
+        const { id, document } = store.import(
+          a.json,
+          a.title ? String(a.title) : undefined,
+        );
+        return { id, title: document.title, pages: document.pages.length };
+      },
+    },
+    {
+      name: 'delete_topology',
+      description: 'Remove a topology from the server.',
+      inputShape: { topologyId },
+      handler: (a) => ({ removed: store.remove(String(a.topologyId)) }),
+    },
+    {
+      name: 'add_page',
+      description:
+        'Append a new (empty) page/frame to a topology. Returns its 0-based index.',
+      inputShape: {
+        topologyId,
+        name: z.string().optional(),
+        viewBox: z.string().optional(),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        const page = addPage(doc, {
+          name: a.name ? String(a.name) : undefined,
+          viewBox: a.viewBox ? String(a.viewBox) : undefined,
+        });
+        return { pageIndex: doc.pages.length - 1, page };
+      },
+    },
+    {
+      name: 'add_node',
+      description:
+        'Add a node to a page. `type` must be a known node type (see describe_capabilities). Extra per-type fields go in `extra`.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        type: z.string(),
+        x: z.number(),
+        y: z.number(),
+        label: z.string().optional(),
+        sublabel: z.string().optional(),
+        color: z.string().optional(),
+        nodeId: z.string().optional().describe('Explicit id (else generated).'),
+        extra,
+      },
+      handler: (a) =>
+        addNode(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          {
+            id: a.nodeId as string | undefined,
+            type: String(a.type),
+            x: Number(a.x),
+            y: Number(a.y),
+            ...(a.label !== undefined ? { label: String(a.label) } : {}),
+            ...(a.sublabel !== undefined
+              ? { sublabel: String(a.sublabel) }
+              : {}),
+            ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...((a.extra as Record<string, unknown>) ?? {}),
+          },
+        ),
+    },
+    {
+      name: 'add_link',
+      description:
+        'Connect two endpoints (node or anchor ids) with a link. `type` must be a known link type.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        type: z.string(),
+        from: z.string(),
+        to: z.string(),
+        label: z.string().optional(),
+        color: z.string().optional(),
+        lineStyle: z.enum(['straight', 'orthogonal', 'curved']).optional(),
+        linkId: z.string().optional(),
+        extra,
+      },
+      handler: (a) =>
+        addLink(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          {
+            id: a.linkId as string | undefined,
+            type: String(a.type),
+            from: String(a.from),
+            to: String(a.to),
+            ...(a.label !== undefined ? { label: String(a.label) } : {}),
+            ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.lineStyle !== undefined
+              ? { lineStyle: a.lineStyle as 'orthogonal' | 'curved' }
+              : {}),
+            ...((a.extra as Record<string, unknown>) ?? {}),
+          },
+        ),
+    },
+    {
+      name: 'add_anchor',
+      description:
+        'Add a free-floating anchor point usable as a link endpoint or flow-path waypoint.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        x: z.number(),
+        y: z.number(),
+        anchorId: z.string().optional(),
+      },
+      handler: (a) =>
+        addAnchor(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          Number(a.x),
+          Number(a.y),
+          a.anchorId as string | undefined,
+        ),
+    },
+    {
+      name: 'add_zone',
+      description:
+        'Group member nodes into a labeled region (auto-sized around the members).',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        nodes: z.array(z.string()).describe('Member node ids.'),
+        label: z.string().optional(),
+        sublabel: z.string().optional(),
+        description: z.string().optional(),
+        color: z.string().optional(),
+        borderStyle: z.enum(BORDER).optional(),
+        padding: z.number().optional(),
+        labelAlign: z.enum(['left', 'center', 'right']).optional(),
+        parentZone: z.string().optional(),
+        zoneId: z.string().optional(),
+      },
+      handler: (a) =>
+        addZone(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          {
+            id: a.zoneId as string | undefined,
+            nodes: (a.nodes as string[]) ?? [],
+            ...(a.label !== undefined ? { label: String(a.label) } : {}),
+            ...(a.sublabel !== undefined
+              ? { sublabel: String(a.sublabel) }
+              : {}),
+            ...(a.description !== undefined
+              ? { description: String(a.description) }
+              : {}),
+            ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.borderStyle !== undefined
+              ? { borderStyle: a.borderStyle as (typeof BORDER)[number] }
+              : {}),
+            ...(a.padding !== undefined ? { padding: Number(a.padding) } : {}),
+            ...(a.labelAlign !== undefined
+              ? { labelAlign: a.labelAlign as 'left' | 'center' | 'right' }
+              : {}),
+            ...(a.parentZone !== undefined
+              ? { parentZone: String(a.parentZone) }
+              : {}),
+          },
+        ),
+    },
+    {
+      name: 'add_flow_path',
+      description:
+        'Add an animated overlay route threaded through an ordered list of node/anchor ids (≥2 waypoints).',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        waypoints: z.array(z.string()).describe('Ordered node/anchor ids.'),
+        label: z.string().optional(),
+        color: z.string().optional(),
+        animation: z.enum(ANIMATION).optional(),
+        speed: z.union([z.number(), z.enum(SPEED)]).optional(),
+        direction: z.enum(DIRECTION).optional(),
+        width: z.number().optional(),
+        opacity: z.number().optional(),
+        flowPathId: z.string().optional(),
+      },
+      handler: (a) =>
+        addFlowPath(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          {
+            id: a.flowPathId as string | undefined,
+            waypoints: (a.waypoints as string[]) ?? [],
+            ...(a.label !== undefined ? { label: String(a.label) } : {}),
+            ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.animation !== undefined
+              ? { animation: a.animation as (typeof ANIMATION)[number] }
+              : {}),
+            ...(a.speed !== undefined
+              ? { speed: a.speed as number | (typeof SPEED)[number] }
+              : {}),
+            ...(a.direction !== undefined
+              ? { direction: a.direction as (typeof DIRECTION)[number] }
+              : {}),
+            ...(a.width !== undefined ? { width: Number(a.width) } : {}),
+            ...(a.opacity !== undefined ? { opacity: Number(a.opacity) } : {}),
+          },
+        ),
+    },
+    {
+      name: 'add_policy_marker',
+      description:
+        'Pin an enforcement badge (inspect / allow / deny / encrypt …) to a node.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        nodeId: z.string(),
+        type: z.enum(MARKER),
+        label: z.string().optional(),
+        color: z.string().optional(),
+        align: z.enum(ALIGN9).optional(),
+        flowPathId: z.string().optional(),
+        markerId: z.string().optional(),
+      },
+      handler: (a) =>
+        addPolicyMarker(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          {
+            id: a.markerId as string | undefined,
+            nodeId: String(a.nodeId),
+            type: a.type as (typeof MARKER)[number],
+            ...(a.label !== undefined ? { label: String(a.label) } : {}),
+            ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.align !== undefined
+              ? { align: a.align as (typeof ALIGN9)[number] }
+              : {}),
+            ...(a.flowPathId !== undefined
+              ? { flowPathId: String(a.flowPathId) }
+              : {}),
+          },
+        ),
+    },
+    {
+      name: 'define_node_type',
+      description:
+        'Define (or replace) a custom node type for a topology. `spec` is merged over sensible defaults; only `typeName` is required. The type then renders in get/validate/render and shows in describe_capabilities.',
+      inputShape: {
+        topologyId,
+        spec: z
+          .record(z.string(), z.unknown())
+          .describe('Partial CustomNodeSpec; must include typeName.'),
+      },
+      handler: (a) => {
+        const spec = (a.spec ?? {}) as Record<string, unknown>;
+        if (typeof spec.typeName !== 'string' || !spec.typeName)
+          throw new Error('spec.typeName is required');
+        const merged: CustomNodeSpec = {
+          ...defaultSpec(),
+          ...spec,
+        } as CustomNodeSpec;
+        return defineNodeType(store.get(String(a.topologyId)), merged);
+      },
+    },
+    {
+      name: 'validate_topology',
+      description:
+        'Run semantic validation; returns a list of problems (errors block rendering meaning, warnings are advisory). An empty list means the document is valid.',
+      inputShape: { topologyId },
+      handler: (a) => {
+        const problems = validateDocument(store.get(String(a.topologyId)));
+        return { valid: !problems.some((p) => p.level === 'error'), problems };
+      },
+    },
+    {
+      name: 'render_svg',
+      description:
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame).',
+      inputShape: {
+        topologyId,
+        pageIndex: z
+          .number()
+          .int()
+          .optional()
+          .describe('0-based page index; defaults to 0.'),
+      },
+      handler: (a) =>
+        renderDocumentToSVG(
+          store.get(String(a.topologyId)),
+          (a.pageIndex as number | undefined) ?? 0,
+        ),
+    },
+  ];
+}
