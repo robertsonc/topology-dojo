@@ -83,6 +83,45 @@
         overflow: hidden;
         min-height: 0;
       }
+      .palette {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 6;
+        width: 132px;
+        max-height: calc(100% - 24px);
+        overflow-y: auto;
+        background: rgba(34, 37, 46, 0.92);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px;
+        backdrop-filter: blur(8px);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .palette-h {
+        color: var(--muted);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 2px 4px 4px;
+      }
+      .pitem {
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 6px 9px;
+        cursor: pointer;
+        font-size: 12px;
+        font-family: var(--font);
+        text-align: left;
+      }
+      .pitem:hover {
+        border-color: rgba(1, 169, 130, 0.5);
+        color: var(--accent);
+      }
       .stage .tds-root,
       .stage .tds-canvas-row,
       .stage .canvas-host {

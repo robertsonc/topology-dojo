@@ -24,11 +24,13 @@ app.innerHTML = `
       <button class="tbtn on" id="tGrid" title="Toggle grid (R)">▦ grid</button>
       <button class="tbtn on" id="tSnap" title="Toggle snap (G)">⌗ snap</button>
       <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑 delete</button>
-      <span class="hint">click / shift-click / drag a box to select · drag to move · ←/→ flip</span>
+      <button class="tbtn" id="tFit" title="Fit view (0)">⤢ fit</button>
+      <span class="hint">click/shift/box select · drag move · wheel zoom · middle-drag pan · ←/→ flip</span>
     </div>
   </header>
 
   <div class="stage">
+    <aside class="palette" id="palette"></aside>
     <div class="tds-root">
       <div class="tds-canvas-row">
         <div class="tds-canvas canvas-host">
@@ -52,6 +54,35 @@ const editor = new Editor(
   doc.pages[current]!,
   renderFilmstrip,
 );
+
+/* Node palette — click a type to add it at the view center, then drag to place. */
+const PALETTE: { type: string; label: string }[] = [
+  { type: 'ec', label: 'EdgeConnect' },
+  { type: 'router', label: 'Router' },
+  { type: 'switch', label: 'Switch' },
+  { type: 'firewall', label: 'Firewall' },
+  { type: 'server', label: 'Server' },
+  { type: 'database', label: 'Database' },
+  { type: 'host', label: 'Host' },
+  { type: 'cloud', label: 'Cloud' },
+  { type: 'saas', label: 'SaaS' },
+  { type: 'connector', label: 'Connector' },
+  { type: 'apps', label: 'Apps' },
+  { type: 'ap', label: 'Access Pt' },
+  { type: 'text', label: 'Text' },
+];
+const palette = app.querySelector<HTMLElement>('#palette')!;
+palette.innerHTML =
+  `<div class="palette-h">Add node</div>` +
+  PALETTE.map(
+    (p) =>
+      `<button class="pitem" data-type="${p.type}">${esc(p.label)}</button>`,
+  ).join('');
+palette
+  .querySelectorAll<HTMLButtonElement>('[data-type]')
+  .forEach((b) =>
+    b.addEventListener('click', () => editor.addNode(b.dataset.type!)),
+  );
 
 function renderFilmstrip(): void {
   strip.innerHTML = `
@@ -108,6 +139,7 @@ snapBtn.addEventListener('click', () => {
 app
   .querySelector('#tDelete')
   ?.addEventListener('click', () => editor.deleteSelected());
+app.querySelector('#tFit')?.addEventListener('click', () => editor.resetView());
 
 /* Keyboard */
 window.addEventListener('keydown', (e) => {
@@ -131,6 +163,7 @@ window.addEventListener('keydown', (e) => {
     editor.toggleGrid();
     gridBtn.classList.toggle('on', editor.gridVisible);
   }
+  if (e.key === '0') editor.resetView();
   if (e.key === 'ArrowRight') selectPage(current + 1);
   if (e.key === 'ArrowLeft') selectPage(current - 1);
 });
