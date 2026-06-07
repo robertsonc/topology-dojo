@@ -23,6 +23,7 @@ import {
   serializeDoc,
 } from './pages/persist.js';
 import { exportPagePNG, exportPageSVG } from './editor/export.js';
+import { buildTemplate, listTemplates } from './api/templates.js';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
@@ -57,6 +58,7 @@ app.innerHTML = `
       <button class="tbtn file" id="fOpen" title="Open a JSON file">open</button>
       <button class="tbtn file" id="fSvg" title="Export current frame as SVG">svg</button>
       <button class="tbtn file" id="fPng" title="Export current frame as PNG">png</button>
+      <select class="tbtn file" id="fTemplate" title="New from a starter template"></select>
       <input type="file" id="fInput" accept="application/json,.json" hidden />
       <span class="saved" id="saved"></span>
     </div>
@@ -183,6 +185,24 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
     alert('PNG export failed.'),
   );
 });
+/* New from a starter template. */
+const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
+templateSel.innerHTML =
+  `<option value="">＋ template…</option>` +
+  listTemplates()
+    .map(
+      (t) =>
+        `<option value="${t.id}" title="${esc(t.description)}">${esc(t.name)}</option>`,
+    )
+    .join('');
+templateSel.addEventListener('change', () => {
+  const id = templateSel.value;
+  templateSel.value = '';
+  if (!id) return;
+  if (!confirm('Start from this template? Unsaved changes are lost.')) return;
+  loadDoc(buildTemplate(id));
+});
+
 const fileInput = app.querySelector<HTMLInputElement>('#fInput')!;
 app.querySelector('#fOpen')?.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async () => {

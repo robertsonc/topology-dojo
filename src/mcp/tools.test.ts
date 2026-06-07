@@ -26,6 +26,7 @@ describe('MCP tools', () => {
         'add_page',
         'add_policy_marker',
         'add_zone',
+        'create_from_template',
         'create_topology',
         'define_node_type',
         'delete_topology',
@@ -34,6 +35,7 @@ describe('MCP tools', () => {
         'import_topology',
         'layout_guidelines',
         'layout_topology',
+        'list_templates',
         'list_topologies',
         'render_svg',
         'tidy_topology',
@@ -124,6 +126,21 @@ describe('MCP tools', () => {
     const v = call('validate_topology', { topologyId: id }) as {
       layoutClean: boolean;
     };
+    expect(v.layoutClean).toBe(true);
+  });
+
+  it('create_from_template instantiates a valid, clean template', () => {
+    const list = call('list_templates') as { id: string }[];
+    expect(list.length).toBeGreaterThanOrEqual(5);
+    const { id } = call('create_from_template', {
+      template: list[0]!.id,
+      title: 'My net',
+    }) as { id: string };
+    const v = call('validate_topology', { topologyId: id }) as {
+      valid: boolean;
+      layoutClean: boolean;
+    };
+    expect(v.valid).toBe(true);
     expect(v.layoutClean).toBe(true);
   });
 

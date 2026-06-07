@@ -13,4 +13,5 @@ export * from './catalog.js';
 export * from './layout.js';
 export * from './tidy.js';
 export * from './autolayout.js';
+export * from './templates.js';
 export * from './geometry.js';
