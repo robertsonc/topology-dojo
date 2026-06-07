@@ -21,6 +21,15 @@ import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
 import { validateDocument } from './api/validate.js';
+import {
+  getLinkType,
+  getNodeType,
+  linkCatalog,
+  nodeCatalog,
+  type FieldSpec,
+  type LinkTypeInfo,
+  type NodeTypeInfo,
+} from './api/catalog.js';
 
 // Restore the last session from localStorage, else start from the sample.
 const doc: TopologyDocument = loadLocal() ?? sampleDocument();
@@ -223,40 +232,14 @@ const SWATCHES = [
   '#d25f4b',
   '#b1b9be',
 ];
-const LINK_TYPES = [
-  'line',
-  'tunnel',
-  'wireguard',
-  'flow',
-  'wifi',
-  'poe',
-  'optical',
-  'blocked',
-  'packet',
-];
-const NODE_TYPE_OPTS = [
-  'ec',
-  'router',
-  'switch',
-  'firewall',
-  'server',
-  'database',
-  'host',
-  'cloud',
-  'saas',
-  'connector',
-  'apps',
-  'ap',
-  'text',
-];
 
 // One snapshot per edit "session": reset on each focus into the inspector.
 let editing = false;
 inspector.addEventListener('focusin', () => (editing = false));
 
-function swatchRow(current: string | undefined): string {
+function swatchRow(key: string, current: string | undefined): string {
   return (
-    `<div class="swatches">` +
+    `<div class="swatches" data-swatch="${key}">` +
     SWATCHES.map(
       (c) =>
         `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}"></button>`,
@@ -265,15 +248,51 @@ function swatchRow(current: string | undefined): string {
   );
 }
 
-function options(list: string[], current: string): string {
-  return list
+/** A control for one catalog field, bound to the element's current value. */
+function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
+  const v = cfg[f.key];
+  switch (f.kind) {
+    case 'boolean':
+      return `<label class="insp-row"><span>${f.label}${f.animation ? ' ⟳' : ''}</span><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}/></label>`;
+    case 'enum':
+      return `<label class="insp-row">${f.label}<select data-key="${f.key}">${(
+        f.options ?? []
+      )
+        .map(
+          (o) =>
+            `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${o}</option>`,
+        )
+        .join('')}</select></label>`;
+    case 'color':
+      return `<div class="insp-row col">${f.label}${swatchRow(f.key, v as string | undefined)}<input class="hex" data-key="${f.key}" data-kind="color" value="${esc(String(v ?? ''))}" placeholder="#rrggbb"/></div>`;
+    case 'number':
+      return `<label class="insp-row">${f.label}<input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}"/></label>`;
+    case 'point':
+    case 'points':
+      return `<div class="insp-row"><span>${f.label}</span><span class="muted">${Array.isArray(v) ? v.length : 0} pt</span></div>`;
+    default:
+      return `<label class="insp-row">${f.label}<input data-key="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
+  }
+}
+
+function typeRow(current: string, types: string[]): string {
+  const opts = types.includes(current) ? types : [current, ...types];
+  return `<label class="insp-row">Type<select id="i-type">${opts
     .map(
       (t) =>
         `<option value="${t}" ${t === current ? 'selected' : ''}>${t}</option>`,
     )
-    .join('');
+    .join('')}</select></label>`;
 }
 
+function fieldsHtml(
+  info: NodeTypeInfo | LinkTypeInfo | undefined,
+  cfg: Record<string, unknown>,
+): string {
+  return (info?.fields ?? []).map((f) => fieldControl(f, cfg)).join('');
+}
+
+/** Render the inspector for the current selection, driven entirely by the catalog. */
 function renderInspector(): void {
   const link = editor.getSelectedLink();
   const node = link ? null : editor.getSelectedNode();
@@ -285,86 +304,76 @@ function renderInspector(): void {
   inspector.hidden = false;
 
   if (node) {
-    inspector.innerHTML = `
-      <div class="insp-h">Node</div>
-      <label class="insp-row">Label<input id="i-label" value="${esc(String(node.label ?? ''))}"/></label>
-      <label class="insp-row">Sublabel<input id="i-sub" value="${esc(String(node.sublabel ?? ''))}"/></label>
-      <label class="insp-row">Type<select id="i-type">${options(NODE_TYPE_OPTS.includes(node.type) ? NODE_TYPE_OPTS : [node.type, ...NODE_TYPE_OPTS], node.type)}</select></label>
-      <div class="insp-row col">Color${swatchRow(node.color)}<input id="i-color" class="hex" value="${esc(String(node.color ?? ''))}" placeholder="#rrggbb"/></div>
-    `;
-    bindText('#i-label', (v) => editor.updateNode({ label: v }, !editing));
-    bindText('#i-sub', (v) => editor.updateNode({ sublabel: v }, !editing));
-    bindSelect('#i-type', (v) => editor.updateNode({ type: v }));
-    bindSwatches((c) => editor.updateNode({ color: c }));
-    bindHex('#i-color', (v) => editor.updateNode({ color: v }));
-  } else if (link) {
-    inspector.innerHTML = `
-      <div class="insp-h">Link</div>
-      <label class="insp-row">Label<input id="i-label" value="${esc(String(link.label ?? ''))}"/></label>
-      <label class="insp-row">Type<select id="i-type">${options(LINK_TYPES.includes(link.type) ? LINK_TYPES : [link.type, ...LINK_TYPES], link.type)}</select></label>
-      <label class="insp-row">Route<select id="i-route">${options(['straight', 'orthogonal', 'curved'], (link.lineStyle as string) ?? 'straight')}</select></label>
-      <div class="insp-row col">Color${swatchRow(link.color)}<input id="i-color" class="hex" value="${esc(String(link.color ?? ''))}" placeholder="#rrggbb"/></div>
-    `;
-    bindText('#i-label', (v) => editor.updateLink({ label: v }, !editing));
-    bindSelect('#i-type', (v) => editor.updateLink({ type: v }));
-    bindSelect('#i-route', (v) =>
-      editor.updateLink({
-        lineStyle:
-          v === 'straight' ? undefined : (v as 'orthogonal' | 'curved'),
-      }),
+    const info = getNodeType(node.type, doc.customNodes);
+    const types = nodeCatalog(doc.customNodes).map((n) => n.type);
+    inspector.innerHTML =
+      `<div class="insp-h">Node</div>` +
+      typeRow(node.type, types) +
+      fieldsHtml(info, node as Record<string, unknown>);
+    wireType((t) => {
+      editor.updateNode({ type: t });
+      renderInspector();
+    });
+    wireFields((key, val, commit) =>
+      editor.updateNode({ [key]: val } as Record<string, unknown>, commit),
     );
-    bindSwatches((c) => editor.updateLink({ color: c }));
-    bindHex('#i-color', (v) => editor.updateLink({ color: v }));
+  } else if (link) {
+    const info = getLinkType(link.type);
+    const types = linkCatalog().map((l) => l.type);
+    inspector.innerHTML =
+      `<div class="insp-h">Link</div>` +
+      typeRow(link.type, types) +
+      fieldsHtml(info, link as Record<string, unknown>);
+    wireType((t) => {
+      editor.updateLink({ type: t });
+      renderInspector();
+    });
+    wireFields((key, val, commit) =>
+      editor.updateLink({ [key]: val } as Record<string, unknown>, commit),
+    );
   }
 }
 
-function bindText(sel: string, set: (v: string) => void): void {
+function wireType(onChange: (t: string) => void): void {
   inspector
-    .querySelector<HTMLInputElement>(sel)
-    ?.addEventListener('input', (e) => {
-      set((e.target as HTMLInputElement).value);
-      editing = true;
-    });
-}
-function bindSelect(sel: string, set: (v: string) => void): void {
-  inspector
-    .querySelector<HTMLSelectElement>(sel)
+    .querySelector<HTMLSelectElement>('#i-type')
     ?.addEventListener('change', (e) =>
-      set((e.target as HTMLSelectElement).value),
+      onChange((e.target as HTMLSelectElement).value),
     );
-}
-function bindHex(sel: string, set: (v: string) => void): void {
-  inspector
-    .querySelector<HTMLInputElement>(sel)
-    ?.addEventListener('change', (e) =>
-      set((e.target as HTMLInputElement).value),
-    );
-}
-function bindSwatches(set: (c: string) => void): void {
-  inspector.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
-    b.addEventListener('click', () => {
-      set(b.dataset.color!);
-      renderInspector();
-    }),
-  );
 }
 
-/* Node palette — click a type to add it at the view center, then drag to place. */
-const PALETTE: { type: string; label: string }[] = [
-  { type: 'ec', label: 'EdgeConnect' },
-  { type: 'router', label: 'Router' },
-  { type: 'switch', label: 'Switch' },
-  { type: 'firewall', label: 'Firewall' },
-  { type: 'server', label: 'Server' },
-  { type: 'database', label: 'Database' },
-  { type: 'host', label: 'Host' },
-  { type: 'cloud', label: 'Cloud' },
-  { type: 'saas', label: 'SaaS' },
-  { type: 'connector', label: 'Connector' },
-  { type: 'apps', label: 'Apps' },
-  { type: 'ap', label: 'Access Pt' },
-  { type: 'text', label: 'Text' },
-];
+/** Wire every catalog-rendered field control to the given setter. */
+function wireFields(
+  set: (key: string, val: unknown, commit: boolean) => void,
+): void {
+  inspector
+    .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-key]')
+    .forEach((el) => {
+      const key = el.dataset.key!;
+      if (el instanceof HTMLSelectElement) {
+        el.addEventListener('change', () => set(key, el.value, true));
+      } else if (el.type === 'checkbox') {
+        el.addEventListener('change', () => set(key, el.checked, true));
+      } else {
+        const num = el.dataset.kind === 'number';
+        el.addEventListener('input', () => {
+          set(key, num ? Number(el.value) : el.value, !editing);
+          editing = true;
+        });
+      }
+    });
+  inspector.querySelectorAll<HTMLElement>('[data-swatch]').forEach((group) => {
+    const key = group.dataset.swatch!;
+    group.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
+      b.addEventListener('click', () => {
+        set(key, b.dataset.color!, true);
+        renderInspector();
+      }),
+    );
+  });
+}
+
+/* Node palette — driven by the catalog; grouped by category. Click to add. */
 const palette = app.querySelector<HTMLElement>('#palette')!;
 
 /** Add or replace a custom node type, re-register it, and refresh the UI. */
@@ -379,22 +388,24 @@ function upsertCustomNode(spec: CustomNodeSpec): void {
 }
 
 function buildPalette(): void {
-  const builtin =
-    `<div class="palette-h">Add node</div>` +
-    PALETTE.map(
-      (p) =>
-        `<button class="pitem" data-type="${p.type}">${esc(p.label)}</button>`,
-    ).join('');
-  const custom =
-    `<div class="palette-h">Custom</div>` +
-    doc.customNodes
-      .map(
-        (c) =>
-          `<div class="pcustom"><button class="pitem" data-type="${esc(c.typeName)}">${esc(c.typeName)}</button><button class="pedit" data-edit="${esc(c.typeName)}" title="Edit type">✎</button></div>`,
-      )
-      .join('') +
-    `<button class="pitem design" id="pDesign">＋ design node</button>`;
-  palette.innerHTML = builtin + custom;
+  const byCat = new Map<string, NodeTypeInfo[]>();
+  for (const info of nodeCatalog(doc.customNodes)) {
+    const list = byCat.get(info.category) ?? [];
+    list.push(info);
+    byCat.set(info.category, list);
+  }
+  let html = '';
+  for (const [cat, infos] of byCat) {
+    html += `<div class="palette-h">${esc(cat)}</div>`;
+    for (const info of infos) {
+      html += info.custom
+        ? `<div class="pcustom"><button class="pitem" data-type="${esc(info.type)}">${esc(info.label)}</button><button class="pedit" data-edit="${esc(info.type)}" title="Edit type">✎</button></div>`
+        : `<button class="pitem" data-type="${esc(info.type)}">${esc(info.label)}</button>`;
+    }
+  }
+  html += `<button class="pitem design" id="pDesign">＋ design node</button>`;
+  palette.innerHTML = html;
+
   palette
     .querySelectorAll<HTMLButtonElement>('[data-type]')
     .forEach((b) =>
