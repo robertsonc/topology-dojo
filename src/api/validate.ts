@@ -8,6 +8,12 @@
  */
 import type { TopologyDocument } from '../pages/model.js';
 import { isBuiltinNodeType, isLinkType } from './builtins.js';
+import {
+  getLinkType,
+  getNodeType,
+  type NodeTypeInfo,
+  type LinkTypeInfo,
+} from './catalog.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -59,6 +65,13 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         err(`${at} node "${n.id}"`, 'node is missing numeric x/y');
       if (!knownNodeType(n.type))
         err(`${at} node "${n.id}"`, `unknown node type "${n.type}"`);
+      else
+        checkEnums(
+          n as Record<string, unknown>,
+          getNodeType(n.type, doc.customNodes),
+          `${at} node "${n.id}"`,
+          warn,
+        );
     }
     for (const a of page.anchors) {
       claim(a.id, 'anchor');
@@ -68,6 +81,13 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       claim(l.id, 'link');
       if (!isLinkType(l.type))
         warn(`${at} link "${l.id}"`, `unknown link type "${l.type}"`);
+      else
+        checkEnums(
+          l as Record<string, unknown>,
+          getLinkType(l.type),
+          `${at} link "${l.id}"`,
+          warn,
+        );
       if (!endpoints.has(l.from))
         err(`${at} link "${l.id}"`, `'from' references missing "${l.from}"`);
       if (!endpoints.has(l.to))
@@ -76,6 +96,22 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
   });
 
   return problems;
+}
+
+/** Warn when an enum-typed field carries a value outside its catalog options. */
+function checkEnums(
+  cfg: Record<string, unknown>,
+  info: NodeTypeInfo | LinkTypeInfo | undefined,
+  where: string,
+  warn: (where: string, message: string) => void,
+): void {
+  if (!info) return;
+  for (const f of info.fields) {
+    if (f.kind !== 'enum' || !f.options) continue;
+    const v = cfg[f.key];
+    if (v !== undefined && !f.options.includes(String(v)))
+      warn(where, `${f.key} "${String(v)}" not in [${f.options.join(', ')}]`);
+  }
 }
 
 /** True if the document has no errors (warnings are allowed). */
