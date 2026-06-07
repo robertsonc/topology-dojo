@@ -54,6 +54,7 @@ interface EngineInstance {
   addStep(id: string, cfg: Record<string, unknown>): void;
   _buildIndex(): void;
   _renderSVG(): string;
+  _svgDefs(): string;
   _steps: unknown[];
   step: number;
 }
@@ -92,6 +93,11 @@ function engine(): EngineStatic {
 /** The set of node types the vendored engine knows how to draw. */
 export function nodeTypes(): string[] {
   return Object.keys(engine().NODE_TYPES);
+}
+
+/** The engine's shared SVG `<defs>` (glow/bloom/gradient filters) — for previews. */
+export function engineDefs(): string {
+  return new (engine())({})._svgDefs();
 }
 
 /** A renderable page: a complete, standalone topology frame. */

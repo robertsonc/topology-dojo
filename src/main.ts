@@ -17,7 +17,9 @@ import {
   saveLocal,
   serializeDoc,
 } from './pages/persist.js';
-import { registerCustomNodes } from './nodes/render.js';
+import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
+import { openNodeDesigner } from './nodes/designer.js';
+import type { CustomNodeSpec } from './nodes/spec.js';
 
 // Restore the last session from localStorage, else start from the sample.
 const doc: TopologyDocument = loadLocal() ?? sampleDocument();
@@ -353,6 +355,18 @@ const PALETTE: { type: string; label: string }[] = [
   { type: 'text', label: 'Text' },
 ];
 const palette = app.querySelector<HTMLElement>('#palette')!;
+
+/** Add or replace a custom node type, re-register it, and refresh the UI. */
+function upsertCustomNode(spec: CustomNodeSpec): void {
+  const i = doc.customNodes.findIndex((c) => c.typeName === spec.typeName);
+  if (i >= 0) doc.customNodes[i] = spec;
+  else doc.customNodes.push(spec);
+  registerCustomNode(spec);
+  buildPalette();
+  editor.refresh(); // existing nodes of this type pick up the new render
+  markDirty();
+}
+
 function buildPalette(): void {
   const builtin =
     `<div class="palette-h">Add node</div>` +
@@ -360,21 +374,30 @@ function buildPalette(): void {
       (p) =>
         `<button class="pitem" data-type="${p.type}">${esc(p.label)}</button>`,
     ).join('');
-  const custom = doc.customNodes.length
-    ? `<div class="palette-h">Custom</div>` +
-      doc.customNodes
-        .map(
-          (c) =>
-            `<button class="pitem" data-type="${esc(c.typeName)}">${esc(c.typeName)}</button>`,
-        )
-        .join('')
-    : '';
+  const custom =
+    `<div class="palette-h">Custom</div>` +
+    doc.customNodes
+      .map(
+        (c) =>
+          `<div class="pcustom"><button class="pitem" data-type="${esc(c.typeName)}">${esc(c.typeName)}</button><button class="pedit" data-edit="${esc(c.typeName)}" title="Edit type">✎</button></div>`,
+      )
+      .join('') +
+    `<button class="pitem design" id="pDesign">＋ design node</button>`;
   palette.innerHTML = builtin + custom;
   palette
     .querySelectorAll<HTMLButtonElement>('[data-type]')
     .forEach((b) =>
       b.addEventListener('click', () => editor.addNode(b.dataset.type!)),
     );
+  palette.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const spec = doc.customNodes.find((c) => c.typeName === b.dataset.edit);
+      if (spec) openNodeDesigner(spec, upsertCustomNode);
+    }),
+  );
+  palette
+    .querySelector('#pDesign')
+    ?.addEventListener('click', () => openNodeDesigner(null, upsertCustomNode));
 }
 buildPalette();
 
