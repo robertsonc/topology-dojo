@@ -27,6 +27,7 @@ import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { tidyDocument } from '../api/tidy.js';
 import { layoutDocument, type LayoutAlgorithm } from '../api/autolayout.js';
 import { POLICY_MARKER_TYPES } from '../api/markers.js';
+import { buildTemplate, listTemplates } from '../api/templates.js';
 import type { RenderOptions } from '../render/core.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
@@ -112,6 +113,28 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       description: 'List all topologies currently held by the server.',
       inputShape: {},
       handler: () => store.list(),
+    },
+    {
+      name: 'list_templates',
+      description:
+        'List starter templates (id + name + description) that create_from_template can instantiate.',
+      inputShape: {},
+      handler: () => listTemplates(),
+    },
+    {
+      name: 'create_from_template',
+      description:
+        'Create a new topology from a starter template (see list_templates). Returns its id, like create_topology.',
+      inputShape: {
+        template: z.string().describe('Template id from list_templates.'),
+        title: z.string().optional(),
+      },
+      handler: (a) => {
+        const doc = buildTemplate(String(a.template));
+        if (a.title) doc.title = String(a.title);
+        const { id } = store.import(doc);
+        return { id, title: doc.title, pages: doc.pages.length };
+      },
     },
     {
       name: 'get_topology',
