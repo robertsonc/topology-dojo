@@ -35,6 +35,7 @@ describe('MCP tools', () => {
         'layout_guidelines',
         'list_topologies',
         'render_svg',
+        'tidy_topology',
         'validate_topology',
       ].sort(),
     );
@@ -71,6 +72,37 @@ describe('MCP tools', () => {
     expect(v.valid).toBe(true); // overlaps are warnings, not errors
     expect(v.layoutClean).toBe(false);
     expect(v.problems.some((p) => /overlap/.test(p.message))).toBe(true);
+  });
+
+  it('tidy_topology resolves overlaps the layout checker flagged', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 200,
+      y: 200,
+      nodeId: 'a',
+    });
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 206,
+      y: 202,
+      nodeId: 'b',
+    });
+    const res = call('tidy_topology', { topologyId: id }) as {
+      movedNodes: number;
+      before: number;
+      after: number;
+    };
+    expect(res.before).toBeGreaterThan(0);
+    expect(res.after).toBe(0);
+    expect(res.movedNodes).toBeGreaterThan(0);
+    // the mutation persisted on the stored doc
+    const v = call('validate_topology', { topologyId: id }) as {
+      layoutClean: boolean;
+    };
+    expect(v.layoutClean).toBe(true);
   });
 
   it('builds, validates, and renders a topology end to end', () => {

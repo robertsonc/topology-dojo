@@ -64,6 +64,7 @@ app.innerHTML = `
       <button class="tbtn on" id="tSnap" title="Toggle snap (G)">⌗ snap</button>
       <button class="tbtn" id="tCalm" title="Calm canvas — pause animations (C)">◓ calm</button>
       <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑 delete</button>
+      <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)">✦ tidy</button>
       <button class="tbtn" id="tFit" title="Fit view (0)">⤢ fit</button>
       <span class="align-group" id="alignGroup" hidden>
         <button class="tbtn ab" data-align="left" title="Align left">⇤</button>
@@ -755,6 +756,7 @@ calmBtn.addEventListener('click', () => applyCalm(!editor.calm));
 app
   .querySelector('#tDelete')
   ?.addEventListener('click', () => editor.deleteSelected());
+app.querySelector('#tTidy')?.addEventListener('click', () => editor.tidy());
 app.querySelector('#tFit')?.addEventListener('click', () => editor.resetView());
 
 /* Keyboard */
@@ -780,6 +782,7 @@ window.addEventListener('keydown', (e) => {
     gridBtn.classList.toggle('on', editor.gridVisible);
   }
   if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
+  if (e.key === 't' || e.key === 'T') editor.tidy();
   if (e.key === '0') editor.resetView();
   if (e.key === 'l' || e.key === 'L') setTool('link');
   if (e.key === 'v' || e.key === 'V') setTool('select');

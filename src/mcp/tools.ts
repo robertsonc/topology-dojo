@@ -24,6 +24,7 @@ import {
 import { annotationCatalog, linkCatalog, nodeCatalog } from '../api/catalog.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
+import { tidyDocument } from '../api/tidy.js';
 import type { RenderOptions } from '../render/core.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
@@ -408,6 +409,36 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           layoutClean: layout.length === 0,
         };
       },
+    },
+    {
+      name: 'tidy_topology',
+      description:
+        'Auto-arrange a topology toward the layout guidelines: snap nodes to the grid, push apart overlapping/crowded nodes, and keep them inside the page. Mutates the stored topology in place and returns how many nodes moved plus the layout-warning count before/after. Call this after generating, or whenever validate_topology reports layout issues.',
+      inputShape: {
+        topologyId,
+        snapToGrid: z
+          .boolean()
+          .optional()
+          .describe('Snap nodes onto the grid first (default true).'),
+        minGap: z
+          .number()
+          .optional()
+          .describe('Target clear gap between nodes in px (default 24).'),
+        keepInBounds: z
+          .boolean()
+          .optional()
+          .describe('Keep nodes inside the page margin (default true).'),
+      },
+      handler: (a) =>
+        tidyDocument(store.get(String(a.topologyId)), {
+          ...(a.snapToGrid !== undefined
+            ? { snapToGrid: Boolean(a.snapToGrid) }
+            : {}),
+          ...(a.minGap !== undefined ? { minGap: Number(a.minGap) } : {}),
+          ...(a.keepInBounds !== undefined
+            ? { keepInBounds: Boolean(a.keepInBounds) }
+            : {}),
+        }),
     },
     {
       name: 'layout_guidelines',
