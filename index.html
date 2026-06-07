@@ -516,6 +516,33 @@
         color: var(--muted);
         border-style: dashed;
       }
+      .frame[draggable='true'] {
+        cursor: grab;
+      }
+      .frame-x {
+        background: transparent;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 11px;
+        padding: 0 2px;
+        margin-left: 2px;
+        border-radius: 4px;
+      }
+      .frame-x:hover {
+        color: var(--red, #fc6161);
+        background: rgba(252, 97, 97, 0.12);
+      }
+      .frame-rename {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-family: var(--font);
+        width: 120px;
+      }
     </style>
   </head>
   <body>

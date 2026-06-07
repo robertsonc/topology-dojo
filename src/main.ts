@@ -401,29 +401,58 @@ function buildPalette(): void {
 }
 buildPalette();
 
+let dragFrom = -1;
+
 function renderFilmstrip(): void {
+  const canDelete = doc.pages.length > 1;
   strip.innerHTML = `
     ${doc.pages
       .map(
         (p, i) => `
-      <button class="frame ${i === current ? 'on' : ''}" data-page="${i}" title="${esc(p.name)}">
+      <div class="frame ${i === current ? 'on' : ''}" data-page="${i}" draggable="true" title="${esc(p.name)} — double-click to rename, drag to reorder">
         <span class="frame-n">${i + 1}</span>
-        <span class="frame-name">${esc(p.name)}</span>
-      </button>`,
+        <span class="frame-name" data-name="${i}">${esc(p.name)}</span>
+        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete frame">✕</button>` : ''}
+      </div>`,
       )
       .join('')}
     <button class="frame add" id="dupPage" title="Duplicate current frame">⧉ duplicate</button>
     <button class="frame add" id="addPage" title="Add blank frame">＋ frame</button>
   `;
 
+  strip.querySelectorAll<HTMLElement>('[data-page]').forEach((el) => {
+    const i = Number(el.dataset.page);
+    el.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('[data-del]') || t.tagName === 'INPUT') return;
+      selectPage(i);
+    });
+    el.addEventListener('dragstart', (e) => {
+      dragFrom = i;
+      e.dataTransfer?.setData('text/plain', String(i));
+    });
+    el.addEventListener('dragover', (e) => e.preventDefault());
+    el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      reorderPage(dragFrom, i);
+    });
+  });
   strip
-    .querySelectorAll<HTMLButtonElement>('[data-page]')
-    .forEach((b) =>
-      b.addEventListener('click', () => selectPage(Number(b.dataset.page))),
+    .querySelectorAll<HTMLElement>('[data-name]')
+    .forEach((el) =>
+      el.addEventListener('dblclick', () =>
+        startRename(Number(el.dataset.name), el),
+      ),
     );
+  strip.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deletePage(Number(b.dataset.del));
+    }),
+  );
   strip.querySelector('#addPage')?.addEventListener('click', () => {
     doc.pages.push(blankPage(`Frame ${doc.pages.length + 1}`));
-    selectPage(doc.pages.length - 1);
+    gotoPage(doc.pages.length - 1);
     markDirty();
   });
   strip.querySelector('#dupPage')?.addEventListener('click', () => {
@@ -432,16 +461,71 @@ function renderFilmstrip(): void {
       0,
       duplicatePage(doc.pages[current]!, `Frame ${doc.pages.length + 1}`),
     );
-    selectPage(current + 1);
+    gotoPage(current + 1);
     markDirty();
   });
+}
+
+/** Switch to a page AND rebuild the strip (after a structural change). */
+function gotoPage(i: number): void {
+  current = i;
+  editor.setPage(doc.pages[current]!);
+  renderFilmstrip();
+}
+
+function startRename(i: number, span: HTMLElement): void {
+  const page = doc.pages[i];
+  if (!page) return;
+  const input = document.createElement('input');
+  input.className = 'frame-rename';
+  input.value = page.name;
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+  const commit = (save: boolean): void => {
+    if (save) page.name = input.value.trim() || page.name;
+    renderFilmstrip();
+    if (save) markDirty();
+  };
+  input.addEventListener('blur', () => commit(true));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur();
+    else if (e.key === 'Escape') commit(false);
+  });
+}
+
+function deletePage(i: number): void {
+  if (doc.pages.length <= 1) return;
+  const page = doc.pages[i]!;
+  const hasContent = page.nodes.length > 0 || page.links.length > 0;
+  if (hasContent && !confirm(`Delete "${page.name}"? This frame has content.`))
+    return;
+  doc.pages.splice(i, 1);
+  if (current >= doc.pages.length) current = doc.pages.length - 1;
+  else if (i < current) current -= 1;
+  editor.setPage(doc.pages[current]!);
+  renderFilmstrip();
+  markDirty();
+}
+
+function reorderPage(from: number, to: number): void {
+  if (from < 0 || from === to || from >= doc.pages.length) return;
+  const cur = doc.pages[current]!;
+  const [moved] = doc.pages.splice(from, 1);
+  doc.pages.splice(to, 0, moved!);
+  current = doc.pages.indexOf(cur);
+  renderFilmstrip();
+  markDirty();
 }
 
 function selectPage(i: number): void {
   if (i < 0 || i >= doc.pages.length) return;
   current = i;
   editor.setPage(doc.pages[current]!);
-  renderFilmstrip();
+  // Update highlight without rebuilding the strip (so dblclick-rename survives).
+  strip
+    .querySelectorAll<HTMLElement>('[data-page]')
+    .forEach((el) => el.classList.toggle('on', Number(el.dataset.page) === i));
 }
 
 /* Toolbar */
