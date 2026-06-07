@@ -174,7 +174,7 @@ export function sampleDocument(): TopologyDocument {
     .zone({
       id: 'zone_branch',
       label: 'Branch',
-      nodes: ['user', 'ec', 'fw', 'sensor1'],
+      nodes: ['user', 'ec', 'sensor1'],
       color: '#65aef9',
     })
     .flowPath({

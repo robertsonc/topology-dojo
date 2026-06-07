@@ -23,6 +23,7 @@ import {
 } from '../api/builder.js';
 import { annotationCatalog, linkCatalog, nodeCatalog } from '../api/catalog.js';
 import { validateDocument } from '../api/validate.js';
+import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { renderDocumentToSVG } from '../server/render.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
 import { TopologyStore } from './store.js';
@@ -379,12 +380,26 @@ export function createTools(store: TopologyStore): ToolDef[] {
     {
       name: 'validate_topology',
       description:
-        'Run semantic validation; returns a list of problems (errors block rendering meaning, warnings are advisory). An empty list means the document is valid.',
+        'Validate a topology: semantic problems (dangling refs, duplicate ids, unknown types) AND layout problems (overlapping/crowded nodes, labels, zones; off-page elements). Errors block meaning; warnings — including all layout issues — are advisory. An empty problems list means the document is clean. See layout_guidelines for the rules.',
       inputShape: { topologyId },
       handler: (a) => {
-        const problems = validateDocument(store.get(String(a.topologyId)));
-        return { valid: !problems.some((p) => p.level === 'error'), problems };
+        const doc = store.get(String(a.topologyId));
+        const semantic = validateDocument(doc);
+        const layout = analyzeLayout(doc);
+        const problems = [...semantic, ...layout];
+        return {
+          valid: !problems.some((p) => p.level === 'error'),
+          problems,
+          layoutClean: layout.length === 0,
+        };
       },
+    },
+    {
+      name: 'layout_guidelines',
+      description:
+        'Return the ground-truth layout rules (spacing minimums, grid, zone padding, margins) plus prose guidance for arranging a well-organized, overlap-free topology. Read this before generating coordinates; validate_topology checks against the same rules.',
+      inputShape: {},
+      handler: () => layoutGuidelines(),
     },
     {
       name: 'render_svg',

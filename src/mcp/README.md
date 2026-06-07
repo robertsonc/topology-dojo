@@ -47,18 +47,28 @@ document's custom node types).
 
 ## Tools
 
-| Tool                                                   | Purpose                                              |
-| ------------------------------------------------------ | ---------------------------------------------------- |
-| `describe_capabilities`                                | Discover node/link/annotation types and their fields |
-| `create_topology`                                      | New document (one empty page)                        |
-| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                |
-| `import_topology`                                      | Load from document JSON (string or object)           |
-| `add_page`                                             | Append a frame                                       |
-| `add_node` / `add_link` / `add_anchor`                 | Core elements                                        |
-| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                     |
-| `define_node_type`                                     | Add a custom node type (merged over defaults)        |
-| `validate_topology`                                    | Semantic validation                                  |
-| `render_svg`                                           | Render a page to a standalone SVG string             |
+| Tool                                                   | Purpose                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------- |
+| `describe_capabilities`                                | Discover node/link/annotation types and their fields          |
+| `create_topology`                                      | New document (one empty page)                                 |
+| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                         |
+| `import_topology`                                      | Load from document JSON (string or object)                    |
+| `add_page`                                             | Append a frame                                                |
+| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                 |
+| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                              |
+| `define_node_type`                                     | Add a custom node type (merged over defaults)                 |
+| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes) |
+| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page) |
+| `render_svg`                                           | Render a page to a standalone SVG string                      |
+
+## Layout quality
+
+For well-organized, overlap-free results, read `layout_guidelines` before
+choosing coordinates — it returns the quantitative rules (grid step, minimum
+node gap, edge margin, zone padding) plus prose guidance. `validate_topology`
+checks against those same rules and reports any overlapping/crowded nodes,
+labels, or zones and off-page elements as **warnings** (advisory — they never
+block rendering), alongside the semantic checks.
 
 The tool handlers live in `tools.ts` (pure, unit-tested in `tools.test.ts`);
 `server.ts` registers them with the SDK and maps results to MCP text content.

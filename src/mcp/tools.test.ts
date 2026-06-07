@@ -31,11 +31,45 @@ describe('MCP tools', () => {
         'describe_capabilities',
         'get_topology',
         'import_topology',
+        'layout_guidelines',
         'list_topologies',
         'render_svg',
         'validate_topology',
       ].sort(),
     );
+  });
+
+  it('exposes layout guidelines and folds layout checks into validation', () => {
+    const g = call('layout_guidelines') as {
+      rules: { minNodeGap: number };
+      guidance: string[];
+    };
+    expect(g.rules.minNodeGap).toBeGreaterThan(0);
+    expect(g.guidance.length).toBeGreaterThan(0);
+
+    const { id } = call('create_topology', {}) as { id: string };
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 200,
+      y: 200,
+      nodeId: 'a',
+    });
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 203,
+      y: 201,
+      nodeId: 'b',
+    });
+    const v = call('validate_topology', { topologyId: id }) as {
+      valid: boolean;
+      layoutClean: boolean;
+      problems: { message: string }[];
+    };
+    expect(v.valid).toBe(true); // overlaps are warnings, not errors
+    expect(v.layoutClean).toBe(false);
+    expect(v.problems.some((p) => /overlap/.test(p.message))).toBe(true);
   });
 
   it('builds, validates, and renders a topology end to end', () => {

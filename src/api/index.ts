@@ -9,3 +9,5 @@ export * from './builder.js';
 export * from './validate.js';
 export * from './builtins.js';
 export * from './catalog.js';
+export * from './layout.js';
+export * from './geometry.js';
