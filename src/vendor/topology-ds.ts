@@ -58,9 +58,18 @@ interface EngineInstance {
   step: number;
 }
 
+/** Plugin shape accepted by the engine's static registerNodeType. */
+export interface NodePlugin {
+  render: (x: number, y: number, cfg: { color?: string }) => string;
+  defaults?: Record<string, unknown>;
+  hitBox?: { rx: number; ry: number };
+  haloColor?: string;
+}
+
 interface EngineStatic {
   new (cfg: Record<string, unknown>): EngineInstance;
   NODE_TYPES: Record<string, (x: number, y: number, cfg: unknown) => string>;
+  registerNodeType(name: string, plugin: NodePlugin): void;
 }
 
 declare global {

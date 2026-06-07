@@ -14,6 +14,7 @@ import type {
   NodeConfig,
   RenderablePage,
 } from '../vendor/topology-ds.js';
+import type { CustomNodeSpec } from '../nodes/spec.js';
 
 export interface Page extends RenderablePage {
   id: string;
@@ -27,6 +28,8 @@ export interface Page extends RenderablePage {
 export interface TopologyDocument {
   title: string;
   pages: Page[];
+  /** User-designed node types, registered with the engine on load. */
+  customNodes: CustomNodeSpec[];
 }
 
 let _seq = 0;
@@ -126,5 +129,39 @@ export function sampleDocument(): TopologyDocument {
       },
     ],
   };
-  return { title: 'Untitled', pages: [page1] };
+  // A seeded custom node type demonstrates the Node Designer pipeline end to end.
+  const sensor: CustomNodeSpec = {
+    typeName: 'sensor',
+    shape: 'hexagon',
+    icon: 'signal',
+    colorStroke: '#65aef9',
+    colorFill: '#292d3a',
+    size: 22,
+    strokeW: 1.4,
+    radius: 3,
+    glow: true,
+    highlight: true,
+    innerRing: false,
+    pattern: false,
+    patternType: 'none',
+    leds: true,
+    ledCount: 2,
+    ledColor: '#05cc93',
+    ledPos: 'bottom',
+    badge: false,
+    badgeText: 'EDGE',
+    badgeColor: '#01a982',
+    antenna: true,
+    ports: false,
+    portCount: 4,
+    portPos: 'bottom',
+  };
+  page1.nodes.push({
+    id: 'sensor1',
+    type: 'sensor',
+    x: 130,
+    y: 200,
+    label: 'Sensor',
+  });
+  return { title: 'Untitled', pages: [page1], customNodes: [sensor] };
 }

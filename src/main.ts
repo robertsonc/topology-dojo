@@ -17,9 +17,12 @@ import {
   saveLocal,
   serializeDoc,
 } from './pages/persist.js';
+import { registerCustomNodes } from './nodes/render.js';
 
 // Restore the last session from localStorage, else start from the sample.
 const doc: TopologyDocument = loadLocal() ?? sampleDocument();
+// Register the document's custom node types with the engine before any render.
+registerCustomNodes(doc.customNodes);
 let current = 0;
 
 const app = document.getElementById('app')!;
@@ -104,7 +107,10 @@ const editor = new Editor(
 function loadDoc(next: TopologyDocument): void {
   doc.title = next.title;
   doc.pages = next.pages;
+  doc.customNodes = next.customNodes;
+  registerCustomNodes(doc.customNodes);
   current = 0;
+  buildPalette();
   editor.setPage(doc.pages[current]!);
   renderFilmstrip();
   markDirty();
@@ -114,7 +120,11 @@ function loadDoc(next: TopologyDocument): void {
 app.querySelector('#fNew')?.addEventListener('click', () => {
   if (!confirm('Start a new document? Unsaved changes to this one are lost.'))
     return;
-  loadDoc({ title: 'Untitled', pages: [blankPage('Frame 1')] });
+  loadDoc({
+    title: 'Untitled',
+    pages: [blankPage('Frame 1')],
+    customNodes: [],
+  });
 });
 app.querySelector('#fSave')?.addEventListener('click', () => {
   const blob = new Blob([serializeDoc(doc)], { type: 'application/json' });
@@ -343,17 +353,30 @@ const PALETTE: { type: string; label: string }[] = [
   { type: 'text', label: 'Text' },
 ];
 const palette = app.querySelector<HTMLElement>('#palette')!;
-palette.innerHTML =
-  `<div class="palette-h">Add node</div>` +
-  PALETTE.map(
-    (p) =>
-      `<button class="pitem" data-type="${p.type}">${esc(p.label)}</button>`,
-  ).join('');
-palette
-  .querySelectorAll<HTMLButtonElement>('[data-type]')
-  .forEach((b) =>
-    b.addEventListener('click', () => editor.addNode(b.dataset.type!)),
-  );
+function buildPalette(): void {
+  const builtin =
+    `<div class="palette-h">Add node</div>` +
+    PALETTE.map(
+      (p) =>
+        `<button class="pitem" data-type="${p.type}">${esc(p.label)}</button>`,
+    ).join('');
+  const custom = doc.customNodes.length
+    ? `<div class="palette-h">Custom</div>` +
+      doc.customNodes
+        .map(
+          (c) =>
+            `<button class="pitem" data-type="${esc(c.typeName)}">${esc(c.typeName)}</button>`,
+        )
+        .join('')
+    : '';
+  palette.innerHTML = builtin + custom;
+  palette
+    .querySelectorAll<HTMLButtonElement>('[data-type]')
+    .forEach((b) =>
+      b.addEventListener('click', () => editor.addNode(b.dataset.type!)),
+    );
+}
+buildPalette();
 
 function renderFilmstrip(): void {
   strip.innerHTML = `

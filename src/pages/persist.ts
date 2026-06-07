@@ -7,11 +7,16 @@
  */
 import type { TopologyDocument, Page } from './model.js';
 import { newPageId } from './model.js';
+import type { CustomNodeSpec } from '../nodes/spec.js';
 
 const KEY = 'topology-dojo:doc';
 
 export function serializeDoc(doc: TopologyDocument): string {
-  return JSON.stringify({ title: doc.title, pages: doc.pages }, null, 2);
+  return JSON.stringify(
+    { title: doc.title, pages: doc.pages, customNodes: doc.customNodes },
+    null,
+    2,
+  );
 }
 
 /** Parse + normalize an unknown value into a valid document, or null if hopeless. */
@@ -42,7 +47,14 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     });
   }
   if (pages.length === 0) return null;
-  return { title: typeof d.title === 'string' ? d.title : 'Untitled', pages };
+  const customNodes = Array.isArray(d.customNodes)
+    ? (d.customNodes as CustomNodeSpec[])
+    : [];
+  return {
+    title: typeof d.title === 'string' ? d.title : 'Untitled',
+    pages,
+    customNodes,
+  };
 }
 
 export function saveLocal(doc: TopologyDocument): void {
