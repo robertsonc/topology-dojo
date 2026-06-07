@@ -1,0 +1,100 @@
+import { describe, it, expect } from 'vitest';
+import {
+  createDocument,
+  addNode,
+  defineNodeType,
+  emptyDocument,
+  addPage,
+} from './builder.js';
+import { validateDocument, isValid } from './validate.js';
+import { defaultSpec } from '../nodes/spec.js';
+
+describe('builder', () => {
+  it('constructs a document fluently', () => {
+    const doc = createDocument('Net')
+      .page({ name: 'F1' })
+      .node({ id: 'a', type: 'ec', x: 100, y: 100, label: 'A' })
+      .node({ id: 'b', type: 'firewall', x: 300, y: 100 })
+      .link({ id: 'l', type: 'line', from: 'a', to: 'b' })
+      .build();
+    expect(doc.title).toBe('Net');
+    expect(doc.pages).toHaveLength(1);
+    expect(doc.pages[0]!.nodes).toHaveLength(2);
+    expect(doc.pages[0]!.links[0]!.from).toBe('a');
+  });
+
+  it('auto-generates unique ids when omitted', () => {
+    const doc = emptyDocument();
+    const page = addPage(doc);
+    const n1 = addNode(page, { type: 'host', x: 0, y: 0 });
+    const n2 = addNode(page, { type: 'host', x: 1, y: 1 });
+    expect(n1.id).not.toBe(n2.id);
+  });
+
+  it('defineNodeType replaces by typeName', () => {
+    const doc = emptyDocument();
+    defineNodeType(doc, { ...defaultSpec(), typeName: 'x', size: 20 });
+    defineNodeType(doc, { ...defaultSpec(), typeName: 'x', size: 40 });
+    expect(doc.customNodes).toHaveLength(1);
+    expect(doc.customNodes[0]!.size).toBe(40);
+  });
+});
+
+describe('validateDocument', () => {
+  it('passes a well-formed document', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'cloud', x: 1, y: 1 })
+      .link({ id: 'l', type: 'tunnel', from: 'a', to: 'b' })
+      .build();
+    expect(validateDocument(doc)).toEqual([]);
+    expect(isValid(doc)).toBe(true);
+  });
+
+  it('flags dangling link endpoints', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .link({ id: 'l', type: 'line', from: 'a', to: 'ghost' })
+      .build();
+    const probs = validateDocument(doc);
+    expect(
+      probs.some((p) => p.level === 'error' && /ghost/.test(p.message)),
+    ).toBe(true);
+    expect(isValid(doc)).toBe(false);
+  });
+
+  it('flags duplicate ids and unknown node types', () => {
+    const doc = emptyDocument();
+    const page = addPage(doc);
+    addNode(page, { id: 'dup', type: 'ec', x: 0, y: 0 });
+    addNode(page, { id: 'dup', type: 'bogus', x: 1, y: 1 });
+    const probs = validateDocument(doc);
+    expect(probs.some((p) => /duplicate node id/.test(p.message))).toBe(true);
+    expect(probs.some((p) => /unknown node type "bogus"/.test(p.message))).toBe(
+      true,
+    );
+  });
+
+  it('recognizes custom node types as valid', () => {
+    const doc = createDocument()
+      .defineNodeType({ ...defaultSpec(), typeName: 'sensor' })
+      .page()
+      .node({ id: 'n', type: 'sensor', x: 0, y: 0 })
+      .build();
+    expect(isValid(doc)).toBe(true);
+  });
+
+  it('warns (not errors) on unknown link type', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'ec', x: 1, y: 1 })
+      .link({ id: 'l', type: 'weird', from: 'a', to: 'b' })
+      .build();
+    const probs = validateDocument(doc);
+    expect(probs.every((p) => p.level === 'warning')).toBe(true);
+    expect(isValid(doc)).toBe(true);
+  });
+});

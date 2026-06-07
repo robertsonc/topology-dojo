@@ -15,6 +15,7 @@ import type {
   RenderablePage,
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
+import { createDocument } from '../api/builder.js';
 
 export interface Page extends RenderablePage {
   id: string;
@@ -67,68 +68,6 @@ export function blankPage(name: string): Page {
  * editor-core phase.
  */
 export function sampleDocument(): TopologyDocument {
-  const page1: Page = {
-    id: newPageId(),
-    name: 'Frame 1',
-    viewBox: '0 0 1050 700',
-    anchors: [],
-    nodes: [
-      { id: 'user', type: 'host', x: 130, y: 470, label: 'User' },
-      {
-        id: 'ec',
-        type: 'ec',
-        x: 330,
-        y: 360,
-        label: 'EC-Branch',
-        color: '#01a982',
-      },
-      { id: 'fw', type: 'firewall', x: 560, y: 360, label: 'SRX' },
-      {
-        id: 'hub',
-        type: 'ec',
-        x: 560,
-        y: 180,
-        label: 'EC-Hub',
-        color: '#01a982',
-      },
-      {
-        id: 'app',
-        type: 'server',
-        x: 780,
-        y: 180,
-        label: 'App',
-        color: '#deb146',
-      },
-      {
-        id: 'inet',
-        type: 'cloud',
-        x: 840,
-        y: 460,
-        label: 'Internet',
-        color: '#b1b9be',
-      },
-    ],
-    links: [
-      { id: 'lan', type: 'line', from: 'user', to: 'ec' },
-      {
-        id: 'overlay',
-        type: 'tunnel',
-        from: 'ec',
-        to: 'hub',
-        color: '#01a982',
-        label: 'IPsec Overlay',
-      },
-      { id: 'ec-fw', type: 'line', from: 'ec', to: 'fw', color: '#fc6161' },
-      { id: 'hub-app', type: 'line', from: 'hub', to: 'app', color: '#deb146' },
-      {
-        id: 'breakout',
-        type: 'line',
-        from: 'fw',
-        to: 'inet',
-        color: '#b1b9be',
-      },
-    ],
-  };
   // A seeded custom node type demonstrates the Node Designer pipeline end to end.
   const sensor: CustomNodeSpec = {
     typeName: 'sensor',
@@ -156,12 +95,69 @@ export function sampleDocument(): TopologyDocument {
     portCount: 4,
     portPos: 'bottom',
   };
-  page1.nodes.push({
-    id: 'sensor1',
-    type: 'sensor',
-    x: 130,
-    y: 200,
-    label: 'Sensor',
-  });
-  return { title: 'Untitled', pages: [page1], customNodes: [sensor] };
+
+  // Built via the headless authoring API — the same path code / an MCP server use.
+  const doc = createDocument('Untitled').defineNodeType(sensor);
+  doc
+    .page({ id: newPageId(), name: 'Frame 1' })
+    .node({ id: 'user', type: 'host', x: 130, y: 470, label: 'User' })
+    .node({
+      id: 'ec',
+      type: 'ec',
+      x: 330,
+      y: 360,
+      label: 'EC-Branch',
+      color: '#01a982',
+    })
+    .node({ id: 'fw', type: 'firewall', x: 560, y: 360, label: 'SRX' })
+    .node({
+      id: 'hub',
+      type: 'ec',
+      x: 560,
+      y: 180,
+      label: 'EC-Hub',
+      color: '#01a982',
+    })
+    .node({
+      id: 'app',
+      type: 'server',
+      x: 780,
+      y: 180,
+      label: 'App',
+      color: '#deb146',
+    })
+    .node({
+      id: 'inet',
+      type: 'cloud',
+      x: 840,
+      y: 460,
+      label: 'Internet',
+      color: '#b1b9be',
+    })
+    .node({ id: 'sensor1', type: 'sensor', x: 130, y: 200, label: 'Sensor' })
+    .link({ id: 'lan', type: 'line', from: 'user', to: 'ec' })
+    .link({
+      id: 'overlay',
+      type: 'tunnel',
+      from: 'ec',
+      to: 'hub',
+      color: '#01a982',
+      label: 'IPsec Overlay',
+    })
+    .link({ id: 'ec-fw', type: 'line', from: 'ec', to: 'fw', color: '#fc6161' })
+    .link({
+      id: 'hub-app',
+      type: 'line',
+      from: 'hub',
+      to: 'app',
+      color: '#deb146',
+    })
+    .link({
+      id: 'breakout',
+      type: 'line',
+      from: 'fw',
+      to: 'inet',
+      color: '#b1b9be',
+    });
+  return doc.build();
 }
