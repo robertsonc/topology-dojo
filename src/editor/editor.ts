@@ -16,6 +16,7 @@ import {
   type ZoneConfig,
 } from '../vendor/topology-ds.js';
 import { clientToUser } from './coords.js';
+import { tidyPage } from '../api/tidy.js';
 import type { Page } from '../pages/model.js';
 import {
   hitTestLink,
@@ -134,6 +135,19 @@ export class Editor {
   refresh(): void {
     this.renderArt();
     this.renderOverlay();
+  }
+
+  /** Auto-arrange the current page (grid-snap + de-overlap + keep in bounds). */
+  tidy(): void {
+    this.snapshot();
+    const moved = tidyPage(this.page);
+    if (moved === 0) {
+      this.undoStack.pop(); // nothing changed — don't pollute history
+      return;
+    }
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
   }
 
   /** Reset pan/zoom to frame the whole page. */

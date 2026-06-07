@@ -10,7 +10,7 @@
  * DOM-free, so it runs in the browser, in Node, and behind the MCP server.
  */
 import type { Page, TopologyDocument } from '../pages/model.js';
-import type { ZoneConfig } from '../vendor/topology-ds.js';
+import type { NodeConfig, ZoneConfig } from '../vendor/topology-ds.js';
 import { nodeBounds, type BoundsRect } from './geometry.js';
 import type { Problem } from './validate.js';
 
@@ -75,7 +75,7 @@ function analyzePage(page: Page, at: string, out: Problem[]): void {
   const [vx, vy, vw, vh] = parseViewBox(page.viewBox);
 
   const fps = new Map<string, BoundsRect>();
-  for (const n of page.nodes) fps.set(n.id, footprint(page, n.id)!);
+  for (const n of page.nodes) fps.set(n.id, nodeFootprint(n));
 
   // 1. Out-of-bounds / edge crowding.
   const m = LAYOUT_RULES.edgeMargin;
@@ -143,9 +143,7 @@ export function isWellLaidOut(doc: TopologyDocument): boolean {
 /* ── geometry helpers ─────────────────────────────────────────────── */
 
 /** A node's footprint: its drawn glyph plus the label that renders below it. */
-function footprint(page: Page, id: string): BoundsRect | null {
-  const n = page.nodes.find((m) => m.id === id);
-  if (!n) return null;
+export function nodeFootprint(n: NodeConfig): BoundsRect {
   const b = nodeBounds(n);
   const label = typeof n.label === 'string' ? n.label : '';
   const labelW = label ? label.length * LAYOUT_RULES.labelCharWidth : 0;
@@ -215,7 +213,7 @@ function intersects(a: BoundsRect, b: BoundsRect): boolean {
 }
 
 /** Separation between two boxes: negative = penetration depth (overlap), 0 = touching. */
-function rectGap(a: BoundsRect, b: BoundsRect): number {
+export function rectGap(a: BoundsRect, b: BoundsRect): number {
   const dx = Math.max(a.x - (b.x + b.w), b.x - (a.x + a.w), 0);
   const dy = Math.max(a.y - (b.y + b.h), b.y - (a.y + a.h), 0);
   if (dx === 0 && dy === 0) {
@@ -226,7 +224,7 @@ function rectGap(a: BoundsRect, b: BoundsRect): number {
   return Math.hypot(dx, dy);
 }
 
-function parseViewBox(vb: string): [number, number, number, number] {
+export function parseViewBox(vb: string): [number, number, number, number] {
   const p = vb.split(/\s+/).map(Number);
   return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 1050, p[3] ?? 700];
 }

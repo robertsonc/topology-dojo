@@ -91,6 +91,7 @@ document's custom node types).
 | `define_node_type`                                     | Add a custom node type (merged over defaults)                 |
 | `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes) |
 | `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page) |
+| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds         |
 | `render_svg`                                           | Render a page to a standalone SVG string                      |
 
 ## Layout quality
@@ -101,6 +102,13 @@ node gap, edge margin, zone padding) plus prose guidance. `validate_topology`
 checks against those same rules and reports any overlapping/crowded nodes,
 labels, or zones and off-page elements as **warnings** (advisory — they never
 block rendering), alongside the semantic checks.
+
+When a generated layout has issues, **`tidy_topology`** resolves them
+automatically: it snaps nodes to the grid, pushes apart overlapping/crowded
+nodes, and keeps them inside the page (zones auto-resize around their tidied
+members). A typical agent loop is generate → `validate_topology` →
+`tidy_topology` → `render_svg`. In the editor, the **Tidy** button (`T`) runs the
+same pass on the current frame.
 
 The tool handlers live in `tools.ts` (pure, unit-tested in `tools.test.ts`);
 `server.ts` registers them with the SDK and maps results to MCP text content.
