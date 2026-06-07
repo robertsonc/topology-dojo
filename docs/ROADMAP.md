@@ -14,23 +14,30 @@ against [`DESIGN.md`](DESIGN.md).
 - A minimal runnable app shell (editor + presenter) ported from the prototype,
   to be redesigned in Phase 2. **This UI is intentionally provisional.**
 
-## Phase 2 — Authoring UX (the key bet) 🔜
+## Phase 2 — Authoring UX (the key bet) ✅
 
-The prototype authors a beat via a side-panel table of toggle chips. That works
-but it is not the intuitive surface we want. The bet
-([DESIGN.md #6](DESIGN.md)):
+Canvas-first authoring, replacing the prototype's side-panel chip table. Design
+decisions made in review:
 
-> Dragging a node on the canvas writes an `x`/`y` override into the current beat
-> automatically. Direct manipulation, no coordinate forms.
+- **Canvas-first.** Click an element on the diagram to select it; contextual
+  controls (visible / emphasis / flow) appear inline on it. The side panel
+  demotes to a beat inspector + element list.
+- **Drag = authoring.** Dragging a node writes an `x`/`y` override into the
+  current beat automatically — direct manipulation, no coordinate forms
+  ([DESIGN.md #6](DESIGN.md)).
+- **Base = structure, no third mode.** On the **Base**, a drag moves the model's
+  real position; on a **beat**, the same gesture writes an override. The
+  existing Base/beat selector _is_ the mode.
+- **Deltas visible on canvas.** Elements a beat authors get a badge; moved nodes
+  show a ghost at their previous position + a motion line. The author sees what a
+  beat does without reading a panel.
 
-Open questions to settle in design review before building:
+The pure write-side logic lives in `core/edits.ts` (unit-tested); the DOM glue
+in `main.ts` + `app/svg-coords.ts`. Verified end-to-end in a headless browser
+(selection, drag-writes-override, inline toggles, presenter walk).
 
-- Does drag-to-move replace the chip table, or sit alongside it?
-- How do we make "this beat changed X" _visible_ on the canvas (so authors
-  always know what a beat is doing without reading a side panel)?
-- Selection model: click-to-select, then toggle visible/emphasis/flow inline?
-- How does adding/removing nodes (topology editing) coexist with beat authoring
-  (presentation editing) without the two modes becoming a hidden third concept?
+Deferred (presentation-only scope): adding/removing nodes, drawing links,
+renaming/retyping — structural editing comes in a later phase.
 
 ## Phase 3 — Presenter polish
 
