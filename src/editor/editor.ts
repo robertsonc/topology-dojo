@@ -122,6 +122,12 @@ export class Editor {
     this.fireLinkSelect();
   }
 
+  /** Re-render the current page (e.g. after a custom node type changed). */
+  refresh(): void {
+    this.renderArt();
+    this.renderOverlay();
+  }
+
   /** Reset pan/zoom to frame the whole page. */
   resetView(): void {
     this.view = parseViewBox(this.page.viewBox);
