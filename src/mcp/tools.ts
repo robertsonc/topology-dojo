@@ -25,6 +25,7 @@ import { annotationCatalog, linkCatalog, nodeCatalog } from '../api/catalog.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { tidyDocument } from '../api/tidy.js';
+import { POLICY_MARKER_TYPES } from '../api/markers.js';
 import type { RenderOptions } from '../render/core.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
@@ -72,17 +73,7 @@ const ANIMATION = ['particles', 'dashed', 'pulse'] as const;
 const DIRECTION = ['forward', 'reverse', 'bidirectional'] as const;
 const SPEED = ['slow', 'medium', 'fast'] as const;
 const ALIGN9 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'C'] as const;
-const MARKER = [
-  'inspect',
-  'allow',
-  'deny',
-  'redirect',
-  'encrypt',
-  'decrypt',
-  'nat',
-  'load-balance',
-  'log',
-] as const;
+const MARKER = POLICY_MARKER_TYPES;
 
 /** Build the full set of tools bound to a store and runtime deps. */
 export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
@@ -342,7 +333,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'add_policy_marker',
       description:
-        'Pin an enforcement badge (inspect / allow / deny / encrypt …) to a node.',
+        'Pin a badge to a node — an enforcement action (inspect/allow/deny/encrypt/…), a host OS (windows/macos/linux/ios/android/chromeos), or SSE posture (agent/agentless). `icon` overrides the default glyph.',
       inputShape: {
         topologyId,
         pageIndex,
@@ -350,6 +341,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         type: z.enum(MARKER),
         label: z.string().optional(),
         color: z.string().optional(),
+        icon: z
+          .string()
+          .optional()
+          .describe('Glyph override (default per type).'),
         align: z.enum(ALIGN9).optional(),
         flowPathId: z.string().optional(),
         markerId: z.string().optional(),
@@ -363,6 +358,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             type: a.type as (typeof MARKER)[number],
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.icon !== undefined ? { icon: String(a.icon) } : {}),
             ...(a.align !== undefined
               ? { align: a.align as (typeof ALIGN9)[number] }
               : {}),

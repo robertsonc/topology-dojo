@@ -87,19 +87,14 @@ export interface FlowPathConfig {
   opacity?: number;
 }
 
-/** Policy actions a marker can represent (enforcement badge on a node). */
-export type PolicyMarkerType =
-  | 'inspect'
-  | 'allow'
-  | 'deny'
-  | 'redirect'
-  | 'encrypt'
-  | 'decrypt'
-  | 'nat'
-  | 'load-balance'
-  | 'log';
+/**
+ * Marker types a policy marker can represent — enforcement actions plus host-OS
+ * and SSE posture. The canonical list + default glyphs live in `api/markers`.
+ */
+export type { PolicyMarkerType } from '../api/markers.js';
+import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
 
-/** A policy marker — an enforcement badge pinned to a node. */
+/** A policy marker — an enforcement / posture badge pinned to a node. */
 export interface PolicyMarkerConfig {
   id: string;
   /** Id of the node the badge attaches to. */
@@ -107,6 +102,8 @@ export interface PolicyMarkerConfig {
   type: PolicyMarkerType;
   label?: string;
   color?: string;
+  /** Glyph override; defaults to the type's glyph (see api/markers). */
+  icon?: string;
   /** Placement relative to the node centre. */
   align?: 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW' | 'C';
   /** Optional association with a flow path. */
@@ -224,7 +221,7 @@ export function renderPageSVG(
   }
   for (const m of page.policyMarkers ?? []) {
     const { id, ...cfg } = m;
-    topo.policyMarker(id, cfg);
+    topo.policyMarker(id, withMarkerIcon(cfg));
   }
 
   // One step that shows every element at once — a static frame, no choreography.

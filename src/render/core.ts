@@ -13,6 +13,7 @@ import type { Page, TopologyDocument } from '../pages/model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import { customHitBox, renderCustomNode } from '../nodes/render.js';
 import { glowForColor } from '../nodes/data.js';
+import { withMarkerIcon } from '../api/markers.js';
 
 export interface EngineInstance {
   node(id: string, cfg: Record<string, unknown>): void;
@@ -90,7 +91,7 @@ export function renderPageWithEngine(
   }
   for (const m of page.policyMarkers ?? []) {
     const { id, ...cfg } = m;
-    topo.policyMarker(id, cfg);
+    topo.policyMarker(id, withMarkerIcon(cfg));
   }
 
   // One all-showing step + a trailing step we sit on → every element renders
