@@ -9,10 +9,10 @@
 import type { TopologyDocument } from '../pages/model.js';
 import { isBuiltinNodeType, isLinkType } from './builtins.js';
 import {
+  getAnnotationType,
   getLinkType,
   getNodeType,
-  type NodeTypeInfo,
-  type LinkTypeInfo,
+  type FieldSpec,
 } from './catalog.js';
 
 export interface Problem {
@@ -68,7 +68,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       else
         checkEnums(
           n as Record<string, unknown>,
-          getNodeType(n.type, doc.customNodes),
+          getNodeType(n.type, doc.customNodes)?.fields,
           `${at} node "${n.id}"`,
           warn,
         );
@@ -84,7 +84,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       else
         checkEnums(
           l as Record<string, unknown>,
-          getLinkType(l.type),
+          getLinkType(l.type)?.fields,
           `${at} link "${l.id}"`,
           warn,
         );
@@ -92,6 +92,67 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         err(`${at} link "${l.id}"`, `'from' references missing "${l.from}"`);
       if (!endpoints.has(l.to))
         err(`${at} link "${l.id}"`, `'to' references missing "${l.to}"`);
+    }
+
+    // ── Annotation layer: zones, flow paths, policy markers ──
+    const nodeIds = new Set(page.nodes.map((n) => n.id));
+    const zoneIds = new Set<string>();
+    for (const z of page.zones ?? []) {
+      claim(z.id, 'zone');
+      zoneIds.add(z.id);
+    }
+    for (const z of page.zones ?? []) {
+      const where = `${at} zone "${z.id}"`;
+      for (const nId of z.nodes ?? [])
+        if (!nodeIds.has(nId))
+          warn(where, `member references missing node "${nId}"`);
+      if (z.parentZone === z.id) err(where, 'zone is its own parent');
+      else if (z.parentZone && !zoneIds.has(z.parentZone))
+        warn(where, `parentZone references missing zone "${z.parentZone}"`);
+      checkEnums(
+        z as unknown as Record<string, unknown>,
+        getAnnotationType('zone')?.fields,
+        where,
+        warn,
+      );
+    }
+
+    const flowIds = new Set<string>();
+    for (const f of page.flowPaths ?? []) {
+      claim(f.id, 'flow path');
+      flowIds.add(f.id);
+    }
+    for (const f of page.flowPaths ?? []) {
+      const where = `${at} flow path "${f.id}"`;
+      const wps = f.waypoints ?? [];
+      if (wps.length < 2) warn(where, 'flow path needs at least 2 waypoints');
+      for (const w of wps)
+        if (!endpoints.has(w))
+          warn(where, `waypoint references missing "${w}"`);
+      checkEnums(
+        f as unknown as Record<string, unknown>,
+        getAnnotationType('flowPath')?.fields,
+        where,
+        warn,
+      );
+    }
+
+    for (const m of page.policyMarkers ?? []) {
+      claim(m.id, 'policy marker');
+      const where = `${at} policy marker "${m.id}"`;
+      if (!nodeIds.has(m.nodeId))
+        err(where, `'nodeId' references missing "${m.nodeId}"`);
+      if (m.flowPathId && !flowIds.has(m.flowPathId))
+        warn(
+          where,
+          `flowPathId references missing flow path "${m.flowPathId}"`,
+        );
+      checkEnums(
+        m as unknown as Record<string, unknown>,
+        getAnnotationType('policyMarker')?.fields,
+        where,
+        warn,
+      );
     }
   });
 
@@ -101,12 +162,12 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
 /** Warn when an enum-typed field carries a value outside its catalog options. */
 function checkEnums(
   cfg: Record<string, unknown>,
-  info: NodeTypeInfo | LinkTypeInfo | undefined,
+  fields: FieldSpec[] | undefined,
   where: string,
   warn: (where: string, message: string) => void,
 ): void {
-  if (!info) return;
-  for (const f of info.fields) {
+  if (!fields) return;
+  for (const f of fields) {
     if (f.kind !== 'enum' || !f.options) continue;
     const v = cfg[f.key];
     if (v !== undefined && !f.options.includes(String(v)))

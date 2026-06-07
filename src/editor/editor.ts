@@ -9,8 +9,11 @@
  */
 import {
   renderPageInto,
+  type FlowPathConfig,
   type LinkConfig,
   type NodeConfig,
+  type PolicyMarkerConfig,
+  type ZoneConfig,
 } from '../vendor/topology-ds.js';
 import { clientToUser } from './coords.js';
 import type { Page } from '../pages/model.js';
@@ -265,6 +268,9 @@ export class Editor {
     this.page.nodes = p.nodes;
     this.page.links = p.links;
     this.page.anchors = p.anchors;
+    this.page.zones = p.zones;
+    this.page.flowPaths = p.flowPaths;
+    this.page.policyMarkers = p.policyMarkers;
   }
 
   undo(): void {
@@ -388,6 +394,69 @@ export class Editor {
     if (!link) return;
     if (commit) this.snapshot();
     Object.assign(link, patch);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /* ── annotations (zones / flow paths / policy markers) ────────── */
+
+  /** Ids of the currently selected nodes — used to seed zones / flow paths. */
+  selectedNodeIds(): string[] {
+    return [...this.sel].filter((id) =>
+      this.page.nodes.some((n) => n.id === id),
+    );
+  }
+
+  addZone(zone: ZoneConfig): void {
+    this.snapshot();
+    this.page.zones.push(zone);
+    this.afterAnnotationChange();
+  }
+  addFlowPath(flow: FlowPathConfig): void {
+    this.snapshot();
+    this.page.flowPaths.push(flow);
+    this.afterAnnotationChange();
+  }
+  addPolicyMarker(marker: PolicyMarkerConfig): void {
+    this.snapshot();
+    this.page.policyMarkers.push(marker);
+    this.afterAnnotationChange();
+  }
+
+  /** Patch an annotation by id. `commit=false` for continuous edits (snapshot once). */
+  updateAnnotation(
+    collection: 'zones' | 'flowPaths' | 'policyMarkers',
+    id: string,
+    patch: Record<string, unknown>,
+    commit = true,
+  ): void {
+    const el = (this.page[collection] as { id: string }[]).find(
+      (e) => e.id === id,
+    );
+    if (!el) return;
+    if (commit) this.snapshot();
+    Object.assign(el, patch);
+    this.afterAnnotationChange();
+  }
+
+  removeAnnotation(
+    collection: 'zones' | 'flowPaths' | 'policyMarkers',
+    id: string,
+  ): void {
+    this.snapshot();
+    if (collection === 'zones')
+      this.page.zones = this.page.zones.filter((e) => e.id !== id);
+    else if (collection === 'flowPaths')
+      this.page.flowPaths = this.page.flowPaths.filter((e) => e.id !== id);
+    else
+      this.page.policyMarkers = this.page.policyMarkers.filter(
+        (e) => e.id !== id,
+      );
+    this.afterAnnotationChange();
+  }
+
+  private afterAnnotationChange(): void {
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -871,6 +940,9 @@ function serialize(page: Page): {
   nodes: NodeConfig[];
   links: Page['links'];
   anchors: Page['anchors'];
+  zones: Page['zones'];
+  flowPaths: Page['flowPaths'];
+  policyMarkers: Page['policyMarkers'];
 } {
   return structuredClone({
     viewBox: page.viewBox,
@@ -878,5 +950,8 @@ function serialize(page: Page): {
     nodes: page.nodes,
     links: page.links,
     anchors: page.anchors,
+    zones: page.zones,
+    flowPaths: page.flowPaths,
+    policyMarkers: page.policyMarkers,
   });
 }

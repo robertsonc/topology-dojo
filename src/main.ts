@@ -21,11 +21,14 @@ import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
 import { validateDocument } from './api/validate.js';
+import { genId } from './api/builder.js';
 import {
+  getAnnotationType,
   getLinkType,
   getNodeType,
   linkCatalog,
   nodeCatalog,
+  type AnnotationKind,
   type FieldSpec,
   type LinkTypeInfo,
   type NodeTypeInfo,
@@ -296,20 +299,28 @@ function fieldsHtml(
 function renderInspector(): void {
   const link = editor.getSelectedLink();
   const node = link ? null : editor.getSelectedNode();
-  if (!node && !link) {
-    inspector.hidden = true;
-    inspector.innerHTML = '';
-    return;
-  }
   inspector.hidden = false;
 
+  let html = '';
   if (node) {
     const info = getNodeType(node.type, doc.customNodes);
     const types = nodeCatalog(doc.customNodes).map((n) => n.type);
-    inspector.innerHTML =
+    html +=
       `<div class="insp-h">Node</div>` +
       typeRow(node.type, types) +
       fieldsHtml(info, node as Record<string, unknown>);
+  } else if (link) {
+    const info = getLinkType(link.type);
+    const types = linkCatalog().map((l) => l.type);
+    html +=
+      `<div class="insp-h">Link</div>` +
+      typeRow(link.type, types) +
+      fieldsHtml(info, link as Record<string, unknown>);
+  }
+  html += annotationsHtml();
+  inspector.innerHTML = html;
+
+  if (node) {
     wireType((t) => {
       editor.updateNode({ type: t });
       renderInspector();
@@ -318,12 +329,6 @@ function renderInspector(): void {
       editor.updateNode({ [key]: val } as Record<string, unknown>, commit),
     );
   } else if (link) {
-    const info = getLinkType(link.type);
-    const types = linkCatalog().map((l) => l.type);
-    inspector.innerHTML =
-      `<div class="insp-h">Link</div>` +
-      typeRow(link.type, types) +
-      fieldsHtml(info, link as Record<string, unknown>);
     wireType((t) => {
       editor.updateLink({ type: t });
       renderInspector();
@@ -332,6 +337,7 @@ function renderInspector(): void {
       editor.updateLink({ [key]: val } as Record<string, unknown>, commit),
     );
   }
+  wireAnnotations();
 }
 
 function wireType(onChange: (t: string) => void): void {
@@ -370,6 +376,168 @@ function wireFields(
         renderInspector();
       }),
     );
+  });
+}
+
+/* ── Annotations (zones / flow paths / policy markers) ──────────────
+ * A page-level layer, edited from the same inspector. "Add" seeds the new
+ * element from the current node selection (members / waypoints / target). */
+const ANNO_GROUPS: { kind: AnnotationKind; col: AnnoCol }[] = [
+  { kind: 'zone', col: 'zones' },
+  { kind: 'flowPath', col: 'flowPaths' },
+  { kind: 'policyMarker', col: 'policyMarkers' },
+];
+type AnnoCol = 'zones' | 'flowPaths' | 'policyMarkers';
+
+function aswatchRow(key: string, current: string | undefined): string {
+  return (
+    `<div class="swatches" data-aswatch="${key}">` +
+    SWATCHES.map(
+      (c) =>
+        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}"></button>`,
+    ).join('') +
+    `</div>`
+  );
+}
+
+/** A control for one annotation field (distinct attrs so node wiring won't grab it). */
+function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
+  const v = cfg[f.key];
+  const req = f.required ? ' *' : '';
+  switch (f.kind) {
+    case 'enum':
+      return `<label class="insp-row">${f.label}${req}<select data-akey="${f.key}">${(
+        f.options ?? []
+      )
+        .map(
+          (o) =>
+            `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${o}</option>`,
+        )
+        .join('')}</select></label>`;
+    case 'color':
+      return `<div class="insp-row col">${f.label}${aswatchRow(f.key, v as string | undefined)}<input class="hex" data-akey="${f.key}" data-akind="color" value="${esc(String(v ?? ''))}" placeholder="#rrggbb"/></div>`;
+    case 'number':
+      return `<label class="insp-row">${f.label}<input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}"/></label>`;
+    case 'refs':
+      return `<label class="insp-row col">${f.label}${req}<input data-akey="${f.key}" data-akind="refs" value="${esc(Array.isArray(v) ? v.join(' ') : '')}" placeholder="space-separated ids"/></label>`;
+    case 'ref':
+      return `<label class="insp-row">${f.label}${req}<input data-akey="${f.key}" value="${esc(String(v ?? ''))}" placeholder="id"/></label>`;
+    default:
+      return `<label class="insp-row">${f.label}<input data-akey="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
+  }
+}
+
+function annotationsHtml(): string {
+  const page = editor.page;
+  const counts =
+    page.zones.length + page.flowPaths.length + page.policyMarkers.length;
+  let html =
+    `<div class="insp-h anno-top">Annotations</div>` +
+    `<div class="anno-add">` +
+    `<button class="tbtn" data-add="zone" title="Group selected nodes into a zone">＋ zone</button>` +
+    `<button class="tbtn" data-add="flowPath" title="Route a flow path through selected nodes">＋ flow</button>` +
+    `<button class="tbtn" data-add="policyMarker" title="Badge the selected node">＋ marker</button>` +
+    `</div>`;
+  if (counts === 0)
+    html += `<div class="muted anno-empty">Select node(s), then add a zone, flow path, or marker.</div>`;
+  for (const g of ANNO_GROUPS) {
+    const info = getAnnotationType(g.kind)!;
+    for (const item of page[g.col] as { id: string }[]) {
+      const cfg = item as Record<string, unknown>;
+      const title = String(cfg.label ?? cfg.type ?? item.id);
+      html +=
+        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}">` +
+        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span><button class="anno-x" data-adel title="Delete">✕</button></summary>` +
+        info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
+        `</details>`;
+    }
+  }
+  return html;
+}
+
+function addAnnotation(kind: AnnotationKind): void {
+  const sel = editor.selectedNodeIds();
+  if (kind === 'zone') {
+    editor.addZone({
+      id: genId('z'),
+      label: 'Zone',
+      nodes: sel,
+      color: '#65aef9',
+    });
+  } else if (kind === 'flowPath') {
+    editor.addFlowPath({
+      id: genId('fp'),
+      label: 'Flow',
+      waypoints: sel,
+      color: '#01a982',
+      animation: 'particles',
+      speed: 'medium',
+    });
+  } else {
+    const nodeId = sel[0];
+    if (!nodeId) {
+      alert('Select a node first to attach a policy marker.');
+      return;
+    }
+    editor.addPolicyMarker({
+      id: genId('pm'),
+      nodeId,
+      type: 'inspect',
+      align: 'NE',
+      color: '#65aef9',
+    });
+  }
+  renderInspector();
+}
+
+function wireAnnotations(): void {
+  inspector
+    .querySelectorAll<HTMLButtonElement>('[data-add]')
+    .forEach((b) =>
+      b.addEventListener('click', () =>
+        addAnnotation(b.dataset.add as AnnotationKind),
+      ),
+    );
+  inspector.querySelectorAll<HTMLButtonElement>('[data-adel]').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      const host = b.closest<HTMLElement>('[data-aid]')!;
+      editor.removeAnnotation(host.dataset.acol as AnnoCol, host.dataset.aid!);
+      renderInspector();
+    }),
+  );
+  inspector.querySelectorAll<HTMLElement>('details.anno').forEach((host) => {
+    const col = host.dataset.acol as AnnoCol;
+    const id = host.dataset.aid!;
+    const setA = (key: string, val: unknown, commit: boolean): void =>
+      editor.updateAnnotation(col, id, { [key]: val }, commit);
+    host
+      .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-akey]')
+      .forEach((el) => {
+        const key = el.dataset.akey!;
+        if (el instanceof HTMLSelectElement) {
+          el.addEventListener('change', () => setA(key, el.value, true));
+        } else {
+          const kind = el.dataset.akind;
+          el.addEventListener('input', () => {
+            let val: unknown = el.value;
+            if (kind === 'number') val = Number(el.value);
+            else if (kind === 'refs')
+              val = el.value.split(/[\s,]+/).filter(Boolean);
+            setA(key, val, !editing);
+            editing = true;
+          });
+        }
+      });
+    host.querySelectorAll<HTMLElement>('[data-aswatch]').forEach((group) => {
+      const key = group.dataset.aswatch!;
+      group.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
+        b.addEventListener('click', () => {
+          setA(key, b.dataset.color!, true);
+          renderInspector();
+        }),
+      );
+    });
   });
 }
 
@@ -606,3 +774,4 @@ function esc(s: string): string {
 }
 
 renderFilmstrip();
+renderInspector();

@@ -32,6 +32,22 @@ describe('persist', () => {
     expect(page.links).toEqual([]);
     expect(page.anchors).toEqual([]);
     expect(page.nodes).toHaveLength(1);
+    expect(page.zones).toEqual([]);
+    expect(page.flowPaths).toEqual([]);
+    expect(page.policyMarkers).toEqual([]);
+  });
+
+  it('round-trips the annotation layer (zones / flow paths / markers)', () => {
+    const doc = sampleDocument();
+    const page0 = doc.pages[0]!;
+    const back = parseDoc(serializeDoc(doc));
+    const back0 = back!.pages[0]!;
+    expect(back0.zones).toHaveLength(page0.zones.length);
+    expect(back0.zones[0]!.nodes).toEqual(page0.zones[0]!.nodes);
+    expect(back0.flowPaths[0]!.waypoints).toEqual(
+      page0.flowPaths[0]!.waypoints,
+    );
+    expect(back0.policyMarkers[0]!.type).toBe(page0.policyMarkers[0]!.type);
   });
 
   it('accepts an already-parsed object', () => {

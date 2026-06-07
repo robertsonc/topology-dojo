@@ -17,6 +17,9 @@ interface EngineInstance {
   node(id: string, cfg: Record<string, unknown>): void;
   link(id: string, cfg: Record<string, unknown>): void;
   anchor(id: string, pos: { x: number; y: number }): void;
+  zone(id: string, cfg: Record<string, unknown>): void;
+  flowPath(id: string, cfg: Record<string, unknown>): void;
+  policyMarker(id: string, cfg: Record<string, unknown>): void;
   act(id: string, cfg: Record<string, unknown>): void;
   addStep(id: string, cfg: Record<string, unknown>): void;
   _buildIndex(): void;
@@ -76,6 +79,18 @@ export function renderPageToSVG(
   for (const l of page.links) {
     const { id, ...cfg } = l;
     topo.link(id, cfg);
+  }
+  for (const z of page.zones ?? []) {
+    const { id, ...cfg } = z;
+    topo.zone(id, cfg);
+  }
+  for (const f of page.flowPaths ?? []) {
+    const { id, ...cfg } = f;
+    topo.flowPath(id, cfg);
+  }
+  for (const m of page.policyMarkers ?? []) {
+    const { id, ...cfg } = m;
+    topo.policyMarker(id, cfg);
   }
 
   // One all-showing step + a trailing step we sit on → every element renders

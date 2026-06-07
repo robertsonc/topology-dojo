@@ -10,8 +10,11 @@
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type {
   AnchorConfig,
+  FlowPathConfig,
   LinkConfig,
   NodeConfig,
+  PolicyMarkerConfig,
+  ZoneConfig,
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import { validateDocument, type Problem } from './validate.js';
@@ -50,6 +53,16 @@ export interface PageInput {
   name?: string;
   viewBox?: string;
 }
+export interface ZoneInput extends Omit<ZoneConfig, 'id' | 'nodes'> {
+  id?: string;
+  nodes?: string[];
+}
+export interface FlowPathInput extends Omit<FlowPathConfig, 'id'> {
+  id?: string;
+}
+export interface PolicyMarkerInput extends Omit<PolicyMarkerConfig, 'id'> {
+  id?: string;
+}
 
 /* ── pure ops ─────────────────────────────────────────────────────── */
 
@@ -65,6 +78,9 @@ export function addPage(doc: TopologyDocument, input: PageInput = {}): Page {
     nodes: [],
     links: [],
     anchors: [],
+    zones: [],
+    flowPaths: [],
+    policyMarkers: [],
   };
   doc.pages.push(page);
   return page;
@@ -95,6 +111,34 @@ export function addAnchor(
   return anchor;
 }
 
+export function addZone(page: Page, input: ZoneInput): ZoneConfig {
+  const { id, nodes, ...rest } = input;
+  const zone: ZoneConfig = {
+    id: id ?? genId('z'),
+    nodes: nodes ?? [],
+    ...rest,
+  };
+  page.zones.push(zone);
+  return zone;
+}
+
+export function addFlowPath(page: Page, input: FlowPathInput): FlowPathConfig {
+  const { id, ...rest } = input;
+  const flow: FlowPathConfig = { id: id ?? genId('fp'), ...rest };
+  page.flowPaths.push(flow);
+  return flow;
+}
+
+export function addPolicyMarker(
+  page: Page,
+  input: PolicyMarkerInput,
+): PolicyMarkerConfig {
+  const { id, ...rest } = input;
+  const marker: PolicyMarkerConfig = { id: id ?? genId('pm'), ...rest };
+  page.policyMarkers.push(marker);
+  return marker;
+}
+
 /** Add or replace a custom node type (by typeName). */
 export function defineNodeType(
   doc: TopologyDocument,
@@ -123,6 +167,18 @@ export class PageBuilder {
   }
   anchor(x: number, y: number, id?: string): this {
     addAnchor(this.page, x, y, id);
+    return this;
+  }
+  zone(input: ZoneInput): this {
+    addZone(this.page, input);
+    return this;
+  }
+  flowPath(input: FlowPathInput): this {
+    addFlowPath(this.page, input);
+    return this;
+  }
+  policyMarker(input: PolicyMarkerInput): this {
+    addPolicyMarker(this.page, input);
     return this;
   }
   viewBox(vb: string): this {

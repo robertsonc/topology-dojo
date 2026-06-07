@@ -10,9 +10,12 @@
  */
 import type {
   AnchorConfig,
+  FlowPathConfig,
   LinkConfig,
   NodeConfig,
+  PolicyMarkerConfig,
   RenderablePage,
+  ZoneConfig,
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import { createDocument } from '../api/builder.js';
@@ -24,6 +27,10 @@ export interface Page extends RenderablePage {
   nodes: NodeConfig[];
   links: LinkConfig[];
   anchors: AnchorConfig[];
+  /** Expressive annotation layer — region groupings, animated routes, badges. */
+  zones: ZoneConfig[];
+  flowPaths: FlowPathConfig[];
+  policyMarkers: PolicyMarkerConfig[];
 }
 
 export interface TopologyDocument {
@@ -59,6 +66,9 @@ export function blankPage(name: string): Page {
     nodes: [],
     links: [],
     anchors: [],
+    zones: [],
+    flowPaths: [],
+    policyMarkers: [],
   };
 }
 
@@ -158,6 +168,30 @@ export function sampleDocument(): TopologyDocument {
       from: 'fw',
       to: 'inet',
       color: '#b1b9be',
+    })
+    // The expressive annotation layer: a region grouping, an animated overlay
+    // route, and an enforcement badge — all part of the document contract.
+    .zone({
+      id: 'zone_branch',
+      label: 'Branch',
+      nodes: ['user', 'ec', 'fw', 'sensor1'],
+      color: '#65aef9',
+    })
+    .flowPath({
+      id: 'fp_app',
+      label: 'App traffic',
+      waypoints: ['user', 'ec', 'hub', 'app'],
+      color: '#01a982',
+      animation: 'particles',
+      speed: 'medium',
+    })
+    .policyMarker({
+      id: 'pm_fw',
+      nodeId: 'fw',
+      type: 'inspect',
+      label: 'IDP',
+      color: '#fc6161',
+      align: 'NE',
     });
   return doc.build();
 }
