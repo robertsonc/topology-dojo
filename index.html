@@ -109,6 +109,46 @@
         display: inline-flex;
         gap: 3px;
       }
+      .meta-top {
+        margin-top: 4px;
+        border-top: 1px solid var(--border);
+        padding-top: 10px;
+      }
+      .meta-row {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+      }
+      .meta-row input {
+        flex: 1;
+        min-width: 0;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 4px 6px;
+        font-size: 11px;
+        font-family: var(--font);
+      }
+      .meta-row .meta-k {
+        color: var(--muted);
+      }
+      .meta-x,
+      .meta-addbtn {
+        background: none;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 6px;
+        cursor: pointer;
+        padding: 2px 6px;
+        font-size: 11px;
+      }
+      .meta-addbtn:hover {
+        color: var(--accent);
+      }
+      .meta-x:hover {
+        color: #fc6161;
+      }
 
       .stage {
         position: relative;

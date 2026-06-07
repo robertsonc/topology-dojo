@@ -326,9 +326,79 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
     case 'point':
     case 'points':
       return `<div class="insp-row"><span>${f.label}</span><span class="muted">${Array.isArray(v) ? v.length : 0} pt</span></div>`;
+    case 'record':
+      return ''; // rendered by the dedicated metadata editor
     default:
       return `<label class="insp-row">${f.label}<input data-key="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
   }
+}
+
+/** Node metadata key/value editor (serials, versions, hostnames, sites…). */
+function metaHtml(meta?: Record<string, string | number | boolean>): string {
+  const rows = Object.entries(meta ?? {})
+    .map(
+      ([k, v]) =>
+        `<div class="meta-row" data-mk="${esc(k)}">` +
+        `<input class="meta-k" value="${esc(k)}" readonly />` +
+        `<input class="meta-v" value="${esc(String(v))}" />` +
+        `<button class="meta-x" title="Remove">✕</button></div>`,
+    )
+    .join('');
+  return (
+    `<div class="insp-h meta-top">Metadata</div>` +
+    rows +
+    `<div class="meta-row meta-add">` +
+    `<input class="meta-nk" placeholder="key" />` +
+    `<input class="meta-nv" placeholder="value" />` +
+    `<button class="meta-addbtn" title="Add">＋</button></div>`
+  );
+}
+
+function wireMeta(_meta?: Record<string, string | number | boolean>): void {
+  // Read live metadata each time so successive edits compose correctly.
+  const cur = (): Record<string, string | number | boolean> => ({
+    ...(editor.getSelectedNode()?.meta ?? {}),
+  });
+  inspector
+    .querySelectorAll<HTMLElement>('.meta-row[data-mk]')
+    .forEach((row) => {
+      const key = row.dataset.mk!;
+      const vIn = row.querySelector<HTMLInputElement>('.meta-v')!;
+      vIn.addEventListener('input', () => {
+        const next = cur();
+        next[key] = vIn.value;
+        editor.updateNode({ meta: next }, !editing);
+        editing = true;
+      });
+      row
+        .querySelector<HTMLButtonElement>('.meta-x')
+        ?.addEventListener('click', () => {
+          const next = cur();
+          delete next[key];
+          editor.updateNode({
+            meta: Object.keys(next).length ? next : undefined,
+          } as Record<string, unknown>);
+          renderInspector();
+        });
+    });
+  const addRow = inspector.querySelector<HTMLElement>('.meta-add');
+  const add = (): void => {
+    const k = addRow?.querySelector<HTMLInputElement>('.meta-nk')?.value.trim();
+    const v = addRow?.querySelector<HTMLInputElement>('.meta-nv')?.value ?? '';
+    if (!k) return;
+    const next = cur();
+    next[k] = v;
+    editor.updateNode({ meta: next });
+    renderInspector();
+  };
+  addRow
+    ?.querySelector<HTMLButtonElement>('.meta-addbtn')
+    ?.addEventListener('click', add);
+  addRow?.querySelectorAll<HTMLInputElement>('input').forEach((i) =>
+    i.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') add();
+    }),
+  );
 }
 
 function typeRow(current: string, types: string[]): string {
@@ -362,6 +432,7 @@ function renderInspector(): void {
       `<div class="insp-h">Node</div>` +
       typeRow(node.type, types) +
       fieldsHtml(info, node as Record<string, unknown>) +
+      metaHtml(node.meta) +
       arrangeRow();
   } else if (link) {
     const info = getLinkType(link.type);
@@ -383,6 +454,7 @@ function renderInspector(): void {
     wireFields((key, val, commit) =>
       editor.updateNode({ [key]: val } as Record<string, unknown>, commit),
     );
+    wireMeta(node.meta);
   } else if (link) {
     wireType((t) => {
       editor.updateLink({ type: t });

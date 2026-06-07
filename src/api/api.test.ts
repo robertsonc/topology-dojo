@@ -153,6 +153,39 @@ describe('validateDocument', () => {
     expect(isValid(doc)).toBe(true);
   });
 
+  it('carries node metadata and validates a well-formed map', () => {
+    const doc = createDocument()
+      .page()
+      .node({
+        id: 'a',
+        type: 'ec',
+        x: 0,
+        y: 0,
+        meta: { serial: 'SN-001', version: '2.3.1', haActive: true, ports: 48 },
+      })
+      .build();
+    expect(validateDocument(doc)).toEqual([]);
+    expect(doc.pages[0]!.nodes[0]!.meta).toMatchObject({ serial: 'SN-001' });
+  });
+
+  it('flags malformed node metadata', () => {
+    const doc = emptyDocument();
+    const page = addPage(doc);
+    addNode(page, { id: 'a', type: 'ec', x: 0, y: 0, meta: 'nope' });
+    addNode(page, {
+      id: 'b',
+      type: 'ec',
+      x: 1,
+      y: 1,
+      meta: { good: 'x', bad: { nested: 1 } },
+    });
+    const probs = validateDocument(doc);
+    expect(
+      probs.some((p) => p.level === 'error' && /meta must be/.test(p.message)),
+    ).toBe(true);
+    expect(probs.some((p) => /meta\."bad"/.test(p.message))).toBe(true);
+  });
+
   it('warns when a flow path has fewer than two waypoints', () => {
     const doc = createDocument()
       .page()

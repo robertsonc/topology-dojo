@@ -69,6 +69,11 @@ const extra = z
   .describe(
     'Any additional catalog fields for this type (see describe_capabilities).',
   );
+type MetaMap = Record<string, string | number | boolean>;
+const metaShape = z
+  .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+  .optional()
+  .describe('Key/value node metadata (serial, version, hostname, site…).');
 
 const BORDER = ['dashed', 'solid', 'dotted'] as const;
 const ANIMATION = ['particles', 'dashed', 'pulse'] as const;
@@ -199,6 +204,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         sublabel: z.string().optional(),
         color: z.string().optional(),
         nodeId: z.string().optional().describe('Explicit id (else generated).'),
+        meta: metaShape,
         extra,
       },
       handler: (a) =>
@@ -214,9 +220,38 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               ? { sublabel: String(a.sublabel) }
               : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.meta !== undefined ? { meta: a.meta as MetaMap } : {}),
             ...((a.extra as Record<string, unknown>) ?? {}),
           },
         ),
+    },
+    {
+      name: 'set_node_metadata',
+      description:
+        'Attach free-form key/value metadata to a node — serials, software versions, hostnames, site/cluster names, etc. (string/number/boolean values). By default replaces the node’s metadata; pass merge:true to merge into the existing map.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        nodeId: z.string(),
+        meta: z
+          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+          .describe('Key/value metadata.'),
+        merge: z
+          .boolean()
+          .optional()
+          .describe('Merge into existing metadata instead of replacing.'),
+      },
+      handler: (a) => {
+        const page = store.page(
+          String(a.topologyId),
+          a.pageIndex as number | undefined,
+        );
+        const node = page.nodes.find((n) => n.id === String(a.nodeId));
+        if (!node) throw new Error(`unknown node "${String(a.nodeId)}"`);
+        const incoming = a.meta as MetaMap;
+        node.meta = a.merge ? { ...(node.meta ?? {}), ...incoming } : incoming;
+        return { id: node.id, meta: node.meta };
+      },
     },
     {
       name: 'add_link',

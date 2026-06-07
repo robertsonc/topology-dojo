@@ -75,6 +75,13 @@ describe('capability catalog', () => {
     expect(marker.fields.some((f) => f.key === 'icon')).toBe(true); // glyph override
   });
 
+  it('exposes node metadata as a record field', () => {
+    const ec = getNodeType('ec')!;
+    expect(ec.fields.some((f) => f.key === 'meta' && f.kind === 'record')).toBe(
+      true,
+    );
+  });
+
   it('includes custom node types when provided', () => {
     const spec = { ...defaultSpec(), typeName: 'sensor' };
     expect(getNodeType('sensor', [spec])?.custom).toBe(true);

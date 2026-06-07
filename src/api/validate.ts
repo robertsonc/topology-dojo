@@ -72,6 +72,12 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `${at} node "${n.id}"`,
           warn,
         );
+      checkMeta(
+        (n as Record<string, unknown>).meta,
+        `${at} node "${n.id}"`,
+        err,
+        warn,
+      );
     }
     for (const a of page.anchors) {
       claim(a.id, 'anchor');
@@ -172,6 +178,26 @@ function checkEnums(
     const v = cfg[f.key];
     if (v !== undefined && !f.options.includes(String(v)))
       warn(where, `${f.key} "${String(v)}" not in [${f.options.join(', ')}]`);
+  }
+}
+
+/** Node metadata must be a flat map of string/number/boolean values. */
+function checkMeta(
+  meta: unknown,
+  where: string,
+  err: (where: string, message: string) => void,
+  warn: (where: string, message: string) => void,
+): void {
+  if (meta === undefined) return;
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) {
+    err(where, 'meta must be a key/value object');
+    return;
+  }
+  for (const [k, v] of Object.entries(meta)) {
+    if (!k) warn(where, 'meta has an empty key');
+    const t = typeof v;
+    if (t !== 'string' && t !== 'number' && t !== 'boolean')
+      warn(where, `meta."${k}" must be a string, number, or boolean`);
   }
 }
 

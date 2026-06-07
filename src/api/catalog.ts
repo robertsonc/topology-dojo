@@ -22,7 +22,9 @@ export type FieldKind =
   /** A single id reference to another element (node, anchor, zone…). */
   | 'ref'
   /** An ordered list of id references. */
-  | 'refs';
+  | 'refs'
+  /** A flat key/value map (string/number/boolean values) — e.g. node metadata. */
+  | 'record';
 
 export interface FieldSpec {
   key: string;
@@ -74,6 +76,7 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'sublabel', label: 'Sublabel', kind: 'string' },
   { key: 'color', label: 'Color', kind: 'color' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
+  { key: 'meta', label: 'Metadata', kind: 'record' },
 ];
 
 /** Per-type extra fields, keyed by node type (common + position are added). */
