@@ -21,6 +21,8 @@ app.innerHTML = `
   <header class="bar">
     <div class="brand">Topology Dojo</div>
     <div class="bar-actions">
+      <button class="tbtn on" id="tSelect" title="Select/move tool (V)">⤧ select</button>
+      <button class="tbtn" id="tLink" title="Draw link tool (L)">🔗 link</button>
       <button class="tbtn on" id="tGrid" title="Toggle grid (R)">▦ grid</button>
       <button class="tbtn on" id="tSnap" title="Toggle snap (G)">⌗ snap</button>
       <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑 delete</button>
@@ -34,6 +36,11 @@ app.innerHTML = `
         <button class="tbtn ab" data-align="bottom" title="Align bottom">⤓</button>
         <button class="tbtn ab" data-dist="h" title="Distribute horizontally" disabled>↔̲</button>
         <button class="tbtn ab" data-dist="v" title="Distribute vertically" disabled>↕̲</button>
+      </span>
+      <span class="align-group" id="linkGroup" hidden>
+        <button class="tbtn ab" id="lkType" title="Cycle link type">type: line</button>
+        <button class="tbtn ab" id="lkStyle" title="Cycle routing">route: straight</button>
+        <button class="tbtn ab" id="lkDel" title="Delete link">🗑</button>
       </span>
       <span class="hint">click/shift/box select · drag move · wheel zoom · middle-drag pan · ←/→ flip</span>
     </div>
@@ -64,7 +71,37 @@ const editor = new Editor(
   doc.pages[current]!,
   renderFilmstrip,
   onSelectionChange,
+  onLinkSelectChange,
 );
+
+/* Tool toggle (select / link) */
+const selectBtn = app.querySelector<HTMLButtonElement>('#tSelect')!;
+const linkBtn = app.querySelector<HTMLButtonElement>('#tLink')!;
+function setTool(t: 'select' | 'link'): void {
+  editor.setTool(t);
+  selectBtn.classList.toggle('on', t === 'select');
+  linkBtn.classList.toggle('on', t === 'link');
+}
+selectBtn.addEventListener('click', () => setTool('select'));
+linkBtn.addEventListener('click', () => setTool('link'));
+
+/* Link toolbar — shown when a link is selected. */
+const linkGroup = app.querySelector<HTMLElement>('#linkGroup')!;
+const lkType = app.querySelector<HTMLButtonElement>('#lkType')!;
+const lkStyle = app.querySelector<HTMLButtonElement>('#lkStyle')!;
+function onLinkSelectChange(linkId: string | null): void {
+  const info = editor.selectedLinkInfo();
+  linkGroup.hidden = linkId === null || info === null;
+  if (info) {
+    lkType.textContent = `type: ${info.type}`;
+    lkStyle.textContent = `route: ${info.style}`;
+  }
+}
+lkType.addEventListener('click', () => editor.cycleLinkType());
+lkStyle.addEventListener('click', () => editor.cycleLinkStyle());
+app
+  .querySelector('#lkDel')
+  ?.addEventListener('click', () => editor.deleteSelected());
 
 /* Align/distribute toolbar — shown when 2+ nodes are selected. */
 const alignGroup = app.querySelector<HTMLElement>('#alignGroup')!;
@@ -206,6 +243,9 @@ window.addEventListener('keydown', (e) => {
     gridBtn.classList.toggle('on', editor.gridVisible);
   }
   if (e.key === '0') editor.resetView();
+  if (e.key === 'l' || e.key === 'L') setTool('link');
+  if (e.key === 'v' || e.key === 'V') setTool('select');
+  if (e.key === 'Escape') setTool('select');
   if (e.key === 'ArrowRight') selectPage(current + 1);
   if (e.key === 'ArrowLeft') selectPage(current - 1);
 });
