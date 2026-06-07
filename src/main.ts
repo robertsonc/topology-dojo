@@ -22,6 +22,7 @@ import {
   saveLocal,
   serializeDoc,
 } from './pages/persist.js';
+import { exportPagePNG, exportPageSVG } from './editor/export.js';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
@@ -54,6 +55,8 @@ app.innerHTML = `
       <button class="tbtn file" id="fNew" title="New document">new</button>
       <button class="tbtn file" id="fSave" title="Download as JSON">save</button>
       <button class="tbtn file" id="fOpen" title="Open a JSON file">open</button>
+      <button class="tbtn file" id="fSvg" title="Export current frame as SVG">svg</button>
+      <button class="tbtn file" id="fPng" title="Export current frame as PNG">png</button>
       <input type="file" id="fInput" accept="application/json,.json" hidden />
       <span class="saved" id="saved"></span>
     </div>
@@ -156,6 +159,22 @@ app.querySelector('#fSave')?.addEventListener('click', () => {
   a.download = `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.json`;
   a.click();
   URL.revokeObjectURL(url);
+});
+
+/* Image export: SVG (vector, honors calm) and PNG (always a static raster). */
+function exportBase(): string {
+  const page = doc.pages[current]!;
+  return `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
+}
+app.querySelector('#fSvg')?.addEventListener('click', () => {
+  exportPageSVG(`${exportBase()}.svg`, doc.pages[current]!, {
+    calm: editor.calm,
+  });
+});
+app.querySelector('#fPng')?.addEventListener('click', () => {
+  void exportPagePNG(`${exportBase()}.png`, doc.pages[current]!, 2).catch(() =>
+    alert('PNG export failed.'),
+  );
 });
 const fileInput = app.querySelector<HTMLInputElement>('#fInput')!;
 app.querySelector('#fOpen')?.addEventListener('click', () => fileInput.click());
