@@ -22,6 +22,8 @@ export interface NodeConfig {
   label?: string;
   sublabel?: string;
   color?: string;
+  /** When true, the editor won't move the node (drag/marquee/nudge skip it). */
+  locked?: boolean;
   [key: string]: unknown;
 }
 
@@ -35,6 +37,8 @@ export interface LinkConfig {
   label?: string;
   waypoints?: { x: number; y: number }[];
   lineStyle?: 'orthogonal' | 'curved';
+  /** When true, the editor won't move/edit the link via direct manipulation. */
+  locked?: boolean;
   [key: string]: unknown;
 }
 

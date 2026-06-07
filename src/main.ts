@@ -315,14 +315,16 @@ function renderInspector(): void {
     html +=
       `<div class="insp-h">Node</div>` +
       typeRow(node.type, types) +
-      fieldsHtml(info, node as Record<string, unknown>);
+      fieldsHtml(info, node as Record<string, unknown>) +
+      arrangeRow();
   } else if (link) {
     const info = getLinkType(link.type);
     const types = linkCatalog().map((l) => l.type);
     html +=
       `<div class="insp-h">Link</div>` +
       typeRow(link.type, types) +
-      fieldsHtml(info, link as Record<string, unknown>);
+      fieldsHtml(info, link as Record<string, unknown>) +
+      arrangeRow();
   }
   html += annotationsHtml();
   inspector.innerHTML = html;
@@ -344,7 +346,39 @@ function renderInspector(): void {
       editor.updateLink({ [key]: val } as Record<string, unknown>, commit),
     );
   }
+  inspector.querySelector('[data-z="front"]')?.addEventListener('click', () => {
+    editor.bringToFront();
+    renderInspector();
+  });
+  inspector
+    .querySelector('[data-z="forward"]')
+    ?.addEventListener('click', () => {
+      editor.bringForward();
+      renderInspector();
+    });
+  inspector
+    .querySelector('[data-z="backward"]')
+    ?.addEventListener('click', () => {
+      editor.sendBackward();
+      renderInspector();
+    });
+  inspector.querySelector('[data-z="back"]')?.addEventListener('click', () => {
+    editor.sendToBack();
+    renderInspector();
+  });
   wireAnnotations();
+}
+
+/** Z-order ("Arrange") controls — shown for a single node or a link. */
+function arrangeRow(): string {
+  return (
+    `<div class="insp-row"><span>Arrange</span><span class="arrange">` +
+    `<button class="tbtn ab" data-z="back" title="Send to back ([Ctrl+[)">⤓⤓</button>` +
+    `<button class="tbtn ab" data-z="backward" title="Send backward ([)">⤓</button>` +
+    `<button class="tbtn ab" data-z="forward" title="Bring forward (])">⤒</button>` +
+    `<button class="tbtn ab" data-z="front" title="Bring to front (Ctrl+])">⤒⤒</button>` +
+    `</span></div>`
+  );
 }
 
 function wireType(onChange: (t: string) => void): void {
@@ -759,18 +793,68 @@ app
 app.querySelector('#tTidy')?.addEventListener('click', () => editor.tidy());
 app.querySelector('#tFit')?.addEventListener('click', () => editor.resetView());
 
-/* Keyboard */
+/* Keyboard. Shortcuts are suppressed while typing in a form field so they don't
+ * hijack the inspector / rename inputs (and Ctrl+C/V do native text edit there). */
 window.addEventListener('keydown', (e) => {
-  const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === 'z') {
-    e.preventDefault();
-    if (e.shiftKey) editor.redo();
-    else editor.undo();
+  const t = e.target as HTMLElement | null;
+  if (
+    t &&
+    (t.tagName === 'INPUT' ||
+      t.tagName === 'SELECT' ||
+      t.tagName === 'TEXTAREA' ||
+      t.isContentEditable)
+  )
     return;
+
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod) {
+    const k = e.key.toLowerCase();
+    if (k === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) editor.redo();
+      else editor.undo();
+    } else if (k === 'y') {
+      e.preventDefault();
+      editor.redo();
+    } else if (k === 'a') {
+      e.preventDefault();
+      editor.selectAll();
+    } else if (k === 'c') {
+      e.preventDefault();
+      editor.copySelection();
+    } else if (k === 'x') {
+      e.preventDefault();
+      editor.cut();
+    } else if (k === 'v') {
+      e.preventDefault();
+      editor.paste();
+    } else if (k === 'd') {
+      e.preventDefault();
+      editor.duplicateSelection();
+    } else if (k === 'l') {
+      e.preventDefault();
+      editor.toggleLock();
+    } else if (e.key === ']') {
+      e.preventDefault();
+      editor.bringToFront();
+    } else if (e.key === '[') {
+      e.preventDefault();
+      editor.sendToBack();
+    }
+    return; // other mod combos: leave to the browser
   }
+
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
     editor.deleteSelected();
+    return;
+  }
+  if (e.key === ']') {
+    editor.bringForward();
+    return;
+  }
+  if (e.key === '[') {
+    editor.sendBackward();
     return;
   }
   if (e.key === 'g' || e.key === 'G') {
@@ -790,8 +874,19 @@ window.addEventListener('keydown', (e) => {
     editor.clearSelection();
     setTool('select');
   }
-  if (e.key === 'ArrowRight') selectPage(current + 1);
-  if (e.key === 'ArrowLeft') selectPage(current - 1);
+
+  // Arrows: nudge the selection (Shift = 10px); otherwise flip pages.
+  if (e.key.startsWith('Arrow')) {
+    if (editor.selectionCount() > 0) {
+      e.preventDefault();
+      const s = e.shiftKey ? 10 : 1;
+      if (e.key === 'ArrowLeft') editor.nudge(-s, 0);
+      else if (e.key === 'ArrowRight') editor.nudge(s, 0);
+      else if (e.key === 'ArrowUp') editor.nudge(0, -s);
+      else if (e.key === 'ArrowDown') editor.nudge(0, s);
+    } else if (e.key === 'ArrowRight') selectPage(current + 1);
+    else if (e.key === 'ArrowLeft') selectPage(current - 1);
+  }
 });
 
 function esc(s: string): string {
