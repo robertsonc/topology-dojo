@@ -1,0 +1,52 @@
+name: Deploy
+
+# Publish the built site to Cloudflare Pages.
+#   - push to main  -> production deployment (branch alias "main")
+#   - pull request  -> preview deployment (branch alias = the PR's head ref)
+# Requires repo secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# One in-flight deploy per ref; a newer push supersedes an older one.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write # lets wrangler-action comment the preview URL on PRs
+    # Mapped to env so steps can guard on their presence (secrets can't be read
+    # in `if:` directly). Absent on fork PRs and until the repo secrets are set.
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Build is the same command the CI gate validates; deploy only ships dist/.
+      - run: npm run build
+      - name: Deploy to Cloudflare Pages
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: >-
+            pages deploy dist
+            --project-name=topology-dojo
+            --branch=${{ github.head_ref || github.ref_name }}
+      - name: Skip notice (Cloudflare secrets not configured)
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
+        run: echo "::notice::Cloudflare secrets not set — skipping deploy. See docs/DEPLOYMENT.md."

@@ -49,3 +49,5 @@ src/
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the model, the resolve seam,
   the locked decisions.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased build plan and open design bets.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — Cloudflare Pages hosting via
+  GitHub Actions, and the one-time secret setup.
