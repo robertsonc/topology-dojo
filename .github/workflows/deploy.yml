@@ -1,0 +1,43 @@
+name: Deploy
+
+# Publish the built site to Cloudflare Pages.
+#   - push to main  -> production deployment (branch alias "main")
+#   - pull request  -> preview deployment (branch alias = the PR's head ref)
+# Requires repo secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# One in-flight deploy per ref; a newer push supersedes an older one.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write # lets wrangler-action comment the preview URL on PRs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Build is the same command the CI gate validates; deploy only ships dist/.
+      - run: npm run build
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: >-
+            pages deploy dist
+            --project-name=topology-dojo
+            --branch=${{ github.head_ref || github.ref_name }}
