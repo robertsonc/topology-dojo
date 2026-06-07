@@ -17,7 +17,11 @@ export type FieldKind =
   | 'color'
   | 'enum'
   | 'point'
-  | 'points';
+  | 'points'
+  /** A single id reference to another element (node, anchor, zone…). */
+  | 'ref'
+  /** An ordered list of id references. */
+  | 'refs';
 
 export interface FieldSpec {
   key: string;
@@ -44,6 +48,17 @@ export interface LinkTypeInfo {
   label: string;
   /** Whether this type animates (flow particles) by default / supports it. */
   animated: boolean;
+  fields: FieldSpec[];
+}
+
+/** The page-level annotation kinds (zones, flow paths, policy markers). */
+export type AnnotationKind = 'zone' | 'flowPath' | 'policyMarker';
+
+export interface AnnotationTypeInfo {
+  kind: AnnotationKind;
+  label: string;
+  /** The page array the elements live in (the document contract surface). */
+  collection: 'zones' | 'flowPaths' | 'policyMarkers';
   fields: FieldSpec[];
 }
 
@@ -222,6 +237,104 @@ const LINK_CATALOG: Record<string, LinkTypeInfo> = Object.fromEntries(
   ]),
 );
 
+/* ── annotation catalog (zones / flow paths / policy markers) ──────── */
+
+const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
+  zone: {
+    kind: 'zone',
+    label: 'Zone',
+    collection: 'zones',
+    fields: [
+      { key: 'label', label: 'Label', kind: 'string' },
+      { key: 'sublabel', label: 'Sublabel', kind: 'string' },
+      { key: 'description', label: 'Description', kind: 'string' },
+      { key: 'nodes', label: 'Member nodes', kind: 'refs', required: true },
+      { key: 'color', label: 'Color', kind: 'color' },
+      {
+        key: 'borderStyle',
+        label: 'Border',
+        kind: 'enum',
+        options: ['dashed', 'solid', 'dotted'],
+      },
+      { key: 'padding', label: 'Padding', kind: 'number' },
+      {
+        key: 'labelAlign',
+        label: 'Label align',
+        kind: 'enum',
+        options: ['left', 'center', 'right'],
+      },
+      { key: 'parentZone', label: 'Parent zone', kind: 'ref' },
+    ],
+  },
+  flowPath: {
+    kind: 'flowPath',
+    label: 'Flow path',
+    collection: 'flowPaths',
+    fields: [
+      { key: 'label', label: 'Label', kind: 'string' },
+      { key: 'waypoints', label: 'Waypoints', kind: 'refs', required: true },
+      { key: 'color', label: 'Color', kind: 'color' },
+      {
+        key: 'animation',
+        label: 'Animation',
+        kind: 'enum',
+        options: ['particles', 'dashed', 'pulse'],
+        animation: true,
+      },
+      {
+        key: 'speed',
+        label: 'Speed',
+        kind: 'enum',
+        options: ['slow', 'medium', 'fast'],
+        animation: true,
+      },
+      {
+        key: 'direction',
+        label: 'Direction',
+        kind: 'enum',
+        options: ['forward', 'reverse', 'bidirectional'],
+        animation: true,
+      },
+      { key: 'width', label: 'Width', kind: 'number' },
+      { key: 'opacity', label: 'Opacity', kind: 'number' },
+    ],
+  },
+  policyMarker: {
+    kind: 'policyMarker',
+    label: 'Policy marker',
+    collection: 'policyMarkers',
+    fields: [
+      {
+        key: 'type',
+        label: 'Action',
+        kind: 'enum',
+        required: true,
+        options: [
+          'inspect',
+          'allow',
+          'deny',
+          'redirect',
+          'encrypt',
+          'decrypt',
+          'nat',
+          'load-balance',
+          'log',
+        ],
+      },
+      { key: 'nodeId', label: 'On node', kind: 'ref', required: true },
+      { key: 'label', label: 'Label', kind: 'string' },
+      { key: 'color', label: 'Color', kind: 'color' },
+      {
+        key: 'align',
+        label: 'Placement',
+        kind: 'enum',
+        options: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'C'],
+      },
+      { key: 'flowPathId', label: 'Flow path', kind: 'ref' },
+    ],
+  },
+};
+
 /* ── public catalog API ───────────────────────────────────────────── */
 
 /** Describe a custom node type (instance-overridable fields; spec defines the art). */
@@ -259,4 +372,15 @@ export function getNodeType(
 
 export function getLinkType(type: string): LinkTypeInfo | undefined {
   return LINK_CATALOG[type];
+}
+
+/** All page-level annotation kinds (zones, flow paths, policy markers). */
+export function annotationCatalog(): AnnotationTypeInfo[] {
+  return Object.values(ANNOTATION_CATALOG);
+}
+
+export function getAnnotationType(
+  kind: AnnotationKind,
+): AnnotationTypeInfo | undefined {
+  return ANNOTATION_CATALOG[kind];
 }

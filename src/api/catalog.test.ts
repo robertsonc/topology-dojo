@@ -6,6 +6,8 @@ import {
   getNodeType,
   getLinkType,
   customNodeInfo,
+  annotationCatalog,
+  getAnnotationType,
 } from './catalog.js';
 import { defaultSpec } from '../nodes/spec.js';
 
@@ -43,6 +45,31 @@ describe('capability catalog', () => {
     );
     const cloud = getNodeType('cloud')!;
     expect(cloud.fields.some((f) => f.key === 'innerClouds')).toBe(true);
+  });
+
+  it('describes every annotation kind (zones / flow paths / markers)', () => {
+    const kinds = new Set(annotationCatalog().map((a) => a.kind));
+    expect(kinds).toEqual(new Set(['zone', 'flowPath', 'policyMarker']));
+    // Each kind names the page array it lives in (the contract surface).
+    expect(getAnnotationType('zone')?.collection).toBe('zones');
+    expect(getAnnotationType('flowPath')?.collection).toBe('flowPaths');
+    expect(getAnnotationType('policyMarker')?.collection).toBe('policyMarkers');
+  });
+
+  it('exposes annotation enums + ref fields discoverably', () => {
+    const zone = getAnnotationType('zone')!;
+    expect(zone.fields.find((f) => f.key === 'nodes')?.kind).toBe('refs');
+    expect(zone.fields.find((f) => f.key === 'borderStyle')?.options).toContain(
+      'dotted',
+    );
+    const flow = getAnnotationType('flowPath')!;
+    expect(flow.fields.find((f) => f.key === 'waypoints')?.kind).toBe('refs');
+    expect(flow.fields.some((f) => f.animation)).toBe(true);
+    const marker = getAnnotationType('policyMarker')!;
+    expect(marker.fields.find((f) => f.key === 'type')?.options).toContain(
+      'deny',
+    );
+    expect(marker.fields.find((f) => f.key === 'nodeId')?.kind).toBe('ref');
   });
 
   it('includes custom node types when provided', () => {

@@ -38,6 +38,23 @@ describe('builder', () => {
     expect(doc.customNodes).toHaveLength(1);
     expect(doc.customNodes[0]!.size).toBe(40);
   });
+
+  it('builds the annotation layer fluently with generated ids', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'cloud', x: 1, y: 1 })
+      .zone({ label: 'LAN', nodes: ['a', 'b'] })
+      .flowPath({ waypoints: ['a', 'b'] })
+      .policyMarker({ nodeId: 'a', type: 'inspect' })
+      .build();
+    const page = doc.pages[0]!;
+    expect(page.zones).toHaveLength(1);
+    expect(page.zones[0]!.id).toMatch(/^z/);
+    // zone() defaults a missing member list to [].
+    expect(page.flowPaths[0]!.waypoints).toEqual(['a', 'b']);
+    expect(page.policyMarkers[0]!.nodeId).toBe('a');
+  });
 });
 
 describe('validateDocument', () => {
@@ -96,5 +113,54 @@ describe('validateDocument', () => {
     const probs = validateDocument(doc);
     expect(probs.every((p) => p.level === 'warning')).toBe(true);
     expect(isValid(doc)).toBe(true);
+  });
+
+  it('passes a document with a well-formed annotation layer', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'cloud', x: 1, y: 1 })
+      .zone({ id: 'z', label: 'LAN', nodes: ['a', 'b'] })
+      .flowPath({ id: 'f', waypoints: ['a', 'b'] })
+      .policyMarker({ id: 'm', nodeId: 'a', type: 'inspect' })
+      .build();
+    expect(validateDocument(doc)).toEqual([]);
+  });
+
+  it('errors when a policy marker targets a missing node', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .policyMarker({ id: 'm', nodeId: 'ghost', type: 'deny' })
+      .build();
+    const probs = validateDocument(doc);
+    expect(
+      probs.some((p) => p.level === 'error' && /ghost/.test(p.message)),
+    ).toBe(true);
+  });
+
+  it('warns on zone members / flow waypoints that do not exist', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .zone({ id: 'z', nodes: ['a', 'nope'] })
+      .flowPath({ id: 'f', waypoints: ['a', 'gone'] })
+      .build();
+    const probs = validateDocument(doc);
+    expect(probs.some((p) => /missing node "nope"/.test(p.message))).toBe(true);
+    expect(probs.some((p) => /missing "gone"/.test(p.message))).toBe(true);
+    // Both are warnings — a dangling annotation ref shouldn't block rendering.
+    expect(isValid(doc)).toBe(true);
+  });
+
+  it('warns when a flow path has fewer than two waypoints', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .flowPath({ id: 'f', waypoints: ['a'] })
+      .build();
+    expect(
+      validateDocument(doc).some((p) => /at least 2 waypoints/.test(p.message)),
+    ).toBe(true);
   });
 });

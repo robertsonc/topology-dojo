@@ -34,6 +34,27 @@ describe('headless render (Node, no browser)', () => {
     expect(svg).toContain('#65aef9'); // custom interpreter ran in Node
   });
 
+  it('renders the annotation layer (zone, flow path, policy marker)', () => {
+    const doc = createDocument('Net')
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'cloud', x: 600, y: 200 })
+      .zone({ id: 'z', label: 'Edge', nodes: ['a', 'b'], color: '#65aef9' })
+      .flowPath({
+        id: 'f',
+        label: 'App',
+        waypoints: ['a', 'b'],
+        color: '#01a982',
+      })
+      .policyMarker({ id: 'm', nodeId: 'a', type: 'inspect', color: '#fc6161' })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    expect(svg).toContain('tds-zone'); // zone rectangle group
+    expect(svg).toContain('data-zone-id="z"');
+    expect(svg).toContain('data-tds-flowpath="f"'); // animated overlay route
+    expect(svg).toContain('data-tds-marker="m"'); // enforcement badge
+  });
+
   it('throws on an out-of-range page index', () => {
     const doc = createDocument().page().build();
     expect(() => renderDocumentToSVG(doc, 5)).toThrow();

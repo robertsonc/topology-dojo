@@ -44,6 +44,13 @@ export function parseDoc(input: unknown): TopologyDocument | null {
       nodes: Array.isArray(p.nodes) ? (p.nodes as Page['nodes']) : [],
       links: Array.isArray(p.links) ? (p.links as Page['links']) : [],
       anchors: Array.isArray(p.anchors) ? (p.anchors as Page['anchors']) : [],
+      zones: Array.isArray(p.zones) ? (p.zones as Page['zones']) : [],
+      flowPaths: Array.isArray(p.flowPaths)
+        ? (p.flowPaths as Page['flowPaths'])
+        : [],
+      policyMarkers: Array.isArray(p.policyMarkers)
+        ? (p.policyMarkers as Page['policyMarkers'])
+        : [],
     });
   }
   if (pages.length === 0) return null;

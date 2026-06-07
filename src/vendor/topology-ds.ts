@@ -45,11 +45,78 @@ export interface AnchorConfig {
   y: number;
 }
 
+/**
+ * A zone — a labeled region that visually groups member nodes. The engine
+ * auto-sizes a dashed/solid border around the members (+ padding); there is no
+ * explicit rectangle to draw, so a zone is defined purely by its membership.
+ */
+export interface ZoneConfig {
+  id: string;
+  /** Ids of member nodes the region encompasses. */
+  nodes: string[];
+  label?: string;
+  sublabel?: string;
+  description?: string;
+  color?: string;
+  borderStyle?: 'dashed' | 'solid' | 'dotted';
+  padding?: number;
+  labelAlign?: 'left' | 'center' | 'right';
+  /** Id of an enclosing zone (zones may nest). */
+  parentZone?: string;
+}
+
+/**
+ * A flow path — an animated overlay route that threads through an ordered list
+ * of node/anchor ids, drawn on top of the topology (particles / dashes / pulse).
+ */
+export interface FlowPathConfig {
+  id: string;
+  /** Ordered node/anchor ids the path passes through (≥2). */
+  waypoints: string[];
+  label?: string;
+  name?: string;
+  color?: string;
+  animation?: 'particles' | 'dashed' | 'pulse';
+  speed?: 'slow' | 'medium' | 'fast' | number;
+  direction?: 'forward' | 'reverse' | 'bidirectional';
+  width?: number;
+  opacity?: number;
+}
+
+/** Policy actions a marker can represent (enforcement badge on a node). */
+export type PolicyMarkerType =
+  | 'inspect'
+  | 'allow'
+  | 'deny'
+  | 'redirect'
+  | 'encrypt'
+  | 'decrypt'
+  | 'nat'
+  | 'load-balance'
+  | 'log';
+
+/** A policy marker — an enforcement badge pinned to a node. */
+export interface PolicyMarkerConfig {
+  id: string;
+  /** Id of the node the badge attaches to. */
+  nodeId: string;
+  type: PolicyMarkerType;
+  label?: string;
+  color?: string;
+  /** Placement relative to the node centre. */
+  align?: 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW' | 'C';
+  /** Optional association with a flow path. */
+  flowPathId?: string;
+}
+
 /** The minimal slice of the vendored engine instance we drive. */
 interface EngineInstance {
   node(id: string, cfg: Record<string, unknown>): void;
   link(id: string, cfg: Record<string, unknown>): void;
   anchor(id: string, pos: { x: number; y: number }): void;
+  zone(id: string, cfg: Record<string, unknown>): void;
+  flowPath(id: string, cfg: Record<string, unknown>): void;
+  policyMarker(id: string, cfg: Record<string, unknown>): void;
   act(id: string, cfg: Record<string, unknown>): void;
   addStep(id: string, cfg: Record<string, unknown>): void;
   _buildIndex(): void;
@@ -106,6 +173,12 @@ export interface RenderablePage {
   nodes: NodeConfig[];
   links: LinkConfig[];
   anchors?: AnchorConfig[];
+  /** Region groupings drawn behind the nodes. */
+  zones?: ZoneConfig[];
+  /** Animated overlay routes drawn on top of the topology. */
+  flowPaths?: FlowPathConfig[];
+  /** Enforcement badges pinned to nodes. */
+  policyMarkers?: PolicyMarkerConfig[];
 }
 
 /**
@@ -124,6 +197,18 @@ export function renderPageSVG(page: RenderablePage): string {
   for (const l of page.links) {
     const { id, ...cfg } = l;
     topo.link(id, cfg);
+  }
+  for (const z of page.zones ?? []) {
+    const { id, ...cfg } = z;
+    topo.zone(id, cfg);
+  }
+  for (const f of page.flowPaths ?? []) {
+    const { id, ...cfg } = f;
+    topo.flowPath(id, cfg);
+  }
+  for (const m of page.policyMarkers ?? []) {
+    const { id, ...cfg } = m;
+    topo.policyMarker(id, cfg);
   }
 
   // One step that shows every element at once — a static frame, no choreography.
