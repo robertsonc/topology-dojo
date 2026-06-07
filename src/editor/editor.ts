@@ -17,6 +17,7 @@ import {
 } from '../vendor/topology-ds.js';
 import { clientToUser } from './coords.js';
 import { tidyPage } from '../api/tidy.js';
+import { cloneElements } from './clone.js';
 import type { Page } from '../pages/model.js';
 import {
   hitTestLink,
@@ -29,6 +30,7 @@ import {
 } from './geometry.js';
 
 const ACCENT = '#01a982';
+const MUTED = '#7d8a92';
 const LINK_TYPES = [
   'line',
   'tunnel',
@@ -95,6 +97,11 @@ export class Editor {
   private linkCursor: { x: number; y: number } | null = null;
   private linkSel: string | null = null;
   private linkSeq = 0;
+  /** Copy/paste buffer (cloned elements, page-independent). */
+  private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
+  /** True while a run of arrow-nudges is coalescing into one undo entry. */
+  private nudgeActive = false;
+  private nudgeTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private art: SVGSVGElement,
@@ -198,6 +205,13 @@ export class Editor {
       if (!n) continue;
       const b = nodeBounds(n);
       const p = 6;
+      if (n.locked === true) {
+        // Locked: muted dashed outline, no drag handles, a small lock glyph.
+        out +=
+          `<rect x="${b.x - p}" y="${b.y - p}" width="${b.w + p * 2}" height="${b.h + p * 2}" fill="none" stroke="${MUTED}" stroke-width="1.5" stroke-dasharray="3 3" rx="4"/>` +
+          `<text x="${b.x + b.w + p - 2}" y="${b.y - p}" text-anchor="end" font-size="11" fill="${MUTED}">🔒</text>`;
+        continue;
+      }
       out += `<rect x="${b.x - p}" y="${b.y - p}" width="${b.w + p * 2}" height="${b.h + p * 2}" fill="none" stroke="${ACCENT}" stroke-width="1.5" rx="4"/>`;
       // corner handles
       for (const [hx, hy] of [
@@ -302,9 +316,17 @@ export class Editor {
   /* ── history ──────────────────────────────────────────────────── */
 
   private snapshot(): void {
+    this.nudgeActive = false; // any new snapshot ends a nudge-coalescing run
     this.undoStack.push(JSON.stringify(serialize(this.page)));
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
+  }
+
+  private newNodeId(): string {
+    return `n${Date.now().toString(36)}${(this.nodeSeq++).toString(36)}`;
+  }
+  private newLinkId(): string {
+    return `l${Date.now().toString(36)}${(this.linkSeq++).toString(36)}`;
   }
 
   private restore(json: string): void {
@@ -402,6 +424,163 @@ export class Editor {
       this.fireSelect();
       this.fireLinkSelect();
     }
+  }
+
+  /* ── clipboard / duplicate / select-all ───────────────────────── */
+
+  /** Select every node on the page. */
+  selectAll(): void {
+    this.linkSel = null;
+    this.sel = new Set(this.page.nodes.map((n) => n.id));
+    this.renderOverlay();
+    this.fireSelect();
+    this.fireLinkSelect();
+  }
+
+  /** Copy the selected nodes (+ links internal to them) into the clipboard. */
+  copySelection(): void {
+    if (this.sel.size === 0) return;
+    const ids = this.sel;
+    this.clipboard = {
+      nodes: this.page.nodes
+        .filter((n) => ids.has(n.id))
+        .map((n) => structuredClone(n)),
+      links: this.page.links
+        .filter((l) => ids.has(l.from) && ids.has(l.to))
+        .map((l) => structuredClone(l)),
+    };
+  }
+
+  /** Copy then delete the selection. */
+  cut(): void {
+    if (this.sel.size === 0) return;
+    this.copySelection();
+    this.deleteSelected();
+  }
+
+  /** Paste the clipboard (offset), selecting the new nodes. */
+  paste(): void {
+    if (!this.clipboard || this.clipboard.nodes.length === 0) return;
+    this.placeClones(this.clipboard.nodes, this.clipboard.links);
+  }
+
+  /** Duplicate the current selection in place (offset), selecting the copies. */
+  duplicateSelection(): void {
+    if (this.sel.size === 0) return;
+    const ids = this.sel;
+    const nodes = this.page.nodes.filter((n) => ids.has(n.id));
+    const links = this.page.links.filter(
+      (l) => ids.has(l.from) && ids.has(l.to),
+    );
+    this.placeClones(nodes, links);
+  }
+
+  private placeClones(srcNodes: NodeConfig[], srcLinks: LinkConfig[]): void {
+    if (srcNodes.length === 0) return;
+    this.snapshot();
+    const { nodes, links } = cloneElements(srcNodes, srcLinks, {
+      nextNodeId: () => this.newNodeId(),
+      nextLinkId: () => this.newLinkId(),
+      dx: 24,
+      dy: 24,
+    });
+    this.page.nodes.push(...nodes);
+    this.page.links.push(...links);
+    this.linkSel = null;
+    this.sel = new Set(nodes.map((n) => n.id));
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireSelect();
+    this.fireLinkSelect();
+  }
+
+  /* ── nudge (arrow keys) ───────────────────────────────────────── */
+
+  /** Move the (unlocked) selected nodes by (dx,dy); coalesces into one undo. */
+  nudge(dx: number, dy: number): void {
+    const movable = [...this.sel]
+      .map((id) => this.page.nodes.find((n) => n.id === id))
+      .filter((n): n is NodeConfig => !!n && n.locked !== true);
+    if (movable.length === 0) return;
+    if (!this.nudgeActive) this.snapshot();
+    this.nudgeActive = true;
+    for (const n of movable) {
+      n.x = Math.round(n.x + dx);
+      n.y = Math.round(n.y + dy);
+    }
+    clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = setTimeout(() => (this.nudgeActive = false), 500);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /* ── z-order ──────────────────────────────────────────────────── */
+
+  bringToFront(): void {
+    this.zorder('front');
+  }
+  sendToBack(): void {
+    this.zorder('back');
+  }
+  bringForward(): void {
+    this.zorder('forward');
+  }
+  sendBackward(): void {
+    this.zorder('backward');
+  }
+
+  /** Reorder the sole selected node (or the selected link) within its array. */
+  private zorder(mode: 'front' | 'back' | 'forward' | 'backward'): void {
+    const arr: { id: string }[] | null = this.linkSel
+      ? this.page.links
+      : this.sel.size === 1
+        ? this.page.nodes
+        : null;
+    const id = this.linkSel ?? (this.sel.size === 1 ? [...this.sel][0]! : null);
+    if (!arr || id === null) return;
+    const i = arr.findIndex((e) => e.id === id);
+    if (i < 0) return;
+    const j =
+      mode === 'front'
+        ? arr.length - 1
+        : mode === 'back'
+          ? 0
+          : mode === 'forward'
+            ? Math.min(arr.length - 1, i + 1)
+            : Math.max(0, i - 1);
+    if (j === i) return;
+    this.snapshot();
+    const [el] = arr.splice(i, 1);
+    arr.splice(j, 0, el!);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /* ── lock ─────────────────────────────────────────────────────── */
+
+  /** Whether z-order/lock actions apply (exactly one node, or a link). */
+  canArrange(): boolean {
+    return this.linkSel !== null || this.sel.size === 1;
+  }
+
+  /** Toggle lock on the selected nodes + link (locks all unless all locked). */
+  toggleLock(): void {
+    const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
+    const link = this.linkSel
+      ? this.page.links.find((l) => l.id === this.linkSel)
+      : null;
+    const targets: { locked?: boolean }[] = [...nodes];
+    if (link) targets.push(link);
+    if (targets.length === 0) return;
+    const next = !targets.every((t) => t.locked === true);
+    this.snapshot();
+    for (const t of targets) t.locked = next;
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
   }
 
   /* ── inspector accessors / updaters ───────────────────────────── */
@@ -849,22 +1028,24 @@ export class Editor {
         this.sel.clear();
         this.sel.add(hit);
       }
-      // Begin drag of the current selection (if the hit is still selected).
+      // Begin drag of the current selection (locked nodes don't move).
       if (this.sel.has(hit)) {
         const base = new Map<string, { x: number; y: number }>();
         for (const id of this.sel) {
           const n = this.page.nodes.find((m) => m.id === id);
-          if (n) base.set(id, { x: n.x, y: n.y });
+          if (n && n.locked !== true) base.set(id, { x: n.x, y: n.y });
         }
-        this.drag = {
-          startX: p.x,
-          startY: p.y,
-          base,
-          moved: false,
-          primary: hit,
-          dx: 0,
-          dy: 0,
-        };
+        if (base.size > 0) {
+          this.drag = {
+            startX: p.x,
+            startY: p.y,
+            base,
+            moved: false,
+            primary: hit,
+            dx: 0,
+            dy: 0,
+          };
+        }
       }
     } else {
       // No node — try selecting a link, else start a marquee.

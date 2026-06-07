@@ -72,6 +72,7 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string' },
   { key: 'sublabel', label: 'Sublabel', kind: 'string' },
   { key: 'color', label: 'Color', kind: 'color' },
+  { key: 'locked', label: 'Locked', kind: 'boolean' },
 ];
 
 /** Per-type extra fields, keyed by node type (common + position are added). */
@@ -163,6 +164,7 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           { key: 'label', label: 'Label', kind: 'string' as const },
           { key: 'color', label: 'Color', kind: 'color' as const },
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
+          { key: 'locked', label: 'Locked', kind: 'boolean' as const },
         ]
       : [...POSITION, ...NODE_COMMON, ...(NODE_EXTRAS[type] ?? [])];
     return [
@@ -201,6 +203,7 @@ const LINK_COMMON: FieldSpec[] = [
     kind: 'boolean',
     animation: true,
   },
+  { key: 'locked', label: 'Locked', kind: 'boolean' },
 ];
 
 /** Per-type extra link fields. */
