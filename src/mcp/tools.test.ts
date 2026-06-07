@@ -38,6 +38,7 @@ describe('MCP tools', () => {
         'list_templates',
         'list_topologies',
         'render_svg',
+        'set_node_metadata',
         'tidy_topology',
         'validate_topology',
       ].sort(),
@@ -142,6 +143,41 @@ describe('MCP tools', () => {
     };
     expect(v.valid).toBe(true);
     expect(v.layoutClean).toBe(true);
+  });
+
+  it('sets node metadata (replace + merge) reachable via the document', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 0,
+      y: 0,
+      nodeId: 'n',
+      meta: { serial: 'SN1' },
+    });
+    call('set_node_metadata', {
+      topologyId: id,
+      nodeId: 'n',
+      meta: { hostname: 'edge-01', version: '2.3' },
+      merge: true,
+    });
+    const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.pages[0]!.nodes[0]!.meta).toMatchObject({
+      serial: 'SN1',
+      hostname: 'edge-01',
+      version: '2.3',
+    });
+    // replace (no merge) drops prior keys
+    call('set_node_metadata', {
+      topologyId: id,
+      nodeId: 'n',
+      meta: { site: 'HQ' },
+    });
+    const doc2 = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc2.pages[0]!.nodes[0]!.meta).toEqual({ site: 'HQ' });
+    expect(() =>
+      call('set_node_metadata', { topologyId: id, nodeId: 'ghost', meta: {} }),
+    ).toThrow(/unknown node/);
   });
 
   it('builds, validates, and renders a topology end to end', () => {

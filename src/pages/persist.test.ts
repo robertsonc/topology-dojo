@@ -50,6 +50,30 @@ describe('persist', () => {
     expect(back0.policyMarkers[0]!.type).toBe(page0.policyMarkers[0]!.type);
   });
 
+  it('round-trips node metadata', () => {
+    const back = parseDoc(
+      JSON.stringify({
+        pages: [
+          {
+            nodes: [
+              {
+                id: 'a',
+                type: 'ec',
+                x: 1,
+                y: 2,
+                meta: { serial: 'SN1', ports: 48 },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(back!.pages[0]!.nodes[0]!.meta).toMatchObject({
+      serial: 'SN1',
+      ports: 48,
+    });
+  });
+
   it('accepts an already-parsed object', () => {
     const doc = parseDoc({ title: 'X', pages: [blankPage('F1')] });
     expect(doc?.title).toBe('X');

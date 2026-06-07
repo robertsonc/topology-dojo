@@ -24,6 +24,12 @@ export interface NodeConfig {
   color?: string;
   /** When true, the editor won't move the node (drag/marquee/nudge skip it). */
   locked?: boolean;
+  /**
+   * Free-form key/value metadata for real-network attributes — serial numbers,
+   * software versions, hostnames, site/cluster names, etc. Flat primitives only;
+   * ignored by the renderer, carried in the document, editable via API/MCP/GUI.
+   */
+  meta?: Record<string, string | number | boolean>;
   [key: string]: unknown;
 }
 
