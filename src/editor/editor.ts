@@ -74,8 +74,12 @@ export class Editor {
   grid = 20;
   snap = true;
   gridVisible = true;
+  /** Calm canvas: render without animations (a view preference). */
+  calm = false;
 
   private drag: DragState | null = null;
+  /** Active waypoint drag on the selected link (index into link.waypoints). */
+  private wpDrag: { index: number; moved: boolean } | null = null;
   private marquee: { x0: number; y0: number; x1: number; y1: number } | null =
     null;
   /** Pan/zoom window in page coordinates (the displayed viewBox). */
@@ -116,6 +120,7 @@ export class Editor {
     this.redoStack = [];
     this.drag = null;
     this.marquee = null;
+    this.wpDrag = null;
     this.linkSel = null;
     this.linkStart = null;
     this.view = parseViewBox(page.viewBox);
@@ -147,9 +152,15 @@ export class Editor {
   }
 
   private renderArt(): void {
-    renderPageInto(this.art, this.page);
+    renderPageInto(this.art, this.page, { calm: this.calm });
     // renderPageInto resets the art viewBox to the page's; re-apply the view.
     this.applyView();
+  }
+
+  /** Toggle the calm canvas (animations off) and re-render. */
+  setCalm(on: boolean): void {
+    this.calm = on;
+    this.renderArt();
   }
 
   private gridSvg(): string {
@@ -230,9 +241,30 @@ export class Editor {
     if (pts.length < 2) return '';
     const d = 'M' + pts.map((p) => `${p.x},${p.y}`).join(' L');
     let out = `<path d="${d}" fill="none" stroke="${ACCENT}" stroke-width="3" opacity="0.5"/>`;
-    for (const p of pts)
-      out += `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${ACCENT}"/>`;
+    const s = this.handleSize();
+    // Endpoints (follow their nodes — not draggable): small dim dots.
+    const ends = [pts[0]!, pts[pts.length - 1]!];
+    for (const p of ends)
+      out += `<circle cx="${p.x}" cy="${p.y}" r="${s * 0.5}" fill="${ACCENT}" opacity="0.6"/>`;
+    // Midpoint "add" handles: hollow circle with a + on each segment.
+    for (let k = 0; k < pts.length - 1; k++) {
+      const m = midpoint(pts[k]!, pts[k + 1]!);
+      out +=
+        `<circle data-wp-add="${k}" cx="${m.x}" cy="${m.y}" r="${s * 0.6}" fill="${ACCENT}" fill-opacity="0.12" stroke="${ACCENT}" stroke-width="1"/>` +
+        `<path d="M${m.x - s * 0.3},${m.y} h${s * 0.6} M${m.x},${m.y - s * 0.3} v${s * 0.6}" stroke="${ACCENT}" stroke-width="1"/>`;
+    }
+    // Waypoint handles (draggable squares).
+    for (let i = 1; i < pts.length - 1; i++) {
+      const p = pts[i]!;
+      out += `<rect data-wp="${i - 1}" x="${p.x - s}" y="${p.y - s}" width="${s * 2}" height="${s * 2}" rx="2" fill="${ACCENT}" stroke="#fff" stroke-width="1"/>`;
+    }
     return out;
+  }
+
+  /** Half-size of an interaction handle, in user units (≈7 screen px). */
+  private handleSize(): number {
+    const wpx = this.overlay.getBoundingClientRect().width || 1;
+    return Math.max(3, (7 * this.view.w) / wpx);
   }
 
   private linkPreviewSvg(): string {
@@ -680,9 +712,65 @@ export class Editor {
     this.overlay.addEventListener('pointerdown', (e) => this.onDown(e));
     this.overlay.addEventListener('pointermove', (e) => this.onMove(e));
     this.overlay.addEventListener('pointerup', (e) => this.onUp(e));
+    this.overlay.addEventListener('dblclick', (e) => this.onDblClick(e));
     this.overlay.addEventListener('wheel', (e) => this.onWheel(e), {
       passive: false,
     });
+  }
+
+  /**
+   * If `p` lands on a waypoint handle of the selected link, begin dragging it; if
+   * it lands on a segment's midpoint "+" handle, insert a new waypoint there and
+   * drag that. Returns true when a grab started.
+   */
+  private tryWaypointGrab(p: { x: number; y: number }): boolean {
+    const link = this.page.links.find((l) => l.id === this.linkSel);
+    if (!link) return false;
+    const pts = linkPolyline(this.page, link);
+    if (pts.length < 2) return false;
+    const tol = this.handleSize() * 1.4;
+    // Existing waypoint handles (polyline indices 1..n-2).
+    for (let i = 1; i < pts.length - 1; i++) {
+      if (dist(p, pts[i]!) <= tol) {
+        this.wpDrag = { index: i - 1, moved: false };
+        return true;
+      }
+    }
+    // Segment midpoint "add" handles → insert a waypoint at segment index k.
+    for (let k = 0; k < pts.length - 1; k++) {
+      const m = midpoint(pts[k]!, pts[k + 1]!);
+      if (dist(p, m) <= tol) {
+        this.snapshot();
+        const wps = link.waypoints ? [...link.waypoints] : [];
+        wps.splice(k, 0, { x: Math.round(m.x), y: Math.round(m.y) });
+        link.waypoints = wps;
+        this.wpDrag = { index: k, moved: true };
+        this.renderArt();
+        this.onChange();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Double-click a waypoint handle to remove that bend point. */
+  private onDblClick(e: MouseEvent): void {
+    if (this.tool !== 'select' || !this.linkSel) return;
+    const link = this.page.links.find((l) => l.id === this.linkSel);
+    if (!link?.waypoints?.length) return;
+    const p = clientToUser(this.overlay, e.clientX, e.clientY);
+    const tol = this.handleSize() * 1.4;
+    for (let i = 0; i < link.waypoints.length; i++) {
+      if (dist(p, link.waypoints[i]!) <= tol) {
+        this.snapshot();
+        link.waypoints.splice(i, 1);
+        if (link.waypoints.length === 0) delete link.waypoints;
+        this.renderArt();
+        this.renderOverlay();
+        this.onChange();
+        return;
+      }
+    }
   }
 
   /** Wheel = zoom toward the cursor (keeps the point under the cursor fixed). */
@@ -709,6 +797,14 @@ export class Editor {
       return;
     }
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
+
+    // Editing waypoints on the selected link takes priority over other hits.
+    if (this.tool === 'select' && this.linkSel && this.tryWaypointGrab(p)) {
+      this.overlay.setPointerCapture(e.pointerId);
+      this.renderOverlay();
+      return;
+    }
+
     const hit = hitTestNode(this.page, p.x, p.y);
 
     // Link tool: click source node, then target node, to create a link.
@@ -803,6 +899,21 @@ export class Editor {
       this.renderOverlay();
       return;
     }
+    if (this.wpDrag) {
+      const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      const link = this.page.links.find((l) => l.id === this.linkSel);
+      const wp = link?.waypoints?.[this.wpDrag.index];
+      if (wp) {
+        if (!this.wpDrag.moved) {
+          this.snapshot();
+          this.wpDrag.moved = true;
+        }
+        wp.x = this.snapVal(pp.x);
+        wp.y = this.snapVal(pp.y);
+        this.renderOverlay();
+      }
+      return;
+    }
     if (!this.drag && !this.marquee) return;
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
     if (this.drag) {
@@ -824,6 +935,21 @@ export class Editor {
     this.overlay.releasePointerCapture(e.pointerId);
     if (this.pan) {
       this.pan = null;
+      return;
+    }
+    if (this.wpDrag) {
+      if (this.wpDrag.moved) {
+        const link = this.page.links.find((l) => l.id === this.linkSel);
+        const wp = link?.waypoints?.[this.wpDrag.index];
+        if (wp) {
+          wp.x = Math.round(wp.x);
+          wp.y = Math.round(wp.y);
+        }
+        this.renderArt();
+        this.onChange();
+      }
+      this.wpDrag = null;
+      this.renderOverlay();
       return;
     }
     if (this.drag) {
@@ -921,6 +1047,20 @@ function spacingGuide(
     labelX: gx,
     labelY: (Math.min(...ys) + Math.max(...ys)) / 2,
   };
+}
+
+function dist(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function midpoint(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): { x: number; y: number } {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
 function clamp(v: number, lo: number, hi: number): number {

@@ -124,6 +124,14 @@ interface EngineInstance {
   _svgDefs(): string;
   _steps: unknown[];
   step: number;
+  /** When true, the engine omits animations (particles, pulses, glints). */
+  reducedMotion: boolean;
+}
+
+/** Render options shared by the page renderers. */
+export interface RenderOptions {
+  /** Calm canvas: suppress motion (animated flow particles, link dots, glints). */
+  calm?: boolean;
 }
 
 /** Plugin shape accepted by the engine's static registerNodeType. */
@@ -185,9 +193,13 @@ export interface RenderablePage {
  * Render a page to an SVG inner-markup string (defs + ambient + elements),
  * meant to be injected into an `<svg viewBox=…>` inside a `.tds-canvas`.
  */
-export function renderPageSVG(page: RenderablePage): string {
+export function renderPageSVG(
+  page: RenderablePage,
+  opts: RenderOptions = {},
+): string {
   const Engine = engine();
   const topo = new Engine({ viewBox: page.viewBox });
+  if (opts.calm) topo.reducedMotion = true;
 
   for (const a of page.anchors ?? []) topo.anchor(a.id, { x: a.x, y: a.y });
   for (const n of page.nodes) {
@@ -237,8 +249,12 @@ export function renderPageSVG(page: RenderablePage): string {
 }
 
 /** Render a page directly into a host `<svg>` element, syncing its viewBox. */
-export function renderPageInto(svg: SVGSVGElement, page: RenderablePage): void {
+export function renderPageInto(
+  svg: SVGSVGElement,
+  page: RenderablePage,
+  opts: RenderOptions = {},
+): void {
   svg.setAttribute('viewBox', page.viewBox);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  svg.innerHTML = renderPageSVG(page);
+  svg.innerHTML = renderPageSVG(page, opts);
 }

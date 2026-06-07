@@ -55,6 +55,20 @@ describe('headless render (Node, no browser)', () => {
     expect(svg).toContain('data-tds-marker="m"'); // enforcement badge
   });
 
+  it('calm mode suppresses animation in the output', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'cloud', x: 600, y: 200 })
+      .flowPath({ id: 'f', waypoints: ['a', 'b'], animation: 'particles' })
+      .build();
+    const lively = renderDocumentToSVG(doc, 0);
+    const calm = renderDocumentToSVG(doc, 0, { calm: true });
+    expect(lively).toContain('<animateMotion'); // particles animate by default
+    expect(calm).not.toContain('<animateMotion'); // calm = static frame
+    expect(calm).toContain('data-tds-flowpath="f"'); // route still drawn
+  });
+
   it('throws on an out-of-range page index', () => {
     const doc = createDocument().page().build();
     expect(() => renderDocumentToSVG(doc, 5)).toThrow();

@@ -4,10 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Topology Dojo</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- JetBrains Mono is self-hosted via @fontsource (imported in main.ts) so
+         the app renders identically offline / on Cloudflare with no external fetch. -->
     <!-- Vendored legacy renderer + theme (loaded as classic scripts; expose window.TopologyDesigner) -->
     <link rel="stylesheet" href="/vendor/topology-ds.css" />
     <script src="/vendor/core/graph.js"></script>
