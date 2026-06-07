@@ -24,7 +24,8 @@ import {
 import { annotationCatalog, linkCatalog, nodeCatalog } from '../api/catalog.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
-import { renderDocumentToSVG } from '../server/render.js';
+import type { RenderOptions } from '../render/core.js';
+import type { TopologyDocument } from '../pages/model.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
 import { TopologyStore } from './store.js';
 
@@ -33,6 +34,20 @@ export interface ToolDef {
   description: string;
   inputShape: z.ZodRawShape;
   handler: (args: Record<string, unknown>) => unknown;
+}
+
+/**
+ * Runtime dependencies injected into the tools — chiefly the SVG renderer, which
+ * differs by runtime (Node uses `createRequire`; the Worker uses a bundled
+ * engine). Keeping it injected means `tools.ts` has no runtime-specific imports
+ * and bundles cleanly for Cloudflare Workers.
+ */
+export interface ToolDeps {
+  renderDocument: (
+    doc: TopologyDocument,
+    pageIndex?: number,
+    opts?: RenderOptions,
+  ) => string;
 }
 
 /* Reusable field fragments ------------------------------------------------- */
@@ -68,8 +83,8 @@ const MARKER = [
   'log',
 ] as const;
 
-/** Build the full set of tools bound to a store. */
-export function createTools(store: TopologyStore): ToolDef[] {
+/** Build the full set of tools bound to a store and runtime deps. */
+export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
   return [
     {
       name: 'describe_capabilities',
@@ -414,7 +429,7 @@ export function createTools(store: TopologyStore): ToolDef[] {
           .describe('0-based page index; defaults to 0.'),
       },
       handler: (a) =>
-        renderDocumentToSVG(
+        deps.renderDocument(
           store.get(String(a.topologyId)),
           (a.pageIndex as number | undefined) ?? 0,
         ),

@@ -7,7 +7,7 @@ adapter over `src/api` (authoring/validation) and `src/server/render` (headless
 SVG) — there are no UI-only capabilities, so everything the editor can express
 is reachable here too.
 
-## Run
+## Run (local, stdio)
 
 ```bash
 npm run mcp        # tsx src/mcp/server.ts  — speaks MCP over stdio
@@ -26,6 +26,31 @@ Wire it into an MCP client (e.g. Claude Desktop / Claude Code) as a stdio server
   },
 }
 ```
+
+## Run (remote, Cloudflare)
+
+The same tool set is served over **Streamable HTTP** at `/mcp` by the Cloudflare
+Worker (`worker/index.ts`), alongside the static app. Each MCP session is a
+Durable Object (`TopologyMcp`) holding that session's in-memory `TopologyStore`;
+the renderer is the same engine-agnostic core, with the vendored engine bundled
+instead of `require`d. Auth is a **single shared secret** via
+`Authorization: Bearer <key>`.
+
+Deploy (on your Cloudflare account):
+
+```bash
+npx wrangler secret put MCP_API_KEY   # set the shared bearer secret once
+npm run deploy                        # npm run build && wrangler deploy
+```
+
+The connected Workers Builds Git integration also deploys on push (build command
+`npm run build`). After deploy, connect a client to
+`https://<your-worker-domain>/mcp` with header `Authorization: Bearer <key>`.
+
+> State note: a session's topology lives in the Durable Object's memory for the
+> session's lifetime; export with `get_topology` if you need to persist it. Auth
+> is intentionally minimal (one shared key) — graduate to per-key KV or OAuth if
+> you need multiple/revocable credentials.
 
 ## Model
 

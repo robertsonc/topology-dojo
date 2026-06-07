@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TopologyStore } from './store.js';
 import { createTools, type ToolDef } from './tools.js';
+import { renderDocumentToSVG } from '../server/render.js';
 import type { TopologyDocument } from '../pages/model.js';
 
 describe('MCP tools', () => {
@@ -11,7 +12,7 @@ describe('MCP tools', () => {
 
   beforeEach(() => {
     store = new TopologyStore();
-    tools = createTools(store);
+    tools = createTools(store, { renderDocument: renderDocumentToSVG });
   });
 
   it('exposes the full authoring + render + discovery surface', () => {
