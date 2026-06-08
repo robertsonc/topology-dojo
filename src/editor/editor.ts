@@ -132,6 +132,8 @@ export class Editor {
     private onLinkSelect: (linkId: string | null) => void = () => {},
     /** Called when the selected anchor changes (drives the anchor inspector). */
     private onAnchorSelect: (anchorId: string | null) => void = () => {},
+    /** Called whenever the view (pan/zoom/page) changes (drives the status bar). */
+    private onView: () => void = () => {},
   ) {
     this.view = parseViewBox(page.viewBox);
     this.bind();
@@ -237,6 +239,7 @@ export class Editor {
     const vb = `${this.view.x} ${this.view.y} ${this.view.w} ${this.view.h}`;
     this.art.setAttribute('viewBox', vb);
     this.overlay.setAttribute('viewBox', vb);
+    this.onView();
   }
 
   private renderArt(): void {
@@ -596,6 +599,68 @@ export class Editor {
     this.renderOverlay();
     this.fireSelect();
     this.fireLinkSelect();
+  }
+
+  /* ── select by / filter ───────────────────────────────────────── */
+
+  /** Replace the selection with all nodes matching `predicate`. */
+  private selectWhere(predicate: (n: NodeConfig) => boolean): void {
+    this.linkSel = null;
+    this.clearAnchorSel();
+    this.sel = new Set(this.page.nodes.filter(predicate).map((n) => n.id));
+    this.renderOverlay();
+    this.fireSelect();
+    this.fireLinkSelect();
+  }
+
+  /** The first currently-selected node (selection order is page order). */
+  private firstSelectedNode(): NodeConfig | null {
+    return this.page.nodes.find((n) => this.sel.has(n.id)) ?? null;
+  }
+
+  /** Select every node sharing the (first) selected node's type. */
+  selectSameType(): void {
+    const ref = this.firstSelectedNode();
+    if (ref) this.selectWhere((n) => n.type === ref.type);
+  }
+
+  /** Select every node sharing the (first) selected node's color. */
+  selectSameColor(): void {
+    const ref = this.firstSelectedNode();
+    if (ref) this.selectWhere((n) => n.color === ref.color);
+  }
+
+  /** Invert the node selection (select the unselected, deselect the selected). */
+  invertSelection(): void {
+    const had = this.sel;
+    this.selectWhere((n) => !had.has(n.id));
+  }
+
+  /**
+   * Grow the selection by one hop: add every node linked to a selected node.
+   * Repeatable — press again to keep expanding across the connected component.
+   */
+  growConnected(): void {
+    if (this.sel.size === 0) return;
+    const next = new Set(this.sel);
+    for (const l of this.page.links) {
+      if (this.sel.has(l.from) && this.page.nodes.some((n) => n.id === l.to))
+        next.add(l.to);
+      if (this.sel.has(l.to) && this.page.nodes.some((n) => n.id === l.from))
+        next.add(l.from);
+    }
+    this.linkSel = null;
+    this.clearAnchorSel();
+    this.sel = next;
+    this.renderOverlay();
+    this.fireSelect();
+    this.fireLinkSelect();
+  }
+
+  /** Current zoom factor (1 = 100%): page width over the displayed width. */
+  zoom(): number {
+    const [, , pw] = parseVB(this.page.viewBox);
+    return pw / this.view.w;
   }
 
   /** Copy the selected nodes (+ links internal to them) into the clipboard. */

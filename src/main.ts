@@ -10,6 +10,7 @@ import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/600.css';
 import '@fontsource/jetbrains-mono/700.css';
 import { Editor } from './editor/editor.js';
+import { clientToUser } from './editor/coords.js';
 import {
   blankPage,
   duplicatePage,
@@ -78,6 +79,14 @@ app.innerHTML = `
         <option value="circular">circular</option>
         <option value="force">force-directed</option>
       </select>
+      <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion">
+        <option value="">⛶ select…</option>
+        <option value="type">same type</option>
+        <option value="color">same color</option>
+        <option value="connected">connected (grow)</option>
+        <option value="invert">invert</option>
+        <option value="all">all</option>
+      </select>
       <button class="tbtn" id="tFit" title="Fit view (0)">⤢ fit</button>
       <span class="align-group" id="alignGroup" hidden>
         <button class="tbtn ab" data-align="left" title="Align left">⇤</button>
@@ -107,6 +116,7 @@ app.innerHTML = `
   </div>
 
   <footer class="filmstrip" id="filmstrip"></footer>
+  <footer class="statusbar" id="statusbar"></footer>
 `;
 
 const artSvg = app.querySelector<SVGSVGElement>('#page-canvas')!;
@@ -126,8 +136,13 @@ function markDirty(): void {
 }
 function onDocChange(): void {
   renderFilmstrip();
+  renderStatus();
   markDirty();
 }
+
+// Guards the status bar from rendering before `editor`/`statusbar` are set up
+// (the Editor constructor fires onView during construction).
+let statusReady = false;
 
 const editor = new Editor(
   artSvg,
@@ -137,6 +152,7 @@ const editor = new Editor(
   onSelectionChange,
   onLinkSelectChange,
   onAnchorSelectChange,
+  () => renderStatus(),
 );
 
 /* Replace the whole document (open / new) and refresh everything. */
@@ -238,10 +254,53 @@ function setTool(t: 'select' | 'link' | 'anchor'): void {
   selectBtn.classList.toggle('on', t === 'select');
   linkBtn.classList.toggle('on', t === 'link');
   anchorBtn.classList.toggle('on', t === 'anchor');
+  renderStatus();
 }
 selectBtn.addEventListener('click', () => setTool('select'));
 linkBtn.addEventListener('click', () => setTool('link'));
 anchorBtn.addEventListener('click', () => setTool('anchor'));
+
+/* Select-by dropdown — select nodes by a criterion (resets to placeholder). */
+const selectBySel = app.querySelector<HTMLSelectElement>('#tSelectBy')!;
+selectBySel.addEventListener('change', () => {
+  const mode = selectBySel.value;
+  selectBySel.value = '';
+  if (mode === 'type') editor.selectSameType();
+  else if (mode === 'color') editor.selectSameColor();
+  else if (mode === 'connected') editor.growConnected();
+  else if (mode === 'invert') editor.invertSelection();
+  else if (mode === 'all') editor.selectAll();
+});
+
+/* Status bar — live tool / cursor / element counts / zoom. */
+const statusbar = app.querySelector<HTMLElement>('#statusbar')!;
+let cursor: { x: number; y: number } | null = null;
+function renderStatus(): void {
+  if (!statusReady) return; // editor / statusbar not wired yet
+  const p = editor.page;
+  const sel = editor.selectionCount();
+  const cur = cursor ? `${cursor.x}, ${cursor.y}` : '–';
+  statusbar.innerHTML =
+    `<span><span class="sb-k">tool</span> ${editor.tool}</span>` +
+    `<span><span class="sb-k">x,y</span> ${cur}</span>` +
+    `<span><span class="sb-k">nodes</span> ${p.nodes.length}</span>` +
+    `<span><span class="sb-k">links</span> ${p.links.length}</span>` +
+    `<span><span class="sb-k">anchors</span> ${p.anchors.length}</span>` +
+    `<span><span class="sb-k">zones</span> ${p.zones.length}</span>` +
+    `<span><span class="sb-k">selected</span> ${sel}</span>` +
+    `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>`;
+}
+// Live cursor readout (page coordinates) while hovering the canvas.
+overlaySvg.addEventListener('pointermove', (e) => {
+  const u = clientToUser(overlaySvg, e.clientX, e.clientY);
+  cursor = { x: Math.round(u.x), y: Math.round(u.y) };
+  renderStatus();
+});
+overlaySvg.addEventListener('pointerleave', () => {
+  cursor = null;
+  renderStatus();
+});
+statusReady = true;
 
 /* Inspector — properties of the single selected node, link, or anchor. */
 const inspector = app.querySelector<HTMLElement>('#inspector')!;
@@ -260,6 +319,7 @@ function onSelectionChange(count: number): void {
     .querySelectorAll<HTMLButtonElement>('[data-dist]')
     .forEach((b) => (b.disabled = count < 3));
   renderInspector();
+  renderStatus();
 }
 alignGroup
   .querySelectorAll<HTMLButtonElement>('[data-align]')
@@ -1235,3 +1295,4 @@ function esc(s: string): string {
 
 renderFilmstrip();
 renderInspector();
+renderStatus();
