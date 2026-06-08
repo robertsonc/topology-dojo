@@ -21,6 +21,16 @@
         --accent: #01a982;
         --font: 'JetBrains Mono', ui-monospace, monospace;
       }
+      /* Light theme — overrides the chrome + canvas backdrop (engine node art
+         keeps its own colors, which read fine on a light canvas). */
+      :root.light {
+        --bg: #f4f6f8;
+        --panel: #ffffff;
+        --panel2: #eaeef2;
+        --border: #cdd5dd;
+        --text: #1d1f27;
+        --muted: #5c6b76;
+      }
       * {
         box-sizing: border-box;
       }
@@ -36,7 +46,12 @@
       #app {
         display: grid;
         grid-template-rows: auto 1fr auto auto;
+        /* Constrain the single column so the wide legacy canvas can't blow out
+           the grid past the viewport (keeps absolute UI like the minimap in view). */
+        grid-template-columns: minmax(0, 1fr);
         height: 100vh;
+        width: 100vw;
+        overflow: hidden;
       }
 
       /* Status bar — live tool / cursor / counts / zoom readout. */
@@ -711,6 +726,80 @@
         height: 1px;
         margin: 4px 6px;
         background: var(--border);
+      }
+
+      /* Minimap overview (bottom-right of the canvas). */
+      .minimap {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        width: 170px;
+        height: 120px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        cursor: pointer;
+        z-index: 7;
+      }
+
+      /* Find / jump-to-element overlay (Ctrl+F). */
+      .find {
+        position: fixed;
+        top: 64px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 30;
+        width: 340px;
+        padding: 6px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        font-family: var(--font);
+      }
+      .find input {
+        width: 100%;
+        box-sizing: border-box;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 13px;
+        padding: 7px 9px;
+        outline: none;
+      }
+      .find input:focus {
+        border-color: var(--accent);
+      }
+      .find-results {
+        margin-top: 6px;
+        max-height: 240px;
+        overflow-y: auto;
+      }
+      .find-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 9px;
+        border-radius: 5px;
+        font-size: 12px;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .find-item.on,
+      .find-item:hover {
+        background: rgba(1, 169, 130, 0.16);
+        color: var(--accent);
+      }
+      .find-item .fi-type {
+        color: var(--muted);
+      }
+      .find-empty {
+        padding: 6px 9px;
+        font-size: 12px;
+        color: var(--muted);
       }
     </style>
   </head>
