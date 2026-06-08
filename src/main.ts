@@ -88,7 +88,7 @@ app.innerHTML = `
         <button class="tbtn ab" data-dist="h" title="Distribute horizontally" disabled>↔̲</button>
         <button class="tbtn ab" data-dist="v" title="Distribute vertically" disabled>↕̲</button>
       </span>
-      <span class="hint">click/shift/box select · drag move · wheel zoom · middle-drag pan · ←/→ flip</span>
+      <span class="hint">click/shift/box select · drag move · wheel zoom · space/middle-drag pan · ←/→ flip</span>
     </div>
   </header>
 
@@ -981,6 +981,13 @@ window.addEventListener('keydown', (e) => {
   )
     return;
 
+  // Spacebar → hand mode (hold and left-drag to pan). Prevent page scroll.
+  if (e.key === ' ') {
+    e.preventDefault();
+    editor.setSpacePan(true);
+    return;
+  }
+
   const mod = e.ctrlKey || e.metaKey;
   if (mod) {
     const k = e.key.toLowerCase();
@@ -1181,6 +1188,12 @@ window.addEventListener('resize', closeCtxMenu);
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeCtxMenu();
 });
+
+// Release hand mode when Space lifts (or the window loses focus while held).
+window.addEventListener('keyup', (e) => {
+  if (e.key === ' ') editor.setSpacePan(false);
+});
+window.addEventListener('blur', () => editor.setSpacePan(false));
 
 function esc(s: string): string {
   return s.replace(/[<>&"]/g, (c) =>

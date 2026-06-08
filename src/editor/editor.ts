@@ -89,6 +89,8 @@ export class Editor {
   /** Pan/zoom window in page coordinates (the displayed viewBox). */
   private view = { x: 0, y: 0, w: 1050, h: 700 };
   private pan: { startClientX: number; startClientY: number } | null = null;
+  /** Spacebar held → left-drag pans (hand mode), like Figma/Sketch. */
+  private spaceHeld = false;
   private nodeSeq = 0;
   /** Smart guides computed during the current drag (alignment + spacing). */
   private guides: Guide[] = [];
@@ -175,6 +177,17 @@ export class Editor {
   resetView(): void {
     this.view = parseViewBox(this.page.viewBox);
     this.applyView();
+  }
+
+  /**
+   * Enter/leave spacebar pan ("hand") mode: while held, a left-drag pans the
+   * canvas instead of selecting, and the cursor shows a grab hand.
+   */
+  setSpacePan(on: boolean): void {
+    if (this.spaceHeld === on) return;
+    this.spaceHeld = on;
+    // Don't fight an in-progress drag's "grabbing" cursor.
+    if (!this.pan) this.overlay.style.cursor = on ? 'grab' : '';
   }
 
   /* ── page properties ──────────────────────────────────────────── */
@@ -1106,11 +1119,12 @@ export class Editor {
   }
 
   private onDown(e: PointerEvent): void {
-    // Middle button (or space-less default) → pan.
-    if (e.button === 1) {
+    // Pan: middle button, or left button while Space is held (hand mode).
+    if (e.button === 1 || (this.spaceHeld && e.button === 0)) {
       e.preventDefault();
       this.pan = { startClientX: e.clientX, startClientY: e.clientY };
       this.overlay.setPointerCapture(e.pointerId);
+      this.overlay.style.cursor = 'grabbing';
       return;
     }
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
@@ -1254,6 +1268,8 @@ export class Editor {
     this.overlay.releasePointerCapture(e.pointerId);
     if (this.pan) {
       this.pan = null;
+      // Back to the hand cursor if Space is still held, else default.
+      this.overlay.style.cursor = this.spaceHeld ? 'grab' : '';
       return;
     }
     if (this.wpDrag) {
