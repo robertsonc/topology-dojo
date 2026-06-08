@@ -42,7 +42,8 @@ npm run mcp         # run the MCP server over stdio
    via the anchor tool, select-by (type / color / connected / invert), find /
    jump-to-element (Ctrl+F), a minimap overview, a right-click context menu,
    align / distribute, light / dark + calm-canvas toggles, a catalog-driven
-   palette + inspector (incl. document/page properties), a filmstrip of pages, a
+   palette (with live node-art previews) + inspector (incl. document/page
+   properties), a filmstrip of pages, a
    live status bar, a Node Designer for custom node types, and one-click **Tidy**
    (auto-layout).
 2. **The headless API** (`src/api`) — build / mutate / validate / lay out /

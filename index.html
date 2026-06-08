@@ -213,15 +213,41 @@
         padding: 2px 4px 4px;
       }
       .pitem {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         background: var(--panel2);
         border: 1px solid var(--border);
         color: var(--text);
         border-radius: 7px;
-        padding: 6px 9px;
+        padding: 5px 8px;
         cursor: pointer;
         font-size: 12px;
         font-family: var(--font);
         text-align: left;
+      }
+      .pitem:hover {
+        border-color: var(--accent);
+      }
+      .ppreview {
+        width: 32px;
+        height: 24px;
+        flex: none;
+      }
+      .plabel {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .pitem.design {
+        justify-content: center;
+        color: var(--muted);
+      }
+      .pdefs {
+        position: absolute;
+        width: 0;
+        height: 0;
       }
       .pitem:hover {
         border-color: rgba(1, 169, 130, 0.5);

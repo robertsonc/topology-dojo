@@ -11,6 +11,7 @@ import '@fontsource/jetbrains-mono/600.css';
 import '@fontsource/jetbrains-mono/700.css';
 import { Editor } from './editor/editor.js';
 import { clientToUser } from './editor/coords.js';
+import { engineDefs, renderPageSVG } from './vendor/topology-ds.js';
 import {
   blankPage,
   duplicatePage,
@@ -1001,6 +1002,27 @@ function upsertCustomNode(spec: CustomNodeSpec): void {
   markDirty();
 }
 
+/**
+ * A small SVG thumbnail of a node type's actual engine art (label-less), for the
+ * palette. Renders a one-node page through the same engine the canvas uses, so
+ * the preview always matches what gets drawn. `<defs>` is stripped because the
+ * palette shares one copy (see buildPalette) — keeps the DOM light across types.
+ */
+function nodePreviewSVG(type: string): string {
+  let inner: string;
+  try {
+    inner = renderPageSVG({
+      viewBox: '0 0 110 84',
+      nodes: [{ id: 'p', type, x: 55, y: 42 }],
+      links: [],
+    });
+  } catch {
+    return ''; // unknown/unrenderable type — fall back to the label only
+  }
+  inner = inner.replace(/<defs[\s\S]*?<\/defs>/, '');
+  return `<svg class="ppreview" viewBox="0 0 110 84" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${inner}</svg>`;
+}
+
 function buildPalette(): void {
   const byCat = new Map<string, NodeTypeInfo[]>();
   for (const info of nodeCatalog(doc.customNodes)) {
@@ -1008,13 +1030,15 @@ function buildPalette(): void {
     list.push(info);
     byCat.set(info.category, list);
   }
-  let html = '';
+  // One shared copy of the engine's filter/gradient defs for every preview.
+  let html = `<svg class="pdefs" width="0" height="0" aria-hidden="true">${engineDefs()}</svg>`;
   for (const [cat, infos] of byCat) {
     html += `<div class="palette-h">${esc(cat)}</div>`;
     for (const info of infos) {
+      const item = `<button class="pitem" data-type="${esc(info.type)}">${nodePreviewSVG(info.type)}<span class="plabel">${esc(info.label)}</span></button>`;
       html += info.custom
-        ? `<div class="pcustom"><button class="pitem" data-type="${esc(info.type)}">${esc(info.label)}</button><button class="pedit" data-edit="${esc(info.type)}" title="Edit type">✎</button></div>`
-        : `<button class="pitem" data-type="${esc(info.type)}">${esc(info.label)}</button>`;
+        ? `<div class="pcustom">${item}<button class="pedit" data-edit="${esc(info.type)}" title="Edit type">✎</button></div>`
+        : item;
     }
   }
   html += `<button class="pitem design" id="pDesign">＋ design node</button>`;
