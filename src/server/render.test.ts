@@ -82,6 +82,28 @@ describe('headless render (Node, no browser)', () => {
     expect(svg).toContain('★'); // explicit per-marker icon override
   });
 
+  it('honors per-link flow controls (count / speed / reverse)', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 150, y: 200 })
+      .node({ id: 'b', type: 'cloud', x: 650, y: 200 })
+      .link({
+        id: 't',
+        type: 'tunnel',
+        from: 'a',
+        to: 'b',
+        flowParticles: 6,
+        flowSpeed: 1.2,
+        reverseFlow: true,
+      })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    const particles = (svg.match(/<animateMotion/g) ?? []).length;
+    expect(particles).toBe(6); // the requested particle count
+    expect(svg).toContain('keyPoints="1;0"'); // reversed direction
+    expect(svg).toContain('dur="1.20s"'); // first particle at the requested speed
+  });
+
   it('throws on an out-of-range page index', () => {
     const doc = createDocument().page().build();
     expect(() => renderDocumentToSVG(doc, 5)).toThrow();

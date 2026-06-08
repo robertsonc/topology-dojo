@@ -638,6 +638,20 @@ export class Editor {
     this.onChange();
   }
 
+  /** Swap the selected link's endpoints (and reverse any waypoints). */
+  swapLink(): void {
+    const link = this.getSelectedLink();
+    if (!link) return;
+    this.snapshot();
+    const { from, to } = link;
+    link.from = to;
+    link.to = from;
+    if (link.waypoints) link.waypoints = [...link.waypoints].reverse();
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
   /* ── annotations (zones / flow paths / policy markers) ────────── */
 
   /** Ids of the currently selected nodes — used to seed zones / flow paths. */

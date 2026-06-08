@@ -2862,8 +2862,26 @@ class TopologyDesigner {
     return `<g${blur}><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${0.7*op}"/></g>`;
   }
 
+  /** Animated flow particles along a path, controllable by per-link flow cfg. */
+  _flowParticles(path, color, opts) {
+    const speed = opts && opts.speed ? opts.speed : 2.5;
+    const count = Math.max(1, Math.min(32, Math.round((opts && opts.particles) || 3)));
+    const rev = opts && opts.reverse ? 'keyPoints="1;0" keyTimes="0;1" calcMode="linear"' : '';
+    let s = '';
+    for (let i = 0; i < count; i++) {
+      s += `<circle r="3" fill="${color}" opacity=".8" filter="url(#tds-bloom)">` +
+        `<animateMotion dur="${(speed + i * 0.4).toFixed(2)}s" repeatCount="indefinite" begin="${(i * 0.4).toFixed(2)}s" ${rev} path="${path}"/></circle>`;
+    }
+    return s;
+  }
+
+  /** True if a per-link flow config overrides the default particle animation. */
+  _hasFlowCfg(opts) {
+    return !!opts && (opts.speed != null || opts.particles != null || opts.reverse != null);
+  }
+
   /** IPsec-style tunnel — ethereal multi-layer glow with bloom, tube volume & filmic grading */
-  _renderTunnel(stepId, phaseNum, path, color, label, lx, ly, op, dots = true) {
+  _renderTunnel(stepId, phaseNum, path, color, label, lx, ly, op, dots = true, flow) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -2885,11 +2903,12 @@ class TopologyDesigner {
       `<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-dasharray="2000" stroke-dashoffset="0" opacity=".65"${ad}/>` +
       // Layer 5: Dashed encrypted overlay
       `<path d="${path}" fill="none" stroke="${color}" stroke-width="1" stroke-dasharray="6 5" opacity=".3"/>` +
-      // Animated particles (forward + trailing + reverse)
+      // Animated particles (forward + trailing + reverse); per-link flow cfg overrides.
       (dots && !this.reducedMotion && !mobile ?
-        `<circle r="3.5" fill="${color}" opacity=".9" filter="url(#tds-bloom)"><animateMotion dur="2.5s" repeatCount="indefinite" path="${path}"/></circle>` +
-        `<circle r="2" fill="${color}" opacity=".5"><animateMotion dur="2.5s" repeatCount="indefinite" begin="1.2s" path="${path}"/></circle>` +
-        `<circle r="3" fill="${color}" opacity=".85" filter="url(#tds-bloom)"><animateMotion dur="2.8s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="${path}"/></circle>`
+        (this._hasFlowCfg(flow) ? this._flowParticles(path, color, flow) :
+          `<circle r="3.5" fill="${color}" opacity=".9" filter="url(#tds-bloom)"><animateMotion dur="2.5s" repeatCount="indefinite" path="${path}"/></circle>` +
+          `<circle r="2" fill="${color}" opacity=".5"><animateMotion dur="2.5s" repeatCount="indefinite" begin="1.2s" path="${path}"/></circle>` +
+          `<circle r="3" fill="${color}" opacity=".85" filter="url(#tds-bloom)"><animateMotion dur="2.8s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="${path}"/></circle>`)
       : '') +
       (label && lx != null ? `<rect x="${lx-61}" y="${ly-10}" width="122" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
         `<rect x="${lx-60}" y="${ly-9}" width="120" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
@@ -2898,7 +2917,7 @@ class TopologyDesigner {
   }
 
   /** WireGuard-style dashed tunnel */
-  _renderWG(stepId, phaseNum, x1, y1, x2, y2, label, op, dots = true, labelOffset) {
+  _renderWG(stepId, phaseNum, x1, y1, x2, y2, label, op, dots = true, labelOffset, flow) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -2909,7 +2928,7 @@ class TopologyDesigner {
     return `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="6" opacity=".03" filter="url(#tds-glow-blue)"/>` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="1.2" stroke-dasharray="5 3" opacity=".5"/>` +
-      (dots && !this.reducedMotion ? `<circle r="2.5" fill="#65aef9" opacity=".8" filter="url(#tds-bloom)"><animateMotion dur="2.5s" repeatCount="indefinite" path="M${x1},${y1} L${x2},${y2}"/></circle>` : '') +
+      (dots && !this.reducedMotion ? (this._hasFlowCfg(flow) ? this._flowParticles(`M${x1},${y1} L${x2},${y2}`, '#65aef9', flow) : `<circle r="2.5" fill="#65aef9" opacity=".8" filter="url(#tds-bloom)"><animateMotion dur="2.5s" repeatCount="indefinite" path="M${x1},${y1} L${x2},${y2}"/></circle>`) : '') +
       (label ? `<rect x="${lx-47}" y="${ly-9}" width="94" height="18" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
         `<rect x="${lx-46}" y="${ly-8}" width="92" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
         `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="#65aef9" font-size="7" font-weight="600">${_esc(label)}</text>` : '') +
@@ -2917,7 +2936,7 @@ class TopologyDesigner {
   }
 
   /** Animated flow path (with optional custom SVG path) */
-  _renderFlow(stepId, phaseNum, path, color, label, lx, ly, op, dots = true) {
+  _renderFlow(stepId, phaseNum, path, color, label, lx, ly, op, dots = true, flow) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -2925,8 +2944,9 @@ class TopologyDesigner {
       `<path d="${path}" fill="none" stroke="${color}" stroke-width="8" opacity=".03" filter="url(#tds-glow)"/>` +
       `<path d="${path}" fill="none" stroke="${color}" stroke-width="1.8" stroke-dasharray="2000" stroke-dashoffset="0" opacity=".4" ${anim ? `class="tds-draw-phase" style="animation-delay:${delay}s"` : ''}/>` +
       `<path d="${path}" fill="none" stroke="${color}" stroke-width=".8" stroke-dasharray="5 4" opacity=".2"/>` +
-      (dots && !this.reducedMotion ? `<circle r="3.5" fill="${color}" opacity=".9" filter="url(#tds-bloom)"><animateMotion dur="3s" repeatCount="indefinite" path="${path}"/></circle>` +
-        `<circle r="2" fill="${color}" opacity=".5"><animateMotion dur="3s" repeatCount="indefinite" begin="1s" path="${path}"/></circle>` : '') +
+      (dots && !this.reducedMotion ? (this._hasFlowCfg(flow) ? this._flowParticles(path, color, flow) :
+        `<circle r="3.5" fill="${color}" opacity=".9" filter="url(#tds-bloom)"><animateMotion dur="3s" repeatCount="indefinite" path="${path}"/></circle>` +
+        `<circle r="2" fill="${color}" opacity=".5"><animateMotion dur="3s" repeatCount="indefinite" begin="1s" path="${path}"/></circle>`) : '') +
       (label && lx != null ? `<rect x="${lx-55}" y="${ly-10}" width="110" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
         `<rect x="${lx-54}" y="${ly-9}" width="108" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
         `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="${color}" font-size="7.5" font-weight="600">${_esc(label)}</text>` : '') +
@@ -3348,6 +3368,7 @@ class TopologyDesigner {
     const to = this._pos(linkCfg.to);
     const op = linkCfg.opacity != null ? linkCfg.opacity : Math.min(this._dimFor(linkCfg.from), this._dimFor(linkCfg.to));
     const color = linkCfg.color || '#01a982';
+    const _flow = { speed: linkCfg.flowSpeed, particles: linkCfg.flowParticles, reverse: linkCfg.reverseFlow };
     let svg = '';
 
     // Waypoint-aware path: if link has waypoints, build path through them
@@ -3378,15 +3399,15 @@ class TopologyDesigner {
         const tloX = linkCfg.labelOffset?.x || 0, tloY = linkCfg.labelOffset?.y || 0;
         const tlx = tmx + Math.sin(ta) * 16 + Math.cos(ta) * tloX + Math.sin(ta) * tloY;
         const tly = tmy - Math.cos(ta) * 16 + Math.sin(ta) * tloX - Math.cos(ta) * tloY;
-        svg = this._renderTunnel(stepId, phaseNum, tunnelPath, color, linkCfg.label, tlx, tly, op, linkCfg.dots !== false);
+        svg = this._renderTunnel(stepId, phaseNum, tunnelPath, color, linkCfg.label, tlx, tly, op, linkCfg.dots !== false, _flow);
         break;
       }
       case 'wireguard': {
         if (waypointPath) {
           const mx = (from.x + to.x) / 2 + (linkCfg.labelOffset?.x || 0), my = (from.y + to.y) / 2 + (linkCfg.labelOffset?.y || 0);
-          svg = this._renderFlow(stepId, phaseNum, waypointPath, '#65aef9', linkCfg.label, mx, my, op, linkCfg.dots !== false);
+          svg = this._renderFlow(stepId, phaseNum, waypointPath, '#65aef9', linkCfg.label, mx, my, op, linkCfg.dots !== false, _flow);
         } else {
-          svg = this._renderWG(stepId, phaseNum, from.x, from.y, to.x, to.y, linkCfg.label, op, linkCfg.dots !== false, linkCfg.labelOffset);
+          svg = this._renderWG(stepId, phaseNum, from.x, from.y, to.x, to.y, linkCfg.label, op, linkCfg.dots !== false, linkCfg.labelOffset, _flow);
         }
         break;
       }
@@ -3394,7 +3415,7 @@ class TopologyDesigner {
         const path = waypointPath || linkCfg.path || `M${from.x},${from.y} L${to.x},${to.y}`;
         const lpos = linkCfg.labelPos || {};
         const lo = linkCfg.labelOffset;
-        svg = this._renderFlow(stepId, phaseNum, path, color, linkCfg.label, (lpos.x || 0) + (lo?.x || 0) || lpos.x, (lpos.y || 0) + (lo?.y || 0) || lpos.y, op, linkCfg.dots !== false);
+        svg = this._renderFlow(stepId, phaseNum, path, color, linkCfg.label, (lpos.x || 0) + (lo?.x || 0) || lpos.x, (lpos.y || 0) + (lo?.y || 0) || lpos.y, op, linkCfg.dots !== false, _flow);
         break;
       }
       case 'packet':
