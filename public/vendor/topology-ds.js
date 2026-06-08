@@ -3704,7 +3704,9 @@ class TopologyDesigner {
             // Layer opacity
             const layerOp = this._getLayerOpacity(this._getElementLayer(elemId));
             if (layerOp <= 0) continue; // skip hidden layer elements
-            let op = Math.min(this._dimFor(elemId), blastDim) * layerOp;
+            // Honor per-node opacity in this render path (the other path already
+            // does at _renderNodeSVG); keeps node opacity a real document field.
+            let op = Math.min(this._dimFor(elemId), blastDim) * layerOp * (nodeCfg.opacity != null ? nodeCfg.opacity : 1);
             const halo = this._haloForNode(nodeCfg);
 
             // Resolve overlay cloud spans to actual positions BEFORE rendering

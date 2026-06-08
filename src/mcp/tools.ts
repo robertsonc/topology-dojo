@@ -191,6 +191,36 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       },
     },
     {
+      name: 'set_document_title',
+      description: 'Rename a topology document.',
+      inputShape: { topologyId, title: z.string() },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        doc.title = String(a.title);
+        return { id: String(a.topologyId), title: doc.title };
+      },
+    },
+    {
+      name: 'set_page_properties',
+      description:
+        'Update an existing page’s name and/or viewBox (the canvas extent "minX minY width height").',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        name: z.string().optional(),
+        viewBox: z.string().optional(),
+      },
+      handler: (a) => {
+        const page = store.page(
+          String(a.topologyId),
+          a.pageIndex as number | undefined,
+        );
+        if (a.name !== undefined) page.name = String(a.name);
+        if (a.viewBox !== undefined) page.viewBox = String(a.viewBox);
+        return { name: page.name, viewBox: page.viewBox };
+      },
+    },
+    {
       name: 'add_node',
       description:
         'Add a node to a page. `type` must be a known node type (see describe_capabilities). Extra per-type fields go in `extra`.',

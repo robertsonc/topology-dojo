@@ -75,6 +75,9 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string' },
   { key: 'sublabel', label: 'Sublabel', kind: 'string' },
   { key: 'color', label: 'Color', kind: 'color' },
+  { key: 'opacity', label: 'Opacity', kind: 'number' },
+  { key: 'labelColor', label: 'Label color', kind: 'color' },
+  { key: 'labelOffset', label: 'Label offset', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   { key: 'meta', label: 'Metadata', kind: 'record' },
 ];

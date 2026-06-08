@@ -38,7 +38,9 @@ describe('MCP tools', () => {
         'list_templates',
         'list_topologies',
         'render_svg',
+        'set_document_title',
         'set_node_metadata',
+        'set_page_properties',
         'tidy_topology',
         'validate_topology',
       ].sort(),
@@ -76,6 +78,45 @@ describe('MCP tools', () => {
     expect(v.valid).toBe(true); // overlaps are warnings, not errors
     expect(v.layoutClean).toBe(false);
     expect(v.problems.some((p) => /overlap/.test(p.message))).toBe(true);
+  });
+
+  it('edits document title and page properties (name / viewBox)', () => {
+    const { id } = call('create_topology', { title: 'Old' }) as { id: string };
+    const t = call('set_document_title', { topologyId: id, title: 'New' }) as {
+      title: string;
+    };
+    expect(t.title).toBe('New');
+
+    call('add_page', { topologyId: id, name: 'Page 2' });
+    const p = call('set_page_properties', {
+      topologyId: id,
+      pageIndex: 1,
+      name: 'Renamed',
+      viewBox: '0 0 1600 900',
+    }) as { name: string; viewBox: string };
+    expect(p.name).toBe('Renamed');
+    expect(p.viewBox).toBe('0 0 1600 900');
+
+    // The edits persist on the stored document (the contract surface).
+    const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.title).toBe('New');
+    expect(doc.pages[1]!.name).toBe('Renamed');
+    expect(doc.pages[1]!.viewBox).toBe('0 0 1600 900');
+  });
+
+  it('node common fields include opacity + label controls (catalog-driven)', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    const node = call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 100,
+      y: 100,
+      nodeId: 'a',
+      extra: { opacity: 0.5, labelColor: '#fc6161', labelOffset: 30 },
+    }) as { opacity?: number; labelColor?: string; labelOffset?: number };
+    expect(node.opacity).toBe(0.5);
+    expect(node.labelColor).toBe('#fc6161');
+    expect(node.labelOffset).toBe(30);
   });
 
   it('tidy_topology resolves overlaps the layout checker flagged', () => {

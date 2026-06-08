@@ -78,6 +78,12 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         err,
         warn,
       );
+      const op = (n as Record<string, unknown>).opacity;
+      if (op !== undefined && (typeof op !== 'number' || op < 0 || op > 1))
+        warn(
+          `${at} node "${n.id}"`,
+          `opacity ${String(op)} should be between 0 and 1`,
+        );
     }
     for (const a of page.anchors) {
       claim(a.id, 'anchor');

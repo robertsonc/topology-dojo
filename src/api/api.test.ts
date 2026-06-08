@@ -186,6 +186,23 @@ describe('validateDocument', () => {
     expect(probs.some((p) => /meta\."bad"/.test(p.message))).toBe(true);
   });
 
+  it('warns when node opacity is out of the 0–1 range', () => {
+    const doc = emptyDocument();
+    const page = addPage(doc);
+    addNode(page, { id: 'a', type: 'ec', x: 0, y: 0, opacity: 1.5 });
+    const probs = validateDocument(doc);
+    expect(
+      probs.some((p) => p.level === 'warning' && /opacity/.test(p.message)),
+    ).toBe(true);
+    // A valid opacity produces no opacity warning.
+    const ok = emptyDocument();
+    const p2 = addPage(ok);
+    addNode(p2, { id: 'b', type: 'ec', x: 0, y: 0, opacity: 0.5 });
+    expect(validateDocument(ok).some((p) => /opacity/.test(p.message))).toBe(
+      false,
+    );
+  });
+
   it('warns when a flow path has fewer than two waypoints', () => {
     const doc = createDocument()
       .page()

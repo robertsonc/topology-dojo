@@ -104,6 +104,26 @@ describe('headless render (Node, no browser)', () => {
     expect(svg).toContain('dur="1.20s"'); // first particle at the requested speed
   });
 
+  it('honors common node fields (opacity / label color / label offset)', () => {
+    const doc = createDocument('Net')
+      .page()
+      .node({
+        id: 'a',
+        type: 'ec',
+        x: 200,
+        y: 200,
+        label: 'Dimmed',
+        opacity: 0.5,
+        labelColor: '#fc6161',
+        labelOffset: 40,
+      })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    expect(/opacity:0?\.5\b/.test(svg)).toBe(true); // node opacity applied
+    expect(svg).toContain('#fc6161'); // label colour
+    expect(svg).toContain('y="240"'); // label offset (y = 200 + 40)
+  });
+
   it('throws on an out-of-range page index', () => {
     const doc = createDocument().page().build();
     expect(() => renderDocumentToSVG(doc, 5)).toThrow();
