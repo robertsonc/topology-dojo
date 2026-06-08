@@ -65,6 +65,7 @@ app.innerHTML = `
     <div class="bar-actions">
       <button class="tbtn on" id="tSelect" title="Select/move tool (V)">⤧ select</button>
       <button class="tbtn" id="tLink" title="Draw link tool (L)">🔗 link</button>
+      <button class="tbtn" id="tAnchor" title="Drop anchor tool (A) — free-floating link endpoints">◇ anchor</button>
       <button class="tbtn on" id="tGrid" title="Toggle grid (R)">▦ grid</button>
       <button class="tbtn on" id="tSnap" title="Toggle snap (G)">⌗ snap</button>
       <button class="tbtn" id="tCalm" title="Calm canvas — pause animations (C)">◓ calm</button>
@@ -135,6 +136,7 @@ const editor = new Editor(
   onDocChange,
   onSelectionChange,
   onLinkSelectChange,
+  onAnchorSelectChange,
 );
 
 /* Replace the whole document (open / new) and refresh everything. */
@@ -230,17 +232,23 @@ fileInput.addEventListener('change', async () => {
 /* Tool toggle (select / link) */
 const selectBtn = app.querySelector<HTMLButtonElement>('#tSelect')!;
 const linkBtn = app.querySelector<HTMLButtonElement>('#tLink')!;
-function setTool(t: 'select' | 'link'): void {
+const anchorBtn = app.querySelector<HTMLButtonElement>('#tAnchor')!;
+function setTool(t: 'select' | 'link' | 'anchor'): void {
   editor.setTool(t);
   selectBtn.classList.toggle('on', t === 'select');
   linkBtn.classList.toggle('on', t === 'link');
+  anchorBtn.classList.toggle('on', t === 'anchor');
 }
 selectBtn.addEventListener('click', () => setTool('select'));
 linkBtn.addEventListener('click', () => setTool('link'));
+anchorBtn.addEventListener('click', () => setTool('anchor'));
 
-/* Inspector — properties of the single selected node or link. */
+/* Inspector — properties of the single selected node, link, or anchor. */
 const inspector = app.querySelector<HTMLElement>('#inspector')!;
 function onLinkSelectChange(_linkId: string | null): void {
+  renderInspector();
+}
+function onAnchorSelectChange(_anchorId: string | null): void {
   renderInspector();
 }
 
@@ -460,6 +468,7 @@ function wireProperties(): void {
 function renderInspector(): void {
   const link = editor.getSelectedLink();
   const node = link ? null : editor.getSelectedNode();
+  const anchor = link || node ? null : editor.getSelectedAnchor();
   inspector.hidden = false;
 
   let html = '';
@@ -481,6 +490,13 @@ function renderInspector(): void {
       `<div class="insp-row"><span>Endpoints</span><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button></div>` +
       fieldsHtml(info, link as Record<string, unknown>) +
       arrangeRow();
+  } else if (anchor) {
+    html +=
+      `<div class="insp-h">Anchor</div>` +
+      `<div class="insp-row"><span>Id</span><span class="muted">${esc(anchor.id)}</span></div>` +
+      `<label class="insp-row">X<input type="number" id="a-x" value="${anchor.x}"/></label>` +
+      `<label class="insp-row">Y<input type="number" id="a-y" value="${anchor.y}"/></label>` +
+      `<div class="insp-row"><span>Endpoint for ${editor.anchorLinkCount(anchor.id)} link(s)</span><button class="tbtn ab" id="a-del" title="Delete anchor">🗑 delete</button></div>`;
   } else {
     // Nothing selected — show document + page properties.
     html += propertiesHtml();
@@ -507,6 +523,21 @@ function renderInspector(): void {
     );
     inspector.querySelector('#i-swap')?.addEventListener('click', () => {
       editor.swapLink();
+      renderInspector();
+    });
+  } else if (anchor) {
+    const ax = inspector.querySelector<HTMLInputElement>('#a-x');
+    const ay = inspector.querySelector<HTMLInputElement>('#a-y');
+    ax?.addEventListener('input', () => {
+      editor.updateAnchor({ x: Number(ax.value) }, !editing);
+      editing = true;
+    });
+    ay?.addEventListener('input', () => {
+      editor.updateAnchor({ y: Number(ay.value) }, !editing);
+      editing = true;
+    });
+    inspector.querySelector('#a-del')?.addEventListener('click', () => {
+      editor.deleteSelected();
       renderInspector();
     });
   } else {
@@ -1052,6 +1083,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === '0') editor.resetView();
   if (e.key === 'l' || e.key === 'L') setTool('link');
   if (e.key === 'v' || e.key === 'V') setTool('select');
+  if (e.key === 'a' || e.key === 'A') setTool('anchor');
   if (e.key === 'Escape') {
     editor.clearSelection();
     setTool('select');

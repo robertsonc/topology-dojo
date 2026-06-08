@@ -38,9 +38,11 @@ npm run mcp         # run the MCP server over stdio
 
 1. **The editor** — a canvas editor over the vendored rendering engine: select /
    marquee / drag, smart alignment + spacing guides, grid + snap, links with
-   on-canvas waypoint editing, align / distribute, a calm-canvas toggle, a
-   catalog-driven palette + inspector, a filmstrip of pages, a Node Designer for
-   custom node types, and one-click **Tidy** (auto-layout).
+   on-canvas waypoint editing, anchors (free-floating link endpoints) via the
+   anchor tool, a right-click context menu, align / distribute, a calm-canvas
+   toggle, a catalog-driven palette + inspector (incl. document/page
+   properties), a filmstrip of pages, a Node Designer for custom node types, and
+   one-click **Tidy** (auto-layout).
 2. **The headless API** (`src/api`) — build / mutate / validate / lay out /
    render a document in code, DOM-free. The GUI is just one client of it.
 3. **MCP** (`src/mcp`, `worker/`) — the same API exposed as tools over the Model

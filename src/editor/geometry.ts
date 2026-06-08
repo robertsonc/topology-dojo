@@ -44,6 +44,20 @@ export function nodesInRect(
     .map((n) => n.id);
 }
 
+/** Nearest anchor within `pad` user-units of the point (last drawn = on top), else null. */
+export function hitTestAnchor(
+  page: Page,
+  x: number,
+  y: number,
+  pad = 8,
+): string | null {
+  for (let i = page.anchors.length - 1; i >= 0; i--) {
+    const a = page.anchors[i]!;
+    if (Math.abs(x - a.x) <= pad && Math.abs(y - a.y) <= pad) return a.id;
+  }
+  return null;
+}
+
 /** Resolve a node or anchor id to a position (null if unknown). */
 export function resolvePos(
   page: Page,
