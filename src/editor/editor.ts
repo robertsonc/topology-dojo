@@ -9,6 +9,7 @@
  */
 import {
   renderPageInto,
+  type AnchorConfig,
   type FlowPathConfig,
   type LinkConfig,
   type NodeConfig,
@@ -21,6 +22,7 @@ import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
 import type { Page } from '../pages/model.js';
 import {
+  hitTestAnchor,
   hitTestLink,
   hitTestNode,
   linkPolyline,
@@ -94,12 +96,24 @@ export class Editor {
   private nodeSeq = 0;
   /** Smart guides computed during the current drag (alignment + spacing). */
   private guides: Guide[] = [];
-  /** Active tool: select/move, or draw-link. */
-  tool: 'select' | 'link' = 'select';
+  /** Active tool: select/move, draw-link, or drop-anchor. */
+  tool: 'select' | 'link' | 'anchor' = 'select';
   private linkStart: string | null = null;
   private linkCursor: { x: number; y: number } | null = null;
   private linkSel: string | null = null;
   private linkSeq = 0;
+  /** The selected anchor (free-floating point), or null. */
+  private anchorSel: string | null = null;
+  private anchorSeq = 0;
+  /** Active drag of the selected anchor. */
+  private anchorDrag: {
+    id: string;
+    startX: number;
+    startY: number;
+    ox: number;
+    oy: number;
+    moved: boolean;
+  } | null = null;
   /** Copy/paste buffer (cloned elements, page-independent). */
   private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
   /** True while a run of arrow-nudges is coalescing into one undo entry. */
@@ -116,6 +130,8 @@ export class Editor {
     private onSelect: (count: number) => void = () => {},
     /** Called when the selected link changes (drives the link toolbar). */
     private onLinkSelect: (linkId: string | null) => void = () => {},
+    /** Called when the selected anchor changes (drives the anchor inspector). */
+    private onAnchorSelect: (anchorId: string | null) => void = () => {},
   ) {
     this.view = parseViewBox(page.viewBox);
     this.bind();
@@ -134,11 +150,14 @@ export class Editor {
     this.wpDrag = null;
     this.linkSel = null;
     this.linkStart = null;
+    this.anchorSel = null;
+    this.anchorDrag = null;
     this.view = parseViewBox(page.viewBox);
     this.renderArt();
     this.renderOverlay();
     this.fireSelect();
     this.fireLinkSelect();
+    this.fireAnchorSelect();
   }
 
   /** Re-render the current page (e.g. after a custom node type changed). */
@@ -365,11 +384,32 @@ export class Editor {
     return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="transparent"/>`;
   }
 
+  /**
+   * Anchors as small diamond handles (the engine doesn't draw them). Always
+   * visible so they can be seen, selected, moved, and used as link endpoints;
+   * the selected one is highlighted.
+   */
+  private anchorsSvg(): string {
+    let out = '';
+    for (const a of this.page.anchors) {
+      const sel = a.id === this.anchorSel;
+      const c = sel ? ACCENT : MUTED;
+      const r = 5;
+      out +=
+        `<g data-anchor-id="${a.id}">` +
+        `<path d="M${a.x},${a.y - r} L${a.x + r},${a.y} L${a.x},${a.y + r} L${a.x - r},${a.y} Z" fill="${sel ? ACCENT : 'none'}" fill-opacity="${sel ? 0.25 : 0}" stroke="${c}" stroke-width="1.5"/>` +
+        `<circle cx="${a.x}" cy="${a.y}" r="1.5" fill="${c}"/>` +
+        `</g>`;
+    }
+    return out;
+  }
+
   private renderOverlay(): void {
     this.overlay.innerHTML =
       this.backdropSvg() +
       this.gridSvg() +
       this.guidesSvg() +
+      this.anchorsSvg() +
       this.linkSelSvg() +
       this.selectionSvg() +
       this.dragGhostSvg() +
@@ -453,40 +493,51 @@ export class Editor {
   }
 
   deleteSelected(): void {
-    if (this.sel.size === 0 && this.linkSel === null) return;
+    if (this.sel.size === 0 && this.linkSel === null && this.anchorSel === null)
+      return;
     this.snapshot();
     if (this.linkSel !== null) {
       this.page.links = this.page.links.filter((l) => l.id !== this.linkSel);
       this.linkSel = null;
       this.fireLinkSelect();
     }
+    if (this.anchorSel !== null) {
+      this.page.anchors = this.page.anchors.filter(
+        (a) => a.id !== this.anchorSel,
+      );
+      this.anchorSel = null;
+      this.fireAnchorSelect();
+    }
     if (this.sel.size > 0) {
       this.page.nodes = this.page.nodes.filter((n) => !this.sel.has(n.id));
-      // Cascade: drop links whose endpoints no longer exist.
-      const ids = new Set([
-        ...this.page.nodes.map((n) => n.id),
-        ...this.page.anchors.map((a) => a.id),
-      ]);
-      this.page.links = this.page.links.filter(
-        (l) => ids.has(l.from) && ids.has(l.to),
-      );
       this.sel.clear();
     }
+    // Cascade: drop links whose endpoints (node or anchor) no longer exist.
+    const ids = new Set([
+      ...this.page.nodes.map((n) => n.id),
+      ...this.page.anchors.map((a) => a.id),
+    ]);
+    this.page.links = this.page.links.filter(
+      (l) => ids.has(l.from) && ids.has(l.to),
+    );
     this.renderArt();
     this.renderOverlay();
     this.onChange();
     this.fireSelect();
   }
 
-  /** Clear node + link selection (Esc). */
+  /** Clear node + link + anchor selection (Esc). */
   clearSelection(): void {
-    const had = this.sel.size > 0 || this.linkSel !== null;
+    const had =
+      this.sel.size > 0 || this.linkSel !== null || this.anchorSel !== null;
     this.sel.clear();
     this.linkSel = null;
+    this.anchorSel = null;
     if (had) {
       this.renderOverlay();
       this.fireSelect();
       this.fireLinkSelect();
+      this.fireAnchorSelect();
     }
   }
 
@@ -505,6 +556,7 @@ export class Editor {
     const node = hitTestNode(this.page, p.x, p.y);
     if (node) {
       this.clearLinkSel();
+      this.clearAnchorSel();
       if (!this.sel.has(node)) {
         this.sel.clear();
         this.sel.add(node);
@@ -516,6 +568,7 @@ export class Editor {
     const link = hitTestLink(this.page, p.x, p.y);
     if (link) {
       this.sel.clear();
+      this.clearAnchorSel();
       this.fireSelect();
       if (this.linkSel !== link) {
         this.linkSel = link;
@@ -527,6 +580,7 @@ export class Editor {
     // Empty canvas — clear any current selection.
     this.sel.clear();
     this.clearLinkSel();
+    this.clearAnchorSel();
     this.fireSelect();
     this.renderOverlay();
     return { kind: 'empty', id: null };
@@ -537,6 +591,7 @@ export class Editor {
   /** Select every node on the page. */
   selectAll(): void {
     this.linkSel = null;
+    this.clearAnchorSel();
     this.sel = new Set(this.page.nodes.map((n) => n.id));
     this.renderOverlay();
     this.fireSelect();
@@ -878,9 +933,59 @@ export class Editor {
     this.onLinkSelect(this.linkSel);
   }
 
+  private fireAnchorSelect(): void {
+    this.onAnchorSelect(this.anchorSel);
+  }
+
+  private clearAnchorSel(): void {
+    if (this.anchorSel !== null) {
+      this.anchorSel = null;
+      this.fireAnchorSelect();
+    }
+  }
+
+  /* ── anchors (free-floating link endpoints) ───────────────────── */
+
+  /** The selected anchor (for the inspector), or null. */
+  getSelectedAnchor(): AnchorConfig | null {
+    if (!this.anchorSel) return null;
+    return this.page.anchors.find((a) => a.id === this.anchorSel) ?? null;
+  }
+
+  /** How many links use the given anchor as an endpoint. */
+  anchorLinkCount(id: string): number {
+    return this.page.links.filter((l) => l.from === id || l.to === id).length;
+  }
+
+  /** Patch the selected anchor's position (re-renders art + overlay). */
+  updateAnchor(patch: Partial<AnchorConfig>, commit = true): void {
+    const a = this.getSelectedAnchor();
+    if (!a) return;
+    if (commit) this.snapshot();
+    Object.assign(a, patch);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /** Drop a new anchor at a page point, select it (used by the anchor tool). */
+  private addAnchorAt(x: number, y: number): void {
+    this.snapshot();
+    const id = `a${Date.now().toString(36)}${(this.anchorSeq++).toString(36)}`;
+    this.page.anchors.push({ id, x: this.snapVal(x), y: this.snapVal(y) });
+    this.sel.clear();
+    this.clearLinkSel();
+    this.anchorSel = id;
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireSelect();
+    this.fireAnchorSelect();
+  }
+
   /* ── links ────────────────────────────────────────────────────── */
 
-  setTool(t: 'select' | 'link'): void {
+  setTool(t: 'select' | 'link' | 'anchor'): void {
     this.tool = t;
     this.linkStart = null;
     this.linkCursor = null;
@@ -1129,6 +1234,13 @@ export class Editor {
     }
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
 
+    // Anchor tool: click drops a new anchor (a free-floating link endpoint).
+    if (this.tool === 'anchor') {
+      this.addAnchorAt(p.x, p.y);
+      this.overlay.setPointerCapture(e.pointerId);
+      return;
+    }
+
     // Editing waypoints on the selected link takes priority over other hits.
     if (this.tool === 'select' && this.linkSel && this.tryWaypointGrab(p)) {
       this.overlay.setPointerCapture(e.pointerId);
@@ -1138,14 +1250,16 @@ export class Editor {
 
     const hit = hitTestNode(this.page, p.x, p.y);
 
-    // Link tool: click source node, then target node, to create a link.
+    // Link tool: click source, then target, to create a link. Endpoints may be
+    // a node or an anchor (anchors exist precisely to be link endpoints).
     if (this.tool === 'link') {
-      if (hit) {
+      const endpoint = hit ?? hitTestAnchor(this.page, p.x, p.y);
+      if (endpoint) {
         if (this.linkStart === null) {
-          this.linkStart = hit;
+          this.linkStart = endpoint;
           this.linkCursor = p;
-        } else if (hit !== this.linkStart) {
-          this.createLink(this.linkStart, hit);
+        } else if (endpoint !== this.linkStart) {
+          this.createLink(this.linkStart, endpoint);
           this.linkStart = null;
           this.linkCursor = null;
         }
@@ -1159,6 +1273,7 @@ export class Editor {
 
     if (hit) {
       this.clearLinkSel();
+      this.clearAnchorSel();
       if (e.shiftKey) {
         if (this.sel.has(hit)) this.sel.delete(hit);
         else this.sel.add(hit);
@@ -1186,10 +1301,31 @@ export class Editor {
         }
       }
     } else {
-      // No node — try selecting a link, else start a marquee.
+      // No node — try an anchor, then a link, else start a marquee.
+      const anchorHit = hitTestAnchor(this.page, p.x, p.y);
+      if (anchorHit) {
+        const a = this.page.anchors.find((m) => m.id === anchorHit)!;
+        this.sel.clear();
+        this.clearLinkSel();
+        this.anchorSel = anchorHit;
+        this.anchorDrag = {
+          id: anchorHit,
+          startX: p.x,
+          startY: p.y,
+          ox: a.x,
+          oy: a.y,
+          moved: false,
+        };
+        this.fireSelect();
+        this.fireAnchorSelect();
+        this.overlay.setPointerCapture(e.pointerId);
+        this.renderOverlay();
+        return;
+      }
       const link = hitTestLink(this.page, p.x, p.y);
       if (link) {
         this.sel.clear();
+        this.clearAnchorSel();
         this.linkSel = link;
         this.fireSelect();
         this.fireLinkSelect();
@@ -1198,6 +1334,7 @@ export class Editor {
         return;
       }
       this.clearLinkSel();
+      this.clearAnchorSel();
       if (!e.shiftKey) this.sel.clear();
       this.marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     }
@@ -1247,6 +1384,25 @@ export class Editor {
       }
       return;
     }
+    if (this.anchorDrag) {
+      const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      const a = this.page.anchors.find((m) => m.id === this.anchorDrag!.id);
+      if (a) {
+        if (!this.anchorDrag.moved) {
+          this.snapshot();
+          this.anchorDrag.moved = true;
+        }
+        a.x = this.snapVal(
+          this.anchorDrag.ox + (pp.x - this.anchorDrag.startX),
+        );
+        a.y = this.snapVal(
+          this.anchorDrag.oy + (pp.y - this.anchorDrag.startY),
+        );
+        this.renderArt(); // links to the anchor follow it
+        this.renderOverlay();
+      }
+      return;
+    }
     if (!this.drag && !this.marquee) return;
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
     if (this.drag) {
@@ -1284,6 +1440,20 @@ export class Editor {
         this.onChange();
       }
       this.wpDrag = null;
+      this.renderOverlay();
+      return;
+    }
+    if (this.anchorDrag) {
+      if (this.anchorDrag.moved) {
+        const a = this.page.anchors.find((m) => m.id === this.anchorDrag!.id);
+        if (a) {
+          a.x = Math.round(a.x);
+          a.y = Math.round(a.y);
+        }
+        this.renderArt();
+        this.onChange();
+      }
+      this.anchorDrag = null;
       this.renderOverlay();
       return;
     }
