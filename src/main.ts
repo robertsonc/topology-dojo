@@ -418,6 +418,44 @@ function fieldsHtml(
   return (info?.fields ?? []).map((f) => fieldControl(f, cfg)).join('');
 }
 
+/* Document + page properties — shown when nothing is selected. These edit the
+ * document contract directly (title, page name, canvas size); the same fields
+ * are settable headlessly via the MCP set_document_title / set_page_properties
+ * tools, so this surface is not GUI-only. */
+function propertiesHtml(): string {
+  const page = editor.page;
+  const [, , w, h] = page.viewBox.split(/\s+/).map(Number);
+  return (
+    `<div class="insp-h">Document</div>` +
+    `<label class="insp-row">Title<input id="p-title" value="${esc(doc.title)}"/></label>` +
+    `<div class="insp-h">Page</div>` +
+    `<label class="insp-row">Name<input id="p-name" value="${esc(page.name)}"/></label>` +
+    `<label class="insp-row">Canvas W<input type="number" id="p-w" min="1" value="${w || 0}"/></label>` +
+    `<label class="insp-row">Canvas H<input type="number" id="p-h" min="1" value="${h || 0}"/></label>`
+  );
+}
+
+function wireProperties(): void {
+  const title = inspector.querySelector<HTMLInputElement>('#p-title');
+  title?.addEventListener('input', () => {
+    doc.title = title.value;
+    markDirty();
+  });
+  const name = inspector.querySelector<HTMLInputElement>('#p-name');
+  name?.addEventListener('input', () => editor.renamePage(name.value));
+  // Canvas size reframes the page, so commit on change (blur/Enter), not keystroke.
+  const wIn = inspector.querySelector<HTMLInputElement>('#p-w');
+  const hIn = inspector.querySelector<HTMLInputElement>('#p-h');
+  const applySize = (): void => {
+    const [vx, vy] = editor.page.viewBox.split(/\s+/).map(Number);
+    const w = Math.max(1, Math.round(Number(wIn?.value)) || 0);
+    const h = Math.max(1, Math.round(Number(hIn?.value)) || 0);
+    editor.setViewBox(`${vx || 0} ${vy || 0} ${w} ${h}`);
+  };
+  wIn?.addEventListener('change', applySize);
+  hIn?.addEventListener('change', applySize);
+}
+
 /** Render the inspector for the current selection, driven entirely by the catalog. */
 function renderInspector(): void {
   const link = editor.getSelectedLink();
@@ -443,6 +481,9 @@ function renderInspector(): void {
       `<div class="insp-row"><span>Endpoints</span><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button></div>` +
       fieldsHtml(info, link as Record<string, unknown>) +
       arrangeRow();
+  } else {
+    // Nothing selected — show document + page properties.
+    html += propertiesHtml();
   }
   html += annotationsHtml();
   inspector.innerHTML = html;
@@ -468,6 +509,8 @@ function renderInspector(): void {
       editor.swapLink();
       renderInspector();
     });
+  } else {
+    wireProperties();
   }
   inspector.querySelector('[data-z="front"]')?.addEventListener('click', () => {
     editor.bringToFront();

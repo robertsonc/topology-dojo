@@ -22,6 +22,12 @@ export interface NodeConfig {
   label?: string;
   sublabel?: string;
   color?: string;
+  /** Node opacity, 0–1 (defaults to 1). */
+  opacity?: number;
+  /** Colour of the node's label text. */
+  labelColor?: string;
+  /** Vertical distance of the label below the node centre (defaults to 24). */
+  labelOffset?: number;
   /** When true, the editor won't move the node (drag/marquee/nudge skip it). */
   locked?: boolean;
   /**

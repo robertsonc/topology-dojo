@@ -92,6 +92,16 @@ describe('capability catalog', () => {
     );
   });
 
+  it('exposes common node opacity + label controls', () => {
+    const keys = getNodeType('ec')!.fields.map((f) => f.key);
+    for (const k of ['opacity', 'labelColor', 'labelOffset'])
+      expect(keys).toContain(k);
+    const labelColor = getNodeType('ec')!.fields.find(
+      (f) => f.key === 'labelColor',
+    );
+    expect(labelColor?.kind).toBe('color');
+  });
+
   it('includes custom node types when provided', () => {
     const spec = { ...defaultSpec(), typeName: 'sensor' };
     expect(getNodeType('sensor', [spec])?.custom).toBe(true);

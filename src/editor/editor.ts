@@ -177,6 +177,27 @@ export class Editor {
     this.applyView();
   }
 
+  /* ── page properties ──────────────────────────────────────────── */
+
+  /**
+   * Set the page's viewBox (canvas extent) and reframe to it. Not placed on the
+   * undo stack — a structural change like the filmstrip rename, kept out so that
+   * undoing node edits never resets pan/zoom.
+   */
+  setViewBox(vb: string): void {
+    this.page.viewBox = vb;
+    this.view = parseViewBox(vb);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /** Rename the current page (shown in the filmstrip). Not on the undo stack. */
+  renamePage(name: string): void {
+    this.page.name = name;
+    this.onChange();
+  }
+
   /* ── rendering ────────────────────────────────────────────────── */
 
   /** Apply the current pan/zoom window to both layers' viewBox. */

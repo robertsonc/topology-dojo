@@ -153,4 +153,7 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
   additive and default-preserving: (1) a per-marker `icon` override so the
   catalog — not the engine — owns the policy-marker glyph set (`src/api/markers.ts`);
   (2) per-link flow controls (`flowSpeed` / `flowParticles` / `reverseFlow`) honored
-  by the flow/tunnel/wireguard renderers, defaulting to the original animation.
+  by the flow/tunnel/wireguard renderers, defaulting to the original animation;
+  (3) per-node `opacity` multiplied into the primary node-render path so it is a
+  real document field (the engine's other render path already honored it) —
+  values below 0.9 also pick up the engine's existing depth-of-field blur.
