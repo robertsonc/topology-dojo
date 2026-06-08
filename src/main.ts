@@ -70,6 +70,7 @@ app.innerHTML = `
       <button class="tbtn on" id="tGrid" title="Toggle grid (R)">▦ grid</button>
       <button class="tbtn on" id="tSnap" title="Toggle snap (G)">⌗ snap</button>
       <button class="tbtn" id="tCalm" title="Calm canvas — pause animations (C)">◓ calm</button>
+      <button class="tbtn" id="tTheme" title="Toggle light / dark theme">☀ theme</button>
       <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑 delete</button>
       <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)">✦ tidy</button>
       <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm">
@@ -113,6 +114,7 @@ app.innerHTML = `
       </div>
     </div>
     <aside class="inspector" id="inspector" hidden></aside>
+    <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
 
   <footer class="filmstrip" id="filmstrip"></footer>
@@ -137,6 +139,7 @@ function markDirty(): void {
 function onDocChange(): void {
   renderFilmstrip();
   renderStatus();
+  renderMinimap();
   markDirty();
 }
 
@@ -152,7 +155,10 @@ const editor = new Editor(
   onSelectionChange,
   onLinkSelectChange,
   onAnchorSelectChange,
-  () => renderStatus(),
+  () => {
+    renderStatus();
+    renderMinimap();
+  },
 );
 
 /* Replace the whole document (open / new) and refresh everything. */
@@ -300,7 +306,149 @@ overlaySvg.addEventListener('pointerleave', () => {
   cursor = null;
   renderStatus();
 });
+
+/* Minimap — page overview with a draggable view rectangle. */
+const minimap = app.querySelector<SVGSVGElement>('#minimap')!;
+const MM_W = 170;
+const MM_H = 120;
+/** The page viewBox parsed as [x, y, w, h]. */
+function pageVB(): [number, number, number, number] {
+  const [x, y, w, h] = editor.page.viewBox.split(/\s+/).map(Number);
+  return [x || 0, y || 0, w || 1050, h || 700];
+}
+/** Fit transform from page coords into the minimap box. */
+function minimapXform(): {
+  s: number;
+  ox: number;
+  oy: number;
+  px: number;
+  py: number;
+} {
+  const [px, py, pw, ph] = pageVB();
+  const pad = 6;
+  const s = Math.min((MM_W - pad * 2) / pw, (MM_H - pad * 2) / ph);
+  return { s, ox: (MM_W - pw * s) / 2, oy: (MM_H - ph * s) / 2, px, py };
+}
+function renderMinimap(): void {
+  if (!statusReady) return;
+  const p = editor.page;
+  const [, , pw, ph] = pageVB();
+  const { s, ox, oy, px, py } = minimapXform();
+  const mx = (x: number): number => ox + (x - px) * s;
+  const my = (y: number): number => oy + (y - py) * s;
+  const dots = p.nodes
+    .map(
+      (n) =>
+        `<circle cx="${mx(n.x)}" cy="${my(n.y)}" r="2" fill="${n.color || '#7d8a92'}"/>`,
+    )
+    .join('');
+  const v = editor.getView();
+  minimap.setAttribute('viewBox', `0 0 ${MM_W} ${MM_H}`);
+  minimap.innerHTML =
+    `<rect x="${ox}" y="${oy}" width="${pw * s}" height="${ph * s}" fill="none" stroke="#7d8a92" stroke-opacity="0.5" stroke-width="1"/>` +
+    dots +
+    `<rect x="${mx(v.x)}" y="${my(v.y)}" width="${v.w * s}" height="${v.h * s}" fill="#01a982" fill-opacity="0.12" stroke="#01a982" stroke-width="1.5"/>`;
+}
+// Click / drag the minimap to recenter the view there.
+function minimapPanTo(e: PointerEvent): void {
+  const r = minimap.getBoundingClientRect();
+  const mmx = ((e.clientX - r.left) / r.width) * MM_W;
+  const mmy = ((e.clientY - r.top) / r.height) * MM_H;
+  const { s, ox, oy, px, py } = minimapXform();
+  editor.panTo(px + (mmx - ox) / s, py + (mmy - oy) / s);
+}
+minimap.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  minimap.setPointerCapture(e.pointerId);
+  minimapPanTo(e);
+});
+minimap.addEventListener('pointermove', (e) => {
+  if (e.buttons === 1) minimapPanTo(e);
+});
+
 statusReady = true;
+
+/* Find / jump-to-element (Ctrl+F) — search nodes by label / id / type and jump. */
+let findEl: HTMLDivElement | null = null;
+let findMatches: { id: string; label: string; type: string }[] = [];
+let findSel = 0;
+
+function closeFind(): void {
+  findEl?.remove();
+  findEl = null;
+}
+function jumpFind(id: string): void {
+  editor.focusNode(id);
+  closeFind();
+}
+function renderFindResults(): void {
+  const list = findEl?.querySelector<HTMLElement>('.find-results');
+  if (!list) return;
+  if (findMatches.length === 0) {
+    list.innerHTML = `<div class="find-empty">No matching nodes</div>`;
+    return;
+  }
+  list.innerHTML = findMatches
+    .map(
+      (m, i) =>
+        `<div class="find-item ${i === findSel ? 'on' : ''}" data-id="${esc(m.id)}"><span>${esc(m.label)}</span><span class="fi-type">${esc(m.type)}</span></div>`,
+    )
+    .join('');
+  list
+    .querySelectorAll<HTMLElement>('.find-item')
+    .forEach((el) =>
+      el.addEventListener('click', () => jumpFind(el.dataset.id!)),
+    );
+}
+function runFindQuery(q: string): void {
+  const s = q.trim().toLowerCase();
+  findMatches = editor.page.nodes
+    .filter(
+      (n) =>
+        !s ||
+        (n.label ?? '').toLowerCase().includes(s) ||
+        n.id.toLowerCase().includes(s) ||
+        n.type.toLowerCase().includes(s),
+    )
+    .slice(0, 50)
+    .map((n) => ({ id: n.id, label: n.label || '(no label)', type: n.type }));
+  findSel = 0;
+  renderFindResults();
+}
+function openFind(): void {
+  if (findEl) {
+    findEl.querySelector('input')?.focus();
+    return;
+  }
+  findEl = document.createElement('div');
+  findEl.className = 'find';
+  findEl.innerHTML =
+    `<input type="text" placeholder="Find node by label / id / type…" />` +
+    `<div class="find-results"></div>`;
+  app.appendChild(findEl);
+  const input = findEl.querySelector('input')!;
+  input.addEventListener('input', () => runFindQuery(input.value));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeFind();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      findSel = Math.min(findMatches.length - 1, findSel + 1);
+      renderFindResults();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      findSel = Math.max(0, findSel - 1);
+      renderFindResults();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const m = findMatches[findSel];
+      if (m) jumpFind(m.id);
+    }
+  });
+  input.focus();
+  runFindQuery('');
+}
 
 /* Inspector — properties of the single selected node, link, or anchor. */
 const inspector = app.querySelector<HTMLElement>('#inspector')!;
@@ -1044,6 +1192,24 @@ function applyCalm(on: boolean): void {
 applyCalm(localStorage.getItem(CALM_KEY) === '1');
 calmBtn.addEventListener('click', () => applyCalm(!editor.calm));
 
+/* Light / dark theme — a view preference, persisted across sessions. */
+const themeBtn = app.querySelector<HTMLButtonElement>('#tTheme')!;
+const THEME_KEY = 'topology-dojo:theme';
+function applyTheme(light: boolean): void {
+  document.documentElement.classList.toggle('light', light);
+  themeBtn.classList.toggle('on', light);
+  themeBtn.textContent = light ? '🌙 theme' : '☀ theme';
+  try {
+    localStorage.setItem(THEME_KEY, light ? 'light' : 'dark');
+  } catch {
+    // storage unavailable — non-fatal
+  }
+}
+applyTheme(localStorage.getItem(THEME_KEY) === 'light');
+themeBtn.addEventListener('click', () =>
+  applyTheme(!document.documentElement.classList.contains('light')),
+);
+
 app
   .querySelector('#tDelete')
   ?.addEventListener('click', () => editor.deleteSelected());
@@ -1092,6 +1258,9 @@ window.addEventListener('keydown', (e) => {
     } else if (k === 'a') {
       e.preventDefault();
       editor.selectAll();
+    } else if (k === 'f') {
+      e.preventDefault();
+      openFind();
     } else if (k === 'c') {
       e.preventDefault();
       editor.copySelection();
@@ -1274,6 +1443,7 @@ canvasHost.addEventListener('contextmenu', (e) => {
 // Dismiss on outside click, scroll/resize, or Escape.
 window.addEventListener('pointerdown', (e) => {
   if (ctxMenu && !ctxMenu.contains(e.target as Node)) closeCtxMenu();
+  if (findEl && !findEl.contains(e.target as Node)) closeFind();
 });
 window.addEventListener('blur', closeCtxMenu);
 window.addEventListener('resize', closeCtxMenu);
@@ -1296,3 +1466,4 @@ function esc(s: string): string {
 renderFilmstrip();
 renderInspector();
 renderStatus();
+renderMinimap();

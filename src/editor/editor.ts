@@ -200,6 +200,31 @@ export class Editor {
     this.applyView();
   }
 
+  /** The current pan/zoom window (page coordinates) — drives the minimap. */
+  getView(): { x: number; y: number; w: number; h: number } {
+    return { ...this.view };
+  }
+
+  /** Center the view on a page point, keeping the current zoom. */
+  panTo(cx: number, cy: number): void {
+    this.view.x = cx - this.view.w / 2;
+    this.view.y = cy - this.view.h / 2;
+    this.applyView();
+  }
+
+  /** Select a single node and center the view on it (Find / jump-to-element). */
+  focusNode(id: string): void {
+    const n = this.page.nodes.find((m) => m.id === id);
+    if (!n) return;
+    this.linkSel = null;
+    this.clearAnchorSel();
+    this.sel = new Set([id]);
+    this.panTo(n.x, n.y);
+    this.renderOverlay();
+    this.fireSelect();
+    this.fireLinkSelect();
+  }
+
   /**
    * Enter/leave spacebar pan ("hand") mode: while held, a left-drag pans the
    * canvas instead of selecting, and the cursor shows a grab hand.
@@ -265,7 +290,8 @@ export class Editor {
     let d = '';
     for (let x = 0; x <= vw; x += this.grid) d += `M${x},0 V${vh} `;
     for (let y = 0; y <= vh; y += this.grid) d += `M0,${y} H${vw} `;
-    return `<path d="${d}" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1" fill="none"/>`;
+    // Neutral grey so the grid reads on both the dark and light themes.
+    return `<path d="${d}" stroke="${MUTED}" stroke-opacity="0.18" stroke-width="1" fill="none"/>`;
   }
 
   private selectionSvg(): string {
