@@ -1021,6 +1021,124 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+/* Right-click context menu — adaptive to whatever is under the cursor. Every
+ * item maps to an existing editor command (nothing UI-only here): the menu is a
+ * second surface onto the same actions as the toolbar/keyboard/inspector. */
+type CtxItem =
+  | { sep: true }
+  | { label: string; run: () => void; disabled?: boolean };
+
+let ctxMenu: HTMLDivElement | null = null;
+
+function closeCtxMenu(): void {
+  ctxMenu?.remove();
+  ctxMenu = null;
+}
+
+function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
+  if (kind === 'node') {
+    const lockLabel = editor.selectionLocked() ? 'Unlock' : 'Lock';
+    return [
+      { label: 'Duplicate', run: () => editor.duplicateSelection() },
+      { label: 'Copy', run: () => editor.copySelection() },
+      { sep: true },
+      { label: 'Group into zone', run: () => addAnnotation('zone') },
+      { label: 'Add policy marker', run: () => addAnnotation('policyMarker') },
+      { sep: true },
+      {
+        label: 'Bring to front',
+        run: () => editor.bringToFront(),
+        disabled: !editor.canArrange(),
+      },
+      {
+        label: 'Send to back',
+        run: () => editor.sendToBack(),
+        disabled: !editor.canArrange(),
+      },
+      { sep: true },
+      { label: lockLabel, run: () => editor.toggleLock() },
+      { label: 'Delete', run: () => editor.deleteSelected() },
+    ];
+  }
+  if (kind === 'link') {
+    const lockLabel = editor.selectionLocked() ? 'Unlock' : 'Lock';
+    return [
+      { label: 'Swap endpoints', run: () => editor.swapLink() },
+      { sep: true },
+      { label: 'Bring to front', run: () => editor.bringToFront() },
+      { label: 'Send to back', run: () => editor.sendToBack() },
+      { sep: true },
+      { label: lockLabel, run: () => editor.toggleLock() },
+      { label: 'Delete', run: () => editor.deleteSelected() },
+    ];
+  }
+  return [
+    { label: 'Paste', run: () => editor.paste(), disabled: !editor.canPaste() },
+    { label: 'Select all', run: () => editor.selectAll() },
+    { sep: true },
+    { label: 'Tidy layout', run: () => editor.tidy() },
+  ];
+}
+
+function openCtxMenu(clientX: number, clientY: number): void {
+  closeCtxMenu();
+  const hit = editor.pickAt(clientX, clientY);
+  renderInspector();
+  const items = ctxItemsFor(hit.kind);
+
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  menu.setAttribute('role', 'menu');
+  for (const item of items) {
+    if ('sep' in item) {
+      const hr = document.createElement('div');
+      hr.className = 'ctx-sep';
+      menu.appendChild(hr);
+      continue;
+    }
+    const btn = document.createElement('button');
+    btn.className = 'ctx-item';
+    btn.type = 'button';
+    btn.textContent = item.label;
+    btn.disabled = !!item.disabled;
+    btn.addEventListener('click', () => {
+      closeCtxMenu();
+      item.run();
+      renderInspector();
+    });
+    menu.appendChild(btn);
+  }
+
+  // Place at the cursor, then nudge back on-screen if it would overflow.
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  const x = Math.min(clientX, window.innerWidth - r.width - 4);
+  const y = Math.min(clientY, window.innerHeight - r.height - 4);
+  menu.style.left = `${Math.max(4, x)}px`;
+  menu.style.top = `${Math.max(4, y)}px`;
+  ctxMenu = menu;
+}
+
+// Attached to the canvas host (an HTML box) rather than the overlay <svg>,
+// because an svg root only dispatches contextmenu over painted geometry — a
+// right-click on empty canvas would otherwise be missed.
+const canvasHost = app.querySelector<HTMLElement>('.canvas-host')!;
+canvasHost.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  openCtxMenu(e.clientX, e.clientY);
+});
+// Dismiss on outside click, scroll/resize, or Escape.
+window.addEventListener('pointerdown', (e) => {
+  if (ctxMenu && !ctxMenu.contains(e.target as Node)) closeCtxMenu();
+});
+window.addEventListener('blur', closeCtxMenu);
+window.addEventListener('resize', closeCtxMenu);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeCtxMenu();
+});
+
 function esc(s: string): string {
   return s.replace(/[<>&"]/g, (c) =>
     c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '&' ? '&amp;' : '&quot;',

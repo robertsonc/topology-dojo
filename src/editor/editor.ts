@@ -316,8 +316,24 @@ export class Editor {
     return `<line x1="${a.x}" y1="${a.y}" x2="${this.linkCursor.x}" y2="${this.linkCursor.y}" stroke="${ACCENT}" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>`;
   }
 
+  /**
+   * A transparent rect spanning the whole viewBox. An svg root only dispatches
+   * pointer/context events over painted geometry; this backdrop ensures empty
+   * canvas regions still receive them (marquee starts, right-click menus).
+   */
+  private backdropSvg(): string {
+    const [x, y, w, h] = this.page.viewBox.split(' ').map(Number) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="transparent"/>`;
+  }
+
   private renderOverlay(): void {
     this.overlay.innerHTML =
+      this.backdropSvg() +
       this.gridSvg() +
       this.guidesSvg() +
       this.linkSelSvg() +
@@ -440,6 +456,48 @@ export class Editor {
     }
   }
 
+  /**
+   * Hit-test at a client (screen) point and make that element the selection,
+   * returning what was hit. Used by the right-click context menu so the menu
+   * acts on whatever is under the cursor. A node/link under the cursor that is
+   * already part of the selection is left selected (so a menu can act on a
+   * multi-selection); otherwise the selection is replaced with the single hit.
+   */
+  pickAt(
+    clientX: number,
+    clientY: number,
+  ): { kind: 'node' | 'link' | 'empty'; id: string | null } {
+    const p = clientToUser(this.overlay, clientX, clientY);
+    const node = hitTestNode(this.page, p.x, p.y);
+    if (node) {
+      this.clearLinkSel();
+      if (!this.sel.has(node)) {
+        this.sel.clear();
+        this.sel.add(node);
+      }
+      this.fireSelect();
+      this.renderOverlay();
+      return { kind: 'node', id: node };
+    }
+    const link = hitTestLink(this.page, p.x, p.y);
+    if (link) {
+      this.sel.clear();
+      this.fireSelect();
+      if (this.linkSel !== link) {
+        this.linkSel = link;
+        this.fireLinkSelect();
+      }
+      this.renderOverlay();
+      return { kind: 'link', id: link };
+    }
+    // Empty canvas — clear any current selection.
+    this.sel.clear();
+    this.clearLinkSel();
+    this.fireSelect();
+    this.renderOverlay();
+    return { kind: 'empty', id: null };
+  }
+
   /* ── clipboard / duplicate / select-all ───────────────────────── */
 
   /** Select every node on the page. */
@@ -470,6 +528,11 @@ export class Editor {
     if (this.sel.size === 0) return;
     this.copySelection();
     this.deleteSelected();
+  }
+
+  /** Whether the clipboard holds nodes that `paste()` would place. */
+  canPaste(): boolean {
+    return !!this.clipboard && this.clipboard.nodes.length > 0;
   }
 
   /** Paste the clipboard (offset), selecting the new nodes. */
@@ -578,6 +641,18 @@ export class Editor {
   /** Whether z-order/lock actions apply (exactly one node, or a link). */
   canArrange(): boolean {
     return this.linkSel !== null || this.sel.size === 1;
+  }
+
+  /** Whether every selected node/link is locked (so the menu can label it). */
+  selectionLocked(): boolean {
+    const targets: { locked?: boolean }[] = this.page.nodes.filter((n) =>
+      this.sel.has(n.id),
+    );
+    const link = this.linkSel
+      ? this.page.links.find((l) => l.id === this.linkSel)
+      : null;
+    if (link) targets.push(link);
+    return targets.length > 0 && targets.every((t) => t.locked === true);
   }
 
   /** Toggle lock on the selected nodes + link (locks all unless all locked). */
