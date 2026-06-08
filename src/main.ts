@@ -440,6 +440,7 @@ function renderInspector(): void {
     html +=
       `<div class="insp-h">Link</div>` +
       typeRow(link.type, types) +
+      `<div class="insp-row"><span>Endpoints</span><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button></div>` +
       fieldsHtml(info, link as Record<string, unknown>) +
       arrangeRow();
   }
@@ -463,6 +464,10 @@ function renderInspector(): void {
     wireFields((key, val, commit) =>
       editor.updateLink({ [key]: val } as Record<string, unknown>, commit),
     );
+    inspector.querySelector('#i-swap')?.addEventListener('click', () => {
+      editor.swapLink();
+      renderInspector();
+    });
   }
   inspector.querySelector('[data-z="front"]')?.addEventListener('click', () => {
     editor.bringToFront();

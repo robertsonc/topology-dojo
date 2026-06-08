@@ -38,6 +38,16 @@ describe('capability catalog', () => {
     expect(tunnel.fields.some((f) => f.animation)).toBe(true);
   });
 
+  it('exposes per-link flow controls (speed / particles / reverse)', () => {
+    const keys = getLinkType('tunnel')!.fields.map((f) => f.key);
+    for (const k of ['flowSpeed', 'flowParticles', 'reverseFlow'])
+      expect(keys).toContain(k);
+    expect(
+      getLinkType('tunnel')!.fields.find((f) => f.key === 'reverseFlow')
+        ?.animation,
+    ).toBe(true);
+  });
+
   it('surfaces per-type fields (e.g. ec variant, cloud innerClouds)', () => {
     const ec = getNodeType('ec')!;
     expect(ec.fields.find((f) => f.key === 'variant')?.options).toContain(

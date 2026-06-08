@@ -266,6 +266,18 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         label: z.string().optional(),
         color: z.string().optional(),
         lineStyle: z.enum(['straight', 'orthogonal', 'curved']).optional(),
+        flowSpeed: z
+          .number()
+          .optional()
+          .describe('Animated-flow particle speed in seconds.'),
+        flowParticles: z
+          .number()
+          .optional()
+          .describe('Animated-flow particle count (1–32).'),
+        reverseFlow: z
+          .boolean()
+          .optional()
+          .describe('Reverse the flow direction.'),
         linkId: z.string().optional(),
         extra,
       },
@@ -281,6 +293,15 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.lineStyle !== undefined
               ? { lineStyle: a.lineStyle as 'orthogonal' | 'curved' }
+              : {}),
+            ...(a.flowSpeed !== undefined
+              ? { flowSpeed: Number(a.flowSpeed) }
+              : {}),
+            ...(a.flowParticles !== undefined
+              ? { flowParticles: Number(a.flowParticles) }
+              : {}),
+            ...(a.reverseFlow !== undefined
+              ? { reverseFlow: Boolean(a.reverseFlow) }
               : {}),
             ...((a.extra as Record<string, unknown>) ?? {}),
           },

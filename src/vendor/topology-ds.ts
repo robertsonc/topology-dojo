@@ -45,6 +45,10 @@ export interface LinkConfig {
   lineStyle?: 'orthogonal' | 'curved';
   /** When true, the editor won't move/edit the link via direct manipulation. */
   locked?: boolean;
+  /** Per-link animated-flow controls (tunnel / wireguard / flow types). */
+  flowSpeed?: number;
+  flowParticles?: number;
+  reverseFlow?: boolean;
   [key: string]: unknown;
 }
 

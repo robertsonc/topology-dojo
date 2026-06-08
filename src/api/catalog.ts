@@ -207,6 +207,24 @@ const LINK_COMMON: FieldSpec[] = [
     kind: 'boolean',
     animation: true,
   },
+  {
+    key: 'flowSpeed',
+    label: 'Flow speed (s)',
+    kind: 'number',
+    animation: true,
+  },
+  {
+    key: 'flowParticles',
+    label: 'Flow particles',
+    kind: 'number',
+    animation: true,
+  },
+  {
+    key: 'reverseFlow',
+    label: 'Reverse flow',
+    kind: 'boolean',
+    animation: true,
+  },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
 ];
 
