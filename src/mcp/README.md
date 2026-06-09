@@ -54,6 +54,25 @@ npm run deploy                        # npm run build && wrangler deploy
 After deploy, connect a client to `https://<your-worker-domain>/mcp` with header
 `Authorization: Bearer <key>`.
 
+### Temporarily disabling auth (testing only)
+
+To stand up an open `/mcp` for a quick client-connection test, set the
+`MCP_AUTH_DISABLED` var to `"true"` — the worker then skips the bearer check
+entirely (and logs a warning each request). Restore normal auth by removing the
+var (or setting it to anything but `"true"`); no code change is needed.
+
+```bash
+# local dev (wrangler dev): add to .dev.vars, or
+echo 'MCP_AUTH_DISABLED = "true"' >> .dev.vars
+
+# deployed worker
+npx wrangler deploy --var MCP_AUTH_DISABLED:true   # open it
+npx wrangler deploy                                # (var dropped) → auth back on
+```
+
+> ⚠️ This makes the endpoint **wide open** — only do it briefly, and never leave
+> it on for a deploy reachable from the public internet.
+
 > State note: a session's topology lives in the Durable Object's memory for the
 > session's lifetime; export with `get_topology` if you need to persist it. Auth
 > is intentionally minimal (one shared key) — graduate to per-key KV or OAuth if
