@@ -53,43 +53,68 @@ const app = document.getElementById('app')!;
 
 app.innerHTML = `
   <header class="bar">
-    <div class="brand">
-      Topology Dojo
-      <button class="tbtn file" id="fNew" title="New document">new</button>
-      <button class="tbtn file" id="fSave" title="Download as JSON">save</button>
-      <button class="tbtn file" id="fOpen" title="Open a JSON file">open</button>
-      <button class="tbtn file" id="fSvg" title="Export current frame as SVG">svg</button>
-      <button class="tbtn file" id="fPng" title="Export current frame as PNG">png</button>
-      <select class="tbtn file" id="fTemplate" title="New from a starter template"></select>
+    <div class="bar-left">
+      <span class="brand" title="Topology Dojo">
+        <svg class="logo-mark" viewBox="0 0 32 32" width="26" height="26" aria-label="Topology Dojo" role="img">
+          <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.45" stroke-linejoin="round"/>
+          <circle cx="16" cy="5" r="2.5" fill="currentColor"/>
+          <circle cx="27" cy="16" r="2.5" fill="currentColor"/>
+          <circle cx="16" cy="27" r="2.5" fill="currentColor"/>
+          <circle cx="5" cy="16" r="2.5" fill="currentColor"/>
+          <circle cx="16" cy="16" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="16" cy="16" r="1.7" fill="currentColor"/>
+        </svg>
+        <span class="wordmark">topology<b>dojo</b></span>
+      </span>
+      <span class="bar-div"></span>
+      <div class="tgroup">
+        <button class="tbtn" id="fNew" title="New document">new</button>
+        <button class="tbtn" id="fSave" title="Download as JSON">save</button>
+        <button class="tbtn" id="fOpen" title="Open a JSON file">open</button>
+      </div>
+      <span class="bar-div"></span>
+      <div class="tgroup">
+        <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
+        <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
+        <select class="tbtn" id="fTemplate" title="New from a starter template"></select>
+      </div>
       <input type="file" id="fInput" accept="application/json,.json" hidden />
       <span class="saved" id="saved"></span>
     </div>
-    <div class="bar-actions">
-      <button class="tbtn on" id="tSelect" title="Select/move tool (V)">⤧ select</button>
-      <button class="tbtn" id="tLink" title="Draw link tool (L)">🔗 link</button>
-      <button class="tbtn" id="tAnchor" title="Drop anchor tool (A) — free-floating link endpoints">◇ anchor</button>
-      <button class="tbtn on" id="tGrid" title="Toggle grid (R)">▦ grid</button>
-      <button class="tbtn on" id="tSnap" title="Toggle snap (G)">⌗ snap</button>
-      <button class="tbtn" id="tCalm" title="Calm canvas — pause animations (C)">◓ calm</button>
-      <button class="tbtn" id="tTheme" title="Toggle light / dark theme">☀ theme</button>
-      <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑 delete</button>
-      <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)">✦ tidy</button>
-      <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm">
-        <option value="">⤢ arrange…</option>
-        <option value="hierarchical">hierarchical</option>
-        <option value="grid">grid</option>
-        <option value="circular">circular</option>
-        <option value="force">force-directed</option>
-      </select>
-      <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion">
-        <option value="">⛶ select…</option>
-        <option value="type">same type</option>
-        <option value="color">same color</option>
-        <option value="connected">connected (grow)</option>
-        <option value="invert">invert</option>
-        <option value="all">all</option>
-      </select>
-      <button class="tbtn" id="tFit" title="Fit view (0)">⤢ fit</button>
+    <div class="bar-right">
+      <div class="tgroup">
+        <button class="tbtn on" id="tSelect" title="Select/move tool (V)">⤧<span class="tlabel">select</span></button>
+        <button class="tbtn" id="tLink" title="Draw link tool (L)">🔗<span class="tlabel">link</span></button>
+        <button class="tbtn" id="tAnchor" title="Drop anchor tool (A) — free-floating link endpoints">◇<span class="tlabel">anchor</span></button>
+      </div>
+      <span class="bar-div"></span>
+      <div class="tgroup">
+        <button class="tbtn ticon on" id="tGrid" title="Toggle grid (R)">▦</button>
+        <button class="tbtn ticon on" id="tSnap" title="Toggle snap (G)">⌗</button>
+        <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)">◓</button>
+        <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme">☀</button>
+        <button class="tbtn ticon" id="tFit" title="Fit view (0)">⤢</button>
+      </div>
+      <span class="bar-div"></span>
+      <div class="tgroup">
+        <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑<span class="tlabel">delete</span></button>
+        <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)">✦<span class="tlabel">tidy</span></button>
+        <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm">
+          <option value="">⤢ arrange…</option>
+          <option value="hierarchical">hierarchical</option>
+          <option value="grid">grid</option>
+          <option value="circular">circular</option>
+          <option value="force">force-directed</option>
+        </select>
+        <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion">
+          <option value="">⛶ select…</option>
+          <option value="type">same type</option>
+          <option value="color">same color</option>
+          <option value="connected">connected (grow)</option>
+          <option value="invert">invert</option>
+          <option value="all">all</option>
+        </select>
+      </div>
       <span class="align-group" id="alignGroup" hidden>
         <button class="tbtn ab" data-align="left" title="Align left">⇤</button>
         <button class="tbtn ab" data-align="centerH" title="Align centers (h)">⇔</button>
@@ -100,7 +125,6 @@ app.innerHTML = `
         <button class="tbtn ab" data-dist="h" title="Distribute horizontally" disabled>↔̲</button>
         <button class="tbtn ab" data-dist="v" title="Distribute vertically" disabled>↕̲</button>
       </span>
-      <span class="hint">click/shift/box select · drag move · wheel zoom · space/middle-drag pan · ←/→ flip</span>
     </div>
   </header>
 
@@ -322,7 +346,8 @@ function renderStatus(): void {
     `<span><span class="sb-k">anchors</span> ${p.anchors.length}</span>` +
     `<span><span class="sb-k">zones</span> ${p.zones.length}</span>` +
     `<span><span class="sb-k">selected</span> ${sel}</span>` +
-    `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>`;
+    `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>` +
+    `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ←/→ flip</span>`;
 }
 // Live cursor readout (page coordinates) while hovering the canvas.
 overlaySvg.addEventListener('pointermove', (e) => {
@@ -1249,7 +1274,8 @@ const THEME_KEY = 'topology-dojo:theme';
 function applyTheme(light: boolean): void {
   document.documentElement.classList.toggle('light', light);
   themeBtn.classList.toggle('on', light);
-  themeBtn.textContent = light ? '🌙 theme' : '☀ theme';
+  themeBtn.textContent = light ? '🌙' : '☀';
+  themeBtn.title = light ? 'Switch to dark theme' : 'Switch to light theme';
   try {
     localStorage.setItem(THEME_KEY, light ? 'light' : 'dark');
   } catch {
