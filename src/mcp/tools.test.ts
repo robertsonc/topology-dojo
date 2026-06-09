@@ -367,6 +367,35 @@ describe('MCP tools', () => {
     ).toThrow(/typeName is required/);
   });
 
+  it('omits share_topology unless a publish dep is provided', () => {
+    expect(tools.some((t) => t.name === 'share_topology')).toBe(false);
+  });
+
+  it('share_topology publishes the stored doc and returns the link', async () => {
+    let published: TopologyDocument | undefined;
+    const withShare = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      publishTopology: async (doc) => {
+        published = doc;
+        return { id: 'abc123', url: 'https://example.com/v/abc123' };
+      },
+    });
+    const share = withShare.find((t) => t.name === 'share_topology')!;
+    const { id } = call('create_topology', { title: 'Shared' }) as {
+      id: string;
+    };
+    call('add_node', { topologyId: id, type: 'ec', x: 10, y: 10, nodeId: 'a' });
+
+    const res = (await share.handler({ topologyId: id })) as {
+      id: string;
+      url: string;
+    };
+    expect(res.url).toBe('https://example.com/v/abc123');
+    // It snapshots the live stored document (with the node just added).
+    expect(published?.title).toBe('Shared');
+    expect(published?.pages[0]!.nodes[0]!.id).toBe('a');
+  });
+
   it('add_page targets the new page by default; pageIndex overrides', () => {
     const { id } = call('create_topology', {}) as { id: string };
     call('add_page', { topologyId: id, name: 'Frame 2' });

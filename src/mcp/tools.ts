@@ -52,6 +52,15 @@ export interface ToolDeps {
     pageIndex?: number,
     opts?: RenderOptions,
   ) => string;
+  /**
+   * Snapshot a document to durable storage and return a shareable link that
+   * opens it in the browser editor. Only wired up where a backing store + public
+   * origin exist (the Cloudflare Worker); absent for the local stdio server, in
+   * which case the `share_topology` tool is not registered.
+   */
+  publishTopology?: (
+    doc: TopologyDocument,
+  ) => Promise<{ id: string; url: string }>;
 }
 
 /* Reusable field fragments ------------------------------------------------- */
@@ -84,7 +93,7 @@ const MARKER = POLICY_MARKER_TYPES;
 
 /** Build the full set of tools bound to a store and runtime deps. */
 export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
-  return [
+  const tools: ToolDef[] = [
     {
       name: 'describe_capabilities',
       description:
@@ -598,4 +607,21 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         ),
     },
   ];
+
+  // Sharing is only available where a durable store + public origin are wired in
+  // (the Worker). When present, expose a tool that snapshots the topology and
+  // returns a browser link — the durable way to view what was built, immune to
+  // the per-session store expiring.
+  if (deps.publishTopology) {
+    const publish = deps.publishTopology;
+    tools.push({
+      name: 'share_topology',
+      description:
+        'Publish the current topology and return a link that opens it in the Topology Dojo editor in a browser. Use this to give the user a viewable/shareable result after building. The snapshot is stored durably (it does NOT depend on the live server session, so the link keeps working after this session ends). Re-run after further edits to publish an updated snapshot (a new link).',
+      inputShape: { topologyId },
+      handler: (a) => publish(store.get(String(a.topologyId))),
+    });
+  }
+
+  return tools;
 }

@@ -11,17 +11,28 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-06-07",
   "compatibility_flags": ["nodejs_compat"],
+  // Public origin used to build absolute share links from `share_topology`.
+  // Set this to your deployment's domain (workers.dev or a custom domain). If
+  // left blank, share_topology returns a site-relative "/v/<id>" path instead.
+  "vars": { "PUBLIC_BASE_URL": "" },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // Route /mcp* to the Worker; everything else is served straight from assets
-    // (without /mcp here, the SPA not-found handler could shadow the MCP route).
-    "run_worker_first": ["/mcp", "/mcp/*"],
+    // Route /mcp* and the share-snapshot API to the Worker; everything else
+    // (including /v/<id>) is served straight from assets, where the SPA
+    // not-found handler returns index.html and the app loads the snapshot.
+    "run_worker_first": ["/mcp", "/mcp/*", "/api/*"],
   },
   "durable_objects": {
     "bindings": [{ "name": "MCP_OBJECT", "class_name": "TopologyMcp" }],
   },
+  // KV namespace backing `share_topology` snapshots. Create it once with:
+  //   npx wrangler kv namespace create TOPOLOGY_KV
+  // then paste the returned id below (replace the placeholder).
+  "kv_namespaces": [
+    { "binding": "TOPOLOGY_KV", "id": "4a215923f07c43729f70e5f81042befe" },
+  ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] }],
   "observability": { "enabled": true },
 }
