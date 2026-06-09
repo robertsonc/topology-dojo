@@ -5,10 +5,13 @@
  * (art + interaction overlay) and the filmstrip is re-rendered on page changes.
  */
 // Self-hosted JetBrains Mono (bundled by Vite — no external font fetch at runtime).
-import '@fontsource/jetbrains-mono/400.css';
-import '@fontsource/jetbrains-mono/500.css';
-import '@fontsource/jetbrains-mono/600.css';
-import '@fontsource/jetbrains-mono/700.css';
+// Latin-only subset: the UI is latin, and the aggregate weight CSS ships six
+// @font-face subsets (cyrillic/greek/vietnamese/…) per weight, bloating the
+// deployed bundle 6x for glyphs this app never draws.
+import '@fontsource/jetbrains-mono/latin-400.css';
+import '@fontsource/jetbrains-mono/latin-500.css';
+import '@fontsource/jetbrains-mono/latin-600.css';
+import '@fontsource/jetbrains-mono/latin-700.css';
 import { Editor } from './editor/editor.js';
 import { clientToUser } from './editor/coords.js';
 import { engineDefs, renderPageSVG } from './vendor/topology-ds.js';
@@ -192,6 +195,7 @@ function loadDoc(next: TopologyDocument): void {
   doc.pages = next.pages;
   doc.customNodes = next.customNodes;
   registerCustomNodes(doc.customNodes);
+  invalidatePreview(); // custom types replaced — clear cached previews
   current = 0;
   buildPalette();
   editor.setPage(doc.pages[current]!);
@@ -1049,6 +1053,7 @@ function upsertCustomNode(spec: CustomNodeSpec): void {
   if (i >= 0) doc.customNodes[i] = spec;
   else doc.customNodes.push(spec);
   registerCustomNode(spec);
+  invalidatePreview(spec.typeName); // its art changed — drop the stale preview
   buildPalette();
   editor.refresh(); // existing nodes of this type pick up the new render
   markDirty();
@@ -1060,7 +1065,19 @@ function upsertCustomNode(spec: CustomNodeSpec): void {
  * the preview always matches what gets drawn. `<defs>` is stripped because the
  * palette shares one copy (see buildPalette) — keeps the DOM light across types.
  */
+// Previews are pure functions of the node type's art, which is stable for
+// built-ins and only changes when a custom type is re-designed. Memoize so a
+// palette rebuild (custom-node edit, document open) doesn't re-run the engine
+// for every built-in type each time; invalidated via invalidatePreview().
+const previewCache = new Map<string, string>();
+function invalidatePreview(type?: string): void {
+  if (type) previewCache.delete(type);
+  else previewCache.clear();
+}
+
 function nodePreviewSVG(type: string): string {
+  const cached = previewCache.get(type);
+  if (cached !== undefined) return cached;
   let inner: string;
   try {
     inner = renderPageSVG({
@@ -1072,7 +1089,9 @@ function nodePreviewSVG(type: string): string {
     return ''; // unknown/unrenderable type — fall back to the label only
   }
   inner = inner.replace(/<defs[\s\S]*?<\/defs>/, '');
-  return `<svg class="ppreview" viewBox="0 0 110 84" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${inner}</svg>`;
+  const svg = `<svg class="ppreview" viewBox="0 0 110 84" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${inner}</svg>`;
+  previewCache.set(type, svg);
+  return svg;
 }
 
 function buildPalette(): void {

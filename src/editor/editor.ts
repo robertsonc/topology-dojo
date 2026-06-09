@@ -121,6 +121,8 @@ export class Editor {
   /** True while a run of arrow-nudges is coalescing into one undo entry. */
   private nudgeActive = false;
   private nudgeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Pending coalesced art render (rAF handle), or 0 when none is queued. */
+  private artRaf = 0;
 
   constructor(
     private art: SVGSVGElement,
@@ -271,9 +273,31 @@ export class Editor {
   }
 
   private renderArt(): void {
+    // A pending coalesced render is now redundant — this draws current state.
+    if (this.artRaf) {
+      cancelAnimationFrame(this.artRaf);
+      this.artRaf = 0;
+    }
     renderPageInto(this.art, this.page, { calm: this.calm });
     // renderPageInto resets the art viewBox to the page's; re-apply the view.
     this.applyView();
+  }
+
+  /**
+   * Coalesce art re-renders during continuous interaction (anchor drag, held
+   * arrow-nudges, live inspector edits) to at most one per animation frame. The
+   * art is the heavy layer — a full engine rebuild + innerHTML swap — so firing
+   * it on every pointermove/keystroke is the main source of edit lag on large
+   * topologies. The lightweight overlay still updates synchronously, so
+   * selection/handles track the cursor with no perceptible delay.
+   */
+  private scheduleArt(): void {
+    if (this.artRaf) return;
+    this.artRaf = requestAnimationFrame(() => {
+      this.artRaf = 0;
+      renderPageInto(this.art, this.page, { calm: this.calm });
+      this.applyView();
+    });
   }
 
   /** Toggle the calm canvas (animations off) and re-render. */
@@ -808,7 +832,8 @@ export class Editor {
     }
     clearTimeout(this.nudgeTimer);
     this.nudgeTimer = setTimeout(() => (this.nudgeActive = false), 500);
-    this.renderArt();
+    // Held arrow keys repeat faster than frames — coalesce the art render.
+    this.scheduleArt();
     this.renderOverlay();
     this.onChange();
   }
@@ -917,7 +942,9 @@ export class Editor {
     if (!node) return;
     if (commit) this.snapshot();
     Object.assign(node, patch);
-    this.renderArt();
+    // Discrete edits render now; continuous edits (typing) coalesce per frame.
+    if (commit) this.renderArt();
+    else this.scheduleArt();
     this.renderOverlay();
     this.onChange();
   }
@@ -928,7 +955,8 @@ export class Editor {
     if (!link) return;
     if (commit) this.snapshot();
     Object.assign(link, patch);
-    this.renderArt();
+    if (commit) this.renderArt();
+    else this.scheduleArt();
     this.renderOverlay();
     this.onChange();
   }
@@ -985,7 +1013,7 @@ export class Editor {
     if (!el) return;
     if (commit) this.snapshot();
     Object.assign(el, patch);
-    this.afterAnnotationChange();
+    this.afterAnnotationChange(commit);
   }
 
   removeAnnotation(
@@ -1004,8 +1032,9 @@ export class Editor {
     this.afterAnnotationChange();
   }
 
-  private afterAnnotationChange(): void {
-    this.renderArt();
+  private afterAnnotationChange(immediate = true): void {
+    if (immediate) this.renderArt();
+    else this.scheduleArt();
     this.renderOverlay();
     this.onChange();
   }
@@ -1094,7 +1123,8 @@ export class Editor {
     if (!a) return;
     if (commit) this.snapshot();
     Object.assign(a, patch);
-    this.renderArt();
+    if (commit) this.renderArt();
+    else this.scheduleArt();
     this.renderOverlay();
     this.onChange();
   }
@@ -1529,7 +1559,7 @@ export class Editor {
         a.y = this.snapVal(
           this.anchorDrag.oy + (pp.y - this.anchorDrag.startY),
         );
-        this.renderArt(); // links to the anchor follow it
+        this.scheduleArt(); // links to the anchor follow it (coalesced per frame)
         this.renderOverlay();
       }
       return;
