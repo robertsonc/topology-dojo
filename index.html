@@ -71,59 +71,133 @@
       .statusbar .sb-k {
         color: var(--text);
       }
+      .statusbar .sb-hint {
+        margin-left: auto;
+        color: var(--muted);
+        opacity: 0.85;
+      }
 
       .bar {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 16px;
+        gap: 10px;
+        padding: 8px 14px;
         border-bottom: 1px solid var(--border);
         background: var(--panel);
+        overflow-x: auto;
+        overflow-y: hidden;
       }
-      .brand {
-        font-weight: 700;
-        letter-spacing: 0.3px;
+      .bar-left,
+      .bar-right {
         display: flex;
         align-items: center;
-        gap: 8px;
+        flex-wrap: nowrap;
+        gap: 3px;
       }
-      .tbtn.file {
-        font-weight: 400;
-        padding: 4px 9px;
+      .bar-right {
+        justify-content: flex-end;
+      }
+      /* A cluster of related controls; dividers separate clusters. */
+      .tgroup {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .bar-div {
+        flex: none;
+        width: 1px;
+        height: 20px;
+        background: var(--border);
+        margin: 0 4px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding-right: 2px;
+        user-select: none;
+      }
+      .logo-mark {
+        display: block;
+        color: var(--accent);
+        flex: none;
+      }
+      .wordmark {
+        font-size: 13px;
+        letter-spacing: 0.3px;
+        color: var(--muted);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .wordmark b {
+        color: var(--text);
+        font-weight: 700;
+        margin-left: 2px;
+      }
+      .tlabel {
+        margin-left: 5px;
+      }
+      /* Graceful degradation as the bar narrows: first collapse tool/action
+         labels to their icons, then drop the wordmark text (logo stays). */
+      @media (max-width: 1480px) {
+        .tlabel {
+          display: none;
+        }
+      }
+      @media (max-width: 1360px) {
+        .wordmark {
+          display: none;
+        }
       }
       .saved {
         color: var(--muted);
         font-size: 10px;
         font-weight: 400;
-        min-width: 48px;
+        min-width: 46px;
+        padding-left: 4px;
       }
-      .bar-actions {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .bar-actions .hint {
-        color: var(--muted);
-        font-size: 11px;
-      }
+      /* Cohesive, low-chrome buttons: borderless until hover/active. */
       .tbtn {
-        background: var(--panel2);
-        border: 1px solid var(--border);
+        background: transparent;
+        border: 1px solid transparent;
         color: var(--muted);
-        border-radius: 8px;
-        padding: 5px 12px;
+        border-radius: 7px;
+        padding: 5px 8px;
         cursor: pointer;
         font-size: 12px;
         font-family: var(--font);
+        line-height: 1.35;
+        white-space: nowrap;
+        flex: none;
+      }
+      .tbtn:hover {
+        background: var(--panel2);
+        color: var(--text);
+      }
+      .tbtn.ticon {
+        min-width: 28px;
+        padding: 5px 7px;
+        font-size: 13px;
+        text-align: center;
+      }
+      select.tbtn {
+        border-color: var(--border);
+      }
+      select.tbtn:hover {
+        border-color: var(--accent);
       }
       .tbtn.on {
         color: var(--accent);
-        border-color: rgba(1, 169, 130, 0.5);
         background: rgba(1, 169, 130, 0.12);
       }
       .tbtn:disabled {
         opacity: 0.4;
         cursor: default;
+      }
+      .tbtn:disabled:hover {
+        background: transparent;
+        color: var(--muted);
       }
       .align-group {
         display: inline-flex;
