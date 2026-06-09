@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { TopologyStore } from './store.js';
 import { createTools, type ToolDef } from './tools.js';
 import { renderDocumentToSVG } from '../server/render.js';
@@ -45,6 +47,17 @@ describe('MCP tools', () => {
         'validate_topology',
       ].sort(),
     );
+  });
+
+  it('documents every tool in the MCP README (keeps docs in sync)', () => {
+    const readme = readFileSync(
+      fileURLToPath(new URL('./README.md', import.meta.url)),
+      'utf8',
+    );
+    const undocumented = tools
+      .map((t) => t.name)
+      .filter((n) => !readme.includes(`\`${n}\``));
+    expect(undocumented).toEqual([]);
   });
 
   it('exposes layout guidelines and folds layout checks into validation', () => {

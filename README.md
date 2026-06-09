@@ -93,5 +93,5 @@ public/vendor/ the vendored engine + theme (classic script in the browser, Commo
 Hosted on **Cloudflare Workers** via the connected Git integration (Workers
 Builds): `npm run build` produces `dist/`, and the Worker (`worker/index.ts`)
 serves it as static assets while routing `/mcp` to the MCP server (a Durable
-Object per session, bearer-authenticated). Config is in
+Object per session, behind OAuth 2.1 / GitHub sign-in). Config is in
 [`wrangler.jsonc`](wrangler.jsonc).

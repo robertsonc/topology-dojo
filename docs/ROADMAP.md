@@ -46,14 +46,16 @@ Built methodically, one reviewable PR at a time, each reviewed against
 
 ### MCP
 
-- **stdio** server (`src/mcp`) exposing the whole API as 18 tools
-  (`describe_capabilities`, create/get/list/import/delete, add_page/node/link/
-  anchor, add_zone/flow_path/policy_marker, define_node_type, validate,
-  tidy, layout_guidelines, render_svg).
+- **stdio** server (`src/mcp`) exposing the whole API as MCP tools
+  (`describe_capabilities`, create/get/list/import/delete, templates,
+  add_page/node/link/anchor, add_zone/flow_path/policy_marker, set_node_metadata,
+  define_node_type, validate, tidy, layout_guidelines, render_svg,
+  share_topology). See [`src/mcp/README.md`](../src/mcp/README.md) for the full
+  table — a unit test keeps it in sync with the server.
 - **Remote on Cloudflare** (`worker/`): the same tools over Streamable HTTP at
-  `/mcp`, per-session Durable Object state, single-shared-secret bearer auth;
-  the Worker also serves the app. Verified live end-to-end (auth → build →
-  validate → tidy → render).
+  `/mcp`, per-session Durable Object state, OAuth 2.1 (GitHub) auth; the Worker
+  also serves the app. Verified live end-to-end (auth → build → validate →
+  tidy → render).
 
 ## Next / candidate
 
