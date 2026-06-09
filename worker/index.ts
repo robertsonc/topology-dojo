@@ -1,71 +1,41 @@
 /**
- * Cloudflare Worker entry — serves the built app (static assets) and exposes the
- * MCP server at `/mcp` behind a shared-secret bearer check.
+ * Cloudflare Worker entry. The whole worker is wrapped in an OAuth 2.1 provider
+ * (Cloudflare's `workers-oauth-provider`) so the MCP endpoint is real-auth
+ * protected, with GitHub as the upstream identity provider:
  *
- *   GET/POST /mcp           → MCP over Streamable HTTP (auth required)
- *   GET /api/topology/:id   → JSON of a published share snapshot (from KV)
- *   /v/:id                  → the SPA (it reads :id and loads the snapshot)
- *   everything else         → the static SPA (env.ASSETS)
+ *   /mcp                     → MCP over Streamable HTTP (OAuth-protected)
+ *   /authorize, /callback    → GitHub sign-in (the default handler)
+ *   /token, /register        → the OAuth provider's own endpoints
+ *   /api/topology/:id, /v/:id, /* → the default handler (share API + static SPA)
  *
- * Deploy: see src/mcp/README.md → "Remote (Cloudflare)". The DO class below is
- * the per-session MCP agent and must be exported from the entry module.
+ * An authenticated MCP session receives the GitHub user as `this.props` in the
+ * agent. Setup (GitHub OAuth app, OAUTH_KV, GITHUB_CLIENT_SECRET): see
+ * src/mcp/README.md → "Remote (Cloudflare)". The DO class must be exported here.
  */
-import { isAuthorized } from '../src/mcp/auth.js';
+import OAuthProvider from '@cloudflare/workers-oauth-provider';
 import { TopologyMcp } from './mcp.js';
+import { defaultHandler } from './default-handler.js';
 import type { WorkerEnv } from './env.js';
 
 export { TopologyMcp };
 
-const mcpHandler = TopologyMcp.serve('/mcp', { binding: 'MCP_OBJECT' });
-
-const API_TOPOLOGY_PREFIX = '/api/topology/';
-
-/** Serve a published snapshot's JSON from KV (the SPA fetches this for /v/:id). */
-async function serveSnapshot(id: string, env: WorkerEnv): Promise<Response> {
-  const json = await env.TOPOLOGY_KV.get(`doc:${id}`);
-  if (!json) {
-    return new Response(JSON.stringify({ error: 'not found' }), {
-      status: 404,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
-  return new Response(json, {
-    headers: {
-      'content-type': 'application/json',
-      'cache-control': 'public, max-age=60',
-    },
-  });
-}
-
-export default {
-  async fetch(
+// The MCP agent's Streamable HTTP handler, gated by the OAuth provider. Wrapped
+// so its (generic) fetch presents the concrete required signature the provider
+// expects for an API handler.
+const mcp = TopologyMcp.serve('/mcp');
+const apiHandler = {
+  fetch: (
     request: Request,
     env: WorkerEnv,
     ctx: ExecutionContext,
-  ): Promise<Response> {
-    const { pathname } = new URL(request.url);
-    if (pathname === '/mcp' || pathname.startsWith('/mcp/')) {
-      const authDisabled = env.MCP_AUTH_DISABLED === 'true';
-      if (authDisabled) {
-        console.warn('MCP auth DISABLED via MCP_AUTH_DISABLED — /mcp is open.');
-      } else if (!isAuthorized(request, env.MCP_API_KEY)) {
-        return new Response('Unauthorized\n', {
-          status: 401,
-          headers: { 'WWW-Authenticate': 'Bearer realm="topology-dojo-mcp"' },
-        });
-      }
-      return mcpHandler.fetch(request, env, ctx);
-    }
-    if (pathname.startsWith(API_TOPOLOGY_PREFIX)) {
-      if (request.method !== 'GET') {
-        return new Response('Method Not Allowed\n', { status: 405 });
-      }
-      const id = pathname.slice(API_TOPOLOGY_PREFIX.length);
-      if (!id) return new Response('Not Found\n', { status: 404 });
-      return serveSnapshot(id, env);
-    }
-    // /v/:id and everything else fall through to the SPA (the not-found handler
-    // serves index.html, and the app reads the share id from the path).
-    return env.ASSETS.fetch(request);
-  },
+  ): Promise<Response> => mcp.fetch(request, env, ctx),
 };
+
+export default new OAuthProvider({
+  apiRoute: '/mcp',
+  apiHandler,
+  defaultHandler,
+  authorizeEndpoint: '/authorize',
+  tokenEndpoint: '/token',
+  clientRegistrationEndpoint: '/register',
+});

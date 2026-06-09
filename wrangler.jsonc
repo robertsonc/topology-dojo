@@ -1,12 +1,13 @@
 {
   // Cloudflare Worker via the connected Git integration (Workers Builds).
   // Serves the built SPA (dist/) through the ASSETS binding AND exposes the MCP
-  // server at /mcp (see worker/index.ts). The MCP agent is a Durable Object so
-  // each authoring session keeps its own in-memory topology store.
+  // server at /mcp, wrapped in an OAuth 2.1 provider with GitHub as the upstream
+  // identity provider (see worker/index.ts). The MCP agent is a Durable Object
+  // so each authoring session keeps its own in-memory topology store.
   //
-  // Dashboard build command stays `npm run build` (produces dist/); deploy is
-  // the default `npx wrangler deploy`. Set the bearer secret once with:
-  //   npx wrangler secret put MCP_API_KEY
+  // Setup (one-time): create a GitHub OAuth App (callback
+  //   https://<domain>/callback), create the OAUTH_KV namespace, and set the
+  //   GITHUB_CLIENT_SECRET secret in the dashboard. See src/mcp/README.md.
   "name": "topology-dojo",
   "main": "worker/index.ts",
   "compatibility_date": "2026-06-07",
@@ -15,29 +16,36 @@
     // Public origin used to build absolute share links from `share_topology`.
     // Set to your deployment's domain; if blank, links are site-relative.
     "PUBLIC_BASE_URL": "https://topology-dojo.robertson-corey.workers.dev",
-    // TEMPORARY: leaves /mcp wide open (no bearer check) for client testing.
-    // Declared here (not just the dashboard) so it survives git deploys, which
-    // reset dashboard-only vars. REMOVE this before treating the deploy as
-    // anything but a test — see src/mcp/README.md "Temporarily disabling auth".
-    "MCP_AUTH_DISABLED": "true",
+    // GitHub OAuth App client id (public; the secret is a dashboard secret).
+    "GITHUB_CLIENT_ID": "Ov23liAsmD1WV2yT4yzw",
   },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // Route /mcp* and the share-snapshot API to the Worker; everything else
-    // (including /v/<id>) is served straight from assets, where the SPA
-    // not-found handler returns index.html and the app loads the snapshot.
-    "run_worker_first": ["/mcp", "/mcp/*", "/api/*"],
+    // Route the MCP API, the OAuth endpoints, and the share-snapshot API to the
+    // Worker; everything else (the SPA, including /v/<id>) is served straight
+    // from assets, where the not-found handler returns index.html.
+    "run_worker_first": [
+      "/mcp",
+      "/mcp/*",
+      "/authorize",
+      "/callback",
+      "/token",
+      "/register",
+      "/.well-known/*",
+      "/api/*",
+    ],
   },
   "durable_objects": {
     "bindings": [{ "name": "MCP_OBJECT", "class_name": "TopologyMcp" }],
   },
-  // KV namespace backing `share_topology` snapshots. Create it once with:
-  //   npx wrangler kv namespace create TOPOLOGY_KV
-  // then paste the returned id below (replace the placeholder).
+  // TOPOLOGY_KV backs `share_topology` snapshots; OAUTH_KV backs the OAuth
+  // provider's grants/tokens. Create each once in the dashboard (Storage &
+  // Databases → KV) and paste its id below (replace the placeholder).
   "kv_namespaces": [
     { "binding": "TOPOLOGY_KV", "id": "4a215923f07c43729f70e5f81042befe" },
+    { "binding": "OAUTH_KV", "id": "b8f3af5be9e14f8da01c563f376dcc40" },
   ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] }],
   "observability": { "enabled": true },

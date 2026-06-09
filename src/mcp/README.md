@@ -33,15 +33,15 @@ The same tool set is served over **Streamable HTTP** at `/mcp` by the Cloudflare
 Worker (`worker/index.ts`), alongside the static app. Each MCP session is a
 Durable Object (`TopologyMcp`) holding that session's in-memory `TopologyStore`;
 the renderer is the same engine-agnostic core, with the vendored engine bundled
-instead of `require`d. Auth is a **single shared secret** via
-`Authorization: Bearer <key>`.
+instead of `require`d.
 
-Deploy (on your Cloudflare account):
-
-```bash
-npx wrangler secret put MCP_API_KEY   # set the shared bearer secret once
-npm run deploy                        # npm run build && wrangler deploy
-```
+Auth is **OAuth 2.1** (Cloudflare's `workers-oauth-provider`) with **GitHub** as
+the upstream identity provider. The whole Worker is wrapped in the provider;
+`/mcp` is the protected API route. A client (e.g. Claude) is redirected through a
+single GitHub authorize click — no token to paste — and the authenticated GitHub
+user is exposed to the agent as `this.props`. The provider also serves OAuth
+discovery (`/.well-known/oauth-authorization-server`) and dynamic client
+registration (`/register`), so compatible clients configure themselves.
 
 > **Deploy command must be `wrangler deploy`, not `wrangler versions upload`.**
 > This Worker declares a Durable Object **migration** (to create `TopologyMcp`),
@@ -51,33 +51,21 @@ npm run deploy                        # npm run build && wrangler deploy
 > migration is applied, the DO class exists; only a _new_ migration would need
 > another full deploy.)
 
-After deploy, connect a client to `https://<your-worker-domain>/mcp` with header
-`Authorization: Bearer <key>`.
+### One-time auth setup
 
-### Temporarily disabling auth (testing only)
-
-To stand up an open `/mcp` for a quick client-connection test, set the
-`MCP_AUTH_DISABLED` var to `"true"` — the worker then skips the bearer check
-entirely (and logs a warning each request). Restore normal auth by removing the
-var (or setting it to anything but `"true"`); no code change is needed.
-
-```bash
-# local dev (wrangler dev): add to .dev.vars, or
-echo 'MCP_AUTH_DISABLED = "true"' >> .dev.vars
-
-# deployed worker
-npx wrangler deploy --var MCP_AUTH_DISABLED:true   # open it
-npx wrangler deploy                                # (var dropped) → auth back on
-```
-
-> ⚠️ This makes the endpoint **wide open** — only do it briefly, and never leave
-> it on for a deploy reachable from the public internet.
+1. **GitHub OAuth App** (GitHub → Settings → Developer settings → OAuth Apps):
+   - Homepage `https://<your-domain>`, Authorization callback URL
+     `https://<your-domain>/callback`.
+   - Put the **Client ID** in `wrangler.jsonc` (`vars.GITHUB_CLIENT_ID`); add the
+     **client secret** as a dashboard secret **`GITHUB_CLIENT_SECRET`**.
+2. **KV namespace** `OAUTH_KV` (dashboard → Storage & Databases → KV) — paste its
+   id into `wrangler.jsonc` (`kv_namespaces`). This stores grants/tokens.
+3. Deploy. Then connect a client to `https://<your-domain>/mcp`; it will run the
+   GitHub sign-in flow automatically.
 
 > State note: a session's topology lives in the Durable Object's memory for the
 > session's lifetime; export with `get_topology`, or **`share_topology`** (below)
-> for a durable snapshot, if you need it to outlast the session. Auth is
-> intentionally minimal (one shared key) — graduate to per-key KV or OAuth if you
-> need multiple/revocable credentials.
+> for a durable snapshot, if you need it to outlast the session.
 
 ### Share links (`share_topology`)
 
