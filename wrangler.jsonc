@@ -11,10 +11,16 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-06-07",
   "compatibility_flags": ["nodejs_compat"],
-  // Public origin used to build absolute share links from `share_topology`.
-  // Set this to your deployment's domain (workers.dev or a custom domain). If
-  // left blank, share_topology returns a site-relative "/v/<id>" path instead.
-  "vars": { "PUBLIC_BASE_URL": "" },
+  "vars": {
+    // Public origin used to build absolute share links from `share_topology`.
+    // Set to your deployment's domain; if blank, links are site-relative.
+    "PUBLIC_BASE_URL": "https://topology-dojo.robertson-corey.workers.dev",
+    // TEMPORARY: leaves /mcp wide open (no bearer check) for client testing.
+    // Declared here (not just the dashboard) so it survives git deploys, which
+    // reset dashboard-only vars. REMOVE this before treating the deploy as
+    // anything but a test — see src/mcp/README.md "Temporarily disabling auth".
+    "MCP_AUTH_DISABLED": "true",
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
