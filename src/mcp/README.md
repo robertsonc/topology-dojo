@@ -74,9 +74,30 @@ npx wrangler deploy                                # (var dropped) → auth back
 > it on for a deploy reachable from the public internet.
 
 > State note: a session's topology lives in the Durable Object's memory for the
-> session's lifetime; export with `get_topology` if you need to persist it. Auth
-> is intentionally minimal (one shared key) — graduate to per-key KV or OAuth if
-> you need multiple/revocable credentials.
+> session's lifetime; export with `get_topology`, or **`share_topology`** (below)
+> for a durable snapshot, if you need it to outlast the session. Auth is
+> intentionally minimal (one shared key) — graduate to per-key KV or OAuth if you
+> need multiple/revocable credentials.
+
+### Share links (`share_topology`)
+
+`share_topology` snapshots the current document into a **KV namespace** and
+returns a link that opens it in the browser editor — the way to hand a user a
+viewable/shareable result after building. Because the snapshot lives in KV (not
+the per-session in-memory store), the link keeps working after the MCP session
+ends. The link is `<PUBLIC_BASE_URL>/v/<id>`; opening it loads the snapshot into
+the editor (the SPA fetches `/api/topology/<id>`). Snapshots expire after 30 days
+unless re-published. This tool is **remote-only** — the local stdio server has no
+KV/origin, so it isn't registered there.
+
+One-time setup on your Cloudflare account:
+
+```bash
+npx wrangler kv namespace create TOPOLOGY_KV   # paste the id into wrangler.jsonc
+# set PUBLIC_BASE_URL in wrangler.jsonc to your deployment origin (for absolute
+# links); leave it blank to get site-relative "/v/<id>" paths instead.
+npm run deploy
+```
 
 ## Model
 
@@ -114,6 +135,7 @@ document's custom node types).
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds            |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)    |
 | `render_svg`                                           | Render a page to a standalone SVG string                         |
+| `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only) |
 
 ## Layout quality
 

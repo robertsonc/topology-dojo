@@ -175,6 +175,33 @@ function loadDoc(next: TopologyDocument): void {
   markDirty();
 }
 
+/*
+ * Share links: opening "/v/<id>" loads a topology published by the MCP
+ * `share_topology` tool (a snapshot stored in KV, fetched via /api/topology).
+ * We load it over whatever booted from localStorage, then drop the /v/<id> path
+ * so a refresh doesn't refetch and further edits stay in this local session.
+ */
+const shareMatch = location.pathname.match(/^\/v\/([\w-]+)\/?$/);
+if (shareMatch) {
+  void (async () => {
+    try {
+      const res = await fetch(`/api/topology/${shareMatch[1]}`);
+      if (!res.ok)
+        throw new Error(
+          res.status === 404
+            ? 'That shared topology was not found (it may have expired).'
+            : `Could not load the shared topology (HTTP ${res.status}).`,
+        );
+      const parsed = parseDoc(await res.json());
+      if (!parsed) throw new Error('The shared topology was invalid.');
+      loadDoc(parsed);
+      history.replaceState({}, '', '/');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not load shared link.');
+    }
+  })();
+}
+
 /* File actions: new / save (download) / open (upload). */
 app.querySelector('#fNew')?.addEventListener('click', () => {
   if (!confirm('Start a new document? Unsaved changes to this one are lost.'))

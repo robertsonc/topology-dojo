@@ -17,9 +17,9 @@ export function registerTopologyTools(
     server.registerTool(
       tool.name,
       { description: tool.description, inputSchema: tool.inputShape },
-      (args: Record<string, unknown>) => {
+      async (args: Record<string, unknown>) => {
         try {
-          const result = tool.handler(args);
+          const result = await tool.handler(args);
           const text =
             typeof result === 'string'
               ? result
