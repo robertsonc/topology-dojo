@@ -33,8 +33,8 @@ editor/editor.ts        the canvas editor: an interaction overlay <svg> over the
                         smart guides, links + waypoint editing, undo/redo, tidy.
 
 mcp/                    MCP server: tools.ts (pure handlers), store.ts (in-memory
-                        registry), auth.ts (bearer), register.ts (adapter), server.ts
-                        (stdio entry). Shared by the Worker.
+                        registry), register.ts (adapter), server.ts (stdio entry).
+                        Shared by the Worker. (Remote auth lives in worker/, not here.)
 
 worker/                 Cloudflare Worker: index.ts (serve app + route /mcp),
                         mcp.ts (McpAgent Durable Object), render.ts (bundled engine).
@@ -125,8 +125,9 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
   renderer injected).
 - **Remote:** `worker/mcp.ts` is an `McpAgent` Durable Object (one per MCP
   session, holding that session's store) registering the same tools with the
-  bundled Worker renderer. `worker/index.ts` checks the bearer secret, routes
-  `/mcp` to the agent, and serves everything else from static assets.
+  bundled Worker renderer. `worker/index.ts` wraps it in an OAuth 2.1 provider
+  (`@cloudflare/workers-oauth-provider`, GitHub sign-in) that gates `/mcp`, and
+  serves everything else from static assets.
 
 ## Locked decisions
 

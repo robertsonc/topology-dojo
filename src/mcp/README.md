@@ -111,9 +111,11 @@ document's custom node types).
 | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | `describe_capabilities`                                | Discover node/link/annotation types and their fields             |
 | `create_topology`                                      | New document (one empty page)                                    |
+| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document        |
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                            |
 | `import_topology`                                      | Load from document JSON (string or object)                       |
-| `add_page`                                             | Append a frame                                                   |
+| `set_document_title`                                   | Rename a document                                                |
+| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox           |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                    |
 | `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                 |
 | `define_node_type`                                     | Add a custom node type (merged over defaults)                    |
