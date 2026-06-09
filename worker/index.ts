@@ -18,6 +18,14 @@ interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
   /** Shared secret for bearer auth (a Wrangler secret). */
   MCP_API_KEY?: string;
+  /**
+   * Temporary escape hatch: when set to "true", the bearer check on /mcp is
+   * skipped entirely (the endpoint is wide open). Intended only for short-lived
+   * testing of a client connection — unset it (or set anything but "true") to
+   * restore the normal shared-secret auth. Never leave this on for a deploy that
+   * is reachable from the public internet.
+   */
+  MCP_AUTH_DISABLED?: string;
   /** Durable Object namespace backing the MCP agent. */
   MCP_OBJECT: DurableObjectNamespace;
 }
@@ -32,7 +40,10 @@ export default {
   ): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (pathname === '/mcp' || pathname.startsWith('/mcp/')) {
-      if (!isAuthorized(request, env.MCP_API_KEY)) {
+      const authDisabled = env.MCP_AUTH_DISABLED === 'true';
+      if (authDisabled) {
+        console.warn('MCP auth DISABLED via MCP_AUTH_DISABLED — /mcp is open.');
+      } else if (!isAuthorized(request, env.MCP_API_KEY)) {
         return new Response('Unauthorized\n', {
           status: 401,
           headers: { 'WWW-Authenticate': 'Bearer realm="topology-dojo-mcp"' },
