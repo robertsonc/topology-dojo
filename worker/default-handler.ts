@@ -38,7 +38,10 @@ async function serveSnapshot(id: string, env: WorkerEnv): Promise<Response> {
   return new Response(json, {
     headers: {
       'content-type': 'application/json',
-      'cache-control': 'public, max-age=60',
+      // A snapshot id is write-once (a fresh random id per publish), so its
+      // payload never changes — cache it hard so repeat/shared views skip the
+      // round trip. Bounded well under the KV 30-day TTL.
+      'cache-control': 'public, max-age=86400, immutable',
     },
   });
 }

@@ -6,10 +6,13 @@
     <title>Topology Dojo</title>
     <!-- JetBrains Mono is self-hosted via @fontsource (imported in main.ts) so
          the app renders identically offline / on Cloudflare with no external fetch. -->
-    <!-- Vendored legacy renderer + theme (loaded as classic scripts; expose window.TopologyDesigner) -->
+    <!-- Vendored legacy renderer + theme. Loaded as classic scripts that expose
+         window.TopologyDesigner; `defer` keeps the 300KB+ engine from blocking
+         HTML parsing while still guaranteeing it runs (in order) before the
+         deferred entry module that consumes it. -->
     <link rel="stylesheet" href="/vendor/topology-ds.css" />
-    <script src="/vendor/core/graph.js"></script>
-    <script src="/vendor/topology-ds.js"></script>
+    <script src="/vendor/core/graph.js" defer></script>
+    <script src="/vendor/topology-ds.js" defer></script>
     <style>
       :root {
         --bg: #1d1f27;

@@ -1,0 +1,11 @@
+# Cloudflare Workers static-assets headers.
+#
+# Vite fingerprints its own bundle output (under /assets/), which Cloudflare
+# already serves immutable. The vendored engine + theme live at stable,
+# un-fingerprinted URLs (copied verbatim from public/), so without an explicit
+# policy they get revalidated on every visit. They change only when the vendored
+# engine is re-vendored, so cache them hard — a re-vendor ships a new deploy and
+# these files are large (the engine alone is 300KB+), making this the single
+# biggest repeat-visit win.
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
