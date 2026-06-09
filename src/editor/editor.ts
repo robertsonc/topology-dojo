@@ -96,6 +96,8 @@ export class Editor {
   private nodeSeq = 0;
   /** Smart guides computed during the current drag (alignment + spacing). */
   private guides: Guide[] = [];
+  /** The pattern-filled rect backing the infinite grid (tracks the view). */
+  private gridRect: SVGRectElement | null = null;
   /** Active tool: select/move, draw-link, or drop-anchor. */
   tool: 'select' | 'link' | 'anchor' = 'select';
   private linkStart: string | null = null;
@@ -264,6 +266,7 @@ export class Editor {
     const vb = `${this.view.x} ${this.view.y} ${this.view.w} ${this.view.h}`;
     this.art.setAttribute('viewBox', vb);
     this.overlay.setAttribute('viewBox', vb);
+    this.updateGridFill();
     this.onView();
   }
 
@@ -279,19 +282,54 @@ export class Editor {
     this.renderArt();
   }
 
+  /**
+   * The grid as a single cell tiled (in page coordinates) over a rect that
+   * covers the viewport — an "infinite" canvas grid rather than one clipped to
+   * the page bounds. The fill rect tracks the pan/zoom window (see
+   * `updateGridFill`, called from `applyView`), so the grid keeps filling the
+   * screen wherever you scroll. Neutral grey so it reads on dark and light.
+   */
   private gridSvg(): string {
     if (!this.gridVisible) return '';
-    const [, , vw, vh] = this.page.viewBox.split(' ').map(Number) as [
-      number,
-      number,
-      number,
-      number,
-    ];
-    let d = '';
-    for (let x = 0; x <= vw; x += this.grid) d += `M${x},0 V${vh} `;
-    for (let y = 0; y <= vh; y += this.grid) d += `M0,${y} H${vw} `;
-    // Neutral grey so the grid reads on both the dark and light themes.
-    return `<path d="${d}" stroke="${MUTED}" stroke-opacity="0.18" stroke-width="1" fill="none"/>`;
+    const g = this.grid;
+    const e = this.gridExtent();
+    return (
+      `<defs><pattern id="tds-grid" width="${g}" height="${g}" patternUnits="userSpaceOnUse">` +
+      `<path d="M${g} 0 V ${g} M 0 ${g} H ${g}" stroke="${MUTED}" stroke-opacity="0.18" stroke-width="1" fill="none"/>` +
+      `</pattern></defs>` +
+      `<rect class="tds-grid" x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" fill="url(#tds-grid)"/>`
+    );
+  }
+
+  /**
+   * Grid fill extent: the current view padded by a full viewport on each side
+   * and snapped to the grid, so a fast pan still lands on gridded area before
+   * the next `applyView` refresh catches up.
+   */
+  private gridExtent(): { x: number; y: number; w: number; h: number } {
+    const g = this.grid;
+    const { x, y, w, h } = this.view;
+    return {
+      x: Math.floor((x - w) / g) * g,
+      y: Math.floor((y - h) / g) * g,
+      w: w * 3,
+      h: h * 3,
+    };
+  }
+
+  /**
+   * Keep the grid fill covering the viewport as the view pans/zooms — a cheap
+   * attribute update on the existing rect, with no overlay rebuild (so panning
+   * stays smooth).
+   */
+  private updateGridFill(): void {
+    const r = this.gridRect;
+    if (!r) return;
+    const e = this.gridExtent();
+    r.setAttribute('x', String(e.x));
+    r.setAttribute('y', String(e.y));
+    r.setAttribute('width', String(e.w));
+    r.setAttribute('height', String(e.h));
   }
 
   private selectionSvg(): string {
@@ -444,6 +482,8 @@ export class Editor {
       this.dragGhostSvg() +
       this.marqueeSvg() +
       this.linkPreviewSvg();
+    // Cache the grid fill so applyView can track it without rebuilding the overlay.
+    this.gridRect = this.overlay.querySelector<SVGRectElement>('rect.tds-grid');
   }
 
   /* ── history ──────────────────────────────────────────────────── */
