@@ -31,7 +31,7 @@
   //   npx wrangler kv namespace create TOPOLOGY_KV
   // then paste the returned id below (replace the placeholder).
   "kv_namespaces": [
-    { "binding": "TOPOLOGY_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" },
+    { "binding": "TOPOLOGY_KV", "id": "4a215923f07c43729f70e5f81042befe" },
   ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] }],
   "observability": { "enabled": true },
