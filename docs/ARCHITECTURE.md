@@ -50,12 +50,20 @@ is what lets the exact same logic run in the browser, in Node, and in a Worker.
 ## The document model
 
 ```ts
-TopologyDocument = { title, pages: Page[], customNodes: CustomNodeSpec[] }
+TopologyDocument = { title, pages: Page[], customNodes: CustomNodeSpec[],
+                     layers?: LayerDef[] }      // declared planes, bottom → top
 Page = { id, name, viewBox,
          nodes[], links[], anchors[],          // structure
          zones[], flowPaths[], policyMarkers[]  // annotation layer
        }
 ```
+
+**Layers** (`api/layers.ts`): a document may declare named planes —
+underlay / overlay / policy / service — and any element opts in via a `layer`
+field. Declaration order is z-order (bottom → top); untagged elements form the
+implicit base layer beneath all declared layers. Layers affect stacking and
+visibility only (a `visibleLayers` render option filters; a layer can default
+to hidden), never geometry — a page stays one standalone flipbook frame.
 
 A **Page** is a complete, standalone frame. There is no inheritance between
 pages: `duplicatePage` is a deep `structuredClone` with a fresh id, so editing

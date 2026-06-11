@@ -36,6 +36,8 @@ export interface NodeConfig {
    * ignored by the renderer, carried in the document, editable via API/MCP/GUI.
    */
   meta?: Record<string, string | number | boolean>;
+  /** Id of a declared document layer (see api/layers); absent = base layer. */
+  layer?: string;
   [key: string]: unknown;
 }
 
@@ -55,6 +57,8 @@ export interface LinkConfig {
   flowSpeed?: number;
   flowParticles?: number;
   reverseFlow?: boolean;
+  /** Id of a declared document layer (see api/layers); absent = base layer. */
+  layer?: string;
   [key: string]: unknown;
 }
 
@@ -83,6 +87,8 @@ export interface ZoneConfig {
   labelAlign?: 'left' | 'center' | 'right';
   /** Id of an enclosing zone (zones may nest). */
   parentZone?: string;
+  /** Id of a declared document layer (see api/layers); absent = base layer. */
+  layer?: string;
 }
 
 /**
@@ -101,6 +107,8 @@ export interface FlowPathConfig {
   direction?: 'forward' | 'reverse' | 'bidirectional';
   width?: number;
   opacity?: number;
+  /** Id of a declared document layer (see api/layers); absent = base layer. */
+  layer?: string;
 }
 
 /**
@@ -109,6 +117,7 @@ export interface FlowPathConfig {
  */
 export type { PolicyMarkerType } from '../api/markers.js';
 import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
+import { layerView, type LayerDef } from '../api/layers.js';
 
 /** A policy marker — an enforcement / posture badge pinned to a node. */
 export interface PolicyMarkerConfig {
@@ -124,6 +133,8 @@ export interface PolicyMarkerConfig {
   align?: 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW' | 'C';
   /** Optional association with a flow path. */
   flowPathId?: string;
+  /** Id of a declared document layer (see api/layers); absent = base layer. */
+  layer?: string;
 }
 
 /** The minimal slice of the vendored engine instance we drive. */
@@ -149,6 +160,10 @@ interface EngineInstance {
 export interface RenderOptions {
   /** Calm canvas: suppress motion (animated flow particles, link dots, glints). */
   calm?: boolean;
+  /** Declared document layers (bottom → top) — drives stacking order. */
+  layers?: LayerDef[];
+  /** Only draw these layer ids (untagged base elements always draw). */
+  visibleLayers?: string[];
 }
 
 /** Plugin shape accepted by the engine's static registerNodeType. */
@@ -218,30 +233,43 @@ export function renderPageSVG(
   const topo = new Engine({ viewBox: page.viewBox });
   if (opts.calm) topo.reducedMotion = true;
 
+  // The layer view: hidden layers dropped, the rest stacked bottom → top
+  // (insertion order is the engine's paint order within each collection).
+  const layers = opts.layers ?? [];
+  const nodes = layerView(page.nodes, layers, opts.visibleLayers);
+  const links = layerView(page.links, layers, opts.visibleLayers);
+  const zones = layerView(page.zones ?? [], layers, opts.visibleLayers);
+  const flows = layerView(page.flowPaths ?? [], layers, opts.visibleLayers);
+  const markers = layerView(
+    page.policyMarkers ?? [],
+    layers,
+    opts.visibleLayers,
+  );
+
   for (const a of page.anchors ?? []) topo.anchor(a.id, { x: a.x, y: a.y });
-  for (const n of page.nodes) {
+  for (const n of nodes) {
     const { id, ...cfg } = n;
     topo.node(id, cfg);
   }
-  for (const l of page.links) {
+  for (const l of links) {
     const { id, ...cfg } = l;
     topo.link(id, cfg);
   }
-  for (const z of page.zones ?? []) {
+  for (const z of zones) {
     const { id, ...cfg } = z;
     topo.zone(id, cfg);
   }
-  for (const f of page.flowPaths ?? []) {
+  for (const f of flows) {
     const { id, ...cfg } = f;
     topo.flowPath(id, cfg);
   }
-  for (const m of page.policyMarkers ?? []) {
+  for (const m of markers) {
     const { id, ...cfg } = m;
     topo.policyMarker(id, withMarkerIcon(cfg));
   }
 
   // One step that shows every element at once — a static frame, no choreography.
-  const ids = [...page.nodes.map((n) => n.id), ...page.links.map((l) => l.id)];
+  const ids = [...nodes.map((n) => n.id), ...links.map((l) => l.id)];
   topo.act('all', { label: 'All' });
   topo.addStep('all', {
     act: 'all',

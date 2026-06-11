@@ -8,6 +8,7 @@
  */
 import type { TopologyDocument } from '../pages/model.js';
 import { isBuiltinNodeType, isLinkType } from './builtins.js';
+import { LAYER_KINDS } from './layers.js';
 import {
   getAnnotationType,
   getLinkType,
@@ -43,6 +44,28 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
   });
   const knownNodeType = (t: string): boolean =>
     isBuiltinNodeType(t) || customTypes.has(t);
+
+  // Document layers: unique non-empty ids; `kind` from the known vocabulary.
+  const layerIds = new Set<string>();
+  (doc.layers ?? []).forEach((l, i) => {
+    const at = `layers[${i}]`;
+    if (!l.id) err(at, 'layer has no id');
+    else if (layerIds.has(l.id)) err(at, `duplicate layer id "${l.id}"`);
+    layerIds.add(l.id);
+    if (
+      l.kind !== undefined &&
+      !(LAYER_KINDS as readonly string[]).includes(l.kind)
+    )
+      warn(at, `kind "${String(l.kind)}" not in [${LAYER_KINDS.join(', ')}]`);
+  });
+  // An element's `layer` must reference a declared layer (warning: it still
+  // renders, on the base layer).
+  const checkLayer = (cfg: { layer?: unknown }, where: string): void => {
+    const ly = cfg.layer;
+    if (ly === undefined) return;
+    if (typeof ly !== 'string' || !layerIds.has(ly))
+      warn(where, `layer "${String(ly)}" is not declared in document layers`);
+  };
 
   const pageIds = new Set<string>();
   doc.pages.forEach((page, pi) => {
@@ -84,6 +107,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `${at} node "${n.id}"`,
           `opacity ${String(op)} should be between 0 and 1`,
         );
+      checkLayer(n, `${at} node "${n.id}"`);
     }
     for (const a of page.anchors) {
       claim(a.id, 'anchor');
@@ -104,6 +128,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         err(`${at} link "${l.id}"`, `'from' references missing "${l.from}"`);
       if (!endpoints.has(l.to))
         err(`${at} link "${l.id}"`, `'to' references missing "${l.to}"`);
+      checkLayer(l, `${at} link "${l.id}"`);
     }
 
     // ── Annotation layer: zones, flow paths, policy markers ──
@@ -121,6 +146,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       if (z.parentZone === z.id) err(where, 'zone is its own parent');
       else if (z.parentZone && !zoneIds.has(z.parentZone))
         warn(where, `parentZone references missing zone "${z.parentZone}"`);
+      checkLayer(z, where);
       checkEnums(
         z as unknown as Record<string, unknown>,
         getAnnotationType('zone')?.fields,
@@ -141,6 +167,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       for (const w of wps)
         if (!endpoints.has(w))
           warn(where, `waypoint references missing "${w}"`);
+      checkLayer(f, where);
       checkEnums(
         f as unknown as Record<string, unknown>,
         getAnnotationType('flowPath')?.fields,
@@ -159,6 +186,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           where,
           `flowPathId references missing flow path "${m.flowPathId}"`,
         );
+      checkLayer(m, where);
       checkEnums(
         m as unknown as Record<string, unknown>,
         getAnnotationType('policyMarker')?.fields,

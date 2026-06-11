@@ -14,6 +14,7 @@ import type { CustomNodeSpec } from '../nodes/spec.js';
 import { customHitBox, renderCustomNode } from '../nodes/render.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
+import { layerView, type LayerDef } from '../api/layers.js';
 
 export interface EngineInstance {
   node(id: string, cfg: Record<string, unknown>): void;
@@ -38,6 +39,13 @@ export interface EngineStatic {
 export interface RenderOptions {
   /** Calm: suppress animation (flow particles, link dots) in the output. */
   calm?: boolean;
+  /**
+   * Declared document layers (bottom → top) — drives stacking order. The
+   * document render path fills this from `doc.layers` automatically.
+   */
+  layers?: LayerDef[];
+  /** Only draw these layer ids (untagged base elements always draw). */
+  visibleLayers?: string[];
 }
 
 /** Provide the minimal browser globals the engine constructor sniffs (idempotent). */
@@ -72,31 +80,45 @@ export function renderPageWithEngine(
 
   const topo = new E({ viewBox: page.viewBox });
   if (opts.calm) topo.reducedMotion = true;
+
+  // The layer view: hidden layers dropped, the rest stacked bottom → top
+  // (insertion order is the engine's paint order within each collection).
+  const layers = opts.layers ?? [];
+  const nodes = layerView(page.nodes, layers, opts.visibleLayers);
+  const links = layerView(page.links, layers, opts.visibleLayers);
+  const zones = layerView(page.zones ?? [], layers, opts.visibleLayers);
+  const flows = layerView(page.flowPaths ?? [], layers, opts.visibleLayers);
+  const markers = layerView(
+    page.policyMarkers ?? [],
+    layers,
+    opts.visibleLayers,
+  );
+
   for (const a of page.anchors) topo.anchor(a.id, { x: a.x, y: a.y });
-  for (const n of page.nodes) {
+  for (const n of nodes) {
     const { id, ...cfg } = n;
     topo.node(id, cfg);
   }
-  for (const l of page.links) {
+  for (const l of links) {
     const { id, ...cfg } = l;
     topo.link(id, cfg);
   }
-  for (const z of page.zones ?? []) {
+  for (const z of zones) {
     const { id, ...cfg } = z;
     topo.zone(id, cfg);
   }
-  for (const f of page.flowPaths ?? []) {
+  for (const f of flows) {
     const { id, ...cfg } = f;
     topo.flowPath(id, cfg);
   }
-  for (const m of page.policyMarkers ?? []) {
+  for (const m of markers) {
     const { id, ...cfg } = m;
     topo.policyMarker(id, withMarkerIcon(cfg));
   }
 
   // One all-showing step + a trailing step we sit on → every element renders
   // fully with no entrance animation (the validated static-frame trick).
-  const ids = [...page.nodes.map((n) => n.id), ...page.links.map((l) => l.id)];
+  const ids = [...nodes.map((n) => n.id), ...links.map((l) => l.id)];
   topo.act('all', { label: 'All' });
   topo.addStep('all', {
     act: 'all',
@@ -136,5 +158,8 @@ export function renderDocumentWithEngine(
 ): string {
   const page = doc.pages[pageIndex];
   if (!page) throw new Error(`page index ${pageIndex} out of range`);
-  return renderPageWithEngine(E, page, doc.customNodes, opts);
+  return renderPageWithEngine(E, page, doc.customNodes, {
+    ...opts,
+    layers: opts.layers ?? doc.layers ?? [],
+  });
 }

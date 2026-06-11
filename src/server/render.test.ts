@@ -128,4 +128,53 @@ describe('headless render (Node, no browser)', () => {
     const doc = createDocument().page().build();
     expect(() => renderDocumentToSVG(doc, 5)).toThrow();
   });
+
+  it('stacks declared layers bottom → top (underlay paints before overlay)', () => {
+    const doc = createDocument('Fabric')
+      .layer({ id: 'under', kind: 'underlay' })
+      .layer({ id: 'over', kind: 'overlay' })
+      .page()
+      .node({ id: 'a', type: 'ec', x: 150, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 650, y: 200 })
+      // Authored overlay-first: layer rank, not authoring order, must win.
+      .link({ id: 'tun', type: 'tunnel', from: 'a', to: 'b', layer: 'over' })
+      .link({ id: 'wan', type: 'line', from: 'a', to: 'b', layer: 'under' })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    const wanAt = svg.indexOf('data-tds-link="wan"');
+    const tunAt = svg.indexOf('data-tds-link="tun"');
+    expect(wanAt).toBeGreaterThan(-1);
+    expect(tunAt).toBeGreaterThan(-1);
+    expect(wanAt).toBeLessThan(tunAt); // underlay below, overlay on top
+  });
+
+  it('visibleLayers filters the output; base elements always draw', () => {
+    const doc = createDocument('Fabric')
+      .layer({ id: 'under', kind: 'underlay' })
+      .layer({ id: 'over', kind: 'overlay' })
+      .page()
+      .node({ id: 'a', type: 'ec', x: 150, y: 200, label: 'Site-A' })
+      .node({ id: 'b', type: 'ec', x: 650, y: 200, label: 'Site-B' })
+      .link({ id: 'wan', type: 'line', from: 'a', to: 'b', layer: 'under' })
+      .link({ id: 'tun', type: 'tunnel', from: 'a', to: 'b', layer: 'over' })
+      .build();
+    const underOnly = renderDocumentToSVG(doc, 0, { visibleLayers: ['under'] });
+    expect(underOnly).toContain('data-tds-link="wan"');
+    expect(underOnly).not.toContain('data-tds-link="tun"');
+    expect(underOnly).toContain('Site-A'); // untagged base nodes still draw
+  });
+
+  it('honors a layer’s defaultVisible:false when no visible set is given', () => {
+    const doc = createDocument('Fabric')
+      .layer({ id: 'pol', kind: 'policy', defaultVisible: false })
+      .page()
+      .node({ id: 'a', type: 'ec', x: 150, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 650, y: 200 })
+      .link({ id: 'tun', type: 'tunnel', from: 'a', to: 'b', layer: 'pol' })
+      .build();
+    expect(renderDocumentToSVG(doc)).not.toContain('data-tds-link="tun"');
+    expect(renderDocumentToSVG(doc, 0, { visibleLayers: ['pol'] })).toContain(
+      'data-tds-link="tun"',
+    );
+  });
 });

@@ -19,9 +19,16 @@ import {
   addPage,
   addPolicyMarker,
   addZone,
+  defineLayer,
   defineNodeType,
 } from '../api/builder.js';
-import { annotationCatalog, linkCatalog, nodeCatalog } from '../api/catalog.js';
+import {
+  annotationCatalog,
+  layerCatalog,
+  linkCatalog,
+  nodeCatalog,
+} from '../api/catalog.js';
+import { LAYER_KINDS } from '../api/layers.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { tidyDocument } from '../api/tidy.js';
@@ -83,6 +90,12 @@ const metaShape = z
   .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
   .optional()
   .describe('Key/value node metadata (serial, version, hostname, site…).');
+const layerArg = z
+  .string()
+  .optional()
+  .describe(
+    'Layer id this element belongs to (declare layers with define_layer); omit for the base layer.',
+  );
 
 const BORDER = ['dashed', 'solid', 'dotted'] as const;
 const ANIMATION = ['particles', 'dashed', 'pulse'] as const;
@@ -107,6 +120,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           nodeTypes: nodeCatalog(custom),
           linkTypes: linkCatalog(),
           annotations: annotationCatalog(),
+          layers: layerCatalog(),
         };
       },
     },
@@ -244,6 +258,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         color: z.string().optional(),
         nodeId: z.string().optional().describe('Explicit id (else generated).'),
         meta: metaShape,
+        layer: layerArg,
         extra,
       },
       handler: (a) =>
@@ -260,6 +275,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.meta !== undefined ? { meta: a.meta as MetaMap } : {}),
+            ...(a.layer !== undefined ? { layer: String(a.layer) } : {}),
             ...((a.extra as Record<string, unknown>) ?? {}),
           },
         ),
@@ -318,6 +334,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .optional()
           .describe('Reverse the flow direction.'),
         linkId: z.string().optional(),
+        layer: layerArg,
         extra,
       },
       handler: (a) =>
@@ -342,6 +359,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.reverseFlow !== undefined
               ? { reverseFlow: Boolean(a.reverseFlow) }
               : {}),
+            ...(a.layer !== undefined ? { layer: String(a.layer) } : {}),
             ...((a.extra as Record<string, unknown>) ?? {}),
           },
         ),
@@ -382,6 +400,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         labelAlign: z.enum(['left', 'center', 'right']).optional(),
         parentZone: z.string().optional(),
         zoneId: z.string().optional(),
+        layer: layerArg,
       },
       handler: (a) =>
         addZone(
@@ -407,6 +426,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.parentZone !== undefined
               ? { parentZone: String(a.parentZone) }
               : {}),
+            ...(a.layer !== undefined ? { layer: String(a.layer) } : {}),
           },
         ),
     },
@@ -426,6 +446,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         width: z.number().optional(),
         opacity: z.number().optional(),
         flowPathId: z.string().optional(),
+        layer: layerArg,
       },
       handler: (a) =>
         addFlowPath(
@@ -446,6 +467,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               : {}),
             ...(a.width !== undefined ? { width: Number(a.width) } : {}),
             ...(a.opacity !== undefined ? { opacity: Number(a.opacity) } : {}),
+            ...(a.layer !== undefined ? { layer: String(a.layer) } : {}),
           },
         ),
     },
@@ -467,6 +489,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         align: z.enum(ALIGN9).optional(),
         flowPathId: z.string().optional(),
         markerId: z.string().optional(),
+        layer: layerArg,
       },
       handler: (a) =>
         addPolicyMarker(
@@ -484,8 +507,48 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.flowPathId !== undefined
               ? { flowPathId: String(a.flowPathId) }
               : {}),
+            ...(a.layer !== undefined ? { layer: String(a.layer) } : {}),
           },
         ),
+    },
+    {
+      name: 'define_layer',
+      description:
+        'Declare (or update, by id) a document layer — a named plane such as underlay / overlay / policy. Declaration order is z-order (bottom → top); untagged elements form the implicit base layer beneath all declared layers. Elements opt in by passing `layer` to the add_* tools; render_svg can filter with visibleLayers.',
+      inputShape: {
+        topologyId,
+        layerId: z
+          .string()
+          .optional()
+          .describe('Explicit id (else generated). Re-use an id to update.'),
+        name: z
+          .string()
+          .optional()
+          .describe('Display name (falls back to id).'),
+        kind: z
+          .enum(LAYER_KINDS)
+          .optional()
+          .describe('Semantic role of the plane.'),
+        color: z.string().optional(),
+        defaultVisible: z
+          .boolean()
+          .optional()
+          .describe(
+            'Drawn when render_svg gets no visibleLayers (default true).',
+          ),
+      },
+      handler: (a) =>
+        defineLayer(store.get(String(a.topologyId)), {
+          ...(a.layerId !== undefined ? { id: String(a.layerId) } : {}),
+          ...(a.name !== undefined ? { name: String(a.name) } : {}),
+          ...(a.kind !== undefined
+            ? { kind: a.kind as (typeof LAYER_KINDS)[number] }
+            : {}),
+          ...(a.color !== undefined ? { color: String(a.color) } : {}),
+          ...(a.defaultVisible !== undefined
+            ? { defaultVisible: Boolean(a.defaultVisible) }
+            : {}),
+        }),
     },
     {
       name: 'define_node_type',
@@ -591,7 +654,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame).',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -599,11 +662,18 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .int()
           .optional()
           .describe('0-based page index; defaults to 0.'),
+        visibleLayers: z
+          .array(z.string())
+          .optional()
+          .describe('Layer ids to draw (omit for the layers’ defaults).'),
       },
       handler: (a) =>
         deps.renderDocument(
           store.get(String(a.topologyId)),
           (a.pageIndex as number | undefined) ?? 0,
+          a.visibleLayers !== undefined
+            ? { visibleLayers: a.visibleLayers as string[] }
+            : {},
         ),
     },
   ];

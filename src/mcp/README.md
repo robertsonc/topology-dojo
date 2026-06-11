@@ -107,25 +107,26 @@ document's custom node types).
 
 ## Tools
 
-| Tool                                                   | Purpose                                                          |
-| ------------------------------------------------------ | ---------------------------------------------------------------- |
-| `describe_capabilities`                                | Discover node/link/annotation types and their fields             |
-| `create_topology`                                      | New document (one empty page)                                    |
-| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document        |
-| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                            |
-| `import_topology`                                      | Load from document JSON (string or object)                       |
-| `set_document_title`                                   | Rename a document                                                |
-| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox           |
-| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                    |
-| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                 |
-| `define_node_type`                                     | Add a custom node type (merged over defaults)                    |
-| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…) |
-| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)    |
-| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)    |
-| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds            |
-| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)    |
-| `render_svg`                                           | Render a page to a standalone SVG string                         |
-| `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only) |
+| Tool                                                   | Purpose                                                            |
+| ------------------------------------------------------ | ------------------------------------------------------------------ |
+| `describe_capabilities`                                | Discover node/link/annotation types and their fields               |
+| `create_topology`                                      | New document (one empty page)                                      |
+| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document          |
+| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                              |
+| `import_topology`                                      | Load from document JSON (string or object)                         |
+| `set_document_title`                                   | Rename a document                                                  |
+| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox             |
+| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                      |
+| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                   |
+| `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service)   |
+| `define_node_type`                                     | Add a custom node type (merged over defaults)                      |
+| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)   |
+| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)      |
+| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)      |
+| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds              |
+| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)      |
+| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters) |
+| `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)   |
 
 ## Layout quality
 

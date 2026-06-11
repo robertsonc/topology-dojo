@@ -9,6 +9,7 @@
  */
 import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import { POLICY_MARKER_TYPES } from './markers.js';
+import { LAYER_KINDS } from './layers.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 
 export type FieldKind =
@@ -71,6 +72,8 @@ const POSITION: FieldSpec[] = [
   { key: 'x', label: 'X', kind: 'number', required: true },
   { key: 'y', label: 'Y', kind: 'number', required: true },
 ];
+/** Every element kind can opt into a declared document layer. */
+const LAYER_FIELD: FieldSpec = { key: 'layer', label: 'Layer', kind: 'ref' };
 const NODE_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string' },
   { key: 'sublabel', label: 'Sublabel', kind: 'string' },
@@ -80,6 +83,7 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'labelOffset', label: 'Label offset', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   { key: 'meta', label: 'Metadata', kind: 'record' },
+  LAYER_FIELD,
 ];
 
 /** Per-type extra fields, keyed by node type (common + position are added). */
@@ -172,6 +176,7 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           { key: 'color', label: 'Color', kind: 'color' as const },
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
           { key: 'locked', label: 'Locked', kind: 'boolean' as const },
+          LAYER_FIELD,
         ]
       : [...POSITION, ...NODE_COMMON, ...(NODE_EXTRAS[type] ?? [])];
     return [
@@ -229,6 +234,7 @@ const LINK_COMMON: FieldSpec[] = [
     animation: true,
   },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
+  LAYER_FIELD,
 ];
 
 /** Per-type extra link fields. */
@@ -292,6 +298,7 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
         options: ['left', 'center', 'right'],
       },
       { key: 'parentZone', label: 'Parent zone', kind: 'ref' },
+      LAYER_FIELD,
     ],
   },
   flowPath: {
@@ -325,6 +332,7 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
       },
       { key: 'width', label: 'Width', kind: 'number' },
       { key: 'opacity', label: 'Opacity', kind: 'number' },
+      LAYER_FIELD,
     ],
   },
   policyMarker: {
@@ -350,6 +358,7 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
         options: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'C'],
       },
       { key: 'flowPathId', label: 'Flow path', kind: 'ref' },
+      LAYER_FIELD,
     ],
   },
 };
@@ -396,6 +405,24 @@ export function getLinkType(type: string): LinkTypeInfo | undefined {
 /** All page-level annotation kinds (zones, flow paths, policy markers). */
 export function annotationCatalog(): AnnotationTypeInfo[] {
   return Object.values(ANNOTATION_CATALOG);
+}
+
+/** The document-layer vocabulary: semantic kinds + a LayerDef's fields. */
+export interface LayerCatalogInfo {
+  kinds: readonly string[];
+  fields: FieldSpec[];
+}
+
+export function layerCatalog(): LayerCatalogInfo {
+  return {
+    kinds: LAYER_KINDS,
+    fields: [
+      { key: 'name', label: 'Name', kind: 'string' },
+      { key: 'kind', label: 'Kind', kind: 'enum', options: LAYER_KINDS },
+      { key: 'color', label: 'Color', kind: 'color' },
+      { key: 'defaultVisible', label: 'Visible by default', kind: 'boolean' },
+    ],
+  };
 }
 
 export function getAnnotationType(

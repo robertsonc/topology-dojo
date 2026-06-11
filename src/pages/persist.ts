@@ -8,12 +8,18 @@
 import type { TopologyDocument, Page } from './model.js';
 import { newPageId } from './model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
+import type { LayerDef } from '../api/layers.js';
 
 const KEY = 'topology-dojo:doc';
 
 export function serializeDoc(doc: TopologyDocument): string {
   return JSON.stringify(
-    { title: doc.title, pages: doc.pages, customNodes: doc.customNodes },
+    {
+      title: doc.title,
+      pages: doc.pages,
+      customNodes: doc.customNodes,
+      ...(doc.layers?.length ? { layers: doc.layers } : {}),
+    },
     null,
     2,
   );
@@ -57,10 +63,20 @@ export function parseDoc(input: unknown): TopologyDocument | null {
   const customNodes = Array.isArray(d.customNodes)
     ? (d.customNodes as CustomNodeSpec[])
     : [];
+  // Layers: keep only well-formed entries (a string id); drop the rest.
+  const layers = Array.isArray(d.layers)
+    ? (d.layers as unknown[]).filter(
+        (l): l is LayerDef =>
+          typeof l === 'object' &&
+          l !== null &&
+          typeof (l as { id?: unknown }).id === 'string',
+      )
+    : [];
   return {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
     customNodes,
+    ...(layers.length ? { layers } : {}),
   };
 }
 
