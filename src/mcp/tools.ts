@@ -29,6 +29,13 @@ import {
   nodeCatalog,
 } from '../api/catalog.js';
 import { LAYER_KINDS } from '../api/layers.js';
+import {
+  removeElement,
+  updateElement,
+  upsertBySource,
+  type SourcedKind,
+} from '../api/edit.js';
+import type { SourceRef } from '../api/source.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { tidyDocument } from '../api/tidy.js';
@@ -509,6 +516,81 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               : {}),
             ...(a.layer !== undefined ? { layer: String(a.layer) } : {}),
           },
+        ),
+    },
+    {
+      name: 'update_element',
+      description:
+        'Patch an existing element (node, link, anchor, zone, flow path, or policy marker) by its id: merge the given fields, set a field to null to clear it. The id cannot be changed. Field names come from describe_capabilities. This is how a topology is refreshed in place instead of rebuilt.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        elementId: z.string().describe('Id of the element to patch.'),
+        set: z
+          .record(z.string(), z.unknown())
+          .describe('Fields to merge; null clears a field.'),
+      },
+      handler: (a) =>
+        updateElement(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          String(a.elementId),
+          (a.set as Record<string, unknown>) ?? {},
+        ),
+    },
+    {
+      name: 'remove_element',
+      description:
+        'Remove an element by id. By default dependents are removed or cleaned too (links on a removed endpoint, markers on a removed node, zone memberships, flow-path waypoints — a path left with <2 waypoints is removed). Pass cascade:false to leave dangling references for validate_topology to flag.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        elementId: z.string().describe('Id of the element to remove.'),
+        cascade: z
+          .boolean()
+          .optional()
+          .describe('Remove/clean dependents too (default true).'),
+      },
+      handler: (a) =>
+        removeElement(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          String(a.elementId),
+          a.cascade !== undefined ? { cascade: Boolean(a.cascade) } : {},
+        ),
+    },
+    {
+      name: 'upsert_by_source',
+      description:
+        'Converge an element onto external data by its source identity (system + kind + id, e.g. an orchestrator appliance or tunnel). If an element of that kind already carries the same source, it is patched with `set` and its source ref refreshed; otherwise it is created (set must then include the kind’s required fields, e.g. type/x/y for a node). Re-running never duplicates — the idempotent write for live importers.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        kind: z
+          .enum(['node', 'link', 'zone', 'flowPath', 'policyMarker'])
+          .describe('Element kind to upsert.'),
+        source: z
+          .object({
+            system: z.string().describe('External system, e.g. "edgeconnect".'),
+            kind: z
+              .string()
+              .describe('Object kind there, e.g. "appliance" | "tunnel".'),
+            id: z.string().describe('The object’s id in that system.'),
+            fetchedAt: z
+              .string()
+              .optional()
+              .describe('Freshness timestamp (ISO 8601).'),
+          })
+          .describe('The external identity to match on.'),
+        set: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('Fields to apply (see describe_capabilities).'),
+      },
+      handler: (a) =>
+        upsertBySource(
+          store.page(String(a.topologyId), a.pageIndex as number | undefined),
+          a.kind as SourcedKind,
+          a.source as SourceRef,
+          (a.set as Record<string, unknown>) ?? {},
         ),
     },
     {

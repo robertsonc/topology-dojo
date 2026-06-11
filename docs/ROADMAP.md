@@ -42,6 +42,12 @@ Built methodically, one reviewable PR at a time, each reviewed against
   builder, catalog, validation, both render paths, persistence, MCP
   (`define_layer`). Groundwork for live SD-WAN flow visualization
   ([proposal](proposals/0001-live-flow-visualization.md), E1).
+- **External identity + full CRUD** (`api/source.ts`, `api/edit.ts`): a
+  `source` ref (system/kind/id + freshness) on every element, update / remove
+  (with dependent cascade) / upsert-by-source ops, validated shape + duplicate
+  identity warnings, MCP tools (`update_element`, `remove_element`,
+  `upsert_by_source`) — re-running a live import converges instead of
+  duplicating ([proposal](proposals/0001-live-flow-visualization.md), E2).
 
 ### Layout for AI
 

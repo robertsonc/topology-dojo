@@ -38,6 +38,8 @@ export interface NodeConfig {
   meta?: Record<string, string | number | boolean>;
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
+  /** External identity in a source system (see api/source); enables upsert. */
+  source?: SourceRef;
   [key: string]: unknown;
 }
 
@@ -59,6 +61,8 @@ export interface LinkConfig {
   reverseFlow?: boolean;
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
+  /** External identity in a source system (see api/source); enables upsert. */
+  source?: SourceRef;
   [key: string]: unknown;
 }
 
@@ -89,6 +93,8 @@ export interface ZoneConfig {
   parentZone?: string;
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
+  /** External identity in a source system (see api/source); enables upsert. */
+  source?: SourceRef;
 }
 
 /**
@@ -109,6 +115,8 @@ export interface FlowPathConfig {
   opacity?: number;
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
+  /** External identity in a source system (see api/source); enables upsert. */
+  source?: SourceRef;
 }
 
 /**
@@ -118,6 +126,7 @@ export interface FlowPathConfig {
 export type { PolicyMarkerType } from '../api/markers.js';
 import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
+import type { SourceRef } from '../api/source.js';
 
 /** A policy marker — an enforcement / posture badge pinned to a node. */
 export interface PolicyMarkerConfig {
@@ -135,6 +144,8 @@ export interface PolicyMarkerConfig {
   flowPathId?: string;
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
+  /** External identity in a source system (see api/source); enables upsert. */
+  source?: SourceRef;
 }
 
 /** The minimal slice of the vendored engine instance we drive. */

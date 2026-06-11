@@ -112,6 +112,14 @@ describe('capability catalog', () => {
     for (const a of annotationCatalog()) expect(hasLayer(a.fields)).toBe(true);
   });
 
+  it('exposes the source-ref field on every node, link, and annotation type', () => {
+    const hasSource = (fields: { key: string }[]): boolean =>
+      fields.some((f) => f.key === 'source');
+    for (const n of nodeCatalog()) expect(hasSource(n.fields)).toBe(true);
+    for (const l of linkCatalog()) expect(hasSource(l.fields)).toBe(true);
+    for (const a of annotationCatalog()) expect(hasSource(a.fields)).toBe(true);
+  });
+
   it('describes the layer vocabulary (kinds + LayerDef fields)', () => {
     const layers = layerCatalog();
     expect(layers.kinds).toEqual(LAYER_KINDS);
