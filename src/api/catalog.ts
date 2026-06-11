@@ -74,6 +74,12 @@ const POSITION: FieldSpec[] = [
 ];
 /** Every element kind can opt into a declared document layer. */
 const LAYER_FIELD: FieldSpec = { key: 'layer', label: 'Layer', kind: 'ref' };
+/** Every element kind (except anchors) can carry an external source identity. */
+const SOURCE_FIELD: FieldSpec = {
+  key: 'source',
+  label: 'Source ref',
+  kind: 'record',
+};
 const NODE_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string' },
   { key: 'sublabel', label: 'Sublabel', kind: 'string' },
@@ -84,6 +90,7 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   { key: 'meta', label: 'Metadata', kind: 'record' },
   LAYER_FIELD,
+  SOURCE_FIELD,
 ];
 
 /** Per-type extra fields, keyed by node type (common + position are added). */
@@ -177,6 +184,7 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
           { key: 'locked', label: 'Locked', kind: 'boolean' as const },
           LAYER_FIELD,
+          SOURCE_FIELD,
         ]
       : [...POSITION, ...NODE_COMMON, ...(NODE_EXTRAS[type] ?? [])];
     return [
@@ -235,6 +243,7 @@ const LINK_COMMON: FieldSpec[] = [
   },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   LAYER_FIELD,
+  SOURCE_FIELD,
 ];
 
 /** Per-type extra link fields. */
@@ -299,6 +308,7 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
       },
       { key: 'parentZone', label: 'Parent zone', kind: 'ref' },
       LAYER_FIELD,
+      SOURCE_FIELD,
     ],
   },
   flowPath: {
@@ -333,6 +343,7 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
       { key: 'width', label: 'Width', kind: 'number' },
       { key: 'opacity', label: 'Opacity', kind: 'number' },
       LAYER_FIELD,
+      SOURCE_FIELD,
     ],
   },
   policyMarker: {
@@ -359,6 +370,7 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
       },
       { key: 'flowPathId', label: 'Flow path', kind: 'ref' },
       LAYER_FIELD,
+      SOURCE_FIELD,
     ],
   },
 };

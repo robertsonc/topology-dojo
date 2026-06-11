@@ -118,6 +118,8 @@ document's custom node types).
 | `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox             |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                      |
 | `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                   |
+| `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)        |
+| `upsert_by_source`                                     | Converge an element onto external data by source identity          |
 | `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service)   |
 | `define_node_type`                                     | Add a custom node type (merged over defaults)                      |
 | `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)   |

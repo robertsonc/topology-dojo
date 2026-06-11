@@ -42,9 +42,12 @@ describe('MCP tools', () => {
         'list_topologies',
         'render_svg',
         'set_document_title',
+        'remove_element',
         'set_node_metadata',
         'set_page_properties',
         'tidy_topology',
+        'update_element',
+        'upsert_by_source',
         'validate_topology',
       ].sort(),
     );
@@ -363,6 +366,77 @@ describe('MCP tools', () => {
     ]);
     expect(caps.layers.kinds).toContain('underlay');
     expect(caps.layers.kinds).toContain('overlay');
+  });
+
+  it('updates, removes (with cascade), and upserts by source via tools', () => {
+    const { id } = call('create_topology', { title: 'Live' }) as { id: string };
+    const src = { system: 'edgeconnect', kind: 'appliance', id: 'nePk:7.NE' };
+
+    // First import run: creates.
+    const first = call('upsert_by_source', {
+      topologyId: id,
+      kind: 'node',
+      source: { ...src, fetchedAt: '2026-06-11T00:00:00Z' },
+      set: { type: 'ec', x: 200, y: 200, label: 'EC-7' },
+    }) as { created: boolean; element: { id: string } };
+    expect(first.created).toBe(true);
+
+    // Second run: converges (no duplicate), refreshes the source ref.
+    const second = call('upsert_by_source', {
+      topologyId: id,
+      kind: 'node',
+      source: { ...src, fetchedAt: '2026-06-11T01:00:00Z' },
+      set: { label: 'EC-7 (up)' },
+    }) as { created: boolean; element: { id: string } };
+    expect(second.created).toBe(false);
+    expect(second.element.id).toBe(first.element.id);
+    let doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.pages[0]!.nodes).toHaveLength(1);
+    expect(doc.pages[0]!.nodes[0]!.label).toBe('EC-7 (up)');
+    expect(doc.pages[0]!.nodes[0]!.source?.fetchedAt).toBe(
+      '2026-06-11T01:00:00Z',
+    );
+
+    // update_element patches in place; null clears.
+    call('add_node', { topologyId: id, type: 'host', x: 0, y: 0, nodeId: 'h' });
+    call('add_link', {
+      topologyId: id,
+      type: 'line',
+      from: 'h',
+      to: first.element.id,
+      linkId: 'lan',
+    });
+    call('update_element', {
+      topologyId: id,
+      elementId: 'lan',
+      set: { label: 'LAN', color: '#65aef9' },
+    });
+    call('update_element', {
+      topologyId: id,
+      elementId: 'lan',
+      set: { color: null },
+    });
+    doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    const lan = doc.pages[0]!.links.find((l) => l.id === 'lan')!;
+    expect(lan.label).toBe('LAN');
+    expect(lan.color).toBeUndefined();
+
+    // remove_element cascades: removing the host takes its link along.
+    const removed = call('remove_element', {
+      topologyId: id,
+      elementId: 'h',
+    }) as { removed: string; cascaded: { links: number } };
+    expect(removed.removed).toBe('node');
+    expect(removed.cascaded.links).toBe(1);
+    doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.pages[0]!.links).toHaveLength(0);
+    expect(call('validate_topology', { topologyId: id })).toMatchObject({
+      valid: true,
+    });
+
+    expect(() =>
+      call('update_element', { topologyId: id, elementId: 'ghost', set: {} }),
+    ).toThrow(/unknown element/);
   });
 
   it('declares layers, tags elements, and renders a filtered layer view', () => {

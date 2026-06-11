@@ -66,6 +66,21 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     if (typeof ly !== 'string' || !layerIds.has(ly))
       warn(where, `layer "${String(ly)}" is not declared in document layers`);
   };
+  // An element's `source` must be a well-formed external identity.
+  const checkSource = (cfg: { source?: unknown }, where: string): void => {
+    const s = cfg.source;
+    if (s === undefined) return;
+    if (typeof s !== 'object' || s === null || Array.isArray(s)) {
+      err(where, 'source must be an object { system, kind, id }');
+      return;
+    }
+    const r = s as Record<string, unknown>;
+    for (const k of ['system', 'kind', 'id'])
+      if (typeof r[k] !== 'string' || !r[k])
+        err(where, `source.${k} must be a non-empty string`);
+    if (r.fetchedAt !== undefined && typeof r.fetchedAt !== 'string')
+      warn(where, 'source.fetchedAt should be an ISO 8601 string');
+  };
 
   const pageIds = new Set<string>();
   doc.pages.forEach((page, pi) => {
@@ -108,6 +123,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `opacity ${String(op)} should be between 0 and 1`,
         );
       checkLayer(n, `${at} node "${n.id}"`);
+      checkSource(n, `${at} node "${n.id}"`);
     }
     for (const a of page.anchors) {
       claim(a.id, 'anchor');
@@ -129,6 +145,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       if (!endpoints.has(l.to))
         err(`${at} link "${l.id}"`, `'to' references missing "${l.to}"`);
       checkLayer(l, `${at} link "${l.id}"`);
+      checkSource(l, `${at} link "${l.id}"`);
     }
 
     // ── Annotation layer: zones, flow paths, policy markers ──
@@ -147,6 +164,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       else if (z.parentZone && !zoneIds.has(z.parentZone))
         warn(where, `parentZone references missing zone "${z.parentZone}"`);
       checkLayer(z, where);
+      checkSource(z, where);
       checkEnums(
         z as unknown as Record<string, unknown>,
         getAnnotationType('zone')?.fields,
@@ -168,6 +186,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         if (!endpoints.has(w))
           warn(where, `waypoint references missing "${w}"`);
       checkLayer(f, where);
+      checkSource(f, where);
       checkEnums(
         f as unknown as Record<string, unknown>,
         getAnnotationType('flowPath')?.fields,
@@ -187,6 +206,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `flowPathId references missing flow path "${m.flowPathId}"`,
         );
       checkLayer(m, where);
+      checkSource(m, where);
       checkEnums(
         m as unknown as Record<string, unknown>,
         getAnnotationType('policyMarker')?.fields,
@@ -194,6 +214,37 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         warn,
       );
     }
+
+    // Two elements of one kind claiming the same external identity defeats
+    // upsert matching — the importer would update one and orphan the other.
+    const sourceSeen = new Map<string, string>();
+    const sourced: [string, { id: string; source?: unknown }[]][] = [
+      ['node', page.nodes],
+      ['link', page.links],
+      ['zone', page.zones ?? []],
+      ['flow path', page.flowPaths ?? []],
+      ['policy marker', page.policyMarkers ?? []],
+    ];
+    for (const [kindName, elements] of sourced)
+      for (const e of elements) {
+        const s = e.source as Record<string, unknown> | undefined;
+        if (
+          !s ||
+          typeof s !== 'object' ||
+          typeof s.system !== 'string' ||
+          typeof s.kind !== 'string' ||
+          typeof s.id !== 'string'
+        )
+          continue;
+        const key = `${kindName}|${s.system}|${s.kind}|${s.id}`;
+        const prior = sourceSeen.get(key);
+        if (prior)
+          warn(
+            `${at} ${kindName} "${e.id}"`,
+            `duplicate source ${s.system}/${s.kind}/${s.id} (also on "${prior}")`,
+          );
+        else sourceSeen.set(key, e.id);
+      }
   });
 
   return problems;

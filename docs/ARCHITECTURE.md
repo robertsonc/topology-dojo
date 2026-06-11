@@ -13,6 +13,9 @@ pages/persist.ts        (de)serialize + autosave to localStorage; defensive pars
 
 api/                    headless authoring, DOM-free:
   builder.ts            pure ops + fluent builder (createDocument()…build()).
+  edit.ts               mutation ops: updateElement / removeElement (cascade) /
+                        upsertBySource (idempotent converge on external data).
+  source.ts             SourceRef — stable external identity (system/kind/id).
   validate.ts           semantic validation (+ folds in the layout analyzer).
   catalog.ts            the capability catalog: every node/link/annotation type
                         and its editable fields — the machine-readable schema.
