@@ -35,8 +35,15 @@ editor/editor.ts        the canvas editor: an interaction overlay <svg> over the
                         engine-rendered art <svg>. Owns selection, drag, marquee,
                         smart guides, links + waypoint editing, undo/redo, tidy.
 
+connect/                the live-data connector layer: types.ts (the vendor-neutral
+                        TopologyProvider contract + normalized records), edgeconnect.ts
+                        (EdgeConnect Orchestrator REST client; injectable fetch),
+                        mock.ts (fixture fabric for tests/demos). Credentials come
+                        from env/secrets only — never through tool arguments.
+
 mcp/                    MCP server: tools.ts (pure handlers), store.ts (in-memory
-                        registry), register.ts (adapter), server.ts (stdio entry).
+                        registry), register.ts (adapter + runtime arg validation),
+                        server.ts (stdio entry).
                         Shared by the Worker. (Remote auth lives in worker/, not here.)
 
 worker/                 Cloudflare Worker: index.ts (serve app + route /mcp),

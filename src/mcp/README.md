@@ -128,7 +128,30 @@ document's custom node types).
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds              |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)      |
 | `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters) |
+| `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                          |
+| `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                  |
+| `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                       |
+| `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail         |
 | `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)   |
+
+## Live fabric data (optional)
+
+The _(live-data)_ tools above are registered only when a `TopologyProvider`
+is wired in — they read an SD-WAN fabric (appliances, underlay/overlay
+tunnels, overlay policies, and flow tables incl. recently-ended flows) so an
+agent can build topologies from reality instead of from prose. Credentials
+come from the environment only; they never pass through tool arguments.
+
+- **stdio:** set `ORCH_BASE_URL` + `ORCH_API_KEY` (EdgeConnect Orchestrator
+  origin + API key) in the server's environment, or `TOPOLOGY_PROVIDER=mock`
+  for a built-in fixture fabric (demo / development with zero fabric access).
+- **Cloudflare:** set the `ORCH_BASE_URL` var and the **`ORCH_API_KEY`
+  dashboard secret** (same pattern as `GITHUB_CLIENT_SECRET`).
+
+The EdgeConnect provider (`src/connect/edgeconnect.ts`) talks only to the
+**Orchestrator** — appliance flow tables are read through its appliance-API
+proxy, so one key covers the whole fabric and gateways are never contacted
+directly.
 
 ## Layout quality
 

@@ -26,4 +26,11 @@ export interface WorkerEnv {
   GITHUB_CLIENT_ID: string;
   /** GitHub OAuth App client secret (set as a Wrangler/dashboard secret). */
   GITHUB_CLIENT_SECRET: string;
+  /**
+   * EdgeConnect Orchestrator origin + API key (both optional; set the key as
+   * a Wrangler/dashboard secret). When both are present, the MCP agent wires
+   * the live-data provider and registers the read-only fabric tools.
+   */
+  ORCH_BASE_URL?: string;
+  ORCH_API_KEY?: string;
 }

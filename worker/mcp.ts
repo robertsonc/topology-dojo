@@ -11,6 +11,7 @@ import { registerTopologyTools } from '../src/mcp/register.js';
 import { TopologyStore } from '../src/mcp/store.js';
 import { serializeDoc } from '../src/pages/persist.js';
 import type { TopologyDocument } from '../src/pages/model.js';
+import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
 import type { WorkerEnv } from './env.js';
 
@@ -27,11 +28,20 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   private store = new TopologyStore();
 
   async init(): Promise<void> {
+    // Live-data provider, when the Orchestrator secrets are configured.
+    const provider =
+      this.env.ORCH_BASE_URL && this.env.ORCH_API_KEY
+        ? new EdgeConnectProvider({
+            baseUrl: this.env.ORCH_BASE_URL,
+            apiKey: this.env.ORCH_API_KEY,
+          })
+        : undefined;
     registerTopologyTools(
       this.server,
       {
         renderDocument,
         publishTopology: (doc: TopologyDocument) => this.publish(doc),
+        ...(provider ? { provider } : {}),
       },
       this.store,
     );
