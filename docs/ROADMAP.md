@@ -36,6 +36,12 @@ Built methodically, one reviewable PR at a time, each reviewed against
 - **Validation**: dangling refs, duplicate ids, unknown types, enum checks.
 - **Annotation layer**: zones, flow paths, policy markers — across model,
   builder, catalog, validation, render (browser + headless), persistence, GUI.
+- **Document layers** (underlay / overlay / policy / service): declared
+  bottom → top on the document, opt-in per element via `layer`, stacking +
+  visibility at render time (`visibleLayers`), validated refs — across model,
+  builder, catalog, validation, both render paths, persistence, MCP
+  (`define_layer`). Groundwork for live SD-WAN flow visualization
+  ([proposal](proposals/0001-live-flow-visualization.md), E1).
 
 ### Layout for AI
 

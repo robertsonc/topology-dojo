@@ -8,7 +8,9 @@ import {
   customNodeInfo,
   annotationCatalog,
   getAnnotationType,
+  layerCatalog,
 } from './catalog.js';
+import { LAYER_KINDS } from './layers.js';
 import { defaultSpec } from '../nodes/spec.js';
 
 describe('capability catalog', () => {
@@ -100,6 +102,25 @@ describe('capability catalog', () => {
       (f) => f.key === 'labelColor',
     );
     expect(labelColor?.kind).toBe('color');
+  });
+
+  it('exposes the layer field on every node, link, and annotation type', () => {
+    const hasLayer = (fields: { key: string; kind: string }[]): boolean =>
+      fields.some((f) => f.key === 'layer' && f.kind === 'ref');
+    for (const n of nodeCatalog()) expect(hasLayer(n.fields)).toBe(true);
+    for (const l of linkCatalog()) expect(hasLayer(l.fields)).toBe(true);
+    for (const a of annotationCatalog()) expect(hasLayer(a.fields)).toBe(true);
+  });
+
+  it('describes the layer vocabulary (kinds + LayerDef fields)', () => {
+    const layers = layerCatalog();
+    expect(layers.kinds).toEqual(LAYER_KINDS);
+    expect(layers.kinds).toContain('underlay');
+    expect(layers.kinds).toContain('overlay');
+    expect(layers.kinds).toContain('policy');
+    const keys = layers.fields.map((f) => f.key);
+    for (const k of ['name', 'kind', 'color', 'defaultVisible'])
+      expect(keys).toContain(k);
   });
 
   it('includes custom node types when provided', () => {

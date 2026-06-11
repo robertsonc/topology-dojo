@@ -30,6 +30,7 @@ describe('MCP tools', () => {
         'add_zone',
         'create_from_template',
         'create_topology',
+        'define_layer',
         'define_node_type',
         'delete_topology',
         'describe_capabilities',
@@ -351,6 +352,7 @@ describe('MCP tools', () => {
       nodeTypes: unknown[];
       linkTypes: unknown[];
       annotations: { kind: string }[];
+      layers: { kinds: string[] };
     };
     expect(caps.nodeTypes.length).toBeGreaterThan(5);
     expect(caps.linkTypes.length).toBeGreaterThan(3);
@@ -359,6 +361,91 @@ describe('MCP tools', () => {
       'policyMarker',
       'zone',
     ]);
+    expect(caps.layers.kinds).toContain('underlay');
+    expect(caps.layers.kinds).toContain('overlay');
+  });
+
+  it('declares layers, tags elements, and renders a filtered layer view', () => {
+    const { id } = call('create_topology', { title: 'Fabric' }) as {
+      id: string;
+    };
+    call('define_layer', {
+      topologyId: id,
+      layerId: 'under',
+      kind: 'underlay',
+    });
+    call('define_layer', { topologyId: id, layerId: 'over', kind: 'overlay' });
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 150,
+      y: 200,
+      nodeId: 'a',
+    });
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 650,
+      y: 200,
+      nodeId: 'b',
+    });
+    call('add_link', {
+      topologyId: id,
+      type: 'line',
+      from: 'a',
+      to: 'b',
+      linkId: 'wan',
+      layer: 'under',
+    });
+    call('add_link', {
+      topologyId: id,
+      type: 'tunnel',
+      from: 'a',
+      to: 'b',
+      linkId: 'tun',
+      layer: 'over',
+    });
+
+    // Layers + tags land on the document contract.
+    const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.layers?.map((l) => l.id)).toEqual(['under', 'over']);
+    expect(doc.pages[0]!.links.find((l) => l.id === 'tun')?.layer).toBe('over');
+
+    // A tagged document still validates clean…
+    expect(call('validate_topology', { topologyId: id })).toMatchObject({
+      valid: true,
+    });
+    // …an undeclared layer reference is flagged.
+    call('add_node', {
+      topologyId: id,
+      type: 'host',
+      x: 400,
+      y: 400,
+      nodeId: 'ghosted',
+      layer: 'ghost',
+    });
+    const v = call('validate_topology', { topologyId: id }) as {
+      problems: { message: string }[];
+    };
+    expect(v.problems.some((p) => /not declared/.test(p.message))).toBe(true);
+
+    // render_svg can isolate a plane.
+    const underOnly = call('render_svg', {
+      topologyId: id,
+      visibleLayers: ['under'],
+    }) as string;
+    expect(underOnly).toContain('data-tds-link="wan"');
+    expect(underOnly).not.toContain('data-tds-link="tun"');
+
+    // define_layer updates in place by id (no duplicate).
+    call('define_layer', {
+      topologyId: id,
+      layerId: 'over',
+      name: 'Overlay tunnels',
+    });
+    const doc2 = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc2.layers?.length).toBe(2);
+    expect(doc2.layers?.[1]?.name).toBe('Overlay tunnels');
   });
 
   it('surfaces errors as thrown Errors (adapter turns these into isError)', () => {

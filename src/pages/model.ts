@@ -18,6 +18,7 @@ import type {
   ZoneConfig,
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
+import type { LayerDef } from '../api/layers.js';
 import { createDocument } from '../api/builder.js';
 
 export interface Page extends RenderablePage {
@@ -38,6 +39,12 @@ export interface TopologyDocument {
   pages: Page[];
   /** User-designed node types, registered with the engine on load. */
   customNodes: CustomNodeSpec[];
+  /**
+   * Declared layers (bottom → top), e.g. underlay / overlay / policy. Elements
+   * opt in via their `layer` field; untagged elements form the implicit base
+   * layer beneath all declared layers. Optional — absent means unlayered.
+   */
+  layers?: LayerDef[];
 }
 
 let _seq = 0;

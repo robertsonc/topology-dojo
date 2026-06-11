@@ -17,6 +17,7 @@ import type {
   ZoneConfig,
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
+import type { LayerDef, LayerKind } from './layers.js';
 import { validateDocument, type Problem } from './validate.js';
 
 const DEFAULT_VIEWBOX = '0 0 1050 700';
@@ -62,6 +63,13 @@ export interface FlowPathInput extends Omit<FlowPathConfig, 'id'> {
 }
 export interface PolicyMarkerInput extends Omit<PolicyMarkerConfig, 'id'> {
   id?: string;
+}
+export interface LayerInput {
+  id?: string;
+  name?: string;
+  kind?: LayerKind;
+  color?: string;
+  defaultVisible?: boolean;
 }
 
 /* ── pure ops ─────────────────────────────────────────────────────── */
@@ -139,6 +147,24 @@ export function addPolicyMarker(
   return marker;
 }
 
+/**
+ * Declare or update (by id) a document layer. Declaration order is z-order
+ * (bottom → top); untagged elements form the implicit base layer beneath all
+ * declared layers. Elements opt in via their `layer` field.
+ */
+export function defineLayer(
+  doc: TopologyDocument,
+  input: LayerInput = {},
+): LayerDef {
+  const { id, ...rest } = input;
+  const def: LayerDef = { id: id ?? genId('ly'), ...rest };
+  doc.layers ??= [];
+  const i = doc.layers.findIndex((l) => l.id === def.id);
+  if (i >= 0) doc.layers[i] = def;
+  else doc.layers.push(def);
+  return def;
+}
+
 /** Add or replace a custom node type (by typeName). */
 export function defineNodeType(
   doc: TopologyDocument,
@@ -209,6 +235,11 @@ export class DocumentBuilder {
   }
   defineNodeType(spec: CustomNodeSpec): this {
     defineNodeType(this.doc, spec);
+    return this;
+  }
+  /** Declare a document layer (z-order = declaration order, bottom → top). */
+  layer(input: LayerInput): this {
+    defineLayer(this.doc, input);
     return this;
   }
   validate(): Problem[] {
