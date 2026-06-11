@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { TopologyStore } from './store.js';
 import { createTools, type ToolDef } from './tools.js';
+import { parseToolArgs } from './register.js';
 import { renderDocumentToSVG } from '../server/render.js';
+import { MockProvider } from '../connect/mock.js';
 import type { TopologyDocument } from '../pages/model.js';
 
 describe('MCP tools', () => {
@@ -543,6 +545,108 @@ describe('MCP tools', () => {
 
   it('omits share_topology unless a publish dep is provided', () => {
     expect(tools.some((t) => t.name === 'share_topology')).toBe(false);
+  });
+
+  it('validates tool arguments at runtime (parseToolArgs)', () => {
+    const addNode = tools.find((t) => t.name === 'add_node')!;
+    // Malformed input is rejected with a readable message — NaN can't slip in.
+    expect(() =>
+      parseToolArgs(addNode, { topologyId: 't', type: 'ec', x: 'abc', y: 0 }),
+    ).toThrow(/invalid arguments for add_node — x:/);
+    expect(() => parseToolArgs(addNode, { type: 'ec', x: 0, y: 0 })).toThrow(
+      /topologyId/,
+    );
+    // Valid input passes through; unknown keys are stripped.
+    const parsed = parseToolArgs(addNode, {
+      topologyId: 't',
+      type: 'ec',
+      x: 1,
+      y: 2,
+      bogus: true,
+    });
+    expect(parsed.x).toBe(1);
+    expect('bogus' in parsed).toBe(false);
+    // Enum-checked tools reject out-of-vocabulary values.
+    const upsert = tools.find((t) => t.name === 'upsert_by_source')!;
+    expect(() =>
+      parseToolArgs(upsert, {
+        topologyId: 't',
+        kind: 'gizmo',
+        source: { system: 's', kind: 'k', id: '1' },
+      }),
+    ).toThrow(/kind/);
+  });
+
+  it('omits the live-data tools unless a provider is wired in', () => {
+    const liveNames = [
+      'describe_data_source',
+      'list_appliances',
+      'list_tunnels',
+      'get_overlay_policies',
+      'list_flows',
+      'get_flow_details',
+    ];
+    for (const n of liveNames)
+      expect(tools.some((t) => t.name === n)).toBe(false);
+    const withProvider = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      provider: new MockProvider(),
+    });
+    for (const n of liveNames)
+      expect(withProvider.some((t) => t.name === n)).toBe(true);
+  });
+
+  it('queries the fabric and authors a sourced topology end to end', async () => {
+    const live = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      provider: new MockProvider(),
+    });
+    const callLive = (name: string, args: Record<string, unknown> = {}) =>
+      live.find((t) => t.name === name)!.handler(args);
+
+    const src = (await callLive('describe_data_source')) as {
+      system: string;
+    };
+    expect(src.system).toBe('mock');
+
+    const appliances = (await callLive('list_appliances')) as {
+      id: string;
+      role?: string;
+    }[];
+    expect(appliances.length).toBeGreaterThanOrEqual(3);
+
+    const overlay = (await callLive('list_tunnels', {
+      scope: 'overlay',
+    })) as { id: string; overlay?: string }[];
+    expect(overlay.every((t) => t.overlay)).toBe(true);
+
+    const flows = (await callLive('list_flows', {
+      application: 'voip',
+    })) as { id: string; applianceId: string }[];
+    expect(flows.length).toBeGreaterThan(0);
+
+    const detail = (await callLive('get_flow_details', {
+      applianceId: flows[0]!.applianceId,
+      flowId: flows[0]!.id,
+    })) as { flow: { overlay?: string } };
+    expect(detail.flow.overlay).toBe('RealTime');
+
+    // The loop closes: fabric records become sourced document elements.
+    const { id } = callLive('create_topology', { title: 'Live fabric' }) as {
+      id: string;
+    };
+    for (const a of appliances)
+      callLive('upsert_by_source', {
+        topologyId: id,
+        kind: 'node',
+        source: { system: src.system, kind: 'appliance', id: a.id },
+        set: { type: 'ec', x: 100, y: 100, label: a.id },
+      });
+    const doc = callLive('get_topology', {
+      topologyId: id,
+    }) as TopologyDocument;
+    expect(doc.pages[0]!.nodes).toHaveLength(appliances.length);
+    expect(doc.pages[0]!.nodes[0]!.source?.system).toBe('mock');
   });
 
   it('share_topology publishes the stored doc and returns the link', async () => {

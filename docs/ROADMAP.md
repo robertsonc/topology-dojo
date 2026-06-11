@@ -48,6 +48,13 @@ Built methodically, one reviewable PR at a time, each reviewed against
   identity warnings, MCP tools (`update_element`, `remove_element`,
   `upsert_by_source`) — re-running a live import converges instead of
   duplicating ([proposal](proposals/0001-live-flow-visualization.md), E2).
+- **Connector layer** (`src/connect/`): vendor-neutral `TopologyProvider`
+  (appliances / underlay+overlay tunnels / overlay policies / fabric-wide flow
+  tables incl. ended flows), EdgeConnect Orchestrator client (appliance-API
+  proxy, injectable fetch), fixture `MockProvider`, env/secret credential
+  wiring (stdio + Worker), read-only MCP tools, and runtime Zod validation of
+  all tool arguments ([proposal](proposals/0001-live-flow-visualization.md),
+  E3).
 
 ### Layout for AI
 

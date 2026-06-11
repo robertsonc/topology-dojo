@@ -36,6 +36,7 @@ import {
   type SourcedKind,
 } from '../api/edit.js';
 import type { SourceRef } from '../api/source.js';
+import type { FlowQuery, TopologyProvider } from '../connect/types.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { tidyDocument } from '../api/tidy.js';
@@ -75,6 +76,12 @@ export interface ToolDeps {
   publishTopology?: (
     doc: TopologyDocument,
   ) => Promise<{ id: string; url: string }>;
+  /**
+   * Live fabric data source (an SD-WAN orchestrator client or the fixture
+   * mock). Wired from environment credentials by the servers — never from
+   * tool arguments. When absent, the live-data tools are not registered.
+   */
+  provider?: TopologyProvider;
 }
 
 /* Reusable field fragments ------------------------------------------------- */
@@ -759,6 +766,91 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         ),
     },
   ];
+
+  // Live fabric data — registered only when a provider is wired in (from env
+  // credentials on the stdio server / Worker secrets remotely). All read-only:
+  // the agent queries the fabric here and authors the diagram with the tools
+  // above; credentials never pass through tool arguments.
+  if (deps.provider) {
+    const provider = deps.provider;
+    const info = provider.describe();
+    tools.push(
+      {
+        name: 'describe_data_source',
+        description:
+          'Describe the connected live-data source (system id, display name, capabilities). The system id is what element source refs use in `source.system`.',
+        inputShape: {},
+        handler: () => provider.describe(),
+      },
+      {
+        name: 'list_appliances',
+        description: `List the SD-WAN appliances/gateways known to the connected ${info.displayName} (id, hostname, serial, model, software, site, role). Use the id in source refs (kind "appliance") and flow queries.`,
+        inputShape: {},
+        handler: () => provider.getAppliances(),
+      },
+      {
+        name: 'list_tunnels',
+        description:
+          'List fabric tunnels from the connected data source. scope "underlay" = per-WAN transport tunnels; "overlay" = bonded/logical tunnels belonging to an overlay (BIO). Endpoints are appliance ids.',
+        inputShape: {
+          scope: z
+            .enum(['underlay', 'overlay'])
+            .describe('Which plane of tunnels to list.'),
+        },
+        handler: (a) => provider.getTunnels(a.scope as 'underlay' | 'overlay'),
+      },
+      {
+        name: 'get_overlay_policies',
+        description:
+          'List overlay / business-intent policy definitions from the connected data source (id, name, topology shape, full raw policy document).',
+        inputShape: {},
+        handler: () => provider.getOverlayPolicies(),
+      },
+      {
+        name: 'list_flows',
+        description:
+          'Query flow tables across the fabric (or one appliance) from the connected data source. Returns active flows by default; includeEnded:true also returns ended flows still present in the tables. Filter by ip / port / application; cap with limit.',
+        inputShape: {
+          applianceId: z
+            .string()
+            .optional()
+            .describe('Restrict to one appliance (see list_appliances).'),
+          ip: z.string().optional().describe('Match either endpoint IP.'),
+          port: z
+            .number()
+            .int()
+            .optional()
+            .describe('Match either endpoint port.'),
+          application: z
+            .string()
+            .optional()
+            .describe('Application name (substring, case-insensitive).'),
+          includeEnded: z
+            .boolean()
+            .optional()
+            .describe('Also return ended flows still in the tables.'),
+          limit: z.number().int().optional().describe('Max flows to return.'),
+        },
+        handler: (a) => provider.getFlows(a as FlowQuery),
+      },
+      {
+        name: 'get_flow_details',
+        description:
+          'Fetch full detail for one flow from its owning appliance (normalized record + the raw vendor payload, incl. overlay and tunnel usage). Address it by applianceId + flowId (+ seqNum when list_flows reported one).',
+        inputShape: {
+          applianceId: z.string(),
+          flowId: z.string(),
+          seqNum: z.number().int().optional(),
+        },
+        handler: (a) =>
+          provider.getFlowDetails({
+            applianceId: String(a.applianceId),
+            flowId: String(a.flowId),
+            ...(a.seqNum !== undefined ? { seqNum: Number(a.seqNum) } : {}),
+          }),
+      },
+    );
+  }
 
   // Sharing is only available where a durable store + public origin are wired in
   // (the Worker). When present, expose a tool that snapshots the topology and
