@@ -441,6 +441,49 @@ describe('MCP tools', () => {
     ).toThrow(/unknown element/);
   });
 
+  it('build_flow_topology compiles the live fabric into a rendered, layered doc', async () => {
+    const live = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      provider: new MockProvider(),
+    });
+    const callLive = (name: string, args: Record<string, unknown> = {}) =>
+      live.find((t) => t.name === name)!.handler(args);
+
+    const res = (await callLive('build_flow_topology', {
+      title: 'Fabric flows',
+      includeEnded: true,
+    })) as {
+      topologyId: string;
+      valid: boolean;
+      appliances: number;
+      tunnels: number;
+      flowsCompiled: number;
+    };
+    expect(res.valid).toBe(true);
+    expect(res.appliances).toBe(3);
+    expect(res.tunnels).toBe(5);
+    expect(res.flowsCompiled).toBe(2);
+
+    // The stored document is the full layered contract…
+    const doc = callLive('get_topology', {
+      topologyId: res.topologyId,
+    }) as TopologyDocument;
+    expect(doc.layers?.map((l) => l.id)).toEqual([
+      'underlay',
+      'overlay',
+      'policy',
+    ]);
+    expect(doc.pages[0]!.flowPaths.length).toBe(2);
+    expect(doc.pages[0]!.flowPaths[0]!.hops?.length).toBeGreaterThan(0);
+    // …and renders with layer filtering.
+    const svg = callLive('render_svg', {
+      topologyId: res.topologyId,
+      visibleLayers: ['overlay', 'policy'],
+    }) as string;
+    expect(svg).toContain('data-tds-flowpath=');
+    expect(svg).not.toContain('data-tds-link="lk_ut_77_inet"'); // underlay hidden
+  });
+
   it('declares layers, tags elements, and renders a filtered layer view', () => {
     const { id } = call('create_topology', { title: 'Fabric' }) as {
       id: string;
@@ -585,6 +628,7 @@ describe('MCP tools', () => {
       'get_overlay_policies',
       'list_flows',
       'get_flow_details',
+      'build_flow_topology',
     ];
     for (const n of liveNames)
       expect(tools.some((t) => t.name === n)).toBe(false);

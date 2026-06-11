@@ -178,6 +178,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       claim(f.id, 'flow path');
       flowIds.add(f.id);
     }
+    const linkIds = new Set(page.links.map((l) => l.id));
     for (const f of page.flowPaths ?? []) {
       const where = `${at} flow path "${f.id}"`;
       const wps = f.waypoints ?? [];
@@ -185,6 +186,13 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       for (const w of wps)
         if (!endpoints.has(w))
           warn(where, `waypoint references missing "${w}"`);
+      // Per-hop annotations must point back into the path and the page.
+      for (const h of f.hops ?? []) {
+        if (!wps.includes(h.ref))
+          warn(where, `hop ref "${h.ref}" is not one of the waypoints`);
+        if (h.linkId && !linkIds.has(h.linkId))
+          warn(where, `hop linkId references missing link "${h.linkId}"`);
+      }
       checkLayer(f, where);
       checkSource(f, where);
       checkEnums(
