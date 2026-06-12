@@ -128,6 +128,7 @@ document's custom node types).
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds              |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)      |
 | `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters) |
+| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations       |
 | `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                          |
 | `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                  |
 | `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                       |

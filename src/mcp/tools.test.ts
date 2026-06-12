@@ -36,6 +36,7 @@ describe('MCP tools', () => {
         'define_node_type',
         'delete_topology',
         'describe_capabilities',
+        'export_flipbook',
         'get_topology',
         'import_topology',
         'layout_guidelines',
@@ -716,6 +717,40 @@ describe('MCP tools', () => {
     // It snapshots the live stored document (with the node just added).
     expect(published?.title).toBe('Shared');
     expect(published?.pages[0]!.nodes[0]!.id).toBe('a');
+  });
+
+  it('sets playback timing and exports a self-playing flipbook', () => {
+    const { id } = call('create_topology', { title: 'Story' }) as {
+      id: string;
+    };
+    call('add_node', { topologyId: id, type: 'ec', x: 200, y: 200 });
+    call('set_page_properties', {
+      topologyId: id,
+      pageIndex: 0,
+      name: 'Setup',
+      duration: 800,
+    });
+    call('add_page', {
+      topologyId: id,
+      name: 'Steady',
+      duration: 1500,
+      transition: 'fade',
+    });
+    call('add_node', { topologyId: id, type: 'ec', x: 200, y: 200 });
+
+    // Timing lands on the document contract.
+    const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.pages[0]!.duration).toBe(800);
+    expect(doc.pages[1]!).toMatchObject({
+      duration: 1500,
+      transition: 'fade',
+    });
+
+    const html = call('export_flipbook', { topologyId: id }) as string;
+    expect(html.startsWith('<!doctype html>')).toBe(true);
+    expect(html).toContain('data-name="Setup"');
+    expect(html).toContain('"duration":1500');
+    expect(html).toContain('"transition":"fade"');
   });
 
   it('add_page targets the new page by default; pageIndex overrides', () => {

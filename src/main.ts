@@ -27,6 +27,7 @@ import {
   saveLocal,
   serializeDoc,
 } from './pages/persist.js';
+import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
 import { exportPagePNG, exportPageSVG } from './editor/export.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
@@ -704,7 +705,13 @@ function propertiesHtml(): string {
     `<div class="insp-h">Page</div>` +
     `<label class="insp-row">Name<input id="p-name" value="${esc(page.name)}"/></label>` +
     `<label class="insp-row">Canvas W<input type="number" id="p-w" min="1" value="${w || 0}"/></label>` +
-    `<label class="insp-row">Canvas H<input type="number" id="p-h" min="1" value="${h || 0}"/></label>`
+    `<label class="insp-row">Canvas H<input type="number" id="p-h" min="1" value="${h || 0}"/></label>` +
+    `<div class="insp-h">Playback</div>` +
+    `<label class="insp-row">Hold (ms)<input type="number" id="p-dur" min="100" step="100" placeholder="${DEFAULT_PAGE_DURATION}" value="${page.duration ?? ''}"/></label>` +
+    `<label class="insp-row">Transition<select id="p-tr">` +
+    `<option value="cut"${page.transition !== 'fade' ? ' selected' : ''}>cut</option>` +
+    `<option value="fade"${page.transition === 'fade' ? ' selected' : ''}>fade</option>` +
+    `</select></label>`
   );
 }
 
@@ -727,6 +734,20 @@ function wireProperties(): void {
   };
   wIn?.addEventListener('change', applySize);
   hIn?.addEventListener('change', applySize);
+  // Playback timing — same fields the MCP set_page_properties tool sets.
+  const dur = inspector.querySelector<HTMLInputElement>('#p-dur');
+  dur?.addEventListener('change', () => {
+    const v = Number(dur.value);
+    if (Number.isFinite(v) && v > 0) editor.page.duration = v;
+    else delete editor.page.duration;
+    markDirty();
+  });
+  const tr = inspector.querySelector<HTMLSelectElement>('#p-tr');
+  tr?.addEventListener('change', () => {
+    if (tr.value === 'fade') editor.page.transition = 'fade';
+    else delete editor.page.transition;
+    markDirty();
+  });
 }
 
 /** Render the inspector for the current selection, driven entirely by the catalog. */
@@ -1134,9 +1155,42 @@ buildPalette();
 
 let dragFrom = -1;
 
+/* Flipbook playback: step through pages on their durations (loop). The same
+ * timing model drives the MCP export_flipbook artifact (pages/playback). */
+let playTimer: number | null = null;
+function stopPlayback(): void {
+  if (playTimer === null) return;
+  clearTimeout(playTimer);
+  playTimer = null;
+  const b = strip.querySelector('#playFlip');
+  if (b) b.textContent = '▶ play';
+}
+function startPlayback(): void {
+  if (doc.pages.length < 2) return;
+  stopPlayback();
+  const advance = (): void => {
+    const next = (current + 1) % doc.pages.length;
+    selectPage(next);
+    if (doc.pages[next]!.transition === 'fade')
+      artSvg.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: 350,
+        easing: 'ease',
+      });
+    playTimer = window.setTimeout(advance, pageDuration(doc.pages[next]!));
+  };
+  playTimer = window.setTimeout(advance, pageDuration(doc.pages[current]!));
+  const b = strip.querySelector('#playFlip');
+  if (b) b.textContent = '⏸ pause';
+}
+
 function renderFilmstrip(): void {
   const canDelete = doc.pages.length > 1;
   strip.innerHTML = `
+    ${
+      doc.pages.length > 1
+        ? `<button class="frame add" id="playFlip" title="Play the flipbook (each frame holds for its duration)">${playTimer !== null ? '⏸ pause' : '▶ play'}</button>`
+        : ''
+    }
     ${doc.pages
       .map(
         (p, i) => `
@@ -1156,6 +1210,7 @@ function renderFilmstrip(): void {
     el.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-del]') || t.tagName === 'INPUT') return;
+      stopPlayback(); // a manual frame choice takes over from the player
       selectPage(i);
     });
     el.addEventListener('dragstart', (e) => {
@@ -1181,6 +1236,11 @@ function renderFilmstrip(): void {
       deletePage(Number(b.dataset.del));
     }),
   );
+  strip
+    .querySelector('#playFlip')
+    ?.addEventListener('click', () =>
+      playTimer !== null ? stopPlayback() : startPlayback(),
+    );
   strip.querySelector('#addPage')?.addEventListener('click', () => {
     doc.pages.push(blankPage(`Frame ${doc.pages.length + 1}`));
     gotoPage(doc.pages.length - 1);
@@ -1199,6 +1259,7 @@ function renderFilmstrip(): void {
 
 /** Switch to a page AND rebuild the strip (after a structural change). */
 function gotoPage(i: number): void {
+  stopPlayback();
   current = i;
   editor.setPage(doc.pages[current]!);
   renderFilmstrip();
@@ -1227,6 +1288,7 @@ function startRename(i: number, span: HTMLElement): void {
 
 function deletePage(i: number): void {
   if (doc.pages.length <= 1) return;
+  stopPlayback();
   const page = doc.pages[i]!;
   const hasContent = page.nodes.length > 0 || page.links.length > 0;
   if (hasContent && !confirm(`Delete "${page.name}"? This frame has content.`))
@@ -1241,6 +1303,7 @@ function deletePage(i: number): void {
 
 function reorderPage(from: number, to: number): void {
   if (from < 0 || from === to || from >= doc.pages.length) return;
+  stopPlayback();
   const cur = doc.pages[current]!;
   const [moved] = doc.pages.splice(from, 1);
   doc.pages.splice(to, 0, moved!);

@@ -62,6 +62,13 @@ Built methodically, one reviewable PR at a time, each reviewed against
   steering overlay; convergent re-runs (upsert-by-source throughout);
   ingress/egress flow dedupe; the one-shot `build_flow_topology` MCP tool
   ([proposal](proposals/0001-live-flow-visualization.md), E4).
+- **Flipbook playback**: `Page.duration` / `transition` in the contract
+  (builder, persist, validate, `add_page` / `set_page_properties`), a shared
+  pure timing model (`pages/playback.ts`), the filmstrip **play** control +
+  inspector playback fields, and `export_flipbook` — a standalone,
+  self-playing HTML artifact of every page on its duration
+  ([proposal](proposals/0001-live-flow-visualization.md), E5; also delivers
+  the "standalone HTML export" roadmap candidate).
 
 ### Layout for AI
 

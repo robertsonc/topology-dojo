@@ -10,6 +10,9 @@ vendor/topology-ds.ts   typed facade over the vendored TopologyDesigner engine.
 
 pages/model.ts          the flipbook document model (Document → Page[]).
 pages/persist.ts        (de)serialize + autosave to localStorage; defensive parse.
+pages/playback.ts       the pure flipbook timing model (page durations →
+                        schedule) shared by the editor's play control and the
+                        standalone export (render/flipbook.ts).
 
 api/                    headless authoring, DOM-free:
   builder.ts            pure ops + fluent builder (createDocument()…build()).

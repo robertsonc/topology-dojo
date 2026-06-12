@@ -25,6 +25,13 @@ export interface Page extends RenderablePage {
   id: string;
   name: string;
   viewBox: string;
+  /**
+   * Playback: how long this frame holds (ms) before a player advances, and
+   * how it enters. Optional — players default to 2000ms / 'cut' (see
+   * pages/playback). Static use ignores both.
+   */
+  duration?: number;
+  transition?: 'cut' | 'fade';
   nodes: NodeConfig[];
   links: LinkConfig[];
   anchors: AnchorConfig[];
