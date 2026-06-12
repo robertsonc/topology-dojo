@@ -55,6 +55,13 @@ Built methodically, one reviewable PR at a time, each reviewed against
   wiring (stdio + Worker), read-only MCP tools, and runtime Zod validation of
   all tool arguments ([proposal](proposals/0001-live-flow-visualization.md),
   E3).
+- **Flow-to-topology compiler** (`src/connect/compile.ts`): provider records →
+  layered, sourced, laid-out document — appliances as nodes, sites as zones,
+  underlay/overlay tunnels as links on their layers, flows as animated flow
+  paths with per-hop data (`FlowPathConfig.hops`) + policy markers for the
+  steering overlay; convergent re-runs (upsert-by-source throughout);
+  ingress/egress flow dedupe; the one-shot `build_flow_topology` MCP tool
+  ([proposal](proposals/0001-live-flow-visualization.md), E4).
 
 ### Layout for AI
 

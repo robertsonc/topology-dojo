@@ -98,6 +98,22 @@ export interface ZoneConfig {
 }
 
 /**
+ * Per-hop annotation paired with a flow path's waypoint sequence — which
+ * link/tunnel a segment rode and its measurements. Machine-authored (by the
+ * flow compiler); ignored by the renderer, carried in the document.
+ */
+export interface FlowHop {
+  /** The waypoint id (node/anchor) this hop arrives at. */
+  ref: string;
+  /** Id of the page link (e.g. the tunnel) the segment traversed. */
+  linkId?: string;
+  /** Layer the segment belongs to (underlay/overlay plane). */
+  layer?: string;
+  /** Flat measurements/facts: tunnel id, latency ms, bytes, overlay name… */
+  meta?: Record<string, string | number | boolean>;
+}
+
+/**
  * A flow path — an animated overlay route that threads through an ordered list
  * of node/anchor ids, drawn on top of the topology (particles / dashes / pulse).
  */
@@ -113,6 +129,8 @@ export interface FlowPathConfig {
   direction?: 'forward' | 'reverse' | 'bidirectional';
   width?: number;
   opacity?: number;
+  /** Per-hop annotations (one per segment arrival, machine-authored). */
+  hops?: FlowHop[];
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
   /** External identity in a source system (see api/source); enables upsert. */

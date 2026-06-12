@@ -132,6 +132,7 @@ document's custom node types).
 | `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                  |
 | `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                       |
 | `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail         |
+| `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document        |
 | `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)   |
 
 ## Live fabric data (optional)

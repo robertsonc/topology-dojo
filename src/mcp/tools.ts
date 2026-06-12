@@ -37,6 +37,7 @@ import {
 } from '../api/edit.js';
 import type { SourceRef } from '../api/source.js';
 import type { FlowQuery, TopologyProvider } from '../connect/types.js';
+import { compileFlowTopology } from '../connect/compile.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { tidyDocument } from '../api/tidy.js';
@@ -848,6 +849,58 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             flowId: String(a.flowId),
             ...(a.seqNum !== undefined ? { seqNum: Number(a.seqNum) } : {}),
           }),
+      },
+      {
+        name: 'build_flow_topology',
+        description:
+          'One shot: query the live fabric and compile a complete layered topology document — appliances as nodes, sites as zones, underlay + overlay tunnels as links on their layers, and each matched flow as an animated flow path (hop-by-hop data attached) with a policy marker for the overlay that steered it. The result is laid out, tidied, validated, and stored; render it with render_svg (use visibleLayers to isolate a plane) or share it with share_topology. Flow filters work like list_flows; limit defaults to 10. Re-running creates a fresh topology — to refresh an existing one, re-run and use the new id.',
+        inputShape: {
+          title: z.string().optional(),
+          applianceId: z.string().optional(),
+          ip: z.string().optional().describe('Match either endpoint IP.'),
+          port: z.number().int().optional(),
+          application: z.string().optional(),
+          includeEnded: z
+            .boolean()
+            .optional()
+            .describe('Also draw ended flows still in the tables (as traces).'),
+          limit: z
+            .number()
+            .int()
+            .optional()
+            .describe('Max flows to draw (default 10).'),
+        },
+        handler: async (a) => {
+          const [appliances, underlay, overlay, policies] = await Promise.all([
+            provider.getAppliances(),
+            provider.getTunnels('underlay'),
+            provider.getTunnels('overlay'),
+            provider.getOverlayPolicies(),
+          ]);
+          const flows = await provider.getFlows({
+            ...(a as FlowQuery),
+            limit: (a.limit as number | undefined) ?? 10,
+          });
+          const { document, flowsCompiled } = compileFlowTopology(
+            { appliances, underlay, overlay, policies },
+            flows,
+            {
+              system: info.system,
+              ...(a.title !== undefined ? { title: String(a.title) } : {}),
+            },
+          );
+          const { id } = store.import(document);
+          const problems = validateDocument(document);
+          return {
+            topologyId: id,
+            title: document.title,
+            appliances: appliances.length,
+            tunnels: underlay.length + overlay.length,
+            flowsCompiled,
+            valid: !problems.some((p) => p.level === 'error'),
+            problems,
+          };
+        },
       },
     );
   }
