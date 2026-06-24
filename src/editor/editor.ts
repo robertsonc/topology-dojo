@@ -102,6 +102,18 @@ export class Editor {
   tool: 'select' | 'link' | 'anchor' = 'select';
   private linkStart: string | null = null;
   private linkCursor: { x: number; y: number } | null = null;
+  /**
+   * A link being dragged out from a node's edge while the Select tool is active
+   * (so you don't have to switch to the Link tool). `moved` flips once the drag
+   * passes a small threshold; a press that never moves falls through to a plain
+   * click-select.
+   */
+  private dragLink: {
+    from: string;
+    start: { x: number; y: number };
+    cursor: { x: number; y: number };
+    moved: boolean;
+  } | null = null;
   private linkSel: string | null = null;
   private linkSeq = 0;
   /** The selected anchor (free-floating point), or null. */
@@ -156,6 +168,7 @@ export class Editor {
     this.wpDrag = null;
     this.linkSel = null;
     this.linkStart = null;
+    this.dragLink = null;
     this.anchorSel = null;
     this.anchorDrag = null;
     this.view = parseViewBox(page.viewBox);
@@ -265,11 +278,43 @@ export class Editor {
 
   /** Apply the current pan/zoom window to both layers' viewBox. */
   private applyView(): void {
+    this.normalizeView();
     const vb = `${this.view.x} ${this.view.y} ${this.view.w} ${this.view.h}`;
     this.art.setAttribute('viewBox', vb);
     this.overlay.setAttribute('viewBox', vb);
     this.updateGridFill();
     this.onView();
+  }
+
+  /**
+   * Expand the view to the canvas element's aspect ratio (keeping its centre) so
+   * the SVG's preserveAspectRatio='meet' has nothing to letterbox. Without this
+   * the art + grid get boxed into a centred band whenever the page aspect ratio
+   * differs from the viewport — which reads as a hard "canvas edge" and breaks
+   * the infinite-canvas feel. The page bounds still drive export; only what's
+   * shown on screen is widened to fill. Idempotent: a view already at the right
+   * aspect (or one only panned/zoomed) is left unchanged.
+   */
+  private normalizeView(): void {
+    const rect = this.overlay.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const screen = rect.width / rect.height;
+    const view = this.view.w / this.view.h;
+    if (Math.abs(view - screen) < 1e-3) return;
+    if (view < screen) {
+      const nw = this.view.h * screen;
+      this.view.x -= (nw - this.view.w) / 2;
+      this.view.w = nw;
+    } else {
+      const nh = this.view.w / screen;
+      this.view.y -= (nh - this.view.h) / 2;
+      this.view.h = nh;
+    }
+  }
+
+  /** Re-fit the view to the (possibly resized) canvas element. */
+  resync(): void {
+    this.applyView();
   }
 
   private renderArt(): void {
@@ -465,10 +510,44 @@ export class Editor {
   }
 
   private linkPreviewSvg(): string {
-    if (this.tool !== 'link' || !this.linkStart || !this.linkCursor) return '';
-    const a = resolvePos(this.page, this.linkStart);
-    if (!a) return '';
-    return `<line x1="${a.x}" y1="${a.y}" x2="${this.linkCursor.x}" y2="${this.linkCursor.y}" stroke="${ACCENT}" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>`;
+    // The Link tool's click-then-click preview…
+    let a: { x: number; y: number } | null = null;
+    let c: { x: number; y: number } | null = null;
+    if (this.tool === 'link' && this.linkStart && this.linkCursor) {
+      a = resolvePos(this.page, this.linkStart);
+      c = this.linkCursor;
+    } else if (this.dragLink && this.dragLink.moved) {
+      // …or a link dragged out from a node's edge in Select mode.
+      a = resolvePos(this.page, this.dragLink.from);
+      c = this.dragLink.cursor;
+    }
+    if (!a || !c) return '';
+    return `<line x1="${a.x}" y1="${a.y}" x2="${c.x}" y2="${c.y}" stroke="${ACCENT}" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>`;
+  }
+
+  /** ~7px edge band of a node, in user units — the "grab to link" ring. */
+  private nodeEdgeBand(): number {
+    const wpx = this.overlay.getBoundingClientRect().width || 1;
+    return Math.max(4, (8 * this.view.w) / wpx);
+  }
+
+  /**
+   * Whether a point sits in a node's outer edge ring (vs. its interior). Pressing
+   * the ring drags out a link; pressing the interior selects / moves the node.
+   * Tiny nodes (no room for an interior) count entirely as edge.
+   */
+  private nearNodeEdge(id: string, p: { x: number; y: number }): boolean {
+    const n = this.page.nodes.find((m) => m.id === id);
+    if (!n) return false;
+    const b = nodeBounds(n);
+    const inset = Math.min(this.nodeEdgeBand(), b.w / 2 - 1, b.h / 2 - 1);
+    if (inset <= 0) return true;
+    return (
+      p.x < b.x + inset ||
+      p.x > b.x + b.w - inset ||
+      p.y < b.y + inset ||
+      p.y > b.y + b.h - inset
+    );
   }
 
   /**
@@ -1161,6 +1240,7 @@ export class Editor {
     this.tool = t;
     this.linkStart = null;
     this.linkCursor = null;
+    this.dragLink = null;
     this.renderOverlay();
   }
 
@@ -1447,6 +1527,17 @@ export class Editor {
     if (hit) {
       this.clearLinkSel();
       this.clearAnchorSel();
+      // Drag out from a node's edge to draw a link — no tool switch needed. A
+      // press that doesn't move falls through to a plain select on pointer-up.
+      if (this.tool === 'select' && !e.shiftKey && this.nearNodeEdge(hit, p)) {
+        this.sel.clear();
+        this.sel.add(hit);
+        this.dragLink = { from: hit, start: p, cursor: p, moved: false };
+        this.fireSelect();
+        this.overlay.setPointerCapture(e.pointerId);
+        this.renderOverlay();
+        return;
+      }
       if (e.shiftKey) {
         if (this.sel.has(hit)) this.sel.delete(hit);
         else this.sel.add(hit);
@@ -1542,6 +1633,14 @@ export class Editor {
       this.renderOverlay();
       return;
     }
+    if (this.dragLink) {
+      const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      this.dragLink.cursor = pp;
+      if (dist(pp, this.dragLink.start) > this.nodeEdgeBand())
+        this.dragLink.moved = true;
+      this.renderOverlay();
+      return;
+    }
     if (this.wpDrag) {
       const pp = clientToUser(this.overlay, e.clientX, e.clientY);
       const link = this.page.links.find((l) => l.id === this.linkSel);
@@ -1576,7 +1675,16 @@ export class Editor {
       }
       return;
     }
-    if (!this.drag && !this.marquee) return;
+    // Idle hover: hint that a node's edge can be dragged out as a link.
+    if (!this.drag && !this.marquee) {
+      if (this.tool === 'select' && !this.spaceHeld && e.buttons === 0) {
+        const hp = clientToUser(this.overlay, e.clientX, e.clientY);
+        const over = hitTestNode(this.page, hp.x, hp.y);
+        this.overlay.style.cursor =
+          over && this.nearNodeEdge(over, hp) ? 'crosshair' : '';
+      }
+      return;
+    }
     const p = clientToUser(this.overlay, e.clientX, e.clientY);
     if (this.drag) {
       const rawX = p.x - this.drag.startX;
@@ -1627,6 +1735,21 @@ export class Editor {
         this.onChange();
       }
       this.anchorDrag = null;
+      this.renderOverlay();
+      return;
+    }
+    if (this.dragLink) {
+      const dl = this.dragLink;
+      this.dragLink = null;
+      if (dl.moved) {
+        // Released over a node or anchor → connect; over empty space → cancel.
+        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+        const target =
+          hitTestNode(this.page, pp.x, pp.y) ??
+          hitTestAnchor(this.page, pp.x, pp.y, this.anchorHitPad());
+        if (target && target !== dl.from) this.createLink(dl.from, target);
+      }
+      // A press that never moved leaves the node selected (plain click-select).
       this.renderOverlay();
       return;
     }
