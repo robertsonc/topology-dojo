@@ -1953,10 +1953,10 @@ class TopologyDesigner {
 <filter id="tds-bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <filter id="tds-dof-blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.8"/></filter>
 <filter id="tds-dof-blur-strong" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.8"/></filter>
-<filter id="tds-focus-halo-green" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b"/><feFlood flood-color="#01a982" flood-opacity=".3" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-blue" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b"/><feFlood flood-color="#65aef9" flood-opacity=".25" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-purple" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feFlood flood-color="#7764fc" flood-opacity=".22" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-gold" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feFlood flood-color="#deb146" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-green" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="16" result="b"/><feFlood flood-color="#01a982" flood-opacity=".3" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-blue" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="16" result="b"/><feFlood flood-color="#65aef9" flood-opacity=".25" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-purple" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="14" result="b"/><feFlood flood-color="#7764fc" flood-opacity=".22" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-gold" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="14" result="b"/><feFlood flood-color="#deb146" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <!-- Advanced Glow-Depth Filters (Goal 2a): focused nodes physically "lift" off canvas -->
 <filter id="tds-depth-lift" x="-80%" y="-80%" width="260%" height="260%">
   <!-- Layer 1: Large soft shadow beneath (depth illusion) -->
@@ -1984,7 +1984,7 @@ class TopologyDesigner {
   <feOffset in="shadow" dx="0" dy="6" result="shadowOffset"/>
   <feFlood flood-color="#000" flood-opacity=".35" result="shadowColor"/>
   <feComposite in="shadowColor" in2="shadowOffset" operator="in" result="dropShadow"/>
-  <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="bloom"/>
+  <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="bloom"/>
   <feFlood flood-color="#01a982" flood-opacity=".25" result="glowColor"/>
   <feComposite in="glowColor" in2="bloom" operator="in" result="coloredGlow"/>
   <feGaussianBlur in="SourceAlpha" stdDeviation="1.5" result="innerEdge"/>
@@ -1997,7 +1997,7 @@ class TopologyDesigner {
   <feOffset in="shadow" dx="0" dy="6" result="shadowOffset"/>
   <feFlood flood-color="#000" flood-opacity=".35" result="shadowColor"/>
   <feComposite in="shadowColor" in2="shadowOffset" operator="in" result="dropShadow"/>
-  <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="bloom"/>
+  <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="bloom"/>
   <feFlood flood-color="#65aef9" flood-opacity=".22" result="glowColor"/>
   <feComposite in="glowColor" in2="bloom" operator="in" result="coloredGlow"/>
   <feMerge><feMergeNode in="dropShadow"/><feMergeNode in="coloredGlow"/><feMergeNode in="SourceGraphic"/></feMerge>
@@ -2007,7 +2007,7 @@ class TopologyDesigner {
   <feOffset in="shadow" dx="0" dy="6" result="shadowOffset"/>
   <feFlood flood-color="#000" flood-opacity=".35" result="shadowColor"/>
   <feComposite in="shadowColor" in2="shadowOffset" operator="in" result="dropShadow"/>
-  <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="bloom"/>
+  <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="bloom"/>
   <feFlood flood-color="#7764fc" flood-opacity=".2" result="glowColor"/>
   <feComposite in="glowColor" in2="bloom" operator="in" result="coloredGlow"/>
   <feMerge><feMergeNode in="dropShadow"/><feMergeNode in="coloredGlow"/><feMergeNode in="SourceGraphic"/></feMerge>
@@ -2098,9 +2098,9 @@ class TopologyDesigner {
 <!-- Tunnel filmic color grading (ACES-like tone mapping approximation) -->
 <filter id="tds-tunnel-filmic" x="-100%" y="-100%" width="300%" height="300%">
   <feComponentTransfer>
-    <feFuncR type="gamma" amplitude="1.1" exponent="0.92" offset="0.02"/>
-    <feFuncG type="gamma" amplitude="1.1" exponent="0.92" offset="0.02"/>
-    <feFuncB type="gamma" amplitude="1.15" exponent="0.88" offset="0.03"/>
+    <feFuncR type="gamma" amplitude="1.1" exponent="0.92" offset="0"/>
+    <feFuncG type="gamma" amplitude="1.1" exponent="0.92" offset="0"/>
+    <feFuncB type="gamma" amplitude="1.15" exponent="0.88" offset="0"/>
   </feComponentTransfer>
 </filter>
 <linearGradient id="tds-labelGlass" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(34,37,46,.92)"/><stop offset="100%" stop-color="rgba(29,31,39,.88)"/></linearGradient>
