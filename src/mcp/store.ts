@@ -49,6 +49,15 @@ export class TopologyStore {
     return d;
   }
 
+  /**
+   * Insert a document under a known id — used to rehydrate the registry from a
+   * durable backing store (e.g. Durable Object storage) on a cold start, so ids
+   * handed out earlier keep resolving. Overwrites any existing entry.
+   */
+  load(id: string, document: TopologyDocument): void {
+    this.docs.set(id, document);
+  }
+
   list(): { id: string; title: string; pages: number }[] {
     return [...this.docs].map(([id, d]) => ({
       id,

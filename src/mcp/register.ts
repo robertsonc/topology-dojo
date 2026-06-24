@@ -35,6 +35,13 @@ export function registerTopologyTools(
   server: McpServer,
   deps: ToolDeps,
   store: TopologyStore = new TopologyStore(),
+  /**
+   * Called after a tool handler succeeds, with the tool's name — the hook for a
+   * durable backing store to persist the (possibly mutated) registry. Awaited
+   * before the response is returned, so a write completes before the client
+   * sees the result. No-op by default (the stdio server keeps state in memory).
+   */
+  afterToolCall?: (toolName: string) => void | Promise<void>,
 ): TopologyStore {
   for (const tool of createTools(store, deps)) {
     server.registerTool(
@@ -43,6 +50,7 @@ export function registerTopologyTools(
       async (args: Record<string, unknown>) => {
         try {
           const result = await tool.handler(parseToolArgs(tool, args));
+          await afterToolCall?.(tool.name);
           const text =
             typeof result === 'string'
               ? result
