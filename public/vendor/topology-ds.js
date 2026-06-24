@@ -2894,13 +2894,21 @@ class TopologyDesigner {
     // particles' first cycle), producing a hard rectangular cut over the arc.
     // Strokes have no filter region, so this can never clip — animated or not.
     return `<g ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
-      // Outer glow halo: wide, faint, layered for a soft falloff.
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="34" ${lj} opacity=".05"/>` +
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="24" ${lj} opacity=".06"/>` +
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="16" ${lj} opacity=".10"/>` +
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="10" ${lj} opacity=".18"/>` +
+      // Soft glow halo: many thin translucent layers with a GENTLE opacity ramp
+      // so the halo fades out smoothly. A steep ramp (few wide layers jumping to
+      // a high-opacity band) reads as a hard "tube wall" edge — this avoids that
+      // while staying entirely filter-free (so it can never composite-clip).
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="44" ${lj} opacity=".02"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="36" ${lj} opacity=".025"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="29" ${lj} opacity=".035"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="23" ${lj} opacity=".045"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="18" ${lj} opacity=".06"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="14" ${lj} opacity=".08"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="10" ${lj} opacity=".11"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="7" ${lj} opacity=".16"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="4.5" ${lj} opacity=".28"/>` +
       // Tube body + bright fiber-optic core (the core draws in when animating).
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="6" ${lj} opacity=".55"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="3" ${lj} opacity=".5"/>` +
       `<path d="${path}" fill="none" stroke="#dffff4" stroke-width="2.4" ${lj} stroke-dasharray="2000" stroke-dashoffset="0" opacity=".9"${ad}/>` +
       // Faint white highlight, nudged up a hair for a hint of cylindrical volume.
       `<path d="${path}" fill="none" stroke="#ffffff" stroke-width="1" ${lj} opacity=".4" transform="translate(0,-1.1)"/>` +
