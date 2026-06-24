@@ -685,11 +685,103 @@ function typeRow(current: string, types: string[]): string {
     .join('')}</select></label>`;
 }
 
-function fieldsHtml(
+/** A named, ordered bucket of catalog field keys for the inspector. */
+interface FieldGroup {
+  title: string;
+  keys: string[];
+  /** Whether the section starts expanded (defaults to collapsed). */
+  open?: boolean;
+}
+
+/** Link fields, organised so the common edits surface first. */
+const LINK_GROUPS: FieldGroup[] = [
+  {
+    title: 'Appearance',
+    keys: ['color', 'strokeWidth', 'opacity', 'dashed'],
+    open: true,
+  },
+  { title: 'Label', keys: ['label', 'fromLabel', 'toLabel'], open: true },
+  {
+    title: 'Routing',
+    keys: ['lineStyle', 'cornerRadius', 'waypoints'],
+    open: true,
+  },
+  {
+    title: 'Animation',
+    keys: ['dots', 'flowSpeed', 'flowParticles', 'reverseFlow'],
+  },
+  { title: 'Advanced', keys: ['locked', 'layer', 'source'] },
+];
+
+/** Node fields, grouped the same way. */
+const NODE_GROUPS: FieldGroup[] = [
+  {
+    title: 'Label',
+    keys: ['label', 'sublabel', 'labelColor', 'labelOffset'],
+    open: true,
+  },
+  { title: 'Appearance', keys: ['color', 'opacity'], open: true },
+  { title: 'Position', keys: ['x', 'y'] },
+  { title: 'Advanced', keys: ['locked', 'layer', 'source'] },
+];
+
+/**
+ * Per-group expanded/collapsed state, remembered across inspector re-renders so
+ * toggling a section doesn't get reset by the next live edit. Keyed by title.
+ */
+const groupOpen = new Map<string, boolean>();
+
+/**
+ * Render an element's catalog fields as collapsible sections. Fields that don't
+ * fall into a declared group (e.g. per-type extras like a host's "Managed"
+ * flag) are gathered into a trailing "Type options" section so nothing is lost.
+ */
+function groupedFieldsHtml(
   info: NodeTypeInfo | LinkTypeInfo | undefined,
   cfg: Record<string, unknown>,
+  groups: FieldGroup[],
 ): string {
-  return (info?.fields ?? []).map((f) => fieldControl(f, cfg)).join('');
+  // `record` fields (metadata / source) are rendered by dedicated editors.
+  const fields = (info?.fields ?? []).filter((f) => f.kind !== 'record');
+  const byKey = new Map(fields.map((f) => [f.key, f] as const));
+  const used = new Set<string>();
+
+  const section = (
+    title: string,
+    specs: FieldSpec[],
+    fallbackOpen: boolean,
+  ): string => {
+    if (!specs.length) return '';
+    const open = groupOpen.get(title) ?? fallbackOpen;
+    return (
+      `<details class="insp-group" data-group="${esc(title)}"${open ? ' open' : ''}>` +
+      `<summary class="insp-h">${title}</summary>` +
+      specs.map((f) => fieldControl(f, cfg)).join('') +
+      `</details>`
+    );
+  };
+
+  let html = '';
+  for (const g of groups) {
+    const specs = g.keys
+      .map((k) => byKey.get(k))
+      .filter((f): f is FieldSpec => Boolean(f));
+    specs.forEach((f) => used.add(f.key));
+    html += section(g.title, specs, g.open ?? false);
+  }
+  const rest = fields.filter((f) => !used.has(f.key));
+  return html + section('Type options', rest, true);
+}
+
+/** Persist each section's open/closed state as the user toggles it. */
+function wireGroups(): void {
+  inspector
+    .querySelectorAll<HTMLDetailsElement>('details.insp-group[data-group]')
+    .forEach((d) => {
+      d.addEventListener('toggle', () => {
+        groupOpen.set(d.dataset.group!, d.open);
+      });
+    });
 }
 
 /* Document + page properties — shown when nothing is selected. These edit the
@@ -764,7 +856,7 @@ function renderInspector(): void {
     html +=
       `<div class="insp-h">Node</div>` +
       typeRow(node.type, types) +
-      fieldsHtml(info, node as Record<string, unknown>) +
+      groupedFieldsHtml(info, node as Record<string, unknown>, NODE_GROUPS) +
       metaHtml(node.meta) +
       arrangeRow();
   } else if (link) {
@@ -774,7 +866,7 @@ function renderInspector(): void {
       `<div class="insp-h">Link</div>` +
       typeRow(link.type, types) +
       `<div class="insp-row"><span>Endpoints</span><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button></div>` +
-      fieldsHtml(info, link as Record<string, unknown>) +
+      groupedFieldsHtml(info, link as Record<string, unknown>, LINK_GROUPS) +
       arrangeRow();
   } else if (anchor) {
     html +=
@@ -849,6 +941,7 @@ function renderInspector(): void {
     editor.sendToBack();
     renderInspector();
   });
+  wireGroups();
   wireAnnotations();
 }
 
