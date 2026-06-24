@@ -1062,6 +1062,44 @@ function aswatchRow(key: string, current: string | undefined): string {
   );
 }
 
+/** Human label for a waypoint/member ref (node label, anchor id, or raw id). */
+function endpointLabel(id: string): string {
+  const n = editor.page.nodes.find((m) => m.id === id);
+  if (n) {
+    const label = (n as { label?: unknown }).label;
+    return typeof label === 'string' && label ? label : n.id;
+  }
+  if (editor.page.anchors.some((a) => a.id === id)) return `⚓ ${id}`;
+  return id; // dangling ref — surface the id so it can be fixed
+}
+
+/** One removable, reorderable chip in a refs editor. */
+function refChip(id: string): string {
+  return (
+    `<span class="refchip" data-id="${esc(id)}">` +
+    `<button type="button" class="refmv" data-refmove="-1" title="Move earlier">‹</button>` +
+    `<span class="reflbl">${esc(endpointLabel(id))}</span>` +
+    `<button type="button" class="refmv" data-refmove="1" title="Move later">›</button>` +
+    `<button type="button" class="refx" data-refdel title="Remove">✕</button>` +
+    `</span>`
+  );
+}
+
+/** "+ add…" picker options: every node (by label) then every anchor. */
+function refAddOptions(): string {
+  const nodes = editor.page.nodes
+    .map((n) => {
+      const label = (n as { label?: unknown }).label;
+      const text = typeof label === 'string' && label ? label : n.id;
+      return `<option value="${esc(n.id)}">${esc(text)}</option>`;
+    })
+    .join('');
+  const anchors = editor.page.anchors
+    .map((a) => `<option value="${esc(a.id)}">⚓ ${esc(a.id)}</option>`)
+    .join('');
+  return `<option value="">＋ add…</option>${nodes}${anchors}`;
+}
+
 /** A control for one annotation field (distinct attrs so node wiring won't grab it). */
 function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
   const v = cfg[f.key];
@@ -1080,8 +1118,20 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
       return `<div class="insp-row col">${f.label}${aswatchRow(f.key, v as string | undefined)}<input class="hex" data-akey="${f.key}" data-akind="color" value="${esc(String(v ?? ''))}" placeholder="#rrggbb"/></div>`;
     case 'number':
       return `<label class="insp-row">${f.label}<input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}"/></label>`;
-    case 'refs':
-      return `<label class="insp-row col">${f.label}${req}<input data-akey="${f.key}" data-akind="refs" value="${esc(Array.isArray(v) ? v.join(' ') : '')}" placeholder="space-separated ids"/></label>`;
+    case 'refs': {
+      const ids = Array.isArray(v) ? (v as string[]) : [];
+      const hint =
+        f.key === 'waypoints'
+          ? `<div class="refhint">Order is the route. Add nodes below or select them in order, then “＋ flow”. Reorder with ‹ ›.</div>`
+          : '';
+      return (
+        `<div class="insp-row col">${f.label}${req}` +
+        `<div class="refchips" data-refkey="${f.key}">` +
+        ids.map(refChip).join('') +
+        `<select class="refadd" title="Add by node">${refAddOptions()}</select>` +
+        `</div>${hint}</div>`
+      );
+    }
     case 'ref':
       return `<label class="insp-row">${f.label}${req}<input data-akey="${f.key}" value="${esc(String(v ?? ''))}" placeholder="id"/></label>`;
     default:
@@ -1197,6 +1247,47 @@ function wireAnnotations(): void {
         b.addEventListener('click', () => {
           setA(key, b.dataset.color!, true);
           renderInspector();
+        }),
+      );
+    });
+    // Refs editor (flow waypoints / zone members): add by node picker, reorder
+    // with ‹ ›, remove with ✕ — all by chip position so duplicates behave.
+    host.querySelectorAll<HTMLElement>('.refchips').forEach((box) => {
+      const key = box.dataset.refkey!;
+      const ids = (): string[] =>
+        [...box.querySelectorAll<HTMLElement>('.refchip')].map(
+          (c) => c.dataset.id!,
+        );
+      const commit = (next: string[]): void => {
+        setA(key, next, true);
+        renderInspector();
+      };
+      const indexOfChip = (el: HTMLElement): number =>
+        [...box.querySelectorAll<HTMLElement>('.refchip')].indexOf(el);
+      box
+        .querySelector<HTMLSelectElement>('.refadd')
+        ?.addEventListener('change', (e) => {
+          const sel = e.target as HTMLSelectElement;
+          if (sel.value) commit([...ids(), sel.value]);
+        });
+      box.querySelectorAll<HTMLButtonElement>('[data-refdel]').forEach((b) =>
+        b.addEventListener('click', (e) => {
+          e.preventDefault();
+          const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
+          const next = ids();
+          next.splice(i, 1);
+          commit(next);
+        }),
+      );
+      box.querySelectorAll<HTMLButtonElement>('[data-refmove]').forEach((b) =>
+        b.addEventListener('click', (e) => {
+          e.preventDefault();
+          const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
+          const j = i + Number(b.dataset.refmove);
+          const next = ids();
+          if (j < 0 || j >= next.length) return;
+          [next[i], next[j]] = [next[j]!, next[i]!];
+          commit(next);
         }),
       );
     });
