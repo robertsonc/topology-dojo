@@ -357,6 +357,38 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
+      /* Collapsible field section (Appearance / Routing / Animation / …) */
+      .insp-group {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        border-top: 1px solid var(--border);
+        padding-top: 10px;
+      }
+      .insp-group > summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        user-select: none;
+      }
+      .insp-group > summary::-webkit-details-marker {
+        display: none;
+      }
+      /* Disclosure caret, rotates when the section is open. */
+      .insp-group > summary::before {
+        content: '▸';
+        font-size: 9px;
+        color: var(--muted);
+        transition: transform 0.12s ease;
+      }
+      .insp-group[open] > summary::before {
+        transform: rotate(90deg);
+      }
+      .insp-group > summary:hover {
+        color: var(--text);
+      }
       .insp-row {
         display: flex;
         align-items: center;

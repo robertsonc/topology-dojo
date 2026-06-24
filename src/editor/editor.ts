@@ -453,6 +453,17 @@ export class Editor {
     return Math.max(3, (7 * this.view.w) / wpx);
   }
 
+  /**
+   * Click tolerance for grabbing an anchor, in user units. Anchors are tiny
+   * (≈5px) link endpoints; a fixed user-space pad makes them un-clickable when
+   * zoomed out, which reads as "linking to anchors doesn't work". Scale the pad
+   * to a constant ≈14 screen px (min 8 user units) so they stay easy to hit.
+   */
+  private anchorHitPad(): number {
+    const wpx = this.overlay.getBoundingClientRect().width || 1;
+    return Math.max(8, (14 * this.view.w) / wpx);
+  }
+
   private linkPreviewSvg(): string {
     if (this.tool !== 'link' || !this.linkStart || !this.linkCursor) return '';
     const a = resolvePos(this.page, this.linkStart);
@@ -1414,7 +1425,8 @@ export class Editor {
     // Link tool: click source, then target, to create a link. Endpoints may be
     // a node or an anchor (anchors exist precisely to be link endpoints).
     if (this.tool === 'link') {
-      const endpoint = hit ?? hitTestAnchor(this.page, p.x, p.y);
+      const endpoint =
+        hit ?? hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
       if (endpoint) {
         if (this.linkStart === null) {
           this.linkStart = endpoint;
@@ -1463,7 +1475,7 @@ export class Editor {
       }
     } else {
       // No node — try an anchor, then a link, else start a marquee.
-      const anchorHit = hitTestAnchor(this.page, p.x, p.y);
+      const anchorHit = hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
       if (anchorHit) {
         const a = this.page.anchors.find((m) => m.id === anchorHit)!;
         this.sel.clear();

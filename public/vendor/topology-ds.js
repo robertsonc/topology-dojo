@@ -2096,7 +2096,7 @@ class TopologyDesigner {
   <feComposite in="SourceGraphic" in2="lit" operator="arithmetic" k1="0" k2="1" k3="0.4" k4="0"/>
 </filter>
 <!-- Tunnel filmic color grading (ACES-like tone mapping approximation) -->
-<filter id="tds-tunnel-filmic" x="0" y="0" width="100%" height="100%">
+<filter id="tds-tunnel-filmic" x="-100%" y="-100%" width="300%" height="300%">
   <feComponentTransfer>
     <feFuncR type="gamma" amplitude="1.1" exponent="0.92" offset="0.02"/>
     <feFuncG type="gamma" amplitude="1.1" exponent="0.92" offset="0.02"/>
