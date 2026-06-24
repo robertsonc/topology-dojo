@@ -88,6 +88,24 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     if (pageIds.has(page.id)) err(at, `duplicate page id "${page.id}"`);
     pageIds.add(page.id);
 
+    // Playback metadata: duration must be a positive ms count.
+    if (
+      page.duration !== undefined &&
+      (typeof page.duration !== 'number' ||
+        !Number.isFinite(page.duration) ||
+        page.duration <= 0)
+    )
+      warn(
+        at,
+        `duration ${String(page.duration)} should be a positive ms count`,
+      );
+    if (
+      page.transition !== undefined &&
+      page.transition !== 'cut' &&
+      page.transition !== 'fade'
+    )
+      warn(at, `transition "${String(page.transition)}" not in [cut, fade]`);
+
     // Element ids unique within the page; collect endpoints (nodes + anchors).
     const ids = new Set<string>();
     const endpoints = new Set<string>();

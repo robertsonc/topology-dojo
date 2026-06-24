@@ -47,6 +47,14 @@ export function parseDoc(input: unknown): TopologyDocument | null {
       id: typeof p.id === 'string' ? p.id : newPageId(),
       name: typeof p.name === 'string' ? p.name : `Frame ${pages.length + 1}`,
       viewBox: typeof p.viewBox === 'string' ? p.viewBox : '0 0 1050 700',
+      ...(typeof p.duration === 'number' &&
+      Number.isFinite(p.duration) &&
+      p.duration > 0
+        ? { duration: p.duration }
+        : {}),
+      ...(p.transition === 'cut' || p.transition === 'fade'
+        ? { transition: p.transition }
+        : {}),
       nodes: Array.isArray(p.nodes) ? (p.nodes as Page['nodes']) : [],
       links: Array.isArray(p.links) ? (p.links as Page['links']) : [],
       anchors: Array.isArray(p.anchors) ? (p.anchors as Page['anchors']) : [],

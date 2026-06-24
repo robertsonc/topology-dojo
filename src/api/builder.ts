@@ -53,6 +53,9 @@ export interface PageInput {
   id?: string;
   name?: string;
   viewBox?: string;
+  /** Playback hold time in ms (players default to 2000 when absent). */
+  duration?: number;
+  transition?: 'cut' | 'fade';
 }
 export interface ZoneInput extends Omit<ZoneConfig, 'id' | 'nodes'> {
   id?: string;
@@ -83,6 +86,8 @@ export function addPage(doc: TopologyDocument, input: PageInput = {}): Page {
     id: input.id ?? genId('p'),
     name: input.name ?? `Frame ${doc.pages.length + 1}`,
     viewBox: input.viewBox ?? DEFAULT_VIEWBOX,
+    ...(input.duration !== undefined ? { duration: input.duration } : {}),
+    ...(input.transition !== undefined ? { transition: input.transition } : {}),
     nodes: [],
     links: [],
     anchors: [],

@@ -1,6 +1,6 @@
 # Proposal: groundwork for live SD-WAN flow visualization
 
-- **Status:** Proposed
+- **Status:** Implemented — E1 (#65), E2 (#66), E3 (#67), E4 (#68), E5
 - **Date:** 2026-06-09
 - **Scope:** code review of the current repo + the five enhancements that lay
   the groundwork for an agent to (1) gather live flow details from an

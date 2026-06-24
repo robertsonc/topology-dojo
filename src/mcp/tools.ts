@@ -38,6 +38,7 @@ import {
 import type { SourceRef } from '../api/source.js';
 import type { FlowQuery, TopologyProvider } from '../connect/types.js';
 import { compileFlowTopology } from '../connect/compile.js';
+import { exportFlipbookHTML } from '../render/flipbook.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
 import { tidyDocument } from '../api/tidy.js';
@@ -213,17 +214,26 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'add_page',
       description:
-        'Append a new (empty) page/frame to a topology. Returns its 0-based index.',
+        'Append a new (empty) page/frame to a topology. Returns its 0-based index. duration/transition control flipbook playback (see export_flipbook).',
       inputShape: {
         topologyId,
         name: z.string().optional(),
         viewBox: z.string().optional(),
+        duration: z
+          .number()
+          .optional()
+          .describe('Playback hold time in ms (players default to 2000).'),
+        transition: z.enum(['cut', 'fade']).optional(),
       },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
         const page = addPage(doc, {
           name: a.name ? String(a.name) : undefined,
           viewBox: a.viewBox ? String(a.viewBox) : undefined,
+          ...(a.duration !== undefined ? { duration: Number(a.duration) } : {}),
+          ...(a.transition !== undefined
+            ? { transition: a.transition as 'cut' | 'fade' }
+            : {}),
         });
         return { pageIndex: doc.pages.length - 1, page };
       },
@@ -241,12 +251,17 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_page_properties',
       description:
-        'Update an existing page’s name and/or viewBox (the canvas extent "minX minY width height").',
+        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), and/or playback timing (duration ms / transition) for flipbook playback.',
       inputShape: {
         topologyId,
         pageIndex,
         name: z.string().optional(),
         viewBox: z.string().optional(),
+        duration: z
+          .number()
+          .optional()
+          .describe('Playback hold time in ms (players default to 2000).'),
+        transition: z.enum(['cut', 'fade']).optional(),
       },
       handler: (a) => {
         const page = store.page(
@@ -255,7 +270,17 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         );
         if (a.name !== undefined) page.name = String(a.name);
         if (a.viewBox !== undefined) page.viewBox = String(a.viewBox);
-        return { name: page.name, viewBox: page.viewBox };
+        if (a.duration !== undefined) page.duration = Number(a.duration);
+        if (a.transition !== undefined)
+          page.transition = a.transition as 'cut' | 'fade';
+        return {
+          name: page.name,
+          viewBox: page.viewBox,
+          ...(page.duration !== undefined ? { duration: page.duration } : {}),
+          ...(page.transition !== undefined
+            ? { transition: page.transition }
+            : {}),
+        };
       },
     },
     {
@@ -764,6 +789,16 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           a.visibleLayers !== undefined
             ? { visibleLayers: a.visibleLayers as string[] }
             : {},
+        ),
+    },
+    {
+      name: 'export_flipbook',
+      description:
+        'Export the whole document as one standalone, self-playing HTML flipbook: every page rendered to SVG, played in order on each page’s duration (default 2000ms) with cut/fade transitions, loop, play/pause, and frame dots. No external assets — save it as an .html file and open in any browser. This is how an animated multi-frame story (e.g. a flow’s setup → steady state → teardown) is delivered end to end.',
+      inputShape: { topologyId },
+      handler: (a) =>
+        exportFlipbookHTML(store.get(String(a.topologyId)), (doc, i) =>
+          deps.renderDocument(doc, i),
         ),
     },
   ];
