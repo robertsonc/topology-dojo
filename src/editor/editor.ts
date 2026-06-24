@@ -90,6 +90,7 @@ export class Editor {
     null;
   /** Pan/zoom window in page coordinates (the displayed viewBox). */
   private view = { x: 0, y: 0, w: 1050, h: 700 };
+  private viewInsets?: () => { right: number; bottom: number };
   private pan: { startClientX: number; startClientY: number } | null = null;
   /** Spacebar held → left-drag pans (hand mode), like Figma/Sketch. */
   private spaceHeld = false;
@@ -153,7 +154,7 @@ export class Editor {
     /** Called whenever the view (pan/zoom/page) changes (drives the status bar). */
     private onView: () => void = () => {},
   ) {
-    this.view = parseViewBox(page.viewBox);
+    this.view = this.computeFitView();
     this.bind();
     this.renderArt();
     this.renderOverlay();
@@ -174,7 +175,7 @@ export class Editor {
     this.hoverNode = null;
     this.anchorSel = null;
     this.anchorDrag = null;
-    this.view = parseViewBox(page.viewBox);
+    this.view = this.computeFitView();
     this.renderArt();
     this.renderOverlay();
     this.fireSelect();
@@ -214,10 +215,81 @@ export class Editor {
     this.onChange();
   }
 
-  /** Reset pan/zoom to frame the whole page. */
+  /** Reset pan/zoom to frame the page's content (falls back to the page box). */
   resetView(): void {
-    this.view = parseViewBox(this.page.viewBox);
+    this.view = this.computeFitView();
     this.applyView();
+  }
+
+  /**
+   * Supply the on-screen insets (px) taken by floating panels (inspector,
+   * minimap) so fit-to-content frames the *visible* canvas area rather than
+   * tucking edge content behind a panel. Optional; defaults to no insets.
+   */
+  setViewInsets(fn: () => { right: number; bottom: number }): void {
+    this.viewInsets = fn;
+  }
+
+  /** Axis-aligned bounds of all drawn content (nodes + anchors), or null. */
+  private contentBounds(): {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let has = false;
+    const add = (x: number, y: number, w: number, h: number): void => {
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + w);
+      maxY = Math.max(maxY, y + h);
+      has = true;
+    };
+    for (const n of this.page.nodes) {
+      const b = nodeBounds(n);
+      add(b.x, b.y, b.w, b.h);
+    }
+    for (const a of this.page.anchors) add(a.x - 4, a.y - 4, 8, 8);
+    if (!has) return null;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  /**
+   * Compute a view that frames the page's content (with padding), scaled so the
+   * content fits the *visible* canvas area — the overlay minus any panel insets
+   * — and centred within it. Falls back to the page viewBox when the page is
+   * empty or the canvas hasn't been laid out yet.
+   */
+  private computeFitView(): { x: number; y: number; w: number; h: number } {
+    const b = this.contentBounds();
+    if (!b) return parseViewBox(this.page.viewBox);
+    const pad = Math.max(40, 0.06 * Math.max(b.w, b.h));
+    const cw = b.w + 2 * pad;
+    const ch = b.h + 2 * pad;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const rect = this.overlay.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0)
+      return { x: cx - cw / 2, y: cy - ch / 2, w: cw, h: ch };
+    const insets = this.viewInsets?.() ?? { right: 0, bottom: 0 };
+    const visW = Math.max(1, rect.width - Math.max(0, insets.right));
+    const visH = Math.max(1, rect.height - Math.max(0, insets.bottom));
+    // Page units per pixel needed to fit the content into the visible sub-rect.
+    const scale = Math.max(cw / visW, ch / visH);
+    // The view spans the whole canvas element at that scale; the content is
+    // centred over the visible region, leaving the panel gutters as empty canvas.
+    const visCenterX = (rect.width - Math.max(0, insets.right)) / 2;
+    const visCenterY = (rect.height - Math.max(0, insets.bottom)) / 2;
+    return {
+      x: cx - visCenterX * scale,
+      y: cy - visCenterY * scale,
+      w: rect.width * scale,
+      h: rect.height * scale,
+    };
   }
 
   /** The current pan/zoom window (page coordinates) — drives the minimap. */

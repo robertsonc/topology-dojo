@@ -196,6 +196,34 @@ const editor = new Editor(
   },
 );
 
+/*
+ * Tell the editor how much of the canvas the floating panels cover, so
+ * fit-to-content frames the *visible* area and never tucks edge content behind
+ * the inspector or minimap. Recomputed on each fit (panels collapse/expand).
+ */
+editor.setViewInsets(() => {
+  const canvas = overlaySvg.getBoundingClientRect();
+  let right = 0;
+  let bottom = 0;
+  const insp = document.getElementById('inspector-wrap');
+  if (insp && !insp.classList.contains('collapsed')) {
+    const r = insp.getBoundingClientRect();
+    if (r.width > 0) right = Math.max(right, canvas.right - r.left + 12);
+  }
+  const mm = document.getElementById('minimap-wrap');
+  if (mm && !mm.classList.contains('collapsed')) {
+    const r = mm.getBoundingClientRect();
+    if (r.height > 0) bottom = Math.max(bottom, canvas.bottom - r.top + 12);
+  }
+  // Never surrender more than ~60% of the canvas to a panel.
+  return {
+    right: Math.max(0, Math.min(right, canvas.width * 0.6)),
+    bottom: Math.max(0, Math.min(bottom, canvas.height * 0.6)),
+  };
+});
+// Initial fit once the canvas has real dimensions (constructor ran pre-layout).
+requestAnimationFrame(() => editor.resetView());
+
 /* Replace the whole document (open / new) and refresh everything. */
 function loadDoc(next: TopologyDocument): void {
   doc.title = next.title;
