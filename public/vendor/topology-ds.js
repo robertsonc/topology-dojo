@@ -2888,9 +2888,12 @@ class TopologyDesigner {
     const ad = anim ? ` class="tds-draw-phase" style="animation-delay:${delay}s"` : '';
     const mobile = this._isMobile;
     const bloomF = !mobile ? 'url(#tds-tunnel-bloom)' : 'url(#tds-glow-strong)';
-    // Filmic color grading wrapper (ACES-like tone mapping, skip on mobile)
-    const filmicOpen = !mobile ? '<g filter="url(#tds-tunnel-filmic)">' : '';
-    const filmicClose = !mobile ? '</g>' : '';
+    // Filmic color grading wrapper removed: as an outer filter wrapping the
+    // animated flow particles, Chrome composited the group and clipped the glow
+    // to its bbox (hard rectangular edges on the tunnel when animation is on,
+    // and a flat cut at sharp peaks). The grading was a negligible gamma tweak.
+    const filmicOpen = '';
+    const filmicClose = '';
     return filmicOpen +
       `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
       // Layer 1: Multi-scale bloom aura (approximates UnrealBloom light bleed)
