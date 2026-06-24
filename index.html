@@ -443,6 +443,59 @@
         flex: none;
         width: 100%;
       }
+      /* Refs editor — flow waypoints / zone members as labelled chips. */
+      .refchips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .refchip {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1px 2px 1px 6px;
+        font-size: 11px;
+        color: var(--text);
+        max-width: 100%;
+      }
+      .refchip .reflbl {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 110px;
+      }
+      .refchip .refmv,
+      .refchip .refx {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 0 3px;
+        font-size: 11px;
+        line-height: 1;
+      }
+      .refchip .refmv:hover {
+        color: var(--accent);
+      }
+      .refchip .refx:hover {
+        color: #fc6161;
+      }
+      .refchips .refadd {
+        flex: 0 0 auto;
+        width: auto;
+        min-width: 84px;
+        padding: 3px 6px;
+        font-size: 11px;
+      }
+      .refhint {
+        font-size: 10px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
       .swatches {
         display: grid;
         grid-template-columns: repeat(9, 1fr);
