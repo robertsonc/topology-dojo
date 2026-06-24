@@ -1953,10 +1953,10 @@ class TopologyDesigner {
 <filter id="tds-bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <filter id="tds-dof-blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.8"/></filter>
 <filter id="tds-dof-blur-strong" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.8"/></filter>
-<filter id="tds-focus-halo-green"><feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b"/><feFlood flood-color="#01a982" flood-opacity=".3" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-blue"><feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b"/><feFlood flood-color="#65aef9" flood-opacity=".25" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-purple"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feFlood flood-color="#7764fc" flood-opacity=".22" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-gold"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feFlood flood-color="#deb146" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-green" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b"/><feFlood flood-color="#01a982" flood-opacity=".3" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-blue" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b"/><feFlood flood-color="#65aef9" flood-opacity=".25" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-purple" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feFlood flood-color="#7764fc" flood-opacity=".22" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-gold" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feFlood flood-color="#deb146" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <!-- Advanced Glow-Depth Filters (Goal 2a): focused nodes physically "lift" off canvas -->
 <filter id="tds-depth-lift" x="-80%" y="-80%" width="260%" height="260%">
   <!-- Layer 1: Large soft shadow beneath (depth illusion) -->
@@ -2126,10 +2126,10 @@ class TopologyDesigner {
 <filter id="tds-dof-blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.2"/></filter>
 <filter id="tds-dof-blur-strong" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2"/></filter>
 <!-- Mobile: simplified focus halos (no multi-stage depth lift) -->
-<filter id="tds-focus-halo-green"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/><feFlood flood-color="#01a982" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-blue"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/><feFlood flood-color="#65aef9" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-purple"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/><feFlood flood-color="#7764fc" flood-opacity=".18" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<filter id="tds-focus-halo-gold"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/><feFlood flood-color="#deb146" flood-opacity=".15" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-green" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/><feFlood flood-color="#01a982" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-blue" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/><feFlood flood-color="#65aef9" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-purple" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/><feFlood flood-color="#7764fc" flood-opacity=".18" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="tds-focus-halo-gold" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/><feFlood flood-color="#deb146" flood-opacity=".15" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <!-- Mobile: depth-lift aliases point to simple halos -->
 <filter id="tds-depth-lift"><feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <filter id="tds-depth-lift-green"><feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b"/><feFlood flood-color="#01a982" flood-opacity=".15" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -2894,15 +2894,15 @@ class TopologyDesigner {
     return filmicOpen +
       `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
       // Layer 1: Multi-scale bloom aura (approximates UnrealBloom light bleed)
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="24" opacity=".05" filter="${bloomF}"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="24" stroke-linejoin="round" stroke-linecap="round" opacity=".05" filter="${bloomF}"/>` +
       // Layer 2: Tube volume (cylindrical 3D illusion via diffuse lighting)
-      (!mobile ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="12" opacity=".15" filter="url(#tds-tunnel-tube)"/>` : '') +
+      (!mobile ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="12" stroke-linejoin="round" stroke-linecap="round" opacity=".15" filter="url(#tds-tunnel-tube)"/>` : '') +
       // Layer 3: Inner luminous corridor
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="8" opacity=".1" filter="url(#tds-bloom)"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="8" stroke-linejoin="round" stroke-linecap="round" opacity=".1" filter="url(#tds-bloom)"/>` +
       // Layer 4: Core energy line (draw animation)
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-dasharray="2000" stroke-dashoffset="0" opacity=".65"${ad}/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="2000" stroke-dashoffset="0" opacity=".65"${ad}/>` +
       // Layer 5: Dashed encrypted overlay
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="1" stroke-dasharray="6 5" opacity=".3"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="6 5" opacity=".3"/>` +
       // Animated particles (forward + trailing + reverse); per-link flow cfg overrides.
       (dots && !this.reducedMotion && !mobile ?
         (this._hasFlowCfg(flow) ? this._flowParticles(path, color, flow) :

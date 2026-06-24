@@ -114,6 +114,8 @@ export class Editor {
     cursor: { x: number; y: number };
     moved: boolean;
   } | null = null;
+  /** Node currently under the cursor in Select mode (drives connection dots). */
+  private hoverNode: string | null = null;
   private linkSel: string | null = null;
   private linkSeq = 0;
   /** The selected anchor (free-floating point), or null. */
@@ -169,6 +171,7 @@ export class Editor {
     this.linkSel = null;
     this.linkStart = null;
     this.dragLink = null;
+    this.hoverNode = null;
     this.anchorSel = null;
     this.anchorDrag = null;
     this.view = parseViewBox(page.viewBox);
@@ -525,29 +528,81 @@ export class Editor {
     return `<line x1="${a.x}" y1="${a.y}" x2="${c.x}" y2="${c.y}" stroke="${ACCENT}" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>`;
   }
 
-  /** ~7px edge band of a node, in user units — the "grab to link" ring. */
+  /** Movement threshold (user units) before a press becomes a link drag. */
   private nodeEdgeBand(): number {
     const wpx = this.overlay.getBoundingClientRect().width || 1;
     return Math.max(4, (8 * this.view.w) / wpx);
   }
 
-  /**
-   * Whether a point sits in a node's outer edge ring (vs. its interior). Pressing
-   * the ring drags out a link; pressing the interior selects / moves the node.
-   * Tiny nodes (no room for an interior) count entirely as edge.
-   */
-  private nearNodeEdge(id: string, p: { x: number; y: number }): boolean {
+  /** Connection-dot radius in user units (≈5 screen px). */
+  private dotRadius(): number {
+    const wpx = this.overlay.getBoundingClientRect().width || 1;
+    return Math.max(3, (5 * this.view.w) / wpx);
+  }
+
+  /** The four edge-midpoint connection points of a node, in user units. */
+  private connectionDots(id: string): { x: number; y: number }[] {
     const n = this.page.nodes.find((m) => m.id === id);
-    if (!n) return false;
+    if (!n) return [];
     const b = nodeBounds(n);
-    const inset = Math.min(this.nodeEdgeBand(), b.w / 2 - 1, b.h / 2 - 1);
-    if (inset <= 0) return true;
-    return (
-      p.x < b.x + inset ||
-      p.x > b.x + b.w - inset ||
-      p.y < b.y + inset ||
-      p.y > b.y + b.h - inset
-    );
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    return [
+      { x: cx, y: b.y }, // top
+      { x: b.x + b.w, y: cy }, // right
+      { x: cx, y: b.y + b.h }, // bottom
+      { x: b.x, y: cy }, // left
+    ];
+  }
+
+  /**
+   * If `p` lands on a connection dot of the hovered or a selected node, return
+   * that node's id (so a link can be dragged out from it), else null.
+   */
+  private connectionDotHit(p: { x: number; y: number }): string | null {
+    const r = this.dotRadius() * 1.8; // forgiving grab radius
+    const ids = new Set<string>(this.sel);
+    if (this.hoverNode) ids.add(this.hoverNode);
+    for (const id of ids) {
+      for (const d of this.connectionDots(id)) {
+        if (Math.abs(p.x - d.x) <= r && Math.abs(p.y - d.y) <= r) return id;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The node to treat as "hovered": the one under the cursor, or one whose
+   * connection dot the cursor is poised over (so dots stay reachable even though
+   * they sit just on the node's edge).
+   */
+  private hoverNodeAt(p: { x: number; y: number }): string | null {
+    const direct = hitTestNode(this.page, p.x, p.y);
+    if (direct) return direct;
+    const r = this.dotRadius() * 1.8;
+    for (let i = this.page.nodes.length - 1; i >= 0; i--) {
+      const id = this.page.nodes[i]!.id;
+      for (const d of this.connectionDots(id)) {
+        if (Math.abs(p.x - d.x) <= r && Math.abs(p.y - d.y) <= r) return id;
+      }
+    }
+    return null;
+  }
+
+  /** Connection dots drawn on the hovered / selected node(s) in Select mode. */
+  private connectionDotsSvg(): string {
+    if (this.tool !== 'select' || this.dragLink || this.drag || this.marquee)
+      return '';
+    const r = this.dotRadius();
+    const ids = new Set<string>(this.sel);
+    if (this.hoverNode) ids.add(this.hoverNode);
+    let out = '';
+    for (const id of ids) {
+      for (const d of this.connectionDots(id)) {
+        out += `<circle cx="${d.x}" cy="${d.y}" r="${r}" fill="#0b0e14" stroke="${ACCENT}" stroke-width="1.5"/>`;
+      }
+    }
+    return out;
   }
 
   /**
@@ -593,6 +648,7 @@ export class Editor {
       this.anchorsSvg() +
       this.linkSelSvg() +
       this.selectionSvg() +
+      this.connectionDotsSvg() +
       this.dragGhostSvg() +
       this.marqueeSvg() +
       this.linkPreviewSvg();
@@ -1241,6 +1297,7 @@ export class Editor {
     this.linkStart = null;
     this.linkCursor = null;
     this.dragLink = null;
+    this.hoverNode = null;
     this.renderOverlay();
   }
 
@@ -1399,6 +1456,12 @@ export class Editor {
     this.overlay.addEventListener('pointerdown', (e) => this.onDown(e));
     this.overlay.addEventListener('pointermove', (e) => this.onMove(e));
     this.overlay.addEventListener('pointerup', (e) => this.onUp(e));
+    this.overlay.addEventListener('pointerleave', () => {
+      if (this.hoverNode !== null) {
+        this.hoverNode = null;
+        this.renderOverlay();
+      }
+    });
     this.overlay.addEventListener('dblclick', (e) => this.onDblClick(e));
     this.overlay.addEventListener('wheel', (e) => this.onWheel(e), {
       passive: false,
@@ -1502,6 +1565,24 @@ export class Editor {
 
     const hit = hitTestNode(this.page, p.x, p.y);
 
+    // Select tool: pressing a connection dot (the handles shown when hovering a
+    // node) drags out a link — no tool switch needed. Dot beats node-body so you
+    // can link from the edge without moving the node.
+    if (this.tool === 'select' && !this.spaceHeld && !e.shiftKey) {
+      const dotNode = this.connectionDotHit(p);
+      if (dotNode) {
+        if (!this.sel.has(dotNode)) {
+          this.sel.clear();
+          this.sel.add(dotNode);
+          this.fireSelect();
+        }
+        this.dragLink = { from: dotNode, start: p, cursor: p, moved: false };
+        this.overlay.setPointerCapture(e.pointerId);
+        this.renderOverlay();
+        return;
+      }
+    }
+
     // Link tool: click source, then target, to create a link. Endpoints may be
     // a node or an anchor (anchors exist precisely to be link endpoints).
     if (this.tool === 'link') {
@@ -1527,17 +1608,6 @@ export class Editor {
     if (hit) {
       this.clearLinkSel();
       this.clearAnchorSel();
-      // Drag out from a node's edge to draw a link — no tool switch needed. A
-      // press that doesn't move falls through to a plain select on pointer-up.
-      if (this.tool === 'select' && !e.shiftKey && this.nearNodeEdge(hit, p)) {
-        this.sel.clear();
-        this.sel.add(hit);
-        this.dragLink = { from: hit, start: p, cursor: p, moved: false };
-        this.fireSelect();
-        this.overlay.setPointerCapture(e.pointerId);
-        this.renderOverlay();
-        return;
-      }
       if (e.shiftKey) {
         if (this.sel.has(hit)) this.sel.delete(hit);
         else this.sel.add(hit);
@@ -1675,13 +1745,19 @@ export class Editor {
       }
       return;
     }
-    // Idle hover: hint that a node's edge can be dragged out as a link.
+    // Idle hover: show connection dots on the node under the cursor, and a
+    // crosshair when poised over a dot (drag it out to draw a link).
     if (!this.drag && !this.marquee) {
       if (this.tool === 'select' && !this.spaceHeld && e.buttons === 0) {
         const hp = clientToUser(this.overlay, e.clientX, e.clientY);
-        const over = hitTestNode(this.page, hp.x, hp.y);
-        this.overlay.style.cursor =
-          over && this.nearNodeEdge(over, hp) ? 'crosshair' : '';
+        const over = this.hoverNodeAt(hp);
+        if (over !== this.hoverNode) {
+          this.hoverNode = over;
+          this.renderOverlay();
+        }
+        this.overlay.style.cursor = this.connectionDotHit(hp)
+          ? 'crosshair'
+          : '';
       }
       return;
     }
