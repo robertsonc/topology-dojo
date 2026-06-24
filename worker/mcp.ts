@@ -9,6 +9,7 @@ import { McpAgent } from 'agents/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTopologyTools } from '../src/mcp/register.js';
 import { TopologyStore } from '../src/mcp/store.js';
+import { persistStore, rehydrateStore } from '../src/mcp/persist-store.js';
 import { serializeDoc } from '../src/pages/persist.js';
 import type { TopologyDocument } from '../src/pages/model.js';
 import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
@@ -23,11 +24,40 @@ function shareId(): string {
 /** Snapshots live in KV for 30 days unless re-published (keeps the namespace bounded). */
 const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
 
+/**
+ * Tools that only read the registry — no persistence needed after them. Anything
+ * NOT listed is treated as a mutation and triggers a write-back, so a new
+ * mutating tool is durable by default (fail safe). The connect/* tools query a
+ * live data source and never touch the store.
+ */
+const READONLY_TOOLS = new Set<string>([
+  'describe_capabilities',
+  'list_topologies',
+  'list_templates',
+  'get_topology',
+  'validate_topology',
+  'layout_guidelines',
+  'render_svg',
+  'export_flipbook',
+  'share_topology',
+  'describe_data_source',
+  'list_appliances',
+  'list_tunnels',
+  'get_overlay_policies',
+  'list_flows',
+  'get_flow_details',
+]);
+
 export class TopologyMcp extends McpAgent<WorkerEnv> {
   server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
   private store = new TopologyStore();
 
   async init(): Promise<void> {
+    // Rehydrate the registry from Durable Object storage. McpAgent is a DO that
+    // hibernates between requests, dropping in-memory fields — without this, a
+    // topology created on one request vanishes on the next (the QA "blocker").
+    await this.rehydrate();
+
     // Live-data provider, when the Orchestrator secrets are configured.
     const provider =
       this.env.ORCH_BASE_URL && this.env.ORCH_API_KEY
@@ -44,7 +74,32 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
         ...(provider ? { provider } : {}),
       },
       this.store,
+      (toolName) => this.persistAfter(toolName),
     );
+  }
+
+  /** Load every persisted document back into the in-memory registry. */
+  private async rehydrate(): Promise<void> {
+    try {
+      await rehydrateStore(this.store, this.ctx.storage);
+    } catch (err) {
+      // A storage hiccup shouldn't block tool registration — start empty.
+      console.error('topology rehydrate failed', err);
+    }
+  }
+
+  /**
+   * After a mutating tool, write the registry back to DO storage. Errors are
+   * logged, not thrown, so a write failure doesn't fail the user's call (the
+   * mutation still took effect in memory for the rest of the session).
+   */
+  private async persistAfter(toolName: string): Promise<void> {
+    if (READONLY_TOOLS.has(toolName)) return;
+    try {
+      await persistStore(this.store, this.ctx.storage);
+    } catch (err) {
+      console.error(`topology persist after ${toolName} failed`, err);
+    }
   }
 
   /** Store a document snapshot in KV and return the link that opens it. */
