@@ -65,6 +65,39 @@ describe('auto-layout', () => {
     expect(overlaps(a)).toBe(0);
   });
 
+  it('zone-aware layout keeps members together and zones non-overlapping', () => {
+    const d = createDocument().page();
+    // Two zones whose members are all piled on the same spot.
+    for (const id of ['a1', 'a2', 'a3'])
+      d.node({ id, type: 'ec', x: 300, y: 300, label: id });
+    for (const id of ['b1', 'b2', 'b3'])
+      d.node({ id, type: 'ec', x: 300, y: 300, label: id });
+    d.zone({ id: 'za', nodes: ['a1', 'a2', 'a3'], label: 'A' });
+    d.zone({ id: 'zb', nodes: ['b1', 'b2', 'b3'], label: 'B' });
+    const doc = d.build();
+
+    const moved = layoutPage(doc.pages[0]!, { algorithm: 'grid' });
+    expect(moved).toBeGreaterThan(0);
+
+    // No overlap, no crowding, and no zone swallowing the other's members.
+    const messages = analyzeLayout(doc).map((p) => p.message);
+    expect(messages.some((m) => /overlap|too close/.test(m))).toBe(false);
+    expect(messages.some((m) => /visually contains/.test(m))).toBe(false);
+
+    // Cohesion: every za member is nearer za's centroid than zb's, and vice-versa.
+    const at = (id: string) => doc.pages[0]!.nodes.find((n) => n.id === id)!;
+    const centroid = (ids: string[]) => ({
+      x: ids.reduce((s, i) => s + at(i).x, 0) / ids.length,
+      y: ids.reduce((s, i) => s + at(i).y, 0) / ids.length,
+    });
+    const ca = centroid(['a1', 'a2', 'a3']);
+    const cb = centroid(['b1', 'b2', 'b3']);
+    const near = (id: string, c: { x: number; y: number }) =>
+      Math.hypot(at(id).x - c.x, at(id).y - c.y);
+    for (const id of ['a1', 'a2', 'a3'])
+      expect(near(id, ca)).toBeLessThan(near(id, cb));
+  });
+
   it('autoLayout is pure and a single node is a no-op', () => {
     const doc = piled();
     const before = JSON.stringify(doc);

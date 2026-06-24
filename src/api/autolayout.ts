@@ -200,6 +200,146 @@ function forceLayout(page: Page, vb: number[], spacing: number): void {
   }
 }
 
+function applyAlgorithm(
+  page: Page,
+  vb: number[],
+  spacing: number,
+  opts: AutoLayoutOptions,
+): void {
+  if (opts.algorithm === 'grid') gridLayout(page, vb, spacing);
+  else if (opts.algorithm === 'circular') circularLayout(page, vb, spacing);
+  else if (opts.algorithm === 'force') forceLayout(page, vb, spacing);
+  else hierarchicalLayout(page, vb, spacing, opts.direction ?? 'TB');
+}
+
+/* ── zone-aware layout ────────────────────────────────────────────────
+ * Laying nodes out as a flat graph scatters a zone's members across the
+ * page; the zone then auto-sizes a box that spans — and visually swallows —
+ * unrelated nodes. When a page has zones we instead keep each zone's members
+ * together (a compact grid per zone), then pack the zones and the remaining
+ * free nodes as non-overlapping blocks. Block reserves mirror the engine's
+ * zone box (member centers padded by `gridPad`+`zonePadding`), so adjacent
+ * zones never overlap. The chosen algorithm governs the no-zone path; with
+ * zones it influences only the (grid) intra-cluster arrangement for now.
+ */
+
+/** All node ids belonging to a zone and its descendant zones. */
+function zoneMembers(
+  zones: { id: string; nodes?: string[]; parentZone?: string }[],
+  zoneId: string,
+): string[] {
+  const z = zones.find((x) => x.id === zoneId);
+  if (!z) return [];
+  const ids = [...(z.nodes ?? [])];
+  for (const child of zones)
+    if (child.parentZone === zoneId) ids.push(...zoneMembers(zones, child.id));
+  return ids;
+}
+
+/** Arrange a cluster's members in a compact grid; centers start at (0,0). */
+function gridCluster(
+  nodes: NodeConfig[],
+  spacing: number,
+): { centerW: number; centerH: number } {
+  let cw = 0;
+  let ch = 0;
+  for (const n of nodes) {
+    const f = nodeFootprint(n);
+    cw = Math.max(cw, f.w);
+    ch = Math.max(ch, f.h);
+  }
+  cw += spacing;
+  ch += spacing;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
+  const rows = Math.ceil(nodes.length / cols);
+  nodes.forEach((n, i) => {
+    n.x = (i % cols) * cw;
+    n.y = Math.floor(i / cols) * ch;
+  });
+  return { centerW: (cols - 1) * cw, centerH: (rows - 1) * ch };
+}
+
+interface LayoutBlock {
+  nodes: NodeConfig[];
+  /** Reserve extents from the member-center origin to the block's edges. */
+  l: number;
+  r: number;
+  t: number;
+  b: number;
+}
+
+function zoneAwareLayout(page: Page, vb: number[], spacing: number): void {
+  const [vx, vy, vw, vh] = vb as [number, number, number, number];
+  const m = LAYOUT_RULES.edgeMargin;
+  const zones = page.zones ?? [];
+  // The engine pads a zone box by these around member *centers* (see layout.ts
+  // `zoneBox`): a fixed inset plus the zone's padding.
+  const pad = LAYOUT_RULES.zonePadding;
+  const insetX = 40 + pad;
+  const insetY = 30 + pad;
+
+  // Assign each node to its top-level zone (first wins); the rest are free.
+  const assigned = new Map<string, string>();
+  const topZones = zones.filter(
+    (z) => !(z.parentZone && zones.some((o) => o.id === z.parentZone)),
+  );
+  for (const z of topZones)
+    for (const id of zoneMembers(zones, z.id))
+      if (!assigned.has(id)) assigned.set(id, z.id);
+
+  const blocks: LayoutBlock[] = [];
+  for (const z of topZones) {
+    const members = page.nodes.filter((n) => assigned.get(n.id) === z.id);
+    if (!members.length) continue;
+    const { centerW, centerH } = gridCluster(members, spacing);
+    blocks.push({
+      nodes: members,
+      l: insetX,
+      r: centerW + insetX,
+      t: insetY,
+      b: centerH + insetY,
+    });
+  }
+  for (const n of page.nodes) {
+    if (assigned.has(n.id)) continue;
+    n.x = 0;
+    n.y = 0;
+    const f = nodeFootprint(n); // relative to the (0,0) center
+    blocks.push({ nodes: [n], l: -f.x, r: f.x + f.w, t: -f.y, b: f.y + f.h });
+  }
+
+  // Pack blocks left→right, wrapping at the usable width; `gap` keeps both
+  // free-node footprints (≥ minNodeGap) and zone boxes clear of each other.
+  const gap = LAYOUT_RULES.minNodeGap;
+  const usableW = Math.max(1, vw - 2 * m);
+  const placed: { block: LayoutBlock; originX: number; originY: number }[] = [];
+  let curX = 0;
+  let rowTop = 0;
+  let rowH = 0;
+  let totalW = 0;
+  for (const block of blocks) {
+    const bw = block.l + block.r;
+    const bh = block.t + block.b;
+    if (curX > 0 && curX + bw > usableW) {
+      rowTop += rowH + gap;
+      curX = 0;
+      rowH = 0;
+    }
+    placed.push({ block, originX: curX + block.l, originY: rowTop + block.t });
+    curX += bw + gap;
+    rowH = Math.max(rowH, bh);
+    totalW = Math.max(totalW, curX - gap);
+  }
+  const totalH = rowTop + rowH;
+  const offX = vx + Math.max(m, (vw - totalW) / 2);
+  const offY = vy + Math.max(m, (vh - totalH) / 2);
+  for (const { block, originX, originY } of placed)
+    for (const n of block.nodes) {
+      n.x += offX + originX;
+      n.y += offY + originY;
+    }
+}
+
 /** Arrange a page with the given algorithm (mutates); returns count moved. */
 export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
   if (page.nodes.length < 2) return 0;
@@ -207,10 +347,8 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
   const spacing = opts.spacing ?? LAYOUT_RULES.minNodeGap * 1.5;
   const orig = page.nodes.map((n) => ({ x: n.x, y: n.y }));
 
-  if (opts.algorithm === 'grid') gridLayout(page, vb, spacing);
-  else if (opts.algorithm === 'circular') circularLayout(page, vb, spacing);
-  else if (opts.algorithm === 'force') forceLayout(page, vb, spacing);
-  else hierarchicalLayout(page, vb, spacing, opts.direction ?? 'TB');
+  if ((page.zones?.length ?? 0) > 0) zoneAwareLayout(page, vb, spacing);
+  else applyAlgorithm(page, vb, spacing, opts);
 
   if (opts.tidy !== false) tidyPage(page, { snapToGrid: false });
 
