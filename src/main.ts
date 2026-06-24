@@ -143,7 +143,10 @@ app.innerHTML = `
       </div>
     </div>
     <aside class="inspector" id="inspector" hidden></aside>
-    <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="minimap-wrap" id="minimap-wrap">
+      <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">hide ▾</button>
+      <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
   </div>
 
   <footer class="filmstrip" id="filmstrip"></footer>
@@ -423,6 +426,24 @@ minimap.addEventListener('pointerdown', (e) => {
 minimap.addEventListener('pointermove', (e) => {
   if (e.buttons === 1) minimapPanTo(e);
 });
+
+// Collapse / restore the minimap so it stops covering the inspector panel.
+const minimapWrap = app.querySelector<HTMLDivElement>('#minimap-wrap')!;
+const minimapToggle = app.querySelector<HTMLButtonElement>('#minimap-toggle')!;
+function setMinimapCollapsed(collapsed: boolean): void {
+  minimapWrap.classList.toggle('collapsed', collapsed);
+  minimapToggle.textContent = collapsed ? 'map ▴' : 'hide ▾';
+  minimapToggle.title = collapsed ? 'Show minimap (M)' : 'Hide minimap (M)';
+  try {
+    localStorage.setItem('tds-minimap-collapsed', collapsed ? '1' : '0');
+  } catch {
+    /* storage unavailable — fine, just don't persist */
+  }
+}
+minimapToggle.addEventListener('click', () =>
+  setMinimapCollapsed(!minimapWrap.classList.contains('collapsed')),
+);
+setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') === '1');
 
 statusReady = true;
 
@@ -1559,6 +1580,8 @@ window.addEventListener('keydown', (e) => {
     editor.toggleGrid();
     gridBtn.classList.toggle('on', editor.gridVisible);
   }
+  if (e.key === 'm' || e.key === 'M')
+    setMinimapCollapsed(!minimapWrap.classList.contains('collapsed'));
   if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
   if (e.key === 't' || e.key === 'T') editor.tidy();
   if (e.key === '0') editor.resetView();
@@ -1698,7 +1721,10 @@ window.addEventListener('pointerdown', (e) => {
   if (findEl && !findEl.contains(e.target as Node)) closeFind();
 });
 window.addEventListener('blur', closeCtxMenu);
-window.addEventListener('resize', closeCtxMenu);
+window.addEventListener('resize', () => {
+  closeCtxMenu();
+  editor.resync();
+});
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeCtxMenu();
 });

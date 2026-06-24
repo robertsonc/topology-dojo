@@ -863,11 +863,18 @@
         background: var(--border);
       }
 
-      /* Minimap overview (bottom-right of the canvas). */
-      .minimap {
+      /* Minimap overview (bottom-right of the canvas), with a collapse toggle. */
+      .minimap-wrap {
         position: absolute;
         right: 12px;
         bottom: 12px;
+        z-index: 7;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+      }
+      .minimap {
         width: 170px;
         height: 120px;
         background: var(--panel);
@@ -875,7 +882,24 @@
         border-radius: 6px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
         cursor: pointer;
-        z-index: 7;
+      }
+      .minimap-wrap.collapsed .minimap {
+        display: none;
+      }
+      .minimap-toggle {
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--muted);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 3px 8px;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      }
+      .minimap-toggle:hover {
+        color: var(--text);
+        border-color: var(--accent);
       }
 
       /* Find / jump-to-element overlay (Ctrl+F). */
