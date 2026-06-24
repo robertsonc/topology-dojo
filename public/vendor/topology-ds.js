@@ -2884,39 +2884,40 @@ class TopologyDesigner {
   _renderTunnel(stepId, phaseNum, path, color, label, lx, ly, op, dots = true, flow) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
-    const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
     const ad = anim ? ` class="tds-draw-phase" style="animation-delay:${delay}s"` : '';
     const mobile = this._isMobile;
-    const bloomF = !mobile ? 'url(#tds-tunnel-bloom)' : 'url(#tds-glow-strong)';
-    // Filmic color grading wrapper removed: as an outer filter wrapping the
-    // animated flow particles, Chrome composited the group and clipped the glow
-    // to its bbox (hard rectangular edges on the tunnel when animation is on,
-    // and a flat cut at sharp peaks). The grading was a negligible gamma tweak.
-    const filmicOpen = '';
-    const filmicClose = '';
-    return filmicOpen +
-      `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
-      // Layer 1: Multi-scale bloom aura (approximates UnrealBloom light bleed)
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="24" stroke-linejoin="round" stroke-linecap="round" opacity=".05" filter="${bloomF}"/>` +
-      // Layer 2: Tube volume (cylindrical 3D illusion via diffuse lighting)
-      (!mobile ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="12" stroke-linejoin="round" stroke-linecap="round" opacity=".15" filter="url(#tds-tunnel-tube)"/>` : '') +
-      // Layer 3: Inner luminous corridor
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="8" stroke-linejoin="round" stroke-linecap="round" opacity=".1" filter="url(#tds-bloom)"/>` +
-      // Layer 4: Core energy line (draw animation)
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="2000" stroke-dashoffset="0" opacity=".65"${ad}/>` +
-      // Layer 5: Dashed encrypted overlay
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="6 5" opacity=".3"/>` +
-      // Animated particles (forward + trailing + reverse); per-link flow cfg overrides.
+    const lj = 'stroke-linejoin="round" stroke-linecap="round"';
+    // Filter-free "neon tube". The glow is built entirely from stacked
+    // translucent strokes — NO SVG filters (feGaussianBlur / feDiffuseLighting /
+    // filmic). Filter-based glows get composite-clipped to their bounding box
+    // once Chrome promotes the animated SVG to a GPU layer (after the flow
+    // particles' first cycle), producing a hard rectangular cut over the arc.
+    // Strokes have no filter region, so this can never clip — animated or not.
+    return `<g ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
+      // Outer glow halo: wide, faint, layered for a soft falloff.
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="34" ${lj} opacity=".05"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="24" ${lj} opacity=".06"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="16" ${lj} opacity=".10"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="10" ${lj} opacity=".18"/>` +
+      // Tube body + bright fiber-optic core (the core draws in when animating).
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="6" ${lj} opacity=".55"/>` +
+      `<path d="${path}" fill="none" stroke="#dffff4" stroke-width="2.4" ${lj} stroke-dasharray="2000" stroke-dashoffset="0" opacity=".9"${ad}/>` +
+      // Faint white highlight, nudged up a hair for a hint of cylindrical volume.
+      `<path d="${path}" fill="none" stroke="#ffffff" stroke-width="1" ${lj} opacity=".4" transform="translate(0,-1.1)"/>` +
+      // Dashed encrypted overlay.
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="1" ${lj} stroke-dasharray="6 5" opacity=".3"/>` +
+      // Animated flow particles — filter-free (a bright core dot + a faint halo dot).
       (dots && !this.reducedMotion && !mobile ?
         (this._hasFlowCfg(flow) ? this._flowParticles(path, color, flow) :
-          `<circle r="3.5" fill="${color}" opacity=".9" filter="url(#tds-bloom)"><animateMotion dur="2.5s" repeatCount="indefinite" path="${path}"/></circle>` +
+          `<circle r="5" fill="${color}" opacity=".22"><animateMotion dur="2.5s" repeatCount="indefinite" path="${path}"/></circle>` +
+          `<circle r="2.4" fill="#eafff8" opacity=".95"><animateMotion dur="2.5s" repeatCount="indefinite" path="${path}"/></circle>` +
           `<circle r="2" fill="${color}" opacity=".5"><animateMotion dur="2.5s" repeatCount="indefinite" begin="1.2s" path="${path}"/></circle>` +
-          `<circle r="3" fill="${color}" opacity=".85" filter="url(#tds-bloom)"><animateMotion dur="2.8s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="${path}"/></circle>`)
+          `<circle r="4" fill="${color}" opacity=".2"><animateMotion dur="2.8s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="${path}"/></circle>`)
       : '') +
       (label && lx != null ? `<rect x="${lx-61}" y="${ly-10}" width="122" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
         `<rect x="${lx-60}" y="${ly-9}" width="120" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
         `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="${color}" font-size="8" font-weight="600">${_esc(label)}</text>` : '') +
-      '</g>' + filmicClose;
+      '</g>';
   }
 
   /** WireGuard-style dashed tunnel */

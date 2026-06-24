@@ -142,7 +142,10 @@ app.innerHTML = `
         </div>
       </div>
     </div>
-    <aside class="inspector" id="inspector" hidden></aside>
+    <div class="inspector-wrap" id="inspector-wrap">
+      <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ▸</button>
+      <aside class="inspector" id="inspector"></aside>
+    </div>
     <div class="minimap-wrap" id="minimap-wrap">
       <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">hide ▾</button>
       <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
@@ -531,6 +534,27 @@ function openFind(): void {
 
 /* Inspector — properties of the single selected node, link, or anchor. */
 const inspector = app.querySelector<HTMLElement>('#inspector')!;
+
+/* Collapse / restore the properties panel (mirrors the minimap toggle). */
+const inspectorWrap = app.querySelector<HTMLDivElement>('#inspector-wrap')!;
+const inspectorToggle =
+  app.querySelector<HTMLButtonElement>('#inspector-toggle')!;
+function setInspectorCollapsed(collapsed: boolean): void {
+  inspectorWrap.classList.toggle('collapsed', collapsed);
+  inspectorToggle.textContent = collapsed ? 'props ◂' : 'hide ▸';
+  inspectorToggle.title = collapsed
+    ? 'Show properties (P)'
+    : 'Hide properties (P)';
+  try {
+    localStorage.setItem('tds-inspector-collapsed', collapsed ? '1' : '0');
+  } catch {
+    /* storage unavailable — fine, just don't persist */
+  }
+}
+inspectorToggle.addEventListener('click', () =>
+  setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed')),
+);
+setInspectorCollapsed(localStorage.getItem('tds-inspector-collapsed') === '1');
 function onLinkSelectChange(_linkId: string | null): void {
   renderInspector();
 }
@@ -1582,6 +1606,8 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === 'm' || e.key === 'M')
     setMinimapCollapsed(!minimapWrap.classList.contains('collapsed'));
+  if (e.key === 'p' || e.key === 'P')
+    setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed'));
   if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
   if (e.key === 't' || e.key === 'T') editor.tidy();
   if (e.key === '0') editor.resetView();
