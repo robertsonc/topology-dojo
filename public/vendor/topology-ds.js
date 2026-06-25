@@ -3375,19 +3375,55 @@ class TopologyDesigner {
     return pts.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join(' ');
   }
 
+  /**
+   * Perpendicular offset so parallel links between the same node pair fan apart
+   * instead of drawing on top of each other (with one label hidden). Returns
+   * {dx:0,dy:0} for a lone link, or one with explicit waypoints (already
+   * custom-routed). Siblings keep insertion order and fan on a canonical axis,
+   * so each direction of a bidirectional pair lands on a stable side.
+   */
+  _parallelOffset(linkCfg) {
+    if (linkCfg.waypoints && linkCfg.waypoints.length) return { dx: 0, dy: 0 };
+    const siblings = [];
+    for (const cfg of this._links.values()) {
+      if (cfg.waypoints && cfg.waypoints.length) continue;
+      if ((cfg.from === linkCfg.from && cfg.to === linkCfg.to) ||
+          (cfg.from === linkCfg.to && cfg.to === linkCfg.from))
+        siblings.push(cfg);
+    }
+    if (siblings.length < 2) return { dx: 0, dy: 0 };
+    const dist = (siblings.indexOf(linkCfg) - (siblings.length - 1) / 2) * 9;
+    if (!dist) return { dx: 0, dy: 0 };
+    const lo = linkCfg.from < linkCfg.to ? linkCfg.from : linkCfg.to;
+    const hi = linkCfg.from < linkCfg.to ? linkCfg.to : linkCfg.from;
+    const pf = this._pos(lo), pt = this._pos(hi);
+    const ang = Math.atan2(pt.y - pf.y, pt.x - pf.x);
+    return { dx: Math.sin(ang) * dist, dy: -Math.cos(ang) * dist };
+  }
+
   _renderLinkSVG(linkCfg, stepId, phaseNum) {
-    const from = this._pos(linkCfg.from);
-    const to = this._pos(linkCfg.to);
+    let from = this._pos(linkCfg.from);
+    let to = this._pos(linkCfg.to);
+    // Fan out parallel edges (e.g. dual transports A↔B) so they don't overlap.
+    const off = this._parallelOffset(linkCfg);
+    if (off.dx || off.dy) {
+      from = { x: from.x + off.dx, y: from.y + off.dy };
+      to = { x: to.x + off.dx, y: to.y + off.dy };
+    }
     const op = linkCfg.opacity != null ? linkCfg.opacity : Math.min(this._dimFor(linkCfg.from), this._dimFor(linkCfg.to));
     const color = linkCfg.color || '#01a982';
     const _flow = { speed: linkCfg.flowSpeed, particles: linkCfg.flowParticles, reverse: linkCfg.reverseFlow };
     let svg = '';
 
-    // Waypoint-aware path: if link has waypoints, build path through them
+    // Path through explicit waypoints — or, with none, honor a non-straight
+    // lineStyle directly: 'orthogonal' auto-routes an L-path and 'curved' bows
+    // the line, instead of silently falling back to a straight diagonal.
     const hasWaypoints = linkCfg.waypoints && linkCfg.waypoints.length > 0;
     const waypointPath = hasWaypoints
       ? this._buildLinkPath(from, to, linkCfg.waypoints, linkCfg.lineStyle, linkCfg.cornerRadius)
-      : null;
+      : (linkCfg.lineStyle === 'orthogonal' || linkCfg.lineStyle === 'curved')
+        ? this._buildLinkPath(from, to, [], linkCfg.lineStyle, linkCfg.cornerRadius)
+        : null;
 
     // Smart Link Routing (Goal 1c): check for routed path (only when no explicit waypoints)
     const routedPath = !hasWaypoints && (linkCfg.type === 'line' || linkCfg.type === 'tunnel')

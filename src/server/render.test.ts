@@ -55,6 +55,42 @@ describe('headless render (Node, no browser)', () => {
     expect(svg).toContain('data-tds-marker="m"'); // enforcement badge
   });
 
+  it('auto-routes an orthogonal link as an L-path without waypoints', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 600, y: 400 })
+      .link({
+        id: 'l',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        lineStyle: 'orthogonal',
+      })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    // L-route turns at the corner (to.x, from.y) = (600,200); a straight
+    // diagonal would never visit that point.
+    expect(svg).toContain('600,200');
+  });
+
+  it('fans out parallel links between the same node pair', () => {
+    const pair = (ids: string[]) => {
+      const d = createDocument()
+        .page()
+        .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+        .node({ id: 'b', type: 'ec', x: 600, y: 200 });
+      for (const id of ids) d.link({ id, type: 'line', from: 'a', to: 'b' });
+      return renderDocumentToSVG(d.build());
+    };
+    const one = pair(['solo']);
+    const two = pair(['vpnA', 'vpnB']);
+    // A single link stays on the shared axis (y=200); two parallel links are
+    // offset off it so they don't draw coincident.
+    expect(two).not.toBe(one);
+    expect(two).toMatch(/204\.5|195\.5/);
+  });
+
   it('calm mode suppresses animation in the output', () => {
     const doc = createDocument()
       .page()
