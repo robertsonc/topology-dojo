@@ -25,10 +25,12 @@ import {
   hitTestAnchor,
   hitTestLink,
   hitTestNode,
+  hitTestZone,
   linkPolyline,
   nodeBounds,
   nodesInRect,
   resolvePos,
+  zoneBounds,
 } from './geometry.js';
 
 const ACCENT = '#01a982';
@@ -132,6 +134,8 @@ export class Editor {
   private selAnchors = new Set<string>();
   private anchorSeq = 0;
   private zoneSeq = 0;
+  /** The selected zone region (clicked on canvas), or null. */
+  private zoneSel: string | null = null;
   /** Copy/paste buffer (cloned elements, page-independent). */
   private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
   /** True while a run of arrow-nudges is coalescing into one undo entry. */
@@ -154,6 +158,8 @@ export class Editor {
     private onAnchorSelect: (anchorId: string | null) => void = () => {},
     /** Called whenever the view (pan/zoom/page) changes (drives the status bar). */
     private onView: () => void = () => {},
+    /** Called when the selected zone changes (drives the zone inspector). */
+    private onZoneSelect: (zoneId: string | null) => void = () => {},
   ) {
     this.view = this.computeFitView();
     this.bind();
@@ -176,12 +182,14 @@ export class Editor {
     this.hoverNode = null;
     this.anchorSel = null;
     this.selAnchors.clear();
+    this.zoneSel = null;
     this.view = this.computeFitView();
     this.renderArt();
     this.renderOverlay();
     this.fireSelect();
     this.fireLinkSelect();
     this.fireAnchorSelect();
+    this.fireZoneSelect();
   }
 
   /** Re-render the current page (e.g. after a custom node type changed). */
@@ -583,6 +591,20 @@ export class Editor {
     return `<rect x="${Math.min(x0, x1)}" y="${Math.min(y0, y1)}" width="${Math.abs(x1 - x0)}" height="${Math.abs(y1 - y0)}" fill="${ACCENT}" fill-opacity="0.06" stroke="${ACCENT}" stroke-dasharray="5 4" stroke-width="1"/>`;
   }
 
+  /** Highlight the selected zone's region (a dashed accent frame). */
+  private zoneSelSvg(): string {
+    if (this.zoneSel === null) return '';
+    const zone = this.page.zones.find((z) => z.id === this.zoneSel);
+    if (!zone) return '';
+    const b = zoneBounds(this.page, zone);
+    if (!b) return '';
+    return (
+      `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="8" ` +
+      `fill="${ACCENT}" fill-opacity="0.06" stroke="${ACCENT}" stroke-width="2" ` +
+      `stroke-dasharray="6 4" pointer-events="none"/>`
+    );
+  }
+
   private linkSelSvg(): string {
     if (!this.linkSel) return '';
     const link = this.page.links.find((l) => l.id === this.linkSel);
@@ -777,6 +799,7 @@ export class Editor {
       this.gridSvg() +
       (this.overlayExtra?.() ?? '') +
       this.guidesSvg() +
+      this.zoneSelSvg() +
       this.anchorsSvg() +
       this.linkSelSvg() +
       this.selectionSvg() +
@@ -837,6 +860,7 @@ export class Editor {
     this.redoStack.push(JSON.stringify(serialize(this.page)));
     this.restore(prev);
     this.sel.clear();
+    this.clearZoneSel();
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -849,6 +873,7 @@ export class Editor {
     this.undoStack.push(JSON.stringify(serialize(this.page)));
     this.restore(next);
     this.sel.clear();
+    this.clearZoneSel();
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -883,10 +908,18 @@ export class Editor {
     if (
       this.sel.size === 0 &&
       this.linkSel === null &&
-      this.selAnchors.size === 0
+      this.selAnchors.size === 0 &&
+      this.zoneSel === null
     )
       return;
     this.snapshot();
+    if (this.zoneSel !== null) {
+      // Deleting a zone removes the region annotation only — its member nodes
+      // (and their links) stay on the canvas.
+      this.page.zones = this.page.zones.filter((z) => z.id !== this.zoneSel);
+      this.zoneSel = null;
+      this.fireZoneSelect();
+    }
     if (this.linkSel !== null) {
       this.page.links = this.page.links.filter((l) => l.id !== this.linkSel);
       this.linkSel = null;
@@ -918,17 +951,19 @@ export class Editor {
     this.fireSelect();
   }
 
-  /** Clear node + link + anchor selection (Esc). */
+  /** Clear node + link + anchor + zone selection (Esc). */
   clearSelection(): void {
     const had =
       this.sel.size > 0 ||
       this.linkSel !== null ||
       this.selAnchors.size > 0 ||
-      this.anchorSel !== null;
+      this.anchorSel !== null ||
+      this.zoneSel !== null;
     this.sel.clear();
     this.selAnchors.clear();
     this.linkSel = null;
     this.anchorSel = null;
+    this.clearZoneSel();
     if (had) {
       this.renderOverlay();
       this.fireSelect();
@@ -1246,10 +1281,26 @@ export class Editor {
     if (!ids.length) return false;
     this.linkSel = null;
     this.clearAnchorSel();
+    this.clearZoneSel();
     this.sel = new Set(ids);
     this.renderOverlay();
     this.fireSelect();
     this.fireLinkSelect();
+    return true;
+  }
+
+  /** Select a zone by id (e.g. from the annotations list) and show its editor. */
+  selectZone(id: string): boolean {
+    if (!this.page.zones.some((z) => z.id === id)) return false;
+    this.sel.clear();
+    this.selAnchors.clear();
+    this.clearAnchorSel();
+    this.linkSel = null;
+    this.zoneSel = id;
+    this.renderOverlay();
+    this.fireSelect();
+    this.fireLinkSelect();
+    this.fireZoneSelect();
     return true;
   }
 
@@ -1506,9 +1557,10 @@ export class Editor {
     id: string,
   ): void {
     this.snapshot();
-    if (collection === 'zones')
+    if (collection === 'zones') {
       this.page.zones = this.page.zones.filter((e) => e.id !== id);
-    else if (collection === 'flowPaths')
+      if (this.zoneSel === id) this.clearZoneSel();
+    } else if (collection === 'flowPaths')
       this.page.flowPaths = this.page.flowPaths.filter((e) => e.id !== id);
     else
       this.page.policyMarkers = this.page.policyMarkers.filter(
@@ -1580,6 +1632,24 @@ export class Editor {
 
   private fireAnchorSelect(): void {
     this.onAnchorSelect(this.anchorSel);
+  }
+
+  private fireZoneSelect(): void {
+    this.onZoneSelect(this.zoneSel);
+  }
+
+  /** The selected zone (clicked on canvas), or null. */
+  getSelectedZone(): ZoneConfig | null {
+    if (this.zoneSel === null) return null;
+    return this.page.zones.find((z) => z.id === this.zoneSel) ?? null;
+  }
+
+  /** Drop any zone selection (and notify) — used when another element is picked. */
+  private clearZoneSel(): void {
+    if (this.zoneSel !== null) {
+      this.zoneSel = null;
+      this.fireZoneSelect();
+    }
   }
 
   private clearAnchorSel(): void {
@@ -2035,6 +2105,7 @@ export class Editor {
 
     if (hit) {
       this.clearLinkSel();
+      this.clearZoneSel();
       if (e.shiftKey) {
         if (this.sel.has(hit)) this.sel.delete(hit);
         else this.sel.add(hit);
@@ -2052,6 +2123,7 @@ export class Editor {
       const anchorHit = hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
       if (anchorHit) {
         this.clearLinkSel();
+        this.clearZoneSel();
         if (e.shiftKey) {
           if (this.selAnchors.has(anchorHit)) this.selAnchors.delete(anchorHit);
           else this.selAnchors.add(anchorHit);
@@ -2070,6 +2142,7 @@ export class Editor {
       }
       const link = hitTestLink(this.page, p.x, p.y);
       if (link) {
+        this.clearZoneSel();
         this.sel.clear();
         this.selAnchors.clear();
         this.syncAnchorSel();
@@ -2080,7 +2153,23 @@ export class Editor {
         this.renderOverlay();
         return;
       }
+      // No node/anchor/link — an empty spot inside a zone's region selects the
+      // zone (so it's reachable on canvas, not only via the inspector list).
+      const zoneHit = hitTestZone(this.page, p.x, p.y);
+      if (zoneHit) {
+        this.clearLinkSel();
+        this.sel.clear();
+        this.selAnchors.clear();
+        this.syncAnchorSel();
+        this.zoneSel = zoneHit;
+        this.fireSelect();
+        this.fireZoneSelect();
+        this.overlay.setPointerCapture(e.pointerId);
+        this.renderOverlay();
+        return;
+      }
       this.clearLinkSel();
+      this.clearZoneSel();
       if (!e.shiftKey) {
         this.sel.clear();
         this.selAnchors.clear();

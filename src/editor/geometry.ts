@@ -6,9 +6,62 @@
  * adds the editor-facing hit-testing on top.
  */
 import type { Page } from '../pages/model.js';
+import type { ZoneConfig } from '../vendor/topology-ds.js';
 import { nodeHalf, nodeBounds, type BoundsRect } from '../api/geometry.js';
 
 export { nodeHalf, nodeBounds, type BoundsRect };
+
+/**
+ * Bounding box of a zone region, matching the engine's `_renderZoneRect`
+ * geometry: each member node contributes a ±40×±30 box, and the whole is
+ * expanded by the zone's padding (default 40). Returns null when the zone has
+ * no present members (nothing to frame).
+ */
+export function zoneBounds(page: Page, zone: ZoneConfig): BoundsRect | null {
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const nId of zone.nodes ?? []) {
+    const n = page.nodes.find((m) => m.id === nId);
+    if (!n) continue;
+    minX = Math.min(minX, n.x - 40);
+    minY = Math.min(minY, n.y - 30);
+    maxX = Math.max(maxX, n.x + 40);
+    maxY = Math.max(maxY, n.y + 30);
+  }
+  if (!Number.isFinite(minX)) return null;
+  const pad = zone.padding ?? 40;
+  return {
+    x: minX - pad,
+    y: minY - pad,
+    w: maxX - minX + pad * 2,
+    h: maxY - minY + pad * 2,
+  };
+}
+
+/**
+ * The smallest zone whose region contains the point, else null. Smallest-area
+ * wins so a click inside a nested/overlapping zone lands on the most specific
+ * one. (Callers test nodes/anchors/links first, so a click only reaches a zone
+ * on the region's empty space.)
+ */
+export function hitTestZone(page: Page, x: number, y: number): string | null {
+  let best: string | null = null;
+  let bestArea = Infinity;
+  for (const z of page.zones ?? []) {
+    const b = zoneBounds(page, z);
+    if (!b) continue;
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+      const area = b.w * b.h;
+      if (area < bestArea) {
+        bestArea = area;
+        best = z.id;
+      }
+    }
+  }
+  return best;
+}
 
 /** Topmost node whose bounds contain the point (last drawn = on top), else null. */
 export function hitTestNode(
