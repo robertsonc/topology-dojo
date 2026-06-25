@@ -217,6 +217,20 @@ const LINK_COMMON: FieldSpec[] = [
     options: ['straight', 'orthogonal', 'curved'],
   },
   { key: 'cornerRadius', label: 'Corner radius', kind: 'number' },
+  // A.5 ports: pin an endpoint to a node side/corner. Empty = auto-boundary
+  // (A.4): the endpoint attaches to the perimeter facing the other end.
+  {
+    key: 'fromPort',
+    label: 'From port (side)',
+    kind: 'enum',
+    options: ['', 'n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'],
+  },
+  {
+    key: 'toPort',
+    label: 'To port (side)',
+    kind: 'enum',
+    options: ['', 'n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'],
+  },
   { key: 'waypoints', label: 'Waypoints', kind: 'points' },
   {
     key: 'dots',

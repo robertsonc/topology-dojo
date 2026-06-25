@@ -53,6 +53,12 @@ export interface LinkConfig {
   label?: string;
   waypoints?: { x: number; y: number }[];
   lineStyle?: 'orthogonal' | 'curved';
+  /**
+   * A.5 connection ports — pin an endpoint to a node side/corner. Absent = the
+   * A.4 auto-boundary (attach to the perimeter facing the other end).
+   */
+  fromPort?: 'n' | 'e' | 's' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+  toPort?: 'n' | 'e' | 's' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
   /** When true, the editor won't move/edit the link via direct manipulation. */
   locked?: boolean;
   /** Per-link animated-flow controls (tunnel / wireguard / flow types). */

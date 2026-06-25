@@ -1068,6 +1068,45 @@ class TopologyDesigner {
   }
 
   /**
+   * Boundary attachment (A.4 / A.5). A link endpoint on a *node* attaches to the
+   * node's perimeter facing the next point on the path — not the centre — so the
+   * link exits the correct side and never spears through the icon. Anchors are
+   * dimensionless and returned unchanged.
+   *
+   * @param {string} id        - endpoint id (node or anchor)
+   * @param {{x,y}} pos        - the endpoint's centre (already parallel-offset)
+   * @param {{x,y}} toward     - the next point on the path (waypoint or other end)
+   * @param {string} [port]    - optional pinned side: n/e/s/w/ne/nw/se/sw (A.5)
+   * @returns {{x,y}} the point on the node perimeter to draw to
+   */
+  _attachEndpoint(id, pos, toward, port) {
+    if (this._anchors.has(id)) return pos; // anchors carry no body to exit
+    const cfg = this._nodes.get(id);
+    if (!cfg) return pos;
+    const ab = this._getNodeAABB(cfg);
+    const hw = ab.w / 2,
+      hh = ab.h / 2;
+    if (hw <= 0 || hh <= 0) return pos;
+    // A.5: an explicit port pins the exit to a fixed side/corner.
+    const PORTS = {
+      n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0],
+      ne: [1, -1], nw: [-1, -1], se: [1, 1], sw: [-1, 1],
+    };
+    if (port && PORTS[port]) {
+      const [sx, sy] = PORTS[port];
+      return { x: pos.x + sx * hw, y: pos.y + sy * hh };
+    }
+    // A.4: ray from the centre toward `toward`, clipped to the AABB perimeter.
+    const dx = toward.x - pos.x,
+      dy = toward.y - pos.y;
+    if (dx === 0 && dy === 0) return pos;
+    const tx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+    const ty = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+    const t = Math.min(tx, ty);
+    return { x: pos.x + dx * t, y: pos.y + dy * t };
+  }
+
+  /**
    * Check if a line segment from (x1,y1) to (x2,y2) intersects an AABB.
    */
   _lineIntersectsAABB(x1, y1, x2, y2, aabb) {
@@ -3409,6 +3448,17 @@ class TopologyDesigner {
     if (off.dx || off.dy) {
       from = { x: from.x + off.dx, y: from.y + off.dy };
       to = { x: to.x + off.dx, y: to.y + off.dy };
+    }
+    // A.4 / A.5 boundary attachment: trim each node endpoint to the perimeter
+    // facing the next point on the path (first/last waypoint, else the other
+    // end). Anchors pass through untouched. Done before path-building so curves,
+    // routes and straight lines all start/end on the icon edge.
+    {
+      const wps = linkCfg.waypoints;
+      const fromToward = wps && wps.length ? wps[0] : to;
+      const toToward = wps && wps.length ? wps[wps.length - 1] : from;
+      from = this._attachEndpoint(linkCfg.from, from, fromToward, linkCfg.fromPort);
+      to = this._attachEndpoint(linkCfg.to, to, toToward, linkCfg.toPort);
     }
     const op = linkCfg.opacity != null ? linkCfg.opacity : Math.min(this._dimFor(linkCfg.from), this._dimFor(linkCfg.to));
     const color = linkCfg.color || '#01a982';
