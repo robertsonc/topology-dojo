@@ -227,6 +227,7 @@ const editor = new Editor(
     renderStatus();
     renderMinimap();
   },
+  onZoneSelectChange,
 );
 
 /*
@@ -814,6 +815,10 @@ function onLinkSelectChange(_linkId: string | null): void {
 function onAnchorSelectChange(_anchorId: string | null): void {
   renderInspector();
 }
+function onZoneSelectChange(_zoneId: string | null): void {
+  renderInspector();
+  renderStatus();
+}
 
 /* Align/distribute toolbar — shown when 2+ nodes are selected. */
 const alignGroup = app.querySelector<HTMLElement>('#alignGroup')!;
@@ -1296,6 +1301,7 @@ function renderInspector(): void {
   const link = editor.getSelectedLink();
   const node = link ? null : editor.getSelectedNode();
   const anchor = link || node ? null : editor.getSelectedAnchor();
+  const zone = link || node || anchor ? null : editor.getSelectedZone();
   inspector.hidden = false;
 
   let html = '';
@@ -1324,11 +1330,17 @@ function renderInspector(): void {
       `<label class="insp-row">X<input type="number" id="a-x" value="${anchor.x}"/></label>` +
       `<label class="insp-row">Y<input type="number" id="a-y" value="${anchor.y}"/></label>` +
       `<div class="insp-row"><span>Endpoint for ${editor.anchorLinkCount(anchor.id)} link(s)</span><button class="tbtn ab" id="a-del" title="Delete anchor">🗑 delete</button></div>`;
+  } else if (zone) {
+    // A zone region was clicked on canvas — edit it directly (the same control
+    // surface as the annotations list, wired by wireAnnotations()).
+    html += `<div class="insp-h">Zone</div>` + zoneEditorHtml(zone);
   } else {
     // Nothing selected — show document + page properties.
     html += propertiesHtml();
   }
-  html += annotationsHtml();
+  // The annotations list shows every zone/flow/marker; skip the one already
+  // shown focused above to avoid a duplicate editor for the same id.
+  html += annotationsHtml(zone?.id);
   inspector.innerHTML = html;
 
   if (node) {
@@ -1543,7 +1555,23 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
   }
 }
 
-function annotationsHtml(): string {
+/** The focused editor for a single selected zone (reuses annotation wiring). */
+function zoneEditorHtml(zone: { id: string }): string {
+  const info = getAnnotationType('zone')!;
+  const cfg = zone as Record<string, unknown>;
+  const title = String(cfg.label ?? zone.id);
+  return (
+    `<details class="anno selected" data-acol="zones" data-aid="${esc(zone.id)}" open>` +
+    `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>` +
+    `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)">⤧</button>` +
+    `<button class="anno-x" data-azdup title="Duplicate zone with its contents">⧉</button>` +
+    `<button class="anno-x" data-adel title="Delete">✕</button></summary>` +
+    info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
+    `</details>`
+  );
+}
+
+function annotationsHtml(skipId?: string): string {
   const page = editor.page;
   const counts =
     page.zones.length + page.flowPaths.length + page.policyMarkers.length;
@@ -1560,7 +1588,10 @@ function annotationsHtml(): string {
   // zones/flows/markers stays scannable instead of one long flat list.
   for (const g of ANNO_GROUPS) {
     const info = getAnnotationType(g.kind)!;
-    const items = page[g.col] as { id: string }[];
+    // Skip the focused (canvas-selected) zone — it's shown in its own editor above.
+    const items = (page[g.col] as { id: string }[]).filter(
+      (it) => it.id !== skipId,
+    );
     if (!items.length) continue;
     html +=
       `<details class="anno-group" open data-agroup="${g.col}">` +
