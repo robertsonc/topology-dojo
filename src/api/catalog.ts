@@ -109,6 +109,7 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
         'azure',
         'gcp',
         'oracle',
+        'axis',
       ],
     },
   ],

@@ -858,7 +858,7 @@ export class Editor {
   /* ── mutations ────────────────────────────────────────────────── */
 
   /** Add a node of `type` at the current view center; selects it for dragging. */
-  addNode(type: string, label?: string): void {
+  addNode(type: string, label?: string, extra?: Partial<NodeConfig>): void {
     this.snapshot();
     const id = `n${Date.now().toString(36)}${(this.nodeSeq++).toString(36)}`;
     const x = this.snapVal(this.view.x + this.view.w / 2);
@@ -869,6 +869,7 @@ export class Editor {
       x,
       y,
       label: label ?? defaultLabel(type),
+      ...extra,
     });
     this.sel.clear();
     this.sel.add(id);
