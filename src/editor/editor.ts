@@ -1178,6 +1178,54 @@ export class Editor {
     this.fireLinkSelect();
   }
 
+  /* ── stencils / reusable groups (C.3) ─────────────────────────── */
+
+  /**
+   * The selected nodes + the links internal to them, cloned — the raw material
+   * for saving a stencil. Returns null when no node is selected.
+   */
+  selectionElements(): { nodes: NodeConfig[]; links: LinkConfig[] } | null {
+    if (this.sel.size === 0) return null;
+    const ids = this.sel;
+    return {
+      nodes: this.page.nodes
+        .filter((n) => ids.has(n.id))
+        .map((n) => structuredClone(n)),
+      links: this.page.links
+        .filter((l) => ids.has(l.from) && ids.has(l.to))
+        .map((l) => structuredClone(l)),
+    };
+  }
+
+  /**
+   * Stamp a saved stencil's elements onto the current page, centred on the
+   * viewport with fresh ids, selecting the placed copies. The stencil's nodes
+   * are stored centred on (0,0), so the viewport centre becomes the group's
+   * centre. Undoable.
+   */
+  stampStencil(srcNodes: NodeConfig[], srcLinks: LinkConfig[]): void {
+    if (srcNodes.length === 0) return;
+    this.snapshot();
+    const cx = this.snapVal(this.view.x + this.view.w / 2);
+    const cy = this.snapVal(this.view.y + this.view.h / 2);
+    const { nodes, links } = cloneElements(srcNodes, srcLinks, {
+      nextNodeId: () => this.newNodeId(),
+      nextLinkId: () => this.newLinkId(),
+      dx: cx,
+      dy: cy,
+    });
+    this.page.nodes.push(...nodes);
+    this.page.links.push(...links);
+    this.linkSel = null;
+    this.clearAnchorSel();
+    this.sel = new Set(nodes.map((n) => n.id));
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireSelect();
+    this.fireLinkSelect();
+  }
+
   /* ── container zones (C.2) ────────────────────────────────────── */
 
   /** A zone's member node ids that still exist on the page. */

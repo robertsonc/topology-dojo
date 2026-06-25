@@ -65,6 +65,24 @@ export interface TopologyDocument {
    * `show:false` → no legend). Built live from the elements actually in use.
    */
   legend?: LegendConfig;
+  /**
+   * Reusable named groups / stencils (C.3). A stencil captures a selection of
+   * nodes + the links internal to them as a sub-assembly that can be re-stamped
+   * from the palette. Node coordinates are stored relative to the group's
+   * centre, so stamping places the group wherever the user drops it. Optional
+   * and backward-compatible (absent → no saved stencils).
+   */
+  stencils?: Stencil[];
+}
+
+/** A reusable, named sub-assembly captured from a selection (C.3). */
+export interface Stencil {
+  id: string;
+  name: string;
+  /** Member nodes, coordinates normalized so the group centre is at (0,0). */
+  nodes: NodeConfig[];
+  /** Links internal to the members, re-pointed to the stencil's node ids. */
+  links: LinkConfig[];
 }
 
 /** Document legend settings — a key of in-use symbols, toggled per document. */

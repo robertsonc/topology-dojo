@@ -74,6 +74,35 @@ describe('persist', () => {
     });
   });
 
+  it('round-trips reusable stencils (C.3) and drops malformed ones', () => {
+    const doc = parseDoc({
+      title: 'X',
+      pages: [blankPage('F1')],
+      stencils: [
+        {
+          id: 'st1',
+          name: 'Branch',
+          nodes: [{ id: 'a', type: 'ec', x: -100, y: 0 }],
+          links: [{ id: 'l', type: 'line', from: 'a', to: 'a' }],
+        },
+        { id: 'bad', name: 'Empty', nodes: [] }, // dropped: no nodes
+        { name: 'NoId', nodes: [{ id: 'z', type: 'ec', x: 0, y: 0 }] }, // dropped: no id
+      ],
+    });
+    expect(doc!.stencils).toHaveLength(1);
+    expect(doc!.stencils![0]!.name).toBe('Branch');
+    // Survives a full serialize → parse cycle unchanged.
+    const back = parseDoc(serializeDoc(doc!));
+    expect(back!.stencils).toHaveLength(1);
+    expect(back!.stencils![0]!.nodes[0]!.x).toBe(-100);
+    expect(back!.stencils![0]!.links).toHaveLength(1);
+  });
+
+  it('omits the stencils key entirely when there are none', () => {
+    const doc = sampleDocument();
+    expect(JSON.parse(serializeDoc(doc)).stencils).toBeUndefined();
+  });
+
   it('accepts an already-parsed object', () => {
     const doc = parseDoc({ title: 'X', pages: [blankPage('F1')] });
     expect(doc?.title).toBe('X');
