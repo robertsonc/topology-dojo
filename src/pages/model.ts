@@ -52,6 +52,19 @@ export interface TopologyDocument {
    * layer beneath all declared layers. Optional — absent means unlayered.
    */
   layers?: LayerDef[];
+  /**
+   * Auto-generated legend / key (B.1). Optional and opt-in (absent or
+   * `show:false` → no legend). Built live from the elements actually in use.
+   */
+  legend?: LegendConfig;
+}
+
+/** Document legend settings — a key of in-use symbols, toggled per document. */
+export interface LegendConfig {
+  /** Draw the legend on canvas and in exports. Default false. */
+  show?: boolean;
+  /** Which corner of the page it sits in. Default 'tl'. */
+  position?: 'tl' | 'tr' | 'bl' | 'br';
 }
 
 let _seq = 0;
