@@ -151,6 +151,30 @@ describe('headless render (Node, no browser)', () => {
     expect(make({ defaultVisible: false })).toContain('data-tds-node="base"');
   });
 
+  it('dims non-emphasized nodes when a frame has an emphasis set (2.2)', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 100, y: 100 })
+      .node({ id: 'b', type: 'ec', x: 400, y: 100 })
+      .build();
+    // The opacity on the fade-group wrapper immediately preceding a node.
+    const wrapOpacity = (svg: string, id: string): number => {
+      const idx = svg.indexOf(`data-tds-node="${id}"`);
+      const before = svg.slice(Math.max(0, idx - 100), idx);
+      const ops = [...before.matchAll(/opacity:([\d.]+)/g)];
+      return Number(ops[ops.length - 1]?.[1] ?? '1'); // the wrapper just before the node
+    };
+    // No emphasis → both nodes full.
+    const plain = renderDocumentToSVG(doc);
+    expect(wrapOpacity(plain, 'a')).toBe(1);
+    expect(wrapOpacity(plain, 'b')).toBe(1);
+    // Emphasize just `a` → b dims to 0.25, a stays full.
+    doc.pages[0]!.emphasis = ['a'];
+    const svg = renderDocumentToSVG(doc);
+    expect(wrapOpacity(svg, 'a')).toBe(1);
+    expect(wrapOpacity(svg, 'b')).toBeCloseTo(0.25, 5);
+  });
+
   it('fans out parallel links between the same node pair', () => {
     const pair = (ids: string[]) => {
       const d = createDocument()

@@ -56,6 +56,16 @@ export function parseDoc(input: unknown): TopologyDocument | null {
       ...(p.transition === 'cut' || p.transition === 'fade'
         ? { transition: p.transition }
         : {}),
+      ...(typeof p.caption === 'string' && p.caption
+        ? { caption: p.caption }
+        : {}),
+      ...(Array.isArray(p.emphasis)
+        ? {
+            emphasis: (p.emphasis as unknown[]).filter(
+              (e) => typeof e === 'string',
+            ) as string[],
+          }
+        : {}),
       nodes: Array.isArray(p.nodes) ? (p.nodes as Page['nodes']) : [],
       links: Array.isArray(p.links) ? (p.links as Page['links']) : [],
       anchors: Array.isArray(p.anchors) ? (p.anchors as Page['anchors']) : [],

@@ -209,6 +209,8 @@ export interface RenderOptions {
   layers?: LayerDef[];
   /** Only draw these layer ids (untagged base elements always draw). */
   visibleLayers?: string[];
+  /** Per-frame emphasis (2.2): node/link ids to spotlight; others dim to 25%. */
+  emphasis?: string[];
 }
 
 /** Plugin shape accepted by the engine's static registerNodeType. */
@@ -302,15 +304,27 @@ export function renderPageSVG(
     if (lo === undefined) return cfg;
     return { ...cfg, opacity: (cfg.opacity ?? 1) * lo };
   };
+  // Per-frame emphasis (2.2): when a non-empty set is given, dim every node/link
+  // that isn't in it to 25%. Combines with layer opacity above.
+  const emphasis =
+    opts.emphasis && opts.emphasis.length ? new Set(opts.emphasis) : null;
+  const fadedEmph = <T extends { layer?: string; opacity?: number }>(
+    id: string,
+    cfg: T,
+  ): T => {
+    let m = cfg.layer ? (layerOpacity.get(cfg.layer) ?? 1) : 1;
+    if (emphasis && !emphasis.has(id)) m *= 0.25;
+    return m === 1 ? cfg : { ...cfg, opacity: (cfg.opacity ?? 1) * m };
+  };
 
   for (const a of page.anchors ?? []) topo.anchor(a.id, { x: a.x, y: a.y });
   for (const n of nodes) {
     const { id, ...cfg } = n;
-    topo.node(id, faded(cfg));
+    topo.node(id, fadedEmph(id, cfg));
   }
   for (const l of links) {
     const { id, ...cfg } = l;
-    topo.link(id, faded(cfg));
+    topo.link(id, fadedEmph(id, cfg));
   }
   for (const z of zones) {
     const { id, ...cfg } = z;

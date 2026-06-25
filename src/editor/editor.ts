@@ -435,6 +435,7 @@ export class Editor {
     }
     renderPageInto(this.art, this.page, {
       ...this.renderOpts?.(),
+      emphasis: this.page.emphasis,
       calm: this.calm,
     });
     // renderPageInto resets the art viewBox to the page's; re-apply the view.
@@ -912,6 +913,43 @@ export class Editor {
       this.fireLinkSelect();
       this.fireAnchorSelect();
     }
+  }
+
+  /* ── per-frame emphasis (Phase 2.2) ───────────────────────────── */
+
+  /** Element ids spotlighted on this frame (others render dimmed). */
+  getEmphasis(): string[] {
+    return this.page.emphasis ?? [];
+  }
+  isEmphasized(id: string): boolean {
+    return (this.page.emphasis ?? []).includes(id);
+  }
+  private applyEmphasis(ids: string[]): void {
+    this.snapshot();
+    this.page.emphasis = ids.length ? ids : undefined;
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+  /** Add the current selection (nodes + the selected link) to the emphasis set. */
+  emphasizeSelection(): void {
+    const next = new Set(this.page.emphasis ?? []);
+    for (const id of this.sel) next.add(id);
+    if (this.linkSel) next.add(this.linkSel);
+    if (next.size === (this.page.emphasis?.length ?? 0)) return;
+    this.applyEmphasis([...next]);
+  }
+  /** Toggle a single element's membership in the emphasis set. */
+  toggleEmphasis(id: string): void {
+    const next = new Set(this.page.emphasis ?? []);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.applyEmphasis([...next]);
+  }
+  /** Clear the frame's emphasis (everything full again). */
+  clearEmphasis(): void {
+    if (!this.page.emphasis?.length) return;
+    this.applyEmphasis([]);
   }
 
   /**

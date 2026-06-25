@@ -47,6 +47,8 @@ export interface RenderOptions {
   layers?: LayerDef[];
   /** Only draw these layer ids (untagged base elements always draw). */
   visibleLayers?: string[];
+  /** Per-frame emphasis (2.2): node/link ids to spotlight; others dim to 25%. */
+  emphasis?: string[];
 }
 
 /** Provide the minimal browser globals the engine constructor sniffs (idempotent). */
@@ -97,14 +99,32 @@ export function renderPageWithEngine(
     opts.visibleLayers,
   );
 
+  // Fold per-layer opacity (B.3) and per-frame emphasis (2.2) into each
+  // node/link's opacity — mirrors renderPageSVG so the headless/MCP path dims
+  // the same way the editor and exports do.
+  const layerOpacity = new Map<string, number>();
+  for (const ly of layers)
+    if (typeof ly.opacity === 'number' && ly.opacity < 1)
+      layerOpacity.set(ly.id, Math.max(0, ly.opacity));
+  const emphasis =
+    opts.emphasis && opts.emphasis.length ? new Set(opts.emphasis) : null;
+  const fadedEmph = <T extends { layer?: string; opacity?: number }>(
+    id: string,
+    cfg: T,
+  ): T => {
+    let m = cfg.layer ? (layerOpacity.get(cfg.layer) ?? 1) : 1;
+    if (emphasis && !emphasis.has(id)) m *= 0.25;
+    return m === 1 ? cfg : { ...cfg, opacity: (cfg.opacity ?? 1) * m };
+  };
+
   for (const a of page.anchors) topo.anchor(a.id, { x: a.x, y: a.y });
   for (const n of nodes) {
     const { id, ...cfg } = n;
-    topo.node(id, cfg);
+    topo.node(id, fadedEmph(id, cfg));
   }
   for (const l of links) {
     const { id, ...cfg } = l;
-    topo.link(id, cfg);
+    topo.link(id, fadedEmph(id, cfg));
   }
   for (const z of zones) {
     const { id, ...cfg } = z;
@@ -164,5 +184,6 @@ export function renderDocumentWithEngine(
   return renderPageWithEngine(E, page, doc.customNodes, {
     ...opts,
     layers: opts.layers ?? doc.layers ?? [],
+    emphasis: opts.emphasis ?? page.emphasis,
   });
 }
