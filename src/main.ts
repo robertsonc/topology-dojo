@@ -30,6 +30,7 @@ import {
 import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
 import { exportPagePNG, exportPageSVG } from './editor/export.js';
 import { legendSVG } from './editor/legend.js';
+import { captionSVG } from './editor/caption.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { STOCK_NODE_SPECS } from './nodes/stock.js';
@@ -226,7 +227,9 @@ const editor = new Editor(
  */
 // Draw the auto-legend (B.1) on the canvas — recomputed each overlay paint from
 // the elements in use, so it tracks edits live. Off unless the document opts in.
-editor.setOverlayExtra(() => legendSVG(doc, editor.page));
+editor.setOverlayExtra(
+  () => legendSVG(doc, editor.page) + captionSVG(editor.page),
+);
 
 // Feed declared layers (with their visibility/opacity, B.3) into every render so
 // hiding/fading a layer takes effect on canvas. Exports pass the same `layers`.
@@ -330,15 +333,19 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
   exportPageSVG(
     `${exportBase()}.svg`,
     page,
-    { calm: editor.calm, layers: doc.layers },
-    legendSVG(doc, page),
+    { calm: editor.calm, layers: doc.layers, emphasis: page.emphasis },
+    legendSVG(doc, page) + captionSVG(page),
   );
 });
 app.querySelector('#fPng')?.addEventListener('click', () => {
   const page = doc.pages[current]!;
-  void exportPagePNG(`${exportBase()}.png`, page, 2, legendSVG(doc, page), {
-    layers: doc.layers,
-  }).catch(() => alert('PNG export failed.'));
+  void exportPagePNG(
+    `${exportBase()}.png`,
+    page,
+    2,
+    legendSVG(doc, page) + captionSVG(page),
+    { layers: doc.layers, emphasis: page.emphasis },
+  ).catch(() => alert('PNG export failed.'));
 });
 /* New from a starter template. */
 const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
@@ -1017,6 +1024,7 @@ function propertiesHtml(): string {
     `<option value="cut"${page.transition !== 'fade' ? ' selected' : ''}>cut</option>` +
     `<option value="fade"${page.transition === 'fade' ? ' selected' : ''}>fade</option>` +
     `</select></label>` +
+    frameStoryHtml() +
     `<div class="insp-h">Legend</div>` +
     `<label class="insp-row">Show key<input type="checkbox" id="p-legend"${doc.legend?.show ? ' checked' : ''}/></label>` +
     `<label class="insp-row">Position<select id="p-legend-pos">` +
@@ -1058,6 +1066,35 @@ function layersHtml(): string {
     `<div class="insp-h">Layers</div>` +
     (rows || `<div class="insp-hint">No layers declared.</div>`) +
     `<button class="insp-btn" id="p-layer-add">＋ Layer</button>`
+  );
+}
+
+/** Frame storytelling section (2.1 caption + 2.2/2.4 emphasis picker). */
+function frameStoryHtml(): string {
+  const page = editor.page;
+  const emph = new Set(page.emphasis ?? []);
+  const item = (id: string, label: string, type: string): string =>
+    `<label class="emph-row"><input type="checkbox" class="emph-cb" data-eid="${esc(id)}"${emph.has(id) ? ' checked' : ''}/>` +
+    `<span class="emph-label">${esc(label || id)}</span><span class="emph-type">${esc(type)}</span></label>`;
+  const nodeRows = page.nodes
+    .map((n) => item(n.id, n.label ?? n.type, n.type))
+    .join('');
+  const linkRows = page.links
+    .map((l) => item(l.id, l.label ?? `${l.from}→${l.to}`, l.type))
+    .join('');
+  const picker =
+    page.nodes.length + page.links.length === 0
+      ? `<div class="insp-hint">No elements on this frame.</div>`
+      : `<div class="emph-list">${nodeRows}${linkRows}</div>`;
+  return (
+    `<div class="insp-h">Frame</div>` +
+    `<label class="insp-row col">Caption` +
+    `<input id="p-caption" value="${esc(page.caption ?? '')}" placeholder="what this frame shows"/></label>` +
+    `<div class="insp-h">Emphasis (${emph.size})</div>` +
+    `<div class="insp-hint">Tick elements to spotlight; the rest dim. Or right-click a selection → “Emphasize on this frame”.</div>` +
+    `<div class="emph-actions">` +
+    `<button class="insp-btn" id="p-emph-clear"${emph.size ? '' : ' disabled'}>Clear emphasis</button></div>` +
+    picker
   );
 }
 
@@ -1111,6 +1148,27 @@ function wireProperties(): void {
     markDirty();
   });
   wireLayers();
+  wireFrameStory();
+}
+
+/** Wire the Frame section: caption + emphasis picker/actions (Phase 2). */
+function wireFrameStory(): void {
+  const cap = inspector.querySelector<HTMLInputElement>('#p-caption');
+  cap?.addEventListener('input', () => {
+    editor.page.caption = cap.value || undefined;
+    editor.redrawOverlay();
+    markDirty();
+  });
+  inspector.querySelector('#p-emph-clear')?.addEventListener('click', () => {
+    editor.clearEmphasis();
+    renderInspector();
+  });
+  inspector.querySelectorAll<HTMLInputElement>('.emph-cb').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      editor.toggleEmphasis(cb.dataset.eid!);
+      renderInspector();
+    });
+  });
 }
 
 /** Wire the Document panel's Layers controls (B.3): eye, opacity, + Layer. */
@@ -2122,6 +2180,10 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
       { label: 'Duplicate', run: () => editor.duplicateSelection() },
       { label: 'Copy', run: () => editor.copySelection() },
       { sep: true },
+      {
+        label: 'Emphasize on this frame',
+        run: () => editor.emphasizeSelection(),
+      },
       { label: 'Group into zone', run: () => addAnnotation('zone') },
       { label: 'Add policy marker', run: () => addAnnotation('policyMarker') },
       { sep: true },
@@ -2144,6 +2206,10 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
     const lockLabel = editor.selectionLocked() ? 'Unlock' : 'Lock';
     return [
       { label: 'Swap endpoints', run: () => editor.swapLink() },
+      {
+        label: 'Emphasize on this frame',
+        run: () => editor.emphasizeSelection(),
+      },
       { sep: true },
       { label: 'Bring to front', run: () => editor.bringToFront() },
       { label: 'Send to back', run: () => editor.sendToBack() },

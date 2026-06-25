@@ -32,6 +32,14 @@ export interface Page extends RenderablePage {
    */
   duration?: number;
   transition?: 'cut' | 'fade';
+  /**
+   * Frame storytelling (Phase 2). `caption` is a one-line narration shown
+   * during playback and as an export subtitle. `emphasis` is the set of
+   * element ids (nodes + links) spotlighted on this frame — when non-empty,
+   * everything else renders dimmed. Both optional and backward-compatible.
+   */
+  caption?: string;
+  emphasis?: string[];
   nodes: NodeConfig[];
   links: LinkConfig[];
   anchors: AnchorConfig[];
