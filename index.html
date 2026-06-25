@@ -457,6 +457,55 @@
         align-items: stretch;
         gap: 6px;
       }
+      /* Layers section (B.3) */
+      .layer-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 3px 0;
+      }
+      .layer-eye {
+        flex: none;
+        width: 24px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 13px;
+        padding: 2px;
+      }
+      .layer-name {
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .layer-op {
+        flex: 0 0 84px;
+        accent-color: var(--accent);
+      }
+      .insp-hint {
+        font-size: 11px;
+        color: var(--muted);
+        padding: 2px 0 4px;
+      }
+      .insp-btn {
+        margin-top: 6px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 12px;
+        font-family: var(--font);
+        cursor: pointer;
+      }
+      .insp-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
       .insp-row input,
       .insp-row select {
         flex: 1;

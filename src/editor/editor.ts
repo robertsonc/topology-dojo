@@ -411,13 +411,32 @@ export class Editor {
     this.applyView();
   }
 
+  /**
+   * App-supplied extra render options (e.g. declared layers + their
+   * visibility/opacity, B.3) merged into every art render. The `calm` flag is
+   * always applied on top.
+   */
+  private renderOpts: (() => Record<string, unknown>) | null = null;
+  setRenderOpts(fn: (() => Record<string, unknown>) | null): void {
+    this.renderOpts = fn;
+    this.renderArt();
+  }
+  /** Re-paint art + overlay (e.g. after a layer's visibility/opacity changed). */
+  rerender(): void {
+    this.renderArt();
+    this.renderOverlay();
+  }
+
   private renderArt(): void {
     // A pending coalesced render is now redundant — this draws current state.
     if (this.artRaf) {
       cancelAnimationFrame(this.artRaf);
       this.artRaf = 0;
     }
-    renderPageInto(this.art, this.page, { calm: this.calm });
+    renderPageInto(this.art, this.page, {
+      ...this.renderOpts?.(),
+      calm: this.calm,
+    });
     // renderPageInto resets the art viewBox to the page's; re-apply the view.
     this.applyView();
   }

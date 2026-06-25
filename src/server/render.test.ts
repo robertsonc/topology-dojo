@@ -129,6 +129,28 @@ describe('headless render (Node, no browser)', () => {
     expect(build({ showMeta: true })).not.toContain('tds-wire-meta');
   });
 
+  it('hides and fades elements by their layer (B.3)', () => {
+    const make = (over: Record<string, unknown>) => {
+      const d = createDocument()
+        .page()
+        .node({ id: 'base', type: 'ec', x: 100, y: 100 })
+        .node({ id: 'ov', type: 'ec', x: 300, y: 100, layer: 'overlay' })
+        .build();
+      d.layers = [{ id: 'overlay', name: 'Overlay', ...over }];
+      return renderDocumentToSVG(d);
+    };
+    // Visible by default → the overlay node renders.
+    expect(make({})).toContain('data-tds-node="ov"');
+    // defaultVisible:false → it is dropped from the output entirely.
+    expect(make({ defaultVisible: false })).not.toContain('data-tds-node="ov"');
+    // opacity:0.25 → it still renders, but faded (its group opacity reflects it).
+    const faded = make({ opacity: 0.25 });
+    expect(faded).toContain('data-tds-node="ov"');
+    expect(faded).toMatch(/opacity="0?\.25"/);
+    // The base-layer node is never affected by the overlay layer's settings.
+    expect(make({ defaultVisible: false })).toContain('data-tds-node="base"');
+  });
+
   it('fans out parallel links between the same node pair', () => {
     const pair = (ids: string[]) => {
       const d = createDocument()
