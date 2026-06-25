@@ -131,6 +131,7 @@ export class Editor {
   /** Multi-selection of anchors (parallel to `sel` for nodes). */
   private selAnchors = new Set<string>();
   private anchorSeq = 0;
+  private zoneSeq = 0;
   /** Copy/paste buffer (cloned elements, page-independent). */
   private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
   /** True while a run of arrow-nudges is coalescing into one undo entry. */
@@ -814,6 +815,9 @@ export class Editor {
   private newLinkId(): string {
     return `l${Date.now().toString(36)}${(this.linkSeq++).toString(36)}`;
   }
+  private newZoneId(): string {
+    return `z${Date.now().toString(36)}${(this.zoneSeq++).toString(36)}`;
+  }
 
   private restore(json: string): void {
     const p = JSON.parse(json) as ReturnType<typeof serialize>;
@@ -1165,6 +1169,75 @@ export class Editor {
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
     this.linkSel = null;
+    this.sel = new Set(nodes.map((n) => n.id));
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireSelect();
+    this.fireLinkSelect();
+  }
+
+  /* ── container zones (C.2) ────────────────────────────────────── */
+
+  /** A zone's member node ids that still exist on the page. */
+  private zoneMemberIds(id: string): string[] {
+    const z = this.page.zones.find((zz) => zz.id === id);
+    if (!z) return [];
+    const present = new Set(this.page.nodes.map((n) => n.id));
+    return (z.nodes ?? []).filter((nid) => present.has(nid));
+  }
+
+  /**
+   * Select a zone's member nodes (so the existing group-drag / nudge moves the
+   * whole zone — it auto-sizes around its members). Makes a zone behave as a
+   * movable container.
+   */
+  selectZoneMembers(id: string): boolean {
+    const ids = this.zoneMemberIds(id);
+    if (!ids.length) return false;
+    this.linkSel = null;
+    this.clearAnchorSel();
+    this.sel = new Set(ids);
+    this.renderOverlay();
+    this.fireSelect();
+    this.fireLinkSelect();
+    return true;
+  }
+
+  /**
+   * Duplicate a zone together with its contained nodes + the links internal to
+   * them, all with fresh ids and offset — so a zone is a reusable container.
+   * Selects the new nodes.
+   */
+  duplicateZone(id: string): void {
+    const z = this.page.zones.find((zz) => zz.id === id);
+    if (!z) return;
+    const memberIds = new Set(this.zoneMemberIds(id));
+    const srcNodes = this.page.nodes.filter((n) => memberIds.has(n.id));
+    if (!srcNodes.length) return;
+    const srcLinks = this.page.links.filter(
+      (l) => memberIds.has(l.from) && memberIds.has(l.to),
+    );
+    this.snapshot();
+    const { nodes, links } = cloneElements(srcNodes, srcLinks, {
+      nextNodeId: () => this.newNodeId(),
+      nextLinkId: () => this.newLinkId(),
+      dx: 32,
+      dy: 32,
+    });
+    // cloneElements maps over srcNodes in order, so nodes[i] is srcNodes[i]'s clone.
+    const idMap = new Map(srcNodes.map((n, i) => [n.id, nodes[i]!.id]));
+    const newZone: ZoneConfig = {
+      ...structuredClone(z),
+      id: this.newZoneId(),
+      nodes: srcNodes.map((n) => idMap.get(n.id)!),
+      ...(z.label ? { label: `${z.label} copy` } : {}),
+    };
+    this.page.nodes.push(...nodes);
+    this.page.links.push(...links);
+    this.page.zones.push(newZone);
+    this.linkSel = null;
+    this.clearAnchorSel();
     this.sel = new Set(nodes.map((n) => n.id));
     this.renderArt();
     this.renderOverlay();
