@@ -27,7 +27,6 @@ import {
   hitTestNode,
   linkPolyline,
   nodeBounds,
-  nodeHalf,
   nodesInRect,
   resolvePos,
 } from './geometry.js';
@@ -50,9 +49,12 @@ const LINK_STYLES = ['straight', 'orthogonal', 'curved'];
 interface DragState {
   startX: number;
   startY: number;
+  /** Base positions of every moving element — nodes and anchors alike. */
   base: Map<string, { x: number; y: number }>;
+  /** Subset of `base` ids that are anchors (the rest are nodes). */
+  anchors: Set<string>;
   moved: boolean;
-  /** The node grabbed (drives alignment/spacing guides). */
+  /** The element grabbed (drives alignment/spacing guides). */
   primary: string;
   /** Effective (snapped) delta applied to the whole selection. */
   dx: number;
@@ -121,18 +123,14 @@ export class Editor {
   private hoverNode: string | null = null;
   private linkSel: string | null = null;
   private linkSeq = 0;
-  /** The selected anchor (free-floating point), or null. */
+  /**
+   * The single selected anchor (drives the inspector). Mirrors `selAnchors`
+   * when exactly one anchor and no nodes are selected; null otherwise.
+   */
   private anchorSel: string | null = null;
+  /** Multi-selection of anchors (parallel to `sel` for nodes). */
+  private selAnchors = new Set<string>();
   private anchorSeq = 0;
-  /** Active drag of the selected anchor. */
-  private anchorDrag: {
-    id: string;
-    startX: number;
-    startY: number;
-    ox: number;
-    oy: number;
-    moved: boolean;
-  } | null = null;
   /** Copy/paste buffer (cloned elements, page-independent). */
   private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
   /** True while a run of arrow-nudges is coalescing into one undo entry. */
@@ -176,7 +174,7 @@ export class Editor {
     this.dragLink = null;
     this.hoverNode = null;
     this.anchorSel = null;
-    this.anchorDrag = null;
+    this.selAnchors.clear();
     this.view = this.computeFitView();
     this.renderArt();
     this.renderOverlay();
@@ -525,19 +523,6 @@ export class Editor {
     return out;
   }
 
-  private dragGhostSvg(): string {
-    if (!this.drag || !this.drag.moved) return '';
-    const { dx, dy } = this.drag;
-    let out = '';
-    for (const [id, base] of this.drag.base) {
-      const n = this.page.nodes.find((m) => m.id === id);
-      if (!n) continue;
-      const h = nodeHalf(n);
-      out += `<rect x="${base.x + dx - h.w}" y="${base.y + dy - h.h}" width="${h.w * 2}" height="${h.h * 2}" fill="${ACCENT}" fill-opacity="0.08" stroke="${ACCENT}" stroke-dasharray="4 3" stroke-width="1.5" rx="4"/>`;
-    }
-    return out;
-  }
-
   private guidesSvg(): string {
     if (this.guides.length === 0) return '';
     let out = '';
@@ -721,7 +706,7 @@ export class Editor {
   private anchorsSvg(): string {
     let out = '';
     for (const a of this.page.anchors) {
-      const sel = a.id === this.anchorSel;
+      const sel = a.id === this.anchorSel || this.selAnchors.has(a.id);
       const c = sel ? ACCENT : MUTED;
       const r = 5;
       out +=
@@ -742,7 +727,6 @@ export class Editor {
       this.linkSelSvg() +
       this.selectionSvg() +
       this.connectionDotsSvg() +
-      this.dragGhostSvg() +
       this.marqueeSvg() +
       this.linkPreviewSvg();
     // Cache the grid fill so applyView can track it without rebuilding the overlay.
@@ -838,7 +822,11 @@ export class Editor {
   }
 
   deleteSelected(): void {
-    if (this.sel.size === 0 && this.linkSel === null && this.anchorSel === null)
+    if (
+      this.sel.size === 0 &&
+      this.linkSel === null &&
+      this.selAnchors.size === 0
+    )
       return;
     this.snapshot();
     if (this.linkSel !== null) {
@@ -846,10 +834,11 @@ export class Editor {
       this.linkSel = null;
       this.fireLinkSelect();
     }
-    if (this.anchorSel !== null) {
+    if (this.selAnchors.size > 0) {
       this.page.anchors = this.page.anchors.filter(
-        (a) => a.id !== this.anchorSel,
+        (a) => !this.selAnchors.has(a.id),
       );
+      this.selAnchors.clear();
       this.anchorSel = null;
       this.fireAnchorSelect();
     }
@@ -874,8 +863,12 @@ export class Editor {
   /** Clear node + link + anchor selection (Esc). */
   clearSelection(): void {
     const had =
-      this.sel.size > 0 || this.linkSel !== null || this.anchorSel !== null;
+      this.sel.size > 0 ||
+      this.linkSel !== null ||
+      this.selAnchors.size > 0 ||
+      this.anchorSel !== null;
     this.sel.clear();
+    this.selAnchors.clear();
     this.linkSel = null;
     this.anchorSel = null;
     if (had) {
@@ -1092,17 +1085,23 @@ export class Editor {
 
   /* ── nudge (arrow keys) ───────────────────────────────────────── */
 
-  /** Move the (unlocked) selected nodes by (dx,dy); coalesces into one undo. */
+  /**
+   * Move the (unlocked) selected nodes + anchors by (dx,dy); coalesces a burst
+   * of arrow-key presses into one undo entry.
+   */
   nudge(dx: number, dy: number): void {
-    const movable = [...this.sel]
+    const nodes = [...this.sel]
       .map((id) => this.page.nodes.find((n) => n.id === id))
       .filter((n): n is NodeConfig => !!n && n.locked !== true);
-    if (movable.length === 0) return;
+    const anchors = [...this.selAnchors]
+      .map((id) => this.page.anchors.find((a) => a.id === id))
+      .filter((a): a is AnchorConfig => !!a);
+    if (nodes.length === 0 && anchors.length === 0) return;
     if (!this.nudgeActive) this.snapshot();
     this.nudgeActive = true;
-    for (const n of movable) {
-      n.x = Math.round(n.x + dx);
-      n.y = Math.round(n.y + dy);
+    for (const el of [...nodes, ...anchors]) {
+      el.x = Math.round(el.x + dx);
+      el.y = Math.round(el.y + dy);
     }
     clearTimeout(this.nudgeTimer);
     this.nudgeTimer = setTimeout(() => (this.nudgeActive = false), 500);
@@ -1372,9 +1371,81 @@ export class Editor {
   }
 
   private clearAnchorSel(): void {
+    this.selAnchors.clear();
     if (this.anchorSel !== null) {
       this.anchorSel = null;
       this.fireAnchorSelect();
+    }
+  }
+
+  /**
+   * Keep `anchorSel` (the inspector's single-anchor target) in sync with the
+   * multi-selection: it points at the lone selected anchor when exactly one
+   * anchor and no nodes are selected, else null.
+   */
+  private syncAnchorSel(): void {
+    const single =
+      this.sel.size === 0 && this.selAnchors.size === 1
+        ? [...this.selAnchors][0]!
+        : null;
+    if (single !== this.anchorSel) {
+      this.anchorSel = single;
+      this.fireAnchorSelect();
+    }
+  }
+
+  /**
+   * Start dragging the current selection (nodes + anchors) as a group, pivoting
+   * on `primary`. Locked nodes are excluded; if the primary itself is excluded
+   * (locked) no drag begins.
+   */
+  private beginGroupDrag(primary: string, p: { x: number; y: number }): void {
+    const base = new Map<string, { x: number; y: number }>();
+    const anchors = new Set<string>();
+    for (const id of this.sel) {
+      const n = this.page.nodes.find((m) => m.id === id);
+      if (n && n.locked !== true) base.set(id, { x: n.x, y: n.y });
+    }
+    for (const id of this.selAnchors) {
+      const a = this.page.anchors.find((m) => m.id === id);
+      if (a) {
+        base.set(id, { x: a.x, y: a.y });
+        anchors.add(id);
+      }
+    }
+    if (base.size > 0 && base.has(primary)) {
+      this.drag = {
+        startX: p.x,
+        startY: p.y,
+        base,
+        anchors,
+        moved: false,
+        primary,
+        dx: 0,
+        dy: 0,
+      };
+    }
+  }
+
+  /** Apply the live drag delta to every moving node/anchor (no rounding). */
+  private applyDrag(round = false): void {
+    if (!this.drag) return;
+    const { dx, dy } = this.drag;
+    const set = (
+      el: { x: number; y: number },
+      base: { x: number; y: number },
+    ): void => {
+      el.x = round ? Math.round(base.x + dx) : base.x + dx;
+      el.y = round ? Math.round(base.y + dy) : base.y + dy;
+    };
+    for (const [id, base] of this.drag.base) {
+      if (this.drag.anchors.has(id)) {
+        const a = this.page.anchors.find((m) => m.id === id);
+        if (a) set(a, base);
+      } else {
+        const n = this.page.nodes.find((m) => m.id === id);
+        if (n) set(n, base);
+      }
     }
   }
 
@@ -1501,17 +1572,18 @@ export class Editor {
     let snapY: number | null = null;
     let bestX = T;
     let bestY = T;
-    for (const n of this.page.nodes) {
-      if (this.sel.has(n.id)) continue; // never align to the moving selection
-      const dxn = Math.abs(n.x - projX);
+    // Align/space against every static element — nodes AND anchors — so dragging
+    // an anchor snaps to the same guides a node does (and vice-versa).
+    for (const t of this.snapTargets(drag)) {
+      const dxn = Math.abs(t.x - projX);
       if (dxn <= bestX) {
         bestX = dxn;
-        snapX = n.x;
+        snapX = t.x;
       }
-      const dyn = Math.abs(n.y - projY);
+      const dyn = Math.abs(t.y - projY);
       if (dyn <= bestY) {
         bestY = dyn;
-        snapY = n.y;
+        snapY = t.y;
       }
     }
 
@@ -1536,20 +1608,33 @@ export class Editor {
         x2: vx + vw,
         y2: finalY,
       });
-    guides.push(...this.spacingGuides(finalX, finalY, T, [vx, vy, vw, vh]));
+    guides.push(
+      ...this.spacingGuides(drag, finalX, finalY, T, [vx, vy, vw, vh]),
+    );
 
     return { dx: finalX - pb.x, dy: finalY - pb.y, guides };
   }
 
+  /** Static elements (nodes + anchors) the drag can align/space against. */
+  private snapTargets(drag: DragState): { x: number; y: number }[] {
+    const out: { x: number; y: number }[] = [];
+    for (const n of this.page.nodes)
+      if (!drag.base.has(n.id)) out.push({ x: n.x, y: n.y });
+    for (const a of this.page.anchors)
+      if (!drag.base.has(a.id)) out.push({ x: a.x, y: a.y });
+    return out;
+  }
+
   /** Equal-spacing hints: the dragged point + two others evenly spaced on an axis. */
   private spacingGuides(
+    drag: DragState,
     x: number,
     y: number,
     T: number,
     vb: [number, number, number, number],
   ): Guide[] {
     const out: Guide[] = [];
-    const others = this.page.nodes.filter((n) => !this.sel.has(n.id));
+    const others = this.snapTargets(drag);
     const cand = { x, y };
 
     const run = (axis: 'h' | 'v', pts: { x: number; y: number }[]): void => {
@@ -1738,51 +1823,35 @@ export class Editor {
 
     if (hit) {
       this.clearLinkSel();
-      this.clearAnchorSel();
       if (e.shiftKey) {
         if (this.sel.has(hit)) this.sel.delete(hit);
         else this.sel.add(hit);
       } else if (!this.sel.has(hit)) {
+        // Plain click on a fresh node replaces the whole selection.
         this.sel.clear();
+        this.selAnchors.clear();
         this.sel.add(hit);
       }
+      this.syncAnchorSel();
       // Begin drag of the current selection (locked nodes don't move).
-      if (this.sel.has(hit)) {
-        const base = new Map<string, { x: number; y: number }>();
-        for (const id of this.sel) {
-          const n = this.page.nodes.find((m) => m.id === id);
-          if (n && n.locked !== true) base.set(id, { x: n.x, y: n.y });
-        }
-        if (base.size > 0) {
-          this.drag = {
-            startX: p.x,
-            startY: p.y,
-            base,
-            moved: false,
-            primary: hit,
-            dx: 0,
-            dy: 0,
-          };
-        }
-      }
+      if (this.sel.has(hit)) this.beginGroupDrag(hit, p);
     } else {
       // No node — try an anchor, then a link, else start a marquee.
       const anchorHit = hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
       if (anchorHit) {
-        const a = this.page.anchors.find((m) => m.id === anchorHit)!;
-        this.sel.clear();
         this.clearLinkSel();
-        this.anchorSel = anchorHit;
-        this.anchorDrag = {
-          id: anchorHit,
-          startX: p.x,
-          startY: p.y,
-          ox: a.x,
-          oy: a.y,
-          moved: false,
-        };
+        if (e.shiftKey) {
+          if (this.selAnchors.has(anchorHit)) this.selAnchors.delete(anchorHit);
+          else this.selAnchors.add(anchorHit);
+        } else if (!this.selAnchors.has(anchorHit)) {
+          // Plain click on a fresh anchor replaces the whole selection.
+          this.sel.clear();
+          this.selAnchors.clear();
+          this.selAnchors.add(anchorHit);
+        }
+        this.syncAnchorSel();
+        if (this.selAnchors.has(anchorHit)) this.beginGroupDrag(anchorHit, p);
         this.fireSelect();
-        this.fireAnchorSelect();
         this.overlay.setPointerCapture(e.pointerId);
         this.renderOverlay();
         return;
@@ -1790,7 +1859,8 @@ export class Editor {
       const link = hitTestLink(this.page, p.x, p.y);
       if (link) {
         this.sel.clear();
-        this.clearAnchorSel();
+        this.selAnchors.clear();
+        this.syncAnchorSel();
         this.linkSel = link;
         this.fireSelect();
         this.fireLinkSelect();
@@ -1799,8 +1869,11 @@ export class Editor {
         return;
       }
       this.clearLinkSel();
-      this.clearAnchorSel();
-      if (!e.shiftKey) this.sel.clear();
+      if (!e.shiftKey) {
+        this.sel.clear();
+        this.selAnchors.clear();
+        this.syncAnchorSel();
+      }
       this.marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     }
     this.overlay.setPointerCapture(e.pointerId);
@@ -1857,25 +1930,6 @@ export class Editor {
       }
       return;
     }
-    if (this.anchorDrag) {
-      const pp = clientToUser(this.overlay, e.clientX, e.clientY);
-      const a = this.page.anchors.find((m) => m.id === this.anchorDrag!.id);
-      if (a) {
-        if (!this.anchorDrag.moved) {
-          this.snapshot();
-          this.anchorDrag.moved = true;
-        }
-        a.x = this.snapVal(
-          this.anchorDrag.ox + (pp.x - this.anchorDrag.startX),
-        );
-        a.y = this.snapVal(
-          this.anchorDrag.oy + (pp.y - this.anchorDrag.startY),
-        );
-        this.scheduleArt(); // links to the anchor follow it (coalesced per frame)
-        this.renderOverlay();
-      }
-      return;
-    }
     // Idle hover: show connection dots on the node under the cursor, and a
     // crosshair when poised over a dot (drag it out to draw a link).
     if (!this.drag && !this.marquee) {
@@ -1901,11 +1955,20 @@ export class Editor {
     if (this.drag) {
       const rawX = p.x - this.drag.startX;
       const rawY = p.y - this.drag.startY;
+      const wasMoved = this.drag.moved;
       if (Math.abs(rawX) > 1 || Math.abs(rawY) > 1) this.drag.moved = true;
+      // Snapshot once, when the drag first commits to moving.
+      if (!wasMoved && this.drag.moved) this.snapshot();
       const snap = this.computeSnap(this.drag, rawX, rawY);
       this.drag.dx = snap.dx;
       this.drag.dy = snap.dy;
       this.guides = this.drag.moved ? snap.guides : [];
+      if (this.drag.moved) {
+        // Move live so connected links re-route under the cursor (coalesced
+        // per frame); selection rings + guides ride along on the overlay.
+        this.applyDrag();
+        this.scheduleArt();
+      }
     } else if (this.marquee) {
       this.marquee.x1 = p.x;
       this.marquee.y1 = p.y;
@@ -1936,20 +1999,6 @@ export class Editor {
       this.renderOverlay();
       return;
     }
-    if (this.anchorDrag) {
-      if (this.anchorDrag.moved) {
-        const a = this.page.anchors.find((m) => m.id === this.anchorDrag!.id);
-        if (a) {
-          a.x = Math.round(a.x);
-          a.y = Math.round(a.y);
-        }
-        this.renderArt();
-        this.onChange();
-      }
-      this.anchorDrag = null;
-      this.renderOverlay();
-      return;
-    }
     if (this.dragLink) {
       const dl = this.dragLink;
       this.dragLink = null;
@@ -1967,15 +2016,9 @@ export class Editor {
     }
     if (this.drag) {
       if (this.drag.moved) {
-        this.snapshot();
-        const { dx, dy } = this.drag;
-        for (const [id, base] of this.drag.base) {
-          const n = this.page.nodes.find((m) => m.id === id);
-          if (n) {
-            n.x = Math.round(base.x + dx);
-            n.y = Math.round(base.y + dy);
-          }
-        }
+        // Positions were applied live during the drag; snapshot was taken on
+        // the first move. Settle to integer coordinates and commit.
+        this.applyDrag(true);
         this.guides = [];
         this.renderArt();
         this.onChange();
@@ -1986,6 +2029,15 @@ export class Editor {
       if (Math.abs(x1 - x0) > 2 || Math.abs(y1 - y0) > 2) {
         for (const id of nodesInRect(this.page, x0, y0, x1, y1))
           this.sel.add(id);
+        // Anchors whose point falls in the rect join the selection too.
+        const xa = Math.min(x0, x1),
+          xb = Math.max(x0, x1),
+          ya = Math.min(y0, y1),
+          yb = Math.max(y0, y1);
+        for (const a of this.page.anchors)
+          if (a.x >= xa && a.x <= xb && a.y >= ya && a.y <= yb)
+            this.selAnchors.add(a.id);
+        this.syncAnchorSel();
       }
       this.marquee = null;
     }
@@ -2002,8 +2054,9 @@ export class Editor {
   toggleSnap(): void {
     this.snap = !this.snap;
   }
+  /** Total movable elements selected (nodes + anchors) — gates arrow-nudge. */
   selectionCount(): number {
-    return this.sel.size;
+    return this.sel.size + this.selAnchors.size;
   }
 }
 
