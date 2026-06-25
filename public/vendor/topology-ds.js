@@ -3425,8 +3425,17 @@ class TopologyDesigner {
         ? this._buildLinkPath(from, to, [], linkCfg.lineStyle, linkCfg.cornerRadius)
         : null;
 
-    // Smart Link Routing (Goal 1c): check for routed path (only when no explicit waypoints)
-    const routedPath = !hasWaypoints && (linkCfg.type === 'line' || linkCfg.type === 'tunnel')
+    // Smart Link Routing (Goal 1c): check for routed path (only when no explicit
+    // waypoints). Anchor endpoints are deliberate user-placed points (bends /
+    // standalone endpoints), not nodes to be avoided — and because an anchor
+    // commonly sits on the very edge of a nearby node's hit-box, the obstruction
+    // detour would otherwise fire and bend the link backward around that node
+    // (a hook/loop). So when either endpoint is an anchor we skip smart routing:
+    // a straight link stays a single segment, a curved link uses the curve
+    // builder, both with endpoint tangents that point toward the other end.
+    const hasAnchorEnd =
+      this._anchors.has(linkCfg.from) || this._anchors.has(linkCfg.to);
+    const routedPath = !hasWaypoints && !hasAnchorEnd && (linkCfg.type === 'line' || linkCfg.type === 'tunnel')
       ? this._routeLink(from, to, linkCfg.id) : null;
 
     switch (linkCfg.type) {

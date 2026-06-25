@@ -1,0 +1,106 @@
+{
+  "title": "Untitled",
+  "pages": [
+    {
+      "id": "pmqrg06dr0",
+      "name": "Frame 1",
+      "viewBox": "0 0 1050 700",
+      "nodes": [
+        {
+          "id": "nmqsmxeix0",
+          "type": "ec",
+          "x": 280,
+          "y": 240,
+          "label": "Ec",
+          "labelOffset": 0,
+          "locked": false,
+          "layer": "asdf"
+        },
+        {
+          "id": "nmqsmxgdl1",
+          "type": "ec",
+          "x": 571,
+          "y": 240,
+          "label": "Ec"
+        },
+        {
+          "id": "nmqsr2k1w0",
+          "type": "cloud",
+          "x": 280,
+          "y": 100,
+          "label": "INET A",
+          "labelColor": "#deb146",
+          "color": "#deb146"
+        },
+        {
+          "id": "nmqsr2xq81",
+          "type": "cloud",
+          "x": 571,
+          "y": 100,
+          "label": "INET B",
+          "labelColor": "#deb146",
+          "color": "#fc6161"
+        }
+      ],
+      "links": [
+        {
+          "id": "lmqsr9b3t5",
+          "type": "line",
+          "from": "amqsr89gd2",
+          "to": "nmqsmxeix0"
+        },
+        {
+          "id": "lmqsr9iqz6",
+          "type": "line",
+          "from": "amqsr8b6r3",
+          "to": "nmqsmxgdl1"
+        },
+        {
+          "id": "lmqsr9odv7",
+          "type": "tunnel",
+          "from": "amqsr95ux8",
+          "to": "nmqsmxeix0",
+          "lineStyle": "curved"
+        },
+        {
+          "id": "lmqsr9s578",
+          "type": "line",
+          "from": "amqsr94d57",
+          "to": "nmqsmxgdl1",
+          "color": "#fc6161"
+        }
+      ],
+      "anchors": [
+        {
+          "id": "amqsr7z9d0",
+          "x": 280,
+          "y": 140
+        },
+        {
+          "id": "amqsr89gd2",
+          "x": 260,
+          "y": 140
+        },
+        {
+          "id": "amqsr8b6r3",
+          "x": 280,
+          "y": 140
+        },
+        {
+          "id": "amqsr94d57",
+          "x": 580,
+          "y": 140
+        },
+        {
+          "id": "amqsr95ux8",
+          "x": 560,
+          "y": 140
+        }
+      ],
+      "zones": [],
+      "flowPaths": [],
+      "policyMarkers": []
+    }
+  ],
+  "customNodes": []
+}
