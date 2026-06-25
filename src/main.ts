@@ -148,39 +148,43 @@ app.innerHTML = `
   </header>
 
   <div class="stage">
-    <aside class="palette" id="palette">
-      <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
-      <div class="palette-list" id="palette-list"></div>
-    </aside>
-    <div class="tds-root">
-      <div class="tds-canvas-row">
-        <div class="tds-canvas canvas-host">
-          <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
-          <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
-          <div class="canvas-ctrls" id="canvasCtrls">
-            <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)">✋</button>
-            <button class="cc-btn" id="ccZoomIn" title="Zoom in">+</button>
-            <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)">100%</button>
-            <button class="cc-btn" id="ccZoomOut" title="Zoom out">−</button>
-            <button class="cc-btn" id="ccFit" title="Fit to content (0)">⤢</button>
+    <div class="canvas-area" id="canvas-area">
+      <aside class="palette" id="palette">
+        <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
+        <div class="palette-list" id="palette-list"></div>
+      </aside>
+      <div class="tds-root">
+        <div class="tds-canvas-row">
+          <div class="tds-canvas canvas-host">
+            <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
+            <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+            <div class="canvas-ctrls" id="canvasCtrls">
+              <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)">✋</button>
+              <button class="cc-btn" id="ccZoomIn" title="Zoom in">+</button>
+              <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)">100%</button>
+              <button class="cc-btn" id="ccZoomOut" title="Zoom out">−</button>
+              <button class="cc-btn" id="ccFit" title="Fit to content (0)">⤢</button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-    <div class="inspector-wrap" id="inspector-wrap">
-      <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ▸</button>
-      <div class="inspector-body" id="inspector-body">
-        <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
-        <aside class="inspector" id="inspector"></aside>
+      <div class="minimap-wrap" id="minimap-wrap">
+        <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">hide ▾</button>
+        <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <div class="problems-wrap collapsed" id="problems-wrap">
+        <button class="problems-toggle" id="problems-toggle" title="Show problems (validation + layout)">✓ ok</button>
+        <div class="problems" id="problems"></div>
       </div>
     </div>
-    <div class="minimap-wrap" id="minimap-wrap">
-      <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">hide ▾</button>
-      <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
-    </div>
-    <div class="problems-wrap collapsed" id="problems-wrap">
-      <button class="problems-toggle" id="problems-toggle" title="Show problems (validation + layout)">✓ ok</button>
-      <div class="problems" id="problems"></div>
+    <div class="inspector-wrap" id="inspector-wrap">
+      <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
+      <div class="inspector-col">
+        <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ▸</button>
+        <div class="inspector-body" id="inspector-body">
+          <aside class="inspector" id="inspector"></aside>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -751,23 +755,14 @@ inspectorToggle.addEventListener('click', () =>
 );
 setInspectorCollapsed(localStorage.getItem('tds-inspector-collapsed') === '1');
 
-/* Keep the properties panel inside the stage — its bottom (the annotations /
- * zones list) must never be clipped behind the filmstrip — and let the user
- * resize its width via a left-edge grip (persisted). */
-const stageEl = app.querySelector<HTMLElement>('.stage')!;
-const inspectorBody = app.querySelector<HTMLElement>('#inspector-body')!;
+/* The properties panel is a docked right column (full stage height, above the
+ * filmstrip), so its annotations / zones list is never clipped or overlapped.
+ * A left-edge grip resizes its width (persisted). */
 const inspectorResizer = app.querySelector<HTMLElement>('#inspector-resizer')!;
 const INSPECTOR_W_KEY = 'tds-inspector-width';
 const INSPECTOR_W_MIN = 200;
 const INSPECTOR_W_MAX = 560;
 
-/** Cap the panel height to the visible stage so it scrolls instead of clipping. */
-function fitInspector(): void {
-  const sr = stageEl.getBoundingClientRect();
-  const br = inspectorBody.getBoundingClientRect();
-  const max = Math.max(140, Math.floor(sr.bottom - br.top - 12));
-  inspectorBody.style.maxHeight = `${max}px`;
-}
 try {
   const w = Number(localStorage.getItem(INSPECTOR_W_KEY));
   if (w >= INSPECTOR_W_MIN && w <= INSPECTOR_W_MAX)
@@ -775,12 +770,8 @@ try {
 } catch {
   /* storage unavailable — use the default width */
 }
-// Refit whenever the stage resizes (viewport, toolbar wrap, filmstrip growth).
-new ResizeObserver(fitInspector).observe(stageEl);
-window.addEventListener('resize', fitInspector);
-fitInspector();
 
-// Left-edge drag-to-resize (dragging left widens the right-docked panel).
+// Left-edge drag-to-resize (dragging left widens the docked panel).
 inspectorResizer.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   const startX = e.clientX;

@@ -294,6 +294,17 @@
         position: relative;
         overflow: hidden;
         min-height: 0;
+        display: flex;
+        flex-direction: row;
+      }
+      /* The canvas region (canvas + floating palette/minimap/problems). The
+         properties panel is a docked column beside it, not a floating overlay,
+         so it can never overlap the canvas, minimap, or filmstrip. */
+      .canvas-area {
+        position: relative;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
       }
       .palette {
         position: absolute;
@@ -394,33 +405,28 @@
       }
 
       /* Properties / inspector panel (top-right), with a collapse toggle. */
+      /* Docked properties column on the right of the stage: [resize grip][panel].
+         It spans the full stage height (above the filmstrip), so it never floats
+         over — or collides with — the canvas, minimap, or filmstrip. */
       .inspector-wrap {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        /* Above the minimap (z-index 7): an expanded inspector can extend down
-           into the minimap's corner, and the interactive panel must win. */
+        position: relative;
         z-index: 8;
+        flex: none;
         display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 4px;
-      }
-      /* The inspector + its left-edge resize grip sit in a right-aligned row, so
-         dragging the grip leftward widens the panel into the canvas. */
-      .inspector-body {
-        display: flex;
+        flex-direction: row;
         align-items: stretch;
-        /* Bounded to the stage by JS (fitInspector); CSS fallback keeps it clear
-           of the header/filmstrip/statusbar before JS runs. */
-        max-height: calc(100vh - 150px);
-        min-height: 0;
+        background: rgba(34, 37, 46, 0.94);
+        border-left: 1px solid var(--border);
+        backdrop-filter: blur(8px);
+      }
+      .inspector-wrap.collapsed {
+        background: transparent;
+        border-left: none;
       }
       .inspector-resizer {
         flex: none;
         width: 7px;
         cursor: ew-resize;
-        border-radius: 8px 0 0 8px;
         background: transparent;
         transition: background 0.12s;
       }
@@ -428,17 +434,32 @@
       .inspector-resizer.active {
         background: rgba(1, 169, 130, 0.35);
       }
-      .inspector {
-        width: 220px;
-        min-width: 200px;
+      .inspector-wrap.collapsed .inspector-resizer {
+        display: none;
+      }
+      .inspector-col {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        padding: 10px 10px 10px 4px;
+        gap: 6px;
+      }
+      .inspector-body {
         flex: 1 1 auto;
         min-height: 0;
+        display: flex;
+        align-items: stretch;
+      }
+      .inspector {
+        width: 240px;
+        min-width: 200px;
+        flex: none;
+        min-height: 0;
         overflow-y: auto;
-        background: rgba(34, 37, 46, 0.94);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 12px;
-        backdrop-filter: blur(8px);
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        padding: 0;
         display: flex;
         flex-direction: column;
         gap: 10px;
