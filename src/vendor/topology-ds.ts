@@ -59,6 +59,16 @@ export interface LinkConfig {
    */
   fromPort?: 'n' | 'e' | 's' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
   toPort?: 'n' | 'e' | 's' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+  /**
+   * B.2 first-class link metadata — renderable on the wire when `showMeta` is
+   * set. Endpoint interface names reuse `fromLabel`/`toLabel`. All optional and
+   * machine-populatable (north-star data feed).
+   */
+  vlan?: string | number;
+  subnet?: string;
+  bandwidth?: string;
+  transport?: string;
+  showMeta?: boolean;
   /** When true, the editor won't move/edit the link via direct manipulation. */
   locked?: boolean;
   /** Per-link animated-flow controls (tunnel / wireguard / flow types). */

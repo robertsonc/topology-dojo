@@ -206,8 +206,15 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
 const LINK_COMMON: FieldSpec[] = [
   { key: 'color', label: 'Color', kind: 'color' },
   { key: 'label', label: 'Label', kind: 'string' },
-  { key: 'fromLabel', label: 'From port label', kind: 'string' },
-  { key: 'toLabel', label: 'To port label', kind: 'string' },
+  { key: 'fromLabel', label: 'From interface (A)', kind: 'string' },
+  { key: 'toLabel', label: 'To interface (Z)', kind: 'string' },
+  // B.2 first-class link metadata — renderable on the wire (see showMeta).
+  // Stable per-field properties a future data feed can populate.
+  { key: 'vlan', label: 'VLAN', kind: 'string' },
+  { key: 'subnet', label: 'Subnet', kind: 'string' },
+  { key: 'bandwidth', label: 'Bandwidth', kind: 'string' },
+  { key: 'transport', label: 'Transport', kind: 'string' },
+  { key: 'showMeta', label: 'Show metadata on wire', kind: 'boolean' },
   { key: 'strokeWidth', label: 'Stroke width', kind: 'number' },
   { key: 'opacity', label: 'Opacity', kind: 'number' },
   {
