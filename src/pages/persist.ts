@@ -5,7 +5,7 @@
  * defensive normalization on the way in (a corrupt or hand-edited file must
  * never crash the editor — it falls back to a valid shape or null).
  */
-import type { TopologyDocument, Page } from './model.js';
+import type { TopologyDocument, Page, Stencil } from './model.js';
 import { newPageId } from './model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type { LayerDef } from '../api/layers.js';
@@ -20,6 +20,7 @@ export function serializeDoc(doc: TopologyDocument): string {
       customNodes: doc.customNodes,
       ...(doc.layers?.length ? { layers: doc.layers } : {}),
       ...(doc.legend ? { legend: doc.legend } : {}),
+      ...(doc.stencils?.length ? { stencils: doc.stencils } : {}),
     },
     null,
     2,
@@ -102,12 +103,37 @@ export function parseDoc(input: unknown): TopologyDocument | null {
             : {}),
         }
       : undefined;
+  // Stencils (C.3): keep only well-formed entries — an id + name + a non-empty
+  // node array. Links default to [] so a malformed link list can't crash a stamp.
+  const stencils = Array.isArray(d.stencils)
+    ? (d.stencils as unknown[])
+        .filter(
+          (s): s is Record<string, unknown> =>
+            typeof s === 'object' && s !== null,
+        )
+        .filter(
+          (s) =>
+            typeof s.id === 'string' &&
+            typeof s.name === 'string' &&
+            Array.isArray(s.nodes) &&
+            s.nodes.length > 0,
+        )
+        .map(
+          (s): Stencil => ({
+            id: s.id as string,
+            name: s.name as string,
+            nodes: s.nodes as Stencil['nodes'],
+            links: Array.isArray(s.links) ? (s.links as Stencil['links']) : [],
+          }),
+        )
+    : [];
   return {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
     customNodes,
     ...(layers.length ? { layers } : {}),
     ...(legend && Object.keys(legend).length ? { legend } : {}),
+    ...(stencils.length ? { stencils } : {}),
   };
 }
 

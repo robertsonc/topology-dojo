@@ -20,7 +20,9 @@ import {
   duplicatePage,
   sampleDocument,
   type TopologyDocument,
+  type Stencil,
 } from './pages/model.js';
+import { captureStencil, stencilViewBox } from './editor/stencil.js';
 import {
   loadLocal,
   parseDoc,
@@ -1712,6 +1714,56 @@ function nodePreviewSVG(type: string, extra?: Record<string, unknown>): string {
   return svg;
 }
 
+/** A thumbnail of a stencil's whole sub-assembly (nodes + internal links). */
+function stencilPreviewSVG(st: Stencil): string {
+  const vb = stencilViewBox(st.nodes);
+  let inner: string;
+  try {
+    inner = renderPageSVG({ viewBox: vb, nodes: st.nodes, links: st.links });
+  } catch {
+    return '';
+  }
+  inner = inner.replace(/<defs[\s\S]*?<\/defs>/, '');
+  return `<svg class="ppreview" viewBox="${esc(vb)}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${inner}</svg>`;
+}
+
+/**
+ * Save the current node selection as a reusable, named stencil (C.3). Prompts
+ * for a name; no-op (with a hint) when nothing is selected. The stencil lands in
+ * the palette's Stencils section, ready to re-stamp.
+ */
+function saveSelectionAsStencil(): void {
+  const sel = editor.selectionElements();
+  if (!sel || sel.nodes.length === 0) {
+    savedEl.textContent = 'select node(s) first';
+    return;
+  }
+  const suggested = `Group ${(doc.stencils?.length ?? 0) + 1}`;
+  const name = window.prompt('Name this stencil', suggested)?.trim();
+  if (!name) return; // cancelled or blank
+  const stencil: Stencil = {
+    id: genId('st'),
+    ...captureStencil(name, sel.nodes, sel.links),
+  };
+  (doc.stencils ??= []).push(stencil);
+  buildPalette();
+  markDirty();
+}
+
+/** Re-stamp a saved stencil onto the current page (centred, fresh ids). */
+function stampStencil(id: string): void {
+  const st = doc.stencils?.find((s) => s.id === id);
+  if (st) editor.stampStencil(st.nodes, st.links);
+}
+
+/** Forget a saved stencil. */
+function deleteStencil(id: string): void {
+  if (!doc.stencils) return;
+  doc.stencils = doc.stencils.filter((s) => s.id !== id);
+  buildPalette();
+  markDirty();
+}
+
 function buildPalette(): void {
   const byCat = new Map<string, NodeTypeInfo[]>();
   for (const info of nodeCatalog(doc.customNodes)) {
@@ -1735,6 +1787,14 @@ function buildPalette(): void {
     }
   }
   html += `<button class="pitem design" id="pDesign">＋ design node</button>`;
+
+  // Stencils (C.3): reusable named groups. Each is a click-to-stamp entry with
+  // a thumbnail of the whole sub-assembly; the ＋ button saves the selection.
+  html += `<div class="palette-h">Stencils</div>`;
+  for (const st of doc.stencils ?? []) {
+    html += `<div class="pcustom"><button class="pitem" data-stencil="${esc(st.id)}" title="Stamp '${esc(st.name)}'">${stencilPreviewSVG(st)}<span class="plabel">${esc(st.name)}</span></button><button class="pedit" data-stencil-del="${esc(st.id)}" title="Delete stencil">✕</button></div>`;
+  }
+  html += `<button class="pitem design" id="pSaveStencil" title="Save the selected node(s) as a reusable group">＋ save stencil</button>`;
   palette.innerHTML = html;
 
   palette.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) =>
@@ -1756,6 +1816,19 @@ function buildPalette(): void {
   palette
     .querySelector('#pDesign')
     ?.addEventListener('click', () => openNodeDesigner(null, upsertCustomNode));
+  palette
+    .querySelectorAll<HTMLButtonElement>('[data-stencil]')
+    .forEach((b) =>
+      b.addEventListener('click', () => stampStencil(b.dataset.stencil!)),
+    );
+  palette
+    .querySelectorAll<HTMLButtonElement>('[data-stencil-del]')
+    .forEach((b) =>
+      b.addEventListener('click', () => deleteStencil(b.dataset.stencilDel!)),
+    );
+  palette
+    .querySelector('#pSaveStencil')
+    ?.addEventListener('click', () => saveSelectionAsStencil());
 }
 buildPalette();
 
@@ -2228,6 +2301,7 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
         run: () => editor.emphasizeSelection(),
       },
       { label: 'Group into zone', run: () => addAnnotation('zone') },
+      { label: 'Save as stencil…', run: () => saveSelectionAsStencil() },
       { label: 'Add policy marker', run: () => addAnnotation('policyMarker') },
       { sep: true },
       {
