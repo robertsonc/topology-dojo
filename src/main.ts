@@ -1252,9 +1252,16 @@ function annotationsHtml(): string {
     `</div>`;
   if (counts === 0)
     html += `<div class="muted anno-empty">Select node(s), then add a zone, flow path, or marker.</div>`;
+  // Group by type into collapsible sections with counts, so a frame with many
+  // zones/flows/markers stays scannable instead of one long flat list.
   for (const g of ANNO_GROUPS) {
     const info = getAnnotationType(g.kind)!;
-    for (const item of page[g.col] as { id: string }[]) {
+    const items = page[g.col] as { id: string }[];
+    if (!items.length) continue;
+    html +=
+      `<details class="anno-group" open data-agroup="${g.col}">` +
+      `<summary class="anno-group-h">${esc(info.label)}s<span class="anno-count">${items.length}</span></summary>`;
+    for (const item of items) {
       const cfg = item as Record<string, unknown>;
       const title = String(cfg.label ?? cfg.type ?? item.id);
       html +=
@@ -1263,6 +1270,7 @@ function annotationsHtml(): string {
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
         `</details>`;
     }
+    html += `</details>`;
   }
   return html;
 }
