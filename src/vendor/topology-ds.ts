@@ -291,22 +291,34 @@ export function renderPageSVG(
     opts.visibleLayers,
   );
 
+  // Per-layer opacity (B.3): fade every element on a dimmed layer by folding the
+  // layer's opacity into each member's own opacity (1 = no change).
+  const layerOpacity = new Map<string, number>();
+  for (const ly of layers)
+    if (typeof ly.opacity === 'number' && ly.opacity < 1)
+      layerOpacity.set(ly.id, Math.max(0, ly.opacity));
+  const faded = <T extends { layer?: string; opacity?: number }>(cfg: T): T => {
+    const lo = cfg.layer ? layerOpacity.get(cfg.layer) : undefined;
+    if (lo === undefined) return cfg;
+    return { ...cfg, opacity: (cfg.opacity ?? 1) * lo };
+  };
+
   for (const a of page.anchors ?? []) topo.anchor(a.id, { x: a.x, y: a.y });
   for (const n of nodes) {
     const { id, ...cfg } = n;
-    topo.node(id, cfg);
+    topo.node(id, faded(cfg));
   }
   for (const l of links) {
     const { id, ...cfg } = l;
-    topo.link(id, cfg);
+    topo.link(id, faded(cfg));
   }
   for (const z of zones) {
     const { id, ...cfg } = z;
-    topo.zone(id, cfg);
+    topo.zone(id, faded(cfg));
   }
   for (const f of flows) {
     const { id, ...cfg } = f;
-    topo.flowPath(id, cfg);
+    topo.flowPath(id, faded(cfg));
   }
   for (const m of markers) {
     const { id, ...cfg } = m;

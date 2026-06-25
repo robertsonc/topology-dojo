@@ -27,6 +27,8 @@ export interface LayerDef {
   color?: string;
   /** Drawn when no explicit visible set is given (defaults to true). */
   defaultVisible?: boolean;
+  /** Layer-wide opacity 0–1 (B.3). Multiplies each member element's opacity. */
+  opacity?: number;
 }
 
 /** An element that may opt into a layer. */

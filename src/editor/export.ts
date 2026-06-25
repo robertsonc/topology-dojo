@@ -90,10 +90,11 @@ export async function exportPagePNG(
   page: Page,
   scale = 2,
   extra = '',
+  opts: RenderOptions = {},
 ): Promise<void> {
   // Always rasterize a static frame (calm) so the captured image is clean.
   const blob = await svgToPngBlob(
-    pageToSVG(page, { calm: true }, extra),
+    pageToSVG(page, { ...opts, calm: true }, extra),
     scale,
   );
   downloadBlob(filename, blob);

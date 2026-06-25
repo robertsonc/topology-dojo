@@ -228,6 +228,13 @@ const editor = new Editor(
 // the elements in use, so it tracks edits live. Off unless the document opts in.
 editor.setOverlayExtra(() => legendSVG(doc, editor.page));
 
+// Feed declared layers (with their visibility/opacity, B.3) into every render so
+// hiding/fading a layer takes effect on canvas. Exports pass the same `layers`.
+const renderLayerOpts = (): { layers: typeof doc.layers } => ({
+  layers: doc.layers,
+});
+editor.setRenderOpts(renderLayerOpts);
+
 editor.setViewInsets(() => {
   const canvas = overlaySvg.getBoundingClientRect();
   let right = 0;
@@ -323,18 +330,15 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
   exportPageSVG(
     `${exportBase()}.svg`,
     page,
-    { calm: editor.calm },
+    { calm: editor.calm, layers: doc.layers },
     legendSVG(doc, page),
   );
 });
 app.querySelector('#fPng')?.addEventListener('click', () => {
   const page = doc.pages[current]!;
-  void exportPagePNG(
-    `${exportBase()}.png`,
-    page,
-    2,
-    legendSVG(doc, page),
-  ).catch(() => alert('PNG export failed.'));
+  void exportPagePNG(`${exportBase()}.png`, page, 2, legendSVG(doc, page), {
+    layers: doc.layers,
+  }).catch(() => alert('PNG export failed.'));
 });
 /* New from a starter template. */
 const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
@@ -1029,7 +1033,31 @@ function propertiesHtml(): string {
           }</option>`,
       )
       .join('') +
-    `</select></label>`
+    `</select></label>` +
+    layersHtml()
+  );
+}
+
+/** The Layers section of the Document panel (B.3): per-layer eye + opacity. */
+function layersHtml(): string {
+  const layers = doc.layers ?? [];
+  const rows = layers
+    .map((l, i) => {
+      const vis = l.defaultVisible !== false;
+      const op = Math.round((l.opacity ?? 1) * 100);
+      return (
+        `<div class="layer-row" data-li="${i}">` +
+        `<button class="layer-eye" data-li="${i}" title="Show / hide layer">${vis ? '👁' : '🚫'}</button>` +
+        `<span class="layer-name">${esc(l.name ?? l.id)}</span>` +
+        `<input class="layer-op" data-li="${i}" type="range" min="0" max="100" step="5" value="${op}" title="Layer opacity (${op}%)"/>` +
+        `</div>`
+      );
+    })
+    .join('');
+  return (
+    `<div class="insp-h">Layers</div>` +
+    (rows || `<div class="insp-hint">No layers declared.</div>`) +
+    `<button class="insp-btn" id="p-layer-add">＋ Layer</button>`
   );
 }
 
@@ -1080,6 +1108,49 @@ function wireProperties(): void {
       position: legendPos.value as 'tl' | 'tr' | 'bl' | 'br',
     };
     editor.redrawOverlay();
+    markDirty();
+  });
+  wireLayers();
+}
+
+/** Wire the Document panel's Layers controls (B.3): eye, opacity, + Layer. */
+function wireLayers(): void {
+  const layers = doc.layers ?? [];
+  inspector.querySelectorAll<HTMLButtonElement>('.layer-eye').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const l = layers[Number(btn.dataset.li)];
+      if (!l) return;
+      l.defaultVisible = l.defaultVisible === false; // toggle (default = visible)
+      editor.rerender();
+      renderInspector(); // refresh the eye glyph
+      markDirty();
+    });
+  });
+  inspector
+    .querySelectorAll<HTMLInputElement>('.layer-op')
+    .forEach((slider) => {
+      slider.addEventListener('input', () => {
+        const l = layers[Number(slider.dataset.li)];
+        if (!l) return;
+        l.opacity = Math.max(0, Math.min(1, Number(slider.value) / 100));
+        editor.rerender();
+        markDirty();
+      });
+    });
+  inspector.querySelector('#p-layer-add')?.addEventListener('click', () => {
+    const n = (doc.layers ?? []).length + 1;
+    const KINDS = ['underlay', 'overlay', 'policy', 'service'] as const;
+    doc.layers = [
+      ...(doc.layers ?? []),
+      {
+        id: `layer${n}`,
+        name: `Layer ${n}`,
+        kind: KINDS[(n - 1) % KINDS.length],
+        defaultVisible: true,
+      },
+    ];
+    editor.rerender();
+    renderInspector();
     markDirty();
   });
 }
