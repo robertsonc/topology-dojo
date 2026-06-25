@@ -1501,9 +1501,15 @@ function annotationsHtml(): string {
     for (const item of items) {
       const cfg = item as Record<string, unknown>;
       const title = String(cfg.label ?? cfg.type ?? item.id);
+      // Zones are containers (C.2): offer move-members + duplicate-with-contents.
+      const zoneBtns =
+        g.col === 'zones'
+          ? `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)">⤧</button>` +
+            `<button class="anno-x" data-azdup title="Duplicate zone with its contents">⧉</button>`
+          : '';
       html +=
         `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}">` +
-        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span><button class="anno-x" data-adel title="Delete">✕</button></summary>` +
+        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete">✕</button></summary>` +
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
         `</details>`;
     }
@@ -1560,6 +1566,22 @@ function wireAnnotations(): void {
       e.preventDefault();
       const host = b.closest<HTMLElement>('[data-aid]')!;
       editor.removeAnnotation(host.dataset.acol as AnnoCol, host.dataset.aid!);
+      renderInspector();
+    }),
+  );
+  // Container-zone actions (C.2): move members / duplicate with contents.
+  inspector.querySelectorAll<HTMLButtonElement>('[data-azmove]').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      editor.selectZoneMembers(
+        b.closest<HTMLElement>('[data-aid]')!.dataset.aid!,
+      );
+    }),
+  );
+  inspector.querySelectorAll<HTMLButtonElement>('[data-azdup]').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      editor.duplicateZone(b.closest<HTMLElement>('[data-aid]')!.dataset.aid!);
       renderInspector();
     }),
   );
