@@ -46,6 +46,9 @@ export interface NodeTypeInfo {
   category: string;
   custom: boolean;
   fields: FieldSpec[];
+  /** Search aliases (Phase 4 node library) — synonyms/abbreviations a user
+   * might type that aren't in the type/label (e.g. "fw" → firewall). */
+  keywords?: string[];
 }
 
 export interface LinkTypeInfo {
@@ -166,6 +169,26 @@ const NODE_CATEGORY: Record<string, string> = {
   text: 'Annotation',
 };
 
+/** Search aliases per built-in type (Phase 4) — abbreviations / synonyms. */
+const NODE_KEYWORDS: Record<string, string[]> = {
+  ec: ['edge connect', 'branch', 'sd-wan', 'sdwan', 'gateway', 'axis'],
+  connector: ['private edge', 'ztna', 'sse', 'axis'],
+  router: ['gateway', 'l3', 'routing'],
+  switch: ['l2', 'switching', 'lan'],
+  switchEnterprise: ['l2', 'core switch', 'distribution', 'access switch'],
+  ap: ['access point', 'wifi', 'wireless'],
+  firewall: ['fw', 'security', 'ngfw', 'srx'],
+  idcard: ['identity', 'sase', 'user', 'auth', 'id'],
+  cloud: ['internet', 'wan', 'aws', 'azure', 'gcp', 'public cloud'],
+  saas: ['software as a service', 'app', 'o365', 'salesforce'],
+  overlayCloud: ['overlay', 'vpn cloud', 'tunnel cloud'],
+  server: ['compute', 'vm', 'host server'],
+  apps: ['application', 'app server', 'workload'],
+  database: ['db', 'data', 'sql', 'storage'],
+  host: ['user', 'endpoint', 'pc', 'laptop', 'client'],
+  text: ['label', 'note', 'annotation', 'caption'],
+};
+
 function titleCase(s: string): string {
   return s
     .replace(/^shape:/, '')
@@ -197,6 +220,7 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
         category: shape ? 'Shape' : (NODE_CATEGORY[type] ?? 'Other'),
         custom: false,
         fields,
+        ...(NODE_KEYWORDS[type] ? { keywords: NODE_KEYWORDS[type] } : {}),
       } satisfies NodeTypeInfo,
     ];
   }),
@@ -437,6 +461,27 @@ export function nodeCatalog(
     ...Object.values(STOCK_NODE_CATALOG),
     ...customNodes.map(customNodeInfo),
   ];
+}
+
+/**
+ * Filter the node library by a free-text query (Phase 4). Matches the query's
+ * whitespace-separated terms (AND) against each type's type/label/category and
+ * search aliases, case-insensitively. An empty query returns the full catalog
+ * unchanged — so callers can use it as the single source of palette entries.
+ */
+export function filterNodeCatalog(
+  query: string,
+  customNodes: CustomNodeSpec[] = [],
+): NodeTypeInfo[] {
+  const all = nodeCatalog(customNodes);
+  const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return all;
+  return all.filter((info) => {
+    const hay = [info.type, info.label, info.category, ...(info.keywords ?? [])]
+      .join(' ')
+      .toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  });
 }
 
 /** All link types. */

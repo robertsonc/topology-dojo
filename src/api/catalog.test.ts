@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import {
   nodeCatalog,
+  filterNodeCatalog,
   linkCatalog,
   getNodeType,
   getLinkType,
@@ -61,6 +62,33 @@ describe('capability catalog', () => {
     );
     const cloud = getNodeType('cloud')!;
     expect(cloud.fields.some((f) => f.key === 'innerClouds')).toBe(true);
+  });
+
+  it('searches the node library by type, label, category, and aliases (Phase 4)', () => {
+    const types = (q: string): string[] =>
+      filterNodeCatalog(q).map((n) => n.type);
+    // Empty query → the whole catalog, unchanged.
+    expect(filterNodeCatalog('').length).toBe(nodeCatalog().length);
+    // By type / label substring.
+    expect(types('firewall')).toContain('firewall');
+    // By alias ("fw" is not in the type/label — it's a keyword).
+    expect(types('fw')).toContain('firewall');
+    // By category ("Security" groups firewall + idcard).
+    const sec = types('security');
+    expect(sec).toContain('firewall');
+    expect(sec).toContain('idcard');
+    // Multi-term AND narrows the result.
+    expect(types('cloud aws')).toContain('cloud');
+    // Case-insensitive; a nonsense query yields nothing.
+    expect(types('ROUTER')).toContain('router');
+    expect(filterNodeCatalog('zzzznotathing')).toEqual([]);
+  });
+
+  it('includes custom node types in search results', () => {
+    const custom = [{ ...defaultSpec(), typeName: 'sensor' }];
+    expect(filterNodeCatalog('sensor', custom).map((n) => n.type)).toContain(
+      'sensor',
+    );
   });
 
   it('describes every annotation kind (zones / flow paths / markers)', () => {
