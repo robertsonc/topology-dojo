@@ -1,0 +1,125 @@
+{
+  "title": "EdgeHA — BEFORE (manual-anchor workaround)",
+  "pages": [
+    {
+      "id": "pmqrg06dr0",
+      "name": "Frame 1",
+      "viewBox": "0 0 1050 700",
+      "nodes": [
+        {
+          "id": "nmqsycoja0",
+          "type": "ec",
+          "x": 220,
+          "y": 260,
+          "label": "BR1-01"
+        },
+        {
+          "id": "nmqsyd1b11",
+          "type": "ec",
+          "x": 400,
+          "y": 260,
+          "label": "BR1-01"
+        },
+        {
+          "id": "nmqsyehwm2",
+          "type": "cloud",
+          "x": 220,
+          "y": 60,
+          "label": "INET A",
+          "innerClouds": "left",
+          "labelColor": "#deb146",
+          "color": "#deb146",
+          "sublabel": "ISP"
+        },
+        {
+          "id": "nmqsyenx43",
+          "type": "cloud",
+          "x": 400,
+          "y": 60,
+          "label": "INET B",
+          "innerClouds": "right",
+          "labelColor": "#d25f4b",
+          "color": "#d25f4b"
+        }
+      ],
+      "links": [
+        {
+          "id": "lmqsyx54x8",
+          "type": "flow",
+          "from": "amqsypd910",
+          "to": "amqsyvc4ed",
+          "color": "#deb146",
+          "fromLabel": ""
+        },
+        {
+          "id": "lmqsz2iuvc",
+          "type": "flow",
+          "from": "amqsz1ptxt",
+          "to": "amqsyuwmdc",
+          "color": "#d25f4b"
+        },
+        {
+          "id": "lmqszkk5mf",
+          "type": "flow",
+          "from": "amqsyu3qt9",
+          "to": "amqsyyqoks",
+          "lineStyle": "curved",
+          "waypoints": [{ "x": 220, "y": 240 }],
+          "color": "#deb146"
+        },
+        {
+          "id": "lmqszlbikg",
+          "type": "flow",
+          "from": "amqsyulada",
+          "to": "amqszbr88v",
+          "lineStyle": "curved",
+          "waypoints": [{ "x": 400, "y": 240 }],
+          "color": "#d25f4b"
+        },
+        {
+          "id": "lmqszsbx0k",
+          "type": "flow",
+          "from": "amqszqu7yw",
+          "to": "amqszbr88v",
+          "color": "#d25f4b"
+        },
+        {
+          "id": "lmqszt0pjm",
+          "type": "flow",
+          "from": "amqszrno611",
+          "to": "amqsyyqoks",
+          "color": "#deb146"
+        }
+      ],
+      "anchors": [
+        { "id": "amqsypd910", "x": 200, "y": 100 },
+        { "id": "amqsyu3qt9", "x": 220, "y": 100 },
+        { "id": "amqsyulada", "x": 400, "y": 100 },
+        { "id": "amqsyuwmdc", "x": 420, "y": 100 },
+        { "id": "amqsyvc4ed", "x": 200, "y": 238 },
+        { "id": "amqsyyqoks", "x": 263, "y": 251 },
+        { "id": "amqsz1ptxt", "x": 420, "y": 238 },
+        { "id": "amqszbr88v", "x": 360, "y": 251 },
+        { "id": "amqszqu7yw", "x": 263, "y": 258 },
+        { "id": "amqszrno611", "x": 360, "y": 259 }
+      ],
+      "zones": [
+        {
+          "id": "zmqszwg620",
+          "label": "BR1",
+          "nodes": ["nmqsycoja0", "nmqsyd1b11"],
+          "color": "#01a982",
+          "borderStyle": "solid",
+          "padding": 2,
+          "labelAlign": "center",
+          "sublabel": "Edge HA",
+          "description": "branch 1"
+        }
+      ],
+      "flowPaths": [],
+      "policyMarkers": []
+    }
+  ],
+  "customNodes": [],
+  "legend": { "show": false }
+}
