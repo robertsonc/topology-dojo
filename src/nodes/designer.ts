@@ -14,7 +14,25 @@ import {
 } from './data.js';
 import { defaultSpec, type CustomNodeSpec } from './spec.js';
 import { renderCustomNode } from './render.js';
+import { nodeSpecToCode } from './codegen.js';
 import { engineDefs } from '../vendor/topology-ds.js';
+
+/** Clipboard fallback for browsers/contexts without navigator.clipboard. */
+function fallbackCopy(text: string, done: (ok: boolean) => void): void {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    done(ok);
+  } catch {
+    done(false);
+  }
+}
 
 function esc(s: string): string {
   return String(s).replace(/[<>&"]/g, (c) =>
@@ -78,6 +96,7 @@ export function openNodeDesigner(
         <input class="nd-name" id="nd-name" value="${esc(spec.typeName)}" placeholder="type name"/>
         <span class="nd-spacer"></span>
         <button class="nd-btn" id="nd-cancel">Cancel</button>
+        <button class="nd-btn" id="nd-code" title="Copy a self-contained registerNodeType() snippet">Copy as code</button>
         <button class="nd-btn primary" id="nd-save">Save</button>
       </div>
       <div class="nd-body">
@@ -216,6 +235,24 @@ export function openNodeDesigner(
   $('#nd-cancel').addEventListener('click', close);
   root.addEventListener('click', (e) => {
     if (e.target === root) close(); // click backdrop
+  });
+  // Copy-as-code (1.4): a self-contained registerNodeType() snippet for the
+  // current design, copied to the clipboard. Save-into-document is unchanged.
+  $<HTMLButtonElement>('#nd-code').addEventListener('click', () => {
+    const btn = $<HTMLButtonElement>('#nd-code');
+    const named = { ...spec, typeName: spec.typeName.trim() || 'myNode' };
+    const code = nodeSpecToCode(named);
+    const done = (ok: boolean): void => {
+      btn.textContent = ok ? '✓ Copied' : 'Copy failed';
+      setTimeout(() => (btn.textContent = 'Copy as code'), 1400);
+    };
+    const clip = navigator.clipboard;
+    if (clip?.writeText)
+      clip.writeText(code).then(
+        () => done(true),
+        () => fallbackCopy(code, done),
+      );
+    else fallbackCopy(code, done);
   });
   $('#nd-save').addEventListener('click', () => {
     spec.typeName = spec.typeName.trim() || 'myNode';
