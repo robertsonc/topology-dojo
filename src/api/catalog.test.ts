@@ -91,6 +91,22 @@ describe('capability catalog', () => {
     );
   });
 
+  it('exposes link endpoint ports with friendly side labels (A.5)', () => {
+    const fromSide = getLinkType('line')!.fields.find(
+      (f) => f.key === 'fromPort',
+    )!;
+    expect(fromSide.label).toBe('From side');
+    // The stored values stay compass codes (engine + persistence depend on it)…
+    expect(fromSide.options).toContain('n');
+    expect(fromSide.options).toContain('s');
+    // …but the dropdown shows human labels.
+    expect(fromSide.optionLabels?.n).toBe('Top');
+    expect(fromSide.optionLabels?.s).toBe('Bottom');
+    expect(fromSide.optionLabels?.e).toBe('Right');
+    expect(fromSide.optionLabels?.w).toBe('Left');
+    expect(fromSide.optionLabels?.['']).toMatch(/auto/i);
+  });
+
   it('describes every annotation kind (zones / flow paths / markers)', () => {
     const kinds = new Set(annotationCatalog().map((a) => a.kind));
     expect(kinds).toEqual(new Set(['zone', 'flowPath', 'policyMarker']));
