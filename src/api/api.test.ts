@@ -127,6 +127,41 @@ describe('validateDocument', () => {
     expect(validateDocument(doc)).toEqual([]);
   });
 
+  it('warns on stacked and orphan anchors (anchor lint)', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'n', type: 'ec', x: 280, y: 240 })
+      .anchor(280, 140, 'a-used')
+      .anchor(280, 140, 'a-stacked')
+      .anchor(900, 900, 'a-orphan')
+      .link({ id: 'l', type: 'line', from: 'a-used', to: 'n' })
+      .build();
+    const probs = validateDocument(doc);
+    // a-stacked sits on a-used → stacked warning.
+    expect(
+      probs.some((p) => p.level === 'warning' && /stacked/.test(p.message)),
+    ).toBe(true);
+    // a-stacked and a-orphan are referenced by no link → orphan warnings.
+    expect(
+      probs.filter((p) => /orphan anchor/.test(p.message)).length,
+    ).toBeGreaterThanOrEqual(2);
+    // a-used is referenced, so it is not flagged orphan.
+    expect(probs.some((p) => /a-used.*orphan/.test(p.message))).toBe(false);
+    // All anchor lint is advisory — it never blocks rendering.
+    expect(isValid(doc)).toBe(true);
+  });
+
+  it('does not flag an anchor used only by a flow path as orphan', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'n', type: 'ec', x: 0, y: 0 })
+      .anchor(100, 100, 'wp')
+      .flowPath({ id: 'f', waypoints: ['n', 'wp'] })
+      .build();
+    const probs = validateDocument(doc);
+    expect(probs.some((p) => /orphan anchor/.test(p.message))).toBe(false);
+  });
+
   it('errors when a policy marker targets a missing node', () => {
     const doc = createDocument()
       .page()

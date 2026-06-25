@@ -144,10 +144,34 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       checkLayer(n, `${at} node "${n.id}"`);
       checkSource(n, `${at} node "${n.id}"`);
     }
+    const anchorAt = new Map<string, string>();
     for (const a of page.anchors) {
       claim(a.id, 'anchor');
       endpoints.add(a.id);
+      // Two anchors stacked at the exact same point are almost always an
+      // accidental double-place — one is invariably the orphan (warned below).
+      const key = `${a.x},${a.y}`;
+      const prior = anchorAt.get(key);
+      if (prior)
+        warn(
+          `${at} anchor "${a.id}"`,
+          `stacked on anchor "${prior}" at the same point (${key})`,
+        );
+      else anchorAt.set(key, a.id);
     }
+    const anchorRefs = new Set<string>();
+    for (const l of page.links) {
+      if (l.from) anchorRefs.add(l.from);
+      if (l.to) anchorRefs.add(l.to);
+    }
+    for (const f of page.flowPaths ?? [])
+      for (const w of f.waypoints ?? []) anchorRefs.add(w);
+    for (const a of page.anchors)
+      if (!anchorRefs.has(a.id))
+        warn(
+          `${at} anchor "${a.id}"`,
+          'orphan anchor — no link or flow path references it',
+        );
     for (const l of page.links) {
       claim(l.id, 'link');
       if (!isLinkType(l.type))
