@@ -75,6 +75,33 @@ describe('headless render (Node, no browser)', () => {
     expect(svg).toContain('L568,216 L568,384');
   });
 
+  it('orthogonal auto-route detours around a node between the endpoints (A.7)', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 300 })
+      .node({ id: 'b', type: 'ec', x: 700, y: 300 })
+      .node({ id: 'c', type: 'ec', x: 450, y: 300 }) // squarely between a and b
+      .link({
+        id: 'l',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        lineStyle: 'orthogonal',
+      })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    // The naive elbow runs straight along y=300 through c; the router instead
+    // detours to a clear lane (y=263, above c's padded box) with right angles.
+    const path = svg.match(/d="(M232,300[^"]*)"/);
+    expect(path).toBeTruthy();
+    const d = path![1]!;
+    // It leaves the y=300 row to clear c, and every turn is axis-aligned (no
+    // diagonal L would share an x or y with its predecessor at each corner).
+    expect(d).toContain('L232,263');
+    expect(d).toContain('L668,263');
+    expect(/[QC]/.test(d)).toBe(false); // right angles only, no curves
+  });
+
   it('fans out parallel links between the same node pair', () => {
     const pair = (ids: string[]) => {
       const d = createDocument()

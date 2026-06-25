@@ -1217,6 +1217,85 @@ class TopologyDesigner {
   }
 
   /**
+   * Does the axis-aligned-or-diagonal segment a→b enter the padded box?
+   * (Liang–Barsky clip against the inflated AABB.)
+   */
+  _segHitsBox(a, b, ab, pad) {
+    const left = ab.x - pad, top = ab.y - pad;
+    const right = ab.x + ab.w + pad, bottom = ab.y + ab.h + pad;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    let tMin = 0, tMax = 1;
+    const edges = [
+      { p: -dx, q: a.x - left },
+      { p: dx, q: right - a.x },
+      { p: -dy, q: a.y - top },
+      { p: dy, q: bottom - a.y },
+    ];
+    for (const { p, q } of edges) {
+      if (Math.abs(p) < 1e-8) {
+        if (q < 0) return false;
+      } else {
+        const t = q / p;
+        if (p < 0) { if (t > tMax) return false; tMin = Math.max(tMin, t); }
+        else { if (t < tMin) return false; tMax = Math.min(tMax, t); }
+      }
+    }
+    return tMin <= tMax;
+  }
+
+  /**
+   * Smart orthogonal routing (A.7). Produce an axis-aligned right-angle path
+   * from→to that routes AROUND obstructing nodes instead of through them. Tries
+   * the two simple L-elbows first; if both are blocked, detours via a clear lane
+   * above / below / left / right of the obstacles. Falls back to the H-elbow when
+   * nothing is clear (dense diagrams) rather than failing.
+   *
+   * @returns {string} an SVG path of `M`/`L` segments
+   */
+  _orthogonalRoute(from, to, linkId) {
+    const linkCfg = this._links.get(linkId);
+    const fromId = linkCfg && linkCfg.from, toId = linkCfg && linkCfg.to;
+    const obstacles = [];
+    for (const [nodeId, nodeCfg] of this._nodes) {
+      if (nodeId === fromId || nodeId === toId) continue;
+      const showPhase = this._findShowPhase(nodeId);
+      if (!showPhase) continue;
+      if (this.step < this._stepIndex[showPhase.stepId]) continue;
+      obstacles.push(this._getNodeAABB(nodeCfg));
+    }
+    const pad = 12;
+    const clear = (pts) => {
+      for (let i = 0; i < pts.length - 1; i++)
+        for (const ab of obstacles)
+          if (this._segHitsBox(pts[i], pts[i + 1], ab, pad)) return false;
+      return true;
+    };
+    const toPath = (pts) =>
+      'M' + pts.map((p) => `${p.x},${p.y}`).join(' L');
+
+    const hv = [from, { x: to.x, y: from.y }, to]; // horizontal then vertical
+    const vh = [from, { x: from.x, y: to.y }, to]; // vertical then horizontal
+    if (clear(hv)) return toPath(hv);
+    if (clear(vh)) return toPath(vh);
+
+    // Both elbows blocked → detour through a clear lane around the obstacles.
+    if (obstacles.length) {
+      const minX = Math.min(...obstacles.map((o) => o.x)) - pad - 8;
+      const maxX = Math.max(...obstacles.map((o) => o.x + o.w)) + pad + 8;
+      const minY = Math.min(...obstacles.map((o) => o.y)) - pad - 8;
+      const maxY = Math.max(...obstacles.map((o) => o.y + o.h)) + pad + 8;
+      const lanes = [
+        [from, { x: from.x, y: minY }, { x: to.x, y: minY }, to], // over the top
+        [from, { x: from.x, y: maxY }, { x: to.x, y: maxY }, to], // under
+        [from, { x: minX, y: from.y }, { x: minX, y: to.y }, to], // around left
+        [from, { x: maxX, y: from.y }, { x: maxX, y: to.y }, to], // around right
+      ];
+      for (const lane of lanes) if (clear(lane)) return toPath(lane);
+    }
+    return toPath(hv); // best effort
+  }
+
+  /**
    * Clear the route cache (called when nodes move or topology changes).
    */
   _clearRouteCache() {
@@ -3471,9 +3550,15 @@ class TopologyDesigner {
     const hasWaypoints = linkCfg.waypoints && linkCfg.waypoints.length > 0;
     const waypointPath = hasWaypoints
       ? this._buildLinkPath(from, to, linkCfg.waypoints, linkCfg.lineStyle, linkCfg.cornerRadius)
-      : (linkCfg.lineStyle === 'orthogonal' || linkCfg.lineStyle === 'curved')
-        ? this._buildLinkPath(from, to, [], linkCfg.lineStyle, linkCfg.cornerRadius)
-        : null;
+      : linkCfg.lineStyle === 'orthogonal'
+        ? // A.7: auto-route orthogonal links around obstructing nodes with right
+          // angles (no manual waypoints). Anchor endpoints keep the naive L.
+          this._anchors.has(linkCfg.from) || this._anchors.has(linkCfg.to)
+          ? this._buildLinkPath(from, to, [], 'orthogonal', linkCfg.cornerRadius)
+          : this._orthogonalRoute(from, to, linkCfg.id)
+        : linkCfg.lineStyle === 'curved'
+          ? this._buildLinkPath(from, to, [], 'curved', linkCfg.cornerRadius)
+          : null;
 
     // Smart Link Routing (Goal 1c): check for routed path (only when no explicit
     // waypoints). Anchor endpoints are deliberate user-placed points (bends /
