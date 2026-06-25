@@ -169,7 +169,10 @@ app.innerHTML = `
     </div>
     <div class="inspector-wrap" id="inspector-wrap">
       <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ▸</button>
-      <aside class="inspector" id="inspector"></aside>
+      <div class="inspector-body" id="inspector-body">
+        <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
+        <aside class="inspector" id="inspector"></aside>
+      </div>
     </div>
     <div class="minimap-wrap" id="minimap-wrap">
       <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">hide ▾</button>
@@ -747,6 +750,64 @@ inspectorToggle.addEventListener('click', () =>
   setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed')),
 );
 setInspectorCollapsed(localStorage.getItem('tds-inspector-collapsed') === '1');
+
+/* Keep the properties panel inside the stage — its bottom (the annotations /
+ * zones list) must never be clipped behind the filmstrip — and let the user
+ * resize its width via a left-edge grip (persisted). */
+const stageEl = app.querySelector<HTMLElement>('.stage')!;
+const inspectorBody = app.querySelector<HTMLElement>('#inspector-body')!;
+const inspectorResizer = app.querySelector<HTMLElement>('#inspector-resizer')!;
+const INSPECTOR_W_KEY = 'tds-inspector-width';
+const INSPECTOR_W_MIN = 200;
+const INSPECTOR_W_MAX = 560;
+
+/** Cap the panel height to the visible stage so it scrolls instead of clipping. */
+function fitInspector(): void {
+  const sr = stageEl.getBoundingClientRect();
+  const br = inspectorBody.getBoundingClientRect();
+  const max = Math.max(140, Math.floor(sr.bottom - br.top - 12));
+  inspectorBody.style.maxHeight = `${max}px`;
+}
+try {
+  const w = Number(localStorage.getItem(INSPECTOR_W_KEY));
+  if (w >= INSPECTOR_W_MIN && w <= INSPECTOR_W_MAX)
+    inspector.style.width = `${w}px`;
+} catch {
+  /* storage unavailable — use the default width */
+}
+// Refit whenever the stage resizes (viewport, toolbar wrap, filmstrip growth).
+new ResizeObserver(fitInspector).observe(stageEl);
+window.addEventListener('resize', fitInspector);
+fitInspector();
+
+// Left-edge drag-to-resize (dragging left widens the right-docked panel).
+inspectorResizer.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  const startX = e.clientX;
+  const startW = inspector.offsetWidth;
+  inspectorResizer.classList.add('active');
+  inspectorResizer.setPointerCapture(e.pointerId);
+  const onMove = (ev: PointerEvent): void => {
+    const w = Math.min(
+      INSPECTOR_W_MAX,
+      Math.max(INSPECTOR_W_MIN, startW + (startX - ev.clientX)),
+    );
+    inspector.style.width = `${w}px`;
+  };
+  const onUp = (): void => {
+    inspectorResizer.classList.remove('active');
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    try {
+      localStorage.setItem(INSPECTOR_W_KEY, String(inspector.offsetWidth));
+    } catch {
+      /* ignore */
+    }
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+});
+
 function onLinkSelectChange(_linkId: string | null): void {
   renderInspector();
 }

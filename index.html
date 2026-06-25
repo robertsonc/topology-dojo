@@ -406,9 +406,33 @@
         align-items: flex-end;
         gap: 4px;
       }
+      /* The inspector + its left-edge resize grip sit in a right-aligned row, so
+         dragging the grip leftward widens the panel into the canvas. */
+      .inspector-body {
+        display: flex;
+        align-items: stretch;
+        /* Bounded to the stage by JS (fitInspector); CSS fallback keeps it clear
+           of the header/filmstrip/statusbar before JS runs. */
+        max-height: calc(100vh - 150px);
+        min-height: 0;
+      }
+      .inspector-resizer {
+        flex: none;
+        width: 7px;
+        cursor: ew-resize;
+        border-radius: 8px 0 0 8px;
+        background: transparent;
+        transition: background 0.12s;
+      }
+      .inspector-resizer:hover,
+      .inspector-resizer.active {
+        background: rgba(1, 169, 130, 0.35);
+      }
       .inspector {
         width: 220px;
-        max-height: calc(100vh - 84px);
+        min-width: 200px;
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
         background: rgba(34, 37, 46, 0.94);
         border: 1px solid var(--border);
@@ -420,7 +444,7 @@
         gap: 10px;
       }
       .inspector[hidden],
-      .inspector-wrap.collapsed .inspector {
+      .inspector-wrap.collapsed .inspector-body {
         display: none;
       }
       .inspector-toggle {
