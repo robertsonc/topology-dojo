@@ -102,6 +102,33 @@ describe('headless render (Node, no browser)', () => {
     expect(/[QC]/.test(d)).toBe(false); // right angles only, no curves
   });
 
+  it('renders link metadata on the wire only when showMeta is set (B.2)', () => {
+    const build = (meta: Record<string, unknown>) =>
+      renderDocumentToSVG(
+        createDocument()
+          .page()
+          .node({ id: 'a', type: 'ec', x: 200, y: 300 })
+          .node({ id: 'b', type: 'ec', x: 700, y: 300 })
+          .link({ id: 'l', type: 'line', from: 'a', to: 'b', ...meta })
+          .build(),
+      );
+    const fields = {
+      vlan: '10',
+      subnet: '10.0.0.0/24',
+      bandwidth: '1G',
+      transport: 'MPLS',
+    };
+    // Metadata present but not toggled on → nothing on the wire.
+    const off = build(fields);
+    expect(off).not.toContain('tds-wire-meta');
+    // Toggled on → a compact chip listing the populated fields.
+    const on = build({ ...fields, showMeta: true });
+    expect(on).toContain('tds-wire-meta');
+    expect(on).toContain('VLAN 10 · 10.0.0.0/24 · 1G · MPLS');
+    // showMeta on but no fields populated → still nothing (non-destructive).
+    expect(build({ showMeta: true })).not.toContain('tds-wire-meta');
+  });
+
   it('fans out parallel links between the same node pair', () => {
     const pair = (ids: string[]) => {
       const d = createDocument()

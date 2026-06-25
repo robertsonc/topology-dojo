@@ -3438,6 +3438,39 @@ class TopologyDesigner {
   }
 
   /**
+   * Render first-class link metadata (B.2) as a compact chip on the wire:
+   * VLAN / subnet / bandwidth / transport, whichever are set, when the link's
+   * `showMeta` flag is on. Non-destructive — independent of the link's own
+   * label and the endpoint (interface) labels. Designed to be machine-populated
+   * by a future data feed (stable per-field properties).
+   */
+  _renderWireMeta(x1, y1, x2, y2, linkCfg, op) {
+    if (!linkCfg.showMeta) return '';
+    const parts = [];
+    if (linkCfg.vlan != null && linkCfg.vlan !== '')
+      parts.push(`VLAN ${linkCfg.vlan}`);
+    if (linkCfg.subnet) parts.push(String(linkCfg.subnet));
+    if (linkCfg.bandwidth) parts.push(String(linkCfg.bandwidth));
+    if (linkCfg.transport) parts.push(String(linkCfg.transport));
+    if (!parts.length) return '';
+    const text = parts.join(' · ');
+    const color = linkCfg.color || '#01a982';
+    const mx = (x1 + x2) / 2,
+      my = (y1 + y2) / 2;
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    // Float the chip just off the wire (perpendicular), opposite the usual
+    // label side so the two don't collide.
+    const px = Math.sin(a) * 15,
+      py = -Math.cos(a) * 15;
+    const w = text.length * 5.4 + 14;
+    return (
+      `<g opacity="${op}" class="tds-wire-meta">` +
+      `<rect x="${mx + px - w / 2}" y="${my + py - 9}" width="${w}" height="16" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.08)" stroke-width=".5"/>` +
+      `<text x="${mx + px}" y="${my + py + 2}" text-anchor="middle" fill="${color}" font-size="8" font-weight="600" opacity=".95">${_esc(text)}</text></g>`
+    );
+  }
+
+  /**
    * Render a link by resolving its from/to positions and calling the right renderer.
    */
   /**
@@ -3651,6 +3684,10 @@ class TopologyDesigner {
     // Append endpoint (port) labels if configured
     if (svg && (linkCfg.fromLabel || linkCfg.toLabel)) {
       svg += this._renderEndpointLabels(from.x, from.y, to.x, to.y, linkCfg, op);
+    }
+    // Append on-the-wire metadata chip (B.2) if enabled.
+    if (svg && linkCfg.showMeta) {
+      svg += this._renderWireMeta(from.x, from.y, to.x, to.y, linkCfg, op);
     }
 
     return svg;
