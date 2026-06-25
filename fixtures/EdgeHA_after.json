@@ -1,0 +1,103 @@
+{
+  "title": "EdgeHA — AFTER (no anchors; relies on A.4 boundary attachment)",
+  "pages": [
+    {
+      "id": "pmqrg06dr0",
+      "name": "Frame 1",
+      "viewBox": "0 0 1050 700",
+      "nodes": [
+        {
+          "id": "nmqsycoja0",
+          "type": "ec",
+          "x": 220,
+          "y": 260,
+          "label": "BR1-01"
+        },
+        {
+          "id": "nmqsyd1b11",
+          "type": "ec",
+          "x": 400,
+          "y": 260,
+          "label": "BR1-02"
+        },
+        {
+          "id": "nmqsyehwm2",
+          "type": "cloud",
+          "x": 220,
+          "y": 60,
+          "label": "INET A",
+          "innerClouds": "left",
+          "labelColor": "#deb146",
+          "color": "#deb146",
+          "sublabel": "ISP"
+        },
+        {
+          "id": "nmqsyenx43",
+          "type": "cloud",
+          "x": 400,
+          "y": 60,
+          "label": "INET B",
+          "innerClouds": "right",
+          "labelColor": "#d25f4b",
+          "color": "#d25f4b"
+        }
+      ],
+      "links": [
+        {
+          "id": "f_a1",
+          "type": "flow",
+          "from": "nmqsyehwm2",
+          "to": "nmqsycoja0",
+          "color": "#deb146"
+        },
+        {
+          "id": "f_a2",
+          "type": "flow",
+          "from": "nmqsyehwm2",
+          "to": "nmqsyd1b11",
+          "color": "#deb146"
+        },
+        {
+          "id": "f_b1",
+          "type": "flow",
+          "from": "nmqsyenx43",
+          "to": "nmqsycoja0",
+          "color": "#d25f4b"
+        },
+        {
+          "id": "f_b2",
+          "type": "flow",
+          "from": "nmqsyenx43",
+          "to": "nmqsyd1b11",
+          "color": "#d25f4b"
+        },
+        {
+          "id": "f_ha",
+          "type": "line",
+          "from": "nmqsycoja0",
+          "to": "nmqsyd1b11",
+          "color": "#01a982",
+          "label": "HA"
+        }
+      ],
+      "anchors": [],
+      "zones": [
+        {
+          "id": "zmqszwg620",
+          "label": "BR1",
+          "nodes": ["nmqsycoja0", "nmqsyd1b11"],
+          "color": "#01a982",
+          "borderStyle": "solid",
+          "padding": 2,
+          "labelAlign": "center",
+          "sublabel": "Edge HA",
+          "description": "branch 1"
+        }
+      ],
+      "flowPaths": [],
+      "policyMarkers": []
+    }
+  ],
+  "customNodes": [],
+  "legend": { "show": false }
+}
