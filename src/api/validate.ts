@@ -8,6 +8,7 @@
  */
 import type { TopologyDocument } from '../pages/model.js';
 import { isBuiltinNodeType, isLinkType } from './builtins.js';
+import { isStockNodeType } from '../nodes/stock.js';
 import { LAYER_KINDS } from './layers.js';
 import {
   getAnnotationType,
@@ -43,7 +44,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     customTypes.add(spec.typeName);
   });
   const knownNodeType = (t: string): boolean =>
-    isBuiltinNodeType(t) || customTypes.has(t);
+    isBuiltinNodeType(t) || isStockNodeType(t) || customTypes.has(t);
 
   // Document layers: unique non-empty ids; `kind` from the known vocabulary.
   const layerIds = new Set<string>();

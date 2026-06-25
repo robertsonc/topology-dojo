@@ -31,6 +31,7 @@ import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
 import { exportPagePNG, exportPageSVG } from './editor/export.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
+import { STOCK_NODE_SPECS } from './nodes/stock.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
 import { validateDocument, type Problem } from './api/validate.js';
@@ -50,7 +51,9 @@ import {
 
 // Restore the last session from localStorage, else start from the sample.
 const doc: TopologyDocument = loadLocal() ?? sampleDocument();
-// Register the document's custom node types with the engine before any render.
+// Register the shipped cloud-native types, then the document's custom types,
+// with the engine before any render.
+registerCustomNodes(STOCK_NODE_SPECS);
 registerCustomNodes(doc.customNodes);
 let current = 0;
 
