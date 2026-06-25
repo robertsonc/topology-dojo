@@ -33,7 +33,8 @@ import { buildTemplate, listTemplates } from './api/templates.js';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
-import { validateDocument } from './api/validate.js';
+import { validateDocument, type Problem } from './api/validate.js';
+import { analyzeLayout } from './api/layout.js';
 import { genId } from './api/builder.js';
 import {
   getAnnotationType,
@@ -150,6 +151,10 @@ app.innerHTML = `
       <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">hide ▾</button>
       <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
+    <div class="problems-wrap collapsed" id="problems-wrap">
+      <button class="problems-toggle" id="problems-toggle" title="Show problems (validation + layout)">✓ ok</button>
+      <div class="problems" id="problems"></div>
+    </div>
   </div>
 
   <footer class="filmstrip" id="filmstrip"></footer>
@@ -175,6 +180,7 @@ function onDocChange(): void {
   renderFilmstrip();
   renderStatus();
   renderMinimap();
+  renderProblems();
   markDirty();
 }
 
@@ -235,6 +241,7 @@ function loadDoc(next: TopologyDocument): void {
   buildPalette();
   editor.setPage(doc.pages[current]!);
   renderFilmstrip();
+  renderProblems();
   markDirty();
 }
 
@@ -476,7 +483,72 @@ minimapToggle.addEventListener('click', () =>
 );
 setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') === '1');
 
+/* Problems panel — runs the same checks as the MCP `validate_topology`
+ * (semantic validation + layout analysis) live in the studio, so overlapping
+ * zones, off-canvas nodes, dangling refs, etc. surface as you edit instead of
+ * only at load time. Click a problem to jump to the node it references. */
+const problemsWrap = app.querySelector<HTMLDivElement>('#problems-wrap')!;
+const problemsToggle =
+  app.querySelector<HTMLButtonElement>('#problems-toggle')!;
+const problemsPanel = app.querySelector<HTMLDivElement>('#problems')!;
+
+/** First quoted token in a problem that names a node on the current page. */
+function problemNodeId(p: Problem): string | undefined {
+  const ids = new Set(editor.page.nodes.map((n) => n.id));
+  for (const m of `${p.where} ${p.message}`.matchAll(/"([^"]+)"/g))
+    if (ids.has(m[1]!)) return m[1];
+  return undefined;
+}
+
+function renderProblems(): void {
+  if (!statusReady) return;
+  const problems = [...validateDocument(doc), ...analyzeLayout(doc)];
+  const errors = problems.filter((p) => p.level === 'error').length;
+  const warnings = problems.length - errors;
+
+  problemsWrap.classList.toggle('has-error', errors > 0);
+  problemsWrap.classList.toggle('has-warn', errors === 0 && warnings > 0);
+  problemsToggle.textContent = problems.length
+    ? `⚠ ${errors ? `${errors} error${errors > 1 ? 's' : ''}` : ''}${errors && warnings ? ', ' : ''}${warnings ? `${warnings} warning${warnings > 1 ? 's' : ''}` : ''}`
+    : '✓ ok';
+
+  if (!problems.length) {
+    problemsPanel.innerHTML = `<div class="prob-empty">No problems — validation and layout are clean.</div>`;
+    return;
+  }
+  problemsPanel.innerHTML = problems
+    .map((p, i) => {
+      const nodeId = problemNodeId(p);
+      return (
+        `<button class="prob prob-${p.level}"${nodeId ? ` data-prob-node="${esc(nodeId)}"` : ''} data-i="${i}">` +
+        `<span class="prob-dot"></span>` +
+        `<span class="prob-msg">${esc(p.message)}<span class="prob-where">${esc(p.where)}</span></span>` +
+        `</button>`
+      );
+    })
+    .join('');
+  problemsPanel
+    .querySelectorAll<HTMLButtonElement>('[data-prob-node]')
+    .forEach((b) =>
+      b.addEventListener('click', () => editor.focusNode(b.dataset.probNode!)),
+    );
+}
+
+function setProblemsCollapsed(collapsed: boolean): void {
+  problemsWrap.classList.toggle('collapsed', collapsed);
+  try {
+    localStorage.setItem('tds-problems-collapsed', collapsed ? '1' : '0');
+  } catch {
+    /* storage unavailable — fine, just don't persist */
+  }
+}
+problemsToggle.addEventListener('click', () =>
+  setProblemsCollapsed(!problemsWrap.classList.contains('collapsed')),
+);
+setProblemsCollapsed(localStorage.getItem('tds-problems-collapsed') !== '0');
+
 statusReady = true;
+renderProblems();
 
 /* Find / jump-to-element (Ctrl+F) — search nodes by label / id / type and jump. */
 let findEl: HTMLDivElement | null = null;
@@ -1520,6 +1592,7 @@ function gotoPage(i: number): void {
   current = i;
   editor.setPage(doc.pages[current]!);
   renderFilmstrip();
+  renderProblems();
 }
 
 function startRename(i: number, span: HTMLElement): void {
