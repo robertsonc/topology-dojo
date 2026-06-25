@@ -3615,8 +3615,27 @@ class TopologyDesigner {
       const wps = linkCfg.waypoints;
       const fromToward = wps && wps.length ? wps[0] : to;
       const toToward = wps && wps.length ? wps[wps.length - 1] : from;
-      from = this._attachEndpoint(linkCfg.from, from, fromToward, linkCfg.fromPort);
-      to = this._attachEndpoint(linkCfg.to, to, toToward, linkCfg.toPort);
+      const fromC = from, toC = to; // centres (post parallel-offset)
+      const fromA = this._attachEndpoint(linkCfg.from, from, fromToward, linkCfg.fromPort);
+      const toA = this._attachEndpoint(linkCfg.to, to, toToward, linkCfg.toPort);
+      // Degenerate guard: when two nodes are so close that the boundary insets
+      // (edge + 3px gap, or a pinned port) cross past each other, the trimmed
+      // segment reverses vs the centre→centre direction and the link draws
+      // backwards — a wide tunnel glow then collapses under the icons and looks
+      // like it vanished. Detect the reversal (no waypoints) and fall back to
+      // centre→centre so a short, correctly-oriented link still shows.
+      const reversed =
+        !(wps && wps.length) &&
+        (toC.x - fromC.x) * (toA.x - fromA.x) +
+          (toC.y - fromC.y) * (toA.y - fromA.y) <=
+          0;
+      if (reversed) {
+        from = fromC;
+        to = toC;
+      } else {
+        from = fromA;
+        to = toA;
+      }
     }
     const op = linkCfg.opacity != null ? linkCfg.opacity : Math.min(this._dimFor(linkCfg.from), this._dimFor(linkCfg.to));
     const color = linkCfg.color || '#01a982';
