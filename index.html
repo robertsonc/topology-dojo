@@ -153,6 +153,36 @@
           display: none;
         }
       }
+      /* Narrow viewports: let the toolbar wrap to rows instead of clipping, and
+         shrink the floating panels so the canvas stays usable. */
+      @media (max-width: 880px) {
+        .bar {
+          overflow-x: visible;
+          flex-wrap: wrap;
+          row-gap: 4px;
+        }
+        .bar-left,
+        .bar-right {
+          flex-wrap: wrap;
+        }
+      }
+      @media (max-width: 700px) {
+        .palette {
+          width: 108px;
+          padding: 8px;
+        }
+        .inspector {
+          width: 184px;
+          padding: 9px;
+        }
+        .minimap {
+          width: 140px;
+          height: 96px;
+        }
+        .problems {
+          max-width: calc(100vw - 24px);
+        }
+      }
       .saved {
         color: var(--muted);
         font-size: 10px;
@@ -532,6 +562,35 @@
       .anno-empty {
         font-size: 11px;
         line-height: 1.4;
+      }
+      /* Per-type collapsible section grouping the annotation rows. */
+      .anno-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .anno-group > summary.anno-group-h {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        list-style: none;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: var(--muted);
+        padding: 2px 0;
+      }
+      .anno-group > summary.anno-group-h::-webkit-details-marker {
+        display: none;
+      }
+      .anno-count {
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0 6px;
+        font-size: 10px;
+        color: var(--text);
       }
       details.anno {
         border: 1px solid var(--border);
