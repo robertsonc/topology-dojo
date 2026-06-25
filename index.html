@@ -941,6 +941,100 @@
         background: var(--border);
       }
 
+      /* Problems panel (bottom-left of the canvas) — live validation + layout. */
+      .problems-wrap {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        z-index: 7;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        max-width: min(360px, calc(100% - 24px));
+      }
+      .problems-toggle {
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--muted);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 3px 9px;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      }
+      .problems-wrap.has-warn .problems-toggle {
+        color: #e0a44a;
+        border-color: #e0a44a;
+      }
+      .problems-wrap.has-error .problems-toggle {
+        color: #fc6161;
+        border-color: #fc6161;
+      }
+      .problems {
+        max-height: 40vh;
+        overflow-y: auto;
+        background: rgba(34, 37, 46, 0.94);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        backdrop-filter: blur(8px);
+      }
+      .problems-wrap.collapsed .problems {
+        display: none;
+      }
+      .prob-empty {
+        font-size: 11px;
+        color: var(--muted);
+        padding: 4px 6px;
+      }
+      .prob {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        text-align: left;
+        background: none;
+        border: none;
+        border-radius: 5px;
+        padding: 4px 6px;
+        cursor: default;
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--text);
+      }
+      .prob[data-prob-node] {
+        cursor: pointer;
+      }
+      .prob[data-prob-node]:hover {
+        background: var(--panel2);
+      }
+      .prob-dot {
+        flex: none;
+        width: 7px;
+        height: 7px;
+        margin-top: 4px;
+        border-radius: 50%;
+      }
+      .prob-error .prob-dot {
+        background: #fc6161;
+      }
+      .prob-warning .prob-dot {
+        background: #e0a44a;
+      }
+      .prob-msg {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .prob-where {
+        color: var(--muted);
+        font-size: 10px;
+      }
+
       /* Minimap overview (bottom-right of the canvas), with a collapse toggle. */
       .minimap-wrap {
         position: absolute;
