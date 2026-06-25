@@ -42,6 +42,7 @@ import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
 import { genId } from './api/builder.js';
 import {
+  filterNodeCatalog,
   getAnnotationType,
   getLinkType,
   getNodeType,
@@ -147,7 +148,10 @@ app.innerHTML = `
   </header>
 
   <div class="stage">
-    <aside class="palette" id="palette"></aside>
+    <aside class="palette" id="palette">
+      <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
+      <div class="palette-list" id="palette-list"></div>
+    </aside>
     <div class="tds-root">
       <div class="tds-canvas-row">
         <div class="tds-canvas canvas-host">
@@ -1663,8 +1667,12 @@ function wireAnnotations(): void {
   });
 }
 
-/* Node palette — driven by the catalog; grouped by category. Click to add. */
-const palette = app.querySelector<HTMLElement>('#palette')!;
+/* Node palette — driven by the catalog; grouped by category. Click to add.
+ * A search box (Phase 4) filters the library live; the list re-renders into
+ * #palette-list while the search input itself persists (keeps focus/caret). */
+const paletteList = app.querySelector<HTMLElement>('#palette-list')!;
+const paletteSearch = app.querySelector<HTMLInputElement>('#palette-search')!;
+let paletteQuery = '';
 
 /** Add or replace a custom node type, re-register it, and refresh the UI. */
 function upsertCustomNode(spec: CustomNodeSpec): void {
@@ -1765,8 +1773,9 @@ function deleteStencil(id: string): void {
 }
 
 function buildPalette(): void {
+  const searching = paletteQuery.trim().length > 0;
   const byCat = new Map<string, NodeTypeInfo[]>();
-  for (const info of nodeCatalog(doc.customNodes)) {
+  for (const info of filterNodeCatalog(paletteQuery, doc.customNodes)) {
     const list = byCat.get(info.category) ?? [];
     list.push(info);
     byCat.set(info.category, list);
@@ -1786,18 +1795,34 @@ function buildPalette(): void {
         html += `<button class="pitem" data-type="ec" data-variant="axis" title="EC hosting the Axis SSE/ZTNA connector as a container">${nodePreviewSVG('ec', { variant: 'axis' })}<span class="plabel">EC + Axis Connector (container)</span></button>`;
     }
   }
-  html += `<button class="pitem design" id="pDesign">＋ design node</button>`;
 
   // Stencils (C.3): reusable named groups. Each is a click-to-stamp entry with
-  // a thumbnail of the whole sub-assembly; the ＋ button saves the selection.
-  html += `<div class="palette-h">Stencils</div>`;
-  for (const st of doc.stencils ?? []) {
-    html += `<div class="pcustom"><button class="pitem" data-stencil="${esc(st.id)}" title="Stamp '${esc(st.name)}'">${stencilPreviewSVG(st)}<span class="plabel">${esc(st.name)}</span></button><button class="pedit" data-stencil-del="${esc(st.id)}" title="Delete stencil">✕</button></div>`;
+  // a thumbnail of the whole sub-assembly. Filtered by the search query too.
+  const stencils = (doc.stencils ?? []).filter(
+    (st) =>
+      !searching ||
+      st.name.toLowerCase().includes(paletteQuery.trim().toLowerCase()),
+  );
+  if (stencils.length) {
+    html += `<div class="palette-h">Stencils</div>`;
+    for (const st of stencils) {
+      html += `<div class="pcustom"><button class="pitem" data-stencil="${esc(st.id)}" title="Stamp '${esc(st.name)}'">${stencilPreviewSVG(st)}<span class="plabel">${esc(st.name)}</span></button><button class="pedit" data-stencil-del="${esc(st.id)}" title="Delete stencil">✕</button></div>`;
+    }
   }
-  html += `<button class="pitem design" id="pSaveStencil" title="Save the selected node(s) as a reusable group">＋ save stencil</button>`;
-  palette.innerHTML = html;
 
-  palette.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) =>
+  if (searching && byCat.size === 0 && stencils.length === 0) {
+    html += `<div class="palette-empty">No nodes match “${esc(paletteQuery.trim())}”</div>`;
+  }
+
+  // The library actions (design a type, save a stencil) only show when not
+  // mid-search — a filtered list is for picking, not authoring.
+  if (!searching) {
+    html += `<button class="pitem design" id="pDesign">＋ design node</button>`;
+    html += `<button class="pitem design" id="pSaveStencil" title="Save the selected node(s) as a reusable group">＋ save stencil</button>`;
+  }
+  paletteList.innerHTML = html;
+
+  paletteList.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) =>
     b.addEventListener('click', () => {
       const variant = b.dataset.variant;
       editor.addNode(
@@ -1807,29 +1832,42 @@ function buildPalette(): void {
       );
     }),
   );
-  palette.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((b) =>
+  paletteList.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((b) =>
     b.addEventListener('click', () => {
       const spec = doc.customNodes.find((c) => c.typeName === b.dataset.edit);
       if (spec) openNodeDesigner(spec, upsertCustomNode);
     }),
   );
-  palette
+  paletteList
     .querySelector('#pDesign')
     ?.addEventListener('click', () => openNodeDesigner(null, upsertCustomNode));
-  palette
+  paletteList
     .querySelectorAll<HTMLButtonElement>('[data-stencil]')
     .forEach((b) =>
       b.addEventListener('click', () => stampStencil(b.dataset.stencil!)),
     );
-  palette
+  paletteList
     .querySelectorAll<HTMLButtonElement>('[data-stencil-del]')
     .forEach((b) =>
       b.addEventListener('click', () => deleteStencil(b.dataset.stencilDel!)),
     );
-  palette
+  paletteList
     .querySelector('#pSaveStencil')
     ?.addEventListener('click', () => saveSelectionAsStencil());
 }
+// Live search: re-render the list on each keystroke; Esc clears.
+paletteSearch.addEventListener('input', () => {
+  paletteQuery = paletteSearch.value;
+  buildPalette();
+});
+paletteSearch.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && paletteSearch.value) {
+    e.stopPropagation();
+    paletteSearch.value = '';
+    paletteQuery = '';
+    buildPalette();
+  }
+});
 buildPalette();
 
 let dragFrom = -1;
