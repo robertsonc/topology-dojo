@@ -82,6 +82,11 @@ app.innerHTML = `
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
+        <button class="tbtn ticon" id="tUndo" title="Undo (Ctrl/Cmd+Z)">↶</button>
+        <button class="tbtn ticon" id="tRedo" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
+      </div>
+      <span class="bar-div"></span>
+      <div class="tgroup">
         <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
         <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
         <select class="tbtn" id="fTemplate" title="New from a starter template"></select>
@@ -102,6 +107,7 @@ app.innerHTML = `
         <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)">◓</button>
         <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme">☀</button>
         <button class="tbtn ticon" id="tFit" title="Fit view (0)">⤢</button>
+        <button class="tbtn ticon" id="tHelp" title="Keyboard shortcuts (?)">?</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
@@ -143,6 +149,13 @@ app.innerHTML = `
         <div class="tds-canvas canvas-host">
           <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
           <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+          <div class="canvas-ctrls" id="canvasCtrls">
+            <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)">✋</button>
+            <button class="cc-btn" id="ccZoomIn" title="Zoom in">+</button>
+            <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)">100%</button>
+            <button class="cc-btn" id="ccZoomOut" title="Zoom out">−</button>
+            <button class="cc-btn" id="ccFit" title="Fit to content (0)">⤢</button>
+          </div>
         </div>
       </div>
     </div>
@@ -358,6 +371,7 @@ const linkBtn = app.querySelector<HTMLButtonElement>('#tLink')!;
 const anchorBtn = app.querySelector<HTMLButtonElement>('#tAnchor')!;
 function setTool(t: 'select' | 'link' | 'anchor'): void {
   editor.setTool(t);
+  if (editor.isHandActive()) setHand(false); // picking a tool exits Hand mode
   selectBtn.classList.toggle('on', t === 'select');
   linkBtn.classList.toggle('on', t === 'link');
   anchorBtn.classList.toggle('on', t === 'anchor');
@@ -366,6 +380,38 @@ function setTool(t: 'select' | 'link' | 'anchor'): void {
 selectBtn.addEventListener('click', () => setTool('select'));
 linkBtn.addEventListener('click', () => setTool('link'));
 anchorBtn.addEventListener('click', () => setTool('anchor'));
+
+/* Undo / Redo buttons (mirror Ctrl/Cmd+Z) + History readout. */
+const undoBtn = app.querySelector<HTMLButtonElement>('#tUndo')!;
+const redoBtn = app.querySelector<HTMLButtonElement>('#tRedo')!;
+undoBtn.addEventListener('click', () => editor.undo());
+redoBtn.addEventListener('click', () => editor.redo());
+
+/* On-canvas controls: hand/pan, zoom +/−, zoom %, fit. */
+const handBtn = app.querySelector<HTMLButtonElement>('#ccHand')!;
+const ccZoom = app.querySelector<HTMLButtonElement>('#ccZoom')!;
+function setHand(on: boolean): void {
+  editor.setHandTool(on);
+  handBtn.classList.toggle('on', on);
+}
+handBtn.addEventListener('click', () => setHand(!editor.isHandActive()));
+app
+  .querySelector('#ccZoomIn')!
+  .addEventListener('click', () => editor.zoomIn());
+app
+  .querySelector('#ccZoomOut')!
+  .addEventListener('click', () => editor.zoomOut());
+ccZoom.addEventListener('click', () => editor.resetView());
+app
+  .querySelector('#ccFit')!
+  .addEventListener('click', () => editor.resetView());
+
+/** Reflect undo/redo availability + live zoom % in the chrome. */
+function refreshChrome(): void {
+  undoBtn.disabled = !editor.canUndo();
+  redoBtn.disabled = !editor.canRedo();
+  ccZoom.textContent = `${Math.round(editor.zoom() * 100)}%`;
+}
 
 /* Select-by dropdown — select nodes by a criterion (resets to placeholder). */
 const selectBySel = app.querySelector<HTMLSelectElement>('#tSelectBy')!;
@@ -395,8 +441,10 @@ function renderStatus(): void {
     `<span><span class="sb-k">anchors</span> ${p.anchors.length}</span>` +
     `<span><span class="sb-k">zones</span> ${p.zones.length}</span>` +
     `<span><span class="sb-k">selected</span> ${sel}</span>` +
+    `<span><span class="sb-k">history</span> ${editor.historyDepth()}</span>` +
     `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>` +
-    `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ←/→ flip</span>`;
+    `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ? shortcuts</span>`;
+  refreshChrome();
 }
 // Live cursor readout (page coordinates) while hovering the canvas.
 overlaySvg.addEventListener('pointermove', (e) => {
@@ -1725,6 +1773,92 @@ layoutSel.addEventListener('change', () => {
 });
 app.querySelector('#tFit')?.addEventListener('click', () => editor.resetView());
 
+/* ── Keyboard-shortcut help overlay (?) ────────────────────────────── */
+const SHORTCUTS: { group: string; items: [string, string][] }[] = [
+  {
+    group: 'Tools',
+    items: [
+      ['V', 'Select / move'],
+      ['L', 'Draw link'],
+      ['A', 'Drop anchor'],
+      ['Space / H', 'Hand — drag to pan'],
+    ],
+  },
+  {
+    group: 'Edit',
+    items: [
+      ['Ctrl/Cmd+Z', 'Undo'],
+      ['Ctrl/Cmd+Shift+Z · Ctrl+Y', 'Redo'],
+      ['Ctrl/Cmd+C / X / V', 'Copy / Cut / Paste'],
+      ['Ctrl/Cmd+D', 'Duplicate'],
+      ['Ctrl/Cmd+L', 'Lock / unlock'],
+      ['Del / Backspace', 'Delete selection'],
+      ['[ / ]', 'Send back / bring forward'],
+      ['Ctrl/Cmd+[ / ]', 'Send to back / bring to front'],
+    ],
+  },
+  {
+    group: 'Select',
+    items: [
+      ['Ctrl/Cmd+A', 'Select all'],
+      ['Shift+click', 'Add to selection'],
+      ['←↑→↓', 'Nudge (Shift = ×10)'],
+    ],
+  },
+  {
+    group: 'Canvas',
+    items: [
+      ['Wheel', 'Zoom to cursor'],
+      ['Space / Middle-drag', 'Pan'],
+      ['0', 'Fit to content'],
+      ['Ctrl/Cmd+F', 'Find / jump to node'],
+      ['R', 'Toggle grid'],
+      ['G', 'Toggle snap'],
+      ['M / P', 'Toggle minimap / properties'],
+      ['C', 'Calm canvas (pause animation)'],
+      ['T', 'Tidy layout'],
+      ['? ', 'This shortcut reference'],
+    ],
+  },
+];
+let helpEl: HTMLElement | null = null;
+function closeHelp(): void {
+  helpEl?.remove();
+  helpEl = null;
+}
+function openHelp(): void {
+  if (helpEl) {
+    closeHelp();
+    return;
+  }
+  helpEl = document.createElement('div');
+  helpEl.className = 'help-backdrop';
+  const cols = SHORTCUTS.map(
+    (s) =>
+      `<div class="help-col"><h4>${s.group}</h4>` +
+      s.items
+        .map(
+          ([k, d]) =>
+            `<div class="help-row"><kbd>${esc(k)}</kbd><span>${esc(d)}</span></div>`,
+        )
+        .join('') +
+      `</div>`,
+  ).join('');
+  helpEl.innerHTML =
+    `<div class="help-card" role="dialog" aria-label="Keyboard shortcuts">` +
+    `<div class="help-head"><h3>Keyboard shortcuts</h3>` +
+    `<button class="tbtn ticon" id="helpClose" title="Close (Esc)">✕</button></div>` +
+    `<div class="help-cols">${cols}</div></div>`;
+  app.appendChild(helpEl);
+  helpEl.addEventListener('click', (e) => {
+    if (e.target === helpEl) closeHelp(); // click backdrop to dismiss
+  });
+  helpEl
+    .querySelector('#helpClose')
+    ?.addEventListener('click', () => closeHelp());
+}
+app.querySelector('#tHelp')?.addEventListener('click', () => openHelp());
+
 /* Keyboard. Shortcuts are suppressed while typing in a form field so they don't
  * hijack the inspector / rename inputs (and Ctrl+C/V do native text edit there). */
 window.addEventListener('keydown', (e) => {
@@ -1737,6 +1871,19 @@ window.addEventListener('keydown', (e) => {
       t.isContentEditable)
   )
     return;
+
+  // ? (Shift+/) opens the shortcut reference; Esc closes it (handled here so it
+  // takes priority over the selection-clearing Esc below).
+  if (e.key === '?') {
+    e.preventDefault();
+    openHelp();
+    return;
+  }
+  if (e.key === 'Escape' && helpEl) {
+    e.preventDefault();
+    closeHelp();
+    return;
+  }
 
   // Spacebar → hand mode (hold and left-drag to pan). Prevent page scroll.
   if (e.key === ' ') {
@@ -1817,6 +1964,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'l' || e.key === 'L') setTool('link');
   if (e.key === 'v' || e.key === 'V') setTool('select');
   if (e.key === 'a' || e.key === 'A') setTool('anchor');
+  if (e.key === 'h' || e.key === 'H') setHand(!editor.isHandActive());
   if (e.key === 'Escape') {
     editor.clearSelection();
     setTool('select');

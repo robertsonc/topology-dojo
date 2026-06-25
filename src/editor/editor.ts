@@ -94,6 +94,8 @@ export class Editor {
   private pan: { startClientX: number; startClientY: number } | null = null;
   /** Spacebar held → left-drag pans (hand mode), like Figma/Sketch. */
   private spaceHeld = false;
+  /** Dedicated Hand tool active → left-drag pans without holding Space. */
+  private handTool = false;
   private nodeSeq = 0;
   /** Smart guides computed during the current drag (alignment + spacing). */
   private guides: Guide[] = [];
@@ -325,7 +327,26 @@ export class Editor {
     if (this.spaceHeld === on) return;
     this.spaceHeld = on;
     // Don't fight an in-progress drag's "grabbing" cursor.
-    if (!this.pan) this.overlay.style.cursor = on ? 'grab' : '';
+    if (!this.pan) this.overlay.style.cursor = on ? 'grab' : this.handCursor();
+  }
+
+  /**
+   * The dedicated Hand (pan) tool: a sticky version of spacebar-pan. While on,
+   * a left-drag pans the canvas (like holding Space) until toggled off. The
+   * keyboard pan still works regardless.
+   */
+  setHandTool(on: boolean): void {
+    if (this.handTool === on) return;
+    this.handTool = on;
+    if (!this.pan) this.overlay.style.cursor = this.handCursor();
+  }
+  /** Whether the sticky Hand tool is currently active. */
+  isHandActive(): boolean {
+    return this.handTool;
+  }
+  /** Resting cursor for the overlay given the current pan affordances. */
+  private handCursor(): string {
+    return this.spaceHeld || this.handTool ? 'grab' : '';
   }
 
   /* ── page properties ──────────────────────────────────────────── */
@@ -730,6 +751,19 @@ export class Editor {
 
   /* ── history ──────────────────────────────────────────────────── */
 
+  /** True when there is at least one state to undo back to. */
+  canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+  /** True when an undone state can be re-applied. */
+  canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
+  /** Depth of the undo stack — drives the "History: N" status readout. */
+  historyDepth(): number {
+    return this.undoStack.length;
+  }
+
   private snapshot(): void {
     this.nudgeActive = false; // any new snapshot ends a nudge-coalescing run
     this.undoStack.push(JSON.stringify(serialize(this.page)));
@@ -969,6 +1003,28 @@ export class Editor {
   zoom(): number {
     const [, , pw] = parseVB(this.page.viewBox);
     return pw / this.view.w;
+  }
+
+  /**
+   * Scale the view by `factor` about its centre (same limits as wheel zoom).
+   * factor < 1 zooms in (the window shrinks), > 1 zooms out. Drives the
+   * on-canvas zoom +/− buttons.
+   */
+  zoomBy(factor: number): void {
+    const cx = this.view.x + this.view.w / 2;
+    const cy = this.view.y + this.view.h / 2;
+    const w = clamp(this.view.w * factor, 80, 8000);
+    const h = clamp(this.view.h * factor, 53, 5333);
+    this.view = { x: cx - w / 2, y: cy - h / 2, w, h };
+    this.applyView();
+  }
+  /** Step zoom in (button +). */
+  zoomIn(): void {
+    this.zoomBy(1 / 1.25);
+  }
+  /** Step zoom out (button −). */
+  zoomOut(): void {
+    this.zoomBy(1.25);
   }
 
   /** Copy the selected nodes (+ links internal to them) into the clipboard. */
@@ -1611,8 +1667,11 @@ export class Editor {
   }
 
   private onDown(e: PointerEvent): void {
-    // Pan: middle button, or left button while Space is held (hand mode).
-    if (e.button === 1 || (this.spaceHeld && e.button === 0)) {
+    // Pan: middle button, or left button while Space is held / Hand tool is on.
+    if (
+      e.button === 1 ||
+      ((this.spaceHeld || this.handTool) && e.button === 0)
+    ) {
       e.preventDefault();
       this.pan = { startClientX: e.clientX, startClientY: e.clientY };
       this.overlay.setPointerCapture(e.pointerId);
@@ -1820,7 +1879,12 @@ export class Editor {
     // Idle hover: show connection dots on the node under the cursor, and a
     // crosshair when poised over a dot (drag it out to draw a link).
     if (!this.drag && !this.marquee) {
-      if (this.tool === 'select' && !this.spaceHeld && e.buttons === 0) {
+      if (
+        this.tool === 'select' &&
+        !this.spaceHeld &&
+        !this.handTool &&
+        e.buttons === 0
+      ) {
         const hp = clientToUser(this.overlay, e.clientX, e.clientY);
         const over = this.hoverNodeAt(hp);
         if (over !== this.hoverNode) {
@@ -1853,8 +1917,8 @@ export class Editor {
     this.overlay.releasePointerCapture(e.pointerId);
     if (this.pan) {
       this.pan = null;
-      // Back to the hand cursor if Space is still held, else default.
-      this.overlay.style.cursor = this.spaceHeld ? 'grab' : '';
+      // Back to the hand cursor if Space is still held / Hand tool is on.
+      this.overlay.style.cursor = this.handCursor();
       return;
     }
     if (this.wpDrag) {
