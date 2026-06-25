@@ -12,6 +12,7 @@
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import { customHitBox, renderCustomNode } from '../nodes/render.js';
+import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
@@ -76,7 +77,9 @@ export function renderPageWithEngine(
   opts: RenderOptions = {},
 ): string {
   ensureShim();
-  registerCustomTypes(E, customNodes);
+  // Stock cloud types ship with the app; the document's own custom types layer
+  // on top (and override by name if a user redefines one).
+  registerCustomTypes(E, [...STOCK_NODE_SPECS, ...customNodes]);
 
   const topo = new E({ viewBox: page.viewBox });
   if (opts.calm) topo.reducedMotion = true;

@@ -11,6 +11,7 @@ import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import { POLICY_MARKER_TYPES } from './markers.js';
 import { LAYER_KINDS } from './layers.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
+import { STOCK_NODE_LABELS, STOCK_NODE_SPECS } from '../nodes/stock.js';
 
 export type FieldKind =
   | 'string'
@@ -388,11 +389,32 @@ export function customNodeInfo(spec: CustomNodeSpec): NodeTypeInfo {
   };
 }
 
-/** All node types (built-in + the document's custom types). */
+/**
+ * Stock cloud-native types — shipped with the app (not per-document), so they
+ * present as built-ins under the Cloud category rather than user custom nodes.
+ */
+const STOCK_NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
+  STOCK_NODE_SPECS.map((spec) => [
+    spec.typeName,
+    {
+      type: spec.typeName,
+      label: STOCK_NODE_LABELS[spec.typeName] ?? spec.typeName,
+      category: 'Cloud',
+      custom: false,
+      fields: [...POSITION, ...NODE_COMMON],
+    } satisfies NodeTypeInfo,
+  ]),
+);
+
+/** All node types (built-in + stock cloud + the document's custom types). */
 export function nodeCatalog(
   customNodes: CustomNodeSpec[] = [],
 ): NodeTypeInfo[] {
-  return [...Object.values(NODE_CATALOG), ...customNodes.map(customNodeInfo)];
+  return [
+    ...Object.values(NODE_CATALOG),
+    ...Object.values(STOCK_NODE_CATALOG),
+    ...customNodes.map(customNodeInfo),
+  ];
 }
 
 /** All link types. */
@@ -406,6 +428,7 @@ export function getNodeType(
 ): NodeTypeInfo | undefined {
   return (
     NODE_CATALOG[type] ??
+    STOCK_NODE_CATALOG[type] ??
     customNodes.filter((c) => c.typeName === type).map(customNodeInfo)[0]
   );
 }

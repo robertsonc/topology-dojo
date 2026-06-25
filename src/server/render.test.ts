@@ -91,6 +91,16 @@ describe('headless render (Node, no browser)', () => {
     expect(two).toMatch(/204\.5|195\.5/);
   });
 
+  it('renders stock cloud-native types (e.g. a Transit Gateway) headlessly', () => {
+    const doc = createDocument('AWS hub')
+      .page()
+      .node({ id: 'tgw', type: 'tgw', x: 300, y: 200, label: 'us-east-1 TGW' })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    expect(svg).toContain('TGW'); // the stock glyph's badge text
+    expect(svg).toContain('us-east-1 TGW'); // the node label
+  });
+
   it('calm mode suppresses animation in the output', () => {
     const doc = createDocument()
       .page()
