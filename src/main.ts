@@ -1692,14 +1692,15 @@ function invalidatePreview(type?: string): void {
   else previewCache.clear();
 }
 
-function nodePreviewSVG(type: string): string {
-  const cached = previewCache.get(type);
+function nodePreviewSVG(type: string, extra?: Record<string, unknown>): string {
+  const cacheKey = extra ? `${type}:${JSON.stringify(extra)}` : type;
+  const cached = previewCache.get(cacheKey);
   if (cached !== undefined) return cached;
   let inner: string;
   try {
     inner = renderPageSVG({
       viewBox: '0 0 110 84',
-      nodes: [{ id: 'p', type, x: 55, y: 42 }],
+      nodes: [{ id: 'p', type, x: 55, y: 42, ...extra }],
       links: [],
     });
   } catch {
@@ -1707,7 +1708,7 @@ function nodePreviewSVG(type: string): string {
   }
   inner = inner.replace(/<defs[\s\S]*?<\/defs>/, '');
   const svg = `<svg class="ppreview" viewBox="0 0 110 84" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${inner}</svg>`;
-  previewCache.set(type, svg);
+  previewCache.set(cacheKey, svg);
   return svg;
 }
 
@@ -1727,16 +1728,25 @@ function buildPalette(): void {
       html += info.custom
         ? `<div class="pcustom">${item}<button class="pedit" data-edit="${esc(info.type)}" title="Edit type">✎</button></div>`
         : item;
+      // §5: surface the EC+Axis container form as its own palette entry — it
+      // reads distinctly from a plain EC and from a standalone connector node.
+      if (info.type === 'ec')
+        html += `<button class="pitem" data-type="ec" data-variant="axis" title="EC hosting the Axis SSE/ZTNA connector as a container">${nodePreviewSVG('ec', { variant: 'axis' })}<span class="plabel">EC + Axis Connector (container)</span></button>`;
     }
   }
   html += `<button class="pitem design" id="pDesign">＋ design node</button>`;
   palette.innerHTML = html;
 
-  palette
-    .querySelectorAll<HTMLButtonElement>('[data-type]')
-    .forEach((b) =>
-      b.addEventListener('click', () => editor.addNode(b.dataset.type!)),
-    );
+  palette.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const variant = b.dataset.variant;
+      editor.addNode(
+        b.dataset.type!,
+        undefined,
+        variant ? { variant } : undefined,
+      );
+    }),
+  );
   palette.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((b) =>
     b.addEventListener('click', () => {
       const spec = doc.customNodes.find((c) => c.typeName === b.dataset.edit);

@@ -191,7 +191,7 @@ class TopologyDesigner {
    * @param {string} id   - Unique identifier (e.g. 'SEA', 'HOST')
    * @param {object} cfg  - { type, x, y, label, sublabel, color, ... }
    *   type: 'ec'|'switch'|'switchEnterprise'|'cloud'|'host'|'connector'|'apps'|'saas'|'server'|'router'|'firewall'|'database'|'idcard'|'ap'|'overlayCloud'|'custom'
-   *   variant: (ec only) 'generic'|'virtual'|'physical'|'aws'|'azure'|'gcp'|'oracle'
+   *   variant: (ec only) 'generic'|'virtual'|'physical'|'aws'|'azure'|'gcp'|'oracle'|'axis'
    */
   node(id, cfg) {
     if (this._graph) {
@@ -2339,7 +2339,8 @@ class TopologyDesigner {
      ══════════════════════════════════════════ */
 
   /** EdgeConnect appliance
-   *  cfg.variant: 'generic'|'virtual'|'physical'|'aws'|'azure'|'gcp'|'oracle' (default: 'generic')
+   *  cfg.variant: 'generic'|'virtual'|'physical'|'aws'|'azure'|'gcp'|'oracle'|'axis' (default: 'generic')
+   *               'axis' = EC hosting the Axis SSE/ZTNA connector as a container
    */
   static renderEC(x, y, cfg = {}) {
     const variant = cfg.variant || 'generic';
@@ -2351,6 +2352,7 @@ class TopologyDesigner {
       azure:    { color: '#0078d4', glow: 'tds-glow-blue',  badge: 'AZ' },
       gcp:      { color: '#4285f4', glow: 'tds-glow-blue',  badge: 'GCP' },
       oracle:   { color: '#f80000', glow: 'tds-glow-red',   badge: 'OCI' },
+      axis:     { color: '#01a982', glow: 'tds-glow-green', badge: 'AXIS' },
     };
     const vs = variantStyles[variant] || variantStyles.generic;
     const c = cfg.color || vs.color;
@@ -2433,6 +2435,20 @@ class TopologyDesigner {
       // VM dashed box overlay
       s += `<rect x="${x+14}" y="${y-12}" width="14" height="10" rx="2" fill="none" stroke="#7764fc" stroke-width=".8" stroke-dasharray="2 1" opacity=".7"/>`;
       s += `<rect x="${x+16}" y="${y-10}" width="10" height="6" rx="1" fill="#7764fc" opacity=".15"/>`;
+    } else if (variant === 'axis') {
+      // EC hosting the Axis (SSE/ZTNA) connector as a container: an inset
+      // connector hub-and-spoke mark (connector blue) on the right of the
+      // chassis — reads as "one EC that also runs the connector".
+      const cc = '#65aef9';
+      const hx = x + 18, hy = y - 4;
+      s += `<rect x="${x + 10}" y="${y - 12}" width="17" height="16" rx="3" fill="#1a2233" stroke="${cc}" stroke-width=".7" opacity=".95"/>`;
+      s += `<line x1="${hx}" y1="${hy}" x2="${hx - 5}" y2="${hy - 5}" stroke="${cc}" stroke-width="1" opacity=".8"/>`;
+      s += `<line x1="${hx}" y1="${hy}" x2="${hx + 5}" y2="${hy - 5}" stroke="${cc}" stroke-width="1" opacity=".8"/>`;
+      s += `<line x1="${hx}" y1="${hy}" x2="${hx}" y2="${hy + 5}" stroke="${cc}" stroke-width="1" opacity=".8"/>`;
+      s += `<circle cx="${hx}" cy="${hy}" r="2" fill="#292d3a" stroke="${cc}" stroke-width="1" filter="url(#tds-glow)"/>`;
+      s += `<circle cx="${hx - 5}" cy="${hy - 5}" r="1.3" fill="${cc}"/>`;
+      s += `<circle cx="${hx + 5}" cy="${hy - 5}" r="1.3" fill="${cc}"/>`;
+      s += `<circle cx="${hx}" cy="${hy + 5}" r="1.3" fill="${cc}"/>`;
     }
 
     // Variant badge

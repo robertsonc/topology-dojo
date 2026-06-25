@@ -55,6 +55,10 @@ describe('capability catalog', () => {
     expect(ec.fields.find((f) => f.key === 'variant')?.options).toContain(
       'aws',
     );
+    // §5: the EC-hosts-Axis-connector container form is a selectable variant.
+    expect(ec.fields.find((f) => f.key === 'variant')?.options).toContain(
+      'axis',
+    );
     const cloud = getNodeType('cloud')!;
     expect(cloud.fields.some((f) => f.key === 'innerClouds')).toBe(true);
   });
