@@ -67,24 +67,48 @@ describe('A.4 boundary attachment — EdgeHA_after (no anchors)', () => {
   const svg = renderPageToSVG(page, []);
   const ends = pathEnds(svg);
 
-  // Node geometry: EC half-extents 32×17; cloud half-height ≈ 36.
-  const EC_TOP = 260 - 17; // 243
-  const CLOUD_BOTTOM = 60 + 36; // 96
+  // Node geometry: EC half-extents 32×17 (rounded-rect); cloud radii 64×36
+  // (ellipse). Endpoints attach on the silhouette and back off a 3px gap.
+  const GAP = 3;
+  // The two INET clouds (radii 64×36); a flow start belongs to the nearer one.
+  const CLOUDS = [
+    { cx: 220, cy: 60, rx: 64, ry: 36 },
+    { cx: 400, cy: 60, rx: 64, ry: 36 },
+  ];
 
   it('expresses the topology with zero anchors', () => {
     expect(page.anchors).toHaveLength(0);
     expect(page.links).toHaveLength(5);
   });
 
-  it('clouds emit from their bottom edge; ECs receive on their top edge', () => {
+  it('clouds emit downward; ECs receive on their top edge (gapped)', () => {
     // The four flow links each render as glow-layered paths; every one starts
-    // at a cloud's bottom edge (y≈96, below centre 60) and ends at an EC's top
-    // edge (y≈243, above centre 260).
-    const flows = ends.filter((e) => near(e.sy, CLOUD_BOTTOM));
+    // just below a cloud (downward from centre 60) and ends just above an EC's
+    // top edge (243), backed off the 3px gap → ≈240.
+    const flows = ends.filter((e) => e.sy > 88 && e.sy < 104);
     expect(flows.length).toBeGreaterThanOrEqual(4);
     for (const f of flows) {
       expect(f.sy).toBeGreaterThan(60); // emitted downward from the cloud
-      expect(near(f.ey, EC_TOP)).toBe(true); // landed on the EC top edge
+      // landed just above the EC top edge: 260 - 17 - 3 ≈ 240.
+      expect(f.ey).toBeGreaterThan(236);
+      expect(f.ey).toBeLessThan(244);
+    }
+  });
+
+  it('attaches cloud endpoints on the ellipse silhouette, not the AABB corner', () => {
+    // The diagonal flows used to land on the bounding-box corner (normalized
+    // ellipse value ≈1.26 — outside the visible cloud). True ellipse projection
+    // + a 3px gap keeps them on/just-off the curve (≈1.0–1.2).
+    const fromCloud = ends.filter((e) => e.sy > 88 && e.sy < 104);
+    for (const f of fromCloud) {
+      const c = CLOUDS.reduce((a, b) =>
+        Math.hypot(f.sx - a.cx, f.sy - a.cy) <
+        Math.hypot(f.sx - b.cx, f.sy - b.cy)
+          ? a
+          : b,
+      );
+      const v = ((f.sx - c.cx) / c.rx) ** 2 + ((f.sy - c.cy) / c.ry) ** 2;
+      expect(v).toBeLessThan(1.2);
     }
   });
 
@@ -97,21 +121,22 @@ describe('A.4 boundary attachment — EdgeHA_after (no anchors)', () => {
       }
   });
 
-  it('routes the HA link EC1-right-edge → EC2-left-edge', () => {
-    // BR1-01 centre (220,260) right edge x=252; BR1-02 (400,260) left edge x=368.
+  it('routes the HA link EC1-right-edge → EC2-left-edge (gapped)', () => {
+    // BR1-01 (220,260) right edge x=252 +gap→255; BR1-02 (400,260) left edge
+    // x=368 -gap→365.
     const ha = lineEnds(svg).find(
       (l) => near(l.y1, 260) && near(l.y2, 260) && Math.abs(l.x2 - l.x1) > 80,
     );
     expect(ha).toBeDefined();
-    expect(near(ha!.x1, 252)).toBe(true); // EC1 right edge
-    expect(near(ha!.x2, 368)).toBe(true); // EC2 left edge
+    expect(near(ha!.x1, 252 + GAP)).toBe(true); // EC1 right edge + gap
+    expect(near(ha!.x2, 368 - GAP)).toBe(true); // EC2 left edge − gap
   });
 
   it('separates the two flows converging on one EC top (A.8, both visible)', () => {
     // BR1-01 receives flows from both clouds; their landing x differ, so they
     // do not overlap on the EC top edge.
     const landings = ends
-      .filter((e) => near(e.ey, EC_TOP) && near(e.ex, 220, 20))
+      .filter((e) => e.ey > 236 && e.ey < 244 && near(e.ex, 220, 20))
       .map((e) => Math.round(e.ex));
     expect(new Set(landings).size).toBeGreaterThanOrEqual(2);
   });

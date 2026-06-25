@@ -1068,16 +1068,34 @@ class TopologyDesigner {
   }
 
   /**
+   * Classify a node's silhouette for boundary attachment: 'circle', 'ellipse',
+   * or 'rect' (rounded-rect — the safe default). An explicit `shape` (custom
+   * nodes / plugin meta) wins; otherwise it's keyed off the built-in type.
+   */
+  _nodeShape(cfg) {
+    const meta = TopologyDesigner._nodePluginMeta[cfg.type];
+    const sh = cfg.shape || meta?.shape;
+    if (sh === 'circle') return 'circle';
+    if (sh === 'ellipse') return 'ellipse';
+    if (sh) return 'rect'; // square/rectangle/diamond/… → rounded-rect default
+    if (cfg.type === 'cloud' || cfg.type === 'overlayCloud') return 'ellipse';
+    if (cfg.type === 'router' || cfg.type === 'ap') return 'circle';
+    return 'rect';
+  }
+
+  /**
    * Boundary attachment (A.4 / A.5). A link endpoint on a *node* attaches to the
    * node's perimeter facing the next point on the path — not the centre — so the
-   * link exits the correct side and never spears through the icon. Anchors are
-   * dimensionless and returned unchanged.
+   * link exits the correct side and never spears through the icon. The exit is
+   * projected onto the node's actual silhouette (circle / ellipse / rounded-rect)
+   * and backed off by a small GAP so the stroke doesn't touch the icon. Anchors
+   * are dimensionless and returned unchanged.
    *
    * @param {string} id        - endpoint id (node or anchor)
    * @param {{x,y}} pos        - the endpoint's centre (already parallel-offset)
    * @param {{x,y}} toward     - the next point on the path (waypoint or other end)
    * @param {string} [port]    - optional pinned side: n/e/s/w/ne/nw/se/sw (A.5)
-   * @returns {{x,y}} the point on the node perimeter to draw to
+   * @returns {{x,y}} the point just off the node perimeter to draw to
    */
   _attachEndpoint(id, pos, toward, port) {
     if (this._anchors.has(id)) return pos; // anchors carry no body to exit
@@ -1087,7 +1105,8 @@ class TopologyDesigner {
     const hw = ab.w / 2,
       hh = ab.h / 2;
     if (hw <= 0 || hh <= 0) return pos;
-    // A.5: an explicit port pins the exit to a fixed side/corner.
+    // A.5: an explicit port pins the exit to a fixed side/corner (no gap — the
+    // pin is deliberate and exact).
     const PORTS = {
       n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0],
       ne: [1, -1], nw: [-1, -1], se: [1, 1], sw: [-1, 1],
@@ -1096,14 +1115,25 @@ class TopologyDesigner {
       const [sx, sy] = PORTS[port];
       return { x: pos.x + sx * hw, y: pos.y + sy * hh };
     }
-    // A.4: ray from the centre toward `toward`, clipped to the AABB perimeter.
+    // A.4: ray from the centre toward `toward`, projected onto the silhouette.
     const dx = toward.x - pos.x,
       dy = toward.y - pos.y;
-    if (dx === 0 && dy === 0) return pos;
-    const tx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
-    const ty = dy !== 0 ? hh / Math.abs(dy) : Infinity;
-    const t = Math.min(tx, ty);
-    return { x: pos.x + dx * t, y: pos.y + dy * t };
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len === 0) return pos; // overlapping centres — no direction; keep centre
+    const ux = dx / len,
+      uy = dy / len;
+    const GAP = 3; // px clearance so the stroke stops just shy of the icon
+    const shape = this._nodeShape(cfg);
+    let s; // distance from centre to the silhouette along the unit direction
+    if (shape === 'circle') {
+      s = Math.min(hw, hh);
+    } else if (shape === 'ellipse') {
+      s = 1 / Math.sqrt((ux / hw) ** 2 + (uy / hh) ** 2);
+    } else {
+      // rounded-rect: clip the ray to the AABB faces.
+      s = 1 / Math.max(Math.abs(ux) / hw, Math.abs(uy) / hh);
+    }
+    return { x: pos.x + ux * (s + GAP), y: pos.y + uy * (s + GAP) };
   }
 
   /**
