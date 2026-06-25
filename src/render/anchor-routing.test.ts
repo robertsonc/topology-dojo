@@ -41,17 +41,23 @@ function pos(id: string): { x: number; y: number } {
 /** Every `ec` node in the fixture; the engine's AABB half-extents are 32×17. */
 const EC = { hw: 32, hh: 17 };
 
-/** Mirror the engine's `_attachEndpoint`: clip the centre→toward ray to the box. */
+/**
+ * Mirror the engine's `_attachEndpoint` for a rounded-rect node: clip the
+ * centre→toward ray to the box, then back off the 3px gap along the direction.
+ */
+const GAP = 3;
 function attach(
   node: { x: number; y: number },
   toward: { x: number; y: number },
 ): { x: number; y: number } {
   const dx = toward.x - node.x;
   const dy = toward.y - node.y;
-  const tx = dx !== 0 ? EC.hw / Math.abs(dx) : Infinity;
-  const ty = dy !== 0 ? EC.hh / Math.abs(dy) : Infinity;
-  const t = Math.min(tx, ty);
-  return { x: node.x + dx * t, y: node.y + dy * t };
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return { x: node.x, y: node.y };
+  const ux = dx / len;
+  const uy = dy / len;
+  const s = 1 / Math.max(Math.abs(ux) / EC.hw, Math.abs(uy) / EC.hh);
+  return { x: node.x + ux * (s + GAP), y: node.y + uy * (s + GAP) };
 }
 
 /** Parse `<line>` endpoints out of the rendered SVG. */

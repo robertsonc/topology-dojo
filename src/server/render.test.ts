@@ -69,10 +69,19 @@ describe('headless render (Node, no browser)', () => {
       })
       .build();
     const svg = renderDocumentToSVG(doc);
-    // L-route turns at a right angle. With A.4 boundary attachment the endpoints
-    // sit on the node edges (a→(232,216), b→(568,384)), so the corner is at
-    // (to_edge.x, from_edge.y) = (568,216); a straight diagonal never visits it.
-    expect(svg).toContain('L568,216 L568,384');
+    // L-route turns at a right angle. With A.4 boundary attachment + 3px gap the
+    // endpoints sit just off the node edges (a≈(234.7,217.3), b≈(565.3,382.7)),
+    // so the corner is at (to_edge.x, from_edge.y)≈(565.3,217.3); a straight
+    // diagonal never visits it. Parse the elbow: 3 points, right-angle, gapped.
+    const m = svg.match(/d="(M2[^"]*)"/);
+    expect(m).toBeTruthy();
+    const [sx, sy, cx, cy, ex, ey] = [
+      ...m![1]!.matchAll(/-?\d+(?:\.\d+)?/g),
+    ].map((x) => +x[0]!);
+    expect(Math.hypot(sx! - 200, sy! - 200)).toBeGreaterThan(20); // off a's centre
+    expect(Math.hypot(ex! - 600, ey! - 400)).toBeGreaterThan(20); // off b's centre
+    expect(Math.abs(cy! - sy!)).toBeLessThan(0.01); // horizontal leg (corner.y = start.y)
+    expect(Math.abs(cx! - ex!)).toBeLessThan(0.01); // vertical leg (corner.x = end.x)
   });
 
   it('orthogonal auto-route detours around a node between the endpoints (A.7)', () => {
@@ -92,13 +101,15 @@ describe('headless render (Node, no browser)', () => {
     const svg = renderDocumentToSVG(doc);
     // The naive elbow runs straight along y=300 through c; the router instead
     // detours to a clear lane (y=263, above c's padded box) with right angles.
-    const path = svg.match(/d="(M232,300[^"]*)"/);
+    const path = svg.match(/d="(M235,300[^"]*)"/);
     expect(path).toBeTruthy();
     const d = path![1]!;
     // It leaves the y=300 row to clear c, and every turn is axis-aligned (no
     // diagonal L would share an x or y with its predecessor at each corner).
-    expect(d).toContain('L232,263');
-    expect(d).toContain('L668,263');
+    // Endpoints are the gapped node edges (a→235, b→665); the lane y=263 is set
+    // by c's padded box, unaffected by the endpoint gap.
+    expect(d).toContain('L235,263');
+    expect(d).toContain('L665,263');
     expect(/[QC]/.test(d)).toBe(false); // right angles only, no curves
   });
 
