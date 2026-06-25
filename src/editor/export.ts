@@ -19,13 +19,19 @@ function viewBoxSize(page: Page): { vw: number; vh: number } {
   return { vw: vw || 1050, vh: vh || 700 };
 }
 
-/** A complete, standalone SVG string for a page (wrapper + backdrop + art). */
-export function pageToSVG(page: Page, opts: RenderOptions = {}): string {
+/** A complete, standalone SVG string for a page (wrapper + backdrop + art).
+ * `extra` is appended after the art (e.g. a legend `<g>` in page coordinates). */
+export function pageToSVG(
+  page: Page,
+  opts: RenderOptions = {},
+  extra = '',
+): string {
   const { vw, vh } = viewBoxSize(page);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
     `<rect x="0" y="0" width="${vw}" height="${vh}" fill="#1d1f27"/>` +
     renderPageSVG(page, opts) +
+    extra +
     `</svg>`
   );
 }
@@ -71,10 +77,11 @@ export function exportPageSVG(
   filename: string,
   page: Page,
   opts?: RenderOptions,
+  extra = '',
 ): void {
   downloadBlob(
     filename,
-    new Blob([pageToSVG(page, opts)], { type: 'image/svg+xml' }),
+    new Blob([pageToSVG(page, opts, extra)], { type: 'image/svg+xml' }),
   );
 }
 
@@ -82,8 +89,12 @@ export async function exportPagePNG(
   filename: string,
   page: Page,
   scale = 2,
+  extra = '',
 ): Promise<void> {
   // Always rasterize a static frame (calm) so the captured image is clean.
-  const blob = await svgToPngBlob(pageToSVG(page, { calm: true }), scale);
+  const blob = await svgToPngBlob(
+    pageToSVG(page, { calm: true }, extra),
+    scale,
+  );
   downloadBlob(filename, blob);
 }

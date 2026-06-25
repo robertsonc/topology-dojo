@@ -19,6 +19,7 @@ export function serializeDoc(doc: TopologyDocument): string {
       pages: doc.pages,
       customNodes: doc.customNodes,
       ...(doc.layers?.length ? { layers: doc.layers } : {}),
+      ...(doc.legend ? { legend: doc.legend } : {}),
     },
     null,
     2,
@@ -80,11 +81,23 @@ export function parseDoc(input: unknown): TopologyDocument | null {
           typeof (l as { id?: unknown }).id === 'string',
       )
     : [];
+  // Legend: a small opt-in settings object. Keep only recognised fields.
+  const rawLegend = d.legend as Record<string, unknown> | undefined;
+  const legend =
+    rawLegend && typeof rawLegend === 'object'
+      ? {
+          ...(rawLegend.show === true ? { show: true } : {}),
+          ...(['tl', 'tr', 'bl', 'br'].includes(String(rawLegend.position))
+            ? { position: rawLegend.position as 'tl' | 'tr' | 'bl' | 'br' }
+            : {}),
+        }
+      : undefined;
   return {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
     customNodes,
     ...(layers.length ? { layers } : {}),
+    ...(legend && Object.keys(legend).length ? { legend } : {}),
   };
 }
 

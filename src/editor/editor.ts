@@ -718,10 +718,26 @@ export class Editor {
     return out;
   }
 
+  /**
+   * Extra static SVG appended to the overlay each render — a hook for app-level
+   * decorations that should track the canvas (e.g. the auto-legend). Drawn
+   * beneath interactive handles so it never blocks selection.
+   */
+  private overlayExtra: (() => string) | null = null;
+  setOverlayExtra(fn: (() => string) | null): void {
+    this.overlayExtra = fn;
+    this.renderOverlay();
+  }
+  /** Re-paint the overlay (e.g. after the legend config changed). */
+  redrawOverlay(): void {
+    this.renderOverlay();
+  }
+
   private renderOverlay(): void {
     this.overlay.innerHTML =
       this.backdropSvg() +
       this.gridSvg() +
+      (this.overlayExtra?.() ?? '') +
       this.guidesSvg() +
       this.anchorsSvg() +
       this.linkSelSvg() +

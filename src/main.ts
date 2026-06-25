@@ -29,6 +29,7 @@ import {
 } from './pages/persist.js';
 import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
 import { exportPagePNG, exportPageSVG } from './editor/export.js';
+import { legendSVG } from './editor/legend.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { STOCK_NODE_SPECS } from './nodes/stock.js';
@@ -223,6 +224,10 @@ const editor = new Editor(
  * fit-to-content frames the *visible* area and never tucks edge content behind
  * the inspector or minimap. Recomputed on each fit (panels collapse/expand).
  */
+// Draw the auto-legend (B.1) on the canvas — recomputed each overlay paint from
+// the elements in use, so it tracks edits live. Off unless the document opts in.
+editor.setOverlayExtra(() => legendSVG(doc, editor.page));
+
 editor.setViewInsets(() => {
   const canvas = overlaySvg.getBoundingClientRect();
   let right = 0;
@@ -314,14 +319,22 @@ function exportBase(): string {
   return `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
 }
 app.querySelector('#fSvg')?.addEventListener('click', () => {
-  exportPageSVG(`${exportBase()}.svg`, doc.pages[current]!, {
-    calm: editor.calm,
-  });
+  const page = doc.pages[current]!;
+  exportPageSVG(
+    `${exportBase()}.svg`,
+    page,
+    { calm: editor.calm },
+    legendSVG(doc, page),
+  );
 });
 app.querySelector('#fPng')?.addEventListener('click', () => {
-  void exportPagePNG(`${exportBase()}.png`, doc.pages[current]!, 2).catch(() =>
-    alert('PNG export failed.'),
-  );
+  const page = doc.pages[current]!;
+  void exportPagePNG(
+    `${exportBase()}.png`,
+    page,
+    2,
+    legendSVG(doc, page),
+  ).catch(() => alert('PNG export failed.'));
 });
 /* New from a starter template. */
 const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
@@ -999,6 +1012,23 @@ function propertiesHtml(): string {
     `<label class="insp-row">Transition<select id="p-tr">` +
     `<option value="cut"${page.transition !== 'fade' ? ' selected' : ''}>cut</option>` +
     `<option value="fade"${page.transition === 'fade' ? ' selected' : ''}>fade</option>` +
+    `</select></label>` +
+    `<div class="insp-h">Legend</div>` +
+    `<label class="insp-row">Show key<input type="checkbox" id="p-legend"${doc.legend?.show ? ' checked' : ''}/></label>` +
+    `<label class="insp-row">Position<select id="p-legend-pos">` +
+    (['tl', 'tr', 'bl', 'br'] as const)
+      .map(
+        (p) =>
+          `<option value="${p}"${(doc.legend?.position ?? 'tl') === p ? ' selected' : ''}>${
+            {
+              tl: 'top-left',
+              tr: 'top-right',
+              bl: 'bottom-left',
+              br: 'bottom-right',
+            }[p]
+          }</option>`,
+      )
+      .join('') +
     `</select></label>`
   );
 }
@@ -1034,6 +1064,22 @@ function wireProperties(): void {
   tr?.addEventListener('change', () => {
     if (tr.value === 'fade') editor.page.transition = 'fade';
     else delete editor.page.transition;
+    markDirty();
+  });
+  // Legend (B.1) — a per-document setting; redraw the overlay so it shows live.
+  const legendOn = inspector.querySelector<HTMLInputElement>('#p-legend');
+  legendOn?.addEventListener('change', () => {
+    doc.legend = { ...doc.legend, show: legendOn.checked };
+    editor.redrawOverlay();
+    markDirty();
+  });
+  const legendPos = inspector.querySelector<HTMLSelectElement>('#p-legend-pos');
+  legendPos?.addEventListener('change', () => {
+    doc.legend = {
+      ...doc.legend,
+      position: legendPos.value as 'tl' | 'tr' | 'bl' | 'br',
+    };
+    editor.redrawOverlay();
     markDirty();
   });
 }
