@@ -1,12 +1,16 @@
 /**
- * Regression test for the anchor-routing bug (Phase 0).
+ * Regression test for the anchor-routing bug (Phase 0) — kept boundary-aware
+ * after PR-A2 (A.4 boundary attachment).
  *
- * Before the fix, any link with an anchor endpoint rendered as a malformed
- * quadratic "exit stub" — `M<anchor> Q<control> <mid> L<node>` — whose control
- * handle pointed *away* from the target, producing hooks/loops/zig-zags. The
- * cause: the smart-routing detour treated a node whose hit-box happens to touch
- * the anchor (here the INET clouds, whose padded AABB bottom edge sits on the
- * anchors at y=140) as an obstruction and bent the path backward around it.
+ * Phase 0: any link with an anchor endpoint used to render a malformed quadratic
+ * "exit stub" — `M<anchor> Q<control> <mid> L<node>` — whose control handle
+ * pointed *away* from the target (hooks/loops/zig-zags), because the smart-route
+ * detour treated the INET clouds (whose padded AABB sits on the anchors at
+ * y=140) as obstructions. The fix skips smart routing for anchor endpoints.
+ *
+ * A.4: a link's *node* endpoint now attaches to the node's perimeter facing the
+ * other end, not its centre — so the node ends below land on the EC edge, while
+ * the anchor ends (dimensionless) stay exactly on the anchor.
  *
  * The fixture is the exact `blah.json` repro from the bug analysis.
  */
@@ -34,35 +38,72 @@ function pos(id: string): { x: number; y: number } {
   return { x: n.x, y: n.y };
 }
 
+/** Every `ec` node in the fixture; the engine's AABB half-extents are 32×17. */
+const EC = { hw: 32, hh: 17 };
+
+/** Mirror the engine's `_attachEndpoint`: clip the centre→toward ray to the box. */
+function attach(
+  node: { x: number; y: number },
+  toward: { x: number; y: number },
+): { x: number; y: number } {
+  const dx = toward.x - node.x;
+  const dy = toward.y - node.y;
+  const tx = dx !== 0 ? EC.hw / Math.abs(dx) : Infinity;
+  const ty = dy !== 0 ? EC.hh / Math.abs(dy) : Infinity;
+  const t = Math.min(tx, ty);
+  return { x: node.x + dx * t, y: node.y + dy * t };
+}
+
+/** Parse `<line>` endpoints out of the rendered SVG. */
+function lines(
+  svg: string,
+): { x1: number; y1: number; x2: number; y2: number }[] {
+  return [
+    ...svg.matchAll(
+      /<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/g,
+    ),
+  ].map((m) => ({
+    x1: +m[1]!,
+    y1: +m[2]!,
+    x2: +m[3]!,
+    y2: +m[4]!,
+  }));
+}
+
+const near = (a: number, b: number, tol = 0.6): boolean =>
+  Math.abs(a - b) <= tol;
+
 describe('anchor routing (blah.json repro)', () => {
   const svg = renderPageToSVG(page, []);
 
-  it('straight anchor→node lines render with no curve command', () => {
-    // The two type:"line" anchor links must be straight — no Q/C anywhere that
-    // belongs to them. We assert the rendered SVG contains a straight <line>
-    // for each anchor and that no path's control point points backward.
+  it('straight anchor→node lines are a single segment, anchor→edge, no curve', () => {
     for (const id of ['lmqsr9b3t5', 'lmqsr9iqz6', 'lmqsr9s578']) {
       const link = page.links.find((l) => l.id === id)!;
-      const a = pos(link.from);
-      const t = pos(link.to);
-      // A straight segment from the anchor to the node center exists.
-      const lineRe = new RegExp(
-        `<line x1="${a.x}" y1="${a.y}" x2="${t.x}" y2="${t.y}"`,
+      const a = pos(link.from); // anchor end — exact
+      const n = pos(link.to); // node centre
+      const edge = attach(n, a); // node end — trimmed to the EC perimeter
+      // A straight <line> from the anchor to the node's edge exists.
+      const hit = lines(svg).some(
+        (l) =>
+          near(l.x1, a.x) &&
+          near(l.y1, a.y) &&
+          near(l.x2, edge.x) &&
+          near(l.y2, edge.y),
       );
-      expect(lineRe.test(svg)).toBe(true);
+      expect(hit).toBe(true);
+      // It terminates on the icon edge, not the centre (proves A.4 trims it).
+      expect(near(edge.y, n.y)).toBe(false);
     }
   });
 
   it('no rendered path has a control point pointing away from its target', () => {
-    // For each anchor→node link, the vector (control − anchor) must not have a
-    // negative dot product with (target − anchor): no backward exit handle.
     for (const link of page.links) {
       const a = pos(link.from);
       const t = pos(link.to);
       const vx = t.x - a.x;
       const vy = t.y - a.y;
-      // Pull every Q/C control coordinate out of the whole SVG; check those near
-      // this anchor (the curve starts at the anchor with `M<anchor>`).
+      // The curve still starts exactly at the anchor (`M<anchor>`); its first
+      // control point must not head backward (negative dot with anchor→target).
       const startsHere = new RegExp(
         `M${a.x},${a.y} [QC]([\\d.eE+-]+),([\\d.eE+-]+)`,
       );
@@ -74,18 +115,30 @@ describe('anchor routing (blah.json repro)', () => {
     }
   });
 
-  it('the curved tunnel is a single smooth curve toward the target (no detour)', () => {
+  it('the curved tunnel is a single smooth curve from the anchor to the node edge', () => {
     const link = page.links.find((l) => l.id === 'lmqsr9odv7')!;
-    const a = pos(link.from);
-    const t = pos(link.to);
-    // A single quadratic from anchor straight to the node, no intermediate L.
+    const a = pos(link.from); // anchor
+    const n = pos(link.to); // node centre
+    const edge = attach(n, a); // node end on the EC perimeter
+    // One quadratic from the anchor straight to the edge — no intermediate L.
     const re = new RegExp(
-      `M${a.x},${a.y} Q[\\d.eE+-]+,[\\d.eE+-]+ ${t.x},${t.y}`,
+      `M${a.x},${a.y} Q[\\d.eE+-]+,[\\d.eE+-]+ ${edge.x.toFixed(0)}[\\d.]*,${edge.y.toFixed(0)}[\\d.]*`,
     );
-    expect(re.test(svg)).toBe(true);
+    // Be tolerant of formatting: assert the path starts at the anchor with a
+    // single Q and contains no `L`.
+    const path = [...svg.matchAll(/d="([^"]*)"/g)]
+      .map((mm) => mm[1]!)
+      .find((d) => d.startsWith(`M${a.x},${a.y} Q`));
+    expect(path).toBeTruthy();
+    expect(/L/.test(path!)).toBe(false);
+    // Endpoint sits on the EC edge toward the anchor (east side here).
+    const end = path!.match(/Q[\d.eE+-]+,[\d.eE+-]+ ([\d.eE+-]+),([\d.eE+-]+)/);
+    expect(near(+end![1]!, edge.x)).toBe(true);
+    expect(near(+end![2]!, edge.y)).toBe(true);
+    void re;
   });
 
-  it('still renders a node→node link as a clean straight line (no regression)', () => {
+  it('node→node link trims both ends to their facing edges (no regression)', () => {
     const withCtrl: Page = {
       ...page,
       links: [
@@ -94,6 +147,44 @@ describe('anchor routing (blah.json repro)', () => {
       ],
     };
     const out = renderPageToSVG(withCtrl, []);
-    expect(/<line x1="280" y1="240" x2="571" y2="240"/.test(out)).toBe(true);
+    const a = pos('nmqsmxeix0'); // (280,240)
+    const b = pos('nmqsmxgdl1'); // (571,240)
+    const ea = attach(a, b); // east edge of a
+    const eb = attach(b, a); // west edge of b
+    const hit = lines(out).some(
+      (l) =>
+        near(l.x1, ea.x) &&
+        near(l.y1, ea.y) &&
+        near(l.x2, eb.x) &&
+        near(l.y2, eb.y),
+    );
+    expect(hit).toBe(true);
+  });
+
+  it('an explicit port pins the endpoint to that side of the node', () => {
+    const ported: Page = {
+      ...page,
+      links: [
+        {
+          id: 'P',
+          type: 'line',
+          from: 'nmqsmxeix0',
+          to: 'nmqsmxgdl1',
+          fromPort: 'n',
+          toPort: 's',
+        } as Page['links'][number],
+      ],
+    };
+    const out = renderPageToSVG(ported, []);
+    const a = pos('nmqsmxeix0');
+    const b = pos('nmqsmxgdl1');
+    const hit = lines(out).some(
+      (l) =>
+        near(l.x1, a.x) && // north port keeps centre-x
+        near(l.y1, a.y - EC.hh) && // …on the top edge
+        near(l.x2, b.x) &&
+        near(l.y2, b.y + EC.hh), // south port: bottom edge
+    );
+    expect(hit).toBe(true);
   });
 });

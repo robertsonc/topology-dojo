@@ -69,9 +69,10 @@ describe('headless render (Node, no browser)', () => {
       })
       .build();
     const svg = renderDocumentToSVG(doc);
-    // L-route turns at the corner (to.x, from.y) = (600,200); a straight
-    // diagonal would never visit that point.
-    expect(svg).toContain('600,200');
+    // L-route turns at a right angle. With A.4 boundary attachment the endpoints
+    // sit on the node edges (a→(232,216), b→(568,384)), so the corner is at
+    // (to_edge.x, from_edge.y) = (568,216); a straight diagonal never visits it.
+    expect(svg).toContain('L568,216 L568,384');
   });
 
   it('fans out parallel links between the same node pair', () => {
