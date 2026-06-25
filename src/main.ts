@@ -827,7 +827,7 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
       )
         .map(
           (o) =>
-            `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${o}</option>`,
+            `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${esc(f.optionLabels?.[o] ?? o)}</option>`,
         )
         .join('')}</select></label>`;
     case 'color':
@@ -940,7 +940,7 @@ const LINK_GROUPS: FieldGroup[] = [
   { title: 'Label', keys: ['label', 'fromLabel', 'toLabel'], open: true },
   {
     title: 'Routing',
-    keys: ['lineStyle', 'cornerRadius', 'waypoints'],
+    keys: ['lineStyle', 'fromPort', 'toPort', 'cornerRadius', 'waypoints'],
     open: true,
   },
   {

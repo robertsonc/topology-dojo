@@ -34,6 +34,13 @@ export interface FieldSpec {
   kind: FieldKind;
   /** Allowed values for `kind: 'enum'`. */
   options?: readonly string[];
+  /**
+   * Human-readable display labels for `options`, keyed by value (e.g. the link
+   * port code `'n'` shows as "Top"). The stored value is always the option
+   * code; this only affects the dropdown text. Missing keys fall back to the
+   * raw value.
+   */
+  optionLabels?: Readonly<Record<string, string>>;
   /** True for fields that drive motion (e.g. animated flow particles). */
   animation?: boolean;
   /** Hint that the field is required for the type to render meaningfully. */
@@ -228,6 +235,22 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
 
 /* ── link catalog ─────────────────────────────────────────────────── */
 
+// A.5 endpoint "ports" — the side/corner a link end pins to. Order them the way
+// a user reads them (auto, then the four sides, then the corners); the stored
+// value is the compass code, the label is what shows in the dropdown.
+const PORT_OPTIONS = ['', 'n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'] as const;
+const PORT_LABELS: Readonly<Record<string, string>> = {
+  '': 'Auto (facing other end)',
+  n: 'Top',
+  s: 'Bottom',
+  w: 'Left',
+  e: 'Right',
+  nw: 'Top-left',
+  ne: 'Top-right',
+  sw: 'Bottom-left',
+  se: 'Bottom-right',
+};
+
 const LINK_COMMON: FieldSpec[] = [
   { key: 'color', label: 'Color', kind: 'color' },
   { key: 'label', label: 'Label', kind: 'string' },
@@ -250,18 +273,21 @@ const LINK_COMMON: FieldSpec[] = [
   },
   { key: 'cornerRadius', label: 'Corner radius', kind: 'number' },
   // A.5 ports: pin an endpoint to a node side/corner. Empty = auto-boundary
-  // (A.4): the endpoint attaches to the perimeter facing the other end.
+  // (A.4): the endpoint attaches to the perimeter facing the other end. The
+  // stored value stays the compass code; the dropdown shows friendly labels.
   {
     key: 'fromPort',
-    label: 'From port (side)',
+    label: 'From side',
     kind: 'enum',
-    options: ['', 'n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'],
+    options: PORT_OPTIONS,
+    optionLabels: PORT_LABELS,
   },
   {
     key: 'toPort',
-    label: 'To port (side)',
+    label: 'To side',
     kind: 'enum',
-    options: ['', 'n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'],
+    options: PORT_OPTIONS,
+    optionLabels: PORT_LABELS,
   },
   { key: 'waypoints', label: 'Waypoints', kind: 'points' },
   {
