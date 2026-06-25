@@ -162,6 +162,44 @@ describe('validateDocument', () => {
     expect(probs.some((p) => /orphan anchor/.test(p.message))).toBe(false);
   });
 
+  it('warns on an unconnected node when the frame has links (C.1)', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'ec', x: 200, y: 0 })
+      .node({ id: 'lonely', type: 'ec', x: 400, y: 0 })
+      .link({ id: 'l', type: 'line', from: 'a', to: 'b' })
+      .build();
+    const probs = validateDocument(doc);
+    expect(
+      probs.some(
+        (p) =>
+          p.level === 'warning' &&
+          /unconnected node.*"lonely"|"lonely".*unconnected/.test(
+            `${p.where} ${p.message}`,
+          ),
+      ),
+    ).toBe(true);
+    // The connected nodes are not flagged.
+    expect(
+      probs.some((p) =>
+        /"a".*unconnected|unconnected.*"a"/.test(`${p.where} ${p.message}`),
+      ),
+    ).toBe(false);
+    expect(isValid(doc)).toBe(true); // advisory only
+  });
+
+  it('does not flag unconnected nodes on a link-less inventory frame', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'ec', x: 200, y: 0 })
+      .build();
+    expect(
+      validateDocument(doc).some((p) => /unconnected node/.test(p.message)),
+    ).toBe(false);
+  });
+
   it('errors when a policy marker targets a missing node', () => {
     const doc = createDocument()
       .page()

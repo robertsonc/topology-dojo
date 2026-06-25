@@ -567,11 +567,16 @@ const problemsToggle =
   app.querySelector<HTMLButtonElement>('#problems-toggle')!;
 const problemsPanel = app.querySelector<HTMLDivElement>('#problems')!;
 
-/** First quoted token in a problem that names a node on the current page. */
-function problemNodeId(p: Problem): string | undefined {
-  const ids = new Set(editor.page.nodes.map((n) => n.id));
-  for (const m of `${p.where} ${p.message}`.matchAll(/"([^"]+)"/g))
-    if (ids.has(m[1]!)) return m[1];
+/** Locate the element a problem refers to (click-to-jump): a node or a link. */
+function problemLocate(
+  p: Problem,
+): { kind: 'node' | 'link'; id: string } | undefined {
+  const nodes = new Set(editor.page.nodes.map((n) => n.id));
+  const links = new Set(editor.page.links.map((l) => l.id));
+  for (const m of `${p.where} ${p.message}`.matchAll(/"([^"]+)"/g)) {
+    if (nodes.has(m[1]!)) return { kind: 'node', id: m[1]! };
+    if (links.has(m[1]!)) return { kind: 'link', id: m[1]! };
+  }
   return undefined;
 }
 
@@ -593,9 +598,12 @@ function renderProblems(): void {
   }
   problemsPanel.innerHTML = problems
     .map((p, i) => {
-      const nodeId = problemNodeId(p);
+      const loc = problemLocate(p);
+      const attrs = loc
+        ? ` data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
+        : '';
       return (
-        `<button class="prob prob-${p.level}"${nodeId ? ` data-prob-node="${esc(nodeId)}"` : ''} data-i="${i}">` +
+        `<button class="prob prob-${p.level}${loc ? ' locatable' : ''}"${attrs} data-i="${i}">` +
         `<span class="prob-dot"></span>` +
         `<span class="prob-msg">${esc(p.message)}<span class="prob-where">${esc(p.where)}</span></span>` +
         `</button>`
@@ -603,9 +611,12 @@ function renderProblems(): void {
     })
     .join('');
   problemsPanel
-    .querySelectorAll<HTMLButtonElement>('[data-prob-node]')
+    .querySelectorAll<HTMLButtonElement>('[data-prob-id]')
     .forEach((b) =>
-      b.addEventListener('click', () => editor.focusNode(b.dataset.probNode!)),
+      b.addEventListener('click', () => {
+        if (b.dataset.probKind === 'link') editor.focusLink(b.dataset.probId!);
+        else editor.focusNode(b.dataset.probId!);
+      }),
     );
 }
 

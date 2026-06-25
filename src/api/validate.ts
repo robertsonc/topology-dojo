@@ -172,6 +172,21 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `${at} anchor "${a.id}"`,
           'orphan anchor — no link or flow path references it',
         );
+    // Network-aware lint (C.1): a node that nothing touches. Only flag on a page
+    // that *has* links (a pure inventory/legend frame is fine), and count zone
+    // membership and policy markers as "used" to avoid noise.
+    if (page.links.length > 0) {
+      const usedNodes = new Set<string>(anchorRefs); // link endpoints + flow hops
+      for (const z of page.zones ?? [])
+        for (const nId of z.nodes ?? []) usedNodes.add(nId);
+      for (const m of page.policyMarkers ?? []) usedNodes.add(m.nodeId);
+      for (const n of page.nodes)
+        if (!usedNodes.has(n.id))
+          warn(
+            `${at} node "${n.id}"`,
+            'unconnected node — no link, flow, zone, or marker references it',
+          );
+    }
     for (const l of page.links) {
       claim(l.id, 'link');
       if (!isLinkType(l.type))

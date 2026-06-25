@@ -317,6 +317,23 @@ export class Editor {
     this.fireLinkSelect();
   }
 
+  /** Select a single link and center the view on its midpoint (click-to-locate). */
+  focusLink(id: string): void {
+    const link = this.page.links.find((l) => l.id === id);
+    if (!link) return;
+    const a = resolvePos(this.page, link.from);
+    const b = resolvePos(this.page, link.to);
+    this.sel.clear();
+    this.selAnchors.clear();
+    this.anchorSel = null;
+    this.linkSel = id;
+    if (a && b) this.panTo((a.x + b.x) / 2, (a.y + b.y) / 2);
+    this.renderOverlay();
+    this.fireSelect();
+    this.fireLinkSelect();
+    this.fireAnchorSelect();
+  }
+
   /**
    * Enter/leave spacebar pan ("hand") mode: while held, a left-drag pans the
    * canvas instead of selecting, and the cursor shows a grab hand.
