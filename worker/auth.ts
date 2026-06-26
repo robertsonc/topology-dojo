@@ -102,21 +102,43 @@ export async function completeWebLogin(
       client_id: env.GITHUB_CLIENT_ID,
       client_secret: env.GITHUB_CLIENT_SECRET,
       code,
+      // Match the redirect_uri sent at /authorize (parity with the MCP flow).
+      redirect_uri: new URL('/callback', request.url).href,
     }),
   });
-  const token = (await tokenRes.json()) as GitHubToken;
+  const tokenText = await tokenRes.text();
+  let token: GitHubToken = {};
+  try {
+    token = JSON.parse(tokenText) as GitHubToken;
+  } catch {
+    // non-JSON token response — fall through to the guard below
+  }
   if (!token.access_token) {
-    return new Response('GitHub authorization failed\n', { status: 401 });
+    console.error(
+      'web login: token exchange failed',
+      tokenRes.status,
+      tokenText,
+    );
+    return new Response(
+      `GitHub authorization failed\ntoken endpoint: ${tokenRes.status}\n${tokenText.slice(0, 400)}\n`,
+      { status: 401, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    );
   }
   const userRes = await fetch('https://api.github.com/user', {
     headers: {
       authorization: `Bearer ${token.access_token}`,
       accept: 'application/vnd.github+json',
       'user-agent': 'topology-dojo',
+      'x-github-api-version': '2022-11-28',
     },
   });
   if (!userRes.ok) {
-    return new Response('Could not read GitHub profile\n', { status: 401 });
+    const detail = (await userRes.text()).slice(0, 400);
+    console.error('web login: GET /user failed', userRes.status, detail);
+    return new Response(
+      `Could not read GitHub profile\nGET /user -> ${userRes.status}\n${detail}\n`,
+      { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    );
   }
   const user = (await userRes.json()) as GitHubUser;
   const session = await signSession(
