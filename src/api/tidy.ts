@@ -32,6 +32,13 @@ export interface TidyOptions {
   iterations?: number;
 }
 
+export interface BalanceOptions {
+  /** Centres on an axis snap when nodes are within this many px (default ≈ grid×1.3). */
+  alignTolerance?: number;
+  /** Centre the whole layout's bounding box in the page (default true). */
+  center?: boolean;
+}
+
 export interface TidyResult {
   /** How many nodes ended up at a new position. */
   movedNodes: number;
@@ -107,6 +114,109 @@ export function tidyPage(page: Page, opts: TidyOptions = {}): number {
     if (n.x !== orig[k]!.x || n.y !== orig[k]!.y) movedCount++;
   });
   return movedCount;
+}
+
+/**
+ * Cluster node centres on one axis and snap each cluster to its mean, so nodes
+ * that *almost* share a row (y) or column (x) line up exactly. Greedy by
+ * proximity: a new cluster starts when the gap to the previous node exceeds
+ * `tol`. Returns the per-node target for that axis (keyed by node index).
+ */
+function alignAxis(values: number[], tol: number): number[] {
+  const order = values
+    .map((_v, i) => i)
+    .sort((a, b) => values[a]! - values[b]!);
+  const out = values.slice();
+  let i = 0;
+  while (i < order.length) {
+    let j = i + 1;
+    while (
+      j < order.length &&
+      values[order[j]!]! - values[order[j - 1]!]! <= tol
+    )
+      j++;
+    const group = order.slice(i, j);
+    const mean = Math.round(
+      group.reduce((s, k) => s + values[k]!, 0) / group.length,
+    );
+    for (const k of group) out[k] = mean;
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * Balance + symmetry pass. Aligns nodes that nearly share a row/column onto a
+ * common axis (so rows and columns are crisp), then centres the whole layout's
+ * bounding box within the page — a deterministic nudge toward the balanced,
+ * symmetric arrangement a clean topology wants. Assumes a non-overlapping
+ * input (run `tidyPage` first if needed); returns how many nodes moved.
+ *
+ * Pure node-positioning, like tidy — zones auto-size around their members.
+ */
+export function balancePage(page: Page, opts: BalanceOptions = {}): number {
+  const nodes = page.nodes;
+  if (nodes.length === 0) return 0;
+  const grid = LAYOUT_RULES.gridStep;
+  const tol = opts.alignTolerance ?? grid * 1.3;
+  const orig = nodes.map((n) => ({ x: n.x, y: n.y }));
+
+  // Align rows (shared y) and columns (shared x).
+  const ys = alignAxis(
+    nodes.map((n) => n.y),
+    tol,
+  );
+  const xs = alignAxis(
+    nodes.map((n) => n.x),
+    tol,
+  );
+  nodes.forEach((n, k) => {
+    n.y = ys[k]!;
+    n.x = xs[k]!;
+  });
+
+  // Centre the layout's footprint bounding box within the page margins.
+  if (opts.center ?? true) {
+    const [vx, vy, vw, vh] = parseViewBox(page.viewBox);
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (const n of nodes) {
+      const f = nodeFootprint(n);
+      minX = Math.min(minX, f.x);
+      minY = Math.min(minY, f.y);
+      maxX = Math.max(maxX, f.x + f.w);
+      maxY = Math.max(maxY, f.y + f.h);
+    }
+    const dx = Math.round((vx + vw / 2 - (minX + maxX) / 2) / grid) * grid;
+    const dy = Math.round((vy + vh / 2 - (minY + maxY) / 2) / grid) * grid;
+    for (const n of nodes) {
+      n.x += dx;
+      n.y += dy;
+    }
+  }
+
+  let movedCount = 0;
+  nodes.forEach((n, k) => {
+    n.x = Math.round(n.x);
+    n.y = Math.round(n.y);
+    if (n.x !== orig[k]!.x || n.y !== orig[k]!.y) movedCount++;
+  });
+  return movedCount;
+}
+
+/** Tidy (separate) then balance (align + centre) — the editor's "Balance" action. */
+export function balanceLayout(
+  doc: TopologyDocument,
+  opts: BalanceOptions = {},
+): TopologyDocument {
+  const next = structuredClone(doc);
+  for (const page of next.pages) {
+    tidyPage(page);
+    balancePage(page, opts);
+  }
+  return next;
 }
 
 /** Tidy every page of a document in place; returns a before/after summary. */

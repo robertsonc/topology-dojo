@@ -17,7 +17,7 @@ import {
   type ZoneConfig,
 } from '../vendor/topology-ds.js';
 import { clientToUser } from './coords.js';
-import { tidyPage } from '../api/tidy.js';
+import { balancePage, tidyPage } from '../api/tidy.js';
 import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
 import type { Page } from '../pages/model.js';
@@ -217,6 +217,19 @@ export class Editor {
     const moved = tidyPage(this.page);
     if (moved === 0) {
       this.undoStack.pop(); // nothing changed — don't pollute history
+      return;
+    }
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /** Balance the layout: de-overlap, align rows/columns, centre on the page. */
+  balance(): void {
+    this.snapshot();
+    const moved = tidyPage(this.page) + balancePage(this.page);
+    if (moved === 0) {
+      this.undoStack.pop();
       return;
     }
     this.renderArt();
