@@ -3458,6 +3458,27 @@ class TopologyDesigner {
     return map[c] || 'tds-glow';
   }
 
+  /**
+   * Centre label chip for a link (used by the line type, which has no built-in
+   * label renderer). Floats just above the wire's midpoint; `labelOffset`
+   * {x,y} shifts it (so it's moveable), and the chip sizes to the text.
+   */
+  _renderLinkLabel(from, to, label, color, op, labelOffset) {
+    const a = Math.atan2(to.y - from.y, to.x - from.x);
+    const mx = (from.x + to.x) / 2,
+      my = (from.y + to.y) / 2;
+    // Default: nudge perpendicular off the wire so it doesn't sit on the line.
+    const lx = mx - Math.sin(a) * 12 + (labelOffset?.x || 0);
+    const ly = my + Math.cos(a) * 12 + (labelOffset?.y || 0);
+    const w = String(label).length * 5.6 + 14;
+    return (
+      `<g class="tds-fade" style="opacity:${op}">` +
+      `<rect x="${lx - w / 2}" y="${ly - 10}" width="${w}" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
+      `<rect x="${lx - w / 2 + 1}" y="${ly - 9}" width="${w - 2}" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
+      `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${color}" font-size="7.5" font-weight="600">${_esc(label)}</text></g>`
+    );
+  }
+
   /** Render endpoint (port) labels near link source/destination */
   _renderEndpointLabels(x1, y1, x2, y2, linkCfg, op) {
     const fromLabel = linkCfg.fromLabel;
@@ -3681,6 +3702,10 @@ class TopologyDesigner {
         } else {
           svg = this._renderLine(stepId, phaseNum, from.x, from.y, to.x, to.y, color, op, linkCfg.dashed, linkCfg.strokeWidth);
         }
+        // Line links carry a centre label too — every other link type renders
+        // its own, but the line/flow renderers don't, so do it here. Honors the
+        // link's labelOffset (so the label is moveable, like the others).
+        if (linkCfg.label) svg += this._renderLinkLabel(from, to, linkCfg.label, color, op, linkCfg.labelOffset);
         break;
       case 'tunnel': {
         const tunnelPath = waypointPath || routedPath || `M${from.x},${from.y} L${to.x},${to.y}`;
