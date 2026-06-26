@@ -1,0 +1,195 @@
+/**
+ * Browser login flow (gates the SPA), reusing the same GitHub OAuth App as the
+ * MCP auth — but a separate, parallel flow: instead of issuing an MCP grant it
+ * sets a signed session cookie (see src/server/session). The MCP authorization
+ * endpoints (`/authorize`, the MCP `/callback` branch) are untouched.
+ *
+ *   GET /login          → branded "Sign in with GitHub" page
+ *   GET /auth/github    → start: set a state nonce, bounce to GitHub
+ *   GET /callback?state=web… → finish: set the session cookie (handled here)
+ *   GET /logout         → clear the session, back to /login
+ *   GET /api/me         → { login, name } for the signed-in user (or 401)
+ *
+ * The HMAC key for the session cookie is GITHUB_CLIENT_SECRET (already a
+ * configured server secret) — no new secret to provision.
+ */
+import type { WorkerEnv } from './env.js';
+import {
+  parseCookies,
+  signSession,
+  verifySession,
+  SESSION_TTL_SEC,
+  type SessionUser,
+} from '../src/server/session.js';
+
+const COOKIE_SESSION = 'tdg_session';
+const COOKIE_STATE = 'tdg_oauth_state';
+const WEB_STATE_PREFIX = 'web.';
+
+interface GitHubToken {
+  access_token?: string;
+}
+interface GitHubUser {
+  id: number;
+  login: string;
+  name: string | null;
+}
+
+/** A path is a safe same-origin redirect target (no open-redirect). */
+function safePath(p: string | null): string {
+  return p && p.startsWith('/') && !p.startsWith('//') ? p : '/';
+}
+
+function cookie(name: string, value: string, maxAgeSec: number): string {
+  return (
+    `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; ` +
+    `Max-Age=${maxAgeSec}`
+  );
+}
+
+/** The signed-in user for this request (verified session cookie), or null. */
+export async function currentUser(
+  request: Request,
+  env: WorkerEnv,
+): Promise<SessionUser | null> {
+  const token = parseCookies(request.headers.get('cookie'))[COOKIE_SESSION];
+  return verifySession(token, env.GITHUB_CLIENT_SECRET);
+}
+
+/** Start the browser login: stash a state nonce + return path, go to GitHub. */
+export function startWebLogin(request: Request, env: WorkerEnv): Response {
+  const url = new URL(request.url);
+  const go = safePath(url.searchParams.get('go'));
+  const nonce = crypto.randomUUID();
+  const gh = new URL('https://github.com/login/oauth/authorize');
+  gh.searchParams.set('client_id', env.GITHUB_CLIENT_ID);
+  gh.searchParams.set('redirect_uri', new URL('/callback', request.url).href);
+  gh.searchParams.set('scope', 'read:user');
+  gh.searchParams.set('state', WEB_STATE_PREFIX + nonce);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: gh.href,
+      'set-cookie': cookie(COOKIE_STATE, `${nonce}|${go}`, 600),
+    },
+  });
+}
+
+/** True when a `/callback` request belongs to the browser flow (not MCP). */
+export function isWebCallback(state: string | null): boolean {
+  return !!state && state.startsWith(WEB_STATE_PREFIX);
+}
+
+/** Finish the browser login: validate state, exchange code, set the session. */
+export async function completeWebLogin(
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state') ?? '';
+  const nonce = state.slice(WEB_STATE_PREFIX.length);
+  const stateCookie = parseCookies(request.headers.get('cookie'))[COOKIE_STATE];
+  const [cookieNonce, go] = (stateCookie ?? '').split('|');
+  if (!code || !nonce || !cookieNonce || nonce !== cookieNonce) {
+    return new Response('Bad sign-in state\n', { status: 400 });
+  }
+
+  const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      client_id: env.GITHUB_CLIENT_ID,
+      client_secret: env.GITHUB_CLIENT_SECRET,
+      code,
+    }),
+  });
+  const token = (await tokenRes.json()) as GitHubToken;
+  if (!token.access_token) {
+    return new Response('GitHub authorization failed\n', { status: 401 });
+  }
+  const userRes = await fetch('https://api.github.com/user', {
+    headers: {
+      authorization: `Bearer ${token.access_token}`,
+      accept: 'application/vnd.github+json',
+      'user-agent': 'topology-dojo',
+    },
+  });
+  if (!userRes.ok) {
+    return new Response('Could not read GitHub profile\n', { status: 401 });
+  }
+  const user = (await userRes.json()) as GitHubUser;
+  const session = await signSession(
+    { uid: String(user.id), login: user.login, name: user.name ?? undefined },
+    env.GITHUB_CLIENT_SECRET,
+  );
+  const headers = new Headers();
+  headers.append('location', safePath(go ?? '/'));
+  headers.append(
+    'set-cookie',
+    cookie(COOKIE_SESSION, session, SESSION_TTL_SEC),
+  );
+  // Clear the one-shot state cookie.
+  headers.append('set-cookie', `${COOKIE_STATE}=; Path=/; Max-Age=0`);
+  return new Response(null, { status: 302, headers });
+}
+
+/** Sign out: clear the session cookie and return to the login page. */
+export function handleLogout(): Response {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: '/login',
+      'set-cookie': `${COOKIE_SESSION}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`,
+    },
+  });
+}
+
+/** GET /api/me → the signed-in user, or 401. Used by the app header chip. */
+export async function handleMe(
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  const user = await currentUser(request, env);
+  if (!user) return new Response('{}', { status: 401, headers: json });
+  return new Response(JSON.stringify({ login: user.login, name: user.name }), {
+    headers: json,
+  });
+}
+
+const json = { 'content-type': 'application/json' };
+
+/** Is this a top-level page navigation (vs a sub-resource fetch)? */
+export function isDocumentNavigation(request: Request): boolean {
+  if (request.method !== 'GET') return false;
+  if (request.headers.get('sec-fetch-dest') === 'document') return true;
+  // Fallback for clients without Fetch Metadata: an HTML-accepting GET.
+  return (request.headers.get('accept') ?? '').includes('text/html');
+}
+
+/** The branded login page (self-contained — no app assets, so it isn't gated). */
+export function loginPage(go = '/'): Response {
+  const auth = `/auth/github?go=${encodeURIComponent(safePath(go))}`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Sign in · Topology Dojo</title><style>
+:root{--bg:#1d1f27;--panel:#22252e;--border:#3e4550;--text:#e6e8e9;--muted:#7d8a92;--accent:#01a982;--font:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:radial-gradient(1200px 600px at 50% -10%,rgba(1,169,130,.12),transparent),var(--bg);color:var(--text);font-family:var(--font);display:flex;align-items:center;justify-content:center}
+.card{width:340px;max-width:90vw;background:rgba(34,37,46,.9);border:1px solid var(--border);border-radius:14px;padding:28px;text-align:center;backdrop-filter:blur(8px);box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.mark{width:46px;height:46px;border-radius:11px;border:1px solid var(--accent);display:inline-flex;align-items:center;justify-content:center;color:var(--accent);font-size:22px;margin-bottom:14px}
+h1{font-size:16px;margin:0 0 4px;letter-spacing:.3px}p{color:var(--muted);font-size:12px;margin:0 0 20px;line-height:1.5}
+a.btn{display:flex;align-items:center;justify-content:center;gap:10px;text-decoration:none;background:var(--accent);color:#08130f;font-weight:700;font-size:13px;padding:11px 14px;border-radius:9px}
+a.btn:hover{filter:brightness(1.07)}svg{width:18px;height:18px;fill:currentColor}.foot{margin-top:16px;color:var(--muted);font-size:10px}
+</style></head><body><div class="card">
+<div class="mark">△</div><h1>Topology Dojo</h1><p>Sign in with GitHub to open the editor.</p>
+<a class="btn" href="${auth}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Sign in with GitHub</a>
+<div class="foot">Authorized GitHub accounts only.</div>
+</div></body></html>`;
+  return new Response(html, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  });
+}

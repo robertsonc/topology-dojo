@@ -232,6 +232,21 @@
         background: transparent;
         color: var(--muted);
       }
+      /* Signed-in user chip (shown only when the Worker reports a session). */
+      .user-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        text-decoration: none;
+      }
+      .user-chip .uc-dot {
+        color: var(--accent);
+        font-size: 9px;
+        line-height: 1;
+      }
+      .user-chip .tlabel {
+        margin-left: 0;
+      }
       .align-group {
         display: inline-flex;
         gap: 3px;

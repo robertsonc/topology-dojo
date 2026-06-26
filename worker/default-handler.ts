@@ -12,6 +12,16 @@
  */
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
 import type { WorkerEnv } from './env.js';
+import {
+  completeWebLogin,
+  currentUser,
+  handleLogout,
+  handleMe,
+  isDocumentNavigation,
+  isWebCallback,
+  loginPage,
+  startWebLogin,
+} from './auth.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -132,11 +142,26 @@ export const defaultHandler = {
     env: WorkerEnv,
     _ctx: ExecutionContext,
   ): Promise<Response> {
-    const { pathname } = new URL(request.url);
+    const url = new URL(request.url);
+    const { pathname } = url;
 
+    // Browser login flow (separate from the MCP OAuth flow below).
+    if (pathname === '/login')
+      return loginPage(url.searchParams.get('go') ?? '/');
+    if (pathname === '/auth/github') return startWebLogin(request, env);
+    if (pathname === '/logout') return handleLogout();
+    if (pathname === '/api/me') return handleMe(request, env);
+
+    // MCP OAuth provider flow. `/callback` is shared: the browser login uses a
+    // `web.`-prefixed state, the MCP client flow does not.
     if (pathname === '/authorize') return handleAuthorize(request, env);
-    if (pathname === '/callback') return handleCallback(request, env);
+    if (pathname === '/callback') {
+      return isWebCallback(url.searchParams.get('state'))
+        ? completeWebLogin(request, env)
+        : handleCallback(request, env);
+    }
 
+    // Public share snapshot API (backs the read-only /v/:id view).
     if (pathname.startsWith(API_TOPOLOGY_PREFIX)) {
       if (request.method !== 'GET') {
         return new Response('Method Not Allowed\n', { status: 405 });
@@ -144,6 +169,19 @@ export const defaultHandler = {
       const id = pathname.slice(API_TOPOLOGY_PREFIX.length);
       if (!id) return new Response('Not Found\n', { status: 404 });
       return serveSnapshot(id, env);
+    }
+
+    // Gate the editor: a top-level navigation to the app needs a signed-in
+    // session. Read-only shared views (/v/:id) stay public; sub-resource
+    // fetches (scripts/styles/fonts) are served so the login + shared pages
+    // work. Local Vite dev never hits the Worker, so dev is unauthenticated.
+    const isSharedView = pathname === '/v' || pathname.startsWith('/v/');
+    if (isDocumentNavigation(request) && !isSharedView) {
+      const user = await currentUser(request, env);
+      if (!user) {
+        const go = encodeURIComponent(pathname + url.search);
+        return Response.redirect(new URL(`/login?go=${go}`, url).href, 302);
+      }
     }
 
     // /v/:id and everything else fall through to the SPA (the not-found handler
