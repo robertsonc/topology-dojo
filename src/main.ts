@@ -118,6 +118,7 @@ app.innerHTML = `
       <div class="tgroup">
         <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑<span class="tlabel">delete</span></button>
         <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)">✦<span class="tlabel">tidy</span></button>
+        <button class="tbtn" id="tBalance" title="Balance layout — align rows/columns + centre (Shift+T)">⚖<span class="tlabel">balance</span></button>
         <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm">
           <option value="">⤢ arrange…</option>
           <option value="hierarchical">hierarchical</option>
@@ -2174,6 +2175,9 @@ app
   .querySelector('#tDelete')
   ?.addEventListener('click', () => editor.deleteSelected());
 app.querySelector('#tTidy')?.addEventListener('click', () => editor.tidy());
+app
+  .querySelector('#tBalance')
+  ?.addEventListener('click', () => editor.balance());
 const layoutSel = app.querySelector<HTMLSelectElement>('#tLayout')!;
 layoutSel.addEventListener('change', () => {
   const algorithm = layoutSel.value;
@@ -2229,6 +2233,7 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['M / P', 'Toggle minimap / properties'],
       ['C', 'Calm canvas (pause animation)'],
       ['T', 'Tidy layout'],
+      ['Shift+T', 'Balance layout'],
       ['? ', 'This shortcut reference'],
     ],
   },
@@ -2371,7 +2376,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'p' || e.key === 'P')
     setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed'));
   if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
-  if (e.key === 't' || e.key === 'T') editor.tidy();
+  if (e.key === 't') editor.tidy();
+  if (e.key === 'T') editor.balance(); // Shift+T
   if (e.key === '0') editor.resetView();
   if (e.key === 'l' || e.key === 'L') setTool('link');
   if (e.key === 'v' || e.key === 'V') setTool('select');
@@ -2461,6 +2467,7 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
     { label: 'Select all', run: () => editor.selectAll() },
     { sep: true },
     { label: 'Tidy layout', run: () => editor.tidy() },
+    { label: 'Balance layout', run: () => editor.balance() },
   ];
 }
 
