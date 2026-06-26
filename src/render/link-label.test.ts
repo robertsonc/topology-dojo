@@ -33,10 +33,63 @@ function labelX(svg: string, label: string): number {
   return m ? +m[1]! : NaN;
 }
 
+/** The x of the data-llabel chip's text (which side: from/to/centre). */
+function chipTextX(svg: string, which: string, text: string): number {
+  const m = svg.match(
+    new RegExp(
+      `data-llabel="${which}"[^]*?<text x="([\\d.-]+)"[^>]*>${text}</text>`,
+    ),
+  );
+  return m ? +m[1]! : NaN;
+}
+
 describe('line link label', () => {
   it('renders the line link’s centre label', () => {
     const svg = renderPageToSVG(linePage({ label: 'EdgeHA123' }), []);
     expect(svg).toContain('>EdgeHA123</text>');
+  });
+
+  it('tags labels as draggable chips (data-llabel) for the editor', () => {
+    const svg = renderPageToSVG(
+      linePage({ label: 'C', fromLabel: 'wan1', toLabel: 'wan2' }),
+      [],
+    );
+    expect(svg).toContain('data-llabel="from"');
+    expect(svg).toContain('data-llabel="to"');
+    expect(svg).toContain('data-llabel="centre"');
+  });
+
+  it('shifts an interface label by its per-label offset (moveable)', () => {
+    const baseX = chipTextX(
+      renderPageToSVG(linePage({ fromLabel: 'wan1' }), []),
+      'from',
+      'wan1',
+    );
+    const movedX = chipTextX(
+      renderPageToSVG(
+        linePage({ fromLabel: 'wan1', fromLabelOffset: { x: 30, y: 0 } }),
+        [],
+      ),
+      'from',
+      'wan1',
+    );
+    expect(movedX - baseX).toBeCloseTo(30, 1);
+  });
+
+  it('scales label font size by labelScale (resizable)', () => {
+    const fonts = (svg: string): number[] =>
+      [...svg.matchAll(/font-size="([\d.]+)"/g)]
+        .map((m) => +m[1]!)
+        .filter((f) => f < 20);
+    const big = Math.max(
+      ...fonts(
+        renderPageToSVG(linePage({ fromLabel: 'wan1', labelScale: 2 }), []),
+      ),
+    );
+    const small = Math.max(
+      ...fonts(renderPageToSVG(linePage({ fromLabel: 'wan1' }), [])),
+    );
+    expect(big).toBeGreaterThan(small);
   });
 
   it('renders the label even with ports set (no waypoints)', () => {

@@ -256,6 +256,8 @@ const LINK_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string' },
   { key: 'fromLabel', label: 'From interface (A)', kind: 'string' },
   { key: 'toLabel', label: 'To interface (Z)', kind: 'string' },
+  // Label size multiplier (1 = default). Drag the chips on canvas to move them.
+  { key: 'labelScale', label: 'Label size', kind: 'number' },
   // B.2 first-class link metadata — renderable on the wire (see showMeta).
   // Stable per-field properties a future data feed can populate.
   { key: 'vlan', label: 'VLAN', kind: 'string' },

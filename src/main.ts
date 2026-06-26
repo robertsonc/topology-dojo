@@ -994,7 +994,11 @@ const LINK_GROUPS: FieldGroup[] = [
     keys: ['color', 'strokeWidth', 'opacity', 'dashed'],
     open: true,
   },
-  { title: 'Label', keys: ['label', 'fromLabel', 'toLabel'], open: true },
+  {
+    title: 'Label',
+    keys: ['label', 'fromLabel', 'toLabel', 'labelScale'],
+    open: true,
+  },
   {
     title: 'Routing',
     keys: ['lineStyle', 'fromPort', 'toPort', 'cornerRadius', 'waypoints'],

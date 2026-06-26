@@ -90,6 +90,16 @@ export class Editor {
   private drag: DragState | null = null;
   /** Active waypoint drag on the selected link (index into link.waypoints). */
   private wpDrag: { index: number; moved: boolean } | null = null;
+  /** Active drag of a link label chip (interface or centre). */
+  private labelDrag: {
+    lid: string;
+    key: string;
+    startX: number;
+    startY: number;
+    ox: number;
+    oy: number;
+    moved: boolean;
+  } | null = null;
   private marquee: { x0: number; y0: number; x1: number; y1: number } | null =
     null;
   /** Pan/zoom window in page coordinates (the displayed viewBox). */
@@ -1968,6 +1978,38 @@ export class Editor {
    * it lands on a segment's midpoint "+" handle, insert a new waypoint there and
    * drag that. Returns true when a grab started.
    */
+  /**
+   * The link label chip under a doc point, if any — read from the rendered art
+   * (each chip is tagged `.tds-llabel` with data-lid/data-llabel). Topmost wins.
+   */
+  private hitLabel(p: { x: number; y: number }): {
+    lid: string;
+    which: string;
+  } | null {
+    const els = this.art.querySelectorAll<SVGGraphicsElement>('.tds-llabel');
+    for (let i = els.length - 1; i >= 0; i--) {
+      const el = els[i]!;
+      let bb: DOMRect;
+      try {
+        bb = el.getBBox();
+      } catch {
+        continue;
+      }
+      const pad = 2;
+      if (
+        p.x >= bb.x - pad &&
+        p.x <= bb.x + bb.width + pad &&
+        p.y >= bb.y - pad &&
+        p.y <= bb.y + bb.height + pad
+      ) {
+        const lid = el.getAttribute('data-lid');
+        const which = el.getAttribute('data-llabel');
+        if (lid && which) return { lid, which };
+      }
+    }
+    return null;
+  }
+
   private tryWaypointGrab(p: { x: number; y: number }): boolean {
     const link = this.page.links.find((l) => l.id === this.linkSel);
     if (!link) return false;
@@ -2059,6 +2101,38 @@ export class Editor {
       this.overlay.setPointerCapture(e.pointerId);
       this.renderOverlay();
       return;
+    }
+
+    // Grabbing a link's label chip (interface or centre) drags it — beats node
+    // selection so you can move a label that overlaps an icon.
+    if (this.tool === 'select' && !this.spaceHeld) {
+      const lh = this.hitLabel(p);
+      if (lh) {
+        const link = this.page.links.find((l) => l.id === lh.lid);
+        if (link) {
+          const key = labelOffsetKey(lh.which);
+          const cur = (link[key] as { x?: number; y?: number }) ?? {};
+          this.labelDrag = {
+            lid: lh.lid,
+            key,
+            startX: p.x,
+            startY: p.y,
+            ox: cur.x ?? 0,
+            oy: cur.y ?? 0,
+            moved: false,
+          };
+          this.clearZoneSel();
+          this.sel.clear();
+          this.selAnchors.clear();
+          this.syncAnchorSel();
+          this.linkSel = lh.lid;
+          this.fireSelect();
+          this.fireLinkSelect();
+          this.overlay.setPointerCapture(e.pointerId);
+          this.renderOverlay();
+          return;
+        }
+      }
     }
 
     const hit = hitTestNode(this.page, p.x, p.y);
@@ -2231,6 +2305,22 @@ export class Editor {
       }
       return;
     }
+    if (this.labelDrag) {
+      const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      const link = this.page.links.find((l) => l.id === this.labelDrag!.lid);
+      if (link) {
+        if (!this.labelDrag.moved) {
+          this.snapshot();
+          this.labelDrag.moved = true;
+        }
+        link[this.labelDrag.key] = {
+          x: Math.round(this.labelDrag.ox + (pp.x - this.labelDrag.startX)),
+          y: Math.round(this.labelDrag.oy + (pp.y - this.labelDrag.startY)),
+        };
+        this.scheduleArt();
+      }
+      return;
+    }
     // Idle hover: show connection dots on the node under the cursor, and a
     // crosshair when poised over a dot (drag it out to draw a link).
     if (!this.drag && !this.marquee) {
@@ -2300,6 +2390,15 @@ export class Editor {
       this.renderOverlay();
       return;
     }
+    if (this.labelDrag) {
+      if (this.labelDrag.moved) {
+        this.renderArt();
+        this.onChange();
+      }
+      this.labelDrag = null;
+      this.renderOverlay();
+      return;
+    }
     if (this.dragLink) {
       const dl = this.dragLink;
       this.dragLink = null;
@@ -2359,6 +2458,15 @@ export class Editor {
   selectionCount(): number {
     return this.sel.size + this.selAnchors.size;
   }
+}
+
+/** The link field that stores a given label chip's drag offset. */
+function labelOffsetKey(which: string): string {
+  return which === 'from'
+    ? 'fromLabelOffset'
+    : which === 'to'
+      ? 'toLabelOffset'
+      : 'labelOffset';
 }
 
 function parseViewBox(vb: string): {
