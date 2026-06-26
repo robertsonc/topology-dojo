@@ -114,15 +114,13 @@ export async function completeWebLogin(
     // non-JSON token response — fall through to the guard below
   }
   if (!token.access_token) {
+    // Log the upstream detail server-side; keep the user-facing message terse.
     console.error(
       'web login: token exchange failed',
       tokenRes.status,
       tokenText,
     );
-    return new Response(
-      `GitHub authorization failed\ntoken endpoint: ${tokenRes.status}\n${tokenText.slice(0, 400)}\n`,
-      { status: 401, headers: { 'content-type': 'text/plain; charset=utf-8' } },
-    );
+    return new Response('GitHub authorization failed\n', { status: 401 });
   }
   const userRes = await fetch('https://api.github.com/user', {
     headers: {
@@ -133,12 +131,12 @@ export async function completeWebLogin(
     },
   });
   if (!userRes.ok) {
-    const detail = (await userRes.text()).slice(0, 400);
-    console.error('web login: GET /user failed', userRes.status, detail);
-    return new Response(
-      `Could not read GitHub profile\nGET /user -> ${userRes.status}\n${detail}\n`,
-      { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    console.error(
+      'web login: GET /user failed',
+      userRes.status,
+      await userRes.text(),
     );
+    return new Response('Could not read GitHub profile\n', { status: 401 });
   }
   const user = (await userRes.json()) as GitHubUser;
   const session = await signSession(
