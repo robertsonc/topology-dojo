@@ -3494,17 +3494,22 @@ class TopologyDesigner {
     // label freely off its default position, like the centre label's labelOffset.
     const fo = linkCfg.fromLabelOffset || {};
     const to = linkCfg.toLabelOffset || {};
+    // Chip sizes to its text (short labels like "lan0" stay compact; long ones
+    // like "ge-0/0/23" no longer clip).
+    const chipW = (t) => Math.max(20, String(t).length * 5.2 + 12);
     let s = '';
     if (fromLabel) {
       const bx = x1 + dx + px + (fo.x || 0), by = y1 + dy + py + (fo.y || 0);
+      const w = chipW(fromLabel);
       s += `<g opacity="${op}">` +
-        `<rect x="${bx - 22}" y="${by - 8}" width="44" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
+        `<rect x="${bx - w / 2}" y="${by - 8}" width="${w}" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
         `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${fromLabel}</text></g>`;
     }
     if (toLabel) {
       const bx = x2 - dx + px + (to.x || 0), by = y2 - dy + py + (to.y || 0);
+      const w = chipW(toLabel);
       s += `<g opacity="${op}">` +
-        `<rect x="${bx - 22}" y="${by - 8}" width="44" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
+        `<rect x="${bx - w / 2}" y="${by - 8}" width="${w}" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
         `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${toLabel}</text></g>`;
     }
     return s;
