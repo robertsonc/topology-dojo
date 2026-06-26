@@ -80,6 +80,15 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     });
   }
   if (pages.length === 0) return null;
+  // Self-heal stale zone membership: drop member ids that no longer match a node
+  // on the page (e.g. the node was deleted in an older build that didn't prune).
+  // Otherwise they linger as "member references missing node" warnings forever.
+  for (const pg of pages) {
+    const nodeIds = new Set(pg.nodes.map((n) => n.id));
+    for (const z of pg.zones)
+      if (z.nodes.some((id) => !nodeIds.has(id)))
+        z.nodes = z.nodes.filter((id) => nodeIds.has(id));
+  }
   const customNodes = Array.isArray(d.customNodes)
     ? (d.customNodes as CustomNodeSpec[])
     : [];

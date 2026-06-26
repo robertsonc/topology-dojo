@@ -77,6 +77,20 @@ type Guide =
       labelY: number;
     };
 
+/** Node style keys the format painter copies (appearance, never identity). */
+const NODE_FORMAT_KEYS = ['color', 'labelColor', 'opacity'] as const;
+/** Link style keys the format painter copies (type + line style, never wiring). */
+const LINK_FORMAT_KEYS = [
+  'type',
+  'color',
+  'lineStyle',
+  'dashed',
+  'strokeWidth',
+  'flowSpeed',
+  'flowParticles',
+  'reverseFlow',
+] as const;
+
 export class Editor {
   private sel = new Set<string>();
   private undoStack: string[] = [];
@@ -153,6 +167,11 @@ export class Editor {
   private zoneSel: string | null = null;
   /** Copy/paste buffer (cloned elements, page-independent). */
   private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
+  /** Format-painter buffer: a copied node/link style to brush onto others. */
+  private formatClip: {
+    kind: 'node' | 'link';
+    style: Record<string, unknown>;
+  } | null = null;
   /** True while a run of arrow-nudges is coalescing into one undo entry. */
   private nudgeActive = false;
   private nudgeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -973,6 +992,13 @@ export class Editor {
     this.page.links = this.page.links.filter(
       (l) => ids.has(l.from) && ids.has(l.to),
     );
+    // Prune zone membership of nodes that no longer exist — stale member ids
+    // otherwise surface as "member references missing node" warnings and travel
+    // with the zone through save/duplicate.
+    const nodeIds = new Set(this.page.nodes.map((n) => n.id));
+    for (const z of this.page.zones)
+      if (z.nodes.some((id) => !nodeIds.has(id)))
+        z.nodes = z.nodes.filter((id) => nodeIds.has(id));
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -1208,6 +1234,56 @@ export class Editor {
   paste(): void {
     if (!this.clipboard || this.clipboard.nodes.length === 0) return;
     this.placeClones(this.clipboard.nodes, this.clipboard.links);
+  }
+
+  /* ── format painter ───────────────────────────────────────────────
+   * Copy one element's visual style and brush it onto others. We copy
+   * appearance only — never identity/topology (id, from/to, waypoints) or label
+   * TEXT — so a paste restyles without rewiring. */
+
+  /** Copy is available when exactly one node or one link is selected. */
+  canCopyFormat(): boolean {
+    return !!this.getSelectedNode() || !!this.getSelectedLink();
+  }
+
+  /** Capture the selected element's style into the format buffer. */
+  copyFormat(): void {
+    const node = this.getSelectedNode();
+    const link = node ? null : this.getSelectedLink();
+    const src = (node ?? link) as Record<string, unknown> | null;
+    if (!src) return;
+    const keys = node ? NODE_FORMAT_KEYS : LINK_FORMAT_KEYS;
+    const style: Record<string, unknown> = {};
+    for (const k of keys) if (src[k] !== undefined) style[k] = src[k];
+    this.formatClip = { kind: node ? 'node' : 'link', style };
+  }
+
+  /** Paste is available when the buffer matches what's selected. */
+  canPasteFormat(): boolean {
+    if (!this.formatClip) return false;
+    return this.formatClip.kind === 'node' ? this.sel.size > 0 : !!this.linkSel;
+  }
+
+  /** Brush the copied style onto the selection (all nodes, or the one link). */
+  pasteFormat(): void {
+    const clip = this.formatClip;
+    if (!clip) return;
+    if (clip.kind === 'node') {
+      if (this.sel.size === 0) return;
+      this.snapshot();
+      for (const id of this.sel) {
+        const n = this.page.nodes.find((m) => m.id === id);
+        if (n) Object.assign(n, clip.style);
+      }
+    } else {
+      const link = this.getSelectedLink();
+      if (!link) return;
+      this.snapshot();
+      Object.assign(link, clip.style);
+    }
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
   }
 
   /** Duplicate the current selection in place (offset), selecting the copies. */
@@ -1534,6 +1610,22 @@ export class Editor {
     link.from = to;
     link.to = from;
     if (link.waypoints) link.waypoints = [...link.waypoints].reverse();
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
+  /** Whether the selected link has manual bend points (waypoints) to clear. */
+  selectedLinkHasBends(): boolean {
+    return !!this.getSelectedLink()?.waypoints?.length;
+  }
+
+  /** Straighten the selected link: drop its waypoints back to a direct route. */
+  straightenLink(): void {
+    const link = this.getSelectedLink();
+    if (!link?.waypoints?.length) return;
+    this.snapshot();
+    delete link.waypoints;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -2356,10 +2448,16 @@ export class Editor {
           this.snapshot();
           this.labelDrag.moved = true;
         }
-        link[labelOffsetKey(this.labelDrag.which)] = {
-          x: Math.round(this.labelDrag.ox + (pp.x - this.labelDrag.startX)),
-          y: Math.round(this.labelDrag.oy + (pp.y - this.labelDrag.startY)),
-        };
+        let nx = Math.round(this.labelDrag.ox + (pp.x - this.labelDrag.startX));
+        let ny = Math.round(this.labelDrag.oy + (pp.y - this.labelDrag.startY));
+        // Centering assist: snap each axis back to the default position (offset
+        // 0) when close, so a label is easy to re-centre or square on the wire.
+        const SNAP = 6;
+        if (Math.abs(nx) <= SNAP) nx = 0;
+        if (Math.abs(ny) <= SNAP) ny = 0;
+        const key = labelOffsetKey(this.labelDrag.which);
+        if (nx === 0 && ny === 0) delete link[key];
+        else link[key] = { x: nx, y: ny };
         this.scheduleArt();
       }
       return;
