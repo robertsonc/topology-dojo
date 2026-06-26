@@ -3490,16 +3490,22 @@ class TopologyDesigner {
     const px = Math.sin(a) * 10, py = -Math.cos(a) * 10;
     // Inset along the line from the endpoints
     const dx = Math.cos(a) * 20, dy = Math.sin(a) * 20;
+    // Per-label offsets {x,y} (set by dragging the chip in the editor) shift the
+    // label freely off its default position, like the centre label's labelOffset.
+    const fo = linkCfg.fromLabelOffset || {};
+    const to = linkCfg.toLabelOffset || {};
     let s = '';
     if (fromLabel) {
+      const bx = x1 + dx + px + (fo.x || 0), by = y1 + dy + py + (fo.y || 0);
       s += `<g opacity="${op}">` +
-        `<rect x="${x1 + dx + px - 22}" y="${y1 + dy + py - 8}" width="44" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
-        `<text x="${x1 + dx + px}" y="${y1 + dy + py + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${fromLabel}</text></g>`;
+        `<rect x="${bx - 22}" y="${by - 8}" width="44" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
+        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${fromLabel}</text></g>`;
     }
     if (toLabel) {
+      const bx = x2 - dx + px + (to.x || 0), by = y2 - dy + py + (to.y || 0);
       s += `<g opacity="${op}">` +
-        `<rect x="${x2 - dx + px - 22}" y="${y2 - dy + py - 8}" width="44" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
-        `<text x="${x2 - dx + px}" y="${y2 - dy + py + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${toLabel}</text></g>`;
+        `<rect x="${bx - 22}" y="${by - 8}" width="44" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
+        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${toLabel}</text></g>`;
     }
     return s;
   }

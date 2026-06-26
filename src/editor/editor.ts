@@ -121,6 +121,21 @@ export class Editor {
     cursor: { x: number; y: number };
     moved: boolean;
   } | null = null;
+  /**
+   * A link label being repositioned by drag — the centre label or an endpoint
+   * (port) label. The drag accumulates a doc-space delta into the link's
+   * label/from/toLabelOffset, so the chip follows the cursor regardless of the
+   * engine's per-type default placement. `moved` gates the undo snapshot.
+   */
+  private labelDrag: {
+    lid: string;
+    which: 'centre' | 'from' | 'to';
+    ox: number;
+    oy: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null = null;
   /** Node currently under the cursor in Select mode (drives connection dots). */
   private hoverNode: string | null = null;
   private linkSel: string | null = null;
@@ -2046,6 +2061,83 @@ export class Editor {
     this.applyView();
   }
 
+  /**
+   * Hit-test the link labels (centre + endpoint/port) at point `p`. We match by
+   * the label's rendered `<text>` element so the box is exactly where the engine
+   * drew it — no need to replicate each link type's placement maths. The link's
+   * geometry only disambiguates which element belongs to which link when several
+   * share the same text. Returns the grabbed label, or null.
+   */
+  private hitLabel(p: {
+    x: number;
+    y: number;
+  }): { lid: string; which: 'centre' | 'from' | 'to' } | null {
+    const texts = Array.from(
+      this.art.querySelectorAll('text'),
+    ) as SVGTextElement[];
+    if (!texts.length) return null;
+    const PAD = 6;
+    // The rendered text nearest `region` whose content matches `txt`.
+    const nearest = (
+      txt: string,
+      region: { x: number; y: number },
+    ): SVGTextElement | null => {
+      let best: SVGTextElement | null = null;
+      let bestD = Infinity;
+      for (const t of texts) {
+        if ((t.textContent ?? '') !== txt) continue;
+        let b: DOMRect;
+        try {
+          b = t.getBBox();
+        } catch {
+          continue;
+        }
+        const d = Math.hypot(
+          b.x + b.width / 2 - region.x,
+          b.y + b.height / 2 - region.y,
+        );
+        if (d < bestD) {
+          bestD = d;
+          best = t;
+        }
+      }
+      return best;
+    };
+    const inside = (t: SVGTextElement): boolean => {
+      const b = t.getBBox();
+      return (
+        p.x >= b.x - PAD &&
+        p.x <= b.x + b.width + PAD &&
+        p.y >= b.y - PAD &&
+        p.y <= b.y + b.height + PAD
+      );
+    };
+    // Last link drawn sits on top, so test in reverse paint order.
+    for (let i = this.page.links.length - 1; i >= 0; i--) {
+      const link = this.page.links[i]!;
+      const pts = linkPolyline(this.page, link);
+      if (pts.length < 2) continue;
+      const a = pts[0]!;
+      const b = pts[pts.length - 1]!;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const probes: [
+        string | undefined,
+        'centre' | 'from' | 'to',
+        { x: number; y: number },
+      ][] = [
+        [link.label, 'centre', mid],
+        [link.fromLabel, 'from', a],
+        [link.toLabel, 'to', b],
+      ];
+      for (const [txt, which, region] of probes) {
+        if (!txt) continue;
+        const t = nearest(String(txt), region);
+        if (t && inside(t)) return { lid: link.id, which };
+      }
+    }
+    return null;
+  }
+
   private onDown(e: PointerEvent): void {
     // Pan: middle button, or left button while Space is held / Hand tool is on.
     if (
@@ -2072,6 +2164,41 @@ export class Editor {
       this.overlay.setPointerCapture(e.pointerId);
       this.renderOverlay();
       return;
+    }
+
+    // Grabbing a link label (centre or endpoint/port) repositions it. Checked
+    // before nodes so a label resting over a node body is still draggable.
+    if (this.tool === 'select' && !this.spaceHeld && !e.shiftKey) {
+      const lab = this.hitLabel(p);
+      if (lab) {
+        const link = this.page.links.find((l) => l.id === lab.lid);
+        if (link && !link.locked) {
+          const off =
+            (link[labelOffsetKey(lab.which)] as
+              | { x?: number; y?: number }
+              | undefined) ?? {};
+          this.labelDrag = {
+            lid: lab.lid,
+            which: lab.which,
+            ox: off.x ?? 0,
+            oy: off.y ?? 0,
+            startX: p.x,
+            startY: p.y,
+            moved: false,
+          };
+          // Select the link so the inspector + label tools reflect it.
+          this.clearZoneSel();
+          this.sel.clear();
+          this.selAnchors.clear();
+          this.syncAnchorSel();
+          this.linkSel = lab.lid;
+          this.overlay.setPointerCapture(e.pointerId);
+          this.fireSelect();
+          this.fireLinkSelect();
+          this.renderOverlay();
+          return;
+        }
+      }
     }
 
     const hit = hitTestNode(this.page, p.x, p.y);
@@ -2221,6 +2348,22 @@ export class Editor {
       this.renderOverlay();
       return;
     }
+    if (this.labelDrag) {
+      const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      const link = this.page.links.find((l) => l.id === this.labelDrag!.lid);
+      if (link) {
+        if (!this.labelDrag.moved) {
+          this.snapshot();
+          this.labelDrag.moved = true;
+        }
+        link[labelOffsetKey(this.labelDrag.which)] = {
+          x: Math.round(this.labelDrag.ox + (pp.x - this.labelDrag.startX)),
+          y: Math.round(this.labelDrag.oy + (pp.y - this.labelDrag.startY)),
+        };
+        this.scheduleArt();
+      }
+      return;
+    }
     if (this.dragLink) {
       const pp = clientToUser(this.overlay, e.clientX, e.clientY);
       this.dragLink.cursor = pp;
@@ -2296,6 +2439,16 @@ export class Editor {
       this.pan = null;
       // Back to the hand cursor if Space is still held / Hand tool is on.
       this.overlay.style.cursor = this.handCursor();
+      return;
+    }
+    if (this.labelDrag) {
+      const moved = this.labelDrag.moved;
+      this.labelDrag = null;
+      if (moved) {
+        this.renderArt();
+        this.onChange();
+      }
+      this.renderOverlay();
       return;
     }
     if (this.wpDrag) {
@@ -2451,6 +2604,17 @@ function clamp(v: number, lo: number, hi: number): number {
 function defaultLabel(type: string): string {
   const t = type.replace(/^shape:/, '');
   return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** The LinkConfig field holding a given label's drag offset. */
+function labelOffsetKey(
+  which: 'centre' | 'from' | 'to',
+): 'labelOffset' | 'fromLabelOffset' | 'toLabelOffset' {
+  return which === 'from'
+    ? 'fromLabelOffset'
+    : which === 'to'
+      ? 'toLabelOffset'
+      : 'labelOffset';
 }
 
 /** Plain serializable view of a page (drops nothing — pages are already plain). */
