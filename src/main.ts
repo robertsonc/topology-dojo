@@ -587,12 +587,14 @@ const problemsPanel = app.querySelector<HTMLDivElement>('#problems')!;
 /** Locate the element a problem refers to (click-to-jump): a node or a link. */
 function problemLocate(
   p: Problem,
-): { kind: 'node' | 'link'; id: string } | undefined {
+): { kind: 'node' | 'link' | 'zone'; id: string } | undefined {
   const nodes = new Set(editor.page.nodes.map((n) => n.id));
   const links = new Set(editor.page.links.map((l) => l.id));
+  const zones = new Set(editor.page.zones.map((z) => z.id));
   for (const m of `${p.where} ${p.message}`.matchAll(/"([^"]+)"/g)) {
     if (nodes.has(m[1]!)) return { kind: 'node', id: m[1]! };
     if (links.has(m[1]!)) return { kind: 'link', id: m[1]! };
+    if (zones.has(m[1]!)) return { kind: 'zone', id: m[1]! };
   }
   return undefined;
 }
@@ -631,8 +633,10 @@ function renderProblems(): void {
     .querySelectorAll<HTMLButtonElement>('[data-prob-id]')
     .forEach((b) =>
       b.addEventListener('click', () => {
-        if (b.dataset.probKind === 'link') editor.focusLink(b.dataset.probId!);
-        else editor.focusNode(b.dataset.probId!);
+        const id = b.dataset.probId!;
+        if (b.dataset.probKind === 'link') editor.focusLink(id);
+        else if (b.dataset.probKind === 'zone') editor.focusZone(id);
+        else editor.focusNode(id);
       }),
     );
 }

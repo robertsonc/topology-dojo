@@ -1408,6 +1408,15 @@ export class Editor {
     return true;
   }
 
+  /** Select a zone and pan it into view (used by the problems panel). */
+  focusZone(id: string): void {
+    const zone = this.page.zones.find((z) => z.id === id);
+    if (!zone || !this.selectZone(id)) return;
+    const b = zoneBounds(this.page, zone);
+    if (b) this.panTo(b.x + b.w / 2, b.y + b.h / 2);
+    this.renderOverlay();
+  }
+
   /**
    * Duplicate a zone together with its contained nodes + the links internal to
    * them, all with fresh ids and offset — so a zone is a reusable container.
