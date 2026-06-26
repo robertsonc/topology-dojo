@@ -146,7 +146,7 @@ app.innerHTML = `
         <button class="tbtn ab" data-dist="v" title="Distribute vertically" disabled>↕̲</button>
       </span>
       <span class="bar-div" id="userDiv" hidden></span>
-      <a class="tbtn user-chip" id="userChip" href="/logout" title="Sign out" hidden><span class="uc-dot">●</span><span class="tlabel" id="userName"></span></a>
+      <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" hidden><span class="uc-dot">●</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">▾</span></button>
     </div>
   </header>
 
@@ -2278,26 +2278,75 @@ function openHelp(): void {
 }
 app.querySelector('#tHelp')?.addEventListener('click', () => openHelp());
 
-/* Signed-in chip. The Worker gates the app behind GitHub sign-in and exposes the
- * current user at /api/me; show "who am I + sign out" when that succeeds. In Vite
- * dev there's no Worker (auth is bypassed), so the fetch 404s/errors and the chip
- * simply stays hidden — no login UI in dev. Failures here are always non-fatal. */
-async function showUserChip(): Promise<void> {
-  const chip = app.querySelector<HTMLAnchorElement>('#userChip');
+/* Account menu. The Worker gates the app behind GitHub sign-in and reports the
+ * current user at /api/me; when that succeeds we reveal a toolbar chip that opens
+ * a small "Signed in as … / Sign out" menu. In Vite dev there's no Worker (auth is
+ * bypassed) so the fetch 404s and the chip stays hidden — no login UI in dev. All
+ * failures here are non-fatal. The doc autosaves to localStorage, so signing out
+ * (a full navigation to /logout) never loses work. */
+function wireAccountMenu(login: string): void {
+  const chip = app.querySelector<HTMLButtonElement>('#userChip');
   const name = app.querySelector<HTMLElement>('#userName');
   const div = app.querySelector<HTMLElement>('#userDiv');
   if (!chip || !name || !div) return;
+  name.textContent = login;
+  chip.title = `Signed in as @${login}`;
+  chip.hidden = false;
+  div.hidden = false;
+
+  // The menu is fixed-positioned on document.body so the toolbar's horizontal
+  // overflow can't clip it.
+  const menu = document.createElement('div');
+  menu.className = 'user-menu';
+  menu.id = 'userMenu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  menu.innerHTML =
+    `<div class="um-head">Signed in as <b></b></div>` +
+    `<a class="um-item" href="/logout" role="menuitem">Sign out</a>`;
+  menu.querySelector('b')!.textContent = login;
+  document.body.appendChild(menu);
+
+  const close = (): void => {
+    menu.hidden = true;
+    chip.setAttribute('aria-expanded', 'false');
+  };
+  const open = (): void => {
+    const r = chip.getBoundingClientRect();
+    menu.style.top = `${Math.round(r.bottom + 6)}px`;
+    menu.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
+    menu.style.left = 'auto';
+    menu.hidden = false;
+    chip.setAttribute('aria-expanded', 'true');
+  };
+  chip.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu.hidden) open();
+    else close();
+  });
+  // Dismiss on outside click or Esc.
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && e.target !== chip && !menu.contains(e.target as Node))
+      close();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+  // Sign out via an explicit navigation — robust even if the anchor default is
+  // ever intercepted; the localStorage autosave preserves the open document.
+  menu.querySelector('.um-item')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.location.assign('/logout');
+  });
+}
+async function showUserChip(): Promise<void> {
   try {
     const res = await fetch('/api/me', {
       headers: { accept: 'application/json' },
     });
     if (!res.ok) return;
     const me = (await res.json()) as { login?: string; name?: string };
-    if (!me.login) return;
-    name.textContent = me.login;
-    chip.title = `Signed in as @${me.login} — sign out`;
-    chip.hidden = false;
-    div.hidden = false;
+    if (me.login) wireAccountMenu(me.login);
   } catch {
     // No Worker (dev) or offline — leave the chip hidden.
   }
