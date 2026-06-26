@@ -51,6 +51,18 @@ export interface LinkConfig {
   to: string;
   color?: string;
   label?: string;
+  /** Endpoint (interface/port) labels near the link's source and destination. */
+  fromLabel?: string;
+  toLabel?: string;
+  /**
+   * Moveable label offsets, doc-space {x,y}, set by dragging the chip in the
+   * editor. `labelOffset` shifts the centre label (honoured by every link type);
+   * `from`/`toLabelOffset` shift the endpoint (port) labels. All optional and
+   * backward-compatible (absent = the default auto-placement).
+   */
+  labelOffset?: { x: number; y: number };
+  fromLabelOffset?: { x: number; y: number };
+  toLabelOffset?: { x: number; y: number };
   waypoints?: { x: number; y: number }[];
   lineStyle?: 'orthogonal' | 'curved';
   /**
