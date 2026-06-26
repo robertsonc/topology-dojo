@@ -1314,7 +1314,11 @@ function renderInspector(): void {
     html +=
       `<div class="insp-h">Link</div>` +
       typeRow(link.type, types) +
-      `<div class="insp-row"><span>Endpoints</span><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button></div>` +
+      `<div class="insp-row"><span>Endpoints</span><span class="insp-btns"><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button>${
+        editor.selectedLinkHasBends()
+          ? `<button class="tbtn ab" id="i-straighten" title="Clear bends — straight line">╱ straighten</button>`
+          : ''
+      }</span></div>` +
       groupedFieldsHtml(info, link as Record<string, unknown>, LINK_GROUPS) +
       arrangeRow();
   } else if (anchor) {
@@ -1356,6 +1360,10 @@ function renderInspector(): void {
     );
     inspector.querySelector('#i-swap')?.addEventListener('click', () => {
       editor.swapLink();
+      renderInspector();
+    });
+    inspector.querySelector('#i-straighten')?.addEventListener('click', () => {
+      editor.straightenLink();
       renderInspector();
     });
   } else if (anchor) {
@@ -2499,6 +2507,19 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
     return [
       { label: 'Duplicate', run: () => editor.duplicateSelection() },
       { label: 'Copy', run: () => editor.copySelection() },
+      {
+        label: 'Copy format',
+        run: () => editor.copyFormat(),
+        disabled: !editor.canCopyFormat(),
+      },
+      {
+        label: 'Paste format',
+        run: () => {
+          editor.pasteFormat();
+          renderInspector();
+        },
+        disabled: !editor.canPasteFormat(),
+      },
       { sep: true },
       {
         label: 'Emphasize on this frame',
@@ -2527,6 +2548,24 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
     const lockLabel = editor.selectionLocked() ? 'Unlock' : 'Lock';
     return [
       { label: 'Swap endpoints', run: () => editor.swapLink() },
+      {
+        label: 'Straighten (clear bends)',
+        run: () => editor.straightenLink(),
+        disabled: !editor.selectedLinkHasBends(),
+      },
+      {
+        label: 'Copy format',
+        run: () => editor.copyFormat(),
+        disabled: !editor.canCopyFormat(),
+      },
+      {
+        label: 'Paste format',
+        run: () => {
+          editor.pasteFormat();
+          renderInspector();
+        },
+        disabled: !editor.canPasteFormat(),
+      },
       {
         label: 'Emphasize on this frame',
         run: () => editor.emphasizeSelection(),
