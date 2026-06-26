@@ -51,6 +51,45 @@ function clampTo(v: number, lo: number, hi: number, fallback: number): number {
   return lo <= hi ? Math.min(Math.max(v, lo), hi) : fallback;
 }
 
+/**
+ * Carry a layout pass's node movement over to the things pinned to the diagram
+ * but not themselves nodes: free-floating anchors (which model device ports,
+ * placed against a node) and link waypoints (manual bend points). Without this a
+ * pass that shifts nodes leaves ports detached and routes bending back through
+ * stale waypoints — stray lines across the canvas. Each point follows the delta
+ * of the node nearest its pre-move position; a no-op when there are no nodes.
+ */
+function carryAttachments(
+  page: Page,
+  origNodes: { x: number; y: number }[],
+): void {
+  if (!page.nodes.length) return;
+  const delta = (x: number, y: number): { dx: number; dy: number } => {
+    let best = -1;
+    let bestD = Infinity;
+    for (let i = 0; i < origNodes.length; i++) {
+      const o = origNodes[i]!;
+      const d = (x - o.x) ** 2 + (y - o.y) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (best < 0) return { dx: 0, dy: 0 };
+    return {
+      dx: page.nodes[best]!.x - origNodes[best]!.x,
+      dy: page.nodes[best]!.y - origNodes[best]!.y,
+    };
+  };
+  const shift = (pt: { x: number; y: number }): void => {
+    const { dx, dy } = delta(pt.x, pt.y);
+    pt.x = Math.round(pt.x + dx);
+    pt.y = Math.round(pt.y + dy);
+  };
+  for (const a of page.anchors ?? []) shift(a);
+  for (const l of page.links ?? []) for (const w of l.waypoints ?? []) shift(w);
+}
+
 /** Tidy a single page's node positions in place; returns the count of nodes moved. */
 export function tidyPage(page: Page, opts: TidyOptions = {}): number {
   const grid = LAYOUT_RULES.gridStep;
@@ -113,6 +152,7 @@ export function tidyPage(page: Page, opts: TidyOptions = {}): number {
     n.y = Math.round(n.y);
     if (n.x !== orig[k]!.x || n.y !== orig[k]!.y) movedCount++;
   });
+  carryAttachments(page, orig);
   return movedCount;
 }
 
@@ -203,6 +243,7 @@ export function balancePage(page: Page, opts: BalanceOptions = {}): number {
     n.y = Math.round(n.y);
     if (n.x !== orig[k]!.x || n.y !== orig[k]!.y) movedCount++;
   });
+  carryAttachments(page, orig);
   return movedCount;
 }
 
