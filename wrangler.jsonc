@@ -23,19 +23,15 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // Route the MCP API, the OAuth endpoints, and the share-snapshot API to the
-    // Worker; everything else (the SPA, including /v/<id>) is served straight
-    // from assets, where the not-found handler returns index.html.
-    "run_worker_first": [
-      "/mcp",
-      "/mcp/*",
-      "/authorize",
-      "/callback",
-      "/token",
-      "/register",
-      "/.well-known/*",
-      "/api/*",
-    ],
+    // Run the Worker first for every request. It must own the auth routes
+    // (/login, /logout, /auth/github, /callback), the MCP/OAuth endpoints, and
+    // the share API — AND gate top-level SPA navigations behind GitHub sign-in.
+    // The default handler falls through to `env.ASSETS.fetch` for static files
+    // and the SPA not-found (index.html), so assets and /v/<id> shared views
+    // still serve normally. An allowlist here can't express "gate every page
+    // load": it let document navigations skip the gate and served /login &
+    // /logout as the SPA index.html (the "sign-out does nothing" bug).
+    "run_worker_first": true,
   },
   "durable_objects": {
     "bindings": [{ "name": "MCP_OBJECT", "class_name": "TopologyMcp" }],
