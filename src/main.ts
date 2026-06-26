@@ -145,6 +145,8 @@ app.innerHTML = `
         <button class="tbtn ab" data-dist="h" title="Distribute horizontally" disabled>↔̲</button>
         <button class="tbtn ab" data-dist="v" title="Distribute vertically" disabled>↕̲</button>
       </span>
+      <span class="bar-div" id="userDiv" hidden></span>
+      <a class="tbtn user-chip" id="userChip" href="/logout" title="Sign out" hidden><span class="uc-dot">●</span><span class="tlabel" id="userName"></span></a>
     </div>
   </header>
 
@@ -2275,6 +2277,32 @@ function openHelp(): void {
     ?.addEventListener('click', () => closeHelp());
 }
 app.querySelector('#tHelp')?.addEventListener('click', () => openHelp());
+
+/* Signed-in chip. The Worker gates the app behind GitHub sign-in and exposes the
+ * current user at /api/me; show "who am I + sign out" when that succeeds. In Vite
+ * dev there's no Worker (auth is bypassed), so the fetch 404s/errors and the chip
+ * simply stays hidden — no login UI in dev. Failures here are always non-fatal. */
+async function showUserChip(): Promise<void> {
+  const chip = app.querySelector<HTMLAnchorElement>('#userChip');
+  const name = app.querySelector<HTMLElement>('#userName');
+  const div = app.querySelector<HTMLElement>('#userDiv');
+  if (!chip || !name || !div) return;
+  try {
+    const res = await fetch('/api/me', {
+      headers: { accept: 'application/json' },
+    });
+    if (!res.ok) return;
+    const me = (await res.json()) as { login?: string; name?: string };
+    if (!me.login) return;
+    name.textContent = me.login;
+    chip.title = `Signed in as @${me.login} — sign out`;
+    chip.hidden = false;
+    div.hidden = false;
+  } catch {
+    // No Worker (dev) or offline — leave the chip hidden.
+  }
+}
+void showUserChip();
 
 /* Keyboard. Shortcuts are suppressed while typing in a form field so they don't
  * hijack the inspector / rename inputs (and Ctrl+C/V do native text edit there). */
