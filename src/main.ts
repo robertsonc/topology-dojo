@@ -153,6 +153,7 @@ app.innerHTML = `
   <div class="stage">
     <div class="canvas-area" id="canvas-area">
       <aside class="palette" id="palette">
+        <button class="palette-toggle" id="palette-toggle" title="Hide node library (B)">nodes ◂</button>
         <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
         <div class="palette-list" id="palette-list"></div>
       </aside>
@@ -574,6 +575,26 @@ minimapToggle.addEventListener('click', () =>
   setMinimapCollapsed(!minimapWrap.classList.contains('collapsed')),
 );
 setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') === '1');
+
+// Collapse / restore the node palette so it stops crowding the left edge.
+const paletteEl = app.querySelector<HTMLElement>('#palette')!;
+const paletteToggle = app.querySelector<HTMLButtonElement>('#palette-toggle')!;
+function setPaletteCollapsed(collapsed: boolean): void {
+  paletteEl.classList.toggle('collapsed', collapsed);
+  paletteToggle.textContent = collapsed ? 'nodes ▸' : 'nodes ◂';
+  paletteToggle.title = collapsed
+    ? 'Show node library (B)'
+    : 'Hide node library (B)';
+  try {
+    localStorage.setItem('tds-palette-collapsed', collapsed ? '1' : '0');
+  } catch {
+    /* storage unavailable — fine, just don't persist */
+  }
+}
+paletteToggle.addEventListener('click', () =>
+  setPaletteCollapsed(!paletteEl.classList.contains('collapsed')),
+);
+setPaletteCollapsed(localStorage.getItem('tds-palette-collapsed') === '1');
 
 /* Problems panel — runs the same checks as the MCP `validate_topology`
  * (semantic validation + layout analysis) live in the studio, so overlapping
@@ -2261,6 +2282,7 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['R', 'Toggle grid'],
       ['G', 'Toggle snap'],
       ['M / P', 'Toggle minimap / properties'],
+      ['B', 'Toggle node library'],
       ['C', 'Calm canvas (pause animation)'],
       ['T', 'Tidy layout'],
       ['Shift+T', 'Balance layout'],
@@ -2478,6 +2500,8 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === 'm' || e.key === 'M')
     setMinimapCollapsed(!minimapWrap.classList.contains('collapsed'));
+  if (e.key === 'b' || e.key === 'B')
+    setPaletteCollapsed(!paletteEl.classList.contains('collapsed'));
   if (e.key === 'p' || e.key === 'P')
     setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed'));
   if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);

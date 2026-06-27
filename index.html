@@ -366,9 +366,9 @@
         top: 12px;
         left: 12px;
         z-index: 6;
-        width: 132px;
+        width: 162px;
         max-height: calc(100% - 24px);
-        overflow-y: auto;
+        overflow: hidden;
         background: rgba(34, 37, 46, 0.92);
         border: 1px solid var(--border);
         border-radius: 10px;
@@ -378,10 +378,34 @@
         flex-direction: column;
         gap: 4px;
       }
+      /* Collapsed drawer: only the toggle shows; the canvas reclaims the space. */
+      .palette.collapsed {
+        width: auto;
+      }
+      .palette.collapsed .palette-search,
+      .palette.collapsed .palette-list {
+        display: none;
+      }
+      .palette-toggle {
+        flex: none;
+        width: 100%;
+        font-family: var(--font);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 4px 8px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .palette-toggle:hover {
+        color: var(--text);
+        border-color: var(--accent);
+      }
       .palette-search {
-        position: sticky;
-        top: 0;
-        z-index: 1;
         width: 100%;
         box-sizing: border-box;
         background: var(--panel2);
@@ -401,9 +425,23 @@
         color: var(--muted);
       }
       .palette-list {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        /* minmax(0,1fr) lets tracks shrink below their content so the two
+           columns stay equal and long labels wrap/clip instead of overflowing. */
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 4px;
+        align-content: start;
+        overflow-y: auto;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+      /* Headers, custom rows, empty/state and the library actions span the grid. */
+      .palette-list > .palette-h,
+      .palette-list > .palette-empty,
+      .palette-list > .pcustom,
+      .palette-list > .pitem.design,
+      .palette-list > .pdefs {
+        grid-column: 1 / -1;
       }
       .palette-empty {
         color: var(--muted);
@@ -419,31 +457,45 @@
       }
       .pitem {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 8px;
+        gap: 3px;
+        min-width: 0;
         background: var(--panel2);
         border: 1px solid var(--border);
         color: var(--text);
         border-radius: 7px;
-        padding: 5px 8px;
+        padding: 6px 4px;
         cursor: pointer;
-        font-size: 12px;
+        font-size: 11px;
         font-family: var(--font);
-        text-align: left;
+        text-align: center;
       }
       .pitem:hover {
         border-color: var(--accent);
       }
       .ppreview {
-        width: 32px;
-        height: 24px;
+        width: 34px;
+        height: 26px;
         flex: none;
       }
       .plabel {
-        flex: 1;
+        width: 100%;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        /* Wrap to at most two lines so narrow tiles keep readable labels. */
+        line-height: 1.15;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        word-break: break-word;
+      }
+      /* Custom/stencil rows keep the icon-left layout (they span the full width
+         and pair with an edit/delete button). */
+      .pcustom .pitem {
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        text-align: left;
       }
       .pitem.design {
         justify-content: center;
