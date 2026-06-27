@@ -2157,13 +2157,24 @@ const CALM_KEY = 'topology-dojo:calm';
 function applyCalm(on: boolean): void {
   editor.setCalm(on);
   calmBtn.classList.toggle('on', on);
+  calmBtn.title = on
+    ? 'Resume animations — glow & flow particles (C)'
+    : 'Calm canvas — pause animations (C)';
   try {
     localStorage.setItem(CALM_KEY, on ? '1' : '0');
   } catch {
     // storage unavailable — non-fatal
   }
 }
-applyCalm(localStorage.getItem(CALM_KEY) === '1');
+// Default Calm from the OS `prefers-reduced-motion` setting when the user hasn't
+// chosen one — reduced-motion users get a quiet canvas by default, but the
+// toggle can now still turn animation on (the engine honours it both ways).
+const storedCalm = localStorage.getItem(CALM_KEY);
+applyCalm(
+  storedCalm === null
+    ? window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+    : storedCalm === '1',
+);
 calmBtn.addEventListener('click', () => applyCalm(!editor.calm));
 
 /* Light / dark theme — a view preference, persisted across sessions. */

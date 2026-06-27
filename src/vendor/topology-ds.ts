@@ -290,7 +290,13 @@ export function renderPageSVG(
 ): string {
   const Engine = engine();
   const topo = new Engine({ viewBox: page.viewBox });
-  if (opts.calm) topo.reducedMotion = true;
+  // `calm` is the authoritative motion switch for the editor. Set it both ways:
+  // the engine constructor turns reducedMotion ON from the OS
+  // `prefers-reduced-motion` setting, and only ever forcing it true (the old
+  // `if (opts.calm)`) left motion stuck off for those users with no in-app
+  // override. The Calm toggle defaults from the OS setting (see main.ts) but can
+  // now re-enable animation when off.
+  topo.reducedMotion = !!opts.calm;
 
   // The layer view: hidden layers dropped, the rest stacked bottom → top
   // (insertion order is the engine's paint order within each collection).
