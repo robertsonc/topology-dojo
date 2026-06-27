@@ -149,7 +149,19 @@ export class Editor {
     startX: number;
     startY: number;
     moved: boolean;
+    /** The label's rendered centre at drag start (doc coords), for guides. */
+    basePos: { x: number; y: number } | null;
+    /** Other labels' rendered centres at drag start, for alignment snapping. */
+    others: { x: number; y: number }[];
   } | null = null;
+  /** Transient guides drawn while dragging a label (tether home + alignment). */
+  private labelGuides: {
+    kind: 'tether' | 'align';
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  }[] = [];
   /** Node currently under the cursor in Select mode (drives connection dots). */
   private hoverNode: string | null = null;
   private linkSel: string | null = null;
@@ -677,6 +689,22 @@ export class Editor {
     return out;
   }
 
+  /** Guides shown while dragging a label: a tether to its home + align lines. */
+  private labelGuidesSvg(): string {
+    if (this.labelGuides.length === 0) return '';
+    let out = '';
+    for (const g of this.labelGuides) {
+      if (g.kind === 'tether') {
+        out +=
+          `<line x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}" stroke="${ACCENT}" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>` +
+          `<circle cx="${g.x1}" cy="${g.y1}" r="2.5" fill="none" stroke="${ACCENT}" stroke-width="1" opacity="0.8"/>`;
+      } else {
+        out += `<line x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}" stroke="#ff5db1" stroke-width="1" stroke-dasharray="6 4" opacity="0.9"/>`;
+      }
+    }
+    return out;
+  }
+
   private marqueeSvg(): string {
     if (!this.marquee) return '';
     const { x0, y0, x1, y1 } = this.marquee;
@@ -891,6 +919,7 @@ export class Editor {
       this.gridSvg() +
       (this.overlayExtra?.() ?? '') +
       this.guidesSvg() +
+      this.labelGuidesSvg() +
       this.zoneSelSvg() +
       this.anchorsSvg() +
       this.linkSelSvg() +
@@ -2214,6 +2243,74 @@ export class Editor {
    * geometry only disambiguates which element belongs to which link when several
    * share the same text. Returns the grabbed label, or null.
    */
+  /**
+   * Rendered centre (doc coords) of every link label currently drawn — matched
+   * by the label's `<text>` element, like hitLabel. Used to capture the dragged
+   * label's home + its neighbours for the drag guides.
+   */
+  private labelCenters(): {
+    lid: string;
+    which: 'centre' | 'from' | 'to';
+    x: number;
+    y: number;
+  }[] {
+    const texts = Array.from(
+      this.art.querySelectorAll('text'),
+    ) as SVGTextElement[];
+    const nearest = (
+      txt: string,
+      region: { x: number; y: number },
+    ): { x: number; y: number } | null => {
+      let best: { x: number; y: number } | null = null;
+      let bestD = Infinity;
+      for (const t of texts) {
+        if ((t.textContent ?? '') !== txt) continue;
+        let b: DOMRect;
+        try {
+          b = t.getBBox();
+        } catch {
+          continue;
+        }
+        const cx = b.x + b.width / 2;
+        const cy = b.y + b.height / 2;
+        const d = Math.hypot(cx - region.x, cy - region.y);
+        if (d < bestD) {
+          bestD = d;
+          best = { x: cx, y: cy };
+        }
+      }
+      return best;
+    };
+    const out: {
+      lid: string;
+      which: 'centre' | 'from' | 'to';
+      x: number;
+      y: number;
+    }[] = [];
+    for (const link of this.page.links) {
+      const pts = linkPolyline(this.page, link);
+      if (pts.length < 2) continue;
+      const a = pts[0]!;
+      const b = pts[pts.length - 1]!;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const probes: [
+        string | undefined,
+        'centre' | 'from' | 'to',
+        { x: number; y: number },
+      ][] = [
+        [link.label, 'centre', mid],
+        [link.fromLabel, 'from', a],
+        [link.toLabel, 'to', b],
+      ];
+      for (const [txt, which, region] of probes) {
+        if (!txt) continue;
+        const c = nearest(String(txt), region);
+        if (c) out.push({ lid: link.id, which, x: c.x, y: c.y });
+      }
+    }
+    return out;
+  }
+
   private hitLabel(p: {
     x: number;
     y: number;
@@ -2323,6 +2420,12 @@ export class Editor {
             (link[labelOffsetKey(lab.which)] as
               | { x?: number; y?: number }
               | undefined) ?? {};
+          // Capture rendered label centres now (for the drag guides): the
+          // grabbed label's "home" and its neighbours to align against.
+          const centers = this.labelCenters();
+          const self = centers.find(
+            (c) => c.lid === lab.lid && c.which === lab.which,
+          );
           this.labelDrag = {
             lid: lab.lid,
             which: lab.which,
@@ -2331,6 +2434,10 @@ export class Editor {
             startX: p.x,
             startY: p.y,
             moved: false,
+            basePos: self ? { x: self.x, y: self.y } : null,
+            others: centers
+              .filter((c) => c !== self)
+              .map((c) => ({ x: c.x, y: c.y })),
           };
           // Select the link so the inspector + label tools reflect it.
           this.clearZoneSel();
@@ -2496,23 +2603,64 @@ export class Editor {
     }
     if (this.labelDrag) {
       const pp = clientToUser(this.overlay, e.clientX, e.clientY);
-      const link = this.page.links.find((l) => l.id === this.labelDrag!.lid);
+      const ld = this.labelDrag;
+      const link = this.page.links.find((l) => l.id === ld.lid);
       if (link) {
-        if (!this.labelDrag.moved) {
+        if (!ld.moved) {
           this.snapshot();
-          this.labelDrag.moved = true;
+          ld.moved = true;
         }
-        let nx = Math.round(this.labelDrag.ox + (pp.x - this.labelDrag.startX));
-        let ny = Math.round(this.labelDrag.oy + (pp.y - this.labelDrag.startY));
+        let nx = Math.round(ld.ox + (pp.x - ld.startX));
+        let ny = Math.round(ld.oy + (pp.y - ld.startY));
+        const SNAP = 6;
         // Centering assist: snap each axis back to the default position (offset
         // 0) when close, so a label is easy to re-centre or square on the wire.
-        const SNAP = 6;
         if (Math.abs(nx) <= SNAP) nx = 0;
         if (Math.abs(ny) <= SNAP) ny = 0;
-        const key = labelOffsetKey(this.labelDrag.which);
+        this.labelGuides = [];
+        if (ld.basePos) {
+          // The label's home (offset 0) in doc coords.
+          const defX = ld.basePos.x - ld.ox;
+          const defY = ld.basePos.y - ld.oy;
+          // Alignment snap: line the label's centre up with a neighbour's on
+          // either axis (so port labels can sit at matching offsets).
+          for (const o of ld.others) {
+            if (nx !== 0 && Math.abs(defX + nx - o.x) <= SNAP) {
+              nx = Math.round(o.x - defX);
+              this.labelGuides.push({
+                kind: 'align',
+                x1: o.x,
+                y1: Math.min(defY + ny, o.y) - 18,
+                x2: o.x,
+                y2: Math.max(defY + ny, o.y) + 18,
+              });
+            }
+            if (ny !== 0 && Math.abs(defY + ny - o.y) <= SNAP) {
+              ny = Math.round(o.y - defY);
+              this.labelGuides.push({
+                kind: 'align',
+                x1: Math.min(defX + nx, o.x) - 18,
+                y1: o.y,
+                x2: Math.max(defX + nx, o.x) + 18,
+                y2: o.y,
+              });
+            }
+          }
+          // Tether from the label's home to where it is now.
+          if (nx !== 0 || ny !== 0)
+            this.labelGuides.push({
+              kind: 'tether',
+              x1: defX,
+              y1: defY,
+              x2: defX + nx,
+              y2: defY + ny,
+            });
+        }
+        const key = labelOffsetKey(ld.which);
         if (nx === 0 && ny === 0) delete link[key];
         else link[key] = { x: nx, y: ny };
         this.scheduleArt();
+        this.renderOverlay();
       }
       return;
     }
@@ -2596,6 +2744,7 @@ export class Editor {
     if (this.labelDrag) {
       const moved = this.labelDrag.moved;
       this.labelDrag = null;
+      this.labelGuides = [];
       if (moved) {
         this.renderArt();
         this.onChange();
