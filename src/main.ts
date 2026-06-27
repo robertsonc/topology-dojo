@@ -1099,6 +1099,7 @@ function propertiesHtml(): string {
     `<label class="insp-row">Name<input id="p-name" value="${esc(page.name)}"/></label>` +
     `<label class="insp-row">Canvas W<input type="number" id="p-w" min="1" value="${w || 0}"/></label>` +
     `<label class="insp-row">Canvas H<input type="number" id="p-h" min="1" value="${h || 0}"/></label>` +
+    `<div class="insp-row"><span>Size</span><button class="tbtn ab" id="p-fit" title="Resize the page to wrap all content (Tidy/Balance grow it automatically)">⤢ fit to content</button></div>` +
     `<div class="insp-h">Playback</div>` +
     `<label class="insp-row">Hold (ms)<input type="number" id="p-dur" min="100" step="100" placeholder="${DEFAULT_PAGE_DURATION}" value="${page.duration ?? ''}"/></label>` +
     `<label class="insp-row">Transition<select id="p-tr">` +
@@ -1198,6 +1199,10 @@ function wireProperties(): void {
   };
   wIn?.addEventListener('change', applySize);
   hIn?.addEventListener('change', applySize);
+  inspector.querySelector('#p-fit')?.addEventListener('click', () => {
+    editor.fitPageToContent();
+    renderInspector();
+  });
   // Playback timing — same fields the MCP set_page_properties tool sets.
   const dur = inspector.querySelector<HTMLInputElement>('#p-dur');
   dur?.addEventListener('change', () => {
@@ -2599,6 +2604,13 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
     { sep: true },
     { label: 'Tidy layout', run: () => editor.tidy() },
     { label: 'Balance layout', run: () => editor.balance() },
+    {
+      label: 'Fit page to content',
+      run: () => {
+        editor.fitPageToContent();
+        renderInspector();
+      },
+    },
   ];
 }
 

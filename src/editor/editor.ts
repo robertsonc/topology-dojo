@@ -245,11 +245,14 @@ export class Editor {
     this.onChange();
   }
 
-  /** Auto-arrange the current page (grid-snap + de-overlap + keep in bounds). */
+  /** Auto-arrange the current page (grid-snap + de-overlap); page grows to fit. */
   tidy(): void {
     this.snapshot();
-    const moved = tidyPage(this.page);
-    if (moved === 0) {
+    // Don't clamp into the page — the page is effectively unlimited and grows to
+    // wrap the result, so a big topology spreads out instead of being squeezed.
+    const moved = tidyPage(this.page, { keepInBounds: false });
+    const grew = this.growPageToFit();
+    if (moved === 0 && !grew) {
       this.undoStack.pop(); // nothing changed — don't pollute history
       return;
     }
@@ -258,17 +261,59 @@ export class Editor {
     this.onChange();
   }
 
-  /** Balance the layout: de-overlap, align rows/columns, centre on the page. */
+  /** Balance the layout: de-overlap, align rows/columns, centre; page grows to fit. */
   balance(): void {
     this.snapshot();
-    const moved = tidyPage(this.page) + balancePage(this.page);
-    if (moved === 0) {
+    const moved =
+      tidyPage(this.page, { keepInBounds: false }) + balancePage(this.page);
+    const grew = this.growPageToFit();
+    if (moved === 0 && !grew) {
       this.undoStack.pop();
       return;
     }
     this.renderArt();
     this.renderOverlay();
     this.onChange();
+  }
+
+  /**
+   * Resize the page (viewBox) to wrap all content with a margin — the manual
+   * "make the frame match what I've drawn" action. Grows or shrinks, and reframes
+   * the view to show the result. Undoable; a no-op when already a tight fit.
+   */
+  fitPageToContent(): void {
+    const b = this.contentBounds();
+    if (!b) return;
+    const M = 48;
+    const vb = `${Math.round(b.x - M)} ${Math.round(b.y - M)} ${Math.round(b.w + 2 * M)} ${Math.round(b.h + 2 * M)}`;
+    if (vb === this.page.viewBox) return;
+    this.snapshot();
+    this.setViewBox(vb);
+  }
+
+  /**
+   * Grow the page (viewBox) so it contains all content + a margin — never
+   * shrinks. Used by the layout tools so arranging a large topology expands the
+   * page instead of cramming the nodes inward. Returns true if the page changed.
+   */
+  private growPageToFit(): boolean {
+    const b = this.contentBounds();
+    if (!b) return false;
+    const M = 40;
+    const [vx, vy, vw, vh] = this.page.viewBox.split(/\s+/).map(Number) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    const minX = Math.min(vx, Math.round(b.x - M));
+    const minY = Math.min(vy, Math.round(b.y - M));
+    const maxX = Math.max(vx + vw, Math.round(b.x + b.w + M));
+    const maxY = Math.max(vy + vh, Math.round(b.y + b.h + M));
+    const nvb = `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
+    if (nvb === this.page.viewBox) return false;
+    this.page.viewBox = nvb;
+    return true;
   }
 
   /** Reset pan/zoom to frame the page's content (falls back to the page box). */
