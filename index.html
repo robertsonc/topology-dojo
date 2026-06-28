@@ -264,6 +264,58 @@
         box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
         font-size: 12px;
       }
+      /* Display-settings popover (ambient + glass). */
+      .display-pop {
+        position: fixed;
+        z-index: 60;
+        width: 248px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        font-size: 12px;
+        color: var(--text);
+        font-family: var(--font);
+      }
+      .display-pop .dp-h {
+        color: var(--muted);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 0 2px 8px;
+      }
+      .display-pop .dp-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 5px 2px;
+      }
+      .display-pop .dp-row.dp-check {
+        justify-content: flex-start;
+        cursor: pointer;
+      }
+      .display-pop select {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 3px 6px;
+        font-family: var(--font);
+        font-size: 12px;
+      }
+      .display-pop .dp-note {
+        color: var(--muted);
+        font-size: 10.5px;
+        line-height: 1.45;
+        margin-top: 6px;
+        padding: 0 2px;
+      }
+      /* "No glass" — drop the panel backdrop blur for a flatter, faster look. */
+      html.no-glass * {
+        backdrop-filter: none !important;
+      }
       .user-menu .um-head {
         color: var(--muted);
         padding: 6px 8px;

@@ -2300,26 +2300,40 @@ class TopologyDesigner {
   }
 
   _svgAmbient(w, h) {
+    const grid = `<rect width="${w}" height="${h}" fill="url(#tds-grid)"/>`;
+    // Ambient decoration level: 'off' (just the functional grid) | 'static'
+    // (the colour washes + vignette, no motion) | 'animated' (full cinematic).
+    // Independent of reducedMotion, so the decorative ambient can be quieted
+    // while meaningful flow particles still animate.
+    const mode = this.ambient || 'animated';
+    if (mode === 'off') return grid;
+
     // On mobile Safari, skip heavy ambient effects to prevent blank page (#182)
     if (this._isMobileSafari) {
       return `<rect width="${w}" height="${h}" fill="url(#tds-ambientGreen)" opacity=".3"/>
 <rect width="${w}" height="${h}" fill="url(#tds-vignette)" opacity=".3"/>
-<rect width="${w}" height="${h}" fill="url(#tds-grid)"/>`;
+${grid}`;
     }
 
+    // The washes animate only at the 'animated' level and when motion is allowed.
+    const animate = mode === 'animated' && !this.reducedMotion;
+    const wash = (id, lo, hi, dur) =>
+      animate
+        ? `<rect width="${w}" height="${h}" fill="url(#${id})"><animate attributeName="opacity" values="${lo};${hi};${lo}" dur="${dur}s" repeatCount="indefinite"/></rect>`
+        : `<rect width="${w}" height="${h}" fill="url(#${id})" opacity="${hi}"/>`;
     let ambient = `
-<rect width="${w}" height="${h}" fill="url(#tds-ambientGreen)"><animate attributeName="opacity" values=".5;.8;.5" dur="12s" repeatCount="indefinite"/></rect>
-<rect width="${w}" height="${h}" fill="url(#tds-ambientPurple)"><animate attributeName="opacity" values=".4;.7;.4" dur="16s" repeatCount="indefinite"/></rect>
-<rect width="${w}" height="${h}" fill="url(#tds-ambientBlue)"><animate attributeName="opacity" values=".3;.6;.3" dur="10s" repeatCount="indefinite"/></rect>
+${wash('tds-ambientGreen', 0.5, 0.8, 12)}
+${wash('tds-ambientPurple', 0.4, 0.7, 16)}
+${wash('tds-ambientBlue', 0.3, 0.6, 10)}
 <rect width="${w}" height="${h}" fill="url(#tds-vignette)" opacity=".4"/>
-<rect width="${w}" height="${h}" fill="url(#tds-grid)"/>`;
+${grid}`;
 
-    // On mobile, skip data bits + radar pulse + scan lines to reduce SVG element count
-    if (this._isMobile) return ambient;
+    // Static level (or mobile) stops at the washes — no scan/bits/radar motion.
+    if (!animate || this._isMobile) return ambient;
 
     // ── Ambient Enhancement 1: Scanning Grid Lines (Goal 2c) ──
     // Horizontal and vertical scan lines that slowly sweep across the canvas
-    if (!this.reducedMotion) {
+    {
       ambient += `<g opacity=".08">
 <line x1="0" y1="0" x2="${w}" y2="0" stroke="#01a982" stroke-width=".5">
   <animateTransform attributeName="transform" type="translate" values="0,0;0,${h};0,0" dur="18s" repeatCount="indefinite"/>

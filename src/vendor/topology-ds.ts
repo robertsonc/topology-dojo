@@ -211,12 +211,20 @@ interface EngineInstance {
   step: number;
   /** When true, the engine omits animations (particles, pulses, glints). */
   reducedMotion: boolean;
+  /** Ambient backdrop level: 'off' | 'static' | 'animated' (default animated). */
+  ambient?: 'off' | 'static' | 'animated';
 }
 
 /** Render options shared by the page renderers. */
 export interface RenderOptions {
   /** Calm canvas: suppress motion (animated flow particles, link dots, glints). */
   calm?: boolean;
+  /**
+   * Ambient backdrop decoration level (independent of `calm`): 'off' (just the
+   * grid), 'static' (colour washes, no motion), or 'animated' (full). Lets the
+   * decorative ambient be quieted while meaningful flow particles still animate.
+   */
+  ambient?: 'off' | 'static' | 'animated';
   /** Declared document layers (bottom → top) — drives stacking order. */
   layers?: LayerDef[];
   /** Only draw these layer ids (untagged base elements always draw). */
@@ -297,6 +305,7 @@ export function renderPageSVG(
   // override. The Calm toggle defaults from the OS setting (see main.ts) but can
   // now re-enable animation when off.
   topo.reducedMotion = !!opts.calm;
+  if (opts.ambient) topo.ambient = opts.ambient;
 
   // The layer view: hidden layers dropped, the rest stacked bottom → top
   // (insertion order is the engine's paint order within each collection).
