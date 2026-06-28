@@ -2207,11 +2207,18 @@ calmBtn.addEventListener('click', () => applyCalm(!editor.calm));
 /* Light / dark theme — a view preference, persisted across sessions. */
 const themeBtn = app.querySelector<HTMLButtonElement>('#tTheme')!;
 const THEME_KEY = 'topology-dojo:theme';
+const tdsRoot = app.querySelector<HTMLElement>('.tds-root');
 function applyTheme(light: boolean): void {
   document.documentElement.classList.toggle('light', light);
   themeBtn.classList.toggle('on', light);
   themeBtn.textContent = light ? '🌙' : '☀';
   themeBtn.title = light ? 'Switch to dark theme' : 'Switch to light theme';
+  // The vendored engine ships a dark canvas. Flip the engine's own light palette
+  // on the canvas container (its CSS `--tds-*` background vars) and tell the
+  // editor to render a light grid/vignette in the SVG, so the canvas honours
+  // the light theme instead of staying dark (#8).
+  tdsRoot?.classList.toggle('tds-light', light);
+  editor.setLight(light);
   try {
     localStorage.setItem(THEME_KEY, light ? 'light' : 'dark');
   } catch {
