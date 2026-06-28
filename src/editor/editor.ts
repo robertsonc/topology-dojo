@@ -102,6 +102,8 @@ export class Editor {
   calm = false;
   /** Ambient backdrop level: 'off' | 'static' | 'animated' (a view preference). */
   ambient: 'off' | 'static' | 'animated' = 'animated';
+  /** Render the canvas backdrop/grid/vignette for the light theme (#8). */
+  light = false;
 
   private drag: DragState | null = null;
   /** Active waypoint drag on the selected link (index into link.waypoints). */
@@ -570,6 +572,7 @@ export class Editor {
       emphasis: this.page.emphasis,
       calm: this.calm,
       ambient: this.ambient,
+      light: this.light,
     });
     // renderPageInto resets the art viewBox to the page's; re-apply the view.
     this.applyView();
@@ -590,6 +593,7 @@ export class Editor {
       renderPageInto(this.art, this.page, {
         calm: this.calm,
         ambient: this.ambient,
+        light: this.light,
       });
       this.applyView();
     });
@@ -604,6 +608,12 @@ export class Editor {
   /** Set the ambient backdrop level (off/static/animated) and re-render. */
   setAmbient(level: 'off' | 'static' | 'animated'): void {
     this.ambient = level;
+    this.renderArt();
+  }
+
+  /** Render the canvas for the light or dark theme and re-render (#8). */
+  setLight(on: boolean): void {
+    this.light = on;
     this.renderArt();
   }
 

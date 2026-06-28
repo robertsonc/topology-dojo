@@ -163,6 +163,9 @@ class TopologyDesigner {
 
     // ── Theme ──
     this._theme = 'dark';
+    // When true, the string-render path (_svgDefs/_svgAmbient) emits a
+    // light-canvas grid + vignette instead of the dark defaults (#8).
+    this.light = false;
 
     // ── Zone Annotations (#140) ──
     // Visual region rectangles grouping nodes into named zones
@@ -2089,8 +2092,14 @@ class TopologyDesigner {
   _svgDefs() {
     // On mobile Safari, use simplified filters to prevent GPU compositor crash (#182)
     if (this._isMobileSafari) return this._svgDefsMobile();
+    // The engine ships a dark canvas; `light` lifts the hardcoded dark grid +
+    // vignette so the rendered SVG sits coherently on a light page (#8).
+    const gridStroke = this.light ? 'rgba(0,0,0,.06)' : 'rgba(255,255,255,.03)';
+    const vignette = this.light
+      ? `<radialGradient id="tds-vignette" cx="50%" cy="50%" r="55%"><stop offset="0%" stop-color="transparent"/><stop offset="70%" stop-color="rgba(15,23,42,.015)"/><stop offset="100%" stop-color="rgba(15,23,42,.05)"/></radialGradient>`
+      : `<radialGradient id="tds-vignette" cx="50%" cy="50%" r="55%"><stop offset="0%" stop-color="transparent"/><stop offset="65%" stop-color="rgba(5,8,22,.06)"/><stop offset="100%" stop-color="rgba(5,8,22,.3)"/></radialGradient>`;
     return `<defs>
-<pattern id="tds-grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(255,255,255,.03)" stroke-width=".3"/></pattern>
+<pattern id="tds-grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="${gridStroke}" stroke-width=".3"/></pattern>
 <filter id="tds-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <filter id="tds-glow-strong" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <filter id="tds-glow-green" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" result="b"/><feFlood flood-color="#01a982" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -2255,14 +2264,15 @@ class TopologyDesigner {
 <radialGradient id="tds-ambientGreen" cx="20%" cy="35%" r="35%"><stop offset="0%" stop-color="rgba(1,169,130,.07)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
 <radialGradient id="tds-ambientPurple" cx="80%" cy="70%" r="30%"><stop offset="0%" stop-color="rgba(119,100,252,.05)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
 <radialGradient id="tds-ambientBlue" cx="55%" cy="10%" r="25%"><stop offset="0%" stop-color="rgba(101,174,249,.04)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
-<radialGradient id="tds-vignette" cx="50%" cy="50%" r="55%"><stop offset="0%" stop-color="transparent"/><stop offset="65%" stop-color="rgba(5,8,22,.06)"/><stop offset="100%" stop-color="rgba(5,8,22,.3)"/></radialGradient>
+${vignette}
 </defs>`;
   }
 
   /** Simplified SVG defs for mobile Safari — fewer filter stages, smaller blur radii (#182) */
   _svgDefsMobile() {
+    const gridStroke = this.light ? 'rgba(0,0,0,.06)' : 'rgba(255,255,255,.03)';
     return `<defs>
-<pattern id="tds-grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(255,255,255,.03)" stroke-width=".3"/></pattern>
+<pattern id="tds-grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="${gridStroke}" stroke-width=".3"/></pattern>
 <filter id="tds-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <filter id="tds-glow-strong" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <filter id="tds-glow-green" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feFlood flood-color="#01a982" flood-opacity=".2" result="c"/><feComposite in="c" in2="b" operator="in" result="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -2295,7 +2305,7 @@ class TopologyDesigner {
 <radialGradient id="tds-ambientGreen" cx="20%" cy="35%" r="35%"><stop offset="0%" stop-color="rgba(1,169,130,.07)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
 <radialGradient id="tds-ambientPurple" cx="80%" cy="70%" r="30%"><stop offset="0%" stop-color="rgba(119,100,252,.05)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
 <radialGradient id="tds-ambientBlue" cx="55%" cy="10%" r="25%"><stop offset="0%" stop-color="rgba(101,174,249,.04)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
-<radialGradient id="tds-vignette" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="transparent"/><stop offset="100%" stop-color="rgba(0,0,0,.25)"/></radialGradient>
+<radialGradient id="tds-vignette" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="transparent"/><stop offset="100%" stop-color="${this.light ? 'rgba(15,23,42,.05)' : 'rgba(0,0,0,.25)'}"/></radialGradient>
 </defs>`;
   }
 

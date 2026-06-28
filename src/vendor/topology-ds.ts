@@ -213,6 +213,8 @@ interface EngineInstance {
   reducedMotion: boolean;
   /** Ambient backdrop level: 'off' | 'static' | 'animated' (default animated). */
   ambient?: 'off' | 'static' | 'animated';
+  /** Render the canvas backdrop/grid/vignette for a light theme. */
+  light?: boolean;
 }
 
 /** Render options shared by the page renderers. */
@@ -225,6 +227,12 @@ export interface RenderOptions {
    * decorative ambient be quieted while meaningful flow particles still animate.
    */
   ambient?: 'off' | 'static' | 'animated';
+  /**
+   * Render the canvas backdrop, grid and vignette for a light theme. The
+   * vendored engine only ships a dark canvas; this lifts the hardcoded dark
+   * grid/vignette so the SVG sits coherently on a light page.
+   */
+  light?: boolean;
   /** Declared document layers (bottom → top) — drives stacking order. */
   layers?: LayerDef[];
   /** Only draw these layer ids (untagged base elements always draw). */
@@ -306,6 +314,7 @@ export function renderPageSVG(
   // now re-enable animation when off.
   topo.reducedMotion = !!opts.calm;
   if (opts.ambient) topo.ambient = opts.ambient;
+  topo.light = !!opts.light;
 
   // The layer view: hidden layers dropped, the rest stacked bottom → top
   // (insertion order is the engine's paint order within each collection).
