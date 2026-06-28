@@ -10,6 +10,7 @@
 import {
   renderPageInto,
   type AnchorConfig,
+  type BrandPalette,
   type FlowPathConfig,
   type LinkConfig,
   type NodeConfig,
@@ -104,6 +105,8 @@ export class Editor {
   ambient: 'off' | 'static' | 'animated' = 'animated';
   /** Render the canvas backdrop/grid/vignette for the light theme (#8). */
   light = false;
+  /** Active brand palette — remaps the engine's accent colours on canvas (#7). */
+  palette: BrandPalette | undefined = undefined;
 
   private drag: DragState | null = null;
   /** Active waypoint drag on the selected link (index into link.waypoints). */
@@ -573,6 +576,7 @@ export class Editor {
       calm: this.calm,
       ambient: this.ambient,
       light: this.light,
+      palette: this.palette,
     });
     // renderPageInto resets the art viewBox to the page's; re-apply the view.
     this.applyView();
@@ -594,6 +598,7 @@ export class Editor {
         calm: this.calm,
         ambient: this.ambient,
         light: this.light,
+        palette: this.palette,
       });
       this.applyView();
     });
@@ -614,6 +619,12 @@ export class Editor {
   /** Render the canvas for the light or dark theme and re-render (#8). */
   setLight(on: boolean): void {
     this.light = on;
+    this.renderArt();
+  }
+
+  /** Set the active brand palette (or undefined for the default) and re-render (#7). */
+  setPalette(palette: BrandPalette | undefined): void {
+    this.palette = palette;
     this.renderArt();
   }
 

@@ -217,6 +217,73 @@ interface EngineInstance {
   light?: boolean;
 }
 
+/**
+ * A document brand palette (#7). The vendored engine hardcodes its accent
+ * colours in the rendered SVG (it has no colour-variable hooks), so a palette is
+ * applied at render time by remapping those source brand colours to the chosen
+ * ones — see `applyPalette`. The same `accent` also drives the app chrome's
+ * `--accent` (handled in the app, not here). Optional and round-trip safe.
+ */
+export interface BrandPalette {
+  /** Preset id this palette came from, or 'custom' (UI selection only). */
+  id?: string;
+  /** Human label — the preset name or 'Custom'. */
+  name?: string;
+  /** Primary brand colour — remaps the engine's green accent (#01a982). */
+  accent: string;
+  /** Secondary brand colour — remaps the engine's blue accent (#65aef9). */
+  secondary?: string;
+  /** Chrome accent override for the app UI; defaults to `accent` (app-side). */
+  chrome?: string;
+}
+
+/**
+ * The engine's source brand colours, with their `rgb()` channel forms so the
+ * many `rgba(r,g,b,a)` glow/wash usages remap too — not just the `#hex` ones.
+ */
+const ENGINE_BRAND = {
+  accent: { hex: '01a982', rgb: '1,169,130' },
+  secondary: { hex: '65aef9', rgb: '101,174,249' },
+} as const;
+
+/** `#rrggbb` → `r,g,b` channel string; null for anything not a 6-digit hex. */
+function hexChannels(hex: string): string | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1]!, 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+
+/** Remap one engine brand colour (all `#hex` + `rgb/rgba(...)` forms) to `toHex`. */
+function remapColor(
+  svg: string,
+  src: { hex: string; rgb: string },
+  toHex: string,
+): string {
+  const chans = hexChannels(toHex);
+  if (!chans) return svg; // invalid target — leave the SVG untouched
+  const hex = toHex.startsWith('#') ? toHex : `#${toHex}`;
+  // The `#01a982` literal form (node strokes, link colours, glow flood-colors).
+  let out = svg.replace(new RegExp(`#${src.hex}`, 'gi'), hex);
+  // The `rgb()/rgba()` channel forms used by glows, ambient washes and LEDs.
+  out = out.split(`(${src.rgb}`).join(`(${chans}`);
+  return out;
+}
+
+/**
+ * Recolour a rendered SVG string for a brand palette by substituting the
+ * engine's source brand colours. Bounded to the two accent colours, so it never
+ * touches functional colours (reds for alerts, greys for inactive, etc.).
+ */
+export function applyPalette(svg: string, palette: BrandPalette): string {
+  let out = svg;
+  if (palette.accent)
+    out = remapColor(out, ENGINE_BRAND.accent, palette.accent);
+  if (palette.secondary)
+    out = remapColor(out, ENGINE_BRAND.secondary, palette.secondary);
+  return out;
+}
+
 /** Render options shared by the page renderers. */
 export interface RenderOptions {
   /** Calm canvas: suppress motion (animated flow particles, link dots, glints). */
@@ -233,6 +300,8 @@ export interface RenderOptions {
    * grid/vignette so the SVG sits coherently on a light page.
    */
   light?: boolean;
+  /** Document brand palette — remaps the engine's accent colours at render time. */
+  palette?: BrandPalette;
   /** Declared document layers (bottom → top) — drives stacking order. */
   layers?: LayerDef[];
   /** Only draw these layer ids (untagged base elements always draw). */
@@ -397,7 +466,10 @@ export function renderPageSVG(
   topo._buildIndex();
   topo.step = topo._steps.length; // sit on the trailing step (within range)
 
-  return topo._renderSVG();
+  const svg = topo._renderSVG();
+  // The engine bakes its accent colours into the SVG string, so a brand palette
+  // is applied as a final colour-remap pass over the markup (#7).
+  return opts.palette ? applyPalette(svg, opts.palette) : svg;
 }
 
 /** Render a page directly into a host `<svg>` element, syncing its viewBox. */

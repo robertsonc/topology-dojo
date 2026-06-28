@@ -14,13 +14,18 @@ import '@fontsource/jetbrains-mono/latin-600.css';
 import '@fontsource/jetbrains-mono/latin-700.css';
 import { Editor } from './editor/editor.js';
 import { clientToUser } from './editor/coords.js';
-import { engineDefs, renderPageSVG } from './vendor/topology-ds.js';
+import {
+  applyPalette,
+  engineDefs,
+  renderPageSVG,
+} from './vendor/topology-ds.js';
 import {
   blankPage,
   duplicatePage,
   sampleDocument,
   type TopologyDocument,
   type Stencil,
+  type BrandPalette,
 } from './pages/model.js';
 import { captureStencil, stencilViewBox } from './editor/stencil.js';
 import {
@@ -289,6 +294,8 @@ function loadDoc(next: TopologyDocument): void {
   invalidatePreview(); // custom types replaced — clear cached previews
   current = 0;
   buildPalette();
+  // Adopt the incoming document's brand palette (canvas + chrome + inputs).
+  applyBrandPalette(next.palette, false);
   editor.setPage(doc.pages[current]!);
   renderFilmstrip();
   renderProblems();
@@ -537,10 +544,12 @@ function renderMinimap(): void {
     .join('');
   const v = editor.getView();
   minimap.setAttribute('viewBox', `0 0 ${MM_W} ${MM_H}`);
-  minimap.innerHTML =
+  const html =
     `<rect x="${ox}" y="${oy}" width="${pw * s}" height="${ph * s}" fill="none" stroke="#7d8a92" stroke-opacity="0.5" stroke-width="1"/>` +
     dots +
     `<rect x="${mx(v.x)}" y="${my(v.y)}" width="${v.w * s}" height="${v.h * s}" fill="#01a982" fill-opacity="0.12" stroke="#01a982" stroke-width="1.5"/>`;
+  // Mirror the canvas brand remap so the minimap dots + viewport box match (#7).
+  minimap.innerHTML = doc.palette ? applyPalette(html, doc.palette) : html;
 }
 // Click / drag the minimap to recenter the view there.
 function minimapPanTo(e: PointerEvent): void {
@@ -2245,10 +2254,20 @@ displayPop.innerHTML =
   `<option value="animated">Animated</option><option value="static">Static</option><option value="off">Off</option>` +
   `</select></label>` +
   `<label class="dp-row dp-check"><input type="checkbox" id="dpGlass"/><span>Panel blur (glass)</span></label>` +
-  `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (C) pauses those.</div>`;
+  `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (C) pauses those.</div>` +
+  `<div class="dp-h dp-h2">Brand palette</div>` +
+  `<div class="dp-swatches" id="dpPresets"></div>` +
+  `<label class="dp-row">Accent<input type="color" id="dpAccent"/></label>` +
+  `<label class="dp-row">Secondary<input type="color" id="dpSecondary"/></label>` +
+  `<label class="dp-row">Chrome (UI)<input type="color" id="dpChrome"/></label>` +
+  `<div class="dp-note">Recolours the canvas accents and the app chrome to match your brand. Saved with the document.</div>`;
 document.body.appendChild(displayPop);
 const dpAmbient = displayPop.querySelector<HTMLSelectElement>('#dpAmbient')!;
 const dpGlass = displayPop.querySelector<HTMLInputElement>('#dpGlass')!;
+const dpPresets = displayPop.querySelector<HTMLDivElement>('#dpPresets')!;
+const dpAccent = displayPop.querySelector<HTMLInputElement>('#dpAccent')!;
+const dpSecondary = displayPop.querySelector<HTMLInputElement>('#dpSecondary')!;
+const dpChrome = displayPop.querySelector<HTMLInputElement>('#dpChrome')!;
 
 function applyAmbient(level: 'off' | 'static' | 'animated'): void {
   editor.setAmbient(level);
@@ -2281,6 +2300,89 @@ dpAmbient.addEventListener('change', () =>
   applyAmbient(dpAmbient.value as 'off' | 'static' | 'animated'),
 );
 dpGlass.addEventListener('change', () => applyGlass(dpGlass.checked));
+
+/* ── Brand palette (#7) ──────────────────────────────────────────────
+ * A document-level palette that recolours the canvas accents (via a render-time
+ * remap of the engine's hardcoded brand colours) and the app chrome (--accent).
+ * Stored on the document, so it round-trips through save / share. */
+const PALETTE_PRESETS: BrandPalette[] = [
+  { id: 'default', name: 'Default', accent: '#01a982', secondary: '#65aef9' },
+  { id: 'azure', name: 'Azure', accent: '#0a84ff', secondary: '#5ac8fa' },
+  { id: 'violet', name: 'Violet', accent: '#7c6cff', secondary: '#b58cff' },
+  { id: 'amber', name: 'Amber', accent: '#e0922f', secondary: '#f5c16c' },
+  { id: 'crimson', name: 'Crimson', accent: '#e5484d', secondary: '#ff8088' },
+  { id: 'teal', name: 'Teal', accent: '#11b3b3', secondary: '#4fd1c5' },
+  { id: 'slate', name: 'Slate', accent: '#6b7a8f', secondary: '#9aa7b8' },
+];
+const DEFAULT_ACCENT = '#01a982';
+const DEFAULT_SECONDARY = '#65aef9';
+
+// One swatch button per preset; clicking applies it.
+const presetBtns = PALETTE_PRESETS.map((p) => {
+  const b = document.createElement('button');
+  b.className = 'dp-swatch';
+  b.type = 'button';
+  b.dataset.id = p.id!;
+  b.title = p.name!;
+  b.style.setProperty('--sw1', p.accent);
+  b.style.setProperty('--sw2', p.secondary ?? p.accent);
+  b.addEventListener('click', () => applyBrandPalette(p, true));
+  dpPresets.appendChild(b);
+  return b;
+});
+
+function setChromeAccent(hex: string | undefined): void {
+  if (hex) document.documentElement.style.setProperty('--accent', hex);
+  else document.documentElement.style.removeProperty('--accent');
+}
+
+function syncPaletteInputs(p: BrandPalette | undefined): void {
+  dpAccent.value = p?.accent ?? DEFAULT_ACCENT;
+  dpSecondary.value = p?.secondary ?? DEFAULT_SECONDARY;
+  dpChrome.value = p?.chrome ?? p?.accent ?? DEFAULT_ACCENT;
+  const activeId = p?.id ?? 'default';
+  for (const b of presetBtns)
+    b.classList.toggle('on', b.dataset.id === activeId);
+}
+
+/**
+ * Apply a brand palette to the document, canvas, chrome and the popover inputs.
+ * The 'default' preset (or undefined) clears the palette so the engine renders
+ * its native colours. `persist` autosaves the document (skip on initial load).
+ */
+function applyBrandPalette(
+  p: BrandPalette | undefined,
+  persist: boolean,
+): void {
+  const eff = p && p.id !== 'default' ? p : undefined;
+  doc.palette = eff;
+  editor.setPalette(eff);
+  setChromeAccent(eff ? (eff.chrome ?? eff.accent) : undefined);
+  syncPaletteInputs(eff);
+  renderMinimap();
+  if (persist) markDirty();
+}
+
+// Editing any colour input builds a custom palette from the three swatches.
+function applyCustomPalette(): void {
+  const accent = dpAccent.value;
+  const chrome = dpChrome.value;
+  applyBrandPalette(
+    {
+      id: 'custom',
+      name: 'Custom',
+      accent,
+      secondary: dpSecondary.value,
+      ...(chrome.toLowerCase() !== accent.toLowerCase() ? { chrome } : {}),
+    },
+    true,
+  );
+}
+for (const inp of [dpAccent, dpSecondary, dpChrome])
+  inp.addEventListener('input', applyCustomPalette);
+
+// Reflect whatever the booted document already carries.
+applyBrandPalette(doc.palette, false);
 
 function closeDisplayPop(): void {
   displayPop.hidden = true;
