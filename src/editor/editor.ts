@@ -100,6 +100,8 @@ export class Editor {
   gridVisible = true;
   /** Calm canvas: render without animations (a view preference). */
   calm = false;
+  /** Ambient backdrop level: 'off' | 'static' | 'animated' (a view preference). */
+  ambient: 'off' | 'static' | 'animated' = 'animated';
 
   private drag: DragState | null = null;
   /** Active waypoint drag on the selected link (index into link.waypoints). */
@@ -567,6 +569,7 @@ export class Editor {
       ...this.renderOpts?.(),
       emphasis: this.page.emphasis,
       calm: this.calm,
+      ambient: this.ambient,
     });
     // renderPageInto resets the art viewBox to the page's; re-apply the view.
     this.applyView();
@@ -584,7 +587,10 @@ export class Editor {
     if (this.artRaf) return;
     this.artRaf = requestAnimationFrame(() => {
       this.artRaf = 0;
-      renderPageInto(this.art, this.page, { calm: this.calm });
+      renderPageInto(this.art, this.page, {
+        calm: this.calm,
+        ambient: this.ambient,
+      });
       this.applyView();
     });
   }
@@ -592,6 +598,12 @@ export class Editor {
   /** Toggle the calm canvas (animations off) and re-render. */
   setCalm(on: boolean): void {
     this.calm = on;
+    this.renderArt();
+  }
+
+  /** Set the ambient backdrop level (off/static/animated) and re-render. */
+  setAmbient(level: 'off' | 'static' | 'animated'): void {
+    this.ambient = level;
     this.renderArt();
   }
 
