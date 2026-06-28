@@ -108,4 +108,48 @@ describe('persist', () => {
     expect(doc?.title).toBe('X');
     expect(doc?.pages[0]!.name).toBe('F1');
   });
+
+  it('round-trips a brand palette and normalises hex colours (#7)', () => {
+    const doc = parseDoc({
+      title: 'Branded',
+      pages: [blankPage('F1')],
+      palette: {
+        id: 'custom',
+        name: 'Custom',
+        accent: '#0A84FF',
+        secondary: '#5ac8fa',
+        chrome: '#102030',
+      },
+    });
+    expect(doc!.palette).toEqual({
+      id: 'custom',
+      name: 'Custom',
+      accent: '#0a84ff', // lower-cased
+      secondary: '#5ac8fa',
+      chrome: '#102030',
+    });
+    // Survives a full serialize → parse cycle.
+    const back = parseDoc(serializeDoc(doc!));
+    expect(back!.palette!.accent).toBe('#0a84ff');
+  });
+
+  it('drops an invalid palette (no valid accent) and invalid colour fields', () => {
+    // Bad accent → whole palette dropped.
+    const noAccent = parseDoc({
+      pages: [blankPage('F1')],
+      palette: { secondary: '#65aef9' },
+    });
+    expect(noAccent!.palette).toBeUndefined();
+    // Valid accent, junk secondary → secondary dropped, accent kept.
+    const partial = parseDoc({
+      pages: [blankPage('F1')],
+      palette: { accent: '#01a982', secondary: 'not-a-color' },
+    });
+    expect(partial!.palette).toEqual({ accent: '#01a982' });
+  });
+
+  it('omits the palette key entirely when there is none', () => {
+    const doc = sampleDocument();
+    expect(JSON.parse(serializeDoc(doc)).palette).toBeUndefined();
+  });
 });

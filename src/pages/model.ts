@@ -10,6 +10,7 @@
  */
 import type {
   AnchorConfig,
+  BrandPalette,
   FlowPathConfig,
   LinkConfig,
   NodeConfig,
@@ -73,7 +74,16 @@ export interface TopologyDocument {
    * and backward-compatible (absent → no saved stencils).
    */
   stencils?: Stencil[];
+  /**
+   * Brand palette (#7) — remaps the engine's accent colours on the canvas and
+   * drives the chrome accent, so each document can carry its own branding.
+   * Optional and backward-compatible (absent → the default green palette).
+   */
+  palette?: BrandPalette;
 }
+
+/** Re-export so the editor + app import the palette type from the model. */
+export type { BrandPalette };
 
 /** A reusable, named sub-assembly captured from a selection (C.3). */
 export interface Stencil {

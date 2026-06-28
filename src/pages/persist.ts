@@ -5,8 +5,32 @@
  * defensive normalization on the way in (a corrupt or hand-edited file must
  * never crash the editor — it falls back to a valid shape or null).
  */
-import type { TopologyDocument, Page, Stencil } from './model.js';
+import type { TopologyDocument, Page, Stencil, BrandPalette } from './model.js';
 import { newPageId } from './model.js';
+
+/** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
+function hexColor(v: unknown): string | undefined {
+  return typeof v === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim())
+    ? v.trim().toLowerCase()
+    : undefined;
+}
+
+/** Parse a brand palette, keeping only valid hex colours; undefined if no accent. */
+function parsePalette(raw: unknown): BrandPalette | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const r = raw as Record<string, unknown>;
+  const accent = hexColor(r.accent);
+  if (!accent) return undefined; // accent is the one required colour
+  const secondary = hexColor(r.secondary);
+  const chrome = hexColor(r.chrome);
+  return {
+    accent,
+    ...(secondary ? { secondary } : {}),
+    ...(chrome ? { chrome } : {}),
+    ...(typeof r.id === 'string' ? { id: r.id } : {}),
+    ...(typeof r.name === 'string' ? { name: r.name } : {}),
+  };
+}
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type { LayerDef } from '../api/layers.js';
 
@@ -21,6 +45,7 @@ export function serializeDoc(doc: TopologyDocument): string {
       ...(doc.layers?.length ? { layers: doc.layers } : {}),
       ...(doc.legend ? { legend: doc.legend } : {}),
       ...(doc.stencils?.length ? { stencils: doc.stencils } : {}),
+      ...(doc.palette ? { palette: doc.palette } : {}),
     },
     null,
     2,
@@ -136,6 +161,7 @@ export function parseDoc(input: unknown): TopologyDocument | null {
           }),
         )
     : [];
+  const palette = parsePalette(d.palette);
   return {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
@@ -143,6 +169,7 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     ...(layers.length ? { layers } : {}),
     ...(legend && Object.keys(legend).length ? { legend } : {}),
     ...(stencils.length ? { stencils } : {}),
+    ...(palette ? { palette } : {}),
   };
 }
 
