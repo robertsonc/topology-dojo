@@ -130,7 +130,9 @@ describe('capability catalog', () => {
     expect(markerTypes).toContain('deny'); // enforcement
     expect(markerTypes).toContain('windows'); // host OS (SASE)
     expect(markerTypes).toContain('agentless'); // SSE posture (SASE)
-    expect(markerTypes).toHaveLength(17);
+    expect(markerTypes).toContain('dns-proxy'); // network service (SASE)
+    expect(markerTypes).toContain('captive-portal');
+    expect(markerTypes).toHaveLength(29);
     expect(marker.fields.find((f) => f.key === 'nodeId')?.kind).toBe('ref');
     expect(marker.fields.some((f) => f.key === 'icon')).toBe(true); // glyph override
   });
