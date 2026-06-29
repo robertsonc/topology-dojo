@@ -30,6 +30,7 @@ describe('MCP tools', () => {
         'add_page',
         'add_policy_marker',
         'add_zone',
+        'balance_topology',
         'create_from_template',
         'create_topology',
         'define_layer',
@@ -45,6 +46,8 @@ describe('MCP tools', () => {
         'list_topologies',
         'render_svg',
         'set_document_title',
+        'set_legend',
+        'set_palette',
         'remove_element',
         'set_node_metadata',
         'set_page_properties',
@@ -98,6 +101,72 @@ describe('MCP tools', () => {
     expect(v.valid).toBe(true); // overlaps are warnings, not errors
     expect(v.layoutClean).toBe(false);
     expect(v.problems.some((p) => /overlap/.test(p.message))).toBe(true);
+  });
+
+  it('balances a topology (tidy + align/centre) in place', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 137,
+      y: 211,
+      nodeId: 'a',
+    });
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 642,
+      y: 218,
+      nodeId: 'b',
+    });
+    const r = call('balance_topology', { topologyId: id }) as {
+      movedNodes: number;
+      before: number;
+      after: number;
+    };
+    expect(r.movedNodes).toBeGreaterThan(0);
+    const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    // Balance lands the two nodes on a shared row (equal y after alignment).
+    expect(doc.pages[0]!.nodes[0]!.y).toBe(doc.pages[0]!.nodes[1]!.y);
+  });
+
+  it('sets the legend + brand palette, and render_svg applies both', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 200,
+      y: 200,
+      nodeId: 'a',
+    });
+    call('set_legend', { topologyId: id, show: true, position: 'br' });
+    call('set_palette', { topologyId: id, accent: '#FF8800' });
+    const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.legend).toEqual({ show: true, position: 'br' });
+    expect(doc.palette!.accent).toBe('#ff8800'); // lower-cased
+
+    const svg = call('render_svg', { topologyId: id }) as string;
+    expect(svg).toContain('#ff8800'); // palette recoloured the canvas
+    expect(svg).not.toContain('#01a982'); // engine green remapped away
+    expect(svg).toContain('tds-legend'); // legend drawn into the output
+
+    // Clearing restores defaults.
+    call('set_palette', { topologyId: id, clear: true });
+    expect(
+      (call('get_topology', { topologyId: id }) as TopologyDocument).palette,
+    ).toBeUndefined();
+  });
+
+  it('define_layer accepts plane opacity', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    call('define_layer', {
+      topologyId: id,
+      layerId: 'overlay',
+      name: 'Overlay',
+      opacity: 0.5,
+    });
+    const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.layers!.find((l) => l.id === 'overlay')!.opacity).toBe(0.5);
   });
 
   it('edits document title and page properties (name / viewBox)', () => {

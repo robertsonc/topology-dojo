@@ -16,6 +16,8 @@ import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
+import { applyPalette } from '../vendor/topology-ds.js';
+import { legendSVG } from '../editor/legend.js';
 
 export interface EngineInstance {
   node(id: string, cfg: Record<string, unknown>): void;
@@ -181,9 +183,17 @@ export function renderDocumentWithEngine(
 ): string {
   const page = doc.pages[pageIndex];
   if (!page) throw new Error(`page index ${pageIndex} out of range`);
-  return renderPageWithEngine(E, page, doc.customNodes, {
+  let svg = renderPageWithEngine(E, page, doc.customNodes, {
     ...opts,
     layers: opts.layers ?? doc.layers ?? [],
     emphasis: opts.emphasis ?? page.emphasis,
   });
+  // Document-level overlays the per-page engine render doesn't know about:
+  // the auto-legend (drawn into the page), then the brand palette remap over
+  // the whole thing (so legend swatches match the recoloured canvas). Mirrors
+  // what the editor composites, so MCP/headless output matches the GUI.
+  const legend = legendSVG(doc, page);
+  if (legend) svg = svg.replace('</svg>', `${legend}</svg>`);
+  if (doc.palette) svg = applyPalette(svg, doc.palette);
+  return svg;
 }

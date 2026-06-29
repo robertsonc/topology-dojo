@@ -281,3 +281,27 @@ export function tidyLayout(
   tidyDocument(next, opts);
   return next;
 }
+
+/**
+ * Balance every page of a document IN PLACE (tidy → de-overlap, then align
+ * rows/columns onto shared axes and centre the layout) and return a before/after
+ * summary. The crisp second pass `balanceLayout` runs, mutating the stored doc —
+ * the headless/MCP counterpart of the editor's Balance button.
+ */
+export function balanceDocument(
+  doc: TopologyDocument,
+  opts: BalanceOptions = {},
+): TidyResult {
+  const before = analyzeLayout(doc).length;
+  let movedNodes = 0;
+  for (const page of doc.pages) {
+    const orig = page.nodes.map((n) => ({ x: n.x, y: n.y }));
+    tidyPage(page);
+    balancePage(page, opts);
+    movedNodes += page.nodes.filter(
+      (n, i) => n.x !== orig[i]!.x || n.y !== orig[i]!.y,
+    ).length;
+  }
+  const after = analyzeLayout(doc).length;
+  return { movedNodes, before, after };
+}
