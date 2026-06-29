@@ -1804,6 +1804,7 @@
       .problems,
       .display-pop,
       .user-menu,
+      .ctx-menu,
       .find,
       .help {
         background: var(--glass-bg) !important;
@@ -1841,8 +1842,13 @@
         padding: 8px;
       }
       .display-pop,
-      .user-menu {
+      .user-menu,
+      .ctx-menu {
         border-radius: 16px !important;
+      }
+      /* Right-click menu hover → brand accent (matches the palette + glass). */
+      .ctx-item:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--accent) 16%, transparent);
       }
 
       /* Small floating toggles + canvas controls → frosted pills with lift. */
@@ -1958,6 +1964,7 @@
       html.no-glass .problems,
       html.no-glass .display-pop,
       html.no-glass .user-menu,
+      html.no-glass .ctx-menu,
       html.no-glass .find,
       html.no-glass .help {
         background: var(--panel) !important;

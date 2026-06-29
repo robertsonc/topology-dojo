@@ -284,6 +284,43 @@ export function applyPalette(svg: string, palette: BrandPalette): string {
   return out;
 }
 
+/**
+ * Light-mode canvas (#8 follow-up). The engine bakes a DARK card surface and
+ * LIGHT on-card / label text straight into the SVG, so in light mode node cards
+ * stayed dark and their labels (drawn on the now-light canvas) became
+ * unreadable. This flips the surface fills to light and the text to dark — in
+ * both `#hex` and `rgb()/rgba()` (label-glass) forms — leaving the semantic
+ * accent/alert/grey colours alone. Order-safe: each entry replaces only its own
+ * source colour in a single linear pass, so the text→`#1d1f27` mapping below is
+ * applied after the `#1d1f27` surface remap and is left untouched.
+ */
+const LIGHT_CANVAS: { from: string; rgb: string; to: string; toRgb: string }[] =
+  [
+    // Card / shape surface fills (dark → light).
+    { from: '292d3a', rgb: '41,45,58', to: '#ffffff', toRgb: '255,255,255' },
+    { from: '22252e', rgb: '34,37,46', to: '#f2f5f8', toRgb: '242,245,248' },
+    { from: '1d1f27', rgb: '29,31,39', to: '#e9edf2', toRgb: '233,237,242' },
+    // Card border / divider grey (dark → light).
+    { from: '3e4550', rgb: '62,69,80', to: '#ccd4dc', toRgb: '204,212,220' },
+    // On-card + node-label text (light → dark) — must come after the surfaces.
+    { from: 'e6e8e9', rgb: '230,232,233', to: '#1d1f27', toRgb: '29,31,39' },
+  ];
+
+/** Recolour a rendered SVG's card surfaces + text for a light canvas. */
+export function lightenCanvas(svg: string): string {
+  let out = svg;
+  for (const c of LIGHT_CANVAS) {
+    out = out.replace(new RegExp(`#${c.from}`, 'gi'), c.to);
+    out = out.split(`(${c.rgb}`).join(`(${c.toRgb}`);
+  }
+  // Label chips fill from the `tds-labelGlass` gradient, whose stops use
+  // `rgba()` — which Chromium ignores in SVG `stop-color`, falling back to
+  // black. Remapping the stops therefore does nothing; swap the chips to a
+  // solid light fill so they read on a light canvas.
+  out = out.split('url(#tds-labelGlass)').join('#ffffff');
+  return out;
+}
+
 /** Render options shared by the page renderers. */
 export interface RenderOptions {
   /** Calm canvas: suppress motion (animated flow particles, link dots, glints). */
@@ -466,10 +503,14 @@ export function renderPageSVG(
   topo._buildIndex();
   topo.step = topo._steps.length; // sit on the trailing step (within range)
 
-  const svg = topo._renderSVG();
-  // The engine bakes its accent colours into the SVG string, so a brand palette
-  // is applied as a final colour-remap pass over the markup (#7).
-  return opts.palette ? applyPalette(svg, opts.palette) : svg;
+  let svg = topo._renderSVG();
+  // The engine bakes colours straight into the SVG string, so both the
+  // light-canvas card remap (#8) and the brand palette (#7) are applied as
+  // final colour-substitution passes over the markup. They target disjoint
+  // colours (surfaces/text vs accents), so order is irrelevant.
+  if (opts.light) svg = lightenCanvas(svg);
+  if (opts.palette) svg = applyPalette(svg, opts.palette);
+  return svg;
 }
 
 /** Render a page directly into a host `<svg>` element, syncing its viewBox. */
