@@ -30,6 +30,20 @@ export const POLICY_MARKER_TYPES = [
   // SSE posture.
   'agent',
   'agentless',
+  // Network services & SASE security functions (glyph-only; the engine renders
+  // whatever glyph `withMarkerIcon` resolves, so these need no engine change).
+  'dns-proxy',
+  'web-proxy',
+  'captive-portal',
+  'waf',
+  'casb',
+  'dlp',
+  'ips',
+  'sandbox',
+  'ztna',
+  'sso',
+  'mfa',
+  'geo-block',
 ] as const;
 
 export type PolicyMarkerType = (typeof POLICY_MARKER_TYPES)[number];
@@ -53,6 +67,18 @@ export const MARKER_ICONS: Record<string, string> = {
   chromeos: '🌐',
   agent: '🛡',
   agentless: '☁',
+  'dns-proxy': '🧭',
+  'web-proxy': '🌍',
+  'captive-portal': '🚪',
+  waf: '🧱',
+  casb: '☂',
+  dlp: '🔏',
+  ips: '🚨',
+  sandbox: '🧪',
+  ztna: '🔐',
+  sso: '🎫',
+  mfa: '🔢',
+  'geo-block': '🚫',
 };
 
 /**

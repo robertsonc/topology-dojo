@@ -6,8 +6,8 @@ import {
 } from './markers.js';
 
 describe('policy markers', () => {
-  it('covers enforcement + host-OS + SSE posture (17 types)', () => {
-    expect(POLICY_MARKER_TYPES).toHaveLength(17);
+  it('covers enforcement + host-OS + SSE + network services (29 types)', () => {
+    expect(POLICY_MARKER_TYPES).toHaveLength(29);
     for (const t of [
       'inspect',
       'deny',
@@ -19,10 +19,26 @@ describe('policy markers', () => {
       'chromeos',
       'agent',
       'agentless',
+      // network services & SASE
+      'dns-proxy',
+      'web-proxy',
+      'captive-portal',
+      'waf',
+      'casb',
+      'dlp',
+      'ips',
+      'sandbox',
+      'ztna',
+      'sso',
+      'mfa',
+      'geo-block',
     ])
       expect(POLICY_MARKER_TYPES).toContain(t);
     // every type has a default glyph
     for (const t of POLICY_MARKER_TYPES) expect(MARKER_ICONS[t]).toBeTruthy();
+    // glyphs are unique — no two types share a badge glyph
+    const glyphs = POLICY_MARKER_TYPES.map((t) => MARKER_ICONS[t]);
+    expect(new Set(glyphs).size).toBe(glyphs.length);
   });
 
   it('withMarkerIcon resolves a default glyph from the type', () => {
