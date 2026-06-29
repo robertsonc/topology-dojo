@@ -41,7 +41,7 @@ import { compileFlowTopology } from '../connect/compile.js';
 import { exportFlipbookHTML } from '../render/flipbook.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
-import { tidyDocument } from '../api/tidy.js';
+import { tidyDocument, balanceDocument } from '../api/tidy.js';
 import { layoutDocument, type LayoutAlgorithm } from '../api/autolayout.js';
 import { POLICY_MARKER_TYPES } from '../api/markers.js';
 import { buildTemplate, listTemplates } from '../api/templates.js';
@@ -119,6 +119,8 @@ const DIRECTION = ['forward', 'reverse', 'bidirectional'] as const;
 const SPEED = ['slow', 'medium', 'fast'] as const;
 const ALIGN9 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'C'] as const;
 const MARKER = POLICY_MARKER_TYPES;
+/** A CSS hex colour (`#rgb` or `#rrggbb`). */
+const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 /** Build the full set of tools bound to a store and runtime deps. */
 export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
@@ -281,6 +283,78 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ? { transition: page.transition }
             : {}),
         };
+      },
+    },
+    {
+      name: 'set_legend',
+      description:
+        'Toggle and place the document’s auto-generated legend / key — a panel of the node + link symbols actually in use, drawn on the canvas and in exports. Built live from the elements present, so it stays in sync.',
+      inputShape: {
+        topologyId,
+        show: z.boolean().describe('Draw the legend (false hides it).'),
+        position: z
+          .enum(['tl', 'tr', 'bl', 'br'])
+          .optional()
+          .describe('Corner: tl / tr / bl / br (default tl).'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        doc.legend = {
+          show: Boolean(a.show),
+          ...(a.position !== undefined
+            ? { position: a.position as 'tl' | 'tr' | 'bl' | 'br' }
+            : doc.legend?.position
+              ? { position: doc.legend.position }
+              : {}),
+        };
+        return { legend: doc.legend };
+      },
+    },
+    {
+      name: 'set_palette',
+      description:
+        'Set the document brand palette — recolours the canvas accents (the engine green → accent, blue → secondary) and the app chrome, so generated topologies match a brand. Colours are #rgb / #rrggbb hex. Omit accent (or pass clear:true) to remove the palette and restore the default colours.',
+      inputShape: {
+        topologyId,
+        accent: z
+          .string()
+          .regex(HEX)
+          .optional()
+          .describe('Primary brand colour (remaps the engine green).'),
+        secondary: z
+          .string()
+          .regex(HEX)
+          .optional()
+          .describe('Secondary brand colour (remaps the engine blue).'),
+        chrome: z
+          .string()
+          .regex(HEX)
+          .optional()
+          .describe('App-chrome accent override (defaults to accent).'),
+        name: z.string().optional().describe('Label for the palette.'),
+        clear: z
+          .boolean()
+          .optional()
+          .describe('Remove the palette and restore default colours.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        if (a.clear || a.accent === undefined) {
+          delete doc.palette;
+          return { palette: null };
+        }
+        doc.palette = {
+          id: 'custom',
+          accent: String(a.accent).toLowerCase(),
+          ...(a.secondary !== undefined
+            ? { secondary: String(a.secondary).toLowerCase() }
+            : {}),
+          ...(a.chrome !== undefined
+            ? { chrome: String(a.chrome).toLowerCase() }
+            : {}),
+          ...(a.name !== undefined ? { name: String(a.name) } : {}),
+        };
+        return { palette: doc.palette };
       },
     },
     {
@@ -645,6 +719,14 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .optional()
           .describe('Semantic role of the plane.'),
         color: z.string().optional(),
+        opacity: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe(
+            'Plane opacity 0–1 — dims every element on the layer (default 1).',
+          ),
         defaultVisible: z
           .boolean()
           .optional()
@@ -660,6 +742,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ? { kind: a.kind as (typeof LAYER_KINDS)[number] }
             : {}),
           ...(a.color !== undefined ? { color: String(a.color) } : {}),
+          ...(a.opacity !== undefined ? { opacity: Number(a.opacity) } : {}),
           ...(a.defaultVisible !== undefined
             ? { defaultVisible: Boolean(a.defaultVisible) }
             : {}),
@@ -757,6 +840,33 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ? { direction: a.direction as 'TB' | 'LR' }
             : {}),
           ...(a.spacing !== undefined ? { spacing: Number(a.spacing) } : {}),
+        }),
+    },
+    {
+      name: 'balance_topology',
+      description:
+        'Tidy then BALANCE a topology in place: de-overlap, snap nodes onto shared rows/columns, and centre the whole layout in the page. The crisp follow-up to tidy_topology — run it last to make a generated diagram look hand-arranged. Returns how many nodes moved plus the layout-warning count before/after.',
+      inputShape: {
+        topologyId,
+        alignTolerance: z
+          .number()
+          .optional()
+          .describe(
+            'Snap nodes onto a shared axis when within this many px (default ≈ grid×1.3).',
+          ),
+        center: z
+          .boolean()
+          .optional()
+          .describe(
+            "Centre the layout's bounding box in the page (default true).",
+          ),
+      },
+      handler: (a) =>
+        balanceDocument(store.get(String(a.topologyId)), {
+          ...(a.alignTolerance !== undefined
+            ? { alignTolerance: Number(a.alignTolerance) }
+            : {}),
+          ...(a.center !== undefined ? { center: Boolean(a.center) } : {}),
         }),
     },
     {

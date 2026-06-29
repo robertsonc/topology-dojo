@@ -72,6 +72,8 @@ export interface LayerInput {
   name?: string;
   kind?: LayerKind;
   color?: string;
+  /** Plane opacity 0–1 (B.3) — multiplies each member element's opacity. */
+  opacity?: number;
   defaultVisible?: boolean;
 }
 
