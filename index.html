@@ -1731,6 +1731,15 @@
           ),
           var(--bg);
       }
+      /* Unify the canvas with the stage: the vendored engine paints the canvas
+         surface as its own gradient (`--tds-glass` → `--tds-bg`), which read as a
+         separate panel against the app backdrop. Make the canvas layers
+         transparent so the body's depth gradient flows continuously edge to edge
+         and the floating chrome + the page grid sit on one surface. */
+      .tds-root,
+      .tds-canvas {
+        background: transparent !important;
+      }
 
       /* ── Toolbar → a floating glass bar ──────────────────────────────── */
       .bar {
