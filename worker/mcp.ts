@@ -51,6 +51,16 @@ const READONLY_TOOLS = new Set<string>([
 export class TopologyMcp extends McpAgent<WorkerEnv> {
   server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
   private store = new TopologyStore();
+  /**
+   * State of the last rehydrate. `ok` gates the persist delete pass: if the
+   * registry was NOT fully rebuilt from storage, we must never mirror-delete
+   * (an empty/partial registry would otherwise wipe every stored topology).
+   * `failed` ids loaded from storage but didn't parse — preserve, don't delete.
+   */
+  private rehydrateState: { ok: boolean; failed: Set<string> } = {
+    ok: false,
+    failed: new Set(),
+  };
 
   async init(): Promise<void> {
     // Rehydrate the registry from Durable Object storage. McpAgent is a DO that
@@ -81,10 +91,17 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   /** Load every persisted document back into the in-memory registry. */
   private async rehydrate(): Promise<void> {
     try {
-      await rehydrateStore(this.store, this.ctx.storage);
+      const { failed } = await rehydrateStore(this.store, this.ctx.storage);
+      // Rehydrate completed: the registry now mirrors storage, so a later
+      // persist may safely delete keys for docs removed this session — except
+      // any that failed to parse, which we preserve rather than drop.
+      this.rehydrateState = { ok: true, failed: new Set(failed) };
     } catch (err) {
-      // A storage hiccup shouldn't block tool registration — start empty.
+      // A storage hiccup shouldn't block tool registration — start empty. But
+      // mark the registry degraded so persist NEVER deletes: an empty registry
+      // must not be mirrored onto storage (that would wipe every topology).
       console.error('topology rehydrate failed', err);
+      this.rehydrateState = { ok: false, failed: new Set() };
     }
   }
 
@@ -96,7 +113,10 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   private async persistAfter(toolName: string): Promise<void> {
     if (READONLY_TOOLS.has(toolName)) return;
     try {
-      await persistStore(this.store, this.ctx.storage);
+      await persistStore(this.store, this.ctx.storage, {
+        allowDelete: this.rehydrateState.ok,
+        preserve: this.rehydrateState.failed,
+      });
     } catch (err) {
       console.error(`topology persist after ${toolName} failed`, err);
     }

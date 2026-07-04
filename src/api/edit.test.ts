@@ -49,6 +49,29 @@ describe('edit ops', () => {
     );
   });
 
+  it('updateElement refuses to delete or malform structurally-required fields', () => {
+    const { page } = fabric();
+    // Deleting a required field (would corrupt the document / crash rehydrate).
+    expect(() => updateElement(page, 'z', { nodes: null })).toThrow(
+      /required zone field "nodes"/,
+    );
+    expect(() => updateElement(page, 'a', { x: null })).toThrow(
+      /required node field "x"/,
+    );
+    expect(() => updateElement(page, 'fp', { waypoints: null })).toThrow(
+      /required flowPath field "waypoints"/,
+    );
+    // Setting a required field to the wrong shape is rejected too.
+    expect(() => updateElement(page, 'z', { nodes: 'oops' })).toThrow(
+      /must be an array/,
+    );
+    expect(() => updateElement(page, 'a', { x: NaN })).toThrow(
+      /must be a finite number/,
+    );
+    // The zone's membership is left intact after the rejected patches.
+    expect(page.zones[0]!.nodes).toEqual(['a', 'fw']);
+  });
+
   it('removeElement cascades: links, markers, memberships, waypoints', () => {
     const { doc, page } = fabric();
     const res = removeElement(page, 'a');

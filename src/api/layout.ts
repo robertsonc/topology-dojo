@@ -226,5 +226,32 @@ export function rectGap(a: BoundsRect, b: BoundsRect): number {
 
 export function parseViewBox(vb: string): [number, number, number, number] {
   const p = vb.split(/\s+/).map(Number);
-  return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 1050, p[3] ?? 700];
+  // `?? ` alone doesn't guard NaN (Number('800px') is NaN, which is not
+  // nullish), so a malformed viewBox would flow NaN width/height into every
+  // clamp/centre computation and turn node coordinates into NaN. Fall back
+  // per-component to finite defaults; width/height must additionally be > 0.
+  const finite = (v: number | undefined, fallback: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  const positive = (v: number | undefined, fallback: number): number => {
+    const n = finite(v, fallback);
+    return n > 0 ? n : fallback;
+  };
+  return [
+    finite(p[0], 0),
+    finite(p[1], 0),
+    positive(p[2], 1050),
+    positive(p[3], 700),
+  ];
+}
+
+/** True when a viewBox is exactly 4 finite numbers with positive width/height. */
+export function isValidViewBox(vb: string): boolean {
+  const p = vb.trim().split(/\s+/);
+  if (p.length !== 4) return false;
+  const n = p.map(Number);
+  return (
+    n.every((x) => Number.isFinite(x)) &&
+    (n[2] as number) > 0 &&
+    (n[3] as number) > 0
+  );
 }

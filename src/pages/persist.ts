@@ -15,6 +15,77 @@ function hexColor(v: unknown): string | undefined {
     : undefined;
 }
 
+/**
+ * A colour string safe to interpolate verbatim into an SVG/HTML attribute:
+ * strict hex, an `rgb()/rgba()/hsl()/hsla()` form with numeric content only, or
+ * a bare CSS colour keyword. Anything else — in particular anything carrying a
+ * quote or angle bracket — is rejected, so a document from an untrusted source
+ * (an imported file or a shared `/v/<id>` snapshot) cannot break out of an
+ * attribute and inject markup. Returns undefined when the value is unsafe.
+ */
+function safeColor(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = v.trim();
+  if (/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s)) return s;
+  if (/^(rgb|rgba|hsl|hsla)\([\d.,%\s/]*\)$/i.test(s)) return s;
+  if (/^[a-z]{1,32}$/i.test(s)) return s; // named colour / keyword
+  return undefined;
+}
+
+/**
+ * An element `type` token reduced to markup-safe characters. Types are
+ * interpolated into SVG/HTML in sinks the renderer does not escape (e.g. the
+ * inspector's type row and the custom-node pattern id), so a hostile `type`
+ * from an imported/shared document must never carry quotes or angle brackets.
+ */
+function safeType(v: unknown, fallback: string): string {
+  if (typeof v !== 'string') return fallback;
+  const cleaned = v.replace(/[^\w:.-]/g, '');
+  return cleaned || fallback;
+}
+
+/** Drop any colour-typed field of `el` that isn't a safe colour (in place). */
+function scrubColors(el: Record<string, unknown>): void {
+  for (const k of ['color', 'labelColor']) {
+    if (!(k in el)) continue;
+    const c = safeColor(el[k]);
+    if (c === undefined) delete el[k];
+    else el[k] = c;
+  }
+}
+
+/** Sanitize a page's elements against markup injection (in place). */
+function sanitizeElements(pg: Page): void {
+  for (const n of pg.nodes as unknown as Record<string, unknown>[]) {
+    n.type = safeType(n.type, 'host');
+    scrubColors(n);
+  }
+  for (const l of pg.links as unknown as Record<string, unknown>[]) {
+    l.type = safeType(l.type, 'line');
+    scrubColors(l);
+  }
+  for (const coll of [pg.zones, pg.flowPaths, pg.policyMarkers])
+    for (const el of coll as unknown as Record<string, unknown>[])
+      scrubColors(el);
+}
+
+/** Sanitize a custom node spec; returns null if it has no markup-safe name. */
+function sanitizeCustomNode(raw: unknown): CustomNodeSpec | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const s = raw as Record<string, unknown>;
+  const typeName = safeType(s.typeName, '');
+  if (!typeName) return null;
+  const def = defaultSpec();
+  return {
+    ...(s as unknown as CustomNodeSpec),
+    typeName,
+    colorStroke: safeColor(s.colorStroke) ?? def.colorStroke,
+    colorFill: safeColor(s.colorFill) ?? def.colorFill,
+    ledColor: safeColor(s.ledColor) ?? def.ledColor,
+    badgeColor: safeColor(s.badgeColor) ?? def.badgeColor,
+  };
+}
+
 /** Parse a brand palette, keeping only valid hex colours; undefined if no accent. */
 function parsePalette(raw: unknown): BrandPalette | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
@@ -31,7 +102,7 @@ function parsePalette(raw: unknown): BrandPalette | undefined {
     ...(typeof r.name === 'string' ? { name: r.name } : {}),
   };
 }
-import type { CustomNodeSpec } from '../nodes/spec.js';
+import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
 import type { LayerDef } from '../api/layers.js';
 
 const KEY = 'topology-dojo:doc';
@@ -105,17 +176,25 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     });
   }
   if (pages.length === 0) return null;
-  // Self-heal stale zone membership: drop member ids that no longer match a node
-  // on the page (e.g. the node was deleted in an older build that didn't prune).
-  // Otherwise they linger as "member references missing node" warnings forever.
+  // Sanitize untrusted element data (colours / types) so an imported or shared
+  // document cannot inject markup, then self-heal stale zone membership: drop
+  // member ids that no longer match a node on the page (e.g. the node was
+  // deleted in an older build that didn't prune) — otherwise they linger as
+  // "member references missing node" warnings forever. `z.nodes` is normalized
+  // to an array first so a corrupt (e.g. null-patched) membership can't throw.
   for (const pg of pages) {
+    sanitizeElements(pg);
     const nodeIds = new Set(pg.nodes.map((n) => n.id));
-    for (const z of pg.zones)
+    for (const z of pg.zones) {
+      if (!Array.isArray(z.nodes)) z.nodes = [];
       if (z.nodes.some((id) => !nodeIds.has(id)))
         z.nodes = z.nodes.filter((id) => nodeIds.has(id));
+    }
   }
   const customNodes = Array.isArray(d.customNodes)
-    ? (d.customNodes as CustomNodeSpec[])
+    ? (d.customNodes as unknown[])
+        .map(sanitizeCustomNode)
+        .filter((s): s is CustomNodeSpec => s !== null)
     : [];
   // Layers: keep only well-formed entries (a string id); drop the rest.
   const layers = Array.isArray(d.layers)
@@ -152,14 +231,23 @@ export function parseDoc(input: unknown): TopologyDocument | null {
             Array.isArray(s.nodes) &&
             s.nodes.length > 0,
         )
-        .map(
-          (s): Stencil => ({
-            id: s.id as string,
-            name: s.name as string,
-            nodes: s.nodes as Stencil['nodes'],
-            links: Array.isArray(s.links) ? (s.links as Stencil['links']) : [],
-          }),
-        )
+        .map((s): Stencil => {
+          const nodes = s.nodes as Stencil['nodes'];
+          const links = Array.isArray(s.links)
+            ? (s.links as Stencil['links'])
+            : [];
+          // A stencil's members are stamped onto a page verbatim, so its element
+          // data is as untrusted as a page's — sanitize colours / types the same.
+          for (const n of nodes as unknown as Record<string, unknown>[]) {
+            n.type = safeType(n.type, 'host');
+            scrubColors(n);
+          }
+          for (const l of links as unknown as Record<string, unknown>[]) {
+            l.type = safeType(l.type, 'line');
+            scrubColors(l);
+          }
+          return { id: s.id as string, name: s.name as string, nodes, links };
+        })
     : [];
   const palette = parsePalette(d.palette);
   return {

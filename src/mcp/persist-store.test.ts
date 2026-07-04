@@ -68,4 +68,49 @@ describe('MCP store durability', () => {
     expect(() => restored.get(a)).toThrow(/unknown topology/);
     expect(restored.get(b).title).toBe('B');
   });
+
+  it('does NOT mirror-delete when allowDelete is false (degraded rehydrate)', () => {
+    // Regression: a failed rehydrate must never let a near-empty registry wipe
+    // every persisted topology.
+    return (async () => {
+      const storage = fakeStorage();
+      const seed = new TopologyStore();
+      const a = seed.create('A').id;
+      const b = seed.create('B').id;
+      await persistStore(seed, storage);
+
+      // Simulate a cold start whose rehydrate threw: registry starts empty and
+      // the agent creates one fresh topology, then a mutating tool persists.
+      const fresh = new TopologyStore();
+      fresh.create('C');
+      await persistStore(fresh, storage, { allowDelete: false });
+
+      // The two pre-existing docs survive (not deleted); C was added.
+      expect(storage.map.has(DOC_PREFIX + a)).toBe(true);
+      expect(storage.map.has(DOC_PREFIX + b)).toBe(true);
+      expect([...storage.map.keys()].length).toBe(3);
+    })();
+  });
+
+  it('preserves an unparseable stored doc and loads the rest (per-doc isolation)', async () => {
+    const storage = fakeStorage();
+    const seed = new TopologyStore();
+    const good = seed.create('Good').id;
+    await persistStore(seed, storage);
+    // Corrupt a second key that cannot be parsed back into a document.
+    storage.map.set(DOC_PREFIX + 'corrupt', '{ not valid json');
+
+    const restored = new TopologyStore();
+    const { loaded, failed } = await rehydrateStore(restored, storage);
+    expect(loaded).toContain(good);
+    expect(failed).toContain('corrupt');
+    expect(restored.get(good).title).toBe('Good');
+
+    // A subsequent persist that preserves the failed key must not drop it.
+    await persistStore(restored, storage, {
+      allowDelete: true,
+      preserve: new Set(failed),
+    });
+    expect(storage.map.has(DOC_PREFIX + 'corrupt')).toBe(true);
+  });
 });
