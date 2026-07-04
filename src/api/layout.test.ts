@@ -1,9 +1,54 @@
 import { describe, it, expect } from 'vitest';
 import { createDocument } from './builder.js';
-import { analyzeLayout, isWellLaidOut, layoutGuidelines } from './layout.js';
+import {
+  analyzeLayout,
+  isValidViewBox,
+  isWellLaidOut,
+  layoutGuidelines,
+  parseViewBox,
+} from './layout.js';
+import { tidyPage } from './tidy.js';
 
 const has = (probs: { message: string }[], re: RegExp): boolean =>
   probs.some((p) => re.test(p.message));
+
+describe('parseViewBox / isValidViewBox', () => {
+  it('parses a well-formed viewBox', () => {
+    expect(parseViewBox('0 0 800 600')).toEqual([0, 0, 800, 600]);
+  });
+
+  it('never yields NaN or non-positive extent on malformed input', () => {
+    for (const vb of ['0 0 800px 600px', '0 0 0 0', '', 'garbage', '1 2']) {
+      const [x, y, w, h] = parseViewBox(vb);
+      expect(Number.isFinite(x)).toBe(true);
+      expect(Number.isFinite(y)).toBe(true);
+      expect(w).toBeGreaterThan(0);
+      expect(h).toBeGreaterThan(0);
+    }
+  });
+
+  it('validates viewBox shape', () => {
+    expect(isValidViewBox('0 0 1050 700')).toBe(true);
+    expect(isValidViewBox('0 0 800px 600px')).toBe(false);
+    expect(isValidViewBox('0 0 0 0')).toBe(false);
+    expect(isValidViewBox('0 0 -5 700')).toBe(false);
+    expect(isValidViewBox('1 2 3')).toBe(false);
+  });
+
+  it('tidy keeps node coordinates finite even with a malformed page viewBox', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 300, y: 210 })
+      .build();
+    doc.pages[0]!.viewBox = '0 0 800px 600px'; // hostile / hand-edited
+    tidyPage(doc.pages[0]!);
+    for (const n of doc.pages[0]!.nodes) {
+      expect(Number.isFinite(n.x)).toBe(true);
+      expect(Number.isFinite(n.y)).toBe(true);
+    }
+  });
+});
 
 describe('layout guidelines', () => {
   it('exposes machine-readable rules + human guidance', () => {

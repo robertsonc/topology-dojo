@@ -152,4 +152,113 @@ describe('persist', () => {
     const doc = sampleDocument();
     expect(JSON.parse(serializeDoc(doc)).palette).toBeUndefined();
   });
+
+  describe('untrusted-input sanitization (stored XSS)', () => {
+    it('drops an attribute-breakout colour on import (node/link/zone/flow/marker)', () => {
+      const evil = '#000"/><image href=x onerror=alert(1)/><rect fill="';
+      const doc = parseDoc({
+        pages: [
+          {
+            nodes: [{ id: 'n', type: 'ec', x: 1, y: 2, color: evil }],
+            links: [{ id: 'l', type: 'line', from: 'n', to: 'n', color: evil }],
+            zones: [{ id: 'z', label: 'Z', nodes: ['n'], color: evil }],
+            flowPaths: [{ id: 'f', waypoints: ['n', 'n'], color: evil }],
+            policyMarkers: [
+              { id: 'm', nodeId: 'n', type: 'inspect', color: evil },
+            ],
+          },
+        ],
+      })!;
+      const p = doc.pages[0]!;
+      // The unsafe colour is stripped from every element that carried it.
+      expect(
+        (p.nodes[0] as unknown as Record<string, unknown>).color,
+      ).toBeUndefined();
+      expect(
+        (p.links[0] as unknown as Record<string, unknown>).color,
+      ).toBeUndefined();
+      expect(
+        (p.zones[0] as unknown as Record<string, unknown>).color,
+      ).toBeUndefined();
+      expect(
+        (p.flowPaths[0] as unknown as Record<string, unknown>).color,
+      ).toBeUndefined();
+      expect(
+        (p.policyMarkers[0] as unknown as Record<string, unknown>).color,
+      ).toBeUndefined();
+      // No serialized form still carries the payload.
+      expect(serializeDoc(doc)).not.toContain('onerror');
+    });
+
+    it('keeps legitimate colours (hex, rgb/rgba, keyword) unchanged', () => {
+      const doc = parseDoc({
+        pages: [
+          {
+            nodes: [
+              { id: 'a', type: 'ec', x: 0, y: 0, color: '#01a982' },
+              { id: 'b', type: 'ec', x: 0, y: 0, color: 'rgba(1,2,3,.5)' },
+              { id: 'c', type: 'ec', x: 0, y: 0, color: 'transparent' },
+            ],
+          },
+        ],
+      })!;
+      const cols = doc.pages[0]!.nodes.map(
+        (n) => (n as Record<string, unknown>).color,
+      );
+      expect(cols).toEqual(['#01a982', 'rgba(1,2,3,.5)', 'transparent']);
+    });
+
+    it('strips markup-unsafe characters from element types', () => {
+      const doc = parseDoc({
+        pages: [
+          {
+            nodes: [
+              { id: 'n', type: '"><img src=x onerror=alert(1)>', x: 0, y: 0 },
+            ],
+          },
+        ],
+      })!;
+      const type = String(
+        (doc.pages[0]!.nodes[0] as Record<string, unknown>).type,
+      );
+      // Inert: the letters may survive but no attribute-breakout chars remain.
+      expect(type).not.toMatch(/[<>"]/);
+      expect(serializeDoc(doc)).not.toMatch(/[<>]/);
+    });
+
+    it('sanitizes custom node typeName + colours, dropping specs with no safe name', () => {
+      const doc = parseDoc({
+        pages: [blankPage('F1')],
+        customNodes: [
+          {
+            typeName: 'x"/><image href=x onerror=alert(1) y="',
+            colorStroke: '#65aef9',
+            colorFill: 'red"/><script>',
+          },
+          { typeName: '<<<>>>', colorStroke: '#fff' }, // no safe chars → dropped
+        ],
+      })!;
+      expect(doc.customNodes).toHaveLength(1);
+      expect(doc.customNodes[0]!.typeName).not.toMatch(/[<>"]/);
+      // Unsafe colorFill fell back to a safe default hex; safe stroke kept.
+      expect(doc.customNodes[0]!.colorStroke).toBe('#65aef9');
+      expect(doc.customNodes[0]!.colorFill).toMatch(/^#[0-9a-f]{3,8}$/i);
+      // Inert: no attribute-breakout characters survive anywhere in the doc.
+      expect(serializeDoc(doc)).not.toMatch(/[<>]/);
+    });
+  });
+
+  it('normalizes a non-array zone.nodes instead of throwing (corrupt/rehydrate)', () => {
+    // A null-patched zone membership must not crash the defensive self-heal.
+    const doc = parseDoc({
+      pages: [
+        {
+          nodes: [{ id: 'n', type: 'ec', x: 0, y: 0 }],
+          zones: [{ id: 'z', label: 'Z', nodes: null }],
+        },
+      ],
+    });
+    expect(doc).not.toBeNull();
+    expect(doc!.pages[0]!.zones[0]!.nodes).toEqual([]);
+  });
 });

@@ -1012,7 +1012,7 @@ function typeRow(current: string, types: string[]): string {
   return `<label class="insp-row">Type<select id="i-type">${opts
     .map(
       (t) =>
-        `<option value="${t}" ${t === current ? 'selected' : ''}>${t}</option>`,
+        `<option value="${esc(t)}" ${t === current ? 'selected' : ''}>${esc(t)}</option>`,
     )
     .join('')}</select></label>`;
 }

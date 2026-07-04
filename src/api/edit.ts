@@ -81,8 +81,24 @@ export interface UpdateResult {
 }
 
 /**
+ * Structurally-required fields per element kind — a patch may never delete
+ * these (null) or set them to the wrong shape, because doing so produces a
+ * document that later crashes the cascade/renderer/`parseDoc` (e.g. a zone
+ * whose `nodes` array is gone). `id` is guarded separately.
+ */
+const REQUIRED_FIELDS: Record<ElementKind, string[]> = {
+  node: ['type', 'x', 'y'],
+  link: ['type', 'from', 'to'],
+  anchor: ['x', 'y'],
+  zone: ['nodes'],
+  flowPath: ['waypoints'],
+  policyMarker: ['nodeId', 'type'],
+};
+
+/**
  * Patch an element in place: merge the given keys, delete keys set to `null`.
- * Throws on an unknown id or an attempt to change `id`.
+ * Throws on an unknown id, an attempt to change `id`, or a patch that would
+ * delete or malform a structurally-required field.
  */
 export function updateElement(
   page: Page,
@@ -91,14 +107,26 @@ export function updateElement(
 ): UpdateResult {
   const found = locate(page, id);
   if (!found) throw new Error(`unknown element "${id}"`);
+  const required = REQUIRED_FIELDS[found.kind];
   for (const [k, v] of Object.entries(patch)) {
     if (k === 'id') {
       if (v !== undefined && v !== id)
         throw new Error('element id cannot be changed');
       continue;
     }
-    if (v === null) delete found.element[k];
-    else if (v !== undefined) found.element[k] = v;
+    if (v === null) {
+      if (required.includes(k))
+        throw new Error(`cannot delete required ${found.kind} field "${k}"`);
+      delete found.element[k];
+      continue;
+    }
+    if (v === undefined) continue;
+    // Type-guard the fields whose shape the rest of the system relies on.
+    if ((k === 'nodes' || k === 'waypoints') && !Array.isArray(v))
+      throw new Error(`${found.kind} field "${k}" must be an array`);
+    if ((k === 'x' || k === 'y') && !Number.isFinite(v as number))
+      throw new Error(`${found.kind} field "${k}" must be a finite number`);
+    found.element[k] = v;
   }
   return { kind: found.kind, element: found.element };
 }

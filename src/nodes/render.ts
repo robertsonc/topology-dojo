@@ -23,8 +23,11 @@ export function renderCustomNode(
   y: number,
   cfg: { color?: string } = {},
 ): string {
-  const c = cfg.color || spec.colorStroke;
-  const f = spec.colorFill;
+  // Escape colour values before they reach unescaped SVG attribute sinks below.
+  // Imports are already sanitized in persist, but the live designer preview
+  // renders an in-progress spec straight from the inputs, so escape here too.
+  const c = esc(cfg.color || spec.colorStroke);
+  const f = esc(spec.colorFill);
   const sz = spec.size;
   const sw = spec.strokeW;
   const rx = spec.radius;
@@ -40,7 +43,7 @@ export function renderCustomNode(
   // 2. Main shape (with optional pattern fill)
   let fill = f;
   if (spec.pattern && spec.patternType !== 'none') {
-    const pid = `${spec.typeName}-pat`;
+    const pid = `${esc(spec.typeName)}-pat`;
     s += `<defs>${patternDef(spec.patternType, pid, c)}</defs>`;
     fill = `url(#${pid})`;
   }
@@ -90,14 +93,14 @@ export function renderCustomNode(
         cx = x + (b.bx - 3);
         cy = y + off;
       }
-      s += `<circle cx="${cx}" cy="${cy}" r="1.5" fill="${spec.ledColor}" filter="url(#tds-bloom)"/>`;
+      s += `<circle cx="${cx}" cy="${cy}" r="1.5" fill="${esc(spec.ledColor)}" filter="url(#tds-bloom)"/>`;
     }
   }
 
   // 7. Badge
   if (spec.badge && spec.badgeText) {
     const tw = spec.badgeText.length * 3 + 6;
-    s += `<rect x="${x + round1(b.bx - tw / 2 + 2)}" y="${y - round1(b.by + 4)}" width="${tw}" height="10" rx="5" fill="${spec.badgeColor}" opacity=".9"/>`;
+    s += `<rect x="${x + round1(b.bx - tw / 2 + 2)}" y="${y - round1(b.by + 4)}" width="${tw}" height="10" rx="5" fill="${esc(spec.badgeColor)}" opacity=".9"/>`;
     s += `<text x="${x + round1(b.bx + 2)}" y="${y - round1(b.by - 3)}" text-anchor="middle" fill="#fff" font-size="6" font-family="'JetBrains Mono',monospace" font-weight="600">${esc(spec.badgeText)}</text>`;
   }
 

@@ -25,6 +25,43 @@ import {
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
+/**
+ * Content-Security-Policy for every browser-facing response. `script-src 'self'`
+ * (no `'unsafe-inline'`) is the key line: it blocks inline event handlers such
+ * as an injected `<image onerror=…>`, so even a rendering-layer escaping miss on
+ * untrusted topology data cannot execute script. The app has no inline scripts
+ * and no runtime eval; all scripts (the app bundle + the vendored engine) are
+ * same-origin. Styles keep `'unsafe-inline'` because the UI and login page use
+ * inline `style="…"`/`<style>`; fonts/images allow `data:` for Vite-inlined
+ * assets and inline SVG. `frame-ancestors 'none'` adds clickjacking protection.
+ */
+const CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self'",
+  "connect-src 'self'",
+].join('; ');
+
+/** Add CSP + hardening headers to a response, preserving its body and status. */
+function withSecurityHeaders(resp: Response): Response {
+  const headers = new Headers(resp.headers);
+  if (!headers.has('content-security-policy'))
+    headers.set('content-security-policy', CSP);
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('referrer-policy', 'strict-origin-when-cross-origin');
+  headers.set('x-frame-options', 'DENY');
+  return new Response(resp.body, {
+    status: resp.status,
+    statusText: resp.statusText,
+    headers,
+  });
+}
+
 /** Minimal shapes of the GitHub responses we read. */
 interface GitHubToken {
   access_token?: string;
@@ -140,52 +177,60 @@ export const defaultHandler = {
   async fetch(
     request: Request,
     env: WorkerEnv,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
   ): Promise<Response> {
-    const url = new URL(request.url);
-    const { pathname } = url;
-
-    // Browser login flow (separate from the MCP OAuth flow below).
-    if (pathname === '/login')
-      return loginPage(url.searchParams.get('go') ?? '/');
-    if (pathname === '/auth/github') return startWebLogin(request, env);
-    if (pathname === '/logout') return handleLogout();
-    if (pathname === '/api/me') return handleMe(request, env);
-
-    // MCP OAuth provider flow. `/callback` is shared: the browser login uses a
-    // `web.`-prefixed state, the MCP client flow does not.
-    if (pathname === '/authorize') return handleAuthorize(request, env);
-    if (pathname === '/callback') {
-      return isWebCallback(url.searchParams.get('state'))
-        ? completeWebLogin(request, env)
-        : handleCallback(request, env);
-    }
-
-    // Public share snapshot API (backs the read-only /v/:id view).
-    if (pathname.startsWith(API_TOPOLOGY_PREFIX)) {
-      if (request.method !== 'GET') {
-        return new Response('Method Not Allowed\n', { status: 405 });
-      }
-      const id = pathname.slice(API_TOPOLOGY_PREFIX.length);
-      if (!id) return new Response('Not Found\n', { status: 404 });
-      return serveSnapshot(id, env);
-    }
-
-    // Gate the editor: a top-level navigation to the app needs a signed-in
-    // session. Read-only shared views (/v/:id) stay public; sub-resource
-    // fetches (scripts/styles/fonts) are served so the login + shared pages
-    // work. Local Vite dev never hits the Worker, so dev is unauthenticated.
-    const isSharedView = pathname === '/v' || pathname.startsWith('/v/');
-    if (isDocumentNavigation(request) && !isSharedView) {
-      const user = await currentUser(request, env);
-      if (!user) {
-        const go = encodeURIComponent(pathname + url.search);
-        return Response.redirect(new URL(`/login?go=${go}`, url).href, 302);
-      }
-    }
-
-    // /v/:id and everything else fall through to the SPA (the not-found handler
-    // serves index.html, and the app reads the share id from the path).
-    return env.ASSETS.fetch(request);
+    return withSecurityHeaders(await route(request, env, ctx));
   },
 };
+
+async function route(
+  request: Request,
+  env: WorkerEnv,
+  _ctx: ExecutionContext,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const { pathname } = url;
+
+  // Browser login flow (separate from the MCP OAuth flow below).
+  if (pathname === '/login')
+    return loginPage(url.searchParams.get('go') ?? '/');
+  if (pathname === '/auth/github') return startWebLogin(request, env);
+  if (pathname === '/logout') return handleLogout();
+  if (pathname === '/api/me') return handleMe(request, env);
+
+  // MCP OAuth provider flow. `/callback` is shared: the browser login uses a
+  // `web.`-prefixed state, the MCP client flow does not.
+  if (pathname === '/authorize') return handleAuthorize(request, env);
+  if (pathname === '/callback') {
+    return isWebCallback(url.searchParams.get('state'))
+      ? completeWebLogin(request, env)
+      : handleCallback(request, env);
+  }
+
+  // Public share snapshot API (backs the read-only /v/:id view).
+  if (pathname.startsWith(API_TOPOLOGY_PREFIX)) {
+    if (request.method !== 'GET') {
+      return new Response('Method Not Allowed\n', { status: 405 });
+    }
+    const id = pathname.slice(API_TOPOLOGY_PREFIX.length);
+    if (!id) return new Response('Not Found\n', { status: 404 });
+    return serveSnapshot(id, env);
+  }
+
+  // Gate the editor: a top-level navigation to the app needs a signed-in
+  // session. Read-only shared views (/v/:id) stay public; sub-resource
+  // fetches (scripts/styles/fonts) are served so the login + shared pages
+  // work. Local Vite dev never hits the Worker, so dev is unauthenticated.
+  const isSharedView = pathname === '/v' || pathname.startsWith('/v/');
+  if (isDocumentNavigation(request) && !isSharedView) {
+    const user = await currentUser(request, env);
+    if (!user) {
+      const go = encodeURIComponent(pathname + url.search);
+      return Response.redirect(new URL(`/login?go=${go}`, url).href, 302);
+    }
+  }
+
+  // /v/:id and everything else fall through to the SPA (the not-found handler
+  // serves index.html, and the app reads the share id from the path).
+  return env.ASSETS.fetch(request);
+}

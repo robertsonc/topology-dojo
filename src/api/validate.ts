@@ -10,6 +10,7 @@ import type { TopologyDocument } from '../pages/model.js';
 import { isBuiltinNodeType, isLinkType } from './builtins.js';
 import { isStockNodeType } from '../nodes/stock.js';
 import { LAYER_KINDS } from './layers.js';
+import { isValidViewBox } from './layout.js';
 import {
   getAnnotationType,
   getLinkType,
@@ -89,6 +90,14 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     if (pageIds.has(page.id)) err(at, `duplicate page id "${page.id}"`);
     pageIds.add(page.id);
 
+    // A malformed viewBox (non-numeric or zero/negative extent) makes layout /
+    // tidy compute NaN coordinates that silently corrupt the whole page.
+    if (typeof page.viewBox !== 'string' || !isValidViewBox(page.viewBox))
+      err(
+        at,
+        `viewBox "${String(page.viewBox)}" must be "minX minY width height" with a positive width and height`,
+      );
+
     // Playback metadata: duration must be a positive ms count.
     if (
       page.duration !== undefined &&
@@ -118,8 +127,11 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     for (const n of page.nodes) {
       claim(n.id, 'node');
       endpoints.add(n.id);
-      if (typeof n.x !== 'number' || typeof n.y !== 'number')
-        err(`${at} node "${n.id}"`, 'node is missing numeric x/y');
+      if (!Number.isFinite(n.x) || !Number.isFinite(n.y))
+        err(
+          `${at} node "${n.id}"`,
+          'node x/y must be finite numbers (NaN/Infinity corrupt layout)',
+        );
       if (!knownNodeType(n.type))
         err(`${at} node "${n.id}"`, `unknown node type "${n.type}"`);
       else

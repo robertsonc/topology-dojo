@@ -40,7 +40,11 @@ import type { FlowQuery, TopologyProvider } from '../connect/types.js';
 import { compileFlowTopology } from '../connect/compile.js';
 import { exportFlipbookHTML } from '../render/flipbook.js';
 import { validateDocument } from '../api/validate.js';
-import { analyzeLayout, layoutGuidelines } from '../api/layout.js';
+import {
+  analyzeLayout,
+  isValidViewBox,
+  layoutGuidelines,
+} from '../api/layout.js';
 import { tidyDocument, balanceDocument } from '../api/tidy.js';
 import { layoutDocument, type LayoutAlgorithm } from '../api/autolayout.js';
 import { POLICY_MARKER_TYPES } from '../api/markers.js';
@@ -229,6 +233,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
+        if (a.viewBox !== undefined && !isValidViewBox(String(a.viewBox)))
+          throw new Error(
+            `viewBox must be "minX minY width height" with a positive width and height (got "${String(a.viewBox)}")`,
+          );
         const page = addPage(doc, {
           name: a.name ? String(a.name) : undefined,
           viewBox: a.viewBox ? String(a.viewBox) : undefined,
@@ -266,6 +274,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         transition: z.enum(['cut', 'fade']).optional(),
       },
       handler: (a) => {
+        if (a.viewBox !== undefined && !isValidViewBox(String(a.viewBox)))
+          throw new Error(
+            `viewBox must be "minX minY width height" with a positive width and height (got "${String(a.viewBox)}")`,
+          );
         const page = store.page(
           String(a.topologyId),
           a.pageIndex as number | undefined,
