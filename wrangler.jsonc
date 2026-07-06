@@ -34,7 +34,12 @@
     "run_worker_first": true,
   },
   "durable_objects": {
-    "bindings": [{ "name": "MCP_OBJECT", "class_name": "TopologyMcp" }],
+    "bindings": [
+      { "name": "MCP_OBJECT", "class_name": "TopologyMcp" },
+      // Per-user document registry (durable home for authored topologies,
+      // independent of the ephemeral per-session MCP agent DO).
+      { "name": "TOPOLOGY_REGISTRY", "class_name": "TopologyRegistry" },
+    ],
   },
   // TOPOLOGY_KV backs `share_topology` snapshots; OAUTH_KV backs the OAuth
   // provider's grants/tokens. Create each once in the dashboard (Storage &
@@ -43,6 +48,9 @@
     { "binding": "TOPOLOGY_KV", "id": "4a215923f07c43729f70e5f81042befe" },
     { "binding": "OAUTH_KV", "id": "b8f3af5be9e14f8da01c563f376dcc40" },
   ],
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] },
+    { "tag": "v2", "new_sqlite_classes": ["TopologyRegistry"] },
+  ],
   "observability": { "enabled": true },
 }
