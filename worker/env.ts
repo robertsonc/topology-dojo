@@ -4,6 +4,7 @@
  * Kept in one place so the KV/secret/DO bindings stay in sync.
  */
 import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
+import type { TopologyRegistry } from './registry.js';
 
 export interface WorkerEnv {
   /** Static-assets binding (the Vite build in ./dist). */
@@ -14,8 +15,15 @@ export interface WorkerEnv {
    * links fall back to a site-relative path.
    */
   PUBLIC_BASE_URL?: string;
-  /** Durable Object namespace backing the MCP agent. */
+  /** Durable Object namespace backing the MCP agent (one DO per MCP session). */
   MCP_OBJECT: DurableObjectNamespace;
+  /**
+   * Per-user document registry DO (one DO per authenticated GitHub user). This
+   * is the durable home for authored topologies — independent of the ephemeral,
+   * per-session MCP_OBJECT DO, so a user's documents survive and are shared
+   * across all of their MCP sessions.
+   */
+  TOPOLOGY_REGISTRY: DurableObjectNamespace<TopologyRegistry>;
   /** KV namespace where `share_topology` snapshots published documents. */
   TOPOLOGY_KV: KVNamespace;
   /** KV namespace where the OAuth provider stores grants/tokens. */

@@ -9,7 +9,11 @@ import { McpAgent } from 'agents/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTopologyTools } from '../src/mcp/register.js';
 import { TopologyStore } from '../src/mcp/store.js';
-import { persistStore, rehydrateStore } from '../src/mcp/persist-store.js';
+import {
+  persistStore,
+  rehydrateStore,
+  type DocStorage,
+} from '../src/mcp/persist-store.js';
 import { serializeDoc } from '../src/pages/persist.js';
 import type { TopologyDocument } from '../src/pages/model.js';
 import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
@@ -51,21 +55,12 @@ const READONLY_TOOLS = new Set<string>([
 export class TopologyMcp extends McpAgent<WorkerEnv> {
   server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
   private store = new TopologyStore();
-  /**
-   * State of the last rehydrate. `ok` gates the persist delete pass: if the
-   * registry was NOT fully rebuilt from storage, we must never mirror-delete
-   * (an empty/partial registry would otherwise wipe every stored topology).
-   * `failed` ids loaded from storage but didn't parse — preserve, don't delete.
-   */
-  private rehydrateState: { ok: boolean; failed: Set<string> } = {
-    ok: false,
-    failed: new Set(),
-  };
 
   async init(): Promise<void> {
-    // Rehydrate the registry from Durable Object storage. McpAgent is a DO that
-    // hibernates between requests, dropping in-memory fields — without this, a
-    // topology created on one request vanishes on the next (the QA "blocker").
+    // Rehydrate from the per-USER registry DO (not this session DO's storage):
+    // documents must survive and be shared across every MCP session the user
+    // opens. Without this, a topology created on one call vanishes on the next
+    // (the "unknown topology" bug) because each session lands on a fresh DO.
     await this.rehydrate();
 
     // Live-data provider, when the Orchestrator secrets are configured.
@@ -88,35 +83,49 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     );
   }
 
-  /** Load every persisted document back into the in-memory registry. */
+  /**
+   * The per-user registry DO for the signed-in GitHub user, exposed as the
+   * `DocStorage` slice persist-store needs. Keyed on the OAuth `login` from
+   * `this.props` (set by the provider before `init()`). Fails CLOSED: with no
+   * authenticated user we refuse to persist rather than fall back to a shared
+   * "anonymous" key that would leak documents between users.
+   */
+  private registry(): DocStorage {
+    const login = (this.props as { login?: string } | undefined)?.login;
+    if (!login)
+      throw new Error(
+        'no authenticated user (props.login) — refusing to persist',
+      );
+    const ns = this.env.TOPOLOGY_REGISTRY;
+    return ns.get(ns.idFromName(`user:${login}`));
+  }
+
+  /** Load the user's documents from the registry into the in-memory store. */
   private async rehydrate(): Promise<void> {
     try {
-      const { failed } = await rehydrateStore(this.store, this.ctx.storage);
-      // Rehydrate completed: the registry now mirrors storage, so a later
-      // persist may safely delete keys for docs removed this session — except
-      // any that failed to parse, which we preserve rather than drop.
-      this.rehydrateState = { ok: true, failed: new Set(failed) };
+      const { failed } = await rehydrateStore(this.store, this.registry());
+      if (failed.length)
+        console.error(
+          `topology rehydrate: ${failed.length} unparseable doc(s) left intact`,
+          failed,
+        );
     } catch (err) {
-      // A storage hiccup shouldn't block tool registration — start empty. But
-      // mark the registry degraded so persist NEVER deletes: an empty registry
-      // must not be mirrored onto storage (that would wipe every topology).
+      // A storage hiccup (or a missing user) shouldn't block tool registration
+      // — start empty. persist is explicit-delete only, so it can never mirror
+      // an empty store back over the registry and wipe it.
       console.error('topology rehydrate failed', err);
-      this.rehydrateState = { ok: false, failed: new Set() };
     }
   }
 
   /**
-   * After a mutating tool, write the registry back to DO storage. Errors are
-   * logged, not thrown, so a write failure doesn't fail the user's call (the
-   * mutation still took effect in memory for the rest of the session).
+   * After a mutating tool, write the store back to the user's registry. Errors
+   * are logged, not thrown, so a write failure doesn't fail the user's call
+   * (the mutation still took effect in memory for the rest of the session).
    */
   private async persistAfter(toolName: string): Promise<void> {
     if (READONLY_TOOLS.has(toolName)) return;
     try {
-      await persistStore(this.store, this.ctx.storage, {
-        allowDelete: this.rehydrateState.ok,
-        preserve: this.rehydrateState.failed,
-      });
+      await persistStore(this.store, this.registry());
     } catch (err) {
       console.error(`topology persist after ${toolName} failed`, err);
     }

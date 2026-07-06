@@ -58,39 +58,26 @@ export async function rehydrateStore(
   return { loaded, failed };
 }
 
-export interface PersistOptions {
-  /**
-   * Whether the delete (mirror) pass may run. Defaults to true. The caller MUST
-   * pass `false` when the preceding rehydrate did not complete successfully:
-   * an empty/partial in-memory registry would otherwise delete every persisted
-   * document as "not current" — turning one transient storage error into total
-   * data loss.
-   */
-  allowDelete?: boolean;
-  /** Ids present in storage that failed to load; never delete these. */
-  preserve?: Set<string>;
-}
-
 /**
- * Write the registry back to storage: (re)serialize every current document and
- * (when `allowDelete`) delete keys for any that were removed since the last
- * write. Keys in `preserve` are never deleted. O(n) in the number of documents
- * held this session (single-digit in practice).
+ * Write the store back to durable storage: delete the keys for documents this
+ * session explicitly removed, then (re)serialize every current document.
+ *
+ * Deletion is EXPLICIT — driven by `store.drainPendingDeletes()`, not a
+ * set-difference against what's in storage. This matters because storage is
+ * shared across all of a user's MCP sessions: a set-difference mirror would let
+ * a session that only loaded a subset delete documents a concurrent session
+ * just created, and would let an empty store (e.g. after a failed rehydrate)
+ * wipe everything. Explicit deletion removes only what this session removed.
+ * `put` is idempotent and only ever adds/updates, so it's safe under
+ * concurrency. O(n) in the documents held this session (single-digit).
  */
 export async function persistStore(
   store: TopologyStore,
   storage: DocStorage,
-  opts: PersistOptions = {},
 ): Promise<void> {
   const current = new Set(store.list().map((e) => e.id));
-  if (opts.allowDelete ?? true) {
-    const preserve = opts.preserve ?? new Set<string>();
-    const existing = await storage.list<string>({ prefix: DOC_PREFIX });
-    for (const key of existing.keys()) {
-      const id = key.slice(DOC_PREFIX.length);
-      if (!current.has(id) && !preserve.has(id)) await storage.delete(key);
-    }
-  }
+  for (const id of store.drainPendingDeletes())
+    if (!current.has(id)) await storage.delete(DOC_PREFIX + id);
   for (const id of current)
     await storage.put(DOC_PREFIX + id, serializeDoc(store.get(id)));
 }

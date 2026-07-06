@@ -23,6 +23,13 @@ export interface StoreEntry {
 
 export class TopologyStore {
   private docs = new Map<string, TopologyDocument>();
+  /**
+   * Ids explicitly removed since the last persist. Persistence deletes exactly
+   * these keys rather than mirroring by set-difference — so with storage shared
+   * across a user's sessions, one session can never delete a document another
+   * session created (it only ever deletes what it itself removed).
+   */
+  private pendingDeletes = new Set<string>();
 
   /** Create a new document seeded with one empty page (so adds work at once). */
   create(title?: string): StoreEntry {
@@ -30,6 +37,7 @@ export class TopologyStore {
     addPage(document, { name: 'Frame 1' });
     const id = newId();
     this.docs.set(id, document);
+    this.pendingDeletes.delete(id);
     return { id, document };
   }
 
@@ -40,6 +48,7 @@ export class TopologyStore {
     if (title) document.title = title;
     const id = newId();
     this.docs.set(id, document);
+    this.pendingDeletes.delete(id);
     return { id, document };
   }
 
@@ -56,6 +65,7 @@ export class TopologyStore {
    */
   load(id: string, document: TopologyDocument): void {
     this.docs.set(id, document);
+    this.pendingDeletes.delete(id);
   }
 
   list(): { id: string; title: string; pages: number }[] {
@@ -67,7 +77,20 @@ export class TopologyStore {
   }
 
   remove(id: string): boolean {
-    return this.docs.delete(id);
+    const removed = this.docs.delete(id);
+    if (removed) this.pendingDeletes.add(id);
+    return removed;
+  }
+
+  /**
+   * Return and clear the ids removed since the last call — the exact set of
+   * keys a durable backing store should delete. Draining keeps the next persist
+   * from re-issuing deletes it already applied.
+   */
+  drainPendingDeletes(): string[] {
+    const ids = [...this.pendingDeletes];
+    this.pendingDeletes.clear();
+    return ids;
   }
 
   /**

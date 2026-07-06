@@ -69,27 +69,26 @@ describe('MCP store durability', () => {
     expect(restored.get(b).title).toBe('B');
   });
 
-  it('does NOT mirror-delete when allowDelete is false (degraded rehydrate)', () => {
-    // Regression: a failed rehydrate must never let a near-empty registry wipe
-    // every persisted topology.
-    return (async () => {
-      const storage = fakeStorage();
-      const seed = new TopologyStore();
-      const a = seed.create('A').id;
-      const b = seed.create('B').id;
-      await persistStore(seed, storage);
+  it('never deletes documents it did not itself remove (shared cross-session storage)', async () => {
+    // The registry is shared across a user's MCP sessions. A session that only
+    // knows about a subset of docs must not wipe the others when it persists.
+    const storage = fakeStorage();
+    const seed = new TopologyStore();
+    const a = seed.create('A').id;
+    const b = seed.create('B').id;
+    await persistStore(seed, storage);
 
-      // Simulate a cold start whose rehydrate threw: registry starts empty and
-      // the agent creates one fresh topology, then a mutating tool persists.
-      const fresh = new TopologyStore();
-      fresh.create('C');
-      await persistStore(fresh, storage, { allowDelete: false });
+    // A different session (fresh store, e.g. a cold start whose rehydrate threw
+    // and left it empty) creates one topology and persists.
+    const other = new TopologyStore();
+    const c = other.create('C').id;
+    await persistStore(other, storage);
 
-      // The two pre-existing docs survive (not deleted); C was added.
-      expect(storage.map.has(DOC_PREFIX + a)).toBe(true);
-      expect(storage.map.has(DOC_PREFIX + b)).toBe(true);
-      expect([...storage.map.keys()].length).toBe(3);
-    })();
+    // Pre-existing docs survive (no mirror-delete); C is added.
+    expect(storage.map.has(DOC_PREFIX + a)).toBe(true);
+    expect(storage.map.has(DOC_PREFIX + b)).toBe(true);
+    expect(storage.map.has(DOC_PREFIX + c)).toBe(true);
+    expect([...storage.map.keys()]).toHaveLength(3);
   });
 
   it('preserves an unparseable stored doc and loads the rest (per-doc isolation)', async () => {
@@ -106,11 +105,10 @@ describe('MCP store durability', () => {
     expect(failed).toContain('corrupt');
     expect(restored.get(good).title).toBe('Good');
 
-    // A subsequent persist that preserves the failed key must not drop it.
-    await persistStore(restored, storage, {
-      allowDelete: true,
-      preserve: new Set(failed),
-    });
+    // A subsequent persist must not drop the unparseable key: it was never
+    // loaded, so it's neither in `current` nor in the explicit delete set.
+    await persistStore(restored, storage);
     expect(storage.map.has(DOC_PREFIX + 'corrupt')).toBe(true);
+    expect(storage.map.has(DOC_PREFIX + good)).toBe(true);
   });
 });
