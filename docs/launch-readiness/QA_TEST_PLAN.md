@@ -47,12 +47,12 @@
 
 ### 2.1 Environments
 
-| Env                | Purpose                                                                                                                     | Notes                                                                                                                           |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Local dev**      | `npm run dev` (Vite, `http://localhost:5173`) + `npm run mcp` (stdio)                                                       | No auth, no KV — share_topology **not registered** here (verify it's absent, not broken)                                        |
-| **Local worker**   | `wrangler dev` with local KV/DO simulation                                                                                  | OAuth against a dev GitHub OAuth App; verify DO migration applied via `wrangler deploy` (never `versions upload` — error 10211) |
-| **Staging worker** | Dedicated Cloudflare Worker + own `OAUTH_KV` / `TOPOLOGY_KV` namespaces + staging GitHub OAuth App with staging `/callback` | All F5–F8 and N suites run here                                                                                                 |
-| **Production**     | Post-deploy smoke only (read-only + throwaway topology IDs)                                                                 | Verify `PUBLIC_BASE_URL` yields absolute `/v/<id>` links                                                                        |
+| Env                | Purpose                                                                                                              | Notes                                                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Local dev**      | `npm run dev` (Vite, `http://localhost:5173`) + `npm run mcp` (stdio)                                                | No auth, no KV — share_topology **not registered** here (verify it's absent, not broken)                                             |
+| **Local worker**   | `wrangler dev` with local KV/DO simulation                                                                           | OAuth against a dev GitHub OAuth App; verify DO migration applied via `wrangler deploy` (never `versions upload` — error 10211)      |
+| **Staging worker** | Stable, fully deployed Worker + own `OAUTH_KV` / `TOPOLOGY_KV`, DO namespaces, and staging GitHub OAuth App/callback | Canonical preview surface; full `wrangler deploy --env staging`, never production `versions upload`; all F5–F8 and N suites run here |
+| **Production**     | Post-deploy smoke only (read-only + throwaway topology IDs)                                                          | Verify `PUBLIC_BASE_URL` yields absolute `/v/<id>` links                                                                             |
 
 ### 2.2 Browser / viewport matrix
 
@@ -211,7 +211,7 @@ Conventions: each case = **ID / Steps / Expected**. "Fresh doc" = new document, 
 2. **Golden-SVG snapshots:** add a small corpus (5–10 documents covering builtins, custom nodes, layers, annotations, palette) rendered via `server/render.ts` in CI, snapshot-diffed. Any vendored-engine or render-core change lights up visually. Extend the same corpus to the Worker renderer in staging to catch bundled-vs-`createRequire` divergence.
 3. **Automated E2E (Playwright), nightly against staging:** F8-02 golden agent loop over HTTP `/mcp` (with a pre-provisioned OAuth token), F8-17→F8-21 shared-workspace loop, F5-01→F5-02 share-link loop, F6-01/02 login loop, F2-02 duplicate-page invariant, F2-04 autosave reload. Keep the smoke subset small and run the full concurrency matrix separately.
 4. **Manual regression pack:** the P0/P1 rows of F1–F8, executed on release candidates and after any change to `worker/`, `src/vendor`, `public/vendor`, or `src/mcp/register.ts`. Time-boxed to 1 day for two testers.
-5. **Change-risk map:** any diff touching `public/vendor/` or the three sanctioned engine patches (marker `icon`, link flow controls, node `opacity`) triggers the golden-SVG suite + F1-16/F1-17 manually; any diff to `wrangler.jsonc` or DO migrations triggers a full staging deploy with F7 + F8-13/14 before merge (remember: `wrangler deploy`, never `versions upload`).
+5. **Change-risk map:** any diff touching `public/vendor/` or the three sanctioned engine patches (marker `icon`, link flow controls, node `opacity`) triggers the golden-SVG suite + F1-16/F1-17 manually; any diff to `wrangler.jsonc` or DO migrations triggers a full isolated staging deploy with F7 + F8-13/14, recorded SHA, smoke evidence, and a forward-recovery exercise before merge. Follow [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md); use `wrangler deploy --env staging`, never a production `versions upload`.
 
 ---
 
@@ -265,7 +265,7 @@ Target document: **200 nodes / 300 links / 20 pages / 10 zones / 5 custom node t
 ### Entry (per test cycle)
 
 - Build green: `npm run build` (app + worker typecheck), `npm test`, `npm run lint`.
-- Staging deployed via `wrangler deploy` with DO migration applied; `OAUTH_KV`, `TOPOLOGY_KV`, `GITHUB_CLIENT_SECRET`, `PUBLIC_BASE_URL` configured and smoke-verified (F6-01, F7-01 pass).
+- Staging deployed via `wrangler deploy --env staging` with DO migration applied; isolated `OAUTH_KV`, `TOPOLOGY_KV`, `GITHUB_CLIENT_SECRET`, `PUBLIC_BASE_URL`, OAuth App, and DO namespaces configured and smoke-verified (F6-01, F7-01 pass). Deployment evidence identifies the exact source SHA.
 - Test data pack available: golden-SVG corpus + N1 mega-doc generator script.
 
 ### Exit (launch go/no-go at T+27)

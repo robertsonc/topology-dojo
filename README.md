@@ -97,13 +97,29 @@ public/vendor/ the vendored engine + theme (classic script in the browser, Commo
 - [`docs/proposals/0003-adaptive-agent-authoring-profiles.md`](docs/proposals/0003-adaptive-agent-authoring-profiles.md)
   — bounded, explainable learning from repeated user corrections without
   self-modifying or context-bloating MCP tools.
+- [`docs/AGENTIC_IMPLEMENTATION_WORKFLOW.md`](docs/AGENTIC_IMPLEMENTATION_WORKFLOW.md)
+  — bounded task packets, implementation/review roles, context discipline, and
+  human-controlled merge/release gates for agent-built features.
+- [`docs/proposals/0004-isolated-staging-and-deployment-pipeline.md`](docs/proposals/0004-isolated-staging-and-deployment-pipeline.md)
+  — implementation plan for isolated staging, gated deployments, Durable Object
+  migrations, and smoke evidence.
+- [`docs/DEPLOYMENT_RUNBOOK.md`](docs/DEPLOYMENT_RUNBOOK.md) and
+  [`docs/ROLLBACK.md`](docs/ROLLBACK.md) — operator procedures for routine and
+  migration-bearing releases, error 10211, rollback, and forward recovery.
 - [`src/mcp/README.md`](src/mcp/README.md) — running and deploying the MCP server.
 
 ## Deployment
 
-Hosted on **Cloudflare Workers** via the connected Git integration (Workers
-Builds): `npm run build` produces `dist/`, and the Worker (`worker/index.ts`)
-serves it as static assets while routing `/mcp` to the MCP server. Transport
-sessions and canonical per-document coordinators are separate Durable Objects,
-behind OAuth 2.1 / GitHub sign-in. Config is in
+Hosted on **Cloudflare Workers**: `npm run build` produces `dist/`, and the
+Worker (`worker/index.ts`) serves it as static assets while routing `/mcp` to
+the MCP server. Transport sessions and canonical per-document coordinators are
+separate Durable Objects behind OAuth 2.1 / GitHub sign-in. Config is in
 [`wrangler.jsonc`](wrangler.jsonc).
+
+The current Git-connected production path is being replaced by an isolated
+staging Worker and a CI-gated, human-approved deployment workflow. A Worker
+containing a new Durable Object migration must use a full `wrangler deploy`;
+`wrangler versions upload` fails with Cloudflare error 10211 and is not an
+approved preview path. See the
+[deployment plan](docs/proposals/0004-isolated-staging-and-deployment-pipeline.md)
+and [runbook](docs/DEPLOYMENT_RUNBOOK.md).

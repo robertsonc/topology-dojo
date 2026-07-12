@@ -114,6 +114,19 @@ Built methodically, one reviewable PR at a time, each reviewed against
 
 ## Next / candidate
 
+- **Isolated staging and deployment safety** — disable broken non-production
+  version uploads on the production Worker; provision separate staging OAuth,
+  KV, and Durable Object resources; make GitHub Actions the single CI-gated
+  deployment authority; add smoke/health checks; bootstrap migration `v3` with
+  workspace entry points disabled; and exercise forward recovery before
+  production activation. See
+  [`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md).
+- **Agentic implementation workflows** — build roadmap features from bounded
+  implementation packets with explicit ownership, risk-based validation,
+  adversarial architecture/UX review, durable Git handoff, and protected human
+  merge/deployment gates. Pilot on deployment safety and one editor
+  quality-of-life feature. See
+  [`AGENTIC_IMPLEMENTATION_WORKFLOW.md`](AGENTIC_IMPLEMENTATION_WORKFLOW.md).
 - **MCP auth hardening** — graduate the single shared secret to per-key KV
   (mint / revoke / label) or full OAuth, if multiple revocable credentials are
   needed.

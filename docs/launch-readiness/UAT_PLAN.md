@@ -2,7 +2,7 @@
 
 **Version:** 1.0 · **Date:** 2026-07-04 · **UAT window:** 30 days (Day 0 = kickoff, Day 30 = go/no-go)
 **Product under test:** Topology Dojo — the canvas editor, the headless authoring API as exposed over MCP (stdio + remote Cloudflare `/mcp`), and shared services (validation, tidy/layout, render, share links, flipbook export).
-**Environments:** Production-candidate Cloudflare Workers deployment (app + `/mcp` behind GitHub OAuth 2.1); local stdio MCP server for the agent-operator track; `TOPOLOGY_PROVIDER=mock` fixture fabric for live-data scenarios (plus one real EdgeConnect Orchestrator if available).
+**Environments:** Stable isolated staging Worker (app + `/mcp`, staging OAuth App, KV, and Durable Object namespaces) as the production candidate; production only for final smoke; local stdio MCP server for the agent-operator track; `TOPOLOGY_PROVIDER=mock` fixture fabric for live-data scenarios (plus one real EdgeConnect Orchestrator if available). Every UAT result records the active staging SHA; see [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md).
 
 ---
 
@@ -15,6 +15,7 @@
 3. **Agent authoring quality.** Confirm the agent loop (discover → build → validate → tidy → render) reliably produces overlap-free, presentable diagrams without human coordinate babysitting.
 4. **Sharing & delivery.** Confirm `share_topology` links, flipbook HTML export, SVG render, and JSON import/export are dependable enough to put in front of customers.
 5. **Operational readiness.** Confirm OAuth sign-in, private-draft registry behavior, canonical workspace revisions/migration, browser recovery, and share-link expiry semantics are understood and acceptable to real users.
+6. **Release confidence.** Confirm the isolated staging deployment, source-SHA evidence, migration bootstrap/activation gates, smoke suite, and forward-recovery exercise are understandable and executable by the release owner.
 
 ### Launch acceptance criteria (all must hold at Day 30)
 

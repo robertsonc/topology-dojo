@@ -45,16 +45,20 @@ user is exposed to the agent as `this.props`. The provider also serves OAuth
 discovery (`/.well-known/oauth-authorization-server`) and dynamic client
 registration (`/register`), so compatible clients configure themselves.
 
-> **Deploy command must be `wrangler deploy`, not `wrangler versions upload`.**
-> This Worker declares Durable Object **migrations** (including the shared
-> `TopologyDocument` coordinator),
-> and migrations can only be applied by a full, non-versioned `wrangler deploy`
-> (`versions upload` fails with error 10211). In the Workers Builds project
-> settings, set the **Deploy command** to `npx wrangler deploy`. (Once the v1
-> migration is applied, the DO class exists; only a _new_ migration would need
-> another full deploy.)
+> **Durable Object migrations require a full, environment-scoped deploy.** This
+> Worker declares migrations including the shared `TopologyDocument`
+> coordinator. `wrangler versions upload` fails with error 10211 when a new
+> migration is present, and Cloudflare versioned Preview URLs are not the
+> supported preview surface for this stateful Worker. Do not replace the
+> production non-branch command with an automatic production deploy for every
+> PR. Use the isolated staging Worker and `wrangler deploy --env staging`, then
+> follow the protected production process in
+> [`../../docs/DEPLOYMENT_RUNBOOK.md`](../../docs/DEPLOYMENT_RUNBOOK.md).
 
 ### One-time auth setup
+
+Repeat this setup independently for staging and production; never reuse OAuth
+Apps, secrets, or KV namespace ids across environments.
 
 1. **GitHub OAuth App** (GitHub → Settings → Developer settings → OAuth Apps):
    - Homepage `https://<your-domain>`, Authorization callback URL
@@ -63,8 +67,9 @@ registration (`/register`), so compatible clients configure themselves.
      **client secret** as a dashboard secret **`GITHUB_CLIENT_SECRET`**.
 2. **KV namespace** `OAUTH_KV` (dashboard → Storage & Databases → KV) — paste its
    id into `wrangler.jsonc` (`kv_namespaces`). This stores grants/tokens.
-3. Deploy. Then connect a client to `https://<your-domain>/mcp`; it will run the
-   GitHub sign-in flow automatically.
+3. Deploy through the environment-specific runbook. Then connect a client to
+   `https://<your-domain>/mcp`; it will run the GitHub sign-in flow
+   automatically.
 
 > State note: legacy authoring tools create private drafts in the per-user
 > registry. Once the browser hands one into a workspace (or an agent calls
@@ -83,14 +88,19 @@ the editor (the SPA fetches `/api/topology/<id>`). Snapshots expire after 30 day
 unless re-published. This tool is **remote-only** — the local stdio server has no
 KV/origin, so it isn't registered there.
 
-One-time setup on your Cloudflare account:
+One-time setup for the isolated staging environment (use the environment's
+actual binding names and record the generated ids in `env.staging`):
 
 ```bash
-npx wrangler kv namespace create TOPOLOGY_KV   # paste the id into wrangler.jsonc
-# set PUBLIC_BASE_URL in wrangler.jsonc to your deployment origin (for absolute
-# links); leave it blank to get site-relative "/v/<id>" paths instead.
-npm run deploy
+npx wrangler kv namespace create TOPOLOGY_KV --env staging
+# Set staging PUBLIC_BASE_URL and the generated namespace id in wrangler.jsonc.
+# Provision OAUTH_KV and GITHUB_CLIENT_SECRET independently for staging.
+npx wrangler deploy --env staging
 ```
+
+Do not run `npm run deploy` as a preview command; it targets the top-level
+production configuration. See the deployment runbook for production approval,
+migration bootstrap, and smoke requirements.
 
 ## Model
 
