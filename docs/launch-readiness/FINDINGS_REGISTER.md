@@ -70,6 +70,11 @@ _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent ve
 
 ### H7. Production deploy is not gated on CI: Workers Builds auto-deploys every push to main regardless of test results
 
+- **Remediation plan:** Proposed in
+  [`../proposals/0004-isolated-staging-and-deployment-pipeline.md`](../proposals/0004-isolated-staging-and-deployment-pipeline.md).
+  Keep this finding open until the Actions deployment path is protected and
+  Workers Builds can no longer deploy the production script independently.
+
 - **Area:** CI/CD & Release | **Location:** `.github/workflows/ci.yml:8` | **Type:** deploy-pipeline-safety
 - **Problem:** The GitHub Actions workflow only runs checks; deployment happens through the Cloudflare Workers Builds Git integration, which triggers on push to main and runs its own build/deploy command ('npx wrangler deploy' per the repo's own docs) in parallel with — and independent of — CI. A commit whose vitest suite or lint fails but which still compiles ships straight to production at 100% traffic (no gradual rollout is possible because the DO migration forbids 'versions upload'). Worse, the artifact that reaches production is not the one CI built: Workers Builds rebuilds under its own default Node version while CI tests on Node 20 (there is no engines field or .nvmrc pinning). Direct pushes to main are clearly anticipated (the workflow has a push: main trigger), so nothing in the repo assumes branch protection either.
 - **Fix:** Pick one gated path: either move deploy into GitHub Actions (cloudflare/wrangler-action with a CLOUDFLARE_API_TOKEN secret, in a job with `needs: check`, on push to main only) and disconnect Workers Builds auto-deploy, or set the Workers Builds build command to `npm ci && npm run typecheck && npm test && npm run lint && npm run build` so a red suite fails the deploy. Also add an engines/.nvmrc pin (node 20) so CI and the deploy build use the same toolchain, and enable branch protection requiring the CI check.
@@ -168,11 +173,23 @@ _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent ve
 
 ### M14. No staging or preview environment; any non-production deploy shares production KV (OAuth tokens, share snapshots) — and PR previews are known-broken anyway
 
+- **Remediation plan:** Proposed in
+  [`../proposals/0004-isolated-staging-and-deployment-pipeline.md`](../proposals/0004-isolated-staging-and-deployment-pipeline.md)
+  with operator steps in [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md).
+  Documentation does not close this finding; closure requires isolated resource
+  ids, a full staging deploy, and recorded smoke evidence.
+
 - **Area:** CI/CD & Release | **Location:** `wrangler.jsonc:42` | **Type:** environments
 - **Problem:** wrangler.jsonc defines a single environment: no [env.staging]/[env.preview] blocks, no preview_id on the KV namespaces, hard-coded production namespace IDs, and one DO binding. Any deploy that isn't production — a Workers Builds PR preview or a developer testing 'wrangler deploy' — would read and write the production OAUTH_KV (live OAuth grants/tokens) and TOPOLOGY_KV (live share links). On top of that, the repo's own docs state that 'wrangler versions upload' — which is what Workers Builds uses for non-production-branch preview builds — fails with error 10211 because of the Durable Object migration, so PR preview deployments cannot work at all. Net effect for launch: there is nowhere to exercise the GitHub OAuth flow, the MCP endpoint, or the DO/KV wiring before it hits production users.
 - **Fix:** Add an [env.staging] (or a second Worker) with its own KV namespaces, DO namespace, GitHub OAuth App (distinct callback URL), and PUBLIC_BASE_URL; deploy every merge there first and promote to production after a smoke test. Disable Workers Builds non-production-branch builds explicitly since they are known to fail, or scope them to the staging env.
 
 ### M15. No post-deploy smoke test, no alerting, and no rollback procedure — observability:true is the entire ops story
+
+- **Remediation plan:** Smoke and release gates are specified in
+  [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md); rollback and
+  migration-boundary forward recovery are specified in
+  [`../ROLLBACK.md`](../ROLLBACK.md). Keep this finding open until the automated
+  smoke, alert, and staging game-day evidence exists.
 
 - **Area:** CI/CD & Release | **Location:** `wrangler.jsonc:47` | **Type:** release-verification
 - **Problem:** Nothing verifies a deploy after it lands. The whole site — SPA, login gate, share API, and MCP — sits behind one OAuthProvider wrapper in worker/index.ts, so a single bad change (rotated GITHUB_CLIENT_SECRET not updated, KV binding renamed, broken migration) takes down everything at once, and the first signal would be a user report. There is no health endpoint, no post-deploy curl check, no alerting configured (observability only enables logs), and no docs mention rollback anywhere in README/docs/. Rollback is also nontrivial here: `wrangler rollback` cannot cross the Durable Object SQLite migration boundary declared in migrations, so the team needs a written procedure before launch, not during an incident.

@@ -163,6 +163,32 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
   migration source. `worker/index.ts` wraps the surfaces in OAuth 2.1 / GitHub
   sign-in and serves static assets.
 
+## Deployment and environment boundary
+
+The production Worker is stateful: its OAuth grants, public share snapshots,
+transport/private-draft objects, owner registries, and canonical document
+coordinators are part of one environment. A preview is therefore not just a
+different bundle URL.
+
+The target deployment architecture uses a stable `topology-dojo-staging`
+Worker with separate KV namespaces, Durable Object namespaces, GitHub OAuth
+App/secrets, and public origin. Cloudflare version uploads are not used for
+Durable Object migration releases; staging receives a full environment-scoped
+deploy. Production follows required CI, staging evidence, and a protected human
+approval.
+
+Migration-bearing releases separate namespace creation from feature
+activation. For `v3`, production first exports and binds `TopologyDocument`
+with workspace entry points disabled. A later compatible deployment enables
+the shared-workspace feature after smoke and UAT. Recovery across the migration
+boundary is forward-only: keep the class, binding, and migration history while
+disabling the feature and deploying a compatible repair.
+
+See
+[`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md),
+[`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md), and
+[`ROLLBACK.md`](ROLLBACK.md).
+
 ## Shared workspace protocol
 
 The canonical document is stored as metadata plus one `page:<id>` value per
@@ -195,6 +221,10 @@ refused. See
    `isolatedModules`); the engine is vendored unmodified.
 6. **Operations, not document checkout, for collaboration.** Agents suggest by
    default; short UI-granted leases are scoped authority, not a global mutex.
+7. **Repository state, not chat history, for implementation.** Agentic feature
+   work uses bounded packets, one active writer per branch, deterministic
+   evidence, adversarial review, and human-controlled merge/release gates. See
+   [`AGENTIC_IMPLEMENTATION_WORKFLOW.md`](AGENTIC_IMPLEMENTATION_WORKFLOW.md).
 
 ## Known constraints
 
