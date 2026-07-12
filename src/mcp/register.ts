@@ -42,6 +42,11 @@ export function registerTopologyTools(
    * sees the result. No-op by default (the stdio server keeps state in memory).
    */
   afterToolCall?: (toolName: string) => void | Promise<void>,
+  /** Guard invoked after runtime argument parsing but before the handler. */
+  beforeToolCall?: (
+    toolName: string,
+    args: Record<string, unknown>,
+  ) => void | Promise<void>,
 ): TopologyStore {
   for (const tool of createTools(store, deps)) {
     server.registerTool(
@@ -49,7 +54,9 @@ export function registerTopologyTools(
       { description: tool.description, inputSchema: tool.inputShape },
       async (args: Record<string, unknown>) => {
         try {
-          const result = await tool.handler(parseToolArgs(tool, args));
+          const parsed = parseToolArgs(tool, args);
+          await beforeToolCall?.(tool.name, parsed);
+          const result = await tool.handler(parsed);
           await afterToolCall?.(tool.name);
           const text =
             typeof result === 'string'

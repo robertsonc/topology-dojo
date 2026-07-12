@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { TopologyStore } from './store.js';
-import { createTools, type ToolDef } from './tools.js';
+import { createTools, type ToolDef, type ToolDeps } from './tools.js';
 import { parseToolArgs } from './register.js';
 import { renderDocumentToSVG } from '../server/render.js';
 import { MockProvider } from '../connect/mock.js';
@@ -708,6 +708,65 @@ describe('MCP tools', () => {
     });
     for (const n of liveNames)
       expect(withProvider.some((t) => t.name === n)).toBe(true);
+  });
+
+  it('registers the bounded shared-workspace tools only when wired', () => {
+    const unavailable = async (): Promise<never> => {
+      throw new Error('not called');
+    };
+    const workspace: NonNullable<ToolDeps['workspace']> = {
+      createEmpty: unavailable,
+      list: async () => [],
+      manifest: unavailable,
+      changes: unavailable,
+      elements: unavailable,
+      propose: unavailable,
+      applyAgent: unavailable,
+    };
+    const withWorkspace = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      workspace,
+    });
+    const names = [
+      'create_workspace',
+      'list_workspaces',
+      'get_workspace_manifest',
+      'describe_workspace_operations',
+      'get_workspace_changes',
+      'get_workspace_elements',
+      'propose_workspace_changes',
+      'apply_workspace_changes',
+    ];
+    for (const name of names)
+      expect(withWorkspace.some((tool) => tool.name === name)).toBe(true);
+    for (const name of names)
+      expect(tools.some((tool) => tool.name === name)).toBe(false);
+
+    const readme = readFileSync(
+      fileURLToPath(new URL('./README.md', import.meta.url)),
+      'utf8',
+    );
+    for (const name of names) expect(readme).toContain(`\`${name}\``);
+
+    const propose = withWorkspace.find(
+      (tool) => tool.name === 'propose_workspace_changes',
+    )!;
+    const parsed = parseToolArgs(propose, {
+      workspaceId: 'w1',
+      baseRevision: 1,
+      operationId: 'op1',
+      title: 'Compact operation',
+      operations: [{ type: 'element.remove', pageId: 'p1', elementId: 'n1' }],
+    });
+    expect(parsed.operations).toHaveLength(1);
+
+    const describe = withWorkspace.find(
+      (tool) => tool.name === 'describe_workspace_operations',
+    )!;
+    expect(describe.handler({})).toMatchObject({
+      operationSchemaRevision: 1,
+      limits: { maxOperations: 250 },
+    });
   });
 
   it('queries the fabric and authors a sourced topology end to end', async () => {

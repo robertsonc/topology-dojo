@@ -264,6 +264,114 @@
         box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
         font-size: 12px;
       }
+      /* Agent Workspace: compact handoff/proposal/lease surface. It is ordinary
+         browser traffic; none of its polling is inserted into model context. */
+      .workspace-chip .ws-dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        margin-right: 5px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+      .workspace-chip.on .ws-dot {
+        background: var(--accent);
+        box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 65%, transparent);
+      }
+      .workspace-chip.conflict .ws-dot {
+        background: #fc6161;
+      }
+      .workspace-panel {
+        position: fixed;
+        z-index: 70;
+        top: 52px;
+        right: 14px;
+        width: min(390px, calc(100vw - 28px));
+        max-height: min(680px, calc(100vh - 72px));
+        overflow: auto;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--panel) 94%, transparent);
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(16px);
+        color: var(--text);
+        font-size: 11px;
+      }
+      .ws-head,
+      .ws-row,
+      .ws-actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .ws-head {
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .ws-head h3 {
+        margin: 0;
+        font-size: 13px;
+      }
+      .ws-card {
+        margin-top: 9px;
+        padding: 9px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--panel2);
+      }
+      .ws-k {
+        color: var(--muted);
+        min-width: 66px;
+      }
+      .ws-v {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ws-policy {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .ws-note,
+      .ws-empty {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .ws-error {
+        color: #fc8181;
+        line-height: 1.45;
+      }
+      .ws-actions {
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .ws-actions .tbtn {
+        border-color: var(--border);
+        font-size: 10.5px;
+      }
+      .ws-proposal-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .ws-proposal-meta {
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .ws-ops {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .ws-section {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
       /* Display-settings popover (ambient + glass). */
       .display-pop {
         position: fixed;

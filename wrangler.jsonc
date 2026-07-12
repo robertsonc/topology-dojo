@@ -39,6 +39,9 @@
       // Per-user document registry (durable home for authored topologies,
       // independent of the ephemeral per-session MCP agent DO).
       { "name": "TOPOLOGY_REGISTRY", "class_name": "TopologyRegistry" },
+      // One document coordinator per shared topology. It owns revisions,
+      // proposals, scoped leases and per-page snapshots.
+      { "name": "TOPOLOGY_DOCUMENT", "class_name": "TopologyDocument" },
     ],
   },
   // TOPOLOGY_KV backs `share_topology` snapshots; OAUTH_KV backs the OAuth
@@ -51,6 +54,7 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] },
     { "tag": "v2", "new_sqlite_classes": ["TopologyRegistry"] },
+    { "tag": "v3", "new_sqlite_classes": ["TopologyDocument"] },
   ],
   "observability": { "enabled": true },
 }

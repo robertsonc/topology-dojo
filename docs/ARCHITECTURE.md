@@ -49,8 +49,14 @@ mcp/                    MCP server: tools.ts (pure handlers), store.ts (in-memor
                         server.ts (stdio entry).
                         Shared by the Worker. (Remote auth lives in worker/, not here.)
 
+workspace/              shared human-agent write protocol: revision/operation/
+                        proposal types, local snapshot→operation adapter,
+                        field-level conflict targets, browser API client.
+
 worker/                 Cloudflare Worker: index.ts (serve app + route /mcp),
-                        mcp.ts (McpAgent Durable Object), render.ts (bundled engine).
+                        mcp.ts (transport/private-draft DO), document.ts (one
+                        canonical coordinator per shared topology), workspaces.ts
+                        (owner directory + lazy migration), render.ts.
 
 core/                   the retired beat-model (model/resolve/tween) — dormant.
 ```
@@ -144,11 +150,35 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
 
 - **Local:** `server.ts` connects that server to a stdio transport (the Node
   renderer injected).
-- **Remote:** `worker/mcp.ts` is an `McpAgent` Durable Object (one per MCP
-  session, holding that session's store) registering the same tools with the
-  bundled Worker renderer. `worker/index.ts` wraps it in an OAuth 2.1 provider
-  (`@cloudflare/workers-oauth-provider`, GitHub sign-in) that gates `/mcp`, and
-  serves everything else from static assets.
+- **Remote draft:** `worker/mcp.ts` is an `McpAgent` Durable Object holding a
+  private authoring store and registering the same tools with the bundled
+  renderer.
+- **Shared workspace:** `worker/document.ts` is one `TopologyDocument` Durable
+  Object per owner/document. It serializes operation batches, revisions,
+  proposals and scoped leases. Both `/api/workspaces/*` and remote MCP workspace
+  tools use `worker/workspaces.ts`, so browser and agent cannot bypass the
+  coordinator.
+- **Identity:** new workspace directories and document addresses use GitHub's
+  stable numeric user id. The old login-keyed registry is read only as a lazy
+  migration source. `worker/index.ts` wraps the surfaces in OAuth 2.1 / GitHub
+  sign-in and serves static assets.
+
+## Shared workspace protocol
+
+The canonical document is stored as metadata plus one `page:<id>` value per
+page, never one whole-document value. Each accepted batch supplies a
+`baseRevision`, idempotency id and semantic operations. The coordinator rebases
+field-disjoint changes and explicitly rejects overlapping targets. A bounded
+operation log supports `get_workspace_changes`; agents hydrate only selected
+page elements when needed.
+
+Agent writes are proposals unless the browser has granted a live current-page
+lease. A lease grants limited authority but does not block the human editor.
+Proposal acceptance creates one atomic revision. Existing registry documents
+initialize their coordinator on first workspace access; the directory marker is
+written only after successful initialization, and legacy mutation is then
+refused. See
+[`proposals/0002-shared-human-agent-workspace.md`](proposals/0002-shared-human-agent-workspace.md).
 
 ## Locked decisions
 
@@ -163,13 +193,19 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
    shared across GUI, validation, and MCP.
 5. **TypeScript strict** (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`,
    `isolatedModules`); the engine is vendored unmodified.
+6. **Operations, not document checkout, for collaboration.** Agents suggest by
+   default; short UI-granted leases are scoped authority, not a global mutex.
 
 ## Known constraints
 
 - Custom node types render as static art (no morph-tween) — the flipbook model
   has no tweening by design.
-- Remote MCP session state lives in the Durable Object's memory for the session
-  lifetime; `get_topology` exports the portable JSON to persist it.
+- Local stdio and pre-handoff remote authoring remain private draft workflows.
+  Once handed off, the canonical workspace survives MCP transport/session
+  turnover; legacy tools are intentionally rejected for that document.
+- The first workspace slice is single-owner. Organization ACLs, multi-human
+  presence, visual proposal diffs, IndexedDB offline recovery, and CRDT-style
+  offline multi-master editing are follow-on work.
 - The vendored engine is treated as an opaque renderer; we drive a small, typed
   slice of its surface and avoid editing it. Sanctioned exceptions so far, both
   additive and default-preserving: (1) a per-marker `icon` override so the

@@ -5,6 +5,7 @@
  */
 import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 import type { TopologyRegistry } from './registry.js';
+import type { TopologyDocument } from './document.js';
 
 export interface WorkerEnv {
   /** Static-assets binding (the Vite build in ./dist). */
@@ -24,6 +25,8 @@ export interface WorkerEnv {
    * across all of their MCP sessions.
    */
   TOPOLOGY_REGISTRY: DurableObjectNamespace<TopologyRegistry>;
+  /** One canonical, revisioned coordinator per shared topology document. */
+  TOPOLOGY_DOCUMENT: DurableObjectNamespace<TopologyDocument>;
   /** KV namespace where `share_topology` snapshots published documents. */
   TOPOLOGY_KV: KVNamespace;
   /** KV namespace where the OAuth provider stores grants/tokens. */

@@ -30,10 +30,12 @@ Wire it into an MCP client (e.g. Claude Desktop / Claude Code) as a stdio server
 ## Run (remote, Cloudflare)
 
 The same tool set is served over **Streamable HTTP** at `/mcp` by the Cloudflare
-Worker (`worker/index.ts`), alongside the static app. Each MCP session is a
-Durable Object (`TopologyMcp`) holding that session's in-memory `TopologyStore`;
-the renderer is the same engine-agnostic core, with the vendored engine bundled
-instead of `require`d.
+Worker (`worker/index.ts`), alongside the static app. A `TopologyMcp` Durable
+Object hosts the transport/session and private draft store. Shared documents are
+owned by a separate `TopologyDocument` Durable Object per topology, so browser
+and agent writes meet at one revisioned coordinator. The renderer remains the
+same engine-agnostic core, with the vendored engine bundled instead of
+`require`d.
 
 Auth is **OAuth 2.1** (Cloudflare's `workers-oauth-provider`) with **GitHub** as
 the upstream identity provider. The whole Worker is wrapped in the provider;
@@ -44,7 +46,8 @@ discovery (`/.well-known/oauth-authorization-server`) and dynamic client
 registration (`/register`), so compatible clients configure themselves.
 
 > **Deploy command must be `wrangler deploy`, not `wrangler versions upload`.**
-> This Worker declares a Durable Object **migration** (to create `TopologyMcp`),
+> This Worker declares Durable Object **migrations** (including the shared
+> `TopologyDocument` coordinator),
 > and migrations can only be applied by a full, non-versioned `wrangler deploy`
 > (`versions upload` fails with error 10211). In the Workers Builds project
 > settings, set the **Deploy command** to `npx wrangler deploy`. (Once the v1
@@ -63,9 +66,11 @@ registration (`/register`), so compatible clients configure themselves.
 3. Deploy. Then connect a client to `https://<your-domain>/mcp`; it will run the
    GitHub sign-in flow automatically.
 
-> State note: a session's topology lives in the Durable Object's memory for the
-> session's lifetime; export with `get_topology`, or **`share_topology`** (below)
-> for a durable snapshot, if you need it to outlast the session.
+> State note: legacy authoring tools create private drafts in the per-user
+> registry. Once the browser hands one into a workspace (or an agent calls
+> `get_workspace_manifest` with its id), it is lazily migrated and all further
+> writes use workspace tools. The old snapshot is retained as migration rollback
+> material but stale legacy mutation is refused.
 
 ### Share links (`share_topology`)
 
@@ -89,7 +94,8 @@ npm run deploy
 
 ## Model
 
-The server holds topologies in memory, keyed by an id. The usual flow:
+The local stdio server and the remote private-draft path hold topologies keyed by
+an id. The usual draft-building flow is:
 
 1. `create_topology` → returns an `id` (seeded with one empty page).
 2. add elements against that id (`add_node`, `add_link`, `add_zone`, …).
@@ -104,6 +110,24 @@ pass `pageIndex` to target another. `render_svg` defaults to page `0`.
 Call `describe_capabilities` first to discover every node type, link type, and
 annotation kind with its editable fields (pass a `topologyId` to include that
 document's custom node types).
+
+For a document shared with the browser, use the bounded workspace loop instead:
+
+1. `create_workspace` for a new shared document, or `list_workspaces` to choose
+   an existing id (legacy ids are migrated on first access).
+2. `get_workspace_manifest` → remember its revision and page ids/counts.
+3. If `operationSchemaRevision` changed, call
+   `describe_workspace_operations` once and cache the vocabulary.
+4. `get_workspace_changes` from the last-seen revision; summaries are the
+   default and avoid reloading the document.
+5. `get_workspace_elements` only for pages/elements needed by the task.
+6. `propose_workspace_changes` → a named operation batch for owner review.
+7. Use `apply_workspace_changes` only when the browser explicitly shows a live,
+   current-page lease.
+
+The browser's manifest/proposal polling is normal application JSON and is not
+automatically placed into model context. Token usage is therefore proportional
+to the task's affected region and change summaries, not total document size.
 
 ## Tools
 
@@ -138,6 +162,23 @@ document's custom node types).
 | `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                 |
 | `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                |
 | `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)                           |
+| `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path               |
+| `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                      |
+| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; lazily migrates a legacy id             |
+| `describe_workspace_operations`                        | On-demand versioned operation vocabulary; call only when its revision changes              |
+| `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                     |
+| `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                         |
+| `propose_workspace_changes`                            | Submit a semantic change set for browser-owner review (default write path)                 |
+| `apply_workspace_changes`                              | Direct semantic commit only inside a live UI-granted page lease                            |
+
+### Shared workspace concurrency
+
+Every operation batch carries a `baseRevision` and client-generated
+`operationId`. The document coordinator atomically rebases disjoint fields and
+rejects same-field or delete/edit overlap as an explicit conflict. Agents are
+**Suggest only** by default. Only the browser can grant or revoke a ten-minute
+lease, and the first implementation scopes it to the current page; it is an
+authority grant, not a document-wide mutex.
 
 ## Live fabric data (optional)
 

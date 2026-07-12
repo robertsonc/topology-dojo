@@ -14,7 +14,7 @@
 2. **Authoring fitness for network/SASE engineers.** Confirm a network architect or presales SE can author a realistic, multi-page SASE topology (nodes, links, zones, flow paths, policy markers, layers) faster and with less friction than their current tool, using direct manipulation only.
 3. **Agent authoring quality.** Confirm the agent loop (discover → build → validate → tidy → render) reliably produces overlap-free, presentable diagrams without human coordinate babysitting.
 4. **Sharing & delivery.** Confirm `share_topology` links, flipbook HTML export, SVG render, and JSON import/export are dependable enough to put in front of customers.
-5. **Operational readiness.** Confirm OAuth sign-in, session behavior (Durable Object in-memory state, `get_topology` escape hatch), autosave, and share-link expiry semantics are understood and acceptable to real users.
+5. **Operational readiness.** Confirm OAuth sign-in, private-draft registry behavior, canonical workspace revisions/migration, browser recovery, and share-link expiry semantics are understood and acceptable to real users.
 
 ### Launch acceptance criteria (all must hold at Day 30)
 
@@ -145,18 +145,18 @@ Each scenario is run as a scripted session (facilitated, think-aloud) and scored
 **Script:**
 
 1. Connect the MCP client to `https://<domain>/mcp`; complete the GitHub OAuth 2.1 flow (single authorize click, dynamic client registration, no pasted tokens).
-2. Prompt: _"Build a 3-site SASE topology: HQ, branch, DC, each with users → Edge Connector, converging on a SASE PoP with ZTNA to two SaaS apps. Zones per site, tunnels on an overlay layer, one policy marker at the PoP, a flow path from branch user to SaaS. Then make it clean and give me a link."_
-3. Observe the agent loop; the expected tool sequence is: `describe_capabilities` → `layout_guidelines` → `create_topology` → `add_node`/`add_zone`/`add_link`/`define_layer`/`add_policy_marker`/`add_flow_path` → `validate_topology` → `tidy_topology` (or `layout_topology`/`balance_topology`) → `render_svg` → `share_topology`.
+2. Prompt: _"Build a 3-site SASE topology: HQ, branch, DC, each with users → Edge Connector, converging on a SASE PoP with ZTNA to two SaaS apps. Zones per site, tunnels on an overlay layer, one policy marker at the PoP, a flow path from branch user to SaaS. Make it clean, then hand the draft into our shared workspace."_
+3. Observe the agent loop; the expected tool sequence is: `describe_capabilities` → `layout_guidelines` → `create_topology` → authoring tools → `validate_topology` → `tidy_topology` (or `layout_topology`/`balance_topology`) → `render_svg` → `get_workspace_manifest` (lazy handoff).
 4. Record: does validation come back clean (or warnings resolved by tidy)? Inspect the rendered SVG.
-5. Human opens the share link, refines in the editor (rename nodes, bend a link, adjust a zone, add a page), exports JSON.
-6. Agent re-imports the refined JSON (`import_topology`), makes one further change (`update_element` on a node label), re-validates, re-renders — confirming full **bidirectional** round-trip.
+5. Human opens the topology from the Agent Workspace list, refines it (rename nodes, bend a link, adjust a zone, add a page), and confirms compact revision sync.
+6. Agent calls `get_workspace_changes` from its prior revision, hydrates only the affected elements, and submits one label change with `propose_workspace_changes`. Human reviews and accepts it. Repeat a disjoint concurrent edit (must rebase) and a same-field edit (must conflict).
 
 **Pass criteria:**
 
 - OAuth completes without manual token handling; discovery endpoints work with the client.
 - Final agent-built page has **zero** layout warnings and zero semantic errors.
 - The SVG matches the document (all elements present, layers stacked correctly).
-- Share link opens the agent's exact result in the editor; human edits and agent edits compose without loss.
+- The workspace opens the agent's exact result; human edits and accepted agent proposals compose without loss or whole-document resend.
   **Fail if:** any editor-expressible element (zone, waypointed link, anchor, layer, custom node, page duration) fails to survive either direction of the handoff — this is a direct violation of the product contract and is automatically Sev-1.
 
 #### S-C2 (P0): Agent builds from live fabric data (mock provider) — the one-shot and the idempotent re-run
@@ -176,12 +176,12 @@ Each scenario is run as a scripted session (facilitated, think-aloud) and scored
 
 **Script:**
 
-1. Remote session: build a small document; note the documented constraint that Durable Object state is in-memory per session. Kill/expire the MCP session; reconnect; confirm `list_topologies` behavior matches documentation; confirm the recovery path (`get_topology` before disconnect → `import_topology` after) restores work; confirm `share_topology` snapshots survive session death.
+1. Remote session: build a small private draft. Kill/expire the MCP transport session; reconnect and confirm the per-owner registry rehydrates it. Hand it into a workspace, expire the session again, then confirm the browser and a new MCP session see the same canonical revision. Confirm `share_topology` remains a separate published-snapshot workflow.
 2. `list_templates` → instantiate each of the six templates (`three-tier`, `sdwan-branch`, `ztna`, `firewall-dmz`, `spine-leaf`, `hub-spoke`) → `validate_topology` + `render_svg` each: all must be warning-free out of the box.
 3. Build a 3-page document with `add_page` + `set_page_properties` (name, viewBox, duration); `export_flipbook`; open the HTML artifact and verify page timing.
 4. Exercise remaining metadata tools: `set_node_metadata` (serial/hostname/site), `set_legend`, `set_palette` (then `clear`), `define_node_type`, `set_document_title`; confirm each is visible in a subsequent `get_topology` and in the render.
 
-**Pass criteria:** session semantics match docs exactly (no surprise persistence _or_ surprise loss); all six templates validate clean; every metadata tool round-trips into the document JSON. **Fail if:** a template ships with validation warnings, or any tool "succeeds" without a corresponding document change.
+**Pass criteria:** draft and canonical workspace persistence match docs exactly; all six templates validate clean; every metadata tool round-trips into document JSON. **Fail if:** a template ships with validation warnings, a transport session loss drops owner data, or any tool "succeeds" without durable state.
 
 ---
 

@@ -68,6 +68,14 @@ export class TopologyStore {
     this.pendingDeletes.delete(id);
   }
 
+  /** Drop a local cache entry without recording a durable deletion. Used when
+   * a legacy document has been handed to its canonical workspace coordinator. */
+  unload(id: string): boolean {
+    const removed = this.docs.delete(id);
+    this.pendingDeletes.delete(id);
+    return removed;
+  }
+
   list(): { id: string; title: string; pages: number }[] {
     return [...this.docs].map(([id, d]) => ({
       id,

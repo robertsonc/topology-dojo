@@ -22,6 +22,10 @@ generated it.
 - The document JSON is the **contract**: everything the GUI can express lives in
   it, and everything in it is reachable from the headless API — there are no
   UI-only surfaces.
+- A handed-off document is a **revisioned shared workspace**. Browser gestures
+  become compact semantic operations; agents read bounded deltas and propose
+  change sets by default, so collaboration does not require repeatedly placing
+  the whole document in model context.
 
 ## Quick start
 
@@ -45,7 +49,8 @@ npm run mcp         # run the MCP server over stdio
    palette (with live node-art previews) + inspector (incl. document/page
    properties), a filmstrip of pages, a
    live status bar, a Node Designer for custom node types, and one-click **Tidy**
-   (auto-layout).
+   (auto-layout), plus an **Agent Workspace** panel for handoff, proposal review,
+   conflict visibility, and a revocable ten-minute current-page lease.
 2. **The headless API** (`src/api`) — build / mutate / validate / lay out /
    render a document in code, DOM-free. The GUI is just one client of it.
 3. **MCP** (`src/mcp`, `worker/`) — the same API exposed as tools over the Model
@@ -72,8 +77,9 @@ src/
   nodes/       custom node types: spec · interpreter · Node Designer
   editor/      the canvas editor (selection, drag, guides, links, tidy)
   mcp/         MCP server: tools · store · auth · registration (used by stdio + worker)
+  workspace/   semantic operations · conflict targets · browser API client
   core/        the retired beat-model (dormant; kept for reference)
-worker/        Cloudflare Worker: serves the app + /mcp (Durable Object sessions)
+worker/        Cloudflare Worker: app + /mcp + per-document coordinators
 public/vendor/ the vendored engine + theme (classic script in the browser, CommonJS in Node)
 ```
 
@@ -86,12 +92,18 @@ public/vendor/ the vendored engine + theme (classic script in the browser, Commo
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's built and what's next.
 - [`docs/decisions/`](docs/decisions/) — architecture decision records (ADRs),
   e.g. [why flipbook over beats/ASP](docs/decisions/0001-flipbook-vs-beats.md).
+- [`docs/proposals/0002-shared-human-agent-workspace.md`](docs/proposals/0002-shared-human-agent-workspace.md)
+  — revision, operation, proposal, lease, conflict, and migration contract.
+- [`docs/proposals/0003-adaptive-agent-authoring-profiles.md`](docs/proposals/0003-adaptive-agent-authoring-profiles.md)
+  — bounded, explainable learning from repeated user corrections without
+  self-modifying or context-bloating MCP tools.
 - [`src/mcp/README.md`](src/mcp/README.md) — running and deploying the MCP server.
 
 ## Deployment
 
 Hosted on **Cloudflare Workers** via the connected Git integration (Workers
 Builds): `npm run build` produces `dist/`, and the Worker (`worker/index.ts`)
-serves it as static assets while routing `/mcp` to the MCP server (a Durable
-Object per session, behind OAuth 2.1 / GitHub sign-in). Config is in
+serves it as static assets while routing `/mcp` to the MCP server. Transport
+sessions and canonical per-document coordinators are separate Durable Objects,
+behind OAuth 2.1 / GitHub sign-in. Config is in
 [`wrangler.jsonc`](wrangler.jsonc).
