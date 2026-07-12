@@ -44,4 +44,29 @@ export interface WorkerEnv {
    */
   ORCH_BASE_URL?: string;
   ORCH_API_KEY?: string;
+  /**
+   * Feature flag gating the shared workspace surfaces — the `/api/workspaces`
+   * REST routes (`default-handler.ts`) and the eight workspace MCP tools
+   * (`mcp.ts`). Unset means enabled: local dev (`wrangler dev` with no vars
+   * set) and `env.staging` (which sets `"true"` explicitly, for clarity) must
+   * keep working exactly as before this flag existed. Only the literal string
+   * `"false"` disables it. The production bootstrap deploy sets
+   * `"WORKSPACE_ENABLED": "false"` at the top level of `wrangler.jsonc` so the
+   * `v3` `TopologyDocument` migration can ship with workspace traffic held
+   * back until a later, explicit activation deploy flips this to `"true"`
+   * (see proposal 0004, decision 4).
+   */
+  WORKSPACE_ENABLED?: string;
+}
+
+/**
+ * Whether the shared workspace surfaces should accept traffic. Unset ⇒
+ * enabled (see the `WORKSPACE_ENABLED` field doc comment above) — only the
+ * exact string `"false"` disables. Any other value (including a typo'd var)
+ * fails open to "enabled" rather than silently cutting off workspace access.
+ */
+export function workspaceEnabled(
+  env: Pick<WorkerEnv, 'WORKSPACE_ENABLED'>,
+): boolean {
+  return env.WORKSPACE_ENABLED !== 'false';
 }

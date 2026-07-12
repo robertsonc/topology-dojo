@@ -55,6 +55,7 @@ import {
   listWorkspaceProposals,
   rejectWorkspaceProposal,
   revokeWorkspaceLease,
+  WorkspaceDisabledError,
 } from './workspace/client.js';
 import type {
   CommitRequest,
@@ -254,6 +255,10 @@ let activeWorkspace: ActiveWorkspace | null = null;
 let workspaceAuthenticated = false;
 let workspacePanel: HTMLElement | null = null;
 let workspaceChoices: WorkspaceListItem[] = [];
+// Set from the empty-state `listWorkspaces()` call in refreshWorkspaceChoices;
+// swaps the panel's hand-off/open card for a plain disabled notice instead of
+// offering actions that would just 503 (see WorkspaceDisabledError).
+let workspaceDisabled = false;
 let workspaceSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 /* Autosave to localStorage (debounced) whenever the document changes. */
@@ -2880,8 +2885,10 @@ async function refreshWorkspaceChoices(): Promise<void> {
   if (!workspaceAuthenticated || activeWorkspace) return;
   try {
     workspaceChoices = await listWorkspaces();
-  } catch {
+    workspaceDisabled = false;
+  } catch (error) {
     workspaceChoices = [];
+    workspaceDisabled = error instanceof WorkspaceDisabledError;
   }
   renderWorkspacePanel();
 }
@@ -2967,6 +2974,16 @@ function renderWorkspacePanel(): void {
   const body = workspacePanel.querySelector<HTMLElement>('#wsBody');
   if (!body) return;
   if (!workspace) {
+    if (workspaceDisabled) {
+      body.innerHTML =
+        `<div class="ws-note">Workspaces are not enabled on this deployment.</div>` +
+        `<div class="ws-card"><div class="ws-note">The agent workspace surface is turned off for this deployment. Local editing and autosave still work as usual.</div>` +
+        `<div class="ws-actions"><button class="tbtn" id="wsRefreshList">Check again</button></div></div>`;
+      body
+        .querySelector('#wsRefreshList')
+        ?.addEventListener('click', () => void refreshWorkspaceChoices());
+      return;
+    }
     const choices = workspaceChoices.length
       ? `<div class="ws-section">Existing workspaces</div>` +
         workspaceChoices

@@ -11,6 +11,22 @@ import type {
   WorkspaceSnapshot,
 } from './model.js';
 
+/**
+ * Thrown instead of a generic `Error` when the server reports the workspace
+ * surface is disabled for this deployment (`WORKSPACE_ENABLED=false` — see
+ * `worker/env.ts`). Its message is already user-facing, so every existing
+ * `error instanceof Error ? error.message : …` call site in `main.ts` shows
+ * something sensible for free; the Agent Workspace panel additionally
+ * special-cases this type to swap the "hand off / open" card for a plain
+ * disabled notice instead of offering actions that would just 503.
+ */
+export class WorkspaceDisabledError extends Error {
+  constructor() {
+    super('Workspaces are not enabled on this deployment.');
+    this.name = 'WorkspaceDisabledError';
+  }
+}
+
 async function decode<T>(response: Response): Promise<T> {
   let value: unknown;
   try {
@@ -20,6 +36,9 @@ async function decode<T>(response: Response): Promise<T> {
   }
   if (!response.ok) {
     const message = (value as { error?: unknown }).error;
+    if (response.status === 503 && message === 'workspace_disabled') {
+      throw new WorkspaceDisabledError();
+    }
     throw new Error(
       typeof message === 'string'
         ? message

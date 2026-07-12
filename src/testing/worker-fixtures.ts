@@ -41,3 +41,30 @@ export default {
   },
 };
 `;
+
+/**
+ * Exercises `worker/workspace-tools.ts`'s pure `workspaceToolNames` — the
+ * WORKSPACE_ENABLED gate on the eight workspace MCP tools registered by
+ * `worker/mcp.ts`'s `TopologyMcp.init()`. That Durable Object class needs a
+ * live `cloudflare:workers` runtime (via `agents/mcp`) just to construct, so
+ * it isn't exercised directly here; this fixture imports only the pure
+ * decision function `init()` delegates to, with no Durable Object bindings
+ * required. `flag`/`hasWorkspaceService` come from the query string so a
+ * single Miniflare instance covers every combination.
+ */
+export const WORKSPACE_TOOL_NAMES_FIXTURE = String.raw`
+import { workspaceToolNames } from './worker/workspace-tools.ts';
+
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    const flag = url.searchParams.get('flag');
+    const hasWorkspaceService = url.searchParams.get('hasWorkspaceService') === 'true';
+    const env = flag === null ? {} : { WORKSPACE_ENABLED: flag };
+    return new Response(
+      JSON.stringify(workspaceToolNames(env, hasWorkspaceService)),
+      { headers: { 'content-type': 'application/json' } },
+    );
+  },
+};
+`;

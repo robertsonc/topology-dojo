@@ -20,6 +20,7 @@ import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
 import type { WorkerEnv } from './env.js';
 import { WorkspaceService } from './workspaces.js';
+import { workspaceToolNames } from './workspace-tools.js';
 
 /** Short, URL-safe id for a published snapshot (collision-negligible for this use). */
 function shareId(): string {
@@ -80,7 +81,17 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
             apiKey: this.env.ORCH_API_KEY,
           })
         : undefined;
-    const workspace = this.workspaceService();
+    // WORKSPACE_ENABLED gates whether the eight workspace tools are handed to
+    // registerTopologyTools at all — see workspace-tools.ts for the pure
+    // decision (kept out of this file so it stays unit-testable without the
+    // McpAgent Durable Object; the class/binding/migration are untouched).
+    const workspaceService = this.workspaceService();
+    const workspace = workspaceToolNames(
+      this.env,
+      workspaceService !== undefined,
+    ).length
+      ? workspaceService
+      : undefined;
     registerTopologyTools(
       this.server,
       {

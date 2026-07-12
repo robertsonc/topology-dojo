@@ -11,7 +11,7 @@
  * screen (GitHub already shows one) so connecting is a single authorize click.
  */
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
-import type { WorkerEnv } from './env.js';
+import { workspaceEnabled, type WorkerEnv } from './env.js';
 import {
   completeWebLogin,
   currentUser,
@@ -25,6 +25,26 @@ import {
 import { handleWorkspaceApi } from './workspace-api.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
+
+/** Stable 503 body for the `WORKSPACE_ENABLED=false` gate below — see
+ * `env.ts`'s `workspaceEnabled` doc comment for the flag semantics. */
+const WORKSPACE_DISABLED_BODY = JSON.stringify({ error: 'workspace_disabled' });
+
+/**
+ * The workspace surface is off for this deployment: reject before touching
+ * `handleWorkspaceApi` (and therefore before any DO/KV binding is read), so
+ * the production `v3` bootstrap can ship the `TopologyDocument` binding and
+ * migration while staying operationally inert.
+ */
+function workspaceDisabledResponse(): Response {
+  return new Response(WORKSPACE_DISABLED_BODY, {
+    status: 503,
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+    },
+  });
+}
 
 /**
  * Content-Security-Policy for every browser-facing response. `script-src 'self'`
@@ -198,8 +218,13 @@ async function route(
   if (pathname === '/auth/github') return startWebLogin(request, env);
   if (pathname === '/logout') return handleLogout();
   if (pathname === '/api/me') return handleMe(request, env);
-  if (pathname === '/api/workspaces' || pathname.startsWith('/api/workspaces/'))
+  if (
+    pathname === '/api/workspaces' ||
+    pathname.startsWith('/api/workspaces/')
+  ) {
+    if (!workspaceEnabled(env)) return workspaceDisabledResponse();
     return handleWorkspaceApi(request, env);
+  }
 
   // MCP OAuth provider flow. `/callback` is shared: the browser login uses a
   // `web.`-prefixed state, the MCP client flow does not.
