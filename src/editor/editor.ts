@@ -36,6 +36,15 @@ import {
 import type { BadgePlacement } from './problem-badges.js';
 
 const ACCENT = '#01a982';
+/** Escape a string for use inside an SVG/HTML attribute value. */
+function escXmlAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 const MUTED = '#7d8a92';
 // Match the problems panel's `.prob-error` / `.prob-warning` dot colours
 // (index.html) so a badge and its panel row read as the same severity.
@@ -1038,8 +1047,11 @@ export class Editor {
       const color = b.level === 'error' ? PROB_ERROR : PROB_WARN;
       const label =
         b.count > 1 ? (b.count > 99 ? '99+' : String(b.count)) : '⚠';
+      // Element ids come from documents (shared/imported — untrusted) and
+      // are not sanitized by parseDoc, so escape before interpolating into
+      // innerHTML-bound markup.
       out +=
-        `<g pointer-events="auto" style="cursor:pointer" data-badge-kind="${b.kind}" data-badge-id="${b.id}">` +
+        `<g pointer-events="auto" style="cursor:pointer" data-badge-kind="${b.kind}" data-badge-id="${escXmlAttr(b.id)}">` +
         `<circle cx="${b.x}" cy="${b.y}" r="${r}" fill="${color}" stroke="#0b0e14" stroke-width="1.5"/>` +
         `<text x="${b.x}" y="${b.y}" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-weight="700" fill="#0b0e14">${label}</text>` +
         `</g>`;
