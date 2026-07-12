@@ -33,9 +33,14 @@ import {
   resolvePos,
   zoneBounds,
 } from './geometry.js';
+import type { BadgePlacement } from './problem-badges.js';
 
 const ACCENT = '#01a982';
 const MUTED = '#7d8a92';
+// Match the problems panel's `.prob-error` / `.prob-warning` dot colours
+// (index.html) so a badge and its panel row read as the same severity.
+const PROB_ERROR = '#fc6161';
+const PROB_WARN = '#e0a44a';
 const LINK_TYPES = [
   'line',
   'tunnel',
@@ -126,6 +131,10 @@ export class Editor {
   private guides: Guide[] = [];
   /** The pattern-filled rect backing the infinite grid (tracks the view). */
   private gridRect: SVGRectElement | null = null;
+  /** Cached badge circle/text pairs so `applyView` can resize them in place
+   *  as the zoom level changes (see `updateBadgeSizes`), the same trick
+   *  `gridRect` uses for the grid fill. */
+  private badgeEls: { circle: SVGCircleElement; text: SVGTextElement }[] = [];
   /** Active tool: select/move, draw-link, or drop-anchor. */
   tool: 'select' | 'link' | 'anchor' = 'select';
   private linkStart: string | null = null;
@@ -514,6 +523,7 @@ export class Editor {
     this.art.setAttribute('viewBox', vb);
     this.overlay.setAttribute('viewBox', vb);
     this.updateGridFill();
+    this.updateBadgeSizes();
     this.onView();
   }
 
@@ -676,6 +686,24 @@ export class Editor {
     r.setAttribute('y', String(e.y));
     r.setAttribute('width', String(e.w));
     r.setAttribute('height', String(e.h));
+  }
+
+  /**
+   * Keep problem badges at a legible on-screen size as the view pans/zooms —
+   * a cheap attribute update on the cached badge shapes, with no overlay
+   * rebuild (same trick as `updateGridFill`). Without this, `badgeRadius`
+   * would only be recomputed the next time something else forces a full
+   * `renderOverlay` (a selection/hover/edit), so a plain wheel-zoom would
+   * leave badges shrinking/growing with the canvas instead of staying put.
+   */
+  private updateBadgeSizes(): void {
+    if (this.badgeEls.length === 0) return;
+    const r = this.badgeRadius();
+    const fontSize = r * 1.15;
+    for (const { circle, text } of this.badgeEls) {
+      circle.setAttribute('r', String(r));
+      text.setAttribute('font-size', String(fontSize));
+    }
   }
 
   private selectionSvg(): string {
@@ -946,11 +974,86 @@ export class Editor {
     this.renderOverlay();
   }
 
+  /**
+   * On-canvas problem badges (Packet B1) — placements computed by the host
+   * from `validateDocument`/`analyzeLayout` output (see `problem-badges.ts`
+   * and `renderProblems()` in `main.ts`). Empty when the badge toggle is off
+   * or the page has no locatable problems.
+   */
+  private badges: BadgePlacement[] = [];
+  /**
+   * Fired when a badge is clicked — the host selects the element (reusing the
+   * same `focusNode`/`focusLink`/`focusZone` path the problems panel uses)
+   * and can scroll the matching panel row into view. Kept out of the editor
+   * itself so the panel-scrolling stays a host (main.ts) concern.
+   */
+  private onBadgeClick:
+    | ((kind: BadgePlacement['kind'], id: string) => void)
+    | null = null;
+
+  /** Feed this page's current problem badges; pass `[]` to hide them. */
+  setBadges(placements: BadgePlacement[]): void {
+    this.badges = placements;
+    this.renderOverlay();
+  }
+  /** Register the host's badge-click handler (selection + panel scroll). */
+  setOnBadgeClick(
+    cb: ((kind: BadgePlacement['kind'], id: string) => void) | null,
+  ): void {
+    this.onBadgeClick = cb;
+  }
+  /** Badge hit-target radius in user units (~9 screen px, counter-scaled like
+   *  connection dots — see `dotRadius` — so the glyph + count stay legible at
+   *  any zoom level). */
+  private badgeRadius(): number {
+    const wpx = this.overlay.getBoundingClientRect().width || 1;
+    return Math.max(6, (9 * this.view.w) / wpx);
+  }
+  /** The badge (if any) under point `p`, topmost-drawn first. */
+  private hitTestBadge(p: { x: number; y: number }): BadgePlacement | null {
+    if (this.badges.length === 0) return null;
+    const r = this.badgeRadius();
+    for (let i = this.badges.length - 1; i >= 0; i--) {
+      const b = this.badges[i]!;
+      if (Math.hypot(p.x - b.x, p.y - b.y) <= r) return b;
+    }
+    return null;
+  }
+  /**
+   * Badges as small circles with a ⚠ glyph (single problem) or a count
+   * (folded problems), error vs. warning coloured to match the problems
+   * panel. Drawn above the art and the auto-legend, below the interactive
+   * selection/anchor/connection-dot handles, in the same layer position the
+   * `overlayExtra` hook already occupies for app-level decorations. The
+   * group is `pointer-events: none` except each badge's own hit circle, so
+   * badges never intercept drags, the marquee, or waypoint gestures aimed at
+   * geometry beneath them.
+   */
+  private badgesSvg(): string {
+    if (this.badges.length === 0) return '';
+    const r = this.badgeRadius();
+    const fontSize = r * 1.15;
+    let out = '<g pointer-events="none">';
+    for (const b of this.badges) {
+      const color = b.level === 'error' ? PROB_ERROR : PROB_WARN;
+      const label =
+        b.count > 1 ? (b.count > 99 ? '99+' : String(b.count)) : '⚠';
+      out +=
+        `<g pointer-events="auto" style="cursor:pointer" data-badge-kind="${b.kind}" data-badge-id="${b.id}">` +
+        `<circle cx="${b.x}" cy="${b.y}" r="${r}" fill="${color}" stroke="#0b0e14" stroke-width="1.5"/>` +
+        `<text x="${b.x}" y="${b.y}" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-weight="700" fill="#0b0e14">${label}</text>` +
+        `</g>`;
+    }
+    out += '</g>';
+    return out;
+  }
+
   private renderOverlay(): void {
     this.overlay.innerHTML =
       this.backdropSvg() +
       this.gridSvg() +
       (this.overlayExtra?.() ?? '') +
+      this.badgesSvg() +
       this.guidesSvg() +
       this.labelGuidesSvg() +
       this.zoneSelSvg() +
@@ -962,6 +1065,14 @@ export class Editor {
       this.linkPreviewSvg();
     // Cache the grid fill so applyView can track it without rebuilding the overlay.
     this.gridRect = this.overlay.querySelector<SVGRectElement>('rect.tds-grid');
+    // Cache the badge shapes the same way, so a zoom step can resize them
+    // in place (see `updateBadgeSizes`) instead of paying for a full rebuild.
+    this.badgeEls = Array.from(
+      this.overlay.querySelectorAll<SVGGElement>('[data-badge-id]'),
+    ).map((g) => ({
+      circle: g.querySelector('circle')!,
+      text: g.querySelector('text')!,
+    }));
   }
 
   /* ── history ──────────────────────────────────────────────────── */
@@ -2433,6 +2544,18 @@ export class Editor {
       this.addAnchorAt(p.x, p.y);
       this.overlay.setPointerCapture(e.pointerId);
       return;
+    }
+
+    // A problem badge takes priority over every other Select-tool hit: it's a
+    // small fixed target sitting on top of its element's corner, and a click
+    // there means "show me the problem", never "start dragging/marqueeing".
+    // No pointer capture / drag state is set, so the gesture ends here.
+    if (this.tool === 'select') {
+      const badge = this.hitTestBadge(p);
+      if (badge) {
+        this.onBadgeClick?.(badge.kind, badge.id);
+        return;
+      }
     }
 
     // Editing waypoints on the selected link takes priority over other hits.

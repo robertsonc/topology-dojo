@@ -65,6 +65,7 @@ import type {
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
 import { genId } from './api/builder.js';
+import { computeBadgePlacements } from './editor/problem-badges.js';
 import {
   filterNodeCatalog,
   getAnnotationType,
@@ -134,6 +135,7 @@ app.innerHTML = `
         <button class="tbtn ticon on" id="tGrid" title="Toggle grid (R)">▦</button>
         <button class="tbtn ticon on" id="tSnap" title="Toggle snap (G)">⌗</button>
         <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)">◓</button>
+        <button class="tbtn ticon on" id="tBadges" title="Toggle on-canvas problem badges" aria-label="Toggle on-canvas problem badges">⚠</button>
         <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient, glass">⚙</button>
         <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme">☀</button>
         <button class="tbtn ticon" id="tFit" title="Fit view (0)">⤢</button>
@@ -689,6 +691,38 @@ function problemLocate(
   return undefined;
 }
 
+/**
+ * Select the element a problem/badge points at — the single click-to-jump
+ * path shared by the problems panel and the on-canvas badge layer (Packet
+ * B1), so the two surfaces can never disagree about what a click does.
+ */
+function selectProblemTarget(loc: {
+  kind: 'node' | 'link' | 'zone';
+  id: string;
+}): void {
+  if (loc.kind === 'link') editor.focusLink(loc.id);
+  else if (loc.kind === 'zone') editor.focusZone(loc.id);
+  else editor.focusNode(loc.id);
+}
+
+/**
+ * On-canvas problem badges (Packet B1) — a view-state toggle, not document
+ * data (DESIGN.md #2 carve-out: the underlying problems are already
+ * API-reachable via `validate_topology`; only whether the GUI draws a glyph
+ * for them is human-only, like pan/zoom). Persisted like the other canvas
+ * view prefs; default on.
+ */
+const BADGES_KEY = 'tds-badges-visible';
+let badgesVisible = localStorage.getItem(BADGES_KEY) !== '0';
+
+editor.setOnBadgeClick((kind, id) => {
+  selectProblemTarget({ kind, id });
+  const row = problemsPanel.querySelector<HTMLButtonElement>(
+    `[data-prob-kind="${kind}"][data-prob-id="${CSS.escape(id)}"]`,
+  );
+  row?.scrollIntoView({ block: 'nearest' });
+});
+
 function renderProblems(): void {
   if (!statusReady) return;
   const problems = [...validateDocument(doc), ...analyzeLayout(doc)];
@@ -703,32 +737,40 @@ function renderProblems(): void {
 
   if (!problems.length) {
     problemsPanel.innerHTML = `<div class="prob-empty">No problems — validation and layout are clean.</div>`;
-    return;
-  }
-  problemsPanel.innerHTML = problems
-    .map((p, i) => {
-      const loc = problemLocate(p);
-      const attrs = loc
-        ? ` data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
-        : '';
-      return (
-        `<button class="prob prob-${p.level}${loc ? ' locatable' : ''}"${attrs} data-i="${i}">` +
-        `<span class="prob-dot"></span>` +
-        `<span class="prob-msg">${esc(p.message)}<span class="prob-where">${esc(p.where)}</span></span>` +
-        `</button>`
+  } else {
+    problemsPanel.innerHTML = problems
+      .map((p, i) => {
+        const loc = problemLocate(p);
+        const attrs = loc
+          ? ` data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
+          : '';
+        return (
+          `<button class="prob prob-${p.level}${loc ? ' locatable' : ''}"${attrs} data-i="${i}">` +
+          `<span class="prob-dot"></span>` +
+          `<span class="prob-msg">${esc(p.message)}<span class="prob-where">${esc(p.where)}</span></span>` +
+          `</button>`
+        );
+      })
+      .join('');
+    problemsPanel
+      .querySelectorAll<HTMLButtonElement>('[data-prob-id]')
+      .forEach((b) =>
+        b.addEventListener('click', () => {
+          const kind = b.dataset.probKind as 'node' | 'link' | 'zone';
+          selectProblemTarget({ kind, id: b.dataset.probId! });
+        }),
       );
-    })
-    .join('');
-  problemsPanel
-    .querySelectorAll<HTMLButtonElement>('[data-prob-id]')
-    .forEach((b) =>
-      b.addEventListener('click', () => {
-        const id = b.dataset.probId!;
-        if (b.dataset.probKind === 'link') editor.focusLink(id);
-        else if (b.dataset.probKind === 'zone') editor.focusZone(id);
-        else editor.focusNode(id);
-      }),
-    );
+  }
+
+  // Badge layer reuses the same `problems` list + `problemLocate` mapping the
+  // panel just rendered from — one computation feeds both surfaces, and
+  // badges always reflect the current page only (locate() only resolves ids
+  // present on `editor.page`).
+  editor.setBadges(
+    badgesVisible
+      ? computeBadgePlacements(problems, editor.page, problemLocate)
+      : [],
+  );
 }
 
 function setProblemsCollapsed(collapsed: boolean): void {
@@ -2271,6 +2313,28 @@ applyCalm(
     : storedCalm === '1',
 );
 calmBtn.addEventListener('click', () => applyCalm(!editor.calm));
+
+/* On-canvas problem badges (Packet B1) — a view preference, persisted across
+ * sessions like Calm/Grid/Snap (`badgesVisible` + `BADGES_KEY` above, next to
+ * the problems panel they mirror). Toggling re-renders the panel + badges
+ * together since `renderProblems()` computes both from one problem list. */
+const badgesBtn = app.querySelector<HTMLButtonElement>('#tBadges')!;
+function applyBadgesVisible(on: boolean): void {
+  badgesVisible = on;
+  badgesBtn.classList.toggle('on', on);
+  badgesBtn.title = on
+    ? 'Hide on-canvas problem badges'
+    : 'Show on-canvas problem badges';
+  badgesBtn.setAttribute('aria-label', badgesBtn.title);
+  try {
+    localStorage.setItem(BADGES_KEY, on ? '1' : '0');
+  } catch {
+    // storage unavailable — non-fatal
+  }
+  renderProblems();
+}
+badgesBtn.classList.toggle('on', badgesVisible);
+badgesBtn.addEventListener('click', () => applyBadgesVisible(!badgesVisible));
 
 /* Light / dark theme — a view preference, persisted across sessions. */
 const themeBtn = app.querySelector<HTMLButtonElement>('#tTheme')!;
