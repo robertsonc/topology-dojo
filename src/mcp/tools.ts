@@ -53,6 +53,18 @@ import type { RenderOptions } from '../render/core.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
 import { TopologyStore } from './store.js';
+import {
+  ELEMENT_KINDS,
+  type ChangesResult,
+  type CommitRequest,
+  type CommitResult,
+  type ElementKind,
+  type ElementPageResult,
+  type ProposalResult,
+  type WorkspaceListItem,
+  type WorkspaceManifest,
+  type WorkspaceOperation,
+} from '../workspace/model.js';
 
 export interface ToolDef {
   name: string;
@@ -88,6 +100,38 @@ export interface ToolDeps {
    * tool arguments. When absent, the live-data tools are not registered.
    */
   provider?: TopologyProvider;
+  /** Canonical owner workspace (remote-only). Keeping this injected preserves
+   * the pure/local MCP server and makes the tool protocol unit-testable. */
+  workspace?: {
+    createEmpty(title?: string): Promise<{
+      id: string;
+      revision: number;
+      document: TopologyDocument;
+    }>;
+    list(): Promise<WorkspaceListItem[]>;
+    manifest(id: string): Promise<WorkspaceManifest>;
+    changes(
+      id: string,
+      sinceRevision: number,
+      limit?: number,
+      includeOperations?: boolean,
+    ): Promise<ChangesResult>;
+    elements(
+      id: string,
+      pageId: string,
+      ids?: string[],
+      kinds?: ElementKind[],
+      cursor?: number,
+      limit?: number,
+    ): Promise<ElementPageResult>;
+    propose(
+      id: string,
+      request: CommitRequest,
+      title: string,
+      rationale?: string,
+    ): Promise<ProposalResult>;
+    applyAgent(id: string, request: CommitRequest): Promise<CommitResult>;
+  };
 }
 
 /* Reusable field fragments ------------------------------------------------- */
@@ -125,6 +169,15 @@ const ALIGN9 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'C'] as const;
 const MARKER = POLICY_MARKER_TYPES;
 /** A CSS hex colour (`#rgb` or `#rrggbb`). */
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+const elementKindSchema = z.enum(ELEMENT_KINDS);
+// Keep routine MCP discovery small. The strict, versioned vocabulary is
+// returned on demand by describe_workspace_operations and is always validated
+// again inside the document coordinator.
+const compactWorkspaceOperations = z
+  .array(z.record(z.string(), z.unknown()))
+  .min(1)
+  .max(250);
 
 /** Build the full set of tools bound to a store and runtime deps. */
 export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
@@ -1058,6 +1111,172 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             problems,
           };
         },
+      },
+    );
+  }
+
+  // Canonical shared workspace — remote-only. These tools are intentionally
+  // bounded and delta-oriented: manifest → changes → targeted elements. Agents
+  // propose by default; direct writes require a lease granted from the browser.
+  if (deps.workspace) {
+    const workspace = deps.workspace;
+    const workspaceId = z
+      .string()
+      .describe('Workspace id shown in the browser Agent Workspace panel.');
+    const operationId = z
+      .string()
+      .min(1)
+      .max(128)
+      .describe('Client-generated idempotency id; reuse it when retrying.');
+    tools.push(
+      {
+        name: 'create_workspace',
+        description:
+          'Create a canonical shared workspace with one empty page. Use this instead of a private draft when the result should immediately appear in the browser; subsequent agent edits are proposals by default.',
+        inputShape: { title: z.string().max(160).optional() },
+        handler: async (a) => {
+          const snapshot = await workspace.createEmpty(
+            a.title === undefined ? undefined : String(a.title),
+          );
+          return {
+            id: snapshot.id,
+            revision: snapshot.revision,
+            title: snapshot.document.title,
+            pages: snapshot.document.pages.map((page) => ({
+              id: page.id,
+              name: page.name,
+            })),
+          };
+        },
+      },
+      {
+        name: 'list_workspaces',
+        description:
+          'List this owner’s canonical workspaces and legacy drafts available for lazy migration. Does not return document contents.',
+        inputShape: {},
+        handler: () => workspace.list(),
+      },
+      {
+        name: 'get_workspace_manifest',
+        description:
+          'Get compact workspace status: revision, page ids/names, element counts, pending proposal count, and active lease. Calling this on a legacy topology id lazily hands it into the canonical workspace.',
+        inputShape: { workspaceId },
+        handler: (a) => workspace.manifest(String(a.workspaceId)),
+      },
+      {
+        name: 'describe_workspace_operations',
+        description:
+          'Return the versioned semantic operation vocabulary and one example. Call only before a first workspace write or when operationSchemaRevision changes; do not repeat it every turn.',
+        inputShape: {},
+        handler: () => ({
+          operationSchemaRevision: 1,
+          limits: { maxOperations: 250, maxSerializedBytes: 524288 },
+          patch: {
+            set: 'top-level fields to set or replace',
+            unset: 'top-level optional field names to remove',
+          },
+          operations: {
+            'document.patch': '{ type, patch }',
+            'page.add': '{ type, page, afterPageId?: string|null }',
+            'page.patch': '{ type, pageId, patch }',
+            'page.remove': '{ type, pageId }',
+            'page.reorder': '{ type, pageIds: string[] }',
+            'element.add':
+              '{ type, pageId, kind, element, afterElementId?: string|null }',
+            'element.patch': '{ type, pageId, kind, elementId, patch }',
+            'element.remove': '{ type, pageId, kind, elementId }',
+            'element.reorder': '{ type, pageId, kind, elementIds: string[] }',
+          },
+          elementKinds: ELEMENT_KINDS,
+          example: {
+            type: 'element.patch',
+            pageId: 'page-id',
+            kind: 'nodes',
+            elementId: 'node-id',
+            patch: { set: { label: 'Branch A', x: 240 } },
+          },
+        }),
+      },
+      {
+        name: 'get_workspace_changes',
+        description:
+          'Get bounded changes after a last-seen revision. Defaults to compact summaries; request operations only when exact patches are needed. If checkpointRequired is true, hydrate only the relevant page/elements.',
+        inputShape: {
+          workspaceId,
+          sinceRevision: z.number().int().min(0),
+          limit: z.number().int().min(1).max(50).optional(),
+          detail: z.enum(['summary', 'operations']).optional(),
+        },
+        handler: (a) =>
+          workspace.changes(
+            String(a.workspaceId),
+            Number(a.sinceRevision),
+            a.limit as number | undefined,
+            a.detail === 'operations',
+          ),
+      },
+      {
+        name: 'get_workspace_elements',
+        description:
+          'Hydrate a bounded page slice instead of loading the full document. Filter by element ids and/or collections; paginate with nextCursor.',
+        inputShape: {
+          workspaceId,
+          pageId: z.string(),
+          elementIds: z.array(z.string()).max(100).optional(),
+          kinds: z.array(elementKindSchema).optional(),
+          cursor: z.number().int().min(0).optional(),
+          limit: z.number().int().min(1).max(100).optional(),
+        },
+        handler: (a) =>
+          workspace.elements(
+            String(a.workspaceId),
+            String(a.pageId),
+            a.elementIds as string[] | undefined,
+            a.kinds as ElementKind[] | undefined,
+            a.cursor as number | undefined,
+            a.limit as number | undefined,
+          ),
+      },
+      {
+        name: 'propose_workspace_changes',
+        description:
+          'Submit a named semantic change set for owner review. This is the default write path: it never mutates the canonical document until the browser user accepts it.',
+        inputShape: {
+          workspaceId,
+          baseRevision: z.number().int().min(0),
+          operationId,
+          title: z.string().min(1).max(160),
+          rationale: z.string().max(2000).optional(),
+          operations: compactWorkspaceOperations,
+        },
+        handler: (a) =>
+          workspace.propose(
+            String(a.workspaceId),
+            {
+              baseRevision: Number(a.baseRevision),
+              operationId: String(a.operationId),
+              operations: a.operations as WorkspaceOperation[],
+            },
+            String(a.title),
+            a.rationale === undefined ? undefined : String(a.rationale),
+          ),
+      },
+      {
+        name: 'apply_workspace_changes',
+        description:
+          'Commit semantic operations directly only while the browser has granted a live lease for that page. Suggest-only is the default; without a lease use propose_workspace_changes.',
+        inputShape: {
+          workspaceId,
+          baseRevision: z.number().int().min(0),
+          operationId,
+          operations: compactWorkspaceOperations,
+        },
+        handler: (a) =>
+          workspace.applyAgent(String(a.workspaceId), {
+            baseRevision: Number(a.baseRevision),
+            operationId: String(a.operationId),
+            operations: a.operations as WorkspaceOperation[],
+          }),
       },
     );
   }

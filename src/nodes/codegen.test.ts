@@ -16,7 +16,6 @@ function evalSnippet(code: string): {
       captured = def;
     },
   };
-  // eslint-disable-next-line no-new-func
   new Function('TopologyDesigner', code)(TopologyDesigner);
   return captured as ReturnType<typeof evalSnippet>;
 }

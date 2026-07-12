@@ -86,17 +86,47 @@ Built methodically, one reviewable PR at a time, each reviewed against
   share_topology). See [`src/mcp/README.md`](../src/mcp/README.md) for the full
   table — a unit test keeps it in sync with the server.
 - **Remote on Cloudflare** (`worker/`): the same tools over Streamable HTTP at
-  `/mcp`, per-session Durable Object state, OAuth 2.1 (GitHub) auth; the Worker
-  also serves the app. Verified live end-to-end (auth → build → validate →
-  tidy → render).
+  `/mcp`, a transport/private-draft Durable Object plus durable per-owner draft
+  registry, OAuth 2.1 (GitHub) auth; the Worker also serves the app. Verified
+  live end-to-end (auth → build → validate → tidy → render).
+
+### Phase 0 — shared human-agent workspace (vertical slice)
+
+- One canonical `TopologyDocument` coordinator per owner/document with atomic
+  revisions, idempotent semantic operation batches, field-level optimistic
+  rebase, and explicit conflicts.
+- Per-page snapshots instead of one whole-document storage value; bounded
+  change log, manifest, and targeted element hydration keep both storage and
+  model context proportional to the affected region.
+- **Suggest only** agent default: named proposals reviewed/accepted/rejected in
+  the editor as one revision. Direct agent commits require a browser-granted,
+  revocable ten-minute current-page lease.
+- Failure-safe lazy migration from the login-keyed `tdoc:` registry into a
+  stable numeric-owner directory. The source snapshot remains intact, while
+  stale legacy mutation is refused after handoff.
+- Agent Workspace UI: hand off the local document, open existing/legacy
+  workspaces, see sync/revision/conflict state, review semantic proposal detail,
+  and grant/revoke the page lease.
+- Remote MCP delta surface: canonical workspace creation/listing, manifest,
+  on-demand operation vocabulary, bounded changes, targeted elements, proposals,
+  and leased operations. See
+  [`proposals/0002-shared-human-agent-workspace.md`](proposals/0002-shared-human-agent-workspace.md).
 
 ## Next / candidate
 
 - **MCP auth hardening** — graduate the single shared secret to per-key KV
   (mint / revoke / label) or full OAuth, if multiple revocable credentials are
   needed.
-- **Durable session persistence** — persist a remote session's topology to DO
-  storage so it survives hibernation (today it's in-memory for the session).
+- **Workspace review polish** — rendered before/after proposal preview,
+  selective acceptance, named checkpoints, restore/fork, and revision timeline.
+- **Workspace resilience/collaboration** — IndexedDB offline cache, WebSocket
+  push/presence, explicit collaborator/organization ACLs, and finer element-set
+  leases. Add CRDTs only if offline multi-master editing becomes a measured need.
+- **Adaptive authoring profiles** — learn repeated, durable user corrections as
+  scoped preference candidates; require confirmation before application; fetch
+  only task-relevant rules under a hard token budget. MCP schemas remain stable,
+  while product guidance evolves through reviewed/versioned packs. See
+  [`proposals/0003-adaptive-agent-authoring-profiles.md`](proposals/0003-adaptive-agent-authoring-profiles.md).
 - **Surface layout warnings in the GUI** — show `analyzeLayout` results in the
   editor (inline badges), not just via the API.
 - **More node/link art** — port additional renderers from the legacy monolith as

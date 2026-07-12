@@ -22,6 +22,7 @@ import {
   loginPage,
   startWebLogin,
 } from './auth.js';
+import { handleWorkspaceApi } from './workspace-api.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -197,6 +198,8 @@ async function route(
   if (pathname === '/auth/github') return startWebLogin(request, env);
   if (pathname === '/logout') return handleLogout();
   if (pathname === '/api/me') return handleMe(request, env);
+  if (pathname === '/api/workspaces' || pathname.startsWith('/api/workspaces/'))
+    return handleWorkspaceApi(request, env);
 
   // MCP OAuth provider flow. `/callback` is shared: the browser login uses a
   // `web.`-prefixed state, the MCP client flow does not.

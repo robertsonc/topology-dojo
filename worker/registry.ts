@@ -1,11 +1,8 @@
 /**
- * Per-user document registry — a Durable Object addressed by
- * `idFromName("user:<login>")`, so every MCP session a user opens routes to the
- * SAME storage. This decouples authored documents from the ephemeral,
- * per-session `McpAgent` DO (named `streamable-http:<sessionId>`): a topology
- * created in one tool call must be visible to the next even when the client
- * doesn't carry an `mcp-session-id` and each call lands on a fresh session DO
- * (the "unknown topology" bug).
+ * Per-owner directory and legacy draft registry. Existing draft registries use
+ * `idFromName("user:<login>")`; new workspace directories use the stable
+ * `idFromName("user-id:<numeric-id>")`. Both decouple owner state from the
+ * ephemeral per-session `McpAgent` DO.
  *
  * It exposes exactly the `DocStorage` slice `persist-store` needs, so the same
  * rehydrate/persist logic runs unchanged against a registry stub over RPC.
@@ -13,6 +10,13 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { WorkerEnv } from './env.js';
 import type { DocStorage } from '../src/mcp/persist-store.js';
+import type {
+  WorkspaceDirectoryRecord,
+  WorkspaceListItem,
+} from '../src/workspace/model.js';
+
+const WORKSPACE_PREFIX = 'workspace:';
+const LEGACY_PREFIX = 'tdoc:';
 
 export class TopologyRegistry
   extends DurableObject<WorkerEnv>
@@ -28,5 +32,74 @@ export class TopologyRegistry
 
   async delete(key: string): Promise<boolean> {
     return this.ctx.storage.delete(key);
+  }
+
+  async legacyDocument(id: string): Promise<string | null> {
+    return (await this.ctx.storage.get<string>(LEGACY_PREFIX + id)) ?? null;
+  }
+
+  async workspaceRecord(id: string): Promise<WorkspaceDirectoryRecord | null> {
+    return (
+      (await this.ctx.storage.get<WorkspaceDirectoryRecord>(
+        WORKSPACE_PREFIX + id,
+      )) ?? null
+    );
+  }
+
+  async hasWorkspace(id: string): Promise<boolean> {
+    return Boolean(await this.workspaceRecord(id));
+  }
+
+  async markWorkspace(record: WorkspaceDirectoryRecord): Promise<void> {
+    await this.ctx.storage.put(WORKSPACE_PREFIX + record.id, record);
+  }
+
+  async workspaceIds(): Promise<string[]> {
+    const records = await this.ctx.storage.list<WorkspaceDirectoryRecord>({
+      prefix: WORKSPACE_PREFIX,
+    });
+    return [...records.values()].map((record) => record.id);
+  }
+
+  /**
+   * Directory listing used by both browser and MCP. Legacy values have no
+   * metadata key, so their title/page count is read defensively in-place; the
+   * full JSON never leaves this registry RPC merely to produce a listing.
+   */
+  async listWorkspaceSources(): Promise<WorkspaceListItem[]> {
+    const [workspaces, legacy] = await Promise.all([
+      this.ctx.storage.list<WorkspaceDirectoryRecord>({
+        prefix: WORKSPACE_PREFIX,
+      }),
+      this.ctx.storage.list<string>({ prefix: LEGACY_PREFIX }),
+    ]);
+    const migrated = new Set(
+      [...workspaces.values()].map((record) => record.id),
+    );
+    const current: WorkspaceListItem[] = [...workspaces.values()].map(
+      (record) => ({
+        id: record.id,
+        title: record.title,
+        pages: record.pages,
+        revision: record.revision,
+        migrated: true,
+        updatedAt: record.updatedAt,
+      }),
+    );
+    for (const [key, json] of legacy) {
+      const id = key.slice(LEGACY_PREFIX.length);
+      if (migrated.has(id)) continue;
+      let title = 'Untitled';
+      let pages = 0;
+      try {
+        const raw = JSON.parse(json) as { title?: unknown; pages?: unknown };
+        if (typeof raw.title === 'string') title = raw.title;
+        if (Array.isArray(raw.pages)) pages = raw.pages.length;
+      } catch {
+        // Keep corrupt legacy entries visible; opening one reports the parse error.
+      }
+      current.push({ id, title, pages, revision: null, migrated: false });
+    }
+    return current.sort((a, b) => a.title.localeCompare(b.title));
   }
 }

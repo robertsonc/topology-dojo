@@ -19,6 +19,7 @@ import type { TopologyDocument } from '../src/pages/model.js';
 import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
 import type { WorkerEnv } from './env.js';
+import { WorkspaceService } from './workspaces.js';
 
 /** Short, URL-safe id for a published snapshot (collision-negligible for this use). */
 function shareId(): string {
@@ -29,12 +30,12 @@ function shareId(): string {
 const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 /**
- * Tools that only read the registry — no persistence needed after them. Anything
- * NOT listed is treated as a mutation and triggers a write-back, so a new
- * mutating tool is durable by default (fail safe). The connect/* tools query a
- * live data source and never touch the store.
+ * Tools that do not mutate the legacy in-memory TopologyStore. Workspace write
+ * tools are included because they persist atomically through their document
+ * coordinator; they must not trigger a stale legacy-store write-back. Anything
+ * else is treated as a legacy mutation and triggers persistence by default.
  */
-const READONLY_TOOLS = new Set<string>([
+const NO_LEGACY_PERSIST_TOOLS = new Set<string>([
   'describe_capabilities',
   'list_topologies',
   'list_templates',
@@ -50,6 +51,14 @@ const READONLY_TOOLS = new Set<string>([
   'get_overlay_policies',
   'list_flows',
   'get_flow_details',
+  'create_workspace',
+  'list_workspaces',
+  'get_workspace_manifest',
+  'describe_workspace_operations',
+  'get_workspace_changes',
+  'get_workspace_elements',
+  'propose_workspace_changes',
+  'apply_workspace_changes',
 ]);
 
 export class TopologyMcp extends McpAgent<WorkerEnv> {
@@ -71,15 +80,18 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
             apiKey: this.env.ORCH_API_KEY,
           })
         : undefined;
+    const workspace = this.workspaceService();
     registerTopologyTools(
       this.server,
       {
         renderDocument,
         publishTopology: (doc: TopologyDocument) => this.publish(doc),
         ...(provider ? { provider } : {}),
+        ...(workspace ? { workspace } : {}),
       },
       this.store,
       (toolName) => this.persistAfter(toolName),
+      (toolName, args) => this.beforeTool(toolName, args),
     );
   }
 
@@ -109,6 +121,9 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
           `topology rehydrate: ${failed.length} unparseable doc(s) left intact`,
           failed,
         );
+      const workspace = this.workspaceService();
+      if (workspace)
+        for (const id of await workspace.migratedIds()) this.store.unload(id);
     } catch (err) {
       // A storage hiccup (or a missing user) shouldn't block tool registration
       // — start empty. persist is explicit-delete only, so it can never mirror
@@ -123,12 +138,47 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
    * (the mutation still took effect in memory for the rest of the session).
    */
   private async persistAfter(toolName: string): Promise<void> {
-    if (READONLY_TOOLS.has(toolName)) return;
+    if (NO_LEGACY_PERSIST_TOOLS.has(toolName)) return;
     try {
+      const workspace = this.workspaceService();
+      if (workspace)
+        for (const id of await workspace.migratedIds()) this.store.unload(id);
       await persistStore(this.store, this.registry());
     } catch (err) {
       console.error(`topology persist after ${toolName} failed`, err);
     }
+  }
+
+  /** Prevent an old session from reading or writing a stale legacy copy after
+   * that topology has been handed to the canonical document coordinator. */
+  private async beforeTool(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    const workspace = this.workspaceService();
+    if (!workspace) return;
+    if (toolName === 'list_topologies') {
+      for (const id of await workspace.migratedIds()) this.store.unload(id);
+      return;
+    }
+    if (args.topologyId === undefined) return;
+    const id = String(args.topologyId);
+    if (await workspace.isMigrated(id))
+      throw new Error(
+        `topology "${id}" is now a shared workspace; use get_workspace_manifest and the workspace change tools`,
+      );
+  }
+
+  private workspaceService(): WorkspaceService | undefined {
+    const props = this.props as
+      | { id?: number; login?: string; name?: string | null }
+      | undefined;
+    if (props?.id === undefined || !props.login) return undefined;
+    return new WorkspaceService(this.env, {
+      uid: String(props.id),
+      login: props.login,
+      ...(props.name ? { name: props.name } : {}),
+    });
   }
 
   /** Store a document snapshot in KV and return the link that opens it. */
