@@ -114,6 +114,9 @@ Built methodically, one reviewable PR at a time, each reviewed against
 
 ## Next / candidate
 
+The items below are sequenced into dependency-ordered implementation packets
+in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+
 - **Isolated staging and deployment safety** — disable broken non-production
   version uploads on the production Worker; provision separate staging OAuth,
   KV, and Durable Object resources; make GitHub Actions the single CI-gated
