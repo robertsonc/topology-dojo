@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit && tsc -p worker/tsconfig.json --noEmit",
     "mcp": "tsx src/mcp/server.ts",
     "deploy": "npm run build && wrangler deploy",
+    "smoke": "node scripts/smoke.mjs",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write ."
   },
