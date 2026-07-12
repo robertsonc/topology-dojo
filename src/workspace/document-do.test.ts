@@ -1,12 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { build } from 'esbuild';
-import { Miniflare, Log, LogLevel } from 'miniflare';
-import { unlink } from 'node:fs/promises';
-import { resolve } from 'node:path';
-
-const bundlePath = resolve(
-  `.workspace-do-test-${process.pid}-${Date.now()}.mjs`,
-);
+import {
+  buildWorkerBundle,
+  startMiniflare,
+  type MiniflareHandle,
+} from '../testing/worker-harness.js';
 
 const harness = String.raw`
 import { TopologyDocument } from './worker/document.ts';
@@ -40,10 +37,10 @@ export default {
 };
 `;
 
-let miniflare: Miniflare;
+let handle: MiniflareHandle;
 
 async function dispatch(input: Record<string, unknown>) {
-  return miniflare.dispatchFetch('http://workspace.test/', {
+  return handle.fetch('/', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
@@ -86,34 +83,19 @@ function patch(
 }
 
 beforeAll(async () => {
-  await build({
-    stdin: {
-      contents: harness,
-      loader: 'ts',
-      resolveDir: process.cwd(),
-      sourcefile: 'workspace-do-harness.ts',
-    },
-    bundle: true,
-    format: 'esm',
-    platform: 'browser',
-    external: ['cloudflare:workers'],
-    outfile: bundlePath,
-    logLevel: 'silent',
+  const bundle = await buildWorkerBundle(harness, {
+    sourcefile: 'workspace-do-harness.ts',
   });
-  miniflare = new Miniflare({
-    scriptPath: bundlePath,
-    modules: true,
-    compatibilityDate: '2026-06-07',
+  handle = await startMiniflare({
+    bundle,
     durableObjects: {
       DOC: { className: 'TopologyDocument', useSQLite: true },
     },
-    log: new Log(LogLevel.ERROR),
   });
 }, 30_000);
 
 afterAll(async () => {
-  await miniflare?.dispose();
-  await unlink(bundlePath).catch(() => undefined);
+  await handle?.dispose();
 });
 
 describe('TopologyDocument Durable Object', () => {
