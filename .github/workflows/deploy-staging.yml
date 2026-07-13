@@ -88,7 +88,7 @@ jobs:
         run: |
           set -o pipefail
           node scripts/smoke.mjs https://topology-dojo-staging.robertson-corey.workers.dev \
-            --sha "$SHA" --json | tee smoke-output.txt
+            --sha "$SHA" --wait-live 180 --json | tee smoke-output.txt
       # Dynamic values are passed through `env:` (never interpolated
       # directly into the script) since `ref` is free-text
       # `workflow_dispatch` input and must not be treated as shell code.
