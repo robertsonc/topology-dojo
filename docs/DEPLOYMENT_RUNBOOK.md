@@ -110,7 +110,10 @@ Review the effective configuration before continuing:
 
 ### First full staging deploy
 
-Use the protected staging workflow. The underlying command is:
+Dispatch [`deploy-staging.yml`](../.github/workflows/deploy-staging.yml)
+(`workflow_dispatch`, optional `ref` input — defaults to the ref the run was
+dispatched on). It re-runs the `ci.yml` `check` job against the resolved
+commit, then deploys. The underlying command is:
 
 ```bash
 npx wrangler deploy --env staging
@@ -127,11 +130,15 @@ required checks pass.
 
 ## Routine staging deployment
 
-1. Select the candidate SHA in the protected staging workflow.
+1. Dispatch `deploy-staging.yml` with the candidate `ref` (branch, tag, or
+   SHA).
 2. Confirm no other UAT candidate currently owns staging.
-3. Require a green CI check for that SHA.
-4. Deploy with the staging environment and concurrency lock.
-5. Record the active SHA in the workflow summary.
+3. Require a green CI check for that SHA (the workflow re-runs `ci.yml`
+   itself before deploying).
+4. Deploy with the `staging` GitHub Environment and the
+   `topology-dojo-staging` concurrency group (a newer dispatch cancels a
+   queued/running older one).
+5. Record the active SHA in the workflow run summary.
 6. Run automated HTTP smoke tests.
 7. Run browser/MCP/workspace smoke when the change touches auth, Worker routes,
    bindings, storage, or workspace behavior.
@@ -145,8 +152,14 @@ their recorded SHA does not match the current deployment.
 1. Confirm the exact SHA passed CI and staging smoke.
 2. Review the diff from the currently deployed production SHA.
 3. Confirm no new migration tag appears.
-4. Obtain production environment approval.
-5. Deploy from the protected workflow.
+4. Dispatch [`deploy-production.yml`](../.github/workflows/deploy-production.yml)
+   from `main` (its `guard` job rejects any other ref unless an explicit
+   `recovery_sha` is supplied) and obtain the required `production`
+   environment approval.
+5. The workflow re-runs `ci.yml`, then deploys with
+   `wrangler deploy --env=""` (the explicit empty-string environment is
+   required once `env.staging` exists — a bare `wrangler deploy` only warns
+   and refuses to guess).
 6. Run production-safe smoke checks.
 7. Observe error rate and auth failures for the agreed window.
 8. Record the result and update the deployment inventory.
@@ -170,6 +183,10 @@ For migration `v3`, deploy with workspace entry points disabled:
 ```text
 WORKSPACE_ENABLED=false
 ```
+
+Dispatch `deploy-production.yml` with its `expect_workspace_disabled` input
+set to `true` so the workflow's smoke step asserts the 503
+`workspace_disabled` contract instead of the normal 401.
 
 The bundle must still export `TopologyDocument`, bind `TOPOLOGY_DOCUMENT`, and
 include `v3`. After deployment:
