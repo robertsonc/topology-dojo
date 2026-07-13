@@ -73,6 +73,13 @@ let current = 0;
 const app = document.getElementById('app')!;
 
 app.innerHTML = `
+  <!-- Shared engine SVG defs (glow/bloom/gradient filters) mounted ONCE at the
+       app root, ahead of every consumer in DOM order, so canvas nodes, palette
+       previews, and the minimap all resolve url(#tds-*) references here. It must
+       live outside any collapsible container and stay in the render tree — hence
+       width/height 0 + position:absolute + aria-hidden rather than display:none,
+       which would break paint-server resolution in several browsers. -->
+  <svg id="tds-defs-sprite" class="svg-defs-sprite" width="0" height="0" aria-hidden="true" focusable="false"></svg>
   <header class="bar scroll-slim">
     <div class="bar-left">
       <span class="brand" title="Topology Dojo">
@@ -207,6 +214,12 @@ app.innerHTML = `
   <footer class="filmstrip scroll-slim" id="filmstrip"></footer>
   <footer class="statusbar scroll-slim" id="statusbar"></footer>
 `;
+
+// Populate the root defs sprite once. These are the engine's static shared
+// filters/gradients (brand-independent), identical to the copy the palette used
+// to inline into #palette-list — but here they can never be unmounted or hidden
+// by a panel collapse.
+app.querySelector<SVGSVGElement>('#tds-defs-sprite')!.innerHTML = engineDefs();
 
 const artSvg = app.querySelector<SVGSVGElement>('#page-canvas')!;
 const overlaySvg = app.querySelector<SVGSVGElement>('#overlay')!;
@@ -2031,8 +2044,10 @@ function buildPalette(): void {
     list.push(info);
     byCat.set(info.category, list);
   }
-  // One shared copy of the engine's filter/gradient defs for every preview.
-  let html = `<svg class="pdefs" width="0" height="0" aria-hidden="true">${engineDefs()}</svg>`;
+  // Palette previews reference the engine filter/gradient defs by id; those defs
+  // are mounted once in the app-root #tds-defs-sprite (see app.innerHTML), so the
+  // palette no longer carries its own copy — a collapse can't strip them anymore.
+  let html = ``;
   for (const [cat, infos] of byCat) {
     html += `<div class="palette-h">${esc(cat)}</div>`;
     for (const info of infos) {

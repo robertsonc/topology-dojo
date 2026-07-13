@@ -45,6 +45,17 @@
         box-sizing: border-box;
       }
 
+      /* Root SVG defs sprite: present in the render tree but visually absent.
+         Never use display:none here — it disables the paint servers that canvas
+         nodes and palette previews reference by url(#…). */
+      .svg-defs-sprite {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
       /* Slim hover-reveal scrollbars — shared across editor chrome panels
          (palette, properties, dialogs, dropdowns, filmstrip). Applied via the
          .scroll-slim utility, never on the canvas viewport.
@@ -755,8 +766,7 @@
       .palette-list > .palette-h,
       .palette-list > .palette-empty,
       .palette-list > .pcustom,
-      .palette-list > .pitem.design,
-      .palette-list > .pdefs {
+      .palette-list > .pitem.design {
         grid-column: 1 / -1;
       }
       .palette-empty {
@@ -816,11 +826,6 @@
       .pitem.design {
         justify-content: center;
         color: var(--muted);
-      }
-      .pdefs {
-        position: absolute;
-        width: 0;
-        height: 0;
       }
       .pitem:hover {
         border-color: rgba(1, 169, 130, 0.5);
