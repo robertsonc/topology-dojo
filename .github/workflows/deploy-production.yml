@@ -1,0 +1,160 @@
+name: Deploy Production
+
+# Manual-only, protected by branch protection on the required `CI / check`
+# status plus the `production` GitHub Environment's required reviewers
+# (operator checklist O6). The `guard` job below additionally enforces that
+# a normal run only ever dispatches from `main`; `recovery_sha` is the sole,
+# explicit escape hatch for forward-recovery (proposal 0004, decision 5 /
+# docs/ROLLBACK.md).
+on:
+  workflow_dispatch:
+    inputs:
+      recovery_sha:
+        description: >-
+          Explicit commit SHA to deploy instead of the tip of `main`. Use
+          only for a protected forward-recovery deploy
+          (docs/ROLLBACK.md) — leave empty for a routine release.
+        required: false
+        type: string
+        default: ''
+      expect_workspace_disabled:
+        description: >-
+          Assert the workspace_disabled (503) contract in smoke instead of
+          the normal 401. Set this for the v3 bootstrap deploy only
+          (`WORKSPACE_ENABLED=false`, operator checklist O10).
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# No cancel-in-progress: a running production deploy must finish (or be
+# manually intervened on) rather than be silently superseded mid-flight.
+concurrency:
+  group: topology-dojo-production
+
+jobs:
+  # Fails the run before anything else happens unless this dispatch is
+  # either (a) from the protected `main` branch, or (b) an explicit named
+  # recovery SHA. Branch protection on workflow_dispatch's branch selector
+  # is not itself a guarantee here, so this is enforced in-workflow too.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      # `recovery_sha` is free-text `workflow_dispatch` input; it is passed
+      # through `env:` and read as `$RECOVERY_SHA`, never interpolated
+      # directly into the script, so it cannot be treated as shell code.
+      - name: Enforce protected production trigger
+        env:
+          GH_REF: ${{ github.ref }}
+          RECOVERY_SHA: ${{ inputs.recovery_sha }}
+        run: |
+          if [ "$GH_REF" != "refs/heads/main" ] && [ -z "$RECOVERY_SHA" ]; then
+            echo "::error::Production deploys must be dispatched from refs/heads/main, or supply recovery_sha for an explicit, named recovery deploy (docs/ROLLBACK.md)."
+            exit 1
+          fi
+
+  # Resolves the exact commit to deploy: `recovery_sha` when given, else the
+  # tip of `main`. Recorded as an output SHA (not trusted as a bare ref)
+  # so the same commit is what gets checked, built, deployed, and
+  # smoke-tested.
+  resolve-ref:
+    needs: guard
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.recovery_sha || 'main' }}
+      - id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: resolve-ref
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.resolve-ref.outputs.sha }}
+
+  deploy:
+    needs: [resolve-ref, check]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://topology-dojo.robertson-corey.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-ref.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Wrangler env isolation check
+        run: node scripts/check-wrangler-env.mjs
+      - name: Read migration tags
+        id: migrations
+        run: |
+          TAGS=$(node --input-type=module -e '
+            import { parseWranglerJsonc } from "./scripts/check-wrangler-env.mjs";
+            import { readFileSync } from "node:fs";
+            const cfg = parseWranglerJsonc(readFileSync("wrangler.jsonc", "utf8"));
+            console.log((cfg.migrations ?? []).map((m) => m.tag).join(", "));
+          ')
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+      - name: Deploy to production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SHA: ${{ needs.resolve-ref.outputs.sha }}
+        # `--env=""` (not a bare `wrangler deploy`) is required: Wrangler
+        # warns that multiple environments are defined in wrangler.jsonc
+        # (env.staging exists alongside the top-level/production config)
+        # and refuses to guess which one a plain `wrangler deploy` means.
+        # Passing an explicit empty-string environment targets the
+        # top-level (production) config, per D1's verified behavior.
+        run: npx wrangler deploy --env="" --var "GIT_SHA:$SHA"
+      - name: Smoke test production
+        id: smoke
+        env:
+          SHA: ${{ needs.resolve-ref.outputs.sha }}
+          EXPECT_WORKSPACE_DISABLED: ${{ inputs.expect_workspace_disabled }}
+        run: |
+          set -o pipefail
+          ARGS=(--sha "$SHA" --json)
+          if [ "$EXPECT_WORKSPACE_DISABLED" = "true" ]; then
+            ARGS+=(--expect-workspace-disabled)
+          fi
+          node scripts/smoke.mjs https://topology-dojo.robertson-corey.workers.dev "${ARGS[@]}" | tee smoke-output.txt
+      # Dynamic values are passed through `env:` (never interpolated
+      # directly into the script) since `recovery_sha` is free-text
+      # `workflow_dispatch` input and must not be treated as shell code.
+      - name: Write deployment summary
+        if: always()
+        env:
+          SHA: ${{ needs.resolve-ref.outputs.sha }}
+          ACTOR: ${{ github.actor }}
+          RECOVERY_SHA_INPUT: ${{ inputs.recovery_sha }}
+          MIGRATION_TAGS: ${{ steps.migrations.outputs.tags }}
+          EXPECT_WORKSPACE_DISABLED: ${{ inputs.expect_workspace_disabled }}
+        run: |
+          {
+            echo "### Topology Dojo production deployment"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Commit SHA | \`$SHA\` |"
+            echo "| Actor | \`$ACTOR\` |"
+            echo "| Recovery SHA input | \`${RECOVERY_SHA_INPUT:-(none — routine release from main)}\` |"
+            echo "| Migration tags | \`$MIGRATION_TAGS\` |"
+            echo "| expect_workspace_disabled | \`$EXPECT_WORKSPACE_DISABLED\` |"
+            echo ""
+            echo "#### Smoke result"
+            echo ""
+            echo '```json'
+            tail -n 1 smoke-output.txt 2>/dev/null || echo "(smoke did not run)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,118 @@
+name: Deploy Staging
+
+# Manual-only (proposal 0004, decision 3 / operator checklist O7): staging is
+# a single mutable release-candidate environment, never deployed on every
+# push. See docs/proposals/0004-isolated-staging-and-deployment-pipeline.md
+# and docs/DEPLOYMENT_RUNBOOK.md ("Routine staging deployment").
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: >-
+          Git ref (branch, tag, or commit SHA) to deploy. Defaults to the
+          ref this workflow run was dispatched on.
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# Only one release candidate owns staging at a time (proposal 0004, decision
+# 1): a newer dispatch cancels a queued/running older one instead of racing
+# it for the same Worker script.
+concurrency:
+  group: topology-dojo-staging
+  cancel-in-progress: true
+
+jobs:
+  # Resolves `inputs.ref` (or, if empty, the ref this run was dispatched on)
+  # to a concrete commit SHA once, so the exact same commit is what gets
+  # checked (via the reusable `check` call below), built, deployed, and
+  # smoke-tested — a branch name could otherwise move between those steps.
+  resolve-ref:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: resolve-ref
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.resolve-ref.outputs.sha }}
+
+  deploy:
+    needs: [resolve-ref, check]
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://topology-dojo-staging.robertson-corey.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-ref.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Wrangler env isolation check
+        run: node scripts/check-wrangler-env.mjs
+      - name: Read migration tags
+        id: migrations
+        run: |
+          TAGS=$(node --input-type=module -e '
+            import { parseWranglerJsonc } from "./scripts/check-wrangler-env.mjs";
+            import { readFileSync } from "node:fs";
+            const cfg = parseWranglerJsonc(readFileSync("wrangler.jsonc", "utf8"));
+            console.log((cfg.env?.staging?.migrations ?? []).map((m) => m.tag).join(", "));
+          ')
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+      - name: Deploy to staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SHA: ${{ needs.resolve-ref.outputs.sha }}
+        run: npx wrangler deploy --env staging --var "GIT_SHA:$SHA"
+      - name: Smoke test staging
+        id: smoke
+        env:
+          SHA: ${{ needs.resolve-ref.outputs.sha }}
+        run: |
+          set -o pipefail
+          node scripts/smoke.mjs https://topology-dojo-staging.robertson-corey.workers.dev \
+            --sha "$SHA" --json | tee smoke-output.txt
+      # Dynamic values are passed through `env:` (never interpolated
+      # directly into the script) since `ref` is free-text
+      # `workflow_dispatch` input and must not be treated as shell code.
+      - name: Write deployment summary
+        if: always()
+        env:
+          SHA: ${{ needs.resolve-ref.outputs.sha }}
+          ACTOR: ${{ github.actor }}
+          DISPATCHED_REF: ${{ inputs.ref || github.ref }}
+          MIGRATION_TAGS: ${{ steps.migrations.outputs.tags }}
+        run: |
+          {
+            echo "### Topology Dojo staging deployment"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Commit SHA | \`$SHA\` |"
+            echo "| Actor | \`$ACTOR\` |"
+            echo "| Dispatched ref | \`$DISPATCHED_REF\` |"
+            echo "| Migration tags | \`$MIGRATION_TAGS\` |"
+            echo ""
+            echo "#### Smoke result"
+            echo ""
+            echo '```json'
+            tail -n 1 smoke-output.txt 2>/dev/null || echo "(smoke did not run)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
