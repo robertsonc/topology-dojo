@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc -p worker/tsconfig.json --noEmit",
     "mcp": "tsx src/mcp/server.ts",
-    "deploy": "npm run build && wrangler deploy",
+    "check:wrangler": "node scripts/check-wrangler-env.mjs",
+    "deploy:staging": "npm run build && node scripts/check-wrangler-env.mjs && wrangler deploy --env staging",
     "smoke": "node scripts/smoke.mjs",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write ."

@@ -98,9 +98,12 @@ npx wrangler kv namespace create TOPOLOGY_KV --env staging
 npx wrangler deploy --env staging
 ```
 
-Do not run `npm run deploy` as a preview command; it targets the top-level
-production configuration. See the deployment runbook for production approval,
-migration bootstrap, and smoke requirements.
+There is no `npm run deploy` script — a laptop cannot deploy production (finding
+L1). `npm run deploy:staging` runs the build, `check-wrangler-env.mjs`, and
+`wrangler deploy --env staging` for local staging preflight; the protected
+staging/production workflows are the only paths that actually publish a
+deployment. See the deployment runbook for production approval, migration
+bootstrap, and smoke requirements.
 
 ## Model
 

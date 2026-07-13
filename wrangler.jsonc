@@ -57,4 +57,58 @@
     { "tag": "v3", "new_sqlite_classes": ["TopologyDocument"] },
   ],
   "observability": { "enabled": true },
+  // env.staging — isolated, production-like preview surface (proposal 0004,
+  // decisions 1-2: docs/proposals/0004-isolated-staging-and-deployment-pipeline.md,
+  // "Wrangler configuration shape"). Wrangler does NOT inherit `vars`,
+  // `kv_namespaces`, `durable_objects`, or `migrations` into named
+  // environments, so every one of those keys is repeated here in full rather
+  // than partially overridden — a partial override is silently wrong, not
+  // rejected. `name` is set explicitly (instead of relying on Wrangler's
+  // `<name>-<env>` auto-suffix) so this file is unambiguous about which
+  // script — and therefore which Durable Object namespace — staging owns.
+  // No staging Durable Object binding sets `script_name`, so each class gets
+  // its own namespace scoped to `topology-dojo-staging`, never production's.
+  // `scripts/check-wrangler-env.mjs` (run in CI and by `npm run
+  // deploy:staging`) asserts staging never shares a KV id, DO script, or
+  // identity value with production; see that script for the full rule list.
+  "env": {
+    "staging": {
+      "name": "topology-dojo-staging",
+      "vars": {
+        // Staging origin (the staging GitHub OAuth App's callback is
+        // <this>/callback). Never the production PUBLIC_BASE_URL.
+        "PUBLIC_BASE_URL": "https://topology-dojo-staging.robertson-corey.workers.dev",
+        // Staging-only GitHub OAuth App client id (operator checklist O3);
+        // its secret is set independently via `wrangler secret put
+        // GITHUB_CLIENT_SECRET --env staging` (O4). Never the production id.
+        "GITHUB_CLIENT_ID": "Ov23liEpiupkYUA9L4vu",
+        // Explicit (rather than relying on the unset-means-enabled default)
+        // for clarity, per worker/env.ts `workspaceEnabled()`.
+        "WORKSPACE_ENABLED": "true",
+      },
+      // Staging's own KV namespaces (operator checklist O2) — never the
+      // production ids above.
+      "kv_namespaces": [
+        { "binding": "TOPOLOGY_KV", "id": "9919607c2b7941e7b258d2427da28fe4" },
+        { "binding": "OAUTH_KV", "id": "9aaf419994d74908b095989110375571" },
+      ],
+      // Same three bindings as top-level, with no `script_name` override, so
+      // each class resolves against the `topology-dojo-staging` script and
+      // gets its own Durable Object namespace.
+      "durable_objects": {
+        "bindings": [
+          { "name": "MCP_OBJECT", "class_name": "TopologyMcp" },
+          { "name": "TOPOLOGY_REGISTRY", "class_name": "TopologyRegistry" },
+          { "name": "TOPOLOGY_DOCUMENT", "class_name": "TopologyDocument" },
+        ],
+      },
+      // Full migration history repeated verbatim — staging must apply the
+      // exact same v1-v3 sequence production does.
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] },
+        { "tag": "v2", "new_sqlite_classes": ["TopologyRegistry"] },
+        { "tag": "v3", "new_sqlite_classes": ["TopologyDocument"] },
+      ],
+    },
+  },
 }
