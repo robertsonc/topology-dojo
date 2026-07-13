@@ -190,16 +190,22 @@ do not roll back across `v3`.
 
 ### Automated HTTP smoke
 
-| Request                                       | Expected                                     |
-| --------------------------------------------- | -------------------------------------------- |
-| `GET /healthz`                                | `200`, build SHA/environment, no secret data |
-| `GET /login`                                  | `200`, login page                            |
-| `GET /` without session                       | Redirect to `/login`                         |
-| `GET /.well-known/oauth-authorization-server` | `200`, valid metadata                        |
-| `GET /api/topology/nonexistent`               | `404`, controlled JSON error                 |
+| Request                                       | Expected                                                  |
+| --------------------------------------------- | --------------------------------------------------------- |
+| `GET /healthz`                                | `200 { ok: true, sha, workspaceEnabled }`, no secret data |
+| `GET /login`                                  | `200`, login page                                         |
+| `GET /` without session                       | Redirect to `/login`                                      |
+| `GET /.well-known/oauth-authorization-server` | `200`, valid metadata                                     |
+| `GET /api/topology/nonexistent`               | `404`, controlled JSON error                              |
 
-Until `/healthz` is implemented, omit that row rather than substituting a
-state-changing endpoint.
+`scripts/smoke.mjs` runs the `/healthz` check unauthenticated against any
+environment; pass `--sha <deployed-sha>` to assert the deployed commit
+matches. `GET /readyz` is a deeper, owner-authenticated readiness check (a
+`TOPOLOGY_KV` round-trip, a `TOPOLOGY_REGISTRY` DO echo, and — when
+`WORKSPACE_ENABLED` — a `TOPOLOGY_DOCUMENT` DO echo; `200` when every binding
+is reachable, `503` naming the failing binding otherwise). It requires a
+signed-in session, so it is a manual/UAT check, not part of the
+unauthenticated-safe automated smoke subset above.
 
 ### Browser OAuth smoke
 

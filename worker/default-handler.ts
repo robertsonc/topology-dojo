@@ -46,6 +46,149 @@ function workspaceDisabledResponse(): Response {
   });
 }
 
+const NO_STORE = 'no-store';
+
+/** 405 for a non-GET request to a GET-only health/readiness route. */
+function methodNotAllowed(): Response {
+  return new Response('Method Not Allowed\n', {
+    status: 405,
+    headers: { 'cache-control': NO_STORE },
+  });
+}
+
+/**
+ * `GET /healthz` — unauthenticated liveness. Proves the Worker script is
+ * running and reports its build identity, nothing more: no KV, no Durable
+ * Object, no `ASSETS` fetch, no session check. That is what lets it live
+ * outside the `isDocumentNavigation` login gate below (see `route()`) and
+ * why `scripts/smoke.mjs` can call it with zero credentials against
+ * production at any time.
+ */
+function handleHealthz(request: Request, env: WorkerEnv): Response {
+  if (request.method !== 'GET') return methodNotAllowed();
+  const body = {
+    ok: true,
+    sha: env.GIT_SHA ?? null,
+    workspaceEnabled: workspaceEnabled(env),
+  };
+  return new Response(JSON.stringify(body), {
+    headers: { 'content-type': 'application/json', 'cache-control': NO_STORE },
+  });
+}
+
+/** Result of one binding probe in `GET /readyz`'s response body. */
+interface ReadyCheck {
+  name: string;
+  ok: boolean;
+  detail?: string;
+}
+
+function describeProbeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * `TOPOLOGY_KV` liveness: a `get` of a key namespaced so it can never collide
+ * with a real `doc:<id>` share snapshot (see `serveSnapshot` above). A miss
+ * is the expected, and only, result — it still proves the binding round-trips
+ * through the KV RPC layer, without ever writing a probe key that would need
+ * cleanup or could rot into stale storage.
+ */
+async function probeKv(env: WorkerEnv): Promise<ReadyCheck> {
+  try {
+    await env.TOPOLOGY_KV.get('__readyz_probe__');
+    return { name: 'kv', ok: true };
+  } catch (error) {
+    return { name: 'kv', ok: false, detail: describeProbeError(error) };
+  }
+}
+
+/**
+ * `TOPOLOGY_REGISTRY` liveness: `workspaceIds()` against the caller's own
+ * per-owner directory DO (`worker/workspaces.ts`'s `user-id:<uid>` naming).
+ * It is the cheapest existing read on that class — a single storage `list`
+ * already used by the real directory listing path — and, unlike a synthetic
+ * probe id, it addresses a DO the owner's normal traffic already touches.
+ * The id list itself never leaves this function; only pass/fail is reported.
+ */
+async function probeRegistry(
+  env: WorkerEnv,
+  ownerId: string,
+): Promise<ReadyCheck> {
+  try {
+    const ns = env.TOPOLOGY_REGISTRY;
+    const stub = ns.get(ns.idFromName(`user-id:${ownerId}`));
+    await stub.workspaceIds();
+    return { name: 'registry', ok: true };
+  } catch (error) {
+    return { name: 'registry', ok: false, detail: describeProbeError(error) };
+  }
+}
+
+/**
+ * `TOPOLOGY_DOCUMENT` liveness, only performed when `workspaceEnabled(env)`
+ * (mirrors the traffic gate on `/api/workspaces`). There is no per-owner
+ * "list" RPC on this class — each instance is one document — so this probes
+ * a dedicated coordinator id that follows the real
+ * `document:<owner>:<workspaceId>` naming scheme
+ * (`worker/workspaces.ts`'s `WorkspaceService.document`) but with a
+ * workspace id (`__readyz_probe__`) that `WorkspaceService.create` can never
+ * mint (real ids are `w_<uuid>`), so this coordinator is guaranteed to never
+ * be a real user's document. `isInitialized` only reads
+ * `this.ctx.storage.get(META_KEY)` (see `worker/document.ts`) and returns
+ * `false` for an uninitialized coordinator without writing anything — a
+ * true read-only echo, not a disguised initialize call.
+ */
+async function probeDocument(
+  env: WorkerEnv,
+  ownerId: string,
+): Promise<ReadyCheck> {
+  try {
+    const ns = env.TOPOLOGY_DOCUMENT;
+    const stub = ns.get(ns.idFromName(`document:${ownerId}:__readyz_probe__`));
+    await stub.isInitialized(ownerId);
+    return { name: 'document', ok: true };
+  } catch (error) {
+    return { name: 'document', ok: false, detail: describeProbeError(error) };
+  }
+}
+
+/**
+ * `GET /readyz` — owner-authenticated readiness. Reuses the exact session
+ * check `handleMe`/`/api/me` uses (`currentUser`), then round-trips every
+ * binding this deployment depends on (KV always; the registry DO always; the
+ * document DO only when the workspace surfaces are live) and reports
+ * per-binding pass/fail. Never returns document/workspace content — only
+ * booleans and, on failure, a bounded error message.
+ */
+async function handleReadyz(
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  if (request.method !== 'GET') return methodNotAllowed();
+  const user = await currentUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'authentication required' }), {
+      status: 401,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': NO_STORE,
+      },
+    });
+  }
+  const pending: Promise<ReadyCheck>[] = [
+    probeKv(env),
+    probeRegistry(env, user.uid),
+  ];
+  if (workspaceEnabled(env)) pending.push(probeDocument(env, user.uid));
+  const checks = await Promise.all(pending);
+  const ok = checks.every((check) => check.ok);
+  return new Response(JSON.stringify({ ok, checks }), {
+    status: ok ? 200 : 503,
+    headers: { 'content-type': 'application/json', 'cache-control': NO_STORE },
+  });
+}
+
 /**
  * Content-Security-Policy for every browser-facing response. `script-src 'self'`
  * (no `'unsafe-inline'`) is the key line: it blocks inline event handlers such
@@ -218,6 +361,12 @@ async function route(
   if (pathname === '/auth/github') return startWebLogin(request, env);
   if (pathname === '/logout') return handleLogout();
   if (pathname === '/api/me') return handleMe(request, env);
+  // Health/readiness: handled before the document-navigation login gate
+  // below so a direct browser visit to /healthz (which does send an
+  // `accept: text/html` document navigation) never redirects to /login —
+  // it must stay reachable, unauthenticated, from outside at all times.
+  if (pathname === '/healthz') return handleHealthz(request, env);
+  if (pathname === '/readyz') return handleReadyz(request, env);
   if (
     pathname === '/api/workspaces' ||
     pathname.startsWith('/api/workspaces/')
