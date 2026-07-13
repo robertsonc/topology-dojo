@@ -100,18 +100,18 @@ export function openNodeDesigner(
         <button class="nd-btn primary" id="nd-save">Save</button>
       </div>
       <div class="nd-body">
-        <div class="nd-col nd-left">
+        <div class="nd-col scroll-slim nd-left">
           <div class="nd-h">Base shape</div>
           <div class="nd-shapes">${SHAPE_KEYS.map((s) => `<button class="nd-shape ${s === spec.shape ? 'on' : ''}" data-shape="${s}" title="${s}">${shapeThumb(s)}</button>`).join('')}</div>
           <div class="nd-h">Icon</div>
           <div class="nd-icons">${iconPicker}</div>
         </div>
-        <div class="nd-col nd-center">
+        <div class="nd-col scroll-slim nd-center">
           <div class="tds-root nd-preview-wrap">
             <svg id="nd-preview" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet"></svg>
           </div>
         </div>
-        <div class="nd-col nd-right">
+        <div class="nd-col scroll-slim nd-right">
           <div class="nd-h">Colors</div>
           <label class="nd-row">Stroke</label>${swatchRow('colorStroke', spec.colorStroke)}
           <label class="nd-row">Fill</label>${swatchRow('colorFill', spec.colorFill)}
