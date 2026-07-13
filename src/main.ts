@@ -44,6 +44,7 @@ import { STOCK_NODE_SPECS } from './nodes/stock.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
+import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
 import { genId } from './api/builder.js';
@@ -444,7 +445,35 @@ fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
   fileInput.value = '';
   if (!file) return;
-  const parsed = parseDoc(await file.text());
+  const text = await file.text();
+
+  const classified = classifyOpenedFile(text);
+  if (classified.kind === 'legacy') {
+    if (!classified.result.ok) {
+      alert(
+        `Could not convert this legacy Topology Studio file: ${classified.result.error.message}`,
+      );
+      return;
+    }
+    const { document, warnings } = classified.result;
+    const shown = warnings.slice(0, 8);
+    const summary =
+      `Converted from legacy Topology Studio: ${document.pages.length} page(s), ${warnings.length} warning(s)` +
+      (shown.length
+        ? ':\n' +
+          shown.map((w) => `- ${w}`).join('\n') +
+          (warnings.length > shown.length
+            ? `\n+ ${warnings.length - shown.length} more`
+            : '')
+        : '') +
+      '\nLoad it?';
+    if (!confirm(summary)) return;
+    if (!closeWorkspaceForDocumentReplacement()) return;
+    loadDoc(document);
+    return;
+  }
+
+  const parsed = parseDoc(text);
   if (!parsed) {
     alert('That file is not a valid Topology Dojo document.');
     return;

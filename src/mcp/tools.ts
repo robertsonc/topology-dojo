@@ -51,6 +51,7 @@ import { POLICY_MARKER_TYPES } from '../api/markers.js';
 import { buildTemplate, listTemplates } from '../api/templates.js';
 import type { RenderOptions } from '../render/core.js';
 import type { TopologyDocument } from '../pages/model.js';
+import { convertLegacyStudio, detectLegacyStudio } from '../import/legacy.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
 import { TopologyStore } from './store.js';
 import {
@@ -249,19 +250,73 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'import_topology',
       description:
-        'Load a topology from document JSON (a string or object). Returns the new id.',
+        'Load a topology from document JSON (a string or object). Returns the new id. ' +
+        "Also accepts a legacy Topology Studio save (the older sibling app's format) " +
+        'and converts it, reporting any lossy-conversion warnings.',
       inputShape: {
         json: z
           .union([z.string(), z.record(z.string(), z.unknown())])
           .describe('Document JSON as a string or object.'),
         title: z.string().optional(),
+        format: z
+          .enum(['auto', 'topology-dojo', 'legacy-studio'])
+          .optional()
+          .describe(
+            '"auto" (default) detects a legacy Topology Studio save and converts it, ' +
+              'otherwise imports natively; "topology-dojo" requires the native document ' +
+              'shape (no legacy detection); "legacy-studio" always runs the legacy ' +
+              'converter, failing with a typed error if the input is not legacy-shaped.',
+          ),
       },
       handler: (a) => {
-        const { id, document } = store.import(
-          a.json,
-          a.title ? String(a.title) : undefined,
-        );
-        return { id, title: document.title, pages: document.pages.length };
+        const format = (a.format as string | undefined) ?? 'auto';
+        const title = a.title ? String(a.title) : undefined;
+
+        if (format === 'topology-dojo') {
+          const { id, document } = store.import(a.json, title);
+          return { id, title: document.title, pages: document.pages.length };
+        }
+
+        // 'auto' and 'legacy-studio' both need the parsed JSON to sniff or convert.
+        let parsedJson: unknown = a.json;
+        if (typeof a.json === 'string') {
+          try {
+            parsedJson = JSON.parse(a.json);
+          } catch {
+            throw new Error(
+              'invalid topology document JSON — could not parse as JSON',
+            );
+          }
+        }
+
+        const isLegacy =
+          format === 'legacy-studio' || detectLegacyStudio(parsedJson);
+        if (!isLegacy) {
+          const { id, document } = store.import(a.json, title);
+          return { id, title: document.title, pages: document.pages.length };
+        }
+
+        const result = convertLegacyStudio(parsedJson);
+        if (!result.ok) {
+          throw new Error(
+            `legacy Topology Studio conversion failed: ${result.error.message}`,
+          );
+        }
+        const { id, document } = store.importDocument(result.document, title);
+        const shownWarnings = result.warnings.slice(0, 20);
+        return {
+          id,
+          title: document.title,
+          pages: document.pages.length,
+          format: 'legacy-studio',
+          warnings: shownWarnings,
+          ...(result.warnings.length > shownWarnings.length
+            ? {
+                warningsTruncated:
+                  result.warnings.length - shownWarnings.length,
+              }
+            : {}),
+        };
       },
     },
     {
