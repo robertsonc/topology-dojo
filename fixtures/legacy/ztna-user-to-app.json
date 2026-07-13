@@ -1,0 +1,254 @@
+{
+  "title": "ZTNA User-to-App Flow",
+  "subtitle": "Zero Trust access: identity, posture, policy enforcement",
+  "viewBox": "0 0 1050 700",
+  "nodes": [
+    [
+      "USER",
+      {
+        "id": "USER",
+        "type": "host",
+        "x": 120,
+        "y": 350,
+        "label": "Remote User",
+        "sublabel": "ZTNA Agent",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "IDP",
+      {
+        "id": "IDP",
+        "type": "cloud",
+        "x": 310,
+        "y": 160,
+        "label": "Identity Provider",
+        "color": "#7764fc",
+        "sub1": "Entra ID / Okta"
+      }
+    ],
+    [
+      "SSE",
+      {
+        "id": "SSE",
+        "type": "cloud",
+        "x": 525,
+        "y": 250,
+        "label": "SSE / ZTNA PEP",
+        "color": "#65aef9",
+        "sub1": "Policy Decision Point"
+      }
+    ],
+    [
+      "CONN",
+      {
+        "id": "CONN",
+        "type": "connector",
+        "x": 760,
+        "y": 400,
+        "label": "Connector",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "APP",
+      {
+        "id": "APP",
+        "type": "apps",
+        "x": 900,
+        "y": 400,
+        "label": "Private App",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "DB",
+      {
+        "id": "DB",
+        "type": "database",
+        "x": 900,
+        "y": 540,
+        "label": "Database",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "FW",
+      {
+        "id": "FW",
+        "type": "firewall",
+        "x": 760,
+        "y": 540,
+        "label": "Segment FW",
+        "color": "#e57373"
+      }
+    ]
+  ],
+  "links": [
+    [
+      "user-idp",
+      {
+        "id": "user-idp",
+        "type": "line",
+        "from": "USER",
+        "to": "IDP",
+        "color": "#7764fc",
+        "dashed": true,
+        "label": "AuthN"
+      }
+    ],
+    [
+      "user-sse",
+      {
+        "id": "user-sse",
+        "type": "wireguard",
+        "from": "USER",
+        "to": "SSE",
+        "color": "#65aef9",
+        "label": "WireGuard Tunnel"
+      }
+    ],
+    [
+      "idp-sse",
+      {
+        "id": "idp-sse",
+        "type": "line",
+        "from": "IDP",
+        "to": "SSE",
+        "color": "#7764fc",
+        "dashed": true,
+        "label": "Token"
+      }
+    ],
+    [
+      "sse-conn",
+      {
+        "id": "sse-conn",
+        "type": "wireguard",
+        "from": "SSE",
+        "to": "CONN",
+        "color": "#65aef9",
+        "label": "WireGuard Tunnel"
+      }
+    ],
+    [
+      "conn-app",
+      {
+        "id": "conn-app",
+        "type": "line",
+        "from": "CONN",
+        "to": "APP",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "app-db",
+      {
+        "id": "app-db",
+        "type": "line",
+        "from": "APP",
+        "to": "DB",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "fw-db",
+      {
+        "id": "fw-db",
+        "type": "line",
+        "from": "FW",
+        "to": "DB",
+        "color": "#e57373",
+        "dashed": true
+      }
+    ]
+  ],
+  "anchors": [],
+  "acts": [
+    { "id": "a1", "label": "Act 1 · User Authentication", "color": "#7764fc" },
+    { "id": "a2", "label": "Act 2 · ZTNA Tunnel", "color": "#65aef9" },
+    { "id": "a3", "label": "Act 3 · App Access", "color": "#deb146" }
+  ],
+  "steps": [
+    {
+      "id": "s1",
+      "act": "a1",
+      "name": "User & IdP",
+      "goal": "Establish user identity",
+      "narration": "The remote user initiates access. The ZTNA agent contacts the Identity Provider for authentication.",
+      "focus": ["USER", "IDP"],
+      "phases": [
+        { "show": ["USER", "IDP", "user-idp"], "diff": "User authenticates" }
+      ]
+    },
+    {
+      "id": "s2",
+      "act": "a2",
+      "name": "SSE Policy Evaluation",
+      "goal": "Show SSE as policy decision point",
+      "narration": "The identity token flows to the SSE. The Policy Decision Point evaluates identity, posture, and context.",
+      "focus": ["SSE"],
+      "phases": [
+        { "show": ["SSE", "idp-sse"], "diff": "Token arrives at SSE" },
+        { "show": ["user-sse"], "diff": "Encrypted tunnel established" }
+      ]
+    },
+    {
+      "id": "s3",
+      "act": "a3",
+      "name": "App Connector",
+      "goal": "Show traffic reaching private app",
+      "narration": "Once policy permits access, traffic flows through the Connector to the Private App. The segment firewall protects the database.",
+      "focus": ["APP"],
+      "phases": [
+        { "show": ["CONN", "sse-conn"], "diff": "Connector tunnel" },
+        { "show": ["APP", "conn-app"], "diff": "App reachable" },
+        {
+          "show": ["DB", "FW", "app-db", "fw-db"],
+          "diff": "Database segmentation"
+        }
+      ]
+    }
+  ],
+  "glossary": [
+    {
+      "t": "ZTNA",
+      "d": "Zero Trust Network Access: per-app access enforcement with continuous verification."
+    },
+    {
+      "t": "PEP",
+      "d": "Policy Enforcement Point: enforces allow/deny decisions in the data path."
+    },
+    {
+      "t": "PDP",
+      "d": "Policy Decision Point: evaluates context and issues access decisions."
+    },
+    {
+      "t": "SSE",
+      "d": "Security Service Edge: cloud-delivered ZTNA, SWG, and CASB."
+    }
+  ],
+  "layers": [
+    {
+      "id": "physical",
+      "name": "Physical",
+      "type": "physical",
+      "visible": true,
+      "opacity": 1,
+      "locked": false,
+      "color": "#01a982",
+      "order": 0
+    }
+  ],
+  "guides": [],
+  "flowPaths": [],
+  "policyMarkers": [],
+  "_nextFlowPathNum": 1,
+  "_nextMarkerNum": 1,
+  "_nextNodeNum": 10,
+  "_nextLinkNum": 10,
+  "_nextAnchorNum": 1,
+  "_nextActNum": 4,
+  "_nextStepNum": 4,
+  "_nextLayerNum": 1
+}

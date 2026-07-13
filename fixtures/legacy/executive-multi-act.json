@@ -1,0 +1,415 @@
+{
+  "title": "Executive Security Architecture",
+  "subtitle": "Cloud-first SD-WAN + ZTNA + SSE — Board Presentation",
+  "viewBox": "0 0 1050 700",
+  "nodes": [
+    [
+      "HQ",
+      {
+        "id": "HQ",
+        "type": "ec",
+        "x": 180,
+        "y": 320,
+        "label": "HQ",
+        "sublabel": "EdgeConnect",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "BRNCH",
+      {
+        "id": "BRNCH",
+        "type": "ec",
+        "x": 870,
+        "y": 320,
+        "label": "Branch",
+        "sublabel": "EdgeConnect",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "INET",
+      {
+        "id": "INET",
+        "type": "cloud",
+        "x": 525,
+        "y": 180,
+        "label": "Internet",
+        "color": "#b1b9be"
+      }
+    ],
+    [
+      "SSE",
+      {
+        "id": "SSE",
+        "type": "cloud",
+        "x": 525,
+        "y": 60,
+        "label": "HPE SSE",
+        "sub1": "SWG · ZTNA · CASB",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "IDP",
+      {
+        "id": "IDP",
+        "type": "cloud",
+        "x": 310,
+        "y": 60,
+        "label": "Identity",
+        "sub1": "Entra ID",
+        "color": "#7764fc"
+      }
+    ],
+    [
+      "SAAS",
+      {
+        "id": "SAAS",
+        "type": "saas",
+        "x": 740,
+        "y": 60,
+        "label": "SaaS",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "USER",
+      {
+        "id": "USER",
+        "type": "host",
+        "x": 180,
+        "y": 500,
+        "label": "Remote User",
+        "sublabel": "ZTNA Agent",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "CONN",
+      {
+        "id": "CONN",
+        "type": "connector",
+        "x": 740,
+        "y": 420,
+        "label": "Connector",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "APP",
+      {
+        "id": "APP",
+        "type": "apps",
+        "x": 870,
+        "y": 500,
+        "label": "Private App",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "FW",
+      {
+        "id": "FW",
+        "type": "firewall",
+        "x": 525,
+        "y": 320,
+        "label": "NGFW",
+        "color": "#e57373"
+      }
+    ]
+  ],
+  "links": [
+    [
+      "hq-inet",
+      {
+        "id": "hq-inet",
+        "type": "line",
+        "from": "HQ",
+        "to": "INET",
+        "color": "#b1b9be"
+      }
+    ],
+    [
+      "br-inet",
+      {
+        "id": "br-inet",
+        "type": "line",
+        "from": "BRNCH",
+        "to": "INET",
+        "color": "#b1b9be"
+      }
+    ],
+    [
+      "overlay",
+      {
+        "id": "overlay",
+        "type": "flow",
+        "from": "HQ",
+        "to": "BRNCH",
+        "color": "#01a982",
+        "label": "SD-WAN Overlay"
+      }
+    ],
+    [
+      "hq-sse",
+      {
+        "id": "hq-sse",
+        "type": "tunnel",
+        "from": "HQ",
+        "to": "SSE",
+        "color": "#65aef9",
+        "label": "IPsec"
+      }
+    ],
+    [
+      "user-sse",
+      {
+        "id": "user-sse",
+        "type": "wireguard",
+        "from": "USER",
+        "to": "SSE",
+        "color": "#65aef9",
+        "label": "WireGuard"
+      }
+    ],
+    [
+      "idp-sse",
+      {
+        "id": "idp-sse",
+        "type": "line",
+        "from": "IDP",
+        "to": "SSE",
+        "color": "#7764fc",
+        "dashed": true
+      }
+    ],
+    [
+      "sse-saas",
+      {
+        "id": "sse-saas",
+        "type": "line",
+        "from": "SSE",
+        "to": "SAAS",
+        "color": "#65aef9",
+        "dashed": true
+      }
+    ],
+    [
+      "sse-conn",
+      {
+        "id": "sse-conn",
+        "type": "wireguard",
+        "from": "SSE",
+        "to": "CONN",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "conn-app",
+      {
+        "id": "conn-app",
+        "type": "line",
+        "from": "CONN",
+        "to": "APP",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "inet-fw",
+      {
+        "id": "inet-fw",
+        "type": "line",
+        "from": "INET",
+        "to": "FW",
+        "color": "#e57373",
+        "dashed": true
+      }
+    ]
+  ],
+  "anchors": [],
+  "acts": [
+    {
+      "id": "a1",
+      "label": "Act 1 · The Problem",
+      "color": "#e57373",
+      "intro": [
+        "Traditional networks were built for the office.",
+        "Cloud and remote work broke the perimeter."
+      ]
+    },
+    {
+      "id": "a2",
+      "label": "Act 2 · SD-WAN Foundation",
+      "color": "#01a982",
+      "intro": [
+        "SD-WAN replaces MPLS with intelligent overlay.",
+        "Any transport — better performance, lower cost."
+      ]
+    },
+    {
+      "id": "a3",
+      "label": "Act 3 · Zero Trust",
+      "color": "#65aef9",
+      "intro": [
+        "Never trust, always verify.",
+        "Identity + posture + context replace the trusted network."
+      ]
+    },
+    {
+      "id": "a4",
+      "label": "Act 4 · Outcome",
+      "color": "#deb146",
+      "intro": [
+        "One architecture. Complete visibility.",
+        "Secure access from anywhere, to anything."
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "s1",
+      "act": "a1",
+      "name": "Sites Without Security",
+      "goal": "Show the unsecured baseline",
+      "narration": "HQ and Branch have direct internet access but no centralized security policy.",
+      "focus": ["INET"],
+      "phases": [
+        {
+          "show": ["HQ", "BRNCH", "INET", "hq-inet", "br-inet"],
+          "diff": "Sites connected to internet"
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "act": "a2",
+      "name": "SD-WAN Overlay",
+      "goal": "Add SD-WAN connectivity",
+      "narration": "EdgeConnect at each site creates an encrypted overlay. Traffic is routed intelligently across any transport.",
+      "focus": ["overlay"],
+      "phases": [{ "show": ["overlay"], "diff": "SD-WAN overlay active" }]
+    },
+    {
+      "id": "s3",
+      "act": "a2",
+      "name": "Firewall & Inspection",
+      "goal": "Add centralized firewall inspection",
+      "narration": "Internet-bound traffic is inspected centrally. No more local breakout without visibility.",
+      "focus": ["FW"],
+      "phases": [
+        { "show": ["FW", "inet-fw"], "diff": "Firewall inspection added" }
+      ]
+    },
+    {
+      "id": "s4",
+      "act": "a3",
+      "name": "Cloud Security Fabric",
+      "goal": "Show SSE and Identity",
+      "narration": "The SSE platform provides SWG, CASB, and ZTNA from the cloud. Identity ties it all together.",
+      "focus": ["SSE"],
+      "phases": [
+        {
+          "show": ["SSE", "IDP", "idp-sse", "hq-sse"],
+          "diff": "SSE and identity online"
+        },
+        { "show": ["SAAS", "sse-saas"], "diff": "SaaS access protected" }
+      ]
+    },
+    {
+      "id": "s5",
+      "act": "a3",
+      "name": "Remote User ZTNA",
+      "goal": "Show remote access without VPN",
+      "narration": "Remote users access private apps through ZTNA — no VPN, no implicit trust.",
+      "focus": ["USER"],
+      "phases": [
+        { "show": ["USER", "user-sse"], "diff": "User tunnel to SSE" },
+        {
+          "show": ["CONN", "APP", "sse-conn", "conn-app"],
+          "diff": "App accessible via connector"
+        }
+      ]
+    },
+    {
+      "id": "s6",
+      "act": "a4",
+      "name": "Complete Architecture",
+      "goal": "Show all components together",
+      "narration": "The complete architecture: SD-WAN fabric, cloud security, and zero trust access — unified under one platform.",
+      "focus": [],
+      "phases": [
+        {
+          "show": [
+            "HQ",
+            "BRNCH",
+            "INET",
+            "SSE",
+            "IDP",
+            "SAAS",
+            "USER",
+            "CONN",
+            "APP",
+            "FW",
+            "hq-inet",
+            "br-inet",
+            "overlay",
+            "hq-sse",
+            "user-sse",
+            "idp-sse",
+            "sse-saas",
+            "sse-conn",
+            "conn-app",
+            "inet-fw"
+          ],
+          "diff": "Full picture"
+        }
+      ]
+    }
+  ],
+  "glossary": [
+    {
+      "t": "SD-WAN",
+      "d": "Software-Defined WAN: intelligent overlay connecting sites over any transport."
+    },
+    {
+      "t": "SSE",
+      "d": "Security Service Edge: cloud-delivered SWG, CASB, and ZTNA."
+    },
+    {
+      "t": "ZTNA",
+      "d": "Zero Trust Network Access: identity-based, per-app access without implicit trust."
+    },
+    {
+      "t": "CASB",
+      "d": "Cloud Access Security Broker: visibility and control over SaaS usage."
+    },
+    {
+      "t": "SWG",
+      "d": "Secure Web Gateway: proxy that inspects and enforces policy on web traffic."
+    }
+  ],
+  "layers": [
+    {
+      "id": "physical",
+      "name": "Physical",
+      "type": "physical",
+      "visible": true,
+      "opacity": 1,
+      "locked": false,
+      "color": "#01a982",
+      "order": 0
+    }
+  ],
+  "guides": [],
+  "flowPaths": [],
+  "policyMarkers": [],
+  "_nextFlowPathNum": 1,
+  "_nextMarkerNum": 1,
+  "_nextNodeNum": 20,
+  "_nextLinkNum": 20,
+  "_nextAnchorNum": 1,
+  "_nextActNum": 5,
+  "_nextStepNum": 7,
+  "_nextLayerNum": 1
+}

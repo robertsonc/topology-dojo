@@ -1,0 +1,348 @@
+{
+  "title": "Multi-Layer Physical + Flow + Policy",
+  "subtitle": "Overlay diagram: physical fabric, flow paths, and policy markers",
+  "viewBox": "0 0 1200 700",
+  "nodes": [
+    [
+      "CORE",
+      {
+        "id": "CORE",
+        "type": "switch",
+        "x": 600,
+        "y": 200,
+        "label": "Core Switch",
+        "color": "#01a982",
+        "layer": "physical"
+      }
+    ],
+    [
+      "AGG1",
+      {
+        "id": "AGG1",
+        "type": "switch",
+        "x": 350,
+        "y": 350,
+        "label": "Agg SW-1",
+        "color": "#01a982",
+        "layer": "physical"
+      }
+    ],
+    [
+      "AGG2",
+      {
+        "id": "AGG2",
+        "type": "switch",
+        "x": 850,
+        "y": 350,
+        "label": "Agg SW-2",
+        "color": "#01a982",
+        "layer": "physical"
+      }
+    ],
+    [
+      "FW",
+      {
+        "id": "FW",
+        "type": "firewall",
+        "x": 600,
+        "y": 350,
+        "label": "Segment FW",
+        "color": "#e57373",
+        "layer": "physical"
+      }
+    ],
+    [
+      "SRV1",
+      {
+        "id": "SRV1",
+        "type": "server",
+        "x": 200,
+        "y": 520,
+        "label": "Web Srv",
+        "color": "#65aef9",
+        "layer": "physical"
+      }
+    ],
+    [
+      "SRV2",
+      {
+        "id": "SRV2",
+        "type": "server",
+        "x": 500,
+        "y": 520,
+        "label": "App Srv",
+        "color": "#65aef9",
+        "layer": "physical"
+      }
+    ],
+    [
+      "DB1",
+      {
+        "id": "DB1",
+        "type": "database",
+        "x": 750,
+        "y": 520,
+        "label": "Primary DB",
+        "color": "#deb146",
+        "layer": "physical"
+      }
+    ],
+    [
+      "DB2",
+      {
+        "id": "DB2",
+        "type": "database",
+        "x": 1000,
+        "y": 520,
+        "label": "Replica DB",
+        "color": "#deb146",
+        "layer": "physical"
+      }
+    ],
+    [
+      "INET",
+      {
+        "id": "INET",
+        "type": "cloud",
+        "x": 600,
+        "y": 80,
+        "label": "Internet",
+        "color": "#b1b9be"
+      }
+    ],
+    [
+      "LB",
+      {
+        "id": "LB",
+        "type": "ec",
+        "x": 600,
+        "y": 450,
+        "label": "Load Balancer",
+        "color": "#7764fc"
+      }
+    ]
+  ],
+  "links": [
+    [
+      "inet-core",
+      {
+        "id": "inet-core",
+        "type": "line",
+        "from": "INET",
+        "to": "CORE",
+        "color": "#b1b9be"
+      }
+    ],
+    [
+      "core-fw",
+      {
+        "id": "core-fw",
+        "type": "line",
+        "from": "CORE",
+        "to": "FW",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "core-agg1",
+      {
+        "id": "core-agg1",
+        "type": "line",
+        "from": "CORE",
+        "to": "AGG1",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "core-agg2",
+      {
+        "id": "core-agg2",
+        "type": "line",
+        "from": "CORE",
+        "to": "AGG2",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "agg1-srv1",
+      {
+        "id": "agg1-srv1",
+        "type": "line",
+        "from": "AGG1",
+        "to": "SRV1",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "agg1-srv2",
+      {
+        "id": "agg1-srv2",
+        "type": "line",
+        "from": "AGG1",
+        "to": "SRV2",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "agg2-db1",
+      {
+        "id": "agg2-db1",
+        "type": "line",
+        "from": "AGG2",
+        "to": "DB1",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "agg2-db2",
+      {
+        "id": "agg2-db2",
+        "type": "line",
+        "from": "AGG2",
+        "to": "DB2",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "fw-lb",
+      {
+        "id": "fw-lb",
+        "type": "line",
+        "from": "FW",
+        "to": "LB",
+        "color": "#7764fc"
+      }
+    ],
+    [
+      "lb-srv2",
+      {
+        "id": "lb-srv2",
+        "type": "line",
+        "from": "LB",
+        "to": "SRV2",
+        "color": "#7764fc",
+        "dashed": true
+      }
+    ]
+  ],
+  "anchors": [],
+  "acts": [
+    { "id": "a1", "label": "Act 1 · Physical Fabric", "color": "#01a982" },
+    { "id": "a2", "label": "Act 2 · App Flow Path", "color": "#65aef9" },
+    { "id": "a3", "label": "Act 3 · Policy Overlay", "color": "#e57373" }
+  ],
+  "steps": [
+    {
+      "id": "s1",
+      "act": "a1",
+      "name": "Core Infrastructure",
+      "goal": "Show physical switching fabric",
+      "narration": "The physical fabric is a three-tier design: core, aggregation, and access servers.",
+      "focus": ["CORE"],
+      "phases": [
+        {
+          "show": ["CORE", "AGG1", "AGG2", "core-agg1", "core-agg2"],
+          "diff": "Core and aggregation"
+        },
+        {
+          "show": [
+            "SRV1",
+            "SRV2",
+            "DB1",
+            "DB2",
+            "agg1-srv1",
+            "agg1-srv2",
+            "agg2-db1",
+            "agg2-db2"
+          ],
+          "diff": "Server tiers"
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "act": "a2",
+      "name": "Internet Ingress",
+      "goal": "Show internet path through firewall",
+      "narration": "Internet traffic enters through the core and is inspected by the segment firewall.",
+      "focus": ["INET", "FW"],
+      "phases": [
+        { "show": ["INET", "inet-core"], "diff": "Internet ingress" },
+        { "show": ["FW", "core-fw"], "diff": "Firewall inspection" }
+      ]
+    },
+    {
+      "id": "s3",
+      "act": "a2",
+      "name": "Load Balancer Path",
+      "goal": "Show load-balanced app traffic",
+      "narration": "Permitted traffic flows to the load balancer, which distributes requests to app servers.",
+      "focus": ["LB"],
+      "phases": [
+        { "show": ["LB", "fw-lb", "lb-srv2"], "diff": "Load balancer" }
+      ]
+    },
+    {
+      "id": "s4",
+      "act": "a3",
+      "name": "Segmentation Policy",
+      "goal": "Highlight policy enforcement zones",
+      "narration": "The policy overlay shows which segments are isolated. The database tier has the highest restriction.",
+      "focus": ["DB1", "DB2"],
+      "phases": [{ "show": ["DB1", "DB2"], "diff": "Restricted DB tier" }]
+    }
+  ],
+  "glossary": [
+    {
+      "t": "Three-Tier",
+      "d": "Core / Distribution / Access switching architecture for scalable campus networks."
+    },
+    {
+      "t": "Micro-segmentation",
+      "d": "Isolating workloads at the workload level using firewall policy."
+    }
+  ],
+  "layers": [
+    {
+      "id": "physical",
+      "name": "Physical",
+      "type": "physical",
+      "visible": true,
+      "opacity": 1,
+      "locked": false,
+      "color": "#01a982",
+      "order": 0
+    },
+    {
+      "id": "flow",
+      "name": "Flow Paths",
+      "type": "flow",
+      "visible": true,
+      "opacity": 0.9,
+      "locked": false,
+      "color": "#65aef9",
+      "order": 1
+    },
+    {
+      "id": "policy",
+      "name": "Policy",
+      "type": "policy",
+      "visible": true,
+      "opacity": 0.85,
+      "locked": false,
+      "color": "#e57373",
+      "order": 2
+    }
+  ],
+  "guides": [],
+  "flowPaths": [],
+  "policyMarkers": [],
+  "_nextFlowPathNum": 1,
+  "_nextMarkerNum": 1,
+  "_nextNodeNum": 20,
+  "_nextLinkNum": 20,
+  "_nextAnchorNum": 1,
+  "_nextActNum": 4,
+  "_nextStepNum": 5,
+  "_nextLayerNum": 3
+}
