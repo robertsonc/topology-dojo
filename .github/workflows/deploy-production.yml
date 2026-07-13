@@ -124,7 +124,7 @@ jobs:
           EXPECT_WORKSPACE_DISABLED: ${{ inputs.expect_workspace_disabled }}
         run: |
           set -o pipefail
-          ARGS=(--sha "$SHA" --json)
+          ARGS=(--sha "$SHA" --wait-live 180 --json)
           if [ "$EXPECT_WORKSPACE_DISABLED" = "true" ]; then
             ARGS+=(--expect-workspace-disabled)
           fi

@@ -34,6 +34,7 @@ function parseArgs(argv) {
   const args = {
     baseUrl: undefined,
     sha: undefined,
+    waitLiveSeconds: 0,
     expectWorkspaceDisabled: false,
     json: false,
     help: false,
@@ -43,6 +44,8 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === '--sha') {
       args.sha = argv[++i];
+    } else if (arg === '--wait-live') {
+      args.waitLiveSeconds = Number(argv[++i]);
     } else if (arg === '--expect-workspace-disabled') {
       args.expectWorkspaceDisabled = true;
     } else if (arg === '--json') {
@@ -59,7 +62,7 @@ function parseArgs(argv) {
 
 function usage() {
   return [
-    'Usage: node scripts/smoke.mjs <baseUrl> [--sha <expected-sha>] [--expect-workspace-disabled] [--json]',
+    'Usage: node scripts/smoke.mjs <baseUrl> [--sha <expected-sha>] [--wait-live <seconds>] [--expect-workspace-disabled] [--json]',
     '',
     'Runs an unauthenticated HTTP smoke suite against a deployed Topology Dojo',
     'origin (e.g. https://topology-dojo-staging.<account>.workers.dev). Never',
@@ -75,7 +78,36 @@ function usage() {
     '                                of the normal 401',
     '  --json                       also print a one-line JSON summary after',
     '                                the human-readable table',
+    '  --wait-live <seconds>        poll GET / until the origin stops serving',
+    "                                Cloudflare's generic 404 before running",
+    '                                the checks — a brand-new workers.dev',
+    '                                subdomain takes a little while to become',
+    '                                routable after its first-ever deploy',
   ].join('\n');
+}
+
+/**
+ * A first-ever deployment of a new Worker leaves a short window where the
+ * fresh workers.dev subdomain returns Cloudflare's generic 404 for every
+ * path (observed live: Deploy Staging run #2 deployed successfully but the
+ * immediate smoke saw 404s on all routes; the same suite passed 7/7 minutes
+ * later). Poll `GET /` until any response other than that generic 404
+ * arrives, or the deadline passes — then let the real checks judge.
+ */
+async function waitForLiveOrigin(baseUrl, seconds) {
+  const deadline = Date.now() + seconds * 1000;
+  for (;;) {
+    try {
+      const res = await request(baseUrl + '/', {
+        headers: { accept: 'text/html' },
+      });
+      if (res.status !== 404) return true;
+    } catch {
+      // Unreachable/timeout — keep waiting until the deadline.
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +478,15 @@ async function main() {
     console.error(`Invalid base URL: "${args.baseUrl}"`);
     process.exit(1);
     return;
+  }
+
+  if (args.waitLiveSeconds > 0) {
+    const live = await waitForLiveOrigin(baseUrl, args.waitLiveSeconds);
+    console.log(
+      live
+        ? `Origin is live (checked within ${args.waitLiveSeconds}s window).`
+        : `Origin still serving 404s after ${args.waitLiveSeconds}s — running checks anyway.`,
+    );
   }
 
   const results = await runSmoke(baseUrl, {
