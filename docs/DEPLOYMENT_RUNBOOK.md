@@ -199,9 +199,11 @@ include `v3`. After deployment:
 ### Gate C — feature activation
 
 After bootstrap smoke and approval, enable the workspace and deploy forward.
-Run the full shared-workspace smoke suite immediately. A failed activation is
-recovered by disabling the feature and deploying a compatible forward version;
-do not roll back across `v3`.
+Run the full shared-workspace smoke suite immediately, then hold the activation
+in the observation window below. A failed activation — a red smoke or any
+tripped stop threshold — is recovered by disabling the feature
+(`WORKSPACE_ENABLED=false`) and deploying a compatible forward version; do not
+roll back across `v3`. See "Activation observation window and thresholds".
 
 ## Smoke checklist
 
@@ -264,8 +266,57 @@ Stop promotion or activation when any of the following occurs:
 - any smoke test mutates production during staging validation;
 - canonical workspace revisions regress or accepted data disappears;
 - persistence failures are logged after a successful operation response;
-- Worker error rate exceeds the approved threshold;
+- Worker error rate exceeds the approved threshold (see "Activation observation
+  window and thresholds");
 - the deployed SHA cannot be proven from the workflow/deployment record.
+
+## Activation observation window and thresholds
+
+The concrete go/no-go criteria for the workspace-activation flip (Gate C / plan
+O11). These are the "approved threshold" the Stop conditions refer to. Tuned for
+this deployment's reality — a single-owner, low-traffic Worker — so absolute
+counts lead and percentage rates apply only once a window has enough samples to
+be meaningful. Configure Cloudflare alerting (plan O12) to fire at these exact
+values **before** the flip, so the soak tier is covered by alerts.
+
+Every trip recovers the same way: **forward-deploy `WORKSPACE_ENABLED=false`**
+(never roll back across `v3`).
+
+### Observation window
+
+| Tier                 | Duration              | Activity                                                                                     | Exit                                                                                           |
+| -------------------- | --------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| T0 — activation gate | Immediately post-flip | Run the full shared-workspace smoke suite.                                                   | 100% green, or **immediate** flag-off — no soak on a failed smoke.                             |
+| T1 — active watch    | 2 hours, hands-on     | Owner actively watches Worker metrics, DO metrics, and logs; exercises real workspace flows. | No stop condition tripped → enter T2.                                                          |
+| T2 — soak            | 72 hours, passive     | Alerting-only (O12 alerts must be live). Normal intermittent use permitted.                  | Clean soak → Phase 5 exit. Flag retirement (Phase 6) stays gated on a further routine release. |
+
+### Hard stops — roll back on first occurrence (data integrity)
+
+- canonical workspace revision regresses, or an accepted proposal does not
+  advance the canonical revision;
+- a persistence failure is logged after a success response was returned;
+- a lease-scoped change applies out of scope, or an out-of-scope change is not
+  rejected;
+- the owner cannot complete GitHub sign-in to production at all.
+
+### Rate-based stops — roll back on sustained breach
+
+Evaluated over a 10-minute rolling window. The rate column applies only once the
+window holds **≥20 requests**; below that, the absolute column governs.
+
+| Signal                                                                                                      | Absolute trip (any volume) | Rate trip (≥20 req/window) |
+| ----------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------- |
+| Worker errors (5xx / unhandled exceptions)                                                                  | ≥ 5 in 10 min              | > 2% of requests           |
+| Durable Object errors (`TopologyDocument` / registry storage exceptions, non-data-loss)                     | ≥ 3 in 10 min              | > 1% of DO ops             |
+| OAuth server-side failures (callback 5xx, token-exchange error, KV failure; excludes user-declined consent) | ≥ 3 in 10 min              | > 5% of auth attempts      |
+
+### Informational — not a stop by itself
+
+- Proposal conflicts are expected under optimistic concurrency; elevated volume
+  is worth noting but only becomes a stop when it coincides with a hard-stop
+  data-integrity signal above.
+- Request latency is not one of proposal 0004's named activation signals; watch
+  it for context, but it does not by itself trip a rollback.
 
 ## Deployment record template
 

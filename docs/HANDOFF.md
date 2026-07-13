@@ -47,18 +47,18 @@ and the rendered-proposal-preview follow-on from proposal 0002.
 
 ## Operator checklist status (IMPLEMENTATION_PLAN.md §4.7)
 
-| Item    | Status                                                                                                                                                            |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| O1      | ✅ Workers Builds non-production branch builds disabled                                                                                                           |
-| O2      | ✅ Staging KV namespaces created (ids above)                                                                                                                      |
-| O3      | ✅ Staging GitHub OAuth App created (callback `https://topology-dojo-staging.robertson-corey.workers.dev/callback`)                                               |
-| O4      | ⏳ **Next:** add `GITHUB_CLIENT_SECRET` to the `topology-dojo-staging` Worker in the Cloudflare dashboard (Option A was chosen) — enables staging browser sign-in |
-| O5/O6   | ✅ GitHub environments `staging`/`production` with Cloudflare secrets; production required reviewers + `main` restriction; `check` required status                |
-| O7      | Partially: manual-only staging dispatch in effect; observation window / error-rate stop threshold for workspace activation still to be chosen                     |
-| O8      | ✅ First gated staging deploy green (run #4)                                                                                                                      |
-| O9      | ⏳ Disconnect Workers Builds entirely once the production Actions path is also proven                                                                             |
-| O10/O11 | ⏳ Production v3 bootstrap (`WORKSPACE_ENABLED:"false"` PR → protected deploy → smoke `--expect-workspace-disabled`) then activation flip — protected human gates |
-| O12     | ⏳ Cloudflare error-rate alerting + failed-workflow notifications + nightly staging smoke                                                                         |
+| Item    | Status                                                                                                                                                                                           |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| O1      | ✅ Workers Builds non-production branch builds disabled                                                                                                                                          |
+| O2      | ✅ Staging KV namespaces created (ids above)                                                                                                                                                     |
+| O3      | ✅ Staging GitHub OAuth App created (callback `https://topology-dojo-staging.robertson-corey.workers.dev/callback`)                                                                              |
+| O4      | ✅ `GITHUB_CLIENT_SECRET` set on the `topology-dojo-staging` Worker; staging browser sign-in with GitHub credentials verified working                                                            |
+| O5/O6   | ✅ GitHub environments `staging`/`production` with Cloudflare secrets; production required reviewers + `main` restriction; `check` required status                                               |
+| O7      | ✅ Decided: manual-only staging dispatch; observation window (2h active / 72h soak) + error-rate stop thresholds set in `DEPLOYMENT_RUNBOOK.md` → "Activation observation window and thresholds" |
+| O8      | ✅ First gated staging deploy green (run #4)                                                                                                                                                     |
+| O9      | ⏳ Disconnect Workers Builds entirely once the production Actions path is also proven                                                                                                            |
+| O10/O11 | ⏳ Production v3 bootstrap (`WORKSPACE_ENABLED:"false"` PR → protected deploy → smoke `--expect-workspace-disabled`) then activation flip — protected human gates                                |
+| O12     | ⏳ Cloudflare error-rate alerting + failed-workflow notifications + nightly staging smoke                                                                                                        |
 
 Also outstanding on the operator side: manual staging UAT (browser OAuth, MCP
 session, workspace propose/accept/lease flows) and the **forward-recovery
