@@ -284,11 +284,11 @@ Every trip recovers the same way: **forward-deploy `WORKSPACE_ENABLED=false`**
 
 ### Observation window
 
-| Tier                    | Duration               | Activity                                                                                       | Exit                                                                            |
-| ----------------------- | ---------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| T0 — activation gate    | Immediately post-flip  | Run the full shared-workspace smoke suite.                                                      | 100% green, or **immediate** flag-off — no soak on a failed smoke.             |
-| T1 — active watch       | 2 hours, hands-on      | Owner actively watches Worker metrics, DO metrics, and logs; exercises real workspace flows.    | No stop condition tripped → enter T2.                                          |
-| T2 — soak               | 72 hours, passive      | Alerting-only (O12 alerts must be live). Normal intermittent use permitted.                     | Clean soak → Phase 5 exit. Flag retirement (Phase 6) stays gated on a further routine release. |
+| Tier                 | Duration              | Activity                                                                                     | Exit                                                                                           |
+| -------------------- | --------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| T0 — activation gate | Immediately post-flip | Run the full shared-workspace smoke suite.                                                   | 100% green, or **immediate** flag-off — no soak on a failed smoke.                             |
+| T1 — active watch    | 2 hours, hands-on     | Owner actively watches Worker metrics, DO metrics, and logs; exercises real workspace flows. | No stop condition tripped → enter T2.                                                          |
+| T2 — soak            | 72 hours, passive     | Alerting-only (O12 alerts must be live). Normal intermittent use permitted.                  | Clean soak → Phase 5 exit. Flag retirement (Phase 6) stays gated on a further routine release. |
 
 ### Hard stops — roll back on first occurrence (data integrity)
 
@@ -304,10 +304,10 @@ Every trip recovers the same way: **forward-deploy `WORKSPACE_ENABLED=false`**
 Evaluated over a 10-minute rolling window. The rate column applies only once the
 window holds **≥20 requests**; below that, the absolute column governs.
 
-| Signal                                                                                      | Absolute trip (any volume) | Rate trip (≥20 req/window) |
-| ------------------------------------------------------------------------------------------- | -------------------------- | -------------------------- |
-| Worker errors (5xx / unhandled exceptions)                                                  | ≥ 5 in 10 min              | > 2% of requests           |
-| Durable Object errors (`TopologyDocument` / registry storage exceptions, non-data-loss)     | ≥ 3 in 10 min              | > 1% of DO ops             |
+| Signal                                                                                                      | Absolute trip (any volume) | Rate trip (≥20 req/window) |
+| ----------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------- |
+| Worker errors (5xx / unhandled exceptions)                                                                  | ≥ 5 in 10 min              | > 2% of requests           |
+| Durable Object errors (`TopologyDocument` / registry storage exceptions, non-data-loss)                     | ≥ 3 in 10 min              | > 1% of DO ops             |
 | OAuth server-side failures (callback 5xx, token-exchange error, KV failure; excludes user-declined consent) | ≥ 3 in 10 min              | > 5% of auth attempts      |
 
 ### Informational — not a stop by itself
