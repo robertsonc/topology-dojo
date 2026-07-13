@@ -23,6 +23,10 @@
         --muted: #7d8a92;
         --accent: #01a982;
         --font: 'JetBrains Mono', ui-monospace, monospace;
+        /* Slim scrollbar thumb tints, derived from --accent (#01a982 = rgb 1 169 130).
+           Kept as tokens so the scroll-slim rules never hardcode the color twice. */
+        --sb-thumb: rgba(1, 169, 130, 0.25);
+        --sb-thumb-hover: rgba(1, 169, 130, 0.55);
       }
       /* Light theme — overrides the chrome + canvas backdrop (engine node art
          keeps its own colors, which read fine on a light canvas). */
@@ -33,9 +37,60 @@
         --border: #cdd5dd;
         --text: #1d1f27;
         --muted: #5c6b76;
+        /* Slightly stronger tints so the green thumb stays legible on light panels. */
+        --sb-thumb: rgba(1, 169, 130, 0.4);
+        --sb-thumb-hover: rgba(1, 169, 130, 0.7);
       }
       * {
         box-sizing: border-box;
+      }
+
+      /* Slim hover-reveal scrollbars — shared across editor chrome panels
+         (palette, properties, dialogs, dropdowns, filmstrip). Applied via the
+         .scroll-slim utility, never on the canvas viewport.
+
+         Track is always transparent; the thumb is invisible at rest, appears
+         when the pointer is over the scroll container, and tints stronger when
+         hovering the thumb itself. The hit area is a full 8px but the visible
+         pill is ~4px, via a 2px transparent border + padding-box background clip
+         (a raw 4px scrollbar is too hard to grab). scrollbar-gutter: stable
+         reserves the inline-end gutter so content doesn't shift on reveal.
+
+         WARNING: scrollbar-width / scrollbar-color are declared ONLY inside the
+         @supports (Firefox) block. Setting either standard property on the
+         element disables ALL ::-webkit-scrollbar styling in Chromium 121+ — do
+         not hoist them up here. No transitions: Chromium doesn't animate
+         scrollbar pseudo-elements. */
+      .scroll-slim {
+        scrollbar-gutter: stable;
+      }
+      .scroll-slim::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      .scroll-slim::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .scroll-slim::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+      .scroll-slim::-webkit-scrollbar-thumb {
+        background-color: transparent;
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      .scroll-slim:hover::-webkit-scrollbar-thumb {
+        background-color: var(--sb-thumb);
+      }
+      .scroll-slim:hover::-webkit-scrollbar-thumb:hover {
+        background-color: var(--sb-thumb-hover);
+      }
+      @supports not selector(::-webkit-scrollbar) {
+        .scroll-slim {
+          scrollbar-width: thin;
+          scrollbar-color: var(--sb-thumb) transparent;
+        }
       }
       html,
       body {

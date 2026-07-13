@@ -262,7 +262,7 @@ export function renderProposalPreviewHtml(
     );
   const more = totalAffected - frames.length;
   return (
-    `<div class="ws-preview-pages">` +
+    `<div class="ws-preview-pages scroll-slim">` +
     frames
       .map(
         (frame) =>
@@ -903,7 +903,7 @@ export function mountWorkspacePanel(
       return;
     }
     workspacePanel = document.createElement('div');
-    workspacePanel.className = 'workspace-panel';
+    workspacePanel.className = 'workspace-panel scroll-slim';
     workspacePanel.setAttribute('role', 'dialog');
     workspacePanel.setAttribute('aria-label', 'Agent Workspace');
     workspacePanel.innerHTML =

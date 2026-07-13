@@ -73,7 +73,7 @@ let current = 0;
 const app = document.getElementById('app')!;
 
 app.innerHTML = `
-  <header class="bar">
+  <header class="bar scroll-slim">
     <div class="bar-left">
       <span class="brand" title="Topology Dojo">
         <svg class="logo-mark" viewBox="0 0 32 32" width="26" height="26" aria-label="Topology Dojo" role="img">
@@ -167,7 +167,7 @@ app.innerHTML = `
       <aside class="palette" id="palette">
         <button class="palette-toggle" id="palette-toggle" title="Hide node library (B)">nodes ◂</button>
         <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
-        <div class="palette-list" id="palette-list"></div>
+        <div class="palette-list scroll-slim" id="palette-list"></div>
       </aside>
       <div class="tds-root">
         <div class="tds-canvas-row">
@@ -190,7 +190,7 @@ app.innerHTML = `
       </div>
       <div class="problems-wrap collapsed" id="problems-wrap">
         <button class="problems-toggle" id="problems-toggle" title="Show problems (validation + layout)">✓ ok</button>
-        <div class="problems" id="problems"></div>
+        <div class="problems scroll-slim" id="problems"></div>
       </div>
     </div>
     <div class="inspector-wrap" id="inspector-wrap">
@@ -198,14 +198,14 @@ app.innerHTML = `
       <div class="inspector-col">
         <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ▸</button>
         <div class="inspector-body" id="inspector-body">
-          <aside class="inspector" id="inspector"></aside>
+          <aside class="inspector scroll-slim" id="inspector"></aside>
         </div>
       </div>
     </div>
   </div>
 
-  <footer class="filmstrip" id="filmstrip"></footer>
-  <footer class="statusbar" id="statusbar"></footer>
+  <footer class="filmstrip scroll-slim" id="filmstrip"></footer>
+  <footer class="statusbar scroll-slim" id="statusbar"></footer>
 `;
 
 const artSvg = app.querySelector<SVGSVGElement>('#page-canvas')!;
@@ -861,7 +861,7 @@ function openFind(): void {
   findEl.className = 'find';
   findEl.innerHTML =
     `<input type="text" placeholder="Find node by label / id / type…" />` +
-    `<div class="find-results"></div>`;
+    `<div class="find-results scroll-slim"></div>`;
   app.appendChild(findEl);
   const input = findEl.querySelector('input')!;
   input.addEventListener('input', () => runFindQuery(input.value));
@@ -1315,7 +1315,7 @@ function frameStoryHtml(): string {
   const picker =
     page.nodes.length + page.links.length === 0
       ? `<div class="insp-hint">No elements on this frame.</div>`
-      : `<div class="emph-list">${nodeRows}${linkRows}</div>`;
+      : `<div class="emph-list scroll-slim">${nodeRows}${linkRows}</div>`;
   return (
     `<div class="insp-h">Frame</div>` +
     `<label class="insp-row col">Caption` +
@@ -2639,7 +2639,7 @@ function openHelp(): void {
       `</div>`,
   ).join('');
   helpEl.innerHTML =
-    `<div class="help-card" role="dialog" aria-label="Keyboard shortcuts">` +
+    `<div class="help-card scroll-slim" role="dialog" aria-label="Keyboard shortcuts">` +
     `<div class="help-head"><h3>Keyboard shortcuts</h3>` +
     `<button class="tbtn ticon" id="helpClose" title="Close (Esc)">✕</button></div>` +
     `<div class="help-cols">${cols}</div></div>`;
