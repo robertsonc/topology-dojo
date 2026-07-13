@@ -175,6 +175,10 @@ app.innerHTML = `
         <button class="palette-toggle" id="palette-toggle" title="Hide node library (B)">nodes ◂</button>
         <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
         <div class="palette-list scroll-slim" id="palette-list"></div>
+        <div class="minimap-dock" id="minimap-dock">
+          <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">map ▾</button>
+          <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
       </aside>
       <div class="tds-root">
         <div class="tds-canvas-row">
@@ -190,10 +194,6 @@ app.innerHTML = `
             </div>
           </div>
         </div>
-      </div>
-      <div class="minimap-wrap" id="minimap-wrap">
-        <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">hide ▾</button>
-        <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
       </div>
       <div class="problems-wrap collapsed" id="problems-wrap">
         <button class="problems-toggle" id="problems-toggle" title="Show problems (validation + layout)">✓ ok</button>
@@ -285,21 +285,17 @@ editor.setRenderOpts(renderLayerOpts);
 editor.setViewInsets(() => {
   const canvas = overlaySvg.getBoundingClientRect();
   let right = 0;
-  let bottom = 0;
   const insp = document.getElementById('inspector-wrap');
   if (insp && !insp.classList.contains('collapsed')) {
     const r = insp.getBoundingClientRect();
     if (r.width > 0) right = Math.max(right, canvas.right - r.left + 12);
   }
-  const mm = document.getElementById('minimap-wrap');
-  if (mm && !mm.classList.contains('collapsed')) {
-    const r = mm.getBoundingClientRect();
-    if (r.height > 0) bottom = Math.max(bottom, canvas.bottom - r.top + 12);
-  }
+  // The minimap now docks in the left rail, so it no longer reserves a canvas
+  // bottom inset (nothing floats over the bottom-right corner anymore).
   // Never surrender more than ~60% of the canvas to a panel.
   return {
     right: Math.max(0, Math.min(right, canvas.width * 0.6)),
-    bottom: Math.max(0, Math.min(bottom, canvas.height * 0.6)),
+    bottom: 0,
   };
 });
 // Initial fit once the canvas has real dimensions (constructor ran pre-layout).
@@ -658,12 +654,12 @@ minimap.addEventListener('pointermove', (e) => {
   if (e.buttons === 1) minimapPanTo(e);
 });
 
-// Collapse / restore the minimap so it stops covering the inspector panel.
-const minimapWrap = app.querySelector<HTMLDivElement>('#minimap-wrap')!;
+// Collapse / restore the minimap section docked at the bottom of the left rail.
+const minimapDock = app.querySelector<HTMLDivElement>('#minimap-dock')!;
 const minimapToggle = app.querySelector<HTMLButtonElement>('#minimap-toggle')!;
 function setMinimapCollapsed(collapsed: boolean): void {
-  minimapWrap.classList.toggle('collapsed', collapsed);
-  minimapToggle.textContent = collapsed ? 'map ▴' : 'hide ▾';
+  minimapDock.classList.toggle('collapsed', collapsed);
+  minimapToggle.textContent = collapsed ? 'map ▸' : 'map ▾';
   minimapToggle.title = collapsed ? 'Show minimap (M)' : 'Hide minimap (M)';
   try {
     localStorage.setItem('tds-minimap-collapsed', collapsed ? '1' : '0');
@@ -672,7 +668,7 @@ function setMinimapCollapsed(collapsed: boolean): void {
   }
 }
 minimapToggle.addEventListener('click', () =>
-  setMinimapCollapsed(!minimapWrap.classList.contains('collapsed')),
+  setMinimapCollapsed(!minimapDock.classList.contains('collapsed')),
 );
 setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') === '1');
 
@@ -2842,7 +2838,7 @@ window.addEventListener('keydown', (e) => {
     gridBtn.classList.toggle('on', editor.gridVisible);
   }
   if (e.key === 'm' || e.key === 'M')
-    setMinimapCollapsed(!minimapWrap.classList.contains('collapsed'));
+    setMinimapCollapsed(!minimapDock.classList.contains('collapsed'));
   if (e.key === 'b' || e.key === 'B')
     setPaletteCollapsed(!paletteEl.classList.contains('collapsed'));
   if (e.key === 'p' || e.key === 'P')

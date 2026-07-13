@@ -241,10 +241,6 @@
           width: 184px;
           padding: 9px;
         }
-        .minimap {
-          width: 140px;
-          height: 96px;
-        }
         .problems-wrap {
           /* Narrower palette here (108px) → tuck the warnings panel beside it. */
           left: 132px;
@@ -688,13 +684,15 @@
         min-width: 0;
         overflow: hidden;
       }
+      /* Full-height left rail: header + search at the top, scrollable node list
+         filling the middle, minimap docked at the bottom. */
       .palette {
         position: absolute;
         top: 12px;
         left: 12px;
+        bottom: 12px;
         z-index: 6;
         width: 162px;
-        max-height: calc(100% - 24px);
         overflow: hidden;
         background: rgba(34, 37, 46, 0.92);
         border: 1px solid var(--border);
@@ -705,12 +703,15 @@
         flex-direction: column;
         gap: 4px;
       }
-      /* Collapsed drawer: only the toggle shows; the canvas reclaims the space. */
+      /* Collapsed drawer: only the toggle shows; the rail shrinks to fit it and
+         the canvas reclaims the space. The docked minimap collapses with it. */
       .palette.collapsed {
         width: auto;
+        bottom: auto;
       }
       .palette.collapsed .palette-search,
-      .palette.collapsed .palette-list {
+      .palette.collapsed .palette-list,
+      .palette.collapsed .minimap-dock {
         display: none;
       }
       .palette-toggle {
@@ -1693,38 +1694,43 @@
       }
 
       /* Minimap overview (bottom-right of the canvas), with a collapse toggle. */
-      .minimap-wrap {
-        position: absolute;
-        right: 12px;
-        bottom: 12px;
-        z-index: 7;
+      /* Minimap docked at the bottom of the left rail, separated by a border.
+         Fixed aspect (matches the MM_W:MM_H viewBox so pointer→pan mapping stays
+         exact with no letterboxing); its height is content-driven, so it never
+         shifts when the node list above is scrolled or filtered. */
+      .minimap-dock {
+        flex: none;
         display: flex;
         flex-direction: column;
-        align-items: flex-end;
         gap: 4px;
+        margin-top: 4px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
       }
       .minimap {
-        width: 170px;
-        height: 120px;
+        width: 100%;
+        aspect-ratio: 170 / 120;
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 6px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
         cursor: pointer;
       }
-      .minimap-wrap.collapsed .minimap {
+      .minimap-dock.collapsed .minimap {
         display: none;
       }
       .minimap-toggle {
+        width: 100%;
         font-family: var(--font);
-        font-size: 11px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
         color: var(--muted);
-        background: var(--panel);
+        background: var(--panel2);
         border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 3px 8px;
+        border-radius: 7px;
+        padding: 4px 8px;
         cursor: pointer;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        white-space: nowrap;
       }
       .minimap-toggle:hover {
         color: var(--text);
@@ -2035,7 +2041,6 @@
       /* ── Floating glass cards (over the canvas) ──────────────────────── */
       .palette,
       .inspector-wrap,
-      .minimap,
       .problems,
       .display-pop,
       .user-menu,
@@ -2068,9 +2073,6 @@
         box-shadow: none;
         -webkit-backdrop-filter: none;
         backdrop-filter: none;
-      }
-      .minimap {
-        border-radius: 16px !important;
       }
       .problems {
         border-radius: 16px !important;
