@@ -1,0 +1,245 @@
+{
+  "title": "Firewall Blocked Flow",
+  "subtitle": "Policy violation: unauthorized lateral movement blocked",
+  "viewBox": "0 0 1050 700",
+  "nodes": [
+    [
+      "ATTK",
+      {
+        "id": "ATTK",
+        "type": "host",
+        "x": 120,
+        "y": 300,
+        "label": "Compromised Host",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "SW1",
+      {
+        "id": "SW1",
+        "type": "switch",
+        "x": 300,
+        "y": 300,
+        "label": "Access SW",
+        "color": "#7d8a92"
+      }
+    ],
+    [
+      "FW",
+      {
+        "id": "FW",
+        "type": "firewall",
+        "x": 525,
+        "y": 300,
+        "label": "Core NGFW",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "SW2",
+      {
+        "id": "SW2",
+        "type": "switch",
+        "x": 750,
+        "y": 300,
+        "label": "Server SW",
+        "color": "#7d8a92"
+      }
+    ],
+    [
+      "DB",
+      {
+        "id": "DB",
+        "type": "database",
+        "x": 900,
+        "y": 200,
+        "label": "PCI Database",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "SRV",
+      {
+        "id": "SRV",
+        "type": "server",
+        "x": 900,
+        "y": 400,
+        "label": "App Server",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "LOG",
+      {
+        "id": "LOG",
+        "type": "server",
+        "x": 525,
+        "y": 480,
+        "label": "SIEM / Logger",
+        "color": "#7764fc"
+      }
+    ]
+  ],
+  "links": [
+    [
+      "attk-sw1",
+      {
+        "id": "attk-sw1",
+        "type": "line",
+        "from": "ATTK",
+        "to": "SW1",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "sw1-fw",
+      {
+        "id": "sw1-fw",
+        "type": "line",
+        "from": "SW1",
+        "to": "FW",
+        "color": "#7d8a92"
+      }
+    ],
+    [
+      "fw-sw2",
+      {
+        "id": "fw-sw2",
+        "type": "line",
+        "from": "FW",
+        "to": "SW2",
+        "color": "#7d8a92"
+      }
+    ],
+    [
+      "sw2-db",
+      {
+        "id": "sw2-db",
+        "type": "line",
+        "from": "SW2",
+        "to": "DB",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "sw2-srv",
+      {
+        "id": "sw2-srv",
+        "type": "line",
+        "from": "SW2",
+        "to": "SRV",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "fw-log",
+      {
+        "id": "fw-log",
+        "type": "line",
+        "from": "FW",
+        "to": "LOG",
+        "color": "#7764fc",
+        "dashed": true,
+        "label": "Drop + Log"
+      }
+    ]
+  ],
+  "anchors": [],
+  "acts": [
+    {
+      "id": "a1",
+      "label": "Act 1 · Lateral Movement Attempt",
+      "color": "#e57373"
+    },
+    { "id": "a2", "label": "Act 2 · Firewall Block", "color": "#01a982" }
+  ],
+  "steps": [
+    {
+      "id": "s1",
+      "act": "a1",
+      "name": "Compromised Host",
+      "goal": "Identify the attacker origin",
+      "narration": "A compromised host on the access VLAN attempts lateral movement toward the server segment.",
+      "focus": ["ATTK"],
+      "phases": [
+        { "show": ["ATTK", "SW1", "attk-sw1"], "diff": "Attacker on network" }
+      ]
+    },
+    {
+      "id": "s2",
+      "act": "a1",
+      "name": "Traffic Hits Firewall",
+      "goal": "Show traffic reaching the firewall",
+      "narration": "The traffic traverses the access switch and arrives at the core NGFW boundary.",
+      "focus": ["FW"],
+      "phases": [{ "show": ["FW", "sw1-fw"], "diff": "Reaches firewall" }]
+    },
+    {
+      "id": "s3",
+      "act": "a2",
+      "name": "Policy Denies and Logs",
+      "goal": "Show firewall blocking and logging the flow",
+      "narration": "The NGFW policy identifies an unauthorized server-segment access attempt and drops the flow. The event is logged to SIEM.",
+      "focus": ["FW", "LOG"],
+      "phases": [
+        {
+          "show": ["LOG", "fw-log"],
+          "diff": "Dropped and logged",
+          "blocked": true
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "act": "a2",
+      "name": "Protected Servers",
+      "goal": "Show that DB and App Server remain unreachable",
+      "narration": "The PCI database and app server remain isolated. Lateral movement is blocked.",
+      "focus": ["DB", "SRV"],
+      "phases": [
+        {
+          "show": ["SW2", "DB", "SRV", "fw-sw2", "sw2-db", "sw2-srv"],
+          "diff": "Protected segment"
+        }
+      ]
+    }
+  ],
+  "glossary": [
+    {
+      "t": "NGFW",
+      "d": "Next-Generation Firewall: enforces micro-segmentation and application-level policies."
+    },
+    {
+      "t": "SIEM",
+      "d": "Security Information and Event Management: aggregates logs for threat detection."
+    },
+    {
+      "t": "Lateral Movement",
+      "d": "Attacker technique: pivoting between systems after initial compromise."
+    }
+  ],
+  "layers": [
+    {
+      "id": "physical",
+      "name": "Physical",
+      "type": "physical",
+      "visible": true,
+      "opacity": 1,
+      "locked": false,
+      "color": "#01a982",
+      "order": 0
+    }
+  ],
+  "guides": [],
+  "flowPaths": [],
+  "policyMarkers": [],
+  "_nextFlowPathNum": 1,
+  "_nextMarkerNum": 1,
+  "_nextNodeNum": 10,
+  "_nextLinkNum": 10,
+  "_nextAnchorNum": 1,
+  "_nextActNum": 3,
+  "_nextStepNum": 5,
+  "_nextLayerNum": 1
+}

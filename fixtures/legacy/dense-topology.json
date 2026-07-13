@@ -1,0 +1,813 @@
+{
+  "title": "Dense Topology Stress Case",
+  "subtitle": "30 nodes, 40 links — performance and rendering stress test",
+  "viewBox": "0 0 1400 900",
+  "nodes": [
+    [
+      "CORE1",
+      {
+        "id": "CORE1",
+        "type": "switch",
+        "x": 700,
+        "y": 120,
+        "label": "Core-1",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "CORE2",
+      {
+        "id": "CORE2",
+        "type": "switch",
+        "x": 700,
+        "y": 200,
+        "label": "Core-2",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "AGG1",
+      {
+        "id": "AGG1",
+        "type": "switch",
+        "x": 350,
+        "y": 300,
+        "label": "Agg-1",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "AGG2",
+      {
+        "id": "AGG2",
+        "type": "switch",
+        "x": 550,
+        "y": 300,
+        "label": "Agg-2",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "AGG3",
+      {
+        "id": "AGG3",
+        "type": "switch",
+        "x": 850,
+        "y": 300,
+        "label": "Agg-3",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "AGG4",
+      {
+        "id": "AGG4",
+        "type": "switch",
+        "x": 1050,
+        "y": 300,
+        "label": "Agg-4",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "FW1",
+      {
+        "id": "FW1",
+        "type": "firewall",
+        "x": 350,
+        "y": 420,
+        "label": "FW-North",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "FW2",
+      {
+        "id": "FW2",
+        "type": "firewall",
+        "x": 1050,
+        "y": 420,
+        "label": "FW-South",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "LB1",
+      {
+        "id": "LB1",
+        "type": "ec",
+        "x": 550,
+        "y": 420,
+        "label": "LB-1",
+        "color": "#7764fc"
+      }
+    ],
+    [
+      "LB2",
+      {
+        "id": "LB2",
+        "type": "ec",
+        "x": 850,
+        "y": 420,
+        "label": "LB-2",
+        "color": "#7764fc"
+      }
+    ],
+    [
+      "WEB1",
+      {
+        "id": "WEB1",
+        "type": "server",
+        "x": 200,
+        "y": 560,
+        "label": "Web-1",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "WEB2",
+      {
+        "id": "WEB2",
+        "type": "server",
+        "x": 350,
+        "y": 560,
+        "label": "Web-2",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "WEB3",
+      {
+        "id": "WEB3",
+        "type": "server",
+        "x": 500,
+        "y": 560,
+        "label": "Web-3",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "APP1",
+      {
+        "id": "APP1",
+        "type": "apps",
+        "x": 650,
+        "y": 560,
+        "label": "App-1",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "APP2",
+      {
+        "id": "APP2",
+        "type": "apps",
+        "x": 800,
+        "y": 560,
+        "label": "App-2",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "APP3",
+      {
+        "id": "APP3",
+        "type": "apps",
+        "x": 950,
+        "y": 560,
+        "label": "App-3",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "DB1",
+      {
+        "id": "DB1",
+        "type": "database",
+        "x": 350,
+        "y": 700,
+        "label": "DB-1",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "DB2",
+      {
+        "id": "DB2",
+        "type": "database",
+        "x": 550,
+        "y": 700,
+        "label": "DB-2",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "DB3",
+      {
+        "id": "DB3",
+        "type": "database",
+        "x": 750,
+        "y": 700,
+        "label": "DB-3",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "DB4",
+      {
+        "id": "DB4",
+        "type": "database",
+        "x": 950,
+        "y": 700,
+        "label": "DB-4",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "CLOUD1",
+      {
+        "id": "CLOUD1",
+        "type": "cloud",
+        "x": 200,
+        "y": 120,
+        "label": "AWS",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "CLOUD2",
+      {
+        "id": "CLOUD2",
+        "type": "cloud",
+        "x": 1200,
+        "y": 120,
+        "label": "Azure",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "SAAS1",
+      {
+        "id": "SAAS1",
+        "type": "saas",
+        "x": 400,
+        "y": 120,
+        "label": "M365",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "SAAS2",
+      {
+        "id": "SAAS2",
+        "type": "saas",
+        "x": 1000,
+        "y": 120,
+        "label": "Salesforce",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "IDP",
+      {
+        "id": "IDP",
+        "type": "cloud",
+        "x": 700,
+        "y": 40,
+        "label": "IdP",
+        "color": "#7764fc"
+      }
+    ],
+    [
+      "INET",
+      {
+        "id": "INET",
+        "type": "cloud",
+        "x": 700,
+        "y": 420,
+        "label": "Internet",
+        "color": "#b1b9be"
+      }
+    ],
+    [
+      "NAC",
+      {
+        "id": "NAC",
+        "type": "cloud",
+        "x": 1200,
+        "y": 560,
+        "label": "NAC",
+        "color": "#7764fc"
+      }
+    ],
+    [
+      "SSE",
+      {
+        "id": "SSE",
+        "type": "cloud",
+        "x": 1200,
+        "y": 420,
+        "label": "SSE",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "MGMT",
+      {
+        "id": "MGMT",
+        "type": "server",
+        "x": 1200,
+        "y": 700,
+        "label": "MGMT Srv",
+        "color": "#7d8a92"
+      }
+    ],
+    [
+      "MON",
+      {
+        "id": "MON",
+        "type": "server",
+        "x": 200,
+        "y": 700,
+        "label": "Monitor",
+        "color": "#7d8a92"
+      }
+    ]
+  ],
+  "links": [
+    [
+      "core1-core2",
+      {
+        "id": "core1-core2",
+        "type": "line",
+        "from": "CORE1",
+        "to": "CORE2",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "core1-agg1",
+      {
+        "id": "core1-agg1",
+        "type": "line",
+        "from": "CORE1",
+        "to": "AGG1",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "core1-agg2",
+      {
+        "id": "core1-agg2",
+        "type": "line",
+        "from": "CORE1",
+        "to": "AGG2",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "core2-agg3",
+      {
+        "id": "core2-agg3",
+        "type": "line",
+        "from": "CORE2",
+        "to": "AGG3",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "core2-agg4",
+      {
+        "id": "core2-agg4",
+        "type": "line",
+        "from": "CORE2",
+        "to": "AGG4",
+        "color": "#01a982"
+      }
+    ],
+    [
+      "agg1-fw1",
+      {
+        "id": "agg1-fw1",
+        "type": "line",
+        "from": "AGG1",
+        "to": "FW1",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "agg2-lb1",
+      {
+        "id": "agg2-lb1",
+        "type": "line",
+        "from": "AGG2",
+        "to": "LB1",
+        "color": "#7764fc"
+      }
+    ],
+    [
+      "agg3-lb2",
+      {
+        "id": "agg3-lb2",
+        "type": "line",
+        "from": "AGG3",
+        "to": "LB2",
+        "color": "#7764fc"
+      }
+    ],
+    [
+      "agg4-fw2",
+      {
+        "id": "agg4-fw2",
+        "type": "line",
+        "from": "AGG4",
+        "to": "FW2",
+        "color": "#e57373"
+      }
+    ],
+    [
+      "fw1-web1",
+      {
+        "id": "fw1-web1",
+        "type": "line",
+        "from": "FW1",
+        "to": "WEB1",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "fw1-web2",
+      {
+        "id": "fw1-web2",
+        "type": "line",
+        "from": "FW1",
+        "to": "WEB2",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "lb1-web3",
+      {
+        "id": "lb1-web3",
+        "type": "line",
+        "from": "LB1",
+        "to": "WEB3",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "lb1-app1",
+      {
+        "id": "lb1-app1",
+        "type": "line",
+        "from": "LB1",
+        "to": "APP1",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "lb2-app2",
+      {
+        "id": "lb2-app2",
+        "type": "line",
+        "from": "LB2",
+        "to": "APP2",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "lb2-app3",
+      {
+        "id": "lb2-app3",
+        "type": "line",
+        "from": "LB2",
+        "to": "APP3",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "fw2-app3",
+      {
+        "id": "fw2-app3",
+        "type": "line",
+        "from": "FW2",
+        "to": "APP3",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "app1-db1",
+      {
+        "id": "app1-db1",
+        "type": "line",
+        "from": "APP1",
+        "to": "DB1",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "app1-db2",
+      {
+        "id": "app1-db2",
+        "type": "line",
+        "from": "APP1",
+        "to": "DB2",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "app2-db3",
+      {
+        "id": "app2-db3",
+        "type": "line",
+        "from": "APP2",
+        "to": "DB3",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "app3-db4",
+      {
+        "id": "app3-db4",
+        "type": "line",
+        "from": "APP3",
+        "to": "DB4",
+        "color": "#deb146"
+      }
+    ],
+    [
+      "core1-cloud1",
+      {
+        "id": "core1-cloud1",
+        "type": "tunnel",
+        "from": "CORE1",
+        "to": "CLOUD1",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "core2-cloud2",
+      {
+        "id": "core2-cloud2",
+        "type": "tunnel",
+        "from": "CORE2",
+        "to": "CLOUD2",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "core1-saas1",
+      {
+        "id": "core1-saas1",
+        "type": "line",
+        "from": "CORE1",
+        "to": "SAAS1",
+        "color": "#65aef9",
+        "dashed": true
+      }
+    ],
+    [
+      "core2-saas2",
+      {
+        "id": "core2-saas2",
+        "type": "line",
+        "from": "CORE2",
+        "to": "SAAS2",
+        "color": "#65aef9",
+        "dashed": true
+      }
+    ],
+    [
+      "core1-idp",
+      {
+        "id": "core1-idp",
+        "type": "line",
+        "from": "CORE1",
+        "to": "IDP",
+        "color": "#7764fc",
+        "dashed": true
+      }
+    ],
+    [
+      "core1-inet",
+      {
+        "id": "core1-inet",
+        "type": "line",
+        "from": "CORE1",
+        "to": "INET",
+        "color": "#b1b9be"
+      }
+    ],
+    [
+      "agg4-nac",
+      {
+        "id": "agg4-nac",
+        "type": "line",
+        "from": "AGG4",
+        "to": "NAC",
+        "color": "#7764fc",
+        "dashed": true
+      }
+    ],
+    [
+      "agg4-sse",
+      {
+        "id": "agg4-sse",
+        "type": "tunnel",
+        "from": "AGG4",
+        "to": "SSE",
+        "color": "#65aef9"
+      }
+    ],
+    [
+      "fw2-mgmt",
+      {
+        "id": "fw2-mgmt",
+        "type": "line",
+        "from": "FW2",
+        "to": "MGMT",
+        "color": "#7d8a92",
+        "dashed": true
+      }
+    ],
+    [
+      "fw1-mon",
+      {
+        "id": "fw1-mon",
+        "type": "line",
+        "from": "FW1",
+        "to": "MON",
+        "color": "#7d8a92",
+        "dashed": true
+      }
+    ]
+  ],
+  "anchors": [],
+  "acts": [
+    { "id": "a1", "label": "Act 1 · Core Fabric", "color": "#01a982" },
+    { "id": "a2", "label": "Act 2 · Application Tier", "color": "#65aef9" },
+    { "id": "a3", "label": "Act 3 · Cloud & Security", "color": "#7764fc" }
+  ],
+  "steps": [
+    {
+      "id": "s1",
+      "act": "a1",
+      "name": "Core Switching",
+      "goal": "Show core switching pair",
+      "narration": "Dual-core switches provide redundant Layer 3 connectivity across the entire fabric.",
+      "focus": ["CORE1", "CORE2"],
+      "phases": [
+        { "show": ["CORE1", "CORE2", "core1-core2"], "diff": "Core pair" },
+        {
+          "show": [
+            "AGG1",
+            "AGG2",
+            "AGG3",
+            "AGG4",
+            "core1-agg1",
+            "core1-agg2",
+            "core2-agg3",
+            "core2-agg4"
+          ],
+          "diff": "Aggregation layer"
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "act": "a2",
+      "name": "Security Perimeter",
+      "goal": "Add firewalls and load balancers",
+      "narration": "Firewalls segment north/south traffic. Load balancers distribute application workloads.",
+      "focus": ["FW1", "FW2"],
+      "phases": [
+        {
+          "show": [
+            "FW1",
+            "FW2",
+            "LB1",
+            "LB2",
+            "agg1-fw1",
+            "agg2-lb1",
+            "agg3-lb2",
+            "agg4-fw2"
+          ],
+          "diff": "Security tier"
+        }
+      ]
+    },
+    {
+      "id": "s3",
+      "act": "a2",
+      "name": "Application Servers",
+      "goal": "Show web, app, and database tiers",
+      "narration": "Three application tiers: web front-ends, application servers, and database backends.",
+      "focus": [],
+      "phases": [
+        {
+          "show": ["WEB1", "WEB2", "WEB3", "fw1-web1", "fw1-web2", "lb1-web3"],
+          "diff": "Web tier"
+        },
+        {
+          "show": [
+            "APP1",
+            "APP2",
+            "APP3",
+            "lb1-app1",
+            "lb2-app2",
+            "lb2-app3",
+            "fw2-app3"
+          ],
+          "diff": "App tier"
+        },
+        {
+          "show": [
+            "DB1",
+            "DB2",
+            "DB3",
+            "DB4",
+            "app1-db1",
+            "app1-db2",
+            "app2-db3",
+            "app3-db4"
+          ],
+          "diff": "DB tier"
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "act": "a3",
+      "name": "Cloud Connectivity",
+      "goal": "Show hybrid cloud connections",
+      "narration": "Tunnel connectivity to AWS and Azure. Direct SaaS access for Microsoft 365 and Salesforce.",
+      "focus": ["CLOUD1", "CLOUD2"],
+      "phases": [
+        {
+          "show": [
+            "CLOUD1",
+            "CLOUD2",
+            "SAAS1",
+            "SAAS2",
+            "core1-cloud1",
+            "core2-cloud2",
+            "core1-saas1",
+            "core2-saas2"
+          ],
+          "diff": "Cloud and SaaS"
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "act": "a3",
+      "name": "Identity & Security Services",
+      "goal": "Show centralized identity and SSE",
+      "narration": "Identity Provider and SSE platform provide centralized policy. NAC enforces posture at network admission.",
+      "focus": ["SSE", "IDP"],
+      "phases": [
+        {
+          "show": [
+            "IDP",
+            "SSE",
+            "NAC",
+            "INET",
+            "MGMT",
+            "MON",
+            "core1-idp",
+            "core1-inet",
+            "agg4-nac",
+            "agg4-sse",
+            "fw2-mgmt",
+            "fw1-mon"
+          ],
+          "diff": "Security plane"
+        }
+      ]
+    }
+  ],
+  "glossary": [],
+  "layers": [
+    {
+      "id": "physical",
+      "name": "Physical",
+      "type": "physical",
+      "visible": true,
+      "opacity": 1,
+      "locked": false,
+      "color": "#01a982",
+      "order": 0
+    }
+  ],
+  "guides": [],
+  "flowPaths": [],
+  "policyMarkers": [],
+  "_nextFlowPathNum": 1,
+  "_nextMarkerNum": 1,
+  "_nextNodeNum": 40,
+  "_nextLinkNum": 40,
+  "_nextAnchorNum": 1,
+  "_nextActNum": 4,
+  "_nextStepNum": 6,
+  "_nextLayerNum": 1
+}
