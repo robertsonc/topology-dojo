@@ -87,21 +87,41 @@ function usage() {
 }
 
 /**
- * A first-ever deployment of a new Worker leaves a short window where the
- * fresh workers.dev subdomain returns Cloudflare's generic 404 for every
- * path (observed live: Deploy Staging run #2 deployed successfully but the
- * immediate smoke saw 404s on all routes; the same suite passed 7/7 minutes
- * later). Poll `GET /` until any response other than that generic 404
- * arrives, or the deadline passes — then let the real checks judge.
+ * Deploying leaves two short race windows, both observed live on the first
+ * staging deploys:
+ *
+ *  1. A first-ever deployment of a new Worker: the fresh workers.dev
+ *     subdomain returns Cloudflare's generic 404 for every path until it
+ *     becomes routable (run #2 — the same suite passed 7/7 minutes later).
+ *  2. A redeploy of an existing Worker: the origin is live but still serving
+ *     the previous version for a few seconds, so `/healthz` reports the old
+ *     sha (run #3 — 6/7 passed, healthz saw the prior deploy's sha).
+ *
+ * When an expected sha is known, poll `/healthz` until it reports exactly
+ * that sha — which covers both windows at once. Without a sha, fall back to
+ * polling `GET /` until the origin stops serving the generic 404. Either
+ * way, when the deadline passes the real checks run and judge for
+ * themselves.
  */
-async function waitForLiveOrigin(baseUrl, seconds) {
+async function waitForLiveOrigin(baseUrl, seconds, expectedSha) {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
     try {
-      const res = await request(baseUrl + '/', {
-        headers: { accept: 'text/html' },
-      });
-      if (res.status !== 404) return true;
+      if (expectedSha) {
+        const res = await request(baseUrl + '/healthz');
+        if (
+          res.status === 200 &&
+          (res.headers.get('content-type') ?? '').includes('application/json')
+        ) {
+          const data = await res.json();
+          if (data && data.ok === true && data.sha === expectedSha) return true;
+        }
+      } else {
+        const res = await request(baseUrl + '/', {
+          headers: { accept: 'text/html' },
+        });
+        if (res.status !== 404) return true;
+      }
     } catch {
       // Unreachable/timeout — keep waiting until the deadline.
     }
@@ -481,11 +501,17 @@ async function main() {
   }
 
   if (args.waitLiveSeconds > 0) {
-    const live = await waitForLiveOrigin(baseUrl, args.waitLiveSeconds);
+    const live = await waitForLiveOrigin(
+      baseUrl,
+      args.waitLiveSeconds,
+      args.sha,
+    );
     console.log(
       live
-        ? `Origin is live (checked within ${args.waitLiveSeconds}s window).`
-        : `Origin still serving 404s after ${args.waitLiveSeconds}s — running checks anyway.`,
+        ? args.sha
+          ? `Origin is live and serving sha ${args.sha} (within ${args.waitLiveSeconds}s window).`
+          : `Origin is live (checked within ${args.waitLiveSeconds}s window).`
+        : `Origin not confirmed ${args.sha ? `on sha ${args.sha}` : 'live'} after ${args.waitLiveSeconds}s — running checks anyway.`,
     );
   }
 
