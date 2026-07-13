@@ -45,6 +45,15 @@ export class TopologyStore {
   import(json: string | unknown, title?: string): StoreEntry {
     const document = parseDoc(json);
     if (!document) throw new Error('invalid topology document JSON');
+    return this.importDocument(document, title);
+  }
+
+  /**
+   * Insert an already-built document under a fresh id — used by
+   * `import_topology`'s `format: 'legacy-studio' | 'auto'` path, where the
+   * document comes from `convertLegacyStudio` rather than `parseDoc`.
+   */
+  importDocument(document: TopologyDocument, title?: string): StoreEntry {
     if (title) document.title = title;
     const id = newId();
     this.docs.set(id, document);

@@ -356,6 +356,79 @@ describe('MCP tools', () => {
     expect(doc2.pages[0]!.nodes[0]!.id).toBe('h');
   });
 
+  describe('import_topology legacy Topology Studio support', () => {
+    const loadFixture = (name: string): unknown =>
+      JSON.parse(
+        readFileSync(
+          fileURLToPath(
+            new URL(`../../fixtures/legacy/${name}`, import.meta.url),
+          ),
+          'utf8',
+        ),
+      );
+
+    it('format "auto" detects and converts a legacy fixture, returning warnings', () => {
+      const legacy = loadFixture('sdwan-branch.json');
+      const result = call('import_topology', { json: legacy }) as {
+        id: string;
+        pages: number;
+        format?: string;
+        warnings?: string[];
+      };
+      expect(result.format).toBe('legacy-studio');
+      expect(result.pages).toBe(3);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.length).toBeGreaterThan(0);
+
+      const doc = call('get_topology', {
+        topologyId: result.id,
+      }) as TopologyDocument;
+      expect(doc.pages.length).toBe(3);
+    });
+
+    it('format "topology-dojo" rejects a legacy document (no pages array for parseDoc)', () => {
+      const legacy = loadFixture('sdwan-branch.json');
+      expect(() =>
+        call('import_topology', { json: legacy, format: 'topology-dojo' }),
+      ).toThrow(/invalid topology document JSON/);
+    });
+
+    it('format "legacy-studio" on a native document yields a typed conversion failure', () => {
+      const { id } = call('create_topology', {}) as { id: string };
+      call('add_node', {
+        topologyId: id,
+        type: 'host',
+        x: 1,
+        y: 2,
+        nodeId: 'h',
+      });
+      const nativeDoc = call('get_topology', {
+        topologyId: id,
+      }) as TopologyDocument;
+      expect(() =>
+        call('import_topology', { json: nativeDoc, format: 'legacy-studio' }),
+      ).toThrow(/legacy Topology Studio conversion failed/);
+    });
+
+    it('format "topology-dojo" is unaffected for a native document (unchanged behavior)', () => {
+      const { id } = call('create_topology', {}) as { id: string };
+      call('add_node', {
+        topologyId: id,
+        type: 'host',
+        x: 1,
+        y: 2,
+        nodeId: 'h',
+      });
+      const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+      const back = call('import_topology', {
+        json: doc,
+        format: 'topology-dojo',
+      }) as { id: string; format?: string };
+      expect(back.id).not.toBe(id);
+      expect(back.format).toBeUndefined();
+    });
+  });
+
   it('renders the full annotation layer via tools', () => {
     const { id } = call('create_topology', {}) as { id: string };
     call('add_node', {
