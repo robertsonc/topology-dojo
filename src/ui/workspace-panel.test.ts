@@ -22,16 +22,20 @@ import { describe, expect, it } from 'vitest';
 import {
   computeWorkspaceChipState,
   renderActiveWorkspaceHtml,
+  renderChangedElementOverlay,
+  renderProposalPreviewErrorHtml,
+  renderProposalPreviewHtml,
   renderWorkspaceChoicesHtml,
   renderWorkspaceDisabledHtml,
   type ActiveWorkspace,
+  type RenderedPreviewFrame,
 } from './workspace-panel.js';
 import type {
   ProposalSummary,
   WorkspaceListItem,
   WorkspaceManifest,
 } from '../workspace/model.js';
-import type { TopologyDocument } from '../pages/model.js';
+import type { Page, TopologyDocument } from '../pages/model.js';
 
 const BLANK_DOC: TopologyDocument = {
   title: 'Untitled',
@@ -344,5 +348,131 @@ describe('renderActiveWorkspaceHtml', () => {
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
     expect(html).toContain('&lt;b&gt;bold&lt;/b&gt; title');
+  });
+
+  it('renders a collapsed Preview toggle and container for each proposal (Packet R1)', () => {
+    const html = renderActiveWorkspaceHtml(
+      activeWorkspace({
+        proposals: [proposal({ id: 'prop_pending' })],
+      }),
+    );
+    expect(html).toContain('ws-preview-toggle');
+    expect(html).toContain('data-pid="prop_pending"');
+    expect(html).toMatch(
+      /<div class="ws-preview" data-pid="prop_pending" hidden><\/div>/,
+    );
+  });
+});
+
+describe('renderChangedElementOverlay', () => {
+  function page(): Page {
+    return {
+      id: 'p1',
+      name: 'Frame 1',
+      viewBox: '0 0 1050 700',
+      nodes: [{ id: 'n1', type: 'ec', x: 100, y: 200, label: 'A' }],
+      links: [{ id: 'l1', type: 'line', from: 'n1', to: 'n1' }],
+      anchors: [],
+      zones: [],
+      flowPaths: [],
+      policyMarkers: [],
+    };
+  }
+
+  it('draws a highlight rect for a changed node id, offset by the node AABB + padding', () => {
+    const svg = renderChangedElementOverlay(page(), ['n1']);
+    expect(svg).toContain('<g class="ws-preview-highlight">');
+    expect(svg).toContain('class="ws-preview-highlight-rect"');
+    // ec half-extent is 28x18 (api/geometry.ts) plus 6px padding each side.
+    expect(svg).toContain('x="66"');
+    expect(svg).toContain('y="176"');
+    expect(svg).toContain('width="68"');
+    expect(svg).toContain('height="48"');
+  });
+
+  it('draws nothing for a changed id that is not a node (e.g. a link)', () => {
+    expect(renderChangedElementOverlay(page(), ['l1'])).toBe('');
+  });
+
+  it('draws nothing for an empty change list', () => {
+    expect(renderChangedElementOverlay(page(), [])).toBe('');
+  });
+
+  it('only draws rects for ids that resolve to a node, skipping unknown ids', () => {
+    const svg = renderChangedElementOverlay(page(), ['n1', 'ghost']);
+    expect((svg.match(/<rect/g) ?? []).length).toBe(1);
+  });
+});
+
+describe('renderProposalPreviewHtml', () => {
+  it('falls back to a summary-only note when no page was affected (document.patch-only)', () => {
+    const html = renderProposalPreviewHtml([], 0);
+    expect(html).toContain('No page-level preview for this proposal');
+    expect(html).toContain('operation list above');
+  });
+
+  it('renders before/after frames with page names for each shown page', () => {
+    const frames: RenderedPreviewFrame[] = [
+      {
+        pageId: 'p1',
+        pageName: 'Frame <1>',
+        beforeSvg: '<svg data-mock="before"></svg>',
+        afterSvg: '<svg data-mock="after"></svg>',
+      },
+    ];
+    const html = renderProposalPreviewHtml(frames, 1);
+    expect(html).toContain('Frame &lt;1&gt;');
+    expect(html).toContain('Before');
+    expect(html).toContain('After');
+    expect(html).toContain('data-mock="before"');
+    expect(html).toContain('data-mock="after"');
+    expect(html).not.toContain('more page');
+  });
+
+  it('shows "New page" when before is null and "Page removed" when after is null', () => {
+    const frames: RenderedPreviewFrame[] = [
+      {
+        pageId: 'p1',
+        pageName: 'Added',
+        beforeSvg: null,
+        afterSvg: '<svg></svg>',
+      },
+      {
+        pageId: 'p2',
+        pageName: 'Removed',
+        beforeSvg: '<svg></svg>',
+        afterSvg: null,
+      },
+    ];
+    const html = renderProposalPreviewHtml(frames, 2);
+    expect(html).toContain('New page');
+    expect(html).toContain('Page removed');
+  });
+
+  it('notes the remainder when totalAffected exceeds the shown (capped) pages', () => {
+    const frames: RenderedPreviewFrame[] = [
+      { pageId: 'p1', pageName: 'A', beforeSvg: null, afterSvg: null },
+      { pageId: 'p2', pageName: 'B', beforeSvg: null, afterSvg: null },
+      { pageId: 'p3', pageName: 'C', beforeSvg: null, afterSvg: null },
+    ];
+    const html = renderProposalPreviewHtml(frames, 5);
+    expect(html).toContain('+2 more pages affected');
+  });
+
+  it('uses singular phrasing for exactly one remaining page', () => {
+    const frames: RenderedPreviewFrame[] = [
+      { pageId: 'p1', pageName: 'A', beforeSvg: null, afterSvg: null },
+    ];
+    const html = renderProposalPreviewHtml(frames, 2);
+    expect(html).toContain('+1 more page affected');
+  });
+});
+
+describe('renderProposalPreviewErrorHtml', () => {
+  it('surfaces an escaped error message without blocking accept/reject', () => {
+    const html = renderProposalPreviewErrorHtml('<script>x</script> failed');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;x&lt;/script&gt; failed');
+    expect(html).toContain('Preview unavailable');
   });
 });

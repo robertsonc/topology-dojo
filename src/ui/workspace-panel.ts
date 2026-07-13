@@ -23,6 +23,7 @@ import {
   createWorkspace,
   getWorkspace,
   getWorkspaceManifest,
+  getWorkspaceProposal,
   grantWorkspaceLease,
   listWorkspaces,
   listWorkspaceProposals,
@@ -30,6 +31,7 @@ import {
   revokeWorkspaceLease,
   WorkspaceDisabledError,
 } from '../workspace/client.js';
+import { computeProposalPreview } from '../workspace/preview.js';
 import type {
   CommitRequest,
   ProposalSummary,
@@ -37,7 +39,9 @@ import type {
   WorkspaceListItem,
 } from '../workspace/model.js';
 import { serializeDoc } from '../pages/persist.js';
-import type { TopologyDocument } from '../pages/model.js';
+import type { Page, TopologyDocument } from '../pages/model.js';
+import { pageToSVG } from '../editor/export.js';
+import { nodeBounds } from '../api/geometry.js';
 
 // Local copy of main.ts's `esc()` — the codebase's established pattern for
 // this trivial helper (see `src/nodes/render.ts`, `src/nodes/designer.ts`)
@@ -174,7 +178,9 @@ export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
               .map((line) => `<li>${esc(line)}</li>`)
               .join('')}</ul>` +
             `<div class="ws-actions"><button class="tbtn ws-accept" data-pid="${esc(proposal.id)}">Accept</button>` +
-            `<button class="tbtn ws-reject" data-pid="${esc(proposal.id)}">Reject</button></div></div>`,
+            `<button class="tbtn ws-reject" data-pid="${esc(proposal.id)}">Reject</button>` +
+            `<button class="tbtn ws-preview-toggle" data-pid="${esc(proposal.id)}">Preview</button></div>` +
+            `<div class="ws-preview" data-pid="${esc(proposal.id)}" hidden></div></div>`,
         )
         .join('')
     : `<div class="ws-empty">No pending agent proposals.</div>`;
@@ -208,6 +214,87 @@ export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
   );
 }
 
+/** One rendered before/after frame pair — SVG already produced by the engine
+ * (or null: "before" is null for a page the proposal adds, "after" is null
+ * for a page it removes). Kept separate from the engine call itself so the
+ * HTML layout below is testable without a loaded browser engine. */
+export interface RenderedPreviewFrame {
+  pageId: string;
+  pageName: string;
+  beforeSvg: string | null;
+  afterSvg: string | null;
+}
+
+/** Pure: highlight-outline `<g>` for changed node ids on `page`, appended as
+ * a sibling of the engine's own SVG markup (never edits it in place). Only
+ * node elements have an AABB source (`api/geometry.ts`) today, so a changed
+ * link/zone/anchor/flowPath/policyMarker id draws no outline — a known,
+ * documented gap rather than a silent inaccuracy. */
+export function renderChangedElementOverlay(
+  page: Page,
+  changedElementIds: string[],
+): string {
+  const pad = 6;
+  const rects = changedElementIds
+    .map((id) => page.nodes.find((n) => n.id === id))
+    .filter((n): n is NonNullable<typeof n> => Boolean(n))
+    .map((node) => {
+      const b = nodeBounds(node);
+      return (
+        `<rect x="${b.x - pad}" y="${b.y - pad}" width="${b.w + pad * 2}" height="${b.h + pad * 2}" ` +
+        `rx="6" class="ws-preview-highlight-rect"/>`
+      );
+    })
+    .join('');
+  return rects ? `<g class="ws-preview-highlight">${rects}</g>` : '';
+}
+
+/** Pure: the preview body for one proposal from already-rendered SVG frames
+ * (capped upstream to `frames.length`; `totalAffected` may exceed it). */
+export function renderProposalPreviewHtml(
+  frames: RenderedPreviewFrame[],
+  totalAffected: number,
+): string {
+  if (!frames.length)
+    return (
+      `<div class="ws-note">No page-level preview for this proposal — ` +
+      `it only changes document-level settings (see the operation list above).</div>`
+    );
+  const more = totalAffected - frames.length;
+  return (
+    `<div class="ws-preview-pages">` +
+    frames
+      .map(
+        (frame) =>
+          `<div class="ws-preview-page">` +
+          `<div class="ws-preview-page-name">${esc(frame.pageName)}</div>` +
+          `<div class="ws-preview-frames">` +
+          `<div class="ws-preview-frame"><div class="ws-preview-frame-label">Before</div>` +
+          (frame.beforeSvg ??
+            `<div class="ws-note ws-preview-empty">New page</div>`) +
+          `</div>` +
+          `<div class="ws-preview-frame"><div class="ws-preview-frame-label">After</div>` +
+          (frame.afterSvg ??
+            `<div class="ws-note ws-preview-empty">Page removed</div>`) +
+          `</div></div></div>`,
+      )
+      .join('') +
+    `</div>` +
+    (more > 0
+      ? `<div class="ws-note ws-preview-more">+${more} more page${more === 1 ? '' : 's'} affected</div>`
+      : '')
+  );
+}
+
+/** Pure: the preview body when preview computation/rendering failed —
+ * the accept/reject actions above stay intact either way. */
+export function renderProposalPreviewErrorHtml(message: string): string {
+  return (
+    `<div class="ws-note">Preview unavailable (${esc(message)}) — ` +
+    `see the operation list above.</div>`
+  );
+}
+
 export function mountWorkspacePanel(
   host: WorkspacePanelHost,
 ): WorkspacePanelHandle {
@@ -220,6 +307,117 @@ export function mountWorkspacePanel(
   // offering actions that would just 503 (see WorkspaceDisabledError).
   let workspaceDisabled = false;
   let workspaceSaveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Rendered before/after proposal preview (Packet R1) state. Kept apart
+  // from `ActiveWorkspace` because it's a lazy, per-proposal-id UI cache —
+  // reset whenever the active workspace changes, never part of sync/commit.
+  type ProposalPreviewState =
+    | { status: 'loading' }
+    | { status: 'ready'; frames: RenderedPreviewFrame[]; totalAffected: number }
+    | { status: 'error'; message: string };
+  const previewOpen = new Set<string>();
+  const previewState = new Map<string, ProposalPreviewState>();
+
+  function resetProposalPreviews(): void {
+    previewOpen.clear();
+    previewState.clear();
+  }
+
+  function findPreviewContainer(proposalId: string): HTMLElement | null {
+    const containers =
+      workspacePanel?.querySelectorAll<HTMLElement>('.ws-preview');
+    if (!containers) return null;
+    for (const el of containers) if (el.dataset.pid === proposalId) return el;
+    return null;
+  }
+
+  /** Paint the cached preview state for one proposal into its container
+   * without touching the rest of the panel (keeps other proposals/scroll
+   * position stable across a poll-driven full re-render). */
+  function paintProposalPreview(proposalId: string): void {
+    const container = findPreviewContainer(proposalId);
+    if (!container) return;
+    const state = previewState.get(proposalId);
+    if (!state) {
+      container.innerHTML = '';
+      return;
+    }
+    if (state.status === 'loading')
+      container.innerHTML = `<div class="ws-note">Rendering preview…</div>`;
+    else if (state.status === 'error')
+      container.innerHTML = renderProposalPreviewErrorHtml(state.message);
+    else
+      container.innerHTML = renderProposalPreviewHtml(
+        state.frames,
+        state.totalAffected,
+      );
+  }
+
+  /**
+   * Lazily fetch proposal detail (operations) + the current canonical
+   * snapshot, compute the pure preview, and render each affected page (capped
+   * at 3) through the same browser SVG engine path the editor/export use
+   * (`pageToSVG`, `{ calm: true }` for a static frame), with a changed-element
+   * highlight overlay on the "after" frame. Never mutates the live document —
+   * `computeProposalPreview` and the snapshot are both clones/fresh fetches.
+   * Any failure (network, invalid operations, engine render) degrades to the
+   * existing semantic summary already shown above the toggle; it never
+   * touches accept/reject.
+   */
+  async function loadProposalPreview(proposalId: string): Promise<void> {
+    const workspace = activeWorkspace;
+    if (!workspace) return;
+    previewState.set(proposalId, { status: 'loading' });
+    paintProposalPreview(proposalId);
+    try {
+      const [detail, snapshot] = await Promise.all([
+        getWorkspaceProposal(workspace.id, proposalId),
+        getWorkspace(workspace.id),
+      ]);
+      const pages = computeProposalPreview(
+        snapshot.document.pages,
+        detail.operations,
+      );
+      const shown = pages.slice(0, 3);
+      const frames: RenderedPreviewFrame[] = shown.map((page) => ({
+        pageId: page.pageId,
+        pageName: page.pageName,
+        beforeSvg: page.before ? pageToSVG(page.before, { calm: true }) : null,
+        afterSvg: page.after
+          ? pageToSVG(
+              page.after,
+              { calm: true },
+              renderChangedElementOverlay(page.after, page.changedElementIds),
+            )
+          : null,
+      }));
+      if (activeWorkspace !== workspace) return; // workspace changed under the fetch
+      previewState.set(proposalId, {
+        status: 'ready',
+        frames,
+        totalAffected: pages.length,
+      });
+    } catch (error) {
+      previewState.set(proposalId, {
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    paintProposalPreview(proposalId);
+  }
+
+  function toggleProposalPreview(proposalId: string): void {
+    const container = findPreviewContainer(proposalId);
+    if (previewOpen.has(proposalId)) {
+      previewOpen.delete(proposalId);
+      if (container) container.hidden = true;
+      return;
+    }
+    previewOpen.add(proposalId);
+    if (container) container.hidden = false;
+    if (previewState.has(proposalId)) paintProposalPreview(proposalId);
+    else void loadProposalPreview(proposalId);
+  }
 
   function closeWorkspaceForDocumentReplacement(): boolean {
     const workspace = activeWorkspace;
@@ -234,6 +432,7 @@ export function mountWorkspacePanel(
     clearTimeout(workspaceSaveTimer);
     activeWorkspace = null;
     workspaceChoices = [];
+    resetProposalPreviews();
     localStorage.removeItem(WORKSPACE_LINK_KEY);
     updateWorkspaceChip();
     renderWorkspacePanel();
@@ -605,6 +804,7 @@ export function mountWorkspacePanel(
         if (workspaceHasLocalChanges(workspace) && !(await syncWorkspace()))
           return;
         activeWorkspace = null;
+        resetProposalPreviews();
         localStorage.removeItem(WORKSPACE_LINK_KEY);
         workspaceChoices = [];
         updateWorkspaceChip();
@@ -649,6 +849,8 @@ export function mountWorkspacePanel(
             renderWorkspacePanel();
             return;
           }
+          previewOpen.delete(proposalId);
+          previewState.delete(proposalId);
           adoptWorkspaceSnapshot(
             await getWorkspace(workspace.id),
             'proposal accepted · synced',
@@ -663,14 +865,35 @@ export function mountWorkspacePanel(
     });
     body.querySelectorAll<HTMLButtonElement>('.ws-reject').forEach((button) => {
       button.addEventListener('click', () => {
-        void rejectWorkspaceProposal(workspace.id, button.dataset.pid!)
-          .then(() => refreshWorkspaceState(false))
+        const proposalId = button.dataset.pid!;
+        void rejectWorkspaceProposal(workspace.id, proposalId)
+          .then(() => {
+            previewOpen.delete(proposalId);
+            previewState.delete(proposalId);
+            return refreshWorkspaceState(false);
+          })
           .catch((error) => {
             workspace.error =
               error instanceof Error ? error.message : String(error);
             renderWorkspacePanel();
           });
       });
+    });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-preview-toggle')
+      .forEach((button) => {
+        button.addEventListener('click', () =>
+          toggleProposalPreview(button.dataset.pid!),
+        );
+      });
+    // A poll-driven re-render replaces the whole body; repaint any preview
+    // the owner had left open instead of silently collapsing it.
+    body.querySelectorAll<HTMLElement>('.ws-preview').forEach((container) => {
+      const proposalId = container.dataset.pid!;
+      if (previewOpen.has(proposalId)) {
+        container.hidden = false;
+        paintProposalPreview(proposalId);
+      }
     });
   }
 

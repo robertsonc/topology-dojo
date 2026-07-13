@@ -372,6 +372,64 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
+      /* Rendered before/after proposal preview (Packet R1). */
+      .ws-preview {
+        margin-top: 9px;
+        padding-top: 9px;
+        border-top: 1px solid var(--border);
+      }
+      .ws-preview-pages {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 420px;
+        overflow: auto;
+      }
+      .ws-preview-page-name {
+        font-weight: 600;
+        margin-bottom: 5px;
+      }
+      .ws-preview-frames {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .ws-preview-frame {
+        flex: 1 1 150px;
+        min-width: 0;
+      }
+      .ws-preview-frame-label {
+        color: var(--muted);
+        font-size: 9.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 3px;
+      }
+      .ws-preview-frame svg {
+        display: block;
+        width: 100%;
+        max-width: 340px;
+        height: auto;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+      .ws-preview-empty {
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        padding: 14px 8px;
+        text-align: center;
+        font-size: 10px;
+      }
+      .ws-preview-more {
+        margin-top: 2px;
+      }
+      .ws-preview-highlight-rect {
+        fill: none;
+        stroke: #ffcc55;
+        stroke-width: 2;
+        stroke-dasharray: 4 3;
+        vector-effect: non-scaling-stroke;
+      }
       /* Display-settings popover (ambient + glass). */
       .display-pop {
         position: fixed;
