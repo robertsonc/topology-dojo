@@ -27,6 +27,9 @@ Built methodically, one reviewable PR at a time, each reviewed against
   `CustomNodeSpec` rendered by a pure interpreter; the engine's
   `registerNodeType` plugin API).
 - **Calm canvas** toggle (pause animation) and self-hosted JetBrains Mono.
+- **Inline layout warning badges**: `analyzeLayout` / `validateDocument`
+  problems render as small badges anchored to the offending elements on the
+  canvas, alongside the existing clickable problems panel.
 
 ### Headless API + contract
 
@@ -69,6 +72,10 @@ Built methodically, one reviewable PR at a time, each reviewed against
   self-playing HTML artifact of every page on its duration
   ([proposal](proposals/0001-live-flow-visualization.md), E5; also delivers
   the "standalone HTML export" roadmap candidate).
+- **Legacy importer** (`src/import/legacy.ts`): best-effort converter from
+  legacy Topology Studio JSON → pages, validated against real fixtures, wired
+  into the GUI open flow and exposed through a `format` parameter on the
+  `import_topology` MCP tool.
 
 ### Layout for AI
 
@@ -111,19 +118,51 @@ Built methodically, one reviewable PR at a time, each reviewed against
   on-demand operation vocabulary, bounded changes, targeted elements, proposals,
   and leased operations. See
   [`proposals/0002-shared-human-agent-workspace.md`](proposals/0002-shared-human-agent-workspace.md).
+- **Rendered proposal preview**: a before/after render of a pending agent
+  proposal with changed elements highlighted, shown in the review flow (first
+  of the workspace review-polish follow-ons).
+
+### Deployment & release safety (proposal 0004)
+
+Infrastructure delivered and proven on staging; production activation of the
+shared workspace remains a protected operator step (see the residual item under
+Next / candidate).
+
+- **Isolated staging environment**: a stable `topology-dojo-staging` Worker
+  with its own KV namespaces, Durable Object namespaces, GitHub OAuth
+  App/secret, and origin; a `check-wrangler-env.mjs` CI guard enforces that
+  staging and production share no resource ids. Closes finding M14.
+- **CI-gated deployment pipeline**: `deploy-staging.yml` and
+  `deploy-production.yml` re-run the CI `check` before deploying (`ci.yml` is
+  reusable via `workflow_call`); production is restricted to `main`, requires a
+  protected environment approval, and the CI `check` is a required status. The
+  ungoverned `npm run deploy` laptop path was removed. Closes finding L1;
+  closes H7 once Workers Builds is disconnected from production (operator O9/O10).
+- **Feature flag + migration bootstrap**: a `WORKSPACE_ENABLED` flag 503-gates
+  the workspace API, hides the workspace MCP tools, and disables the panel, so
+  migration `v3` can bootstrap the `TopologyDocument` namespace in production
+  with workspace entry points disabled.
+- **Smoke + health + recovery docs**: `scripts/smoke.mjs` external smoke suite
+  (deployed-sha assertion, live-propagation wait), `GET /healthz` and
+  `GET /readyz` endpoints, and written rollback / forward-recovery runbooks.
+  First fully-green gated staging deploy: run #4. Substantially closes M15
+  (alerting + staging game day remain — operator O12 and the ROLLBACK.md game
+  day).
 
 ## Next / candidate
 
 The items below are sequenced into dependency-ordered implementation packets
 in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
 
-- **Isolated staging and deployment safety** — disable broken non-production
-  version uploads on the production Worker; provision separate staging OAuth,
-  KV, and Durable Object resources; make GitHub Actions the single CI-gated
-  deployment authority; add smoke/health checks; bootstrap migration `v3` with
-  workspace entry points disabled; and exercise forward recovery before
-  production activation. See
-  [`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md).
+- **Production workspace activation** — the residual operator steps after the
+  staging pipeline (now shipped, above): run the staging forward-recovery game
+  day; bootstrap migration `v3` in production with `WORKSPACE_ENABLED=false`;
+  disconnect Workers Builds and make GitHub Actions the sole production deploy
+  authority; configure Cloudflare error-rate alerting + nightly staging smoke;
+  then flip the workspace flag under the agreed observation window. See
+  [`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md)
+  and the operator checklist in
+  [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) §4.7.
 - **Agentic implementation workflows** — build roadmap features from bounded
   implementation packets with explicit ownership, risk-based validation,
   adversarial architecture/UX review, durable Git handoff, and protected human
@@ -133,8 +172,9 @@ in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
 - **MCP auth hardening** — graduate the single shared secret to per-key KV
   (mint / revoke / label) or full OAuth, if multiple revocable credentials are
   needed.
-- **Workspace review polish** — rendered before/after proposal preview,
-  selective acceptance, named checkpoints, restore/fork, and revision timeline.
+- **Workspace review polish** — rendered before/after proposal preview
+  (shipped, above); still to come: selective acceptance, named checkpoints,
+  restore/fork, and revision timeline.
 - **Workspace resilience/collaboration** — IndexedDB offline cache, WebSocket
   push/presence, explicit collaborator/organization ACLs, and finer element-set
   leases. Add CRDTs only if offline multi-master editing becomes a measured need.
@@ -143,12 +183,9 @@ in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
   only task-relevant rules under a hard token budget. MCP schemas remain stable,
   while product guidance evolves through reviewed/versioned packs. See
   [`proposals/0003-adaptive-agent-authoring-profiles.md`](proposals/0003-adaptive-agent-authoring-profiles.md).
-- **Surface layout warnings in the GUI** — show `analyzeLayout` results in the
-  editor (inline badges), not just via the API.
 - **More node/link art** — port additional renderers from the legacy monolith as
   needed; richer per-type inspector controls (ports, D2 waypoint UI).
 - **Export / share** — standalone HTML or PNG/SVG export of a page or flipbook.
-- **Importer** — best-effort import from legacy Topology Studio JSON → pages.
 
 ## Retired (kept dormant)
 

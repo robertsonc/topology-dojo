@@ -70,10 +70,19 @@ _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent ve
 
 ### H7. Production deploy is not gated on CI: Workers Builds auto-deploys every push to main regardless of test results
 
-- **Remediation plan:** Proposed in
-  [`../proposals/0004-isolated-staging-and-deployment-pipeline.md`](../proposals/0004-isolated-staging-and-deployment-pipeline.md).
-  Keep this finding open until the Actions deployment path is protected and
-  Workers Builds can no longer deploy the production script independently.
+- **Status (2026-07-13): Pipeline delivered and proven on staging; open pending
+  production cutover.** The CI-gated Actions deploy path now exists —
+  `deploy-production.yml` re-runs `ci.yml` (via `workflow_call` / `needs:
+check`), requires the `production` GitHub environment approval, and is
+  restricted to `main` with the CI `check` as a required status (Packet D5,
+  PR #150; environments + branch protection, operator O5/O6). It was exercised
+  end to end on staging by
+  [Deploy Staging run #4](https://github.com/robertsonc/topology-dojo/actions/runs/29219841599)
+  (SHA `104b4d5`). This finding stays **open** only because production still
+  auto-deploys through Workers Builds: the residual cutover is operator O9
+  (disconnect Workers Builds) followed by O10 (first gated production deploy).
+  A Node 22 pin across all workflows (PR #155) resolved the CI/deploy toolchain
+  mismatch this finding also flagged.
 
 - **Area:** CI/CD & Release | **Location:** `.github/workflows/ci.yml:8` | **Type:** deploy-pipeline-safety
 - **Problem:** The GitHub Actions workflow only runs checks; deployment happens through the Cloudflare Workers Builds Git integration, which triggers on push to main and runs its own build/deploy command ('npx wrangler deploy' per the repo's own docs) in parallel with — and independent of — CI. A commit whose vitest suite or lint fails but which still compiles ships straight to production at 100% traffic (no gradual rollout is possible because the DO migration forbids 'versions upload'). Worse, the artifact that reaches production is not the one CI built: Workers Builds rebuilds under its own default Node version while CI tests on Node 20 (there is no engines field or .nvmrc pinning). Direct pushes to main are clearly anticipated (the workflow has a push: main trigger), so nothing in the repo assumes branch protection either.
@@ -173,11 +182,17 @@ _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent ve
 
 ### M14. No staging or preview environment; any non-production deploy shares production KV (OAuth tokens, share snapshots) — and PR previews are known-broken anyway
 
-- **Remediation plan:** Proposed in
-  [`../proposals/0004-isolated-staging-and-deployment-pipeline.md`](../proposals/0004-isolated-staging-and-deployment-pipeline.md)
-  with operator steps in [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md).
-  Documentation does not close this finding; closure requires isolated resource
-  ids, a full staging deploy, and recorded smoke evidence.
+- **Status (2026-07-13): Closed.** Delivered by Packet D1 (PR #149):
+  `wrangler.jsonc` now declares an `env.staging` block with its own KV
+  namespaces, Durable Object namespaces, GitHub OAuth App/secret, and
+  `PUBLIC_BASE_URL`, and a `scripts/check-wrangler-env.mjs` CI guard asserts
+  staging and production share no resource ids. The `topology-dojo-staging`
+  Worker is deployed and healthy with migrations `v1`–`v3` applied — first
+  fully-green gated deploy
+  [Deploy Staging run #4](https://github.com/robertsonc/topology-dojo/actions/runs/29219841599)
+  (SHA `104b4d5`, smoke 7/7 including sha verification). Non-production Workers
+  Builds branch builds are disabled (operator O1), so no non-production deploy
+  reads or writes production KV.
 
 - **Area:** CI/CD & Release | **Location:** `wrangler.jsonc:42` | **Type:** environments
 - **Problem:** wrangler.jsonc defines a single environment: no [env.staging]/[env.preview] blocks, no preview_id on the KV namespaces, hard-coded production namespace IDs, and one DO binding. Any deploy that isn't production — a Workers Builds PR preview or a developer testing 'wrangler deploy' — would read and write the production OAUTH_KV (live OAuth grants/tokens) and TOPOLOGY_KV (live share links). On top of that, the repo's own docs state that 'wrangler versions upload' — which is what Workers Builds uses for non-production-branch preview builds — fails with error 10211 because of the Durable Object migration, so PR preview deployments cannot work at all. Net effect for launch: there is nowhere to exercise the GitHub OAuth flow, the MCP endpoint, or the DO/KV wiring before it hits production users.
@@ -185,11 +200,19 @@ _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent ve
 
 ### M15. No post-deploy smoke test, no alerting, and no rollback procedure — observability:true is the entire ops story
 
-- **Remediation plan:** Smoke and release gates are specified in
-  [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md); rollback and
-  migration-boundary forward recovery are specified in
-  [`../ROLLBACK.md`](../ROLLBACK.md). Keep this finding open until the automated
-  smoke, alert, and staging game-day evidence exists.
+- **Status (2026-07-13): Substantially addressed; open pending alerting +
+  game-day.** Post-deploy smoke shipped as `scripts/smoke.mjs` (Packet D4,
+  PR #146) and runs on every gated deploy, with `--sha` deployed-commit
+  assertion and a `--wait-live` propagation window; `GET /healthz`
+  (unauthenticated liveness + sha) and `GET /readyz` (owner-authenticated
+  per-binding readiness) were added in Packet D3 (PR #148); a written rollback
+  and migration-boundary forward-recovery procedure exists in
+  [`../ROLLBACK.md`](../ROLLBACK.md). Still **open**: Cloudflare error-rate
+  alerting, failed-workflow notifications, and a nightly staging smoke
+  (operator O12 — the trip thresholds are set in
+  [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md) §"Activation observation
+  window and thresholds"), plus the one-time staging forward-recovery game day
+  ([`../ROLLBACK.md`](../ROLLBACK.md) §"Staging game day").
 
 - **Area:** CI/CD & Release | **Location:** `wrangler.jsonc:47` | **Type:** release-verification
 - **Problem:** Nothing verifies a deploy after it lands. The whole site — SPA, login gate, share API, and MCP — sits behind one OAuthProvider wrapper in worker/index.ts, so a single bad change (rotated GITHUB_CLIENT_SECRET not updated, KV binding renamed, broken migration) takes down everything at once, and the first signal would be a user report. There is no health endpoint, no post-deploy curl check, no alerting configured (observability only enables logs), and no docs mention rollback anywhere in README/docs/. Rollback is also nontrivial here: `wrangler rollback` cannot cross the Durable Object SQLite migration boundary declared in migrations, so the team needs a written procedure before launch, not during an incident.
@@ -282,6 +305,12 @@ _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent ve
 ## LOW (9)
 
 ### L1. Ungoverned second deploy path: `npm run deploy` ships the local working tree to production, bypassing CI and conflicting with Git-integration deploys
+
+- **Status (2026-07-13): Closed.** The `npm run deploy` script was deleted in
+  Packet D1 (PR #149). Deploys now run only through the gated GitHub Actions
+  workflows (`deploy-staging.yml` / `deploy-production.yml`), each of which
+  re-runs the CI `check` before deploying; there is no longer a laptop path
+  that can push a local working tree to the production Worker.
 
 - **Area:** CI/CD & Release | **Location:** `package.json:15` | **Type:** deploy-pipeline-safety
 - **Problem:** The deploy script does a full production `wrangler deploy` from whatever is on the developer's disk — uncommitted or unpushed changes included — with no tests and no record in Git. It coexists with the Workers Builds auto-deploy, so the two paths silently clobber each other: a laptop deploy is reverted by the next push to main, or a laptop deploy of a stale branch overwrites what main deployed. src/mcp/README.md even instructs running `npm run deploy` as part of TOPOLOGY_KV setup, normalizing the bypass. Because wrangler deploy takes 100% traffic instantly, one accidental invocation from the wrong checkout replaces production.
