@@ -57,6 +57,14 @@ export interface WorkerEnv {
    * (see proposal 0004, decision 4).
    */
   WORKSPACE_ENABLED?: string;
+  /**
+   * The deployed commit SHA, surfaced verbatim by `GET /healthz` (`sha`
+   * field) so `scripts/smoke.mjs --sha <sha>` and deploy workflow summaries
+   * can prove which commit is actually live. Deploy workflows set this with
+   * `wrangler deploy --var GIT_SHA:$GITHUB_SHA`; unset in local dev, where
+   * `/healthz` reports `sha: null`.
+   */
+  GIT_SHA?: string;
 }
 
 /**
