@@ -19,7 +19,7 @@
  * (browser OAuth, MCP session, shared workspace flows) this script does not
  * and cannot cover unauthenticated.
  */
-/* global fetch, AbortSignal, URL, console, process */
+/* global fetch, AbortSignal, URL, console, process, setTimeout */
 
 /** Per-request timeout: a hung deployment must fail the run, not hang CI. */
 const TIMEOUT_MS = 15_000;
