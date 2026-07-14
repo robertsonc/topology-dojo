@@ -17,6 +17,7 @@ import {
   applyOperations,
   conflictingTargets,
   operationPageIds,
+  subsetDependencyErrors,
   summarizeOperations,
   validateOperations,
 } from '../src/workspace/operations.js';
@@ -196,7 +197,9 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       lease: activeLease(meta),
       pendingProposals: [...proposals.values()].filter(
         (proposal) =>
-          proposal.status === 'pending' || proposal.status === 'conflicted',
+          proposal.status === 'pending' ||
+          proposal.status === 'partially-accepted' ||
+          proposal.status === 'conflicted',
       ).length,
     };
   }
@@ -386,6 +389,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
         (proposal) =>
           includeResolved ||
           proposal.status === 'pending' ||
+          proposal.status === 'partially-accepted' ||
           proposal.status === 'conflicted',
       )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -407,6 +411,9 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     actor: WorkspaceActor,
     id: string,
     operationId: string,
+    /** Accept only these operation indices (a coherent subset). Omit to accept
+     * the whole proposal. Duplicates and order are normalized. */
+    selectedOperationIndices?: number[],
   ): Promise<CommitResult> {
     if (actor.kind !== 'user')
       throw new Error('only a browser user can accept proposals');
@@ -426,6 +433,45 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
         };
       if (proposal.status === 'rejected')
         throw new Error('a rejected proposal cannot be accepted');
+
+      // Resolve which operations this accept applies: a coherent subset when
+      // indices are given, otherwise the whole (remaining) proposal.
+      const total = proposal.operations.length;
+      let opsToApply = proposal.operations;
+      let residual: WorkspaceOperation[] = [];
+      if (selectedOperationIndices !== undefined) {
+        const indices = [...new Set(selectedOperationIndices)].sort(
+          (a, b) => a - b,
+        );
+        if (indices.some((i) => !Number.isInteger(i) || i < 0 || i >= total))
+          throw new Error('selected operation index out of range');
+        if (indices.length === 0)
+          throw new Error('no operations selected for acceptance');
+        if (indices.length < total) {
+          const depErrors = subsetDependencyErrors(
+            proposal.operations,
+            indices,
+          );
+          if (depErrors.length) {
+            const missing = [...new Set(depErrors.map((e) => e.missingId))];
+            const result: CommitResult = {
+              ok: false,
+              code: 'incoherent-subset',
+              revision: meta.revision,
+              message: `selected operations reference ${missing
+                .map((m) => `"${m}"`)
+                .join(', ')}, which only unselected operations create`,
+              missingDependencies: missing,
+            };
+            await this.rememberRequest(tx, meta, operationId, result);
+            return result;
+          }
+          const chosen = new Set(indices);
+          opsToApply = proposal.operations.filter((_, i) => chosen.has(i));
+          residual = proposal.operations.filter((_, i) => !chosen.has(i));
+        }
+      }
+
       if (proposal.baseRevision < meta.historyFloor) {
         const result: CommitResult = {
           ok: false,
@@ -440,7 +486,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
         tx,
         proposal.baseRevision,
         meta.revision,
-        proposal.operations,
+        opsToApply,
       );
       if (conflicts.length) {
         proposal.status = 'conflicted';
@@ -465,16 +511,28 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
         {
           baseRevision: proposal.baseRevision,
           operationId,
-          operations: proposal.operations,
+          operations: opsToApply,
         },
         'proposal',
         id,
       );
       if (result.ok) {
-        proposal.status = 'accepted';
-        proposal.acceptedRevision = result.revision;
         proposal.updatedAt = nowIso();
         delete proposal.conflictingTargets;
+        if (residual.length) {
+          // Partial acceptance: keep the remainder reviewable, rebased onto the
+          // revision the accepted subset just produced (the residual ops were
+          // authored to run after the accepted ones), so its next accept/view
+          // re-validates against the new canonical state.
+          proposal.operations = residual;
+          proposal.summary = summarizeOperations(residual);
+          proposal.baseRevision = result.revision;
+          proposal.status = 'partially-accepted';
+          proposal.acceptedRevision = result.revision;
+        } else {
+          proposal.status = 'accepted';
+          proposal.acceptedRevision = result.revision;
+        }
         await tx.put(PROPOSAL_PREFIX + id, proposal);
       }
       return result;

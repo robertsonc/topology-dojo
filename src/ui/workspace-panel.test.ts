@@ -319,7 +319,7 @@ describe('renderActiveWorkspaceHtml', () => {
     expect(html).toContain('· conflicted</div>');
   });
 
-  it('truncates operation descriptions to 8 lines', () => {
+  it('renders a selectable checkbox per operation (checked) plus accept-selected', () => {
     const html = renderActiveWorkspaceHtml(
       activeWorkspace({
         proposals: [
@@ -335,7 +335,31 @@ describe('renderActiveWorkspaceHtml', () => {
         ],
       }),
     );
-    expect((html.match(/<li>/g) ?? []).length).toBe(8);
+    expect((html.match(/class="ws-op-check"/g) ?? []).length).toBe(12);
+    expect(html).toContain('data-op-index="0"');
+    expect(html).toContain('data-op-index="11"');
+    expect(html).toContain('ws-accept-selected');
+    expect(html).toContain('Accept all');
+  });
+
+  it('notes operations beyond the listed first 100', () => {
+    const html = renderActiveWorkspaceHtml(
+      activeWorkspace({
+        proposals: [
+          proposal({
+            summary: {
+              count: 150,
+              byType: { 'element.add': 150 },
+              affectedPageIds: ['p1'],
+              affectedElementIds: [],
+              descriptions: Array.from({ length: 100 }, (_, i) => `op ${i}`),
+            },
+          }),
+        ],
+      }),
+    );
+    expect((html.match(/class="ws-op-check"/g) ?? []).length).toBe(100);
+    expect(html).toContain('and 50 more');
   });
 
   it('escapes untrusted text in status/error/proposal fields', () => {

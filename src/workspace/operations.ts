@@ -543,6 +543,145 @@ export function operationPageIds(operation: WorkspaceOperation): string[] {
   }
 }
 
+/** A selected operation that references an element or page which only an
+ * *unselected* operation in the same proposal would create. */
+export interface SubsetDependencyError {
+  /** Index (into the proposal's operations) of the selected op that can't stand alone. */
+  index: number;
+  /** Index of the unselected operation that would create the missing element/page. */
+  dependsOnIndex: number;
+  /** The element or page id that would be left dangling. */
+  missingId: string;
+  kind: 'page' | 'element';
+}
+
+/** The outbound id references an element carries, mirroring the cascade model in
+ * `api/edit.ts` (link endpoints, marker node/flow, flow-path waypoints, zone
+ * members + parent). `node`/`anchor` carry no outbound references. Works on both
+ * a full element and a patch's `set` map, since both name the same fields. */
+function elementRefIds(
+  kind: ElementKind,
+  fields: Record<string, unknown>,
+): string[] {
+  const ids: string[] = [];
+  const push = (v: unknown): void => {
+    if (typeof v === 'string') ids.push(v);
+  };
+  const pushAll = (v: unknown): void => {
+    if (Array.isArray(v)) for (const x of v) push(x);
+  };
+  switch (kind) {
+    case 'links':
+      push(fields.from);
+      push(fields.to);
+      break;
+    case 'policyMarkers':
+      push(fields.nodeId);
+      push(fields.flowPathId);
+      break;
+    case 'flowPaths':
+      pushAll(fields.waypoints);
+      break;
+    case 'zones':
+      pushAll(fields.nodes);
+      push(fields.parentZone);
+      break;
+  }
+  return ids;
+}
+
+const subsetElemKey = (pageId: string, id: string): string => `${pageId} ${id}`;
+
+/**
+ * Validate that a chosen subset of a proposal's operations can stand on its own.
+ * A selected operation must not reference an element or page that only an
+ * *unselected* operation in the same proposal creates — accepting it alone would
+ * leave a dangling reference. Returns one entry per unmet dependency (empty ⇒ the
+ * subset is self-contained). Ids that already exist in the base document are not
+ * created here, so references to them never count as a dependency. Relies on the
+ * proposal being internally well-ordered (a creation precedes its references),
+ * which holds for any proposal that applies cleanly as a whole.
+ */
+export function subsetDependencyErrors(
+  operations: WorkspaceOperation[],
+  selectedIndices: Iterable<number>,
+): SubsetDependencyError[] {
+  const selected = new Set<number>(selectedIndices);
+  // Ids created *within* this proposal → the op index that creates them.
+  const pageCreator = new Map<string, number>();
+  const elementCreator = new Map<string, number>();
+  operations.forEach((op, i) => {
+    if (op.type === 'page.add') pageCreator.set(op.page.id, i);
+    else if (op.type === 'element.add')
+      elementCreator.set(subsetElemKey(op.pageId, String(op.element.id)), i);
+  });
+
+  const errors: SubsetDependencyError[] = [];
+  const seen = new Set<string>();
+  const needPage = (index: number, pageId: string): void => {
+    const creator = pageCreator.get(pageId);
+    if (creator === undefined || selected.has(creator)) return;
+    const key = `${index}:page:${pageId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    errors.push({
+      index,
+      dependsOnIndex: creator,
+      missingId: pageId,
+      kind: 'page',
+    });
+  };
+  const needElement = (index: number, pageId: string, id: string): void => {
+    const creator = elementCreator.get(subsetElemKey(pageId, id));
+    if (creator === undefined || selected.has(creator)) return;
+    const key = `${index}:element:${subsetElemKey(pageId, id)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    errors.push({
+      index,
+      dependsOnIndex: creator,
+      missingId: id,
+      kind: 'element',
+    });
+  };
+
+  operations.forEach((op, index) => {
+    if (!selected.has(index)) return;
+    switch (op.type) {
+      case 'document.patch':
+      case 'page.reorder':
+      case 'page.add':
+        // page.add is self-contained: the whole page + its inner refs arrive together.
+        break;
+      case 'page.patch':
+      case 'page.remove':
+        needPage(index, op.pageId);
+        break;
+      case 'element.add':
+        needPage(index, op.pageId);
+        for (const ref of elementRefIds(op.kind, op.element))
+          needElement(index, op.pageId, ref);
+        break;
+      case 'element.patch':
+        needPage(index, op.pageId);
+        needElement(index, op.pageId, op.elementId);
+        if (op.patch.set)
+          for (const ref of elementRefIds(op.kind, op.patch.set))
+            needElement(index, op.pageId, ref);
+        break;
+      case 'element.remove':
+        needPage(index, op.pageId);
+        needElement(index, op.pageId, op.elementId);
+        break;
+      case 'element.reorder':
+        needPage(index, op.pageId);
+        for (const id of op.elementIds) needElement(index, op.pageId, id);
+        break;
+    }
+  });
+  return errors;
+}
+
 export function describeOperation(operation: WorkspaceOperation): string {
   switch (operation.type) {
     case 'document.patch':

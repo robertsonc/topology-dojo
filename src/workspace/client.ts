@@ -121,6 +121,8 @@ export async function acceptWorkspaceProposal(
   id: string,
   proposalId: string,
   operationId: string,
+  /** Accept only these operation indices (a coherent subset). Omit to accept all. */
+  selectedOperationIndices?: number[],
 ): Promise<CommitResult> {
   const response = await fetch(
     `/api/workspaces/${encodeURIComponent(id)}/proposals/${encodeURIComponent(proposalId)}/accept`,
@@ -130,7 +132,11 @@ export async function acceptWorkspaceProposal(
         accept: 'application/json',
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ operationId }),
+      body: JSON.stringify(
+        selectedOperationIndices
+          ? { operationId, selectedOperationIndices }
+          : { operationId },
+      ),
     },
   );
   if (response.status === 409) return (await response.json()) as CommitResult;
