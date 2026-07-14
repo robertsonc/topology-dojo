@@ -795,6 +795,8 @@ describe('MCP tools', () => {
       elements: unavailable,
       propose: unavailable,
       applyAgent: unavailable,
+      createCheckpoint: unavailable,
+      listCheckpoints: async () => [],
     };
     const withWorkspace = createTools(store, {
       renderDocument: renderDocumentToSVG,
@@ -809,6 +811,8 @@ describe('MCP tools', () => {
       'get_workspace_elements',
       'propose_workspace_changes',
       'apply_workspace_changes',
+      'create_checkpoint',
+      'list_checkpoints',
     ];
     for (const name of names)
       expect(withWorkspace.some((tool) => tool.name === name)).toBe(true);

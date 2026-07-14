@@ -57,6 +57,7 @@ import { TopologyStore } from './store.js';
 import {
   ELEMENT_KINDS,
   type ChangesResult,
+  type CheckpointSummary,
   type CommitRequest,
   type CommitResult,
   type ElementKind,
@@ -132,6 +133,12 @@ export interface ToolDeps {
       rationale?: string,
     ): Promise<ProposalResult>;
     applyAgent(id: string, request: CommitRequest): Promise<CommitResult>;
+    createCheckpoint(
+      id: string,
+      name: string,
+      actorKind?: 'user' | 'agent',
+    ): Promise<CheckpointSummary>;
+    listCheckpoints(id: string): Promise<CheckpointSummary[]>;
   };
 }
 
@@ -1332,6 +1339,28 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             operationId: String(a.operationId),
             operations: a.operations as WorkspaceOperation[],
           }),
+      },
+      {
+        name: 'create_checkpoint',
+        description:
+          'Snapshot the current workspace document as a named checkpoint (e.g. before a risky batch of changes). The owner can later restore or fork it from the browser. Bounded: creating beyond the per-workspace limit fails until one is deleted.',
+        inputShape: {
+          workspaceId,
+          name: z.string().min(1).max(120).describe('A short label for later.'),
+        },
+        handler: (a) =>
+          workspace.createCheckpoint(
+            String(a.workspaceId),
+            String(a.name),
+            'agent',
+          ),
+      },
+      {
+        name: 'list_checkpoints',
+        description:
+          'List this workspace’s named checkpoints (id, name, revision, page count, author). Restore and fork remain browser-owner actions.',
+        inputShape: { workspaceId },
+        handler: (a) => workspace.listCheckpoints(String(a.workspaceId)),
       },
     );
   }

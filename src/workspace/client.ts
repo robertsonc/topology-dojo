@@ -1,8 +1,10 @@
 /** Thin browser client for the owner-authenticated workspace API. */
 import type { TopologyDocument } from '../pages/model.js';
 import type {
+  CheckpointSummary,
   CommitRequest,
   CommitResult,
+  ForkResult,
   ProposalSummary,
   WorkspaceLease,
   WorkspaceListItem,
@@ -149,6 +151,63 @@ export function rejectWorkspaceProposal(
 ): Promise<WorkspaceProposal> {
   return request(
     `/api/workspaces/${encodeURIComponent(id)}/proposals/${encodeURIComponent(proposalId)}/reject`,
+    { method: 'POST', body: '{}' },
+  );
+}
+
+export function listWorkspaceCheckpoints(
+  id: string,
+): Promise<CheckpointSummary[]> {
+  return request(`/api/workspaces/${encodeURIComponent(id)}/checkpoints`);
+}
+
+export function createWorkspaceCheckpoint(
+  id: string,
+  name: string,
+): Promise<CheckpointSummary> {
+  return request(`/api/workspaces/${encodeURIComponent(id)}/checkpoints`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteWorkspaceCheckpoint(
+  id: string,
+  checkpointId: string,
+): Promise<{ deleted: string }> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(checkpointId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function restoreWorkspaceCheckpoint(
+  id: string,
+  checkpointId: string,
+  operationId: string,
+): Promise<CommitResult> {
+  const response = await fetch(
+    `/api/workspaces/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(checkpointId)}/restore`,
+    {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ operationId }),
+    },
+  );
+  if (response.status === 409) return (await response.json()) as CommitResult;
+  return decode<CommitResult>(response);
+}
+
+export function forkWorkspaceCheckpoint(
+  id: string,
+  checkpointId: string,
+): Promise<ForkResult> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(checkpointId)}/fork`,
     { method: 'POST', body: '{}' },
   );
 }

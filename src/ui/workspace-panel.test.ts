@@ -23,6 +23,7 @@ import {
   computeWorkspaceChipState,
   renderActiveWorkspaceHtml,
   renderChangedElementOverlay,
+  renderCheckpointsHtml,
   renderProposalPreviewErrorHtml,
   renderProposalPreviewHtml,
   renderWorkspaceChoicesHtml,
@@ -31,6 +32,7 @@ import {
   type RenderedPreviewFrame,
 } from './workspace-panel.js';
 import type {
+  CheckpointSummary,
   ProposalSummary,
   WorkspaceListItem,
   WorkspaceManifest,
@@ -52,6 +54,7 @@ function activeWorkspace(
     lastSynced: BLANK_DOC,
     manifest: null,
     proposals: [],
+    checkpoints: [],
     pending: null,
     pendingTarget: null,
     syncing: false,
@@ -385,6 +388,64 @@ describe('renderActiveWorkspaceHtml', () => {
     expect(html).toMatch(
       /<div class="ws-preview" data-pid="prop_pending" hidden><\/div>/,
     );
+  });
+});
+
+describe('renderCheckpointsHtml', () => {
+  const checkpoint = (
+    over: Partial<CheckpointSummary> = {},
+  ): CheckpointSummary => ({
+    id: 'cp_1',
+    name: 'Before refactor',
+    createdBy: { kind: 'agent', id: 'a1' },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    revision: 5,
+    pageCount: 2,
+    ...over,
+  });
+
+  it('shows a create row and an empty state with no checkpoints', () => {
+    const html = renderCheckpointsHtml(activeWorkspace({ checkpoints: [] }));
+    expect(html).toContain('Checkpoints (0/12)');
+    expect(html).toContain('id="wsCheckpointCreate"');
+    expect(html).toContain('No checkpoints yet.');
+  });
+
+  it('lists checkpoints with restore/fork/delete actions', () => {
+    const html = renderCheckpointsHtml(
+      activeWorkspace({
+        checkpoints: [
+          checkpoint(),
+          checkpoint({ id: 'cp_2', name: 'v2', pageCount: 1 }),
+        ],
+      }),
+    );
+    expect(html).toContain('Checkpoints (2/12)');
+    expect(html).toContain('data-cid="cp_1"');
+    expect(html).toContain('data-cid="cp_2"');
+    expect(html).toContain('ws-cp-restore');
+    expect(html).toContain('ws-cp-fork');
+    expect(html).toContain('ws-cp-delete');
+    expect(html).toContain('r5 · 2 pages · agent');
+    expect(html).toContain('1 page ·'); // singular
+  });
+
+  it('disables creation at the cap of 12', () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      checkpoint({ id: `cp_${i}` }),
+    );
+    const html = renderCheckpointsHtml(activeWorkspace({ checkpoints: many }));
+    expect(html).toContain('Checkpoints (12/12)');
+    expect(html).toContain('disabled');
+    expect(html).toContain('Checkpoint limit reached');
+  });
+
+  it('escapes untrusted checkpoint names', () => {
+    const html = renderCheckpointsHtml(
+      activeWorkspace({ checkpoints: [checkpoint({ name: '<img src=x>' })] }),
+    );
+    expect(html).not.toContain('<img src=x>');
+    expect(html).toContain('&lt;img src=x&gt;');
   });
 });
 

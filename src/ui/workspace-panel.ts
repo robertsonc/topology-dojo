@@ -20,19 +20,25 @@ import { diffDocuments } from '../workspace/operations.js';
 import {
   acceptWorkspaceProposal,
   commitWorkspaceOperations,
+  createWorkspaceCheckpoint,
   createWorkspace,
+  deleteWorkspaceCheckpoint,
+  forkWorkspaceCheckpoint,
   getWorkspace,
   getWorkspaceManifest,
   getWorkspaceProposal,
   grantWorkspaceLease,
+  listWorkspaceCheckpoints,
   listWorkspaces,
   listWorkspaceProposals,
   rejectWorkspaceProposal,
+  restoreWorkspaceCheckpoint,
   revokeWorkspaceLease,
   WorkspaceDisabledError,
 } from '../workspace/client.js';
 import { computeProposalPreview } from '../workspace/preview.js';
 import type {
+  CheckpointSummary,
   CommitRequest,
   ProposalSummary,
   WorkspaceManifest,
@@ -66,6 +72,7 @@ export interface ActiveWorkspace {
   lastSynced: TopologyDocument;
   manifest: WorkspaceManifest | null;
   proposals: ProposalSummary[];
+  checkpoints: CheckpointSummary[];
   pending: CommitRequest | null;
   pendingTarget: TopologyDocument | null;
   syncing: boolean;
@@ -159,6 +166,38 @@ export function renderWorkspaceChoicesHtml(
   );
 }
 
+/** Pure: the named-checkpoint section — a create row plus the list, each with
+ * restore / fork / delete (all browser-owner actions). */
+export function renderCheckpointsHtml(workspace: ActiveWorkspace): string {
+  const atCap = workspace.checkpoints.length >= 12;
+  const list = workspace.checkpoints.length
+    ? workspace.checkpoints
+        .map(
+          (checkpoint) =>
+            `<div class="ws-checkpoint" data-cid="${esc(checkpoint.id)}">` +
+            `<div class="ws-checkpoint-head"><span class="ws-v">${esc(checkpoint.name)}</span>` +
+            `<span class="ws-note">r${checkpoint.revision} · ${checkpoint.pageCount} page${checkpoint.pageCount === 1 ? '' : 's'} · ${esc(checkpoint.createdBy.kind)}</span></div>` +
+            `<div class="ws-actions">` +
+            `<button class="tbtn ws-cp-restore" data-cid="${esc(checkpoint.id)}">Restore</button>` +
+            `<button class="tbtn ws-cp-fork" data-cid="${esc(checkpoint.id)}">Fork</button>` +
+            `<button class="tbtn ws-cp-delete" data-cid="${esc(checkpoint.id)}">Delete</button>` +
+            `</div></div>`,
+        )
+        .join('')
+    : `<div class="ws-empty">No checkpoints yet.</div>`;
+  return (
+    `<div class="ws-section">Checkpoints (${workspace.checkpoints.length}/12)</div>` +
+    `<div class="ws-card"><div class="ws-row">` +
+    `<input id="wsCheckpointName" class="ws-input" type="text" maxlength="120" placeholder="Name this checkpoint…"${atCap ? ' disabled' : ''}>` +
+    `<button class="tbtn" id="wsCheckpointCreate"${atCap ? ' disabled' : ''}>Save</button></div>` +
+    (atCap
+      ? `<div class="ws-note">Checkpoint limit reached — delete one to save another.</div>`
+      : '') +
+    list +
+    `</div>`
+  );
+}
+
 /** Pure: the panel body for an active workspace (revision/sync/lease/proposals). */
 export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
   const lease = workspace.manifest?.lease;
@@ -217,7 +256,8 @@ export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
       : `<button class="tbtn" id="wsLease">Grant current page · 10 min</button>`) +
     `</div></div>` +
     `<div class="ws-section">Proposals (${workspace.proposals.length})</div>` +
-    proposalHtml
+    proposalHtml +
+    renderCheckpointsHtml(workspace)
   );
 }
 
@@ -600,13 +640,15 @@ export function mountWorkspacePanel(
     const workspace = activeWorkspace;
     if (!workspace) return;
     try {
-      const [manifest, proposals] = await Promise.all([
+      const [manifest, proposals, checkpoints] = await Promise.all([
         getWorkspaceManifest(workspace.id),
         listWorkspaceProposals(workspace.id),
+        listWorkspaceCheckpoints(workspace.id),
       ]);
       if (activeWorkspace !== workspace) return;
       workspace.manifest = manifest;
       workspace.proposals = proposals;
+      workspace.checkpoints = checkpoints;
       if (autoPull && manifest.revision > workspace.revision) {
         if (!workspaceHasLocalChanges(workspace) && !workspace.pending) {
           adoptWorkspaceSnapshot(
@@ -636,6 +678,7 @@ export function mountWorkspacePanel(
         lastSynced: structuredClone(snapshot.document),
         manifest: null,
         proposals: [],
+        checkpoints: [],
         pending: null,
         pendingTarget: null,
         syncing: false,
@@ -682,6 +725,7 @@ export function mountWorkspacePanel(
       lastSynced: structuredClone(snapshot.document),
       manifest: null,
       proposals: [],
+      checkpoints: [],
       pending: null,
       pendingTarget: null,
       syncing: false,
@@ -704,6 +748,7 @@ export function mountWorkspacePanel(
         lastSynced: structuredClone(snapshot.document),
         manifest: null,
         proposals: [],
+        checkpoints: [],
         pending: saved.pending ?? null,
         pendingTarget: saved.pending ? structuredClone(host.getDoc()) : null,
         syncing: false,
@@ -936,6 +981,87 @@ export function mountWorkspacePanel(
         paintProposalPreview(proposalId);
       }
     });
+
+    const checkpointFailure = (error: unknown): void => {
+      workspace.error = error instanceof Error ? error.message : String(error);
+      renderWorkspacePanel();
+    };
+    body.querySelector('#wsCheckpointCreate')?.addEventListener('click', () => {
+      const name = body
+        .querySelector<HTMLInputElement>('#wsCheckpointName')
+        ?.value.trim();
+      if (!name) {
+        workspace.error = 'Name the checkpoint before saving.';
+        renderWorkspacePanel();
+        return;
+      }
+      void (async () => {
+        await createWorkspaceCheckpoint(workspace.id, name);
+        await refreshWorkspaceState(false);
+      })().catch(checkpointFailure);
+    });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-cp-restore')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const checkpointId = button.dataset.cid!;
+          if (
+            !confirm(
+              'Restore this checkpoint as a new forward revision? Any local edits sync first; history is not rewritten.',
+            )
+          )
+            return;
+          void (async () => {
+            if (workspaceHasLocalChanges(workspace) && !(await syncWorkspace()))
+              return;
+            const result = await restoreWorkspaceCheckpoint(
+              workspace.id,
+              checkpointId,
+              operationId('ui_restore'),
+            );
+            if (!result.ok) {
+              workspace.error = result.message;
+              workspace.status = 'restore conflict';
+              renderWorkspacePanel();
+              return;
+            }
+            adoptWorkspaceSnapshot(
+              await getWorkspace(workspace.id),
+              'checkpoint restored · synced',
+            );
+            await refreshWorkspaceState(false);
+          })().catch(checkpointFailure);
+        });
+      });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-cp-fork')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const checkpointId = button.dataset.cid!;
+          void (async () => {
+            const fork = await forkWorkspaceCheckpoint(
+              workspace.id,
+              checkpointId,
+            );
+            workspace.error = null;
+            workspace.status = `forked into ${fork.workspaceId}`;
+            renderWorkspacePanel();
+          })().catch(checkpointFailure);
+        });
+      });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-cp-delete')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const checkpointId = button.dataset.cid!;
+          if (!confirm('Delete this checkpoint? This cannot be undone.'))
+            return;
+          void (async () => {
+            await deleteWorkspaceCheckpoint(workspace.id, checkpointId);
+            await refreshWorkspaceState(false);
+          })().catch(checkpointFailure);
+        });
+      });
   }
 
   function openWorkspacePanel(): void {

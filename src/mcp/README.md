@@ -183,6 +183,8 @@ to the task's affected region and change summaries, not total document size.
 | `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                       |
 | `propose_workspace_changes`                            | Submit a semantic change set for browser-owner review (default write path)                               |
 | `apply_workspace_changes`                              | Direct semantic commit only inside a live UI-granted page lease                                          |
+| `create_checkpoint`                                    | Snapshot the workspace as a named checkpoint (restore/fork stay browser-owner)                           |
+| `list_checkpoints`                                     | List named checkpoints (id, name, revision, page count, author)                                          |
 
 ### Shared workspace concurrency
 

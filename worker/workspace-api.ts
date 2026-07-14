@@ -149,6 +149,49 @@ export async function handleWorkspaceApi(
       return methodNotAllowed();
     }
 
+    if (tail[0] === 'checkpoints') {
+      // Create / list named checkpoints. Create is allowed for the owner here;
+      // agents create checkpoints through the MCP tool surface instead.
+      if (tail.length === 1) {
+        if (request.method === 'GET')
+          return json(await service.listCheckpoints(id));
+        if (request.method === 'POST') {
+          const input = await body(request);
+          return json(
+            await service.createCheckpoint(id, String(input.name ?? '')),
+            201,
+          );
+        }
+        return methodNotAllowed();
+      }
+      const checkpointId = decodeURIComponent(tail[1] ?? '');
+      if (!checkpointId)
+        return json({ error: 'checkpoint id is required' }, 400);
+      // Restore and fork are browser-owner-only actions (authority boundary).
+      if (tail.length === 2) {
+        if (request.method !== 'DELETE') return methodNotAllowed();
+        await service.deleteCheckpoint(id, checkpointId);
+        return json({ deleted: checkpointId });
+      }
+      if (tail[2] === 'restore') {
+        if (request.method !== 'POST') return methodNotAllowed();
+        const input = await body(request);
+        const operationId = String(
+          input.operationId ?? `ui_restore_${crypto.randomUUID()}`,
+        );
+        const result = await service.restoreCheckpoint(
+          id,
+          checkpointId,
+          operationId,
+        );
+        return json(result, result.ok ? 200 : 409);
+      }
+      if (tail[2] === 'fork') {
+        if (request.method !== 'POST') return methodNotAllowed();
+        return json(await service.forkCheckpoint(id, checkpointId), 201);
+      }
+    }
+
     return json({ error: 'not found' }, 404);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
