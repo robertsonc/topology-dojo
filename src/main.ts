@@ -195,10 +195,6 @@ app.innerHTML = `
           </div>
         </div>
       </div>
-      <div class="problems-wrap collapsed" id="problems-wrap">
-        <button class="problems-toggle" id="problems-toggle" title="Show problems (validation + layout)">✓ ok</button>
-        <div class="problems scroll-slim" id="problems"></div>
-      </div>
     </div>
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
@@ -206,6 +202,14 @@ app.innerHTML = `
         <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ▸</button>
         <div class="inspector-body" id="inspector-body">
           <aside class="inspector scroll-slim" id="inspector"></aside>
+        </div>
+        <div class="problems-dock collapsed" id="problems-dock">
+          <button class="problems-toggle" id="problems-toggle" title="Validation + layout problems">
+            <span class="pt-label">Problems</span>
+            <span class="prob-count" id="prob-count">0</span>
+            <span class="pt-chev" aria-hidden="true">▸</span>
+          </button>
+          <div class="problems scroll-slim" id="problems"></div>
         </div>
       </div>
     </div>
@@ -564,6 +568,19 @@ selectBySel.addEventListener('change', () => {
 /* Status bar — live tool / cursor / element counts / zoom. */
 const statusbar = app.querySelector<HTMLElement>('#statusbar')!;
 let cursor: { x: number; y: number } | null = null;
+// Latest problem tallies, shared with the always-visible status-bar indicator so
+// it stays in sync with the pinned Problems panel without recomputing here.
+let lastProblems = { errors: 0, warnings: 0 };
+function statusProblemsHTML(): string {
+  const { errors, warnings } = lastProblems;
+  const total = errors + warnings;
+  const cls = errors ? 'has-error' : warnings ? 'has-warn' : '';
+  const label = total ? `⚠ ${total}` : '✓';
+  const title = total
+    ? `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'} — open Problems`
+    : 'No problems';
+  return `<button class="sb-problems ${cls}" id="sb-problems" title="${title}">${label}</button>`;
+}
 function renderStatus(): void {
   if (!statusReady) return; // editor / statusbar not wired yet
   const p = editor.page;
@@ -579,9 +596,19 @@ function renderStatus(): void {
     `<span><span class="sb-k">selected</span> ${sel}</span>` +
     `<span><span class="sb-k">history</span> ${editor.historyDepth()}</span>` +
     `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>` +
+    statusProblemsHTML() +
     `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ? shortcuts</span>`;
   refreshChrome();
 }
+// Delegated: the status-bar problems indicator opens the right rail (if hidden)
+// and expands the pinned Problems section.
+statusbar.addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).closest('#sb-problems')) {
+    setInspectorCollapsed(false);
+    setProblemsCollapsed(false);
+    problemsPanel.scrollIntoView({ block: 'nearest' });
+  }
+});
 // Live cursor readout (page coordinates) while hovering the canvas.
 overlaySvg.addEventListener('pointermove', (e) => {
   const u = clientToUser(overlaySvg, e.clientX, e.clientY);
@@ -696,12 +723,14 @@ setPaletteCollapsed(localStorage.getItem('tds-palette-collapsed') === '1');
  * (semantic validation + layout analysis) live in the studio, so overlapping
  * zones, off-canvas nodes, dangling refs, etc. surface as you edit instead of
  * only at load time. Click a problem to jump to the node it references. */
-const problemsWrap = app.querySelector<HTMLDivElement>('#problems-wrap')!;
+const problemsDock = app.querySelector<HTMLDivElement>('#problems-dock')!;
 const problemsToggle =
   app.querySelector<HTMLButtonElement>('#problems-toggle')!;
 const problemsPanel = app.querySelector<HTMLDivElement>('#problems')!;
+const probCount = app.querySelector<HTMLSpanElement>('#prob-count')!;
 
-/** Locate the element a problem refers to (click-to-jump): a node or a link. */
+/** Locate the element a problem refers to on the CURRENT page (feeds the canvas
+ * badge layer, which only glyphs elements on the page being viewed). */
 function problemLocate(
   p: Problem,
 ): { kind: 'node' | 'link' | 'zone'; id: string } | undefined {
@@ -712,6 +741,29 @@ function problemLocate(
     if (nodes.has(m[1]!)) return { kind: 'node', id: m[1]! };
     if (links.has(m[1]!)) return { kind: 'link', id: m[1]! };
     if (zones.has(m[1]!)) return { kind: 'zone', id: m[1]! };
+  }
+  return undefined;
+}
+
+/** Locate across the whole document (the pinned panel lists problems for every
+ * page): the target page comes from the `page[N]` prefix in `where`, the element
+ * id from the first quoted token that names something on that page. */
+function problemLocateGlobal(
+  p: Problem,
+):
+  | { pageIndex: number; kind: 'node' | 'link' | 'zone'; id: string }
+  | undefined {
+  const pm = p.where.match(/page\[(\d+)\]/);
+  const pageIndex = pm ? Number(pm[1]) : current;
+  const page = doc.pages[pageIndex];
+  if (!page) return undefined;
+  const nodes = new Set(page.nodes.map((n) => n.id));
+  const links = new Set(page.links.map((l) => l.id));
+  const zones = new Set(page.zones.map((z) => z.id));
+  for (const m of `${p.where} ${p.message}`.matchAll(/["']([^"']+)["']/g)) {
+    if (nodes.has(m[1]!)) return { pageIndex, kind: 'node', id: m[1]! };
+    if (links.has(m[1]!)) return { pageIndex, kind: 'link', id: m[1]! };
+    if (zones.has(m[1]!)) return { pageIndex, kind: 'zone', id: m[1]! };
   }
   return undefined;
 }
@@ -748,26 +800,51 @@ editor.setOnBadgeClick((kind, id) => {
   row?.scrollIntoView({ block: 'nearest' });
 });
 
+// The dock's collapse: `applyProblemsCollapsed` is the visual-only toggle used
+// during render; `setProblemsCollapsed` also records the user's preference.
+// `problemsPref` is null until the user explicitly toggles.
+let problemsPref: boolean | null =
+  localStorage.getItem('tds-problems-collapsed') === null
+    ? null
+    : localStorage.getItem('tds-problems-collapsed') === '1';
+function applyProblemsCollapsed(collapsed: boolean): void {
+  problemsDock.classList.toggle('collapsed', collapsed);
+  const chev = problemsToggle.querySelector('.pt-chev');
+  if (chev) chev.textContent = collapsed ? '▸' : '▾';
+}
+function setProblemsCollapsed(collapsed: boolean): void {
+  problemsPref = collapsed;
+  applyProblemsCollapsed(collapsed);
+  try {
+    localStorage.setItem('tds-problems-collapsed', collapsed ? '1' : '0');
+  } catch {
+    /* storage unavailable — fine, just don't persist */
+  }
+}
+
 function renderProblems(): void {
   if (!statusReady) return;
   const problems = [...validateDocument(doc), ...analyzeLayout(doc)];
   const errors = problems.filter((p) => p.level === 'error').length;
   const warnings = problems.length - errors;
 
-  problemsWrap.classList.toggle('has-error', errors > 0);
-  problemsWrap.classList.toggle('has-warn', errors === 0 && warnings > 0);
-  problemsToggle.textContent = problems.length
-    ? `⚠ ${errors ? `${errors} error${errors > 1 ? 's' : ''}` : ''}${errors && warnings ? ', ' : ''}${warnings ? `${warnings} warning${warnings > 1 ? 's' : ''}` : ''}`
-    : '✓ ok';
+  // Header count badge + severity tint on the pinned dock.
+  problemsDock.classList.toggle('has-error', errors > 0);
+  problemsDock.classList.toggle('has-warn', errors === 0 && warnings > 0);
+  probCount.textContent = String(problems.length);
+
+  // Keep the always-visible status-bar indicator in sync.
+  lastProblems = { errors, warnings };
+  renderStatus();
 
   if (!problems.length) {
     problemsPanel.innerHTML = `<div class="prob-empty">No problems — validation and layout are clean.</div>`;
   } else {
     problemsPanel.innerHTML = problems
       .map((p, i) => {
-        const loc = problemLocate(p);
+        const loc = problemLocateGlobal(p);
         const attrs = loc
-          ? ` data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
+          ? ` data-prob-page="${loc.pageIndex}" data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
           : '';
         return (
           `<button class="prob prob-${p.level}${loc ? ' locatable' : ''}"${attrs} data-i="${i}">` +
@@ -782,15 +859,24 @@ function renderProblems(): void {
       .forEach((b) =>
         b.addEventListener('click', () => {
           const kind = b.dataset.probKind as 'node' | 'link' | 'zone';
+          // Switch to the referenced page first when the problem is elsewhere,
+          // then select + center the element (existing focus path).
+          const page = Number(b.dataset.probPage);
+          if (Number.isInteger(page) && page !== current) gotoPage(page);
           selectProblemTarget({ kind, id: b.dataset.probId! });
         }),
       );
   }
 
-  // Badge layer reuses the same `problems` list + `problemLocate` mapping the
-  // panel just rendered from — one computation feeds both surfaces, and
-  // badges always reflect the current page only (locate() only resolves ids
-  // present on `editor.page`).
+  // Auto-collapse when everything is clean; otherwise honour the user's explicit
+  // preference (default: expanded so problems are visible when they appear).
+  applyProblemsCollapsed(
+    problems.length === 0 ? true : (problemsPref ?? false),
+  );
+
+  // Badge layer reuses the same `problems` list + `problemLocate` mapping (the
+  // current-page locate) — one computation feeds both surfaces, and badges
+  // always reflect the current page only.
   editor.setBadges(
     badgesVisible
       ? computeBadgePlacements(problems, editor.page, problemLocate)
@@ -798,18 +884,9 @@ function renderProblems(): void {
   );
 }
 
-function setProblemsCollapsed(collapsed: boolean): void {
-  problemsWrap.classList.toggle('collapsed', collapsed);
-  try {
-    localStorage.setItem('tds-problems-collapsed', collapsed ? '1' : '0');
-  } catch {
-    /* storage unavailable — fine, just don't persist */
-  }
-}
 problemsToggle.addEventListener('click', () =>
-  setProblemsCollapsed(!problemsWrap.classList.contains('collapsed')),
+  setProblemsCollapsed(!problemsDock.classList.contains('collapsed')),
 );
-setProblemsCollapsed(localStorage.getItem('tds-problems-collapsed') !== '0');
 
 statusReady = true;
 renderProblems();

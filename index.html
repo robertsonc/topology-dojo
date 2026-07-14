@@ -145,6 +145,30 @@
         color: var(--muted);
         opacity: 0.85;
       }
+      /* Always-visible problems indicator; click opens the right-rail section. */
+      .statusbar .sb-problems {
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--muted);
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0 8px;
+        line-height: 16px;
+        cursor: pointer;
+      }
+      .statusbar .sb-problems:hover {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+      .statusbar .sb-problems.has-warn {
+        color: #e0a44a;
+        border-color: #e0a44a;
+      }
+      .statusbar .sb-problems.has-error {
+        color: #fc6161;
+        border-color: #fc6161;
+      }
 
       .bar {
         display: flex;
@@ -240,11 +264,6 @@
         .inspector {
           width: 184px;
           padding: 9px;
-        }
-        .problems-wrap {
-          /* Narrower palette here (108px) → tuck the warnings panel beside it. */
-          left: 132px;
-          max-width: calc(100vw - 144px);
         }
       }
       .saved {
@@ -1598,51 +1617,90 @@
       }
 
       /* Problems panel (bottom-left of the canvas) — live validation + layout. */
-      .problems-wrap {
-        position: absolute;
-        /* Sit just right of the palette (top-left, ~132px) so the warnings pill
-           and its expanded panel never overlap it. */
-        left: 156px;
-        bottom: 12px;
-        z-index: 7;
+      /* Problems section pinned to the bottom of the right rail: property
+         sections scroll above it, this stays put. A header row (label + count
+         badge + chevron) is always visible; the list expands below it. */
+      .problems-dock {
+        flex: none;
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
         gap: 4px;
-        max-width: min(360px, calc(100% - 168px));
+        margin-top: 6px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
+        min-height: 0;
       }
       .problems-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
         font-family: var(--font);
         font-size: 11px;
         color: var(--muted);
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 3px 9px;
+        border-radius: 7px;
+        padding: 4px 9px;
         cursor: pointer;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       }
-      .problems-wrap.has-warn .problems-toggle {
+      .problems-toggle:hover {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+      .pt-label {
+        font-weight: 500;
+        letter-spacing: 0.3px;
+      }
+      .pt-chev {
+        margin-left: auto;
+        opacity: 0.7;
+      }
+      .prob-count {
+        min-width: 18px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        font-size: 10px;
+        line-height: 16px;
+        text-align: center;
+        color: var(--muted);
+      }
+      .problems-dock.has-warn .problems-toggle {
         color: #e0a44a;
         border-color: #e0a44a;
       }
-      .problems-wrap.has-error .problems-toggle {
+      .problems-dock.has-warn .prob-count {
+        color: #1d1f27;
+        background: #e0a44a;
+        border-color: #e0a44a;
+      }
+      .problems-dock.has-error .problems-toggle {
         color: #fc6161;
         border-color: #fc6161;
       }
+      .problems-dock.has-error .prob-count {
+        color: #1d1f27;
+        background: #fc6161;
+        border-color: #fc6161;
+      }
       .problems {
-        max-height: 40vh;
+        max-height: 34vh;
         overflow-y: auto;
-        background: rgba(34, 37, 46, 0.94);
+        background: var(--panel2);
         border: 1px solid var(--border);
         border-radius: 8px;
         padding: 6px;
         display: flex;
         flex-direction: column;
         gap: 3px;
-        backdrop-filter: blur(8px);
       }
-      .problems-wrap.collapsed .problems {
+      .problems-dock.collapsed .problems {
+        display: none;
+      }
+      /* When the whole right rail is collapsed, the pinned section goes with it. */
+      .inspector-wrap.collapsed .problems-dock {
         display: none;
       }
       .prob-empty {
@@ -1664,11 +1722,11 @@
         font-size: 11px;
         color: var(--text);
       }
-      .prob[data-prob-node] {
+      .prob.locatable {
         cursor: pointer;
       }
-      .prob[data-prob-node]:hover {
-        background: var(--panel2);
+      .prob.locatable:hover {
+        background: var(--panel);
       }
       .prob-dot {
         flex: none;
@@ -2041,7 +2099,6 @@
       /* ── Floating glass cards (over the canvas) ──────────────────────── */
       .palette,
       .inspector-wrap,
-      .problems,
       .display-pop,
       .user-menu,
       .ctx-menu,
@@ -2073,10 +2130,6 @@
         box-shadow: none;
         -webkit-backdrop-filter: none;
         backdrop-filter: none;
-      }
-      .problems {
-        border-radius: 16px !important;
-        padding: 8px;
       }
       .display-pop,
       .user-menu,
