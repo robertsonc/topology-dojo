@@ -29,7 +29,7 @@ export function pageToSVG(
   const { vw, vh } = viewBoxSize(page);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
-    `<rect x="0" y="0" width="${vw}" height="${vh}" fill="#1d1f27"/>` +
+    `<rect x="0" y="0" width="${vw}" height="${vh}" fill="#0e1613"/>` +
     renderPageSVG(page, opts) +
     extra +
     `</svg>`

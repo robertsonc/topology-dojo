@@ -3,18 +3,20 @@ import { renderCustomNode, customHitBox } from './render.js';
 import { defaultSpec, type CustomNodeSpec } from './spec.js';
 
 describe('renderCustomNode', () => {
-  it('renders the base shape, glow, and accent stroke', () => {
+  it('renders the base shape and accent stroke, flat (no glow halo)', () => {
     const svg = renderCustomNode(defaultSpec(), 100, 50);
     expect(svg).toContain('<circle'); // circle base shape
-    expect(svg).toContain('<ellipse'); // outer glow
     expect(svg).toContain('stroke="#01a982"'); // accent
     expect(svg).toContain('cx="100"');
+    // Glow is now an emphasis-only channel applied at the render seam; the node
+    // art itself carries no halo/blur.
+    expect(svg).not.toContain('filter="url(#tds-glow');
   });
 
-  it('cfg.color overrides the accent (glow stays the design-time halo)', () => {
+  it('cfg.color overrides the accent and stays flat', () => {
     const svg = renderCustomNode(defaultSpec(), 0, 0, { color: '#fc6161' });
     expect(svg).toContain('stroke="#fc6161"'); // accent overridden
-    expect(svg).toContain('url(#tds-glow-green)'); // halo baked from the spec color
+    expect(svg).not.toContain('filter="url(#tds-'); // no baked glow/bloom
   });
 
   it('includes each enabled embellishment', () => {
@@ -32,7 +34,8 @@ describe('renderCustomNode', () => {
     const svg = renderCustomNode(spec, 0, 0);
     expect(svg).toContain('<polygon'); // hexagon
     expect(svg).toContain('<path'); // icon + antenna arcs
-    expect(svg).toContain('url(#tds-bloom)'); // LED
+    expect(svg).toContain(`fill="${defaultSpec().ledColor}"`); // LED (flat, no bloom)
+    expect(svg).not.toContain('filter="url(#tds-bloom)'); // no per-LED bloom
     expect(svg).toContain('>X</text>'); // badge text
     expect((svg.match(/<rect /g) ?? []).length).toBeGreaterThanOrEqual(3); // 3 ports
   });

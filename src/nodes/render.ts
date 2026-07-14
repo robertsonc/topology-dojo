@@ -31,14 +31,11 @@ export function renderCustomNode(
   const sz = spec.size;
   const sw = spec.strokeW;
   const rx = spec.radius;
-  const halo = glowForColor(spec.colorStroke);
   const b = shapeGeom(spec.shape, 0, 0, sz, rx); // half-bounds at origin
   let s = '';
 
-  // 1. Outer glow
-  if (spec.glow) {
-    s += `<ellipse cx="${x}" cy="${y}" rx="${b.bx + 5}" ry="${b.by + 4}" fill="${c}" opacity=".06" filter="url(#${halo})"/>`;
-  }
+  // 1. Outer glow — removed. Glow is now an emphasis-only channel (applied at
+  //    the render seam via `flattenViewer`); the node art renders flat.
 
   // 2. Main shape (with optional pattern fill)
   let fill = f;
@@ -93,7 +90,7 @@ export function renderCustomNode(
         cx = x + (b.bx - 3);
         cy = y + off;
       }
-      s += `<circle cx="${cx}" cy="${cy}" r="1.5" fill="${esc(spec.ledColor)}" filter="url(#tds-bloom)"/>`;
+      s += `<circle cx="${cx}" cy="${cy}" r="1.5" fill="${esc(spec.ledColor)}"/>`;
     }
   }
 
@@ -108,7 +105,7 @@ export function renderCustomNode(
   if (spec.antenna) {
     s += `<line x1="${x}" y1="${y - b.by}" x2="${x}" y2="${y - (b.by + 12)}" stroke="${c}" stroke-width="1.2"/>`;
     s += `<circle cx="${x}" cy="${y - (b.by + 14)}" r="2.5" fill="${f}" stroke="${c}" stroke-width="1"/>`;
-    s += `<circle cx="${x}" cy="${y - (b.by + 14)}" r="1" fill="${c}" opacity=".8" filter="url(#tds-bloom)"/>`;
+    s += `<circle cx="${x}" cy="${y - (b.by + 14)}" r="1" fill="${c}" opacity=".8"/>`;
     s += `<path d="M${x - 8},${y - (b.by + 20)} A10,10 0 0,1 ${x + 8},${y - (b.by + 20)}" fill="none" stroke="${c}" stroke-width=".8" opacity=".5"/>`;
     s += `<path d="M${x - 13},${y - (b.by + 24)} A16,16 0 0,1 ${x + 13},${y - (b.by + 24)}" fill="none" stroke="${c}" stroke-width=".6" opacity=".3"/>`;
     s += `<path d="M${x - 18},${y - (b.by + 28)} A22,22 0 0,1 ${x + 18},${y - (b.by + 28)}" fill="none" stroke="${c}" stroke-width=".5" opacity=".15"/>`;
