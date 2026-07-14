@@ -16,7 +16,7 @@ import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
-import { applyPalette } from '../vendor/topology-ds.js';
+import { applyPalette, flattenViewer } from '../vendor/topology-ds.js';
 import { legendSVG } from '../editor/legend.js';
 
 export interface EngineInstance {
@@ -115,7 +115,7 @@ export function renderPageWithEngine(
     cfg: T,
   ): T => {
     let m = cfg.layer ? (layerOpacity.get(cfg.layer) ?? 1) : 1;
-    if (emphasis && !emphasis.has(id)) m *= 0.25;
+    if (emphasis && !emphasis.has(id)) m *= 0.3;
     return m === 1 ? cfg : { ...cfg, opacity: (cfg.opacity ?? 1) * m };
   };
 
@@ -166,10 +166,14 @@ export function renderPageWithEngine(
     number,
     number,
   ];
+  // Flatten the cinematic FX so the headless SVG/PNG/flipbook match the live
+  // canvas: glow survives only as the emphasis channel; ambient sheen/vignette
+  // gone; a single flat backdrop fill.
+  const art = flattenViewer(topo._renderSVG(), opts.emphasis ?? []);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
-    `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#1d1f27"/>` +
-    topo._renderSVG() +
+    `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#0e1613"/>` +
+    art +
     `</svg>`
   );
 }

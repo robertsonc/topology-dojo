@@ -179,11 +179,11 @@ describe('headless render (Node, no browser)', () => {
     const plain = renderDocumentToSVG(doc);
     expect(wrapOpacity(plain, 'a')).toBe(1);
     expect(wrapOpacity(plain, 'b')).toBe(1);
-    // Emphasize just `a` → b dims to 0.25, a stays full.
+    // Emphasize just `a` → b dims to 0.3, a stays full.
     doc.pages[0]!.emphasis = ['a'];
     const svg = renderDocumentToSVG(doc);
     expect(wrapOpacity(svg, 'a')).toBe(1);
-    expect(wrapOpacity(svg, 'b')).toBeCloseTo(0.25, 5);
+    expect(wrapOpacity(svg, 'b')).toBeCloseTo(0.3, 5);
   });
 
   it('fans out parallel links between the same node pair', () => {

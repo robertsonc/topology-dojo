@@ -321,6 +321,60 @@ export function lightenCanvas(svg: string): string {
   return out;
 }
 
+/**
+ * Flatten the vendored engine's cinematic FX into a crisp, flat viewer so that
+ * glow becomes an EMPHASIS-ONLY channel. Pure string transform over the
+ * engine's SVG markup, shared by the browser canvas/export path
+ * (`renderPageSVG`) and the headless MCP/flipbook path (`renderPageWithEngine`
+ * in render/core) so live canvas, exported SVG/PNG and flipbook all render
+ * identically flat.
+ *
+ *  1. Strip every decorative `filter="url(#tds-…)"` (glow/bloom/dof/halo/…) —
+ *     this also flattens the custom node-art filters.
+ *  2. Remove the ambient colour-wash + vignette background rects, keeping the
+ *     functional alignment grid (`tds-grid`).
+ *  3. If `emphasisIds` is non-empty, add the single soft `tds-emphasis` glow to
+ *     each spotlighted node/link group — the ONLY glow anywhere on screen.
+ */
+export function flattenViewer(svg: string, emphasisIds: string[] = []): string {
+  // 1. Strip all decorative engine filters. Runs first so the emphasis filter
+  //    injected in step 3 is never caught by this pass.
+  let out = svg.replace(/\s*filter="url\(#tds-[^"]*"/g, '');
+
+  // 2. Drop the ambient sheen + vignette backdrop rects — both the static
+  //    (`… opacity=".4"/>`) and animated (`…><animate…/></rect>`) forms — while
+  //    keeping the functional `tds-grid` rect.
+  out = out.replace(
+    /<rect\b[^>]*?fill="url\(#tds-(?:ambientGreen|ambientPurple|ambientBlue|vignette)\)"[^>]*?(?:\/>|>\s*<animate\b[^>]*\/>\s*<\/rect>)/g,
+    '',
+  );
+
+  // 3. Emphasis glow — the one soft pass, only on spotlighted members.
+  const ids = emphasisIds.filter(Boolean);
+  if (ids.length) {
+    for (const id of ids) {
+      const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out
+        .replace(
+          new RegExp(`<g data-tds-node="${esc}"`, 'g'),
+          `<g filter="url(#tds-emphasis)" data-tds-node="${id}"`,
+        )
+        .replace(
+          new RegExp(`<g data-tds-link="${esc}"`, 'g'),
+          `<g filter="url(#tds-emphasis)" data-tds-link="${id}"`,
+        );
+    }
+    // A single soft drop-shadow at the accent colour (~50% alpha) — one pass,
+    // never stacked. Prepended as its own <defs> (valid to have several).
+    out =
+      `<defs><filter id="tds-emphasis" x="-40%" y="-40%" width="180%" height="180%">` +
+      `<feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#01a982" flood-opacity="0.5"/>` +
+      `</filter></defs>` +
+      out;
+  }
+  return out;
+}
+
 /** Render options shared by the page renderers. */
 export interface RenderOptions {
   /** Calm canvas: suppress motion (animated flow particles, link dots, glints). */
@@ -455,7 +509,7 @@ export function renderPageSVG(
     cfg: T,
   ): T => {
     let m = cfg.layer ? (layerOpacity.get(cfg.layer) ?? 1) : 1;
-    if (emphasis && !emphasis.has(id)) m *= 0.25;
+    if (emphasis && !emphasis.has(id)) m *= 0.3;
     return m === 1 ? cfg : { ...cfg, opacity: (cfg.opacity ?? 1) * m };
   };
 
@@ -510,6 +564,10 @@ export function renderPageSVG(
   // colours (surfaces/text vs accents), so order is irrelevant.
   if (opts.light) svg = lightenCanvas(svg);
   if (opts.palette) svg = applyPalette(svg, opts.palette);
+  // Flatten the cinematic FX (glow/bloom/ambient) last — glow survives only as
+  // the emphasis channel. Applied to both the live canvas and the export path
+  // (which shares this function), so exported SVG/PNG/flipbook match.
+  svg = flattenViewer(svg, opts.emphasis ?? []);
   return svg;
 }
 

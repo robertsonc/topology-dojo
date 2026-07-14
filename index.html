@@ -23,6 +23,15 @@
         --muted: #7d8a92;
         --accent: #01a982;
         --font: 'JetBrains Mono', ui-monospace, monospace;
+        /* Flat canvas fill — a single tone, no radial sheen/vignette. Shared by
+           the live canvas and (as a matching literal) the exported SVG/PNG
+           backdrop so live and exports read identically. */
+        --canvas-bg: #0e1613;
+        /* Glow budget: flat everywhere; the ONLY glow is the emphasis spotlight. */
+        --glow-none: none;
+        --glow-emphasis: drop-shadow(
+          0 0 6px color-mix(in srgb, var(--accent) 50%, transparent)
+        );
         /* Slim scrollbar thumb tints, derived from --accent (#01a982 = rgb 1 169 130).
            Kept as tokens so the scroll-slim rules never hardcode the color twice. */
         --sb-thumb: rgba(1, 169, 130, 0.25);
@@ -37,6 +46,8 @@
         --border: #cdd5dd;
         --text: #1d1f27;
         --muted: #5c6b76;
+        /* Flat light canvas (no sheen/vignette). */
+        --canvas-bg: #eef1f4;
         /* Slightly stronger tints so the green thumb stays legible on light panels. */
         --sb-thumb: rgba(1, 169, 130, 0.4);
         --sb-thumb-hover: rgba(1, 169, 130, 0.7);
@@ -2016,35 +2027,27 @@
         --shadow-float: 0 10px 26px -12px rgba(31, 41, 55, 0.26);
       }
 
-      /* A depth backdrop so the frosted chrome has colour to refract. Tinted by
-         the brand accent + a cool counter-light for a sense of two light sources. */
+      /* Flat stage backdrop — a single flat fill, no radial sheen/vignette.
+         Glow is now an emphasis-only channel, so the stage stays crisp. */
       body {
-        background:
-          radial-gradient(
-            115% 85% at 8% -8%,
-            color-mix(in srgb, var(--accent) 26%, transparent),
-            transparent 52%
-          ),
-          radial-gradient(
-            105% 85% at 108% 110%,
-            rgba(101, 174, 249, 0.2),
-            transparent 54%
-          ),
-          radial-gradient(
-            70% 60% at 60% 120%,
-            color-mix(in srgb, var(--accent) 12%, transparent),
-            transparent 60%
-          ),
-          var(--bg);
+        background: var(--canvas-bg);
       }
-      /* Unify the canvas with the stage: the vendored engine paints the canvas
-         surface as its own gradient (`--tds-glass` → `--tds-bg`), which read as a
-         separate panel against the app backdrop. Make the canvas layers
-         transparent so the body's depth gradient flows continuously edge to edge
-         and the floating chrome + the page grid sit on one surface. */
-      .tds-root,
-      .tds-canvas {
+      /* Canvas: a single flat fill matching the stage. The `.tds-root` stays
+         transparent so the flat body colour flows edge to edge under the
+         floating chrome; the `.tds-canvas` carries the explicit flat fill. */
+      .tds-root {
         background: transparent !important;
+      }
+      .tds-canvas {
+        background: var(--canvas-bg) !important;
+      }
+      /* Neutralize the vendored engine's animated blurred ambient light-leak
+         layers + canvas glow overlays — the backdrop is now one flat tone. */
+      .tds-root::before,
+      .tds-root::after,
+      .tds-canvas::before,
+      .tds-canvas::after {
+        display: none !important;
       }
 
       /* ── Toolbar → a floating glass bar ──────────────────────────────── */
