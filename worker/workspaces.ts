@@ -80,6 +80,7 @@ interface DocumentRpc {
     actor: WorkspaceActor,
     id: string,
     operationId: string,
+    selectedOperationIndices?: number[],
   ): Promise<CommitResult>;
   rejectProposal(
     ownerId: string,
@@ -240,6 +241,7 @@ export class WorkspaceService {
     id: string,
     proposalId: string,
     operationId: string,
+    selectedOperationIndices?: number[],
   ): Promise<CommitResult> {
     const document = await this.ensure(id);
     const result = await document.acceptProposal(
@@ -247,6 +249,7 @@ export class WorkspaceService {
       this.actor('user'),
       proposalId,
       operationId,
+      selectedOperationIndices,
     );
     if (result.ok) await this.tryRefreshDirectory(id, document);
     return result;

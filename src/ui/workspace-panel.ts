@@ -174,10 +174,17 @@ export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
               ? `<div class="ws-note">${esc(proposal.rationale)}</div>`
               : '') +
             `<ul class="ws-ops">${proposal.summary.descriptions
-              .slice(0, 8)
-              .map((line) => `<li>${esc(line)}</li>`)
-              .join('')}</ul>` +
-            `<div class="ws-actions"><button class="tbtn ws-accept" data-pid="${esc(proposal.id)}">Accept</button>` +
+              .map(
+                (line, i) =>
+                  `<li><label class="ws-op"><input type="checkbox" class="ws-op-check" data-pid="${esc(proposal.id)}" data-op-index="${i}" checked> <span>${esc(line)}</span></label></li>`,
+              )
+              .join('')}${
+              proposal.summary.count > proposal.summary.descriptions.length
+                ? `<li class="ws-note">…and ${proposal.summary.count - proposal.summary.descriptions.length} more (use “Accept all”)</li>`
+                : ''
+            }</ul>` +
+            `<div class="ws-actions"><button class="tbtn ws-accept" data-pid="${esc(proposal.id)}">Accept all</button>` +
+            `<button class="tbtn ws-accept-selected" data-pid="${esc(proposal.id)}">Accept selected</button>` +
             `<button class="tbtn ws-reject" data-pid="${esc(proposal.id)}">Reject</button>` +
             `<button class="tbtn ws-preview-toggle" data-pid="${esc(proposal.id)}">Preview</button></div>` +
             `<div class="ws-preview" data-pid="${esc(proposal.id)}" hidden></div></div>`,
@@ -832,37 +839,71 @@ export function mountWorkspacePanel(
           renderWorkspacePanel();
         });
     });
+    const runAccept = (
+      proposalId: string,
+      selectedOperationIndices?: number[],
+    ): void => {
+      void (async () => {
+        if (workspaceHasLocalChanges(workspace) && !(await syncWorkspace()))
+          return;
+        const result = await acceptWorkspaceProposal(
+          workspace.id,
+          proposalId,
+          operationId('ui_accept'),
+          selectedOperationIndices,
+        );
+        if (!result.ok) {
+          workspace.error = result.message;
+          workspace.status =
+            result.code === 'incoherent-subset'
+              ? 'incomplete selection'
+              : 'proposal conflict';
+          renderWorkspacePanel();
+          return;
+        }
+        previewOpen.delete(proposalId);
+        previewState.delete(proposalId);
+        adoptWorkspaceSnapshot(
+          await getWorkspace(workspace.id),
+          selectedOperationIndices
+            ? 'proposal partially accepted · synced'
+            : 'proposal accepted · synced',
+        );
+        await refreshWorkspaceState(false);
+      })().catch((error) => {
+        workspace.error =
+          error instanceof Error ? error.message : String(error);
+        renderWorkspacePanel();
+      });
+    };
+
     body.querySelectorAll<HTMLButtonElement>('.ws-accept').forEach((button) => {
-      button.addEventListener('click', () => {
-        const proposalId = button.dataset.pid!;
-        void (async () => {
-          if (workspaceHasLocalChanges(workspace) && !(await syncWorkspace()))
-            return;
-          const result = await acceptWorkspaceProposal(
-            workspace.id,
-            proposalId,
-            operationId('ui_accept'),
+      button.addEventListener('click', () => runAccept(button.dataset.pid!));
+    });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-accept-selected')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const proposalId = button.dataset.pid!;
+          const checks = body.querySelectorAll<HTMLInputElement>(
+            `.ws-op-check[data-pid="${CSS.escape(proposalId)}"]`,
           );
-          if (!result.ok) {
-            workspace.error = result.message;
-            workspace.status = 'proposal conflict';
+          const selected = [...checks]
+            .filter((check) => check.checked)
+            .map((check) => Number(check.dataset.opIndex));
+          if (selected.length === 0) {
+            workspace.error = 'Select at least one operation to accept.';
             renderWorkspacePanel();
             return;
           }
-          previewOpen.delete(proposalId);
-          previewState.delete(proposalId);
-          adoptWorkspaceSnapshot(
-            await getWorkspace(workspace.id),
-            'proposal accepted · synced',
+          // Everything ticked → a full accept (also folds in any operations
+          // beyond the listed first 100). A strict subset sends the indices.
+          runAccept(
+            proposalId,
+            selected.length === checks.length ? undefined : selected,
           );
-          await refreshWorkspaceState(false);
-        })().catch((error) => {
-          workspace.error =
-            error instanceof Error ? error.message : String(error);
-          renderWorkspacePanel();
         });
       });
-    });
     body.querySelectorAll<HTMLButtonElement>('.ws-reject').forEach((button) => {
       button.addEventListener('click', () => {
         const proposalId = button.dataset.pid!;

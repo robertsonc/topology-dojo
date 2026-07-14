@@ -91,7 +91,12 @@ export interface WorkspaceLease {
   expiresAt: string;
 }
 
-export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'conflicted';
+export type ProposalStatus =
+  | 'pending'
+  | 'accepted'
+  | 'partially-accepted'
+  | 'rejected'
+  | 'conflicted';
 
 export interface WorkspaceProposal {
   id: string;
@@ -189,10 +194,13 @@ export type CommitResult =
         | 'lease-required'
         | 'lease-expired'
         | 'out-of-scope'
-        | 'checkpoint-required';
+        | 'checkpoint-required'
+        | 'incoherent-subset';
       revision: number;
       message: string;
       conflictingTargets?: string[];
+      /** For 'incoherent-subset': ids the selected operations depend on. */
+      missingDependencies?: string[];
     };
 
 export interface ChangesResult {

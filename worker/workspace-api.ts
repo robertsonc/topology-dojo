@@ -113,7 +113,16 @@ export async function handleWorkspaceApi(
         const operationId = String(
           input.operationId ?? `ui_accept_${crypto.randomUUID()}`,
         );
-        const result = await service.accept(id, proposalId, operationId);
+        // Optional: accept only a coherent subset of the proposal's operations.
+        const selected = Array.isArray(input.selectedOperationIndices)
+          ? input.selectedOperationIndices.map(Number)
+          : undefined;
+        const result = await service.accept(
+          id,
+          proposalId,
+          operationId,
+          selected,
+        );
         return json(result, result.ok ? 200 : 409);
       }
       if (tail[2] === 'reject') {

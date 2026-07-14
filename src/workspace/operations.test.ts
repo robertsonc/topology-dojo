@@ -4,8 +4,10 @@ import {
   applyOperations,
   conflictingTargets,
   diffDocuments,
+  subsetDependencyErrors,
   summarizeOperations,
 } from './operations.js';
+import type { Page } from '../pages/model.js';
 import type { WorkspaceOperation } from './model.js';
 
 function fixture(): TopologyDocument {
@@ -197,5 +199,127 @@ describe('workspace semantic operations', () => {
       affectedElementIds: ['a'],
     });
     expect(summary.descriptions[0]).toContain('x, y');
+  });
+});
+
+describe('subsetDependencyErrors (selective acceptance coherence)', () => {
+  const addNode = (id: string): WorkspaceOperation => ({
+    type: 'element.add',
+    pageId: 'p1',
+    kind: 'nodes',
+    element: { id, type: 'ec', x: 0, y: 0 },
+  });
+  const addLink = (
+    id: string,
+    from: string,
+    to: string,
+  ): WorkspaceOperation => ({
+    type: 'element.add',
+    pageId: 'p1',
+    kind: 'links',
+    element: { id, type: 'line', from, to },
+  });
+
+  it('flags a link accepted without the new nodes it connects', () => {
+    const ops = [addNode('n1'), addNode('n2'), addLink('l1', 'n1', 'n2')];
+    const errs = subsetDependencyErrors(ops, [2]);
+    expect(errs.map((e) => e.missingId).sort()).toEqual(['n1', 'n2']);
+    expect(errs.every((e) => e.index === 2 && e.kind === 'element')).toBe(true);
+  });
+
+  it('passes when the link and both endpoints are accepted together', () => {
+    const ops = [addNode('n1'), addNode('n2'), addLink('l1', 'n1', 'n2')];
+    expect(subsetDependencyErrors(ops, [0, 1, 2])).toEqual([]);
+  });
+
+  it('ignores references to elements that already exist in the base document', () => {
+    // 'a' and 'b' are not created by this proposal (they pre-exist).
+    expect(subsetDependencyErrors([addLink('l1', 'a', 'b')], [0])).toEqual([]);
+  });
+
+  it('flags patching an element only an unselected op creates', () => {
+    const ops: WorkspaceOperation[] = [
+      addNode('n1'),
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'nodes',
+        elementId: 'n1',
+        patch: { set: { label: 'X' } },
+      },
+    ];
+    const errs = subsetDependencyErrors(ops, [1]);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toMatchObject({
+      index: 1,
+      dependsOnIndex: 0,
+      missingId: 'n1',
+      kind: 'element',
+    });
+  });
+
+  it('flags a patch that points a field at a new, unselected element', () => {
+    const ops: WorkspaceOperation[] = [
+      addNode('n1'),
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'links',
+        elementId: 'ab',
+        patch: { set: { to: 'n1' } },
+      },
+    ];
+    expect(subsetDependencyErrors(ops, [1]).map((e) => e.missingId)).toEqual([
+      'n1',
+    ]);
+    expect(subsetDependencyErrors(ops, [0, 1])).toEqual([]);
+  });
+
+  it('flags an element added to a page only an unselected op creates', () => {
+    const page: Page = {
+      id: 'p2',
+      name: 'F2',
+      viewBox: '0 0 100 100',
+      nodes: [],
+      links: [],
+      anchors: [],
+      zones: [],
+      flowPaths: [],
+      policyMarkers: [],
+    };
+    const ops: WorkspaceOperation[] = [
+      { type: 'page.add', page },
+      {
+        type: 'element.add',
+        pageId: 'p2',
+        kind: 'nodes',
+        element: { id: 'x', type: 'ec', x: 0, y: 0 },
+      },
+    ];
+    const errs = subsetDependencyErrors(ops, [1]);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toMatchObject({
+      index: 1,
+      dependsOnIndex: 0,
+      missingId: 'p2',
+      kind: 'page',
+    });
+  });
+
+  it('treats a page.add (with inner elements) as self-contained', () => {
+    const page: Page = {
+      id: 'p2',
+      name: 'F2',
+      viewBox: '0 0 100 100',
+      nodes: [{ id: 'n', type: 'ec', x: 0, y: 0 }],
+      links: [],
+      anchors: [],
+      zones: [],
+      flowPaths: [],
+      policyMarkers: [],
+    };
+    expect(subsetDependencyErrors([{ type: 'page.add', page }], [0])).toEqual(
+      [],
+    );
   });
 });

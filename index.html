@@ -442,9 +442,25 @@
       }
       .ws-ops {
         margin: 0;
-        padding-left: 18px;
+        padding-left: 0;
+        list-style: none;
         color: var(--muted);
         line-height: 1.5;
+      }
+      /* Per-operation selection rows for partial proposal acceptance. */
+      .ws-op {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        cursor: pointer;
+      }
+      .ws-op input {
+        margin: 3px 0 0;
+        flex: none;
+        accent-color: var(--accent);
+      }
+      .ws-op:hover {
+        color: var(--text);
       }
       .ws-section {
         margin-top: 12px;
