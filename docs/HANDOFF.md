@@ -67,15 +67,20 @@ exercise** in staging (deploy a flag-off build, verify, re-enable) —
 
 ## Next repo work, in order (per the plan)
 
-1. **D6 — docs truth-up + findings closure**: evidence-backed closure notes
-   for H7/M14/M15/L1 citing run #4 and the merged config; move the roadmap
-   item to Shipped; ARCHITECTURE deployment section "target" → "current".
-   Ready to draft now.
-2. **R2 → R3 → R4** (serialized on `worker/document.ts`; unblocked now that
-   the pipeline has been exercised once): selective proposal acceptance →
-   named checkpoints/restore/fork → revision timeline UI.
-3. **S1–S4** (resilience) after the R-train; **P1–P5** (proposal 0003) last —
-   P2 is migration-bearing (`v4`) and rides the now-proven pipeline.
+**Update (session 2, 2026-07-14):** items 1–2 below are ✅ shipped — D6 (PR
+#161), and the full **R-train R2→R3→R4** merged to `main` (R2 #163; R3+R4 landed
+via the stacked chain #164/#165 → #167). Also shipped this session: the O7
+activation thresholds (#159), slim scrollbars (#160), the Move-Map UI fixes
+(#162), and the **flat viewer** rendering change (#166). Next is the S-train.
+
+1. ~~**D6 — docs truth-up + findings closure**~~ ✅ (PR #161).
+2. ~~**R2 → R3 → R4**~~ ✅ selective acceptance → checkpoints/restore/fork →
+   revision timeline, all merged.
+3. **S1–S4** (resilience) — now unblocked (the `worker/document.ts` serialization
+   with the R-train is cleared): IndexedDB offline cache, WebSocket
+   push/presence, collaborator/org ACLs, finer element-set leases. Then
+   **P1–P5** (proposal 0003) last — P2 is migration-bearing (`v4`) and rides the
+   now-proven pipeline.
 4. Deferred list and open decisions: see `IMPLEMENTATION_PLAN.md` §10–§11.
 
 ## Working conventions this session established

@@ -30,6 +30,10 @@ Built methodically, one reviewable PR at a time, each reviewed against
 - **Inline layout warning badges**: `analyzeLayout` / `validateDocument`
   problems render as small badges anchored to the offending elements on the
   canvas, alongside the existing clickable problems panel.
+- **Flat viewer**: glow is an emphasis-only channel — nodes/links/zones/labels
+  render flat and crisp on a single flat background; only playback-emphasis
+  (spotlight) elements get one soft glow. Applied at the shared render seam
+  (`flattenViewer`), so the live canvas and exported SVG/PNG/flipbook match.
 
 ### Headless API + contract
 
@@ -121,6 +125,19 @@ Built methodically, one reviewable PR at a time, each reviewed against
 - **Rendered proposal preview**: a before/after render of a pending agent
   proposal with changed elements highlighted, shown in the review flow (first
   of the workspace review-polish follow-ons).
+- **Selective proposal acceptance**: the owner accepts a coherent subset of a
+  proposal's operations as one attributed revision; the coordinator rejects a
+  subset that references an element only an unselected op would create; the
+  remainder stays reviewable (partially-accepted) and re-validates against the
+  new revision.
+- **Named checkpoints, restore & fork**: snapshot the document as a named
+  checkpoint (agents may create/list; restore & fork are browser-owner actions),
+  restore one forward-only as a new revision, or fork one into a fresh
+  workspace. `create_checkpoint` / `list_checkpoints` MCP tools (a temporary
+  DESIGN #2 authority carve-out).
+- **Revision timeline**: the Agent Workspace panel shows recent revisions with
+  actor, summary, a source badge (edit / agent / proposal / restore), and
+  proposal-acceptance + checkpoint markers, from the stored change log.
 
 ### Deployment & release safety (proposal 0004)
 
@@ -172,9 +189,6 @@ in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
 - **MCP auth hardening** — graduate the single shared secret to per-key KV
   (mint / revoke / label) or full OAuth, if multiple revocable credentials are
   needed.
-- **Workspace review polish** — rendered before/after proposal preview
-  (shipped, above); still to come: selective acceptance, named checkpoints,
-  restore/fork, and revision timeline.
 - **Workspace resilience/collaboration** — IndexedDB offline cache, WebSocket
   push/presence, explicit collaborator/organization ACLs, and finer element-set
   leases. Add CRDTs only if offline multi-master editing becomes a measured need.
