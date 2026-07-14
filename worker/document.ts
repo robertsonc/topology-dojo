@@ -16,6 +16,7 @@ import { parseDoc } from '../src/pages/persist.js';
 import {
   applyOperations,
   conflictingTargets,
+  diffDocuments,
   operationPageIds,
   subsetDependencyErrors,
   summarizeOperations,
@@ -24,6 +25,7 @@ import {
 import {
   ELEMENT_KINDS,
   type ChangesResult,
+  type CheckpointSummary,
   type CommitRequest,
   type CommitResult,
   type ElementKind,
@@ -43,6 +45,7 @@ const META_KEY = 'meta';
 const PAGE_PREFIX = 'page:';
 const CHANGE_PREFIX = 'change:';
 const PROPOSAL_PREFIX = 'proposal:';
+const CHECKPOINT_PREFIX = 'checkpoint:';
 const REQUEST_PREFIX = 'request:';
 const MAX_BATCH_BYTES = 512 * 1024;
 const MAX_PAGE_BYTES = 1_800 * 1024;
@@ -53,6 +56,7 @@ const REQUEST_LIMIT = 200;
 const OPERATION_SCHEMA_REVISION = 1;
 const MAX_PENDING_PROPOSALS = 20;
 const MAX_PROPOSALS = 50;
+const MAX_CHECKPOINTS = 12;
 
 interface StoredMeta {
   format: 1;
@@ -66,6 +70,20 @@ interface StoredMeta {
   head: Omit<TopologyDocumentModel, 'pages'>;
   lease?: WorkspaceLease;
   requestKeys: string[];
+  /** Named checkpoint ids (Packet R3). Absent on pre-R3 records ⇒ treat as []. */
+  checkpointIds?: string[];
+}
+
+/** A stored named checkpoint: its metadata plus the document head. The page
+ * copies live under `checkpoint:<id>:page:<pageId>` keys. */
+interface StoredCheckpoint {
+  id: string;
+  name: string;
+  createdBy: WorkspaceActor;
+  createdAt: string;
+  revision: number;
+  pageIds: string[];
+  head: Omit<TopologyDocumentModel, 'pages'>;
 }
 
 interface WorkspaceStorage {
@@ -120,6 +138,17 @@ function pageScoped(operation: WorkspaceOperation, pageId: string): boolean {
 function proposalSummary(proposal: WorkspaceProposal): ProposalSummary {
   const { operations: _operations, ...summary } = proposal;
   return summary;
+}
+
+function checkpointSummary(record: StoredCheckpoint): CheckpointSummary {
+  return {
+    id: record.id,
+    name: record.name,
+    createdBy: record.createdBy,
+    createdAt: record.createdAt,
+    revision: record.revision,
+    pageCount: record.pageIds.length,
+  };
 }
 
 export class TopologyDocument extends DurableObject<WorkerEnv> {
@@ -559,6 +588,153 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     });
   }
 
+  /** Snapshot the current document as a named checkpoint. Agents may checkpoint
+   * (e.g. before a risky batch); restore/fork remain browser-owner actions. */
+  async createCheckpoint(
+    ownerId: string,
+    actor: WorkspaceActor,
+    name: string,
+  ): Promise<CheckpointSummary> {
+    if (actor.kind === 'system')
+      throw new Error('system actors cannot create checkpoints');
+    const trimmed = String(name ?? '').trim();
+    if (!trimmed) throw new Error('checkpoint name is required');
+    if (trimmed.length > 120)
+      throw new Error('checkpoint name exceeds 120 characters');
+    return this.ctx.storage.transaction(async (tx) => {
+      const meta = await this.requiredMeta(tx, ownerId);
+      const ids = meta.checkpointIds ?? [];
+      // Hard cap: never silently evict a named checkpoint — the owner deletes one.
+      if (ids.length >= MAX_CHECKPOINTS)
+        throw new Error(
+          `checkpoint limit (${MAX_CHECKPOINTS}) reached — delete one before creating another`,
+        );
+      const document = await this.loadDocument(tx, meta);
+      // Copies are of an already-valid document, but assert before any write so
+      // an oversize state fails visibly rather than mid-mutation.
+      this.assertDocumentSizes(document);
+      const { pages, ...head } = document;
+      const id = crypto.randomUUID();
+      const record: StoredCheckpoint = {
+        id,
+        name: trimmed,
+        createdBy: actor,
+        createdAt: nowIso(),
+        revision: meta.revision,
+        pageIds: pages.map((page) => page.id),
+        head,
+      };
+      for (const page of pages)
+        await tx.put(this.checkpointPageKey(id, page.id), page);
+      await tx.put(CHECKPOINT_PREFIX + id, record);
+      meta.checkpointIds = [...ids, id];
+      await tx.put(META_KEY, meta);
+      return checkpointSummary(record);
+    });
+  }
+
+  async listCheckpoints(ownerId: string): Promise<CheckpointSummary[]> {
+    const meta = await this.requiredMeta(this.ctx.storage, ownerId);
+    const summaries: CheckpointSummary[] = [];
+    for (const id of meta.checkpointIds ?? []) {
+      const record = await this.ctx.storage.get<StoredCheckpoint>(
+        CHECKPOINT_PREFIX + id,
+      );
+      if (record) summaries.push(checkpointSummary(record));
+    }
+    return summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async deleteCheckpoint(
+    ownerId: string,
+    actor: WorkspaceActor,
+    id: string,
+  ): Promise<void> {
+    if (actor.kind !== 'user')
+      throw new Error('only a browser user can delete checkpoints');
+    return this.ctx.storage.transaction(async (tx) => {
+      const meta = await this.requiredMeta(tx, ownerId);
+      const record = await tx.get<StoredCheckpoint>(CHECKPOINT_PREFIX + id);
+      if (!record) throw new Error(`unknown checkpoint "${id}"`);
+      for (const pageId of record.pageIds)
+        await tx.delete(this.checkpointPageKey(id, pageId));
+      await tx.delete(CHECKPOINT_PREFIX + id);
+      meta.checkpointIds = (meta.checkpointIds ?? []).filter(
+        (candidate) => candidate !== id,
+      );
+      await tx.put(META_KEY, meta);
+    });
+  }
+
+  /** Restore a checkpoint forward-only: the checkpoint document is diffed against
+   * the current state and applied as one new attributed revision. History is
+   * never rewritten. Idempotent per operationId. */
+  async restoreCheckpoint(
+    ownerId: string,
+    actor: WorkspaceActor,
+    id: string,
+    operationId: string,
+  ): Promise<CommitResult> {
+    if (actor.kind !== 'user')
+      throw new Error('only a browser user can restore checkpoints');
+    return this.ctx.storage.transaction(async (tx) => {
+      const meta = await this.requiredMeta(tx, ownerId);
+      const duplicate = await tx.get<CommitResult>(
+        REQUEST_PREFIX + operationId,
+      );
+      if (duplicate) return duplicate;
+      const target = await this.loadCheckpointDocument(tx, id);
+      this.assertDocumentSizes(target);
+      const current = await this.loadDocument(tx, meta);
+      const operations = diffDocuments(current, target);
+      if (!operations.length) {
+        const result: CommitResult = {
+          ok: true,
+          revision: meta.revision,
+          rebased: false,
+          summary: summarizeOperations([]),
+        };
+        await this.rememberRequest(tx, meta, operationId, result);
+        return result;
+      }
+      // Applied as one revision, bypassing the client batch-size cap (this is a
+      // trusted, server-computed whole-document replace, not a client batch).
+      const revision = meta.revision + 1;
+      const timestamp = nowIso();
+      const change: WorkspaceChange = {
+        revision,
+        baseRevision: meta.revision,
+        operationId,
+        actor,
+        source: 'restore',
+        createdAt: timestamp,
+        summary: summarizeOperations(operations),
+        operations: structuredClone(operations),
+      };
+      await this.saveDocument(tx, meta, current, target, revision, timestamp);
+      await tx.put(this.changeKey(revision), change);
+      await this.compactHistory(tx, meta, revision);
+      const result: CommitResult = {
+        ok: true,
+        revision,
+        rebased: false,
+        summary: change.summary,
+      };
+      await this.rememberRequest(tx, meta, operationId, result);
+      return result;
+    });
+  }
+
+  /** The checkpoint's full document — used by the fork path to seed a new
+   * workspace via the normal initialize flow. */
+  async getCheckpointDocument(
+    ownerId: string,
+    id: string,
+  ): Promise<TopologyDocumentModel> {
+    await this.requiredMeta(this.ctx.storage, ownerId);
+    return this.loadCheckpointDocument(this.ctx.storage, id);
+  }
+
   async grantPageLease(
     ownerId: string,
     actor: WorkspaceActor,
@@ -752,6 +928,27 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     }
     const parsed = parseDoc({ ...meta.head, pages });
     if (!parsed) throw new Error('stored workspace document is invalid');
+    return parsed;
+  }
+
+  private checkpointPageKey(id: string, pageId: string): string {
+    return `${CHECKPOINT_PREFIX}${id}:page:${pageId}`;
+  }
+
+  private async loadCheckpointDocument(
+    storage: WorkspaceStorage,
+    id: string,
+  ): Promise<TopologyDocumentModel> {
+    const record = await storage.get<StoredCheckpoint>(CHECKPOINT_PREFIX + id);
+    if (!record) throw new Error(`unknown checkpoint "${id}"`);
+    const pages: Page[] = [];
+    for (const pageId of record.pageIds) {
+      const page = await storage.get<Page>(this.checkpointPageKey(id, pageId));
+      if (!page) throw new Error(`checkpoint page "${pageId}" is unavailable`);
+      pages.push(page);
+    }
+    const parsed = parseDoc({ ...record.head, pages });
+    if (!parsed) throw new Error('stored checkpoint document is invalid');
     return parsed;
   }
 

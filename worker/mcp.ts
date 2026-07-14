@@ -60,6 +60,8 @@ const NO_LEGACY_PERSIST_TOOLS = new Set<string>([
   'get_workspace_elements',
   'propose_workspace_changes',
   'apply_workspace_changes',
+  'create_checkpoint',
+  'list_checkpoints',
 ]);
 
 export class TopologyMcp extends McpAgent<WorkerEnv> {
@@ -81,7 +83,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
             apiKey: this.env.ORCH_API_KEY,
           })
         : undefined;
-    // WORKSPACE_ENABLED gates whether the eight workspace tools are handed to
+    // WORKSPACE_ENABLED gates whether the workspace tools are handed to
     // registerTopologyTools at all — see workspace-tools.ts for the pure
     // decision (kept out of this file so it stays unit-testable without the
     // McpAgent Durable Object; the class/binding/migration are untouched).

@@ -23,14 +23,19 @@ import {
   computeWorkspaceChipState,
   renderActiveWorkspaceHtml,
   renderChangedElementOverlay,
+  renderCheckpointsHtml,
+  renderTimelineHtml,
   renderProposalPreviewErrorHtml,
   renderProposalPreviewHtml,
   renderWorkspaceChoicesHtml,
   renderWorkspaceDisabledHtml,
   type ActiveWorkspace,
+  type ChangeSummary,
   type RenderedPreviewFrame,
 } from './workspace-panel.js';
 import type {
+  ChangesResult,
+  CheckpointSummary,
   ProposalSummary,
   WorkspaceListItem,
   WorkspaceManifest,
@@ -52,6 +57,8 @@ function activeWorkspace(
     lastSynced: BLANK_DOC,
     manifest: null,
     proposals: [],
+    checkpoints: [],
+    timeline: null,
     pending: null,
     pendingTarget: null,
     syncing: false,
@@ -385,6 +392,186 @@ describe('renderActiveWorkspaceHtml', () => {
     expect(html).toMatch(
       /<div class="ws-preview" data-pid="prop_pending" hidden><\/div>/,
     );
+  });
+});
+
+describe('renderCheckpointsHtml', () => {
+  const checkpoint = (
+    over: Partial<CheckpointSummary> = {},
+  ): CheckpointSummary => ({
+    id: 'cp_1',
+    name: 'Before refactor',
+    createdBy: { kind: 'agent', id: 'a1' },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    revision: 5,
+    pageCount: 2,
+    ...over,
+  });
+
+  it('shows a create row and an empty state with no checkpoints', () => {
+    const html = renderCheckpointsHtml(activeWorkspace({ checkpoints: [] }));
+    expect(html).toContain('Checkpoints (0/12)');
+    expect(html).toContain('id="wsCheckpointCreate"');
+    expect(html).toContain('No checkpoints yet.');
+  });
+
+  it('lists checkpoints with restore/fork/delete actions', () => {
+    const html = renderCheckpointsHtml(
+      activeWorkspace({
+        checkpoints: [
+          checkpoint(),
+          checkpoint({ id: 'cp_2', name: 'v2', pageCount: 1 }),
+        ],
+      }),
+    );
+    expect(html).toContain('Checkpoints (2/12)');
+    expect(html).toContain('data-cid="cp_1"');
+    expect(html).toContain('data-cid="cp_2"');
+    expect(html).toContain('ws-cp-restore');
+    expect(html).toContain('ws-cp-fork');
+    expect(html).toContain('ws-cp-delete');
+    expect(html).toContain('r5 · 2 pages · agent');
+    expect(html).toContain('1 page ·'); // singular
+  });
+
+  it('disables creation at the cap of 12', () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      checkpoint({ id: `cp_${i}` }),
+    );
+    const html = renderCheckpointsHtml(activeWorkspace({ checkpoints: many }));
+    expect(html).toContain('Checkpoints (12/12)');
+    expect(html).toContain('disabled');
+    expect(html).toContain('Checkpoint limit reached');
+  });
+
+  it('escapes untrusted checkpoint names', () => {
+    const html = renderCheckpointsHtml(
+      activeWorkspace({ checkpoints: [checkpoint({ name: '<img src=x>' })] }),
+    );
+    expect(html).not.toContain('<img src=x>');
+    expect(html).toContain('&lt;img src=x&gt;');
+  });
+});
+
+describe('renderTimelineHtml', () => {
+  const change = (over: Partial<ChangeSummary> = {}): ChangeSummary => ({
+    revision: 1,
+    baseRevision: 0,
+    operationId: 'op1',
+    actor: { kind: 'user', id: 'u1' },
+    source: 'ui',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    summary: {
+      count: 1,
+      byType: {},
+      affectedPageIds: [],
+      affectedElementIds: [],
+      descriptions: ['Update x'],
+    },
+    ...over,
+  });
+  const timeline = (
+    changes: ChangeSummary[],
+    over: Partial<ChangesResult> = {},
+  ): ChangesResult => ({
+    revision: changes.length ? Math.max(...changes.map((c) => c.revision)) : 0,
+    historyFloor: 0,
+    checkpointRequired: false,
+    changes,
+    nextRevision: null,
+    ...over,
+  });
+
+  it('shows an empty state with no change log', () => {
+    expect(renderTimelineHtml(activeWorkspace({ timeline: null }))).toContain(
+      'No revisions yet.',
+    );
+    expect(
+      renderTimelineHtml(activeWorkspace({ timeline: timeline([]) })),
+    ).toContain('No revisions yet.');
+  });
+
+  it('renders revisions newest-first with actor, op count, and a source badge', () => {
+    const html = renderTimelineHtml(
+      activeWorkspace({
+        timeline: timeline([
+          change({ revision: 1 }),
+          change({
+            revision: 2,
+            actor: { kind: 'agent', id: 'a1', label: 'Claude' },
+            summary: {
+              count: 3,
+              byType: {},
+              affectedPageIds: [],
+              affectedElementIds: [],
+              descriptions: ['Add node'],
+            },
+          }),
+        ]),
+      }),
+    );
+    expect(html).toContain('Timeline (r2)');
+    // Newest (r2) appears before r1.
+    expect(html.indexOf('r2')).toBeLessThan(html.indexOf('r1'));
+    expect(html).toContain('Claude');
+    expect(html).toContain('3 ops');
+    expect(html).toContain('1 op ·');
+  });
+
+  it('marks accepted proposals and restore revisions', () => {
+    const html = renderTimelineHtml(
+      activeWorkspace({
+        timeline: timeline([
+          change({ revision: 1, source: 'proposal', proposalId: 'prop_1' }),
+          change({ revision: 2, source: 'restore' }),
+        ]),
+      }),
+    );
+    expect(html).toContain('✓ accepted proposal');
+    expect(html).toContain('ws-src-restore');
+    expect(html).toContain('ws-src-proposal');
+  });
+
+  it('attaches checkpoint markers at their revision and notes the history floor', () => {
+    const html = renderTimelineHtml(
+      activeWorkspace({
+        checkpoints: [
+          {
+            id: 'cp1',
+            name: 'Baseline',
+            createdBy: { kind: 'user', id: 'u1' },
+            createdAt: '2026-01-01T00:00:00.000Z',
+            revision: 2,
+            pageCount: 1,
+          },
+        ],
+        timeline: timeline([change({ revision: 2 })], { historyFloor: 5 }),
+      }),
+    );
+    expect(html).toContain('◈ checkpoint “Baseline”');
+    expect(html).toContain('Older revisions compacted (floor r5)');
+  });
+
+  it('escapes untrusted actor labels and descriptions', () => {
+    const html = renderTimelineHtml(
+      activeWorkspace({
+        timeline: timeline([
+          change({
+            actor: { kind: 'agent', id: 'a', label: '<b>x</b>' },
+            summary: {
+              count: 1,
+              byType: {},
+              affectedPageIds: [],
+              affectedElementIds: [],
+              descriptions: ['<img src=y>'],
+            },
+          }),
+        ]),
+      }),
+    );
+    expect(html).not.toContain('<b>x</b>');
+    expect(html).not.toContain('<img src=y>');
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
   });
 });
 

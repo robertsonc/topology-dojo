@@ -27,6 +27,11 @@ export default {
         case 'propose': result = await stub.propose(owner, agent, input.commit, String(input.title ?? 'Proposal')); break;
         case 'accept': result = await stub.acceptProposal(owner, user, String(input.proposalId), String(input.operationId), input.selectedOperationIndices); break;
         case 'proposal': result = await stub.getProposal(owner, String(input.proposalId)); break;
+        case 'checkpoint': result = await stub.createCheckpoint(owner, input.asAgent ? agent : user, String(input.name)); break;
+        case 'checkpoints': result = await stub.listCheckpoints(owner); break;
+        case 'deleteCheckpoint': await stub.deleteCheckpoint(owner, user, String(input.checkpointId)); result = { deleted: String(input.checkpointId) }; break;
+        case 'restoreCheckpoint': result = await stub.restoreCheckpoint(owner, user, String(input.checkpointId), String(input.operationId)); break;
+        case 'checkpointDoc': result = await stub.getCheckpointDocument(owner, String(input.checkpointId)); break;
         case 'lease': result = await stub.grantPageLease(owner, user, String(input.pageId), 600); break;
         default: return Response.json({ error: 'bad action' }, { status: 400 });
       }
@@ -501,5 +506,164 @@ describe('TopologyDocument Durable Object', () => {
       selectedOperationIndices: [1],
     });
     expect(okSub).toMatchObject({ ok: true });
+  }, 30_000);
+
+  it('creates, lists, and restores a named checkpoint forward-only', async () => {
+    const W = 'r3-restore';
+    await call({
+      action: 'initialize',
+      workspace: W,
+      document: { title: 'T', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    // Snapshot at r0, then move node 'a' (r1).
+    const cp = await call<{ id: string; revision: number; pageCount: number }>({
+      action: 'checkpoint',
+      workspace: W,
+      name: 'before move',
+    });
+    expect(cp).toMatchObject({ revision: 0, pageCount: 1 });
+    await call({
+      action: 'user',
+      workspace: W,
+      commit: {
+        baseRevision: 0,
+        operationId: 'u1',
+        operations: [patch('p1', 'a', { x: 999 })],
+      },
+    });
+    const list = await call<Array<{ id: string; name: string }>>({
+      action: 'checkpoints',
+      workspace: W,
+    });
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ id: cp.id, name: 'before move' });
+
+    // Restore → a NEW revision (r2) whose document matches the checkpoint.
+    const restored = await call<{ ok: boolean; revision: number }>({
+      action: 'restoreCheckpoint',
+      workspace: W,
+      checkpointId: cp.id,
+      operationId: 'rc1',
+    });
+    expect(restored).toMatchObject({ ok: true, revision: 2 });
+    const snap = await call<{
+      revision: number;
+      document: { pages: Array<{ nodes: Array<{ x: number }> }> };
+    }>({ action: 'snapshot', workspace: W });
+    expect(snap.revision).toBe(2);
+    expect(snap.document.pages[0]!.nodes[0]!.x).toBe(10); // reverted from 999
+
+    // History is not rewritten: the intervening r1 change still exists, and the
+    // restore is attributed with source 'restore'.
+    const changes = await call<{
+      changes: Array<{ revision: number; source: string }>;
+    }>({ action: 'changes', workspace: W, since: 0 });
+    expect(changes.changes.map((c) => c.revision)).toEqual([1, 2]);
+    expect(changes.changes[1]!.source).toBe('restore');
+
+    // Idempotent: replaying the same restore operationId does not add a revision.
+    const replay = await call<{ ok: boolean; revision: number }>({
+      action: 'restoreCheckpoint',
+      workspace: W,
+      checkpointId: cp.id,
+      operationId: 'rc1',
+    });
+    expect(replay).toMatchObject({ ok: true, revision: 2 });
+  }, 30_000);
+
+  it('enforces the checkpoint cap without silently evicting', async () => {
+    const W = 'r3-cap';
+    await call({
+      action: 'initialize',
+      workspace: W,
+      document: { title: 'T', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const created: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const cp = await call<{ id: string }>({
+        action: 'checkpoint',
+        workspace: W,
+        name: `cp ${i}`,
+      });
+      created.push(cp.id);
+    }
+    // The 13th is refused (no eviction of a named checkpoint).
+    const over = await dispatch({
+      action: 'checkpoint',
+      workspace: W,
+      name: 'cp 12',
+    });
+    expect(over.status).toBe(400);
+    await expect(over.json()).resolves.toMatchObject({
+      error: expect.stringContaining('limit'),
+    });
+    expect(
+      (await call<unknown[]>({ action: 'checkpoints', workspace: W })).length,
+    ).toBe(12);
+    // Deleting one makes room again.
+    await call({
+      action: 'deleteCheckpoint',
+      workspace: W,
+      checkpointId: created[0],
+    });
+    const room = await call<{ id: string }>({
+      action: 'checkpoint',
+      workspace: W,
+      name: 'cp fresh',
+    });
+    expect(room.id).toBeTruthy();
+    expect(
+      (await call<unknown[]>({ action: 'checkpoints', workspace: W })).length,
+    ).toBe(12);
+  }, 30_000);
+
+  it('isolates a checkpoint copy from later edits (fork seed)', async () => {
+    const W = 'r3-isolation';
+    await call({
+      action: 'initialize',
+      workspace: W,
+      document: { title: 'T', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const cp = await call<{ id: string }>({
+      action: 'checkpoint',
+      workspace: W,
+      name: 'seed',
+    });
+    // Mutate the live workspace after the snapshot.
+    await call({
+      action: 'user',
+      workspace: W,
+      commit: {
+        baseRevision: 0,
+        operationId: 'u1',
+        operations: [patch('p1', 'a', { x: 777 })],
+      },
+    });
+    // The checkpoint document (what a fork seeds from) reflects the OLD state.
+    const doc = await call<{
+      pages: Array<{ nodes: Array<{ x: number }> }>;
+    }>({ action: 'checkpointDoc', workspace: W, checkpointId: cp.id });
+    expect(doc.pages[0]!.nodes[0]!.x).toBe(10);
+  }, 30_000);
+
+  it('lets an agent create a checkpoint (authority carve-out)', async () => {
+    const W = 'r3-agent';
+    await call({
+      action: 'initialize',
+      workspace: W,
+      document: { title: 'T', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const cp = await call<{ id: string; name: string }>({
+      action: 'checkpoint',
+      workspace: W,
+      name: 'agent snapshot',
+      asAgent: true,
+    });
+    expect(cp).toMatchObject({ name: 'agent snapshot' });
+    const list = await call<Array<{ createdBy: { kind: string } }>>({
+      action: 'checkpoints',
+      workspace: W,
+    });
+    expect(list[0]!.createdBy.kind).toBe('agent');
   }, 30_000);
 });

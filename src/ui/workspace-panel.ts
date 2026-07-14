@@ -20,19 +20,27 @@ import { diffDocuments } from '../workspace/operations.js';
 import {
   acceptWorkspaceProposal,
   commitWorkspaceOperations,
+  createWorkspaceCheckpoint,
   createWorkspace,
+  deleteWorkspaceCheckpoint,
+  forkWorkspaceCheckpoint,
   getWorkspace,
+  getWorkspaceChanges,
   getWorkspaceManifest,
   getWorkspaceProposal,
   grantWorkspaceLease,
+  listWorkspaceCheckpoints,
   listWorkspaces,
   listWorkspaceProposals,
   rejectWorkspaceProposal,
+  restoreWorkspaceCheckpoint,
   revokeWorkspaceLease,
   WorkspaceDisabledError,
 } from '../workspace/client.js';
 import { computeProposalPreview } from '../workspace/preview.js';
 import type {
+  ChangesResult,
+  CheckpointSummary,
   CommitRequest,
   ProposalSummary,
   WorkspaceManifest,
@@ -42,6 +50,9 @@ import { serializeDoc } from '../pages/persist.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import { pageToSVG } from '../editor/export.js';
 import { nodeBounds } from '../api/geometry.js';
+
+/** One revision's stored summary (the timeline reads exactly this — no ops). */
+export type ChangeSummary = ChangesResult['changes'][number];
 
 // Local copy of main.ts's `esc()` — the codebase's established pattern for
 // this trivial helper (see `src/nodes/render.ts`, `src/nodes/designer.ts`)
@@ -54,6 +65,8 @@ function esc(s: string): string {
 }
 
 const WORKSPACE_LINK_KEY = 'topology-dojo:workspace-link';
+/** How many recent revisions the timeline requests (server caps summaries at 50). */
+const TIMELINE_LIMIT = 30;
 interface StoredWorkspaceLink {
   id: string;
   revision: number;
@@ -66,6 +79,9 @@ export interface ActiveWorkspace {
   lastSynced: TopologyDocument;
   manifest: WorkspaceManifest | null;
   proposals: ProposalSummary[];
+  checkpoints: CheckpointSummary[];
+  /** Recent change log (summaries) + history floor for the revision timeline. */
+  timeline: ChangesResult | null;
   pending: CommitRequest | null;
   pendingTarget: TopologyDocument | null;
   syncing: boolean;
@@ -159,6 +175,98 @@ export function renderWorkspaceChoicesHtml(
   );
 }
 
+/** Pure: the named-checkpoint section — a create row plus the list, each with
+ * restore / fork / delete (all browser-owner actions). */
+export function renderCheckpointsHtml(workspace: ActiveWorkspace): string {
+  const atCap = workspace.checkpoints.length >= 12;
+  const list = workspace.checkpoints.length
+    ? workspace.checkpoints
+        .map(
+          (checkpoint) =>
+            `<div class="ws-checkpoint" data-cid="${esc(checkpoint.id)}">` +
+            `<div class="ws-checkpoint-head"><span class="ws-v">${esc(checkpoint.name)}</span>` +
+            `<span class="ws-note">r${checkpoint.revision} · ${checkpoint.pageCount} page${checkpoint.pageCount === 1 ? '' : 's'} · ${esc(checkpoint.createdBy.kind)}</span></div>` +
+            `<div class="ws-actions">` +
+            `<button class="tbtn ws-cp-restore" data-cid="${esc(checkpoint.id)}">Restore</button>` +
+            `<button class="tbtn ws-cp-fork" data-cid="${esc(checkpoint.id)}">Fork</button>` +
+            `<button class="tbtn ws-cp-delete" data-cid="${esc(checkpoint.id)}">Delete</button>` +
+            `</div></div>`,
+        )
+        .join('')
+    : `<div class="ws-empty">No checkpoints yet.</div>`;
+  return (
+    `<div class="ws-section">Checkpoints (${workspace.checkpoints.length}/12)</div>` +
+    `<div class="ws-card"><div class="ws-row">` +
+    `<input id="wsCheckpointName" class="ws-input" type="text" maxlength="120" placeholder="Name this checkpoint…"${atCap ? ' disabled' : ''}>` +
+    `<button class="tbtn" id="wsCheckpointCreate"${atCap ? ' disabled' : ''}>Save</button></div>` +
+    (atCap
+      ? `<div class="ws-note">Checkpoint limit reached — delete one to save another.</div>`
+      : '') +
+    list +
+    `</div>`
+  );
+}
+
+/** Human label per change source for the timeline badge. */
+const TIMELINE_SOURCE_LABEL: Record<string, string> = {
+  ui: 'edit',
+  'agent-lease': 'agent',
+  proposal: 'proposal',
+  restore: 'restore',
+  migration: 'migration',
+};
+
+/** Pure: the revision timeline — newest first, with actor, summary, a source
+ * badge, proposal-acceptance and checkpoint markers, and the history floor. */
+export function renderTimelineHtml(workspace: ActiveWorkspace): string {
+  const log = workspace.timeline;
+  if (!log || log.changes.length === 0) {
+    return (
+      `<div class="ws-section">Timeline</div>` +
+      `<div class="ws-card"><div class="ws-empty">No revisions yet.</div></div>`
+    );
+  }
+  const checkpointsAt = new Map<number, string[]>();
+  for (const checkpoint of workspace.checkpoints) {
+    const at = checkpointsAt.get(checkpoint.revision) ?? [];
+    at.push(checkpoint.name);
+    checkpointsAt.set(checkpoint.revision, at);
+  }
+  const rows = [...log.changes]
+    .sort((a, b) => b.revision - a.revision)
+    .map((change) => {
+      const actor = change.actor.label || change.actor.kind;
+      const source = TIMELINE_SOURCE_LABEL[change.source] ?? change.source;
+      const marks = checkpointsAt.get(change.revision) ?? [];
+      const first = change.summary.descriptions[0];
+      return (
+        `<div class="ws-rev">` +
+        `<div class="ws-rev-head"><span class="ws-rev-n">r${change.revision}</span>` +
+        `<span class="ws-badge ws-src-${esc(change.source)}">${esc(source)}</span>` +
+        `<span class="ws-note">${esc(actor)}</span></div>` +
+        `<div class="ws-note">${change.summary.count} op${change.summary.count === 1 ? '' : 's'}${first ? ` · ${esc(first)}` : ''}</div>` +
+        (change.proposalId
+          ? `<div class="ws-note">✓ accepted proposal</div>`
+          : '') +
+        marks
+          .map(
+            (name) => `<div class="ws-note">◈ checkpoint “${esc(name)}”</div>`,
+          )
+          .join('') +
+        `</div>`
+      );
+    })
+    .join('');
+  const floor =
+    log.historyFloor > 0
+      ? `<div class="ws-note ws-rev-floor">Older revisions compacted (floor r${log.historyFloor}).</div>`
+      : '';
+  return (
+    `<div class="ws-section">Timeline (r${log.revision})</div>` +
+    `<div class="ws-card">${rows}${floor}</div>`
+  );
+}
+
 /** Pure: the panel body for an active workspace (revision/sync/lease/proposals). */
 export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
   const lease = workspace.manifest?.lease;
@@ -217,7 +325,9 @@ export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
       : `<button class="tbtn" id="wsLease">Grant current page · 10 min</button>`) +
     `</div></div>` +
     `<div class="ws-section">Proposals (${workspace.proposals.length})</div>` +
-    proposalHtml
+    proposalHtml +
+    renderCheckpointsHtml(workspace) +
+    renderTimelineHtml(workspace)
   );
 }
 
@@ -600,13 +710,26 @@ export function mountWorkspacePanel(
     const workspace = activeWorkspace;
     if (!workspace) return;
     try {
-      const [manifest, proposals] = await Promise.all([
+      const [manifest, proposals, checkpoints] = await Promise.all([
         getWorkspaceManifest(workspace.id),
         listWorkspaceProposals(workspace.id),
+        listWorkspaceCheckpoints(workspace.id),
       ]);
       if (activeWorkspace !== workspace) return;
       workspace.manifest = manifest;
       workspace.proposals = proposals;
+      workspace.checkpoints = checkpoints;
+      // Recent revisions for the timeline (compact summaries only). Fetched
+      // relative to the just-learned head so the newest changes always show.
+      try {
+        workspace.timeline = await getWorkspaceChanges(
+          workspace.id,
+          Math.max(0, manifest.revision - TIMELINE_LIMIT),
+          TIMELINE_LIMIT,
+        );
+      } catch {
+        // A timeline fetch failure is non-fatal — leave the last-known log.
+      }
       if (autoPull && manifest.revision > workspace.revision) {
         if (!workspaceHasLocalChanges(workspace) && !workspace.pending) {
           adoptWorkspaceSnapshot(
@@ -636,6 +759,8 @@ export function mountWorkspacePanel(
         lastSynced: structuredClone(snapshot.document),
         manifest: null,
         proposals: [],
+        checkpoints: [],
+        timeline: null,
         pending: null,
         pendingTarget: null,
         syncing: false,
@@ -682,6 +807,8 @@ export function mountWorkspacePanel(
       lastSynced: structuredClone(snapshot.document),
       manifest: null,
       proposals: [],
+      checkpoints: [],
+      timeline: null,
       pending: null,
       pendingTarget: null,
       syncing: false,
@@ -704,6 +831,8 @@ export function mountWorkspacePanel(
         lastSynced: structuredClone(snapshot.document),
         manifest: null,
         proposals: [],
+        checkpoints: [],
+        timeline: null,
         pending: saved.pending ?? null,
         pendingTarget: saved.pending ? structuredClone(host.getDoc()) : null,
         syncing: false,
@@ -936,6 +1065,87 @@ export function mountWorkspacePanel(
         paintProposalPreview(proposalId);
       }
     });
+
+    const checkpointFailure = (error: unknown): void => {
+      workspace.error = error instanceof Error ? error.message : String(error);
+      renderWorkspacePanel();
+    };
+    body.querySelector('#wsCheckpointCreate')?.addEventListener('click', () => {
+      const name = body
+        .querySelector<HTMLInputElement>('#wsCheckpointName')
+        ?.value.trim();
+      if (!name) {
+        workspace.error = 'Name the checkpoint before saving.';
+        renderWorkspacePanel();
+        return;
+      }
+      void (async () => {
+        await createWorkspaceCheckpoint(workspace.id, name);
+        await refreshWorkspaceState(false);
+      })().catch(checkpointFailure);
+    });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-cp-restore')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const checkpointId = button.dataset.cid!;
+          if (
+            !confirm(
+              'Restore this checkpoint as a new forward revision? Any local edits sync first; history is not rewritten.',
+            )
+          )
+            return;
+          void (async () => {
+            if (workspaceHasLocalChanges(workspace) && !(await syncWorkspace()))
+              return;
+            const result = await restoreWorkspaceCheckpoint(
+              workspace.id,
+              checkpointId,
+              operationId('ui_restore'),
+            );
+            if (!result.ok) {
+              workspace.error = result.message;
+              workspace.status = 'restore conflict';
+              renderWorkspacePanel();
+              return;
+            }
+            adoptWorkspaceSnapshot(
+              await getWorkspace(workspace.id),
+              'checkpoint restored · synced',
+            );
+            await refreshWorkspaceState(false);
+          })().catch(checkpointFailure);
+        });
+      });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-cp-fork')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const checkpointId = button.dataset.cid!;
+          void (async () => {
+            const fork = await forkWorkspaceCheckpoint(
+              workspace.id,
+              checkpointId,
+            );
+            workspace.error = null;
+            workspace.status = `forked into ${fork.workspaceId}`;
+            renderWorkspacePanel();
+          })().catch(checkpointFailure);
+        });
+      });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-cp-delete')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const checkpointId = button.dataset.cid!;
+          if (!confirm('Delete this checkpoint? This cannot be undone.'))
+            return;
+          void (async () => {
+            await deleteWorkspaceCheckpoint(workspace.id, checkpointId);
+            await refreshWorkspaceState(false);
+          })().catch(checkpointFailure);
+        });
+      });
   }
 
   function openWorkspacePanel(): void {

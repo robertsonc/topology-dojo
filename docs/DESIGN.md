@@ -25,6 +25,16 @@ no authoring value for an agent (e.g. pan/zoom) — and we say so explicitly.
 This is what makes the product equally usable by people and by agents, and it's
 the precondition for "topology as a framework for all of SASE."
 
+**Workspace-authority carve-out (temporary).** A few _workspace_ actions are
+deliberately gated to the browser owner rather than exposed to agents: accepting
+proposals, and — as of Packet R3 — restoring or forking a named checkpoint.
+Agents can still _create_ and _list_ checkpoints (to snapshot before a risky
+batch); they just can't unilaterally roll the canonical document back or spawn a
+fork. This is a limit on _authority_ over shared state, not on document
+_vocabulary_ (the document contract stays fully agent-reachable), so it does not
+violate #2. Revisit if a trusted-automation tier ever needs unattended
+restore/fork.
+
 ## 3. One catalog as the source of truth
 
 The capability catalog (`api/catalog.ts`) is the single machine-readable schema

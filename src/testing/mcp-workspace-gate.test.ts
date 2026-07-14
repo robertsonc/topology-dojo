@@ -27,6 +27,8 @@ const WORKSPACE_TOOL_NAMES = [
   'get_workspace_elements',
   'propose_workspace_changes',
   'apply_workspace_changes',
+  'create_checkpoint',
+  'list_checkpoints',
 ];
 
 let handle: MiniflareHandle;
@@ -54,7 +56,7 @@ async function names(
 }
 
 describe('workspaceToolNames — MCP tool-discovery gate', () => {
-  it('registers the eight workspace tools when unset and a workspace service is available', async () => {
+  it('registers the workspace tools when unset and a workspace service is available', async () => {
     expect(await names(undefined, true)).toEqual(WORKSPACE_TOOL_NAMES);
   });
 

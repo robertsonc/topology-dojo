@@ -5,10 +5,12 @@ import type { TopologyDocument } from '../src/pages/model.js';
 import { blankPage } from '../src/pages/model.js';
 import type {
   ChangesResult,
+  CheckpointSummary,
   CommitRequest,
   CommitResult,
   ElementKind,
   ElementPageResult,
+  ForkResult,
   ProposalResult,
   ProposalSummary,
   WorkspaceActor,
@@ -94,6 +96,24 @@ interface DocumentRpc {
     ttlSeconds?: number,
   ): Promise<WorkspaceLease>;
   revokeLease(ownerId: string, actor: WorkspaceActor): Promise<boolean>;
+  createCheckpoint(
+    ownerId: string,
+    actor: WorkspaceActor,
+    name: string,
+  ): Promise<CheckpointSummary>;
+  listCheckpoints(ownerId: string): Promise<CheckpointSummary[]>;
+  deleteCheckpoint(
+    ownerId: string,
+    actor: WorkspaceActor,
+    id: string,
+  ): Promise<void>;
+  restoreCheckpoint(
+    ownerId: string,
+    actor: WorkspaceActor,
+    id: string,
+    operationId: string,
+  ): Promise<CommitResult>;
+  getCheckpointDocument(ownerId: string, id: string): Promise<TopologyDocument>;
 }
 
 function asWorkspaceUser(user: SessionUser): WorkspaceUser {
@@ -281,6 +301,60 @@ export class WorkspaceService {
   async revokeLease(id: string): Promise<boolean> {
     const document = await this.ensure(id);
     return document.revokeLease(this.user.uid, this.actor('user'));
+  }
+
+  async createCheckpoint(
+    id: string,
+    name: string,
+    actorKind: 'user' | 'agent' = 'user',
+  ): Promise<CheckpointSummary> {
+    const document = await this.ensure(id);
+    return document.createCheckpoint(
+      this.user.uid,
+      this.actor(actorKind),
+      name,
+    );
+  }
+
+  async listCheckpoints(id: string): Promise<CheckpointSummary[]> {
+    const document = await this.ensure(id);
+    return document.listCheckpoints(this.user.uid);
+  }
+
+  async deleteCheckpoint(id: string, checkpointId: string): Promise<void> {
+    const document = await this.ensure(id);
+    return document.deleteCheckpoint(
+      this.user.uid,
+      this.actor('user'),
+      checkpointId,
+    );
+  }
+
+  async restoreCheckpoint(
+    id: string,
+    checkpointId: string,
+    operationId: string,
+  ): Promise<CommitResult> {
+    const document = await this.ensure(id);
+    const result = await document.restoreCheckpoint(
+      this.user.uid,
+      this.actor('user'),
+      checkpointId,
+      operationId,
+    );
+    if (result.ok) await this.tryRefreshDirectory(id, document);
+    return result;
+  }
+
+  /** Fork a checkpoint into a brand-new workspace via the normal create flow. */
+  async forkCheckpoint(id: string, checkpointId: string): Promise<ForkResult> {
+    const source = await this.ensure(id);
+    const document = await source.getCheckpointDocument(
+      this.user.uid,
+      checkpointId,
+    );
+    const snapshot = await this.create(document);
+    return { workspaceId: snapshot.id, snapshot };
   }
 
   async isMigrated(id: string): Promise<boolean> {

@@ -76,7 +76,7 @@ export interface WorkspaceChange {
   baseRevision: number;
   operationId: string;
   actor: WorkspaceActor;
-  source: 'ui' | 'agent-lease' | 'proposal' | 'migration';
+  source: 'ui' | 'agent-lease' | 'proposal' | 'migration' | 'restore';
   createdAt: string;
   summary: OperationSummary;
   operations: WorkspaceOperation[];
@@ -124,6 +124,24 @@ export type ProposalResult =
     };
 
 export type ProposalSummary = Omit<WorkspaceProposal, 'operations'>;
+
+/** A named snapshot of the document at a revision (Packet R3). The page copies
+ * live under separate keys; this summary is what list/create return. */
+export interface CheckpointSummary {
+  id: string;
+  name: string;
+  createdBy: WorkspaceActor;
+  createdAt: string;
+  /** The document revision captured. */
+  revision: number;
+  pageCount: number;
+}
+
+/** Result of forking a checkpoint into a brand-new workspace. */
+export interface ForkResult {
+  workspaceId: string;
+  snapshot: WorkspaceSnapshot;
+}
 
 export interface WorkspacePageSummary {
   id: string;
