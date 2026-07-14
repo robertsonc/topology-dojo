@@ -170,12 +170,16 @@ transport/private-draft objects, owner registries, and canonical document
 coordinators are part of one environment. A preview is therefore not just a
 different bundle URL.
 
-The target deployment architecture uses a stable `topology-dojo-staging`
-Worker with separate KV namespaces, Durable Object namespaces, GitHub OAuth
-App/secrets, and public origin. Cloudflare version uploads are not used for
-Durable Object migration releases; staging receives a full environment-scoped
-deploy. Production follows required CI, staging evidence, and a protected human
-approval.
+The deployment architecture uses a stable `topology-dojo-staging` Worker with
+separate KV namespaces, Durable Object namespaces, GitHub OAuth App/secrets, and
+public origin. This staging environment is live: it is deployed by a CI-gated
+`deploy-staging.yml` workflow and has passed a fully-green gated deploy with
+external smoke evidence. Cloudflare version uploads are not used for Durable
+Object migration releases; staging receives a full environment-scoped deploy.
+Production deploys through the same CI-gated Actions path
+(`deploy-production.yml`, restricted to `main` behind a protected environment
+approval); its cutover from the legacy Workers Builds path and the first gated
+production deploy remain protected operator steps.
 
 Migration-bearing releases separate namespace creation from feature
 activation. For `v3`, production first exports and binds `TopologyDocument`
