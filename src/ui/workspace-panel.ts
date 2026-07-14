@@ -25,6 +25,7 @@ import {
   deleteWorkspaceCheckpoint,
   forkWorkspaceCheckpoint,
   getWorkspace,
+  getWorkspaceChanges,
   getWorkspaceManifest,
   getWorkspaceProposal,
   grantWorkspaceLease,
@@ -38,6 +39,7 @@ import {
 } from '../workspace/client.js';
 import { computeProposalPreview } from '../workspace/preview.js';
 import type {
+  ChangesResult,
   CheckpointSummary,
   CommitRequest,
   ProposalSummary,
@@ -48,6 +50,9 @@ import { serializeDoc } from '../pages/persist.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import { pageToSVG } from '../editor/export.js';
 import { nodeBounds } from '../api/geometry.js';
+
+/** One revision's stored summary (the timeline reads exactly this — no ops). */
+export type ChangeSummary = ChangesResult['changes'][number];
 
 // Local copy of main.ts's `esc()` — the codebase's established pattern for
 // this trivial helper (see `src/nodes/render.ts`, `src/nodes/designer.ts`)
@@ -60,6 +65,8 @@ function esc(s: string): string {
 }
 
 const WORKSPACE_LINK_KEY = 'topology-dojo:workspace-link';
+/** How many recent revisions the timeline requests (server caps summaries at 50). */
+const TIMELINE_LIMIT = 30;
 interface StoredWorkspaceLink {
   id: string;
   revision: number;
@@ -73,6 +80,8 @@ export interface ActiveWorkspace {
   manifest: WorkspaceManifest | null;
   proposals: ProposalSummary[];
   checkpoints: CheckpointSummary[];
+  /** Recent change log (summaries) + history floor for the revision timeline. */
+  timeline: ChangesResult | null;
   pending: CommitRequest | null;
   pendingTarget: TopologyDocument | null;
   syncing: boolean;
@@ -198,6 +207,66 @@ export function renderCheckpointsHtml(workspace: ActiveWorkspace): string {
   );
 }
 
+/** Human label per change source for the timeline badge. */
+const TIMELINE_SOURCE_LABEL: Record<string, string> = {
+  ui: 'edit',
+  'agent-lease': 'agent',
+  proposal: 'proposal',
+  restore: 'restore',
+  migration: 'migration',
+};
+
+/** Pure: the revision timeline — newest first, with actor, summary, a source
+ * badge, proposal-acceptance and checkpoint markers, and the history floor. */
+export function renderTimelineHtml(workspace: ActiveWorkspace): string {
+  const log = workspace.timeline;
+  if (!log || log.changes.length === 0) {
+    return (
+      `<div class="ws-section">Timeline</div>` +
+      `<div class="ws-card"><div class="ws-empty">No revisions yet.</div></div>`
+    );
+  }
+  const checkpointsAt = new Map<number, string[]>();
+  for (const checkpoint of workspace.checkpoints) {
+    const at = checkpointsAt.get(checkpoint.revision) ?? [];
+    at.push(checkpoint.name);
+    checkpointsAt.set(checkpoint.revision, at);
+  }
+  const rows = [...log.changes]
+    .sort((a, b) => b.revision - a.revision)
+    .map((change) => {
+      const actor = change.actor.label || change.actor.kind;
+      const source = TIMELINE_SOURCE_LABEL[change.source] ?? change.source;
+      const marks = checkpointsAt.get(change.revision) ?? [];
+      const first = change.summary.descriptions[0];
+      return (
+        `<div class="ws-rev">` +
+        `<div class="ws-rev-head"><span class="ws-rev-n">r${change.revision}</span>` +
+        `<span class="ws-badge ws-src-${esc(change.source)}">${esc(source)}</span>` +
+        `<span class="ws-note">${esc(actor)}</span></div>` +
+        `<div class="ws-note">${change.summary.count} op${change.summary.count === 1 ? '' : 's'}${first ? ` · ${esc(first)}` : ''}</div>` +
+        (change.proposalId
+          ? `<div class="ws-note">✓ accepted proposal</div>`
+          : '') +
+        marks
+          .map(
+            (name) => `<div class="ws-note">◈ checkpoint “${esc(name)}”</div>`,
+          )
+          .join('') +
+        `</div>`
+      );
+    })
+    .join('');
+  const floor =
+    log.historyFloor > 0
+      ? `<div class="ws-note ws-rev-floor">Older revisions compacted (floor r${log.historyFloor}).</div>`
+      : '';
+  return (
+    `<div class="ws-section">Timeline (r${log.revision})</div>` +
+    `<div class="ws-card">${rows}${floor}</div>`
+  );
+}
+
 /** Pure: the panel body for an active workspace (revision/sync/lease/proposals). */
 export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
   const lease = workspace.manifest?.lease;
@@ -257,7 +326,8 @@ export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
     `</div></div>` +
     `<div class="ws-section">Proposals (${workspace.proposals.length})</div>` +
     proposalHtml +
-    renderCheckpointsHtml(workspace)
+    renderCheckpointsHtml(workspace) +
+    renderTimelineHtml(workspace)
   );
 }
 
@@ -649,6 +719,17 @@ export function mountWorkspacePanel(
       workspace.manifest = manifest;
       workspace.proposals = proposals;
       workspace.checkpoints = checkpoints;
+      // Recent revisions for the timeline (compact summaries only). Fetched
+      // relative to the just-learned head so the newest changes always show.
+      try {
+        workspace.timeline = await getWorkspaceChanges(
+          workspace.id,
+          Math.max(0, manifest.revision - TIMELINE_LIMIT),
+          TIMELINE_LIMIT,
+        );
+      } catch {
+        // A timeline fetch failure is non-fatal — leave the last-known log.
+      }
       if (autoPull && manifest.revision > workspace.revision) {
         if (!workspaceHasLocalChanges(workspace) && !workspace.pending) {
           adoptWorkspaceSnapshot(
@@ -679,6 +760,7 @@ export function mountWorkspacePanel(
         manifest: null,
         proposals: [],
         checkpoints: [],
+        timeline: null,
         pending: null,
         pendingTarget: null,
         syncing: false,
@@ -726,6 +808,7 @@ export function mountWorkspacePanel(
       manifest: null,
       proposals: [],
       checkpoints: [],
+      timeline: null,
       pending: null,
       pendingTarget: null,
       syncing: false,
@@ -749,6 +832,7 @@ export function mountWorkspacePanel(
         manifest: null,
         proposals: [],
         checkpoints: [],
+        timeline: null,
         pending: saved.pending ?? null,
         pendingTarget: saved.pending ? structuredClone(host.getDoc()) : null,
         syncing: false,

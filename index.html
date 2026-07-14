@@ -447,6 +447,46 @@
         justify-content: space-between;
         gap: 8px;
       }
+      /* Revision timeline (Packet R4). */
+      .ws-rev {
+        padding: 6px 0;
+        border-top: 1px solid var(--border);
+      }
+      .ws-rev:first-child {
+        border-top: none;
+      }
+      .ws-rev-head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 2px;
+      }
+      .ws-rev-n {
+        font-weight: 600;
+      }
+      .ws-badge {
+        font-size: 9.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .ws-src-proposal {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .ws-src-restore {
+        color: #e0a44a;
+        border-color: #e0a44a;
+      }
+      .ws-rev-floor {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px dashed var(--border);
+        font-style: italic;
+      }
       .ws-error {
         color: #fc8181;
         line-height: 1.45;

@@ -1,6 +1,7 @@
 /** Thin browser client for the owner-authenticated workspace API. */
 import type { TopologyDocument } from '../pages/model.js';
 import type {
+  ChangesResult,
   CheckpointSummary,
   CommitRequest,
   CommitResult,
@@ -82,6 +83,22 @@ export function getWorkspace(id: string): Promise<WorkspaceSnapshot> {
 
 export function getWorkspaceManifest(id: string): Promise<WorkspaceManifest> {
   return request(`/api/workspaces/${encodeURIComponent(id)}/manifest`);
+}
+
+/** Bounded change log after `since`. Defaults to compact summaries (no
+ * operations) — the revision timeline reads exactly this projection. */
+export function getWorkspaceChanges(
+  id: string,
+  since: number,
+  limit?: number,
+  detail: 'summary' | 'operations' = 'summary',
+): Promise<ChangesResult> {
+  const params = new URLSearchParams({ since: String(since) });
+  if (limit !== undefined) params.set('limit', String(limit));
+  if (detail === 'operations') params.set('detail', 'operations');
+  return request(
+    `/api/workspaces/${encodeURIComponent(id)}/changes?${params.toString()}`,
+  );
 }
 
 export async function commitWorkspaceOperations(
