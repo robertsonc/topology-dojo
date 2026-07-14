@@ -185,6 +185,12 @@ in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
   [`proposals/0003-adaptive-agent-authoring-profiles.md`](proposals/0003-adaptive-agent-authoring-profiles.md).
 - **More node/link art** — port additional renderers from the legacy monolith as
   needed; richer per-type inspector controls (ports, D2 waypoint UI).
+- **Adjustable viewer styling** — expose the render aesthetic as user-adjustable
+  UI settings: flat vs. glow, emphasis-glow intensity, and canvas background.
+  Builds on the flat-viewer seam (`flattenViewer` in `src/vendor/topology-ds.ts`)
+  and the `--canvas-bg` / `--glow-none` / `--glow-emphasis` tokens; per DESIGN #2
+  it stays a presentation preference (no document-schema/agent surface), so it
+  lives with pan/zoom as a human-only view control.
 - **Export / share** — standalone HTML or PNG/SVG export of a page or flipbook.
 
 ## Retired (kept dormant)
