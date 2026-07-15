@@ -8,8 +8,9 @@
  *
  * It holds bounded, OBSERVE-ONLY preference *candidates* learned asynchronously
  * from attributed correction outcomes. It changes no agent output: there is no
- * retrieval/guidance method here, and every record stays `status: 'candidate'`
- * (confirmation/promotion is Packet P4).
+ * retrieval/guidance method here, and every record stays within
+ * `status: 'candidate' | 'paused'` — the owner's Packet P3 panel can pause,
+ * resume, or forget a candidate, but confirmation/promotion is Packet P4.
  *
  * Hibernation-safe: the only state is `ctx.storage`. Nothing is cached in
  * memory, so the DO may be evicted between calls and reconstruct everything
@@ -49,7 +50,12 @@ const MAX_RATIONALE_LEN = 500;
 interface ProfileMeta {
   format: 1;
   ownerId: string;
-  /** Bumped only when confirmed guidance changes (Packet P4); 0 here. */
+  /**
+   * Bumped whenever what a (future P4) guidance retrieval could serve changes:
+   * every owner manage action — pause/resume (`setPreferenceStatus`) and
+   * forget (`deletePreference`). Passive learning (`recordOutcome`) does NOT
+   * bump it in observe-only P2/P3. P4's compiled-guidance cache keys on it.
+   */
   profileRevision: number;
   createdAt: string;
   updatedAt: string;
@@ -211,6 +217,76 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
       profileRevision: meta?.profileRevision ?? 0,
       preferences: await this.listPreferences(ownerId),
     };
+  }
+
+  /**
+   * Owner manage action (Packet P3 panel): pause or resume one candidate.
+   * ONLY the candidate↔paused transition is allowed here — `confirmed` and
+   * `rejected` are Packet P4's authority domain, so a record in (or a request
+   * for) any other status throws rather than silently widening this surface.
+   * Setting the status a record already has is a no-op (no revision bump).
+   */
+  async setPreferenceStatus(
+    ownerId: string,
+    preferenceId: string,
+    status: 'candidate' | 'paused',
+  ): Promise<AuthoringPreference> {
+    // Runtime re-check: this argument crosses the RPC trust boundary.
+    if (status !== 'candidate' && status !== 'paused')
+      throw new Error(
+        'only the candidate/paused transition is allowed here (Packet P4 owns confirm/reject)',
+      );
+    return this.ctx.storage.transaction(async (tx) => {
+      const existing = await this.loadOwned(tx, ownerId, preferenceId);
+      if (existing.status !== 'candidate' && existing.status !== 'paused')
+        throw new Error(
+          'only the candidate/paused transition is allowed here (Packet P4 owns confirm/reject)',
+        );
+      if (existing.status === status) return existing;
+      const next: AuthoringPreference = { ...existing, status };
+      await tx.put(CANDIDATE_PREFIX + preferenceId, next);
+      await this.bumpRevision(tx);
+      return next;
+    });
+  }
+
+  /**
+   * Owner manage action (Packet P3 panel): forget a learned candidate — the
+   * proposal's "No, do not learn this" is the owner's right, so this deletes
+   * the record outright (any status; owner authority is absolute here).
+   */
+  async deletePreference(ownerId: string, preferenceId: string): Promise<void> {
+    await this.ctx.storage.transaction(async (tx) => {
+      await this.loadOwned(tx, ownerId, preferenceId);
+      await tx.delete(CANDIDATE_PREFIX + preferenceId);
+      await this.bumpRevision(tx);
+    });
+  }
+
+  /** Owner-asserted read of one stored preference; throws when it (or the
+   * whole profile) does not exist. Shared by the manage actions above. */
+  private async loadOwned(
+    tx: ProfileStorage,
+    ownerId: string,
+    preferenceId: string,
+  ): Promise<AuthoringPreference> {
+    const meta = await tx.get<ProfileMeta>(META_KEY);
+    if (!meta) throw new Error('unknown preference');
+    assertOwner(meta, ownerId);
+    const existing = await tx.get<AuthoringPreference>(
+      CANDIDATE_PREFIX + preferenceId,
+    );
+    if (!existing) throw new Error('unknown preference');
+    return existing;
+  }
+
+  /** Bump `profileRevision` (P4's guidance cache keys on it) + `updatedAt`.
+   * Only called after `loadOwned` proved the meta exists and the owner holds. */
+  private async bumpRevision(tx: ProfileStorage): Promise<void> {
+    const meta = (await tx.get<ProfileMeta>(META_KEY))!;
+    meta.profileRevision += 1;
+    meta.updatedAt = nowIso();
+    await tx.put(META_KEY, meta);
   }
 
   private async assertKnownOwner(ownerId: string): Promise<void> {
