@@ -22,6 +22,11 @@ import { balancePage, tidyPage } from '../api/tidy.js';
 import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
 import type { Page } from '../pages/model.js';
+import type {
+  ElementKind,
+  FieldPatch,
+  WorkspaceOperation,
+} from '../workspace/model.js';
 import {
   hitTestAnchor,
   hitTestLink,
@@ -110,6 +115,17 @@ export class Editor {
   private sel = new Set<string>();
   private undoStack: string[] = [];
   private redoStack: string[] = [];
+  /**
+   * Gesture-native operation buffer (Packet S2). Each mutating gesture records
+   * the semantic `WorkspaceOperation`(s) it just performed here, right where it
+   * mutates `this.page`. The workspace commit layer drains this via
+   * `takePendingOperations()` and — when the emitted ops reproduce the current
+   * document exactly — commits them instead of a reconstructed snapshot diff, so
+   * agent-visible history reflects the user's intent. Anything left un-emitted
+   * (the long tail, plus undo/redo/page-switch) falls back to the diff adapter,
+   * which is why partial coverage is safe. See `syncWorkspace`.
+   */
+  private pendingOps: WorkspaceOperation[] = [];
   grid = 20;
   snap = true;
   gridVisible = true;
@@ -244,6 +260,10 @@ export class Editor {
     this.sel.clear();
     this.undoStack = [];
     this.redoStack = [];
+    // A page switch (or a whole-document open) changes the commit baseline; any
+    // ops buffered for the old page are dropped so the sync cleanly falls back
+    // to the snapshot diff rather than committing stale intent.
+    this.pendingOps = [];
     this.drag = null;
     this.marquee = null;
     this.wpDrag = null;
@@ -510,6 +530,7 @@ export class Editor {
    * undoing node edits never resets pan/zoom.
    */
   setViewBox(vb: string): void {
+    if (this.page.viewBox !== vb) this.emitPagePatch({ set: { viewBox: vb } });
     this.page.viewBox = vb;
     this.view = parseViewBox(vb);
     this.renderArt();
@@ -519,6 +540,7 @@ export class Editor {
 
   /** Rename the current page (shown in the filmstrip). Not on the undo stack. */
   renamePage(name: string): void {
+    if (this.page.name !== name) this.emitPagePatch({ set: { name } });
     this.page.name = name;
     this.onChange();
   }
@@ -1109,6 +1131,149 @@ export class Editor {
     this.redoStack = [];
   }
 
+  /* ── gesture → operation funnel (Packet S2) ───────────────────────
+   *
+   * The single seam through which gestures publish the semantic operation(s)
+   * they performed. Helpers build an op (and are colocated so op construction
+   * is not scattered). Correctness rests on one invariant: applying the drained
+   * ops to the pre-edit document must reproduce the current document — the
+   * commit layer's referee checks exactly this and falls back to the snapshot
+   * diff otherwise, so an incomplete or wrong emission can never corrupt
+   * history, only miss an intent-faithful label. */
+
+  /** Drain the buffered operations (the commit layer calls this each sync). */
+  takePendingOperations(): WorkspaceOperation[] {
+    const ops = this.pendingOps;
+    this.pendingOps = [];
+    return ops;
+  }
+
+  private emit(op: WorkspaceOperation): void {
+    this.pendingOps.push(op);
+  }
+
+  /** Emit `element.add` for freshly-inserted elements, in insertion order, with
+   * each anchored after the element now preceding it (null ⇒ first) — matching
+   * how `diffDocuments` positions an add. */
+  private emitAdds(kind: ElementKind, added: readonly { id: string }[]): void {
+    const coll = this.page[kind] as unknown as { id: string }[];
+    for (const el of added) {
+      const idx = coll.findIndex((e) => e.id === el.id);
+      if (idx < 0) continue;
+      this.emit({
+        type: 'element.add',
+        pageId: this.page.id,
+        kind,
+        // Clone the element as it now sits in the page (full fields), never the
+        // id-only stub some call sites pass to name it.
+        element: structuredClone(coll[idx]) as Record<string, unknown>,
+        afterElementId: idx > 0 ? coll[idx - 1]!.id : null,
+      });
+    }
+  }
+
+  private emitRemoves(kind: ElementKind, ids: readonly string[]): void {
+    for (const id of ids)
+      this.emit({
+        type: 'element.remove',
+        pageId: this.page.id,
+        kind,
+        elementId: id,
+      });
+  }
+
+  private emitPatch(kind: ElementKind, id: string, patch: FieldPatch): void {
+    // Continuous edits (typing in the inspector, a live drag) call this once per
+    // frame/keystroke against the same element. Fold such a patch into the
+    // buffer's tail when it targets that same element so one gesture yields one
+    // patch, not dozens — the merged result is the same final field state.
+    const tail = this.pendingOps.at(-1);
+    if (
+      tail &&
+      tail.type === 'element.patch' &&
+      tail.pageId === this.page.id &&
+      tail.kind === kind &&
+      tail.elementId === id
+    ) {
+      const set = { ...(tail.patch.set ?? {}), ...(patch.set ?? {}) };
+      const unset = new Set([
+        ...(tail.patch.unset ?? []),
+        ...(patch.unset ?? []),
+      ]);
+      // A field set by the newer patch is no longer unset, and vice versa.
+      for (const key of Object.keys(patch.set ?? {})) unset.delete(key);
+      for (const key of patch.unset ?? []) delete set[key];
+      tail.patch = {
+        ...(Object.keys(set).length ? { set } : {}),
+        ...(unset.size ? { unset: [...unset] } : {}),
+      };
+      return;
+    }
+    this.emit({
+      type: 'element.patch',
+      pageId: this.page.id,
+      kind,
+      elementId: id,
+      patch,
+    });
+  }
+
+  /** Emit `element.reorder` for a collection's current order. */
+  private emitReorder(kind: ElementKind): void {
+    const ids = (this.page[kind] as unknown as { id: string }[]).map(
+      (e) => e.id,
+    );
+    this.emit({
+      type: 'element.reorder',
+      pageId: this.page.id,
+      kind,
+      elementIds: ids,
+    });
+  }
+
+  private emitPagePatch(patch: FieldPatch): void {
+    this.emit({ type: 'page.patch', pageId: this.page.id, patch });
+  }
+
+  /** Build a minimal `FieldPatch` for the `keys` that actually changed between
+   * `before` and `after` (set for new values, unset for removed ones) — mirrors
+   * the field-granular diff so an emitted patch equals the referee's. Returns
+   * null when nothing changed. */
+  private patchFromChange(
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+    keys: readonly string[],
+  ): FieldPatch | null {
+    const set: Record<string, unknown> = {};
+    const unset: string[] = [];
+    for (const key of keys) {
+      if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue;
+      if (after[key] === undefined) unset.push(key);
+      else set[key] = structuredClone(after[key]);
+    }
+    if (!Object.keys(set).length && !unset.length) return null;
+    return {
+      ...(Object.keys(set).length ? { set } : {}),
+      ...(unset.length ? { unset } : {}),
+    };
+  }
+
+  /** Apply `patch` to the sole/selected element of `kind` and emit the matching
+   * `element.patch` for exactly the fields that changed. Shared by the
+   * inspector updaters so they don't each re-derive the delta. */
+  private assignAndEmit(
+    kind: ElementKind,
+    target: Record<string, unknown>,
+    patch: Record<string, unknown>,
+  ): void {
+    const keys = Object.keys(patch);
+    const before: Record<string, unknown> = {};
+    for (const key of keys) before[key] = target[key];
+    Object.assign(target, patch);
+    const fp = this.patchFromChange(before, target, keys);
+    if (fp) this.emitPatch(kind, target.id as string, fp);
+  }
+
   private newNodeId(): string {
     return `n${Date.now().toString(36)}${(this.nodeSeq++).toString(36)}`;
   }
@@ -1134,6 +1299,10 @@ export class Editor {
   undo(): void {
     const prev = this.undoStack.pop();
     if (prev === undefined) return;
+    // Undo/redo replace the page wholesale; emitting precise inverse ops isn't
+    // worth the risk, so we drop any buffered intent and let the sync fall back
+    // to the snapshot diff, which computes the correct net delta.
+    this.pendingOps = [];
     this.redoStack.push(JSON.stringify(serialize(this.page)));
     this.restore(prev);
     this.sel.clear();
@@ -1147,6 +1316,7 @@ export class Editor {
   redo(): void {
     const next = this.redoStack.pop();
     if (next === undefined) return;
+    this.pendingOps = [];
     this.undoStack.push(JSON.stringify(serialize(this.page)));
     this.restore(next);
     this.sel.clear();
@@ -1173,6 +1343,7 @@ export class Editor {
       label: label ?? defaultLabel(type),
       ...extra,
     });
+    this.emitAdds('nodes', [{ id }]);
     this.sel.clear();
     this.sel.add(id);
     this.renderArt();
@@ -1190,6 +1361,15 @@ export class Editor {
     )
       return;
     this.snapshot();
+    // Snapshot the collections touched by the cascade so we can emit exact
+    // removes (direct + cascade) and zone-membership patches afterward.
+    const beforeNodes = this.page.nodes.map((n) => n.id);
+    const beforeLinks = this.page.links.map((l) => l.id);
+    const beforeAnchors = this.page.anchors.map((a) => a.id);
+    const beforeZones = this.page.zones.map((z) => ({
+      id: z.id,
+      nodes: [...(z.nodes ?? [])],
+    }));
     if (this.zoneSel !== null) {
       // Deleting a zone removes the region annotation only — its member nodes
       // (and their links) stay on the canvas.
@@ -1229,6 +1409,35 @@ export class Editor {
     for (const z of this.page.zones)
       if (z.nodes.some((id) => !nodeIds.has(id)))
         z.nodes = z.nodes.filter((id) => nodeIds.has(id));
+    // Emit the semantic delete: one remove per element that vanished (direct or
+    // via cascade), then a patch for any zone whose membership was pruned.
+    const nowNodes = new Set(this.page.nodes.map((n) => n.id));
+    const nowLinks = new Set(this.page.links.map((l) => l.id));
+    const nowAnchors = new Set(this.page.anchors.map((a) => a.id));
+    const nowZones = new Set(this.page.zones.map((z) => z.id));
+    this.emitRemoves(
+      'nodes',
+      beforeNodes.filter((id) => !nowNodes.has(id)),
+    );
+    this.emitRemoves(
+      'links',
+      beforeLinks.filter((id) => !nowLinks.has(id)),
+    );
+    this.emitRemoves(
+      'anchors',
+      beforeAnchors.filter((id) => !nowAnchors.has(id)),
+    );
+    this.emitRemoves(
+      'zones',
+      beforeZones.filter((z) => !nowZones.has(z.id)).map((z) => z.id),
+    );
+    for (const z of this.page.zones) {
+      const was = beforeZones.find((b) => b.id === z.id);
+      if (was && JSON.stringify(was.nodes) !== JSON.stringify(z.nodes ?? []))
+        this.emitPatch('zones', z.id, {
+          set: { nodes: structuredClone(z.nodes ?? []) },
+        });
+    }
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -1503,13 +1712,14 @@ export class Editor {
       this.snapshot();
       for (const id of this.sel) {
         const n = this.page.nodes.find((m) => m.id === id);
-        if (n) Object.assign(n, clip.style);
+        if (n)
+          this.assignAndEmit('nodes', n as Record<string, unknown>, clip.style);
       }
     } else {
       const link = this.getSelectedLink();
       if (!link) return;
       this.snapshot();
-      Object.assign(link, clip.style);
+      this.assignAndEmit('links', link as Record<string, unknown>, clip.style);
     }
     this.renderArt();
     this.renderOverlay();
@@ -1538,6 +1748,8 @@ export class Editor {
     });
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
+    this.emitAdds('nodes', nodes);
+    this.emitAdds('links', links);
     this.linkSel = null;
     this.sel = new Set(nodes.map((n) => n.id));
     this.renderArt();
@@ -1585,6 +1797,8 @@ export class Editor {
     });
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
+    this.emitAdds('nodes', nodes);
+    this.emitAdds('links', links);
     this.linkSel = null;
     this.clearAnchorSel();
     this.sel = new Set(nodes.map((n) => n.id));
@@ -1679,6 +1893,9 @@ export class Editor {
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
     this.page.zones.push(newZone);
+    this.emitAdds('nodes', nodes);
+    this.emitAdds('links', links);
+    this.emitAdds('zones', [{ id: newZone.id }]);
     this.linkSel = null;
     this.clearAnchorSel();
     this.sel = new Set(nodes.map((n) => n.id));
@@ -1705,9 +1922,15 @@ export class Editor {
     if (nodes.length === 0 && anchors.length === 0) return;
     if (!this.nudgeActive) this.snapshot();
     this.nudgeActive = true;
-    for (const el of [...nodes, ...anchors]) {
-      el.x = Math.round(el.x + dx);
-      el.y = Math.round(el.y + dy);
+    for (const n of nodes) {
+      n.x = Math.round(n.x + dx);
+      n.y = Math.round(n.y + dy);
+      this.emitPatch('nodes', n.id, { set: { x: n.x, y: n.y } });
+    }
+    for (const a of anchors) {
+      a.x = Math.round(a.x + dx);
+      a.y = Math.round(a.y + dy);
+      this.emitPatch('anchors', a.id, { set: { x: a.x, y: a.y } });
     }
     clearTimeout(this.nudgeTimer);
     this.nudgeTimer = setTimeout(() => (this.nudgeActive = false), 500);
@@ -1755,6 +1978,7 @@ export class Editor {
     this.snapshot();
     const [el] = arr.splice(i, 1);
     arr.splice(j, 0, el!);
+    this.emitReorder(this.linkSel ? 'links' : 'nodes');
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -1790,7 +2014,14 @@ export class Editor {
     if (targets.length === 0) return;
     const next = !targets.every((t) => t.locked === true);
     this.snapshot();
-    for (const t of targets) t.locked = next;
+    for (const n of nodes)
+      this.assignAndEmit('nodes', n as unknown as Record<string, unknown>, {
+        locked: next,
+      });
+    if (link)
+      this.assignAndEmit('links', link as unknown as Record<string, unknown>, {
+        locked: next,
+      });
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -1820,7 +2051,11 @@ export class Editor {
     const node = this.getSelectedNode();
     if (!node) return;
     if (commit) this.snapshot();
-    Object.assign(node, patch);
+    this.assignAndEmit(
+      'nodes',
+      node as unknown as Record<string, unknown>,
+      patch,
+    );
     // Discrete edits render now; continuous edits (typing) coalesce per frame.
     if (commit) this.renderArt();
     else this.scheduleArt();
@@ -1833,7 +2068,11 @@ export class Editor {
     const link = this.getSelectedLink();
     if (!link) return;
     if (commit) this.snapshot();
-    Object.assign(link, patch);
+    this.assignAndEmit(
+      'links',
+      link as unknown as Record<string, unknown>,
+      patch,
+    );
     if (commit) this.renderArt();
     else this.scheduleArt();
     this.renderOverlay();
@@ -1849,6 +2088,15 @@ export class Editor {
     link.from = to;
     link.to = from;
     if (link.waypoints) link.waypoints = [...link.waypoints].reverse();
+    this.emitPatch('links', link.id, {
+      set: {
+        from: link.from,
+        to: link.to,
+        ...(link.waypoints
+          ? { waypoints: structuredClone(link.waypoints) }
+          : {}),
+      },
+    });
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -1865,6 +2113,7 @@ export class Editor {
     if (!link?.waypoints?.length) return;
     this.snapshot();
     delete link.waypoints;
+    this.emitPatch('links', link.id, { unset: ['waypoints'] });
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -1882,16 +2131,19 @@ export class Editor {
   addZone(zone: ZoneConfig): void {
     this.snapshot();
     this.page.zones.push(zone);
+    this.emitAdds('zones', [{ id: zone.id }]);
     this.afterAnnotationChange();
   }
   addFlowPath(flow: FlowPathConfig): void {
     this.snapshot();
     this.page.flowPaths.push(flow);
+    this.emitAdds('flowPaths', [{ id: flow.id }]);
     this.afterAnnotationChange();
   }
   addPolicyMarker(marker: PolicyMarkerConfig): void {
     this.snapshot();
     this.page.policyMarkers.push(marker);
+    this.emitAdds('policyMarkers', [{ id: marker.id }]);
     this.afterAnnotationChange();
   }
 
@@ -1907,7 +2159,11 @@ export class Editor {
     );
     if (!el) return;
     if (commit) this.snapshot();
-    Object.assign(el, patch);
+    this.assignAndEmit(
+      collection,
+      el as unknown as Record<string, unknown>,
+      patch,
+    );
     this.afterAnnotationChange(commit);
   }
 
@@ -1925,6 +2181,7 @@ export class Editor {
       this.page.policyMarkers = this.page.policyMarkers.filter(
         (e) => e.id !== id,
       );
+    this.emitRemoves(collection, [id]);
     this.afterAnnotationChange();
   }
 
@@ -1949,12 +2206,16 @@ export class Editor {
       minY = Math.min(...ys),
       maxY = Math.max(...ys);
     for (const n of nodes) {
+      const bx = n.x;
+      const by = n.y;
       if (mode === 'left') n.x = minX;
       else if (mode === 'right') n.x = maxX;
       else if (mode === 'centerH') n.x = Math.round((minX + maxX) / 2);
       else if (mode === 'top') n.y = minY;
       else if (mode === 'bottom') n.y = maxY;
       else if (mode === 'middleV') n.y = Math.round((minY + maxY) / 2);
+      const fp = this.patchFromChange({ x: bx, y: by }, n, ['x', 'y']);
+      if (fp) this.emitPatch('nodes', n.id, fp);
     }
     this.renderArt();
     this.renderOverlay();
@@ -1973,8 +2234,13 @@ export class Editor {
     const step = span / (nodes.length - 1);
     nodes.forEach((n, i) => {
       const v = Math.round((axis === 'h' ? first.x : first.y) + step * i);
+      const before = axis === 'h' ? n.x : n.y;
       if (axis === 'h') n.x = v;
       else n.y = v;
+      if (v !== before)
+        this.emitPatch('nodes', n.id, {
+          set: axis === 'h' ? { x: v } : { y: v },
+        });
     });
     this.renderArt();
     this.renderOverlay();
@@ -2108,7 +2374,11 @@ export class Editor {
     const a = this.getSelectedAnchor();
     if (!a) return;
     if (commit) this.snapshot();
-    Object.assign(a, patch);
+    this.assignAndEmit(
+      'anchors',
+      a as unknown as Record<string, unknown>,
+      patch,
+    );
     if (commit) this.renderArt();
     else this.scheduleArt();
     this.renderOverlay();
@@ -2120,6 +2390,7 @@ export class Editor {
     this.snapshot();
     const id = `a${Date.now().toString(36)}${(this.anchorSeq++).toString(36)}`;
     this.page.anchors.push({ id, x: this.snapVal(x), y: this.snapVal(y) });
+    this.emitAdds('anchors', [{ id }]);
     this.sel.clear();
     this.clearLinkSel();
     this.anchorSel = id;
@@ -2145,6 +2416,7 @@ export class Editor {
     this.snapshot();
     const id = `l${Date.now().toString(36)}${(this.linkSeq++).toString(36)}`;
     this.page.links.push({ id, type: 'line', from, to });
+    this.emitAdds('links', [{ id }]);
     this.sel.clear();
     this.linkSel = id;
     this.renderArt();
@@ -2167,6 +2439,7 @@ export class Editor {
     this.snapshot();
     const i = LINK_TYPES.indexOf(l.type);
     l.type = LINK_TYPES[(i + 1) % LINK_TYPES.length]!;
+    this.emitPatch('links', l.id, { set: { type: l.type } });
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -2180,8 +2453,13 @@ export class Editor {
     const cur = (l.lineStyle as string) ?? 'straight';
     const next =
       LINK_STYLES[(LINK_STYLES.indexOf(cur) + 1) % LINK_STYLES.length]!;
-    if (next === 'straight') delete l.lineStyle;
-    else l.lineStyle = next as 'orthogonal' | 'curved';
+    if (next === 'straight') {
+      delete l.lineStyle;
+      this.emitPatch('links', l.id, { unset: ['lineStyle'] });
+    } else {
+      l.lineStyle = next as 'orthogonal' | 'curved';
+      this.emitPatch('links', l.id, { set: { lineStyle: l.lineStyle } });
+    }
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -2368,7 +2646,14 @@ export class Editor {
       if (dist(p, link.waypoints[i]!) <= tol) {
         this.snapshot();
         link.waypoints.splice(i, 1);
-        if (link.waypoints.length === 0) delete link.waypoints;
+        if (link.waypoints.length === 0) {
+          delete link.waypoints;
+          this.emitPatch('links', link.id, { unset: ['waypoints'] });
+        } else {
+          this.emitPatch('links', link.id, {
+            set: { waypoints: structuredClone(link.waypoints) },
+          });
+        }
         this.renderArt();
         this.renderOverlay();
         this.onChange();
@@ -2911,9 +3196,20 @@ export class Editor {
     }
     if (this.labelDrag) {
       const moved = this.labelDrag.moved;
+      const ld = this.labelDrag;
       this.labelDrag = null;
       this.labelGuides = [];
       if (moved) {
+        const link = this.page.links.find((l) => l.id === ld.lid);
+        const key = labelOffsetKey(ld.which);
+        if (link)
+          this.emitPatch(
+            'links',
+            link.id,
+            link[key] === undefined
+              ? { unset: [key] }
+              : { set: { [key]: structuredClone(link[key]) } },
+          );
         this.renderArt();
         this.onChange();
       }
@@ -2928,6 +3224,10 @@ export class Editor {
           wp.x = Math.round(wp.x);
           wp.y = Math.round(wp.y);
         }
+        if (link?.waypoints)
+          this.emitPatch('links', link.id, {
+            set: { waypoints: structuredClone(link.waypoints) },
+          });
         this.renderArt();
         this.onChange();
       }
@@ -2955,6 +3255,16 @@ export class Editor {
         // Positions were applied live during the drag; snapshot was taken on
         // the first move. Settle to integer coordinates and commit.
         this.applyDrag(true);
+        // Emit one move (element.patch x/y) per element the drag repositioned.
+        for (const id of this.drag.base.keys()) {
+          if (this.drag.anchors.has(id)) {
+            const a = this.page.anchors.find((m) => m.id === id);
+            if (a) this.emitPatch('anchors', a.id, { set: { x: a.x, y: a.y } });
+          } else {
+            const n = this.page.nodes.find((m) => m.id === id);
+            if (n) this.emitPatch('nodes', n.id, { set: { x: n.x, y: n.y } });
+          }
+        }
         this.guides = [];
         this.renderArt();
         this.onChange();
