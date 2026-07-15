@@ -125,7 +125,7 @@
       }
       #app {
         display: grid;
-        grid-template-rows: auto 1fr auto auto;
+        grid-template-rows: auto 1fr auto;
         /* Constrain the single column so the wide legacy canvas can't blow out
            the grid past the viewport (keeps absolute UI like the minimap in view). */
         grid-template-columns: minmax(0, 1fr);
@@ -788,9 +788,9 @@
         display: flex;
         flex-direction: row;
       }
-      /* The canvas region (canvas + floating palette/minimap/problems). The
-         properties panel is a docked column beside it, not a floating overlay,
-         so it can never overlap the canvas, minimap, or filmstrip. */
+      /* The canvas region (canvas + floating palette/minimap/frames strip).
+         The properties panel is a docked column beside it, not a floating
+         overlay, so it can never overlap the canvas or the floating panels. */
       .canvas-area {
         position: relative;
         flex: 1 1 auto;
@@ -948,8 +948,8 @@
 
       /* Properties / inspector panel (top-right), with a collapse toggle. */
       /* Docked properties column on the right of the stage: [resize grip][panel].
-         It spans the full stage height (above the filmstrip), so it never floats
-         over — or collides with — the canvas, minimap, or filmstrip. */
+         It spans the full stage height, so it never floats over — or collides
+         with — the canvas, minimap, or frames strip. */
       .inspector-wrap {
         position: relative;
         z-index: 8;
@@ -1594,14 +1594,102 @@
         touch-action: none;
       }
 
-      .filmstrip {
+      /* Frames strip — a floating overlay anchored at the canvas's bottom-left
+         (same model as the palette rail), not a docked row: toggling it never
+         resizes or reflows the canvas. Structure:
+           .frames-dock > [.frames-toggle pill][.frames-reveal > .filmstrip]
+         It sits just right of the nodes rail (12 + 162 + 12) so neither the
+         pill nor the strip ever overlaps the palette; when the palette
+         collapses (its bottom edge freed) the dock slides home to the shared
+         12px edge margin. `right: 12px` caps the strip at the canvas width
+         minus margins; extra frames scroll horizontally inside the strip. */
+      .frames-dock {
+        position: absolute;
+        left: 186px;
+        right: 12px;
+        bottom: 12px;
+        z-index: 6; /* palette tier — floating panels over the canvas */
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 12px 16px;
-        border-top: 1px solid var(--border);
-        background: var(--panel);
+        /* The dock spans the canvas width; only its children take events, so
+           canvas clicks/wheel in the empty span behave as bare canvas. */
+        pointer-events: none;
+      }
+      .frames-dock > * {
+        pointer-events: auto;
+      }
+      /* Note: the palette rail renders 162px wide at every viewport size (the
+         max-width:700px shrink rule above predates the rail's base rule in
+         source order, so the base width wins), so a single 186px offset keeps
+         the dock clear of it at any window size. */
+      .palette.collapsed ~ .frames-dock {
+        left: 12px;
+      }
+      .frames-toggle {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-family: var(--font);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 6px 10px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .frames-toggle:hover {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+      .frames-ind {
+        color: var(--text);
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+      /* Clips the strip while it slides; the strip carries no outer shadow
+         (inset highlight only), so overflow clipping costs nothing visually. */
+      .frames-reveal {
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .filmstrip {
+        position: relative; /* chips' offsetParent → strip-local scroll math */
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+        backdrop-filter: blur(8px);
         overflow-x: auto;
+        /* Expand reveals left→right: a transform slide (never an animated
+           width, so chip layout can't thrash mid-animation). */
+        transform: translateX(0);
+        transition: transform 0.18s ease-out;
+      }
+      .frames-dock.collapsed .filmstrip {
+        /* Fully clear the reveal box so nothing peeks while hidden. */
+        transform: translateX(calc(-100% - 24px));
+      }
+      /* Hidden (and hit-transparent) once the slide finishes; visibility flips
+         back instantly on expand so the slide-in is visible. */
+      .frames-dock.collapsed .frames-reveal {
+        visibility: hidden;
+        transition: visibility 0s 0.18s;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .filmstrip,
+        .frames-dock.collapsed .frames-reveal {
+          transition: none;
+        }
       }
       .frame {
         display: flex;
@@ -2232,6 +2320,7 @@
       .inspector-toggle,
       .minimap-toggle,
       .problems-toggle,
+      .frames-toggle,
       .canvas-ctrls {
         background: var(--glass-bg-strong) !important;
         border: 1px solid var(--glass-brd) !important;
@@ -2246,7 +2335,8 @@
       }
       .inspector-toggle:hover,
       .minimap-toggle:hover,
-      .problems-toggle:hover {
+      .problems-toggle:hover,
+      .frames-toggle:hover {
         transform: translateY(-1px);
         box-shadow: var(--shadow-card);
       }
@@ -2264,14 +2354,13 @@
         transform: translateY(-1px);
       }
 
-      /* ── Bottom chrome → one connected floating glass card ───────────── */
+      /* ── Bottom chrome ─────────────────────────────────────────────────
+         The frames strip floats over the canvas (a glass card of its own);
+         the status bar stays docked below the stage as a standalone card. */
       .filmstrip {
-        margin: 8px 12px 0;
-        padding: 12px 14px;
         gap: 10px;
         border: 1px solid var(--glass-brd);
-        border-bottom: none;
-        border-radius: var(--r-card) var(--r-card) 0 0;
+        border-radius: var(--r-card);
         background: var(--glass-bg);
         -webkit-backdrop-filter: blur(var(--glass-blur))
           saturate(var(--glass-sat));
@@ -2279,11 +2368,10 @@
         box-shadow: inset 0 1px 0 var(--glass-hi);
       }
       .statusbar {
-        margin: 0 12px 12px;
+        margin: 8px 12px 12px;
         padding: 6px 16px;
         border: 1px solid var(--glass-brd);
-        border-top: 1px solid var(--glass-brd);
-        border-radius: 0 0 var(--r-card) var(--r-card);
+        border-radius: var(--r-card);
         background: var(--glass-bg);
         -webkit-backdrop-filter: blur(var(--glass-blur))
           saturate(var(--glass-sat));
