@@ -1,8 +1,9 @@
 /**
  * Topology Dojo — flipbook editor shell.
  *
- * The shell (header, stage, filmstrip) is built once; the Editor owns the canvas
- * (art + interaction overlay) and the filmstrip is re-rendered on page changes.
+ * The shell (header, stage, status bar) is built once; the Editor owns the
+ * canvas (art + interaction overlay) and the filmstrip — a hideable overlay
+ * floating at the canvas's bottom-left — is re-rendered on page changes.
  */
 // Self-hosted JetBrains Mono (bundled by Vite — no external font fetch at runtime).
 // Latin-only subset: the UI is latin, and the aggregate weight CSS ships six
@@ -197,6 +198,12 @@ app.innerHTML = `
           </div>
         </div>
       </div>
+      <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
+        <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="Hide frames (F)">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">◂</span></button>
+        <div class="frames-reveal">
+          <div class="filmstrip scroll-slim" id="filmstrip"></div>
+        </div>
+      </div>
     </div>
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
@@ -217,7 +224,6 @@ app.innerHTML = `
     </div>
   </div>
 
-  <footer class="filmstrip scroll-slim" id="filmstrip"></footer>
   <footer class="statusbar scroll-slim" id="statusbar"></footer>
 `;
 
@@ -230,6 +236,9 @@ app.querySelector<SVGSVGElement>('#tds-defs-sprite')!.innerHTML = engineDefs();
 const artSvg = app.querySelector<SVGSVGElement>('#page-canvas')!;
 const overlaySvg = app.querySelector<SVGSVGElement>('#overlay')!;
 const strip = app.querySelector<HTMLElement>('#filmstrip')!;
+const framesDock = app.querySelector<HTMLDivElement>('#frames-dock')!;
+const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
+const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
 const savedEl = app.querySelector<HTMLElement>('#saved')!;
 
 /* Autosave to localStorage (debounced) whenever the document changes. */
@@ -296,12 +305,19 @@ editor.setViewInsets(() => {
     const r = insp.getBoundingClientRect();
     if (r.width > 0) right = Math.max(right, canvas.right - r.left + 12);
   }
-  // The minimap now docks in the left rail, so it no longer reserves a canvas
-  // bottom inset (nothing floats over the bottom-right corner anymore).
+  // The expanded frames strip floats over the canvas bottom; reserve that band
+  // so a fit never tucks content behind it. Collapsed (a small pill) it costs
+  // nothing. The minimap docks in the left rail and reserves nothing.
+  let bottom = 0;
+  const frames = document.getElementById('frames-dock');
+  if (frames && !frames.classList.contains('collapsed')) {
+    const r = frames.getBoundingClientRect();
+    if (r.height > 0) bottom = Math.max(0, canvas.bottom - r.top + 12);
+  }
   // Never surrender more than ~60% of the canvas to a panel.
   return {
     right: Math.max(0, Math.min(right, canvas.width * 0.6)),
-    bottom: 0,
+    bottom: Math.max(0, Math.min(bottom, canvas.height * 0.6)),
   };
 });
 // Initial fit once the canvas has real dimensions (constructor ran pre-layout).
@@ -729,6 +745,44 @@ paletteToggle.addEventListener('click', () =>
 );
 setPaletteCollapsed(localStorage.getItem('tds-palette-collapsed') === '1');
 
+/* Collapse / restore the frames strip — a floating overlay at the canvas's
+ * bottom-left, so toggling never resizes the canvas or moves the viewport.
+ * Collapsed it shrinks to a pill whose current/total readout stays live
+ * (playback keeps running and updating it without forcing the strip open). */
+function setFramesCollapsed(collapsed: boolean): void {
+  framesDock.classList.toggle('collapsed', collapsed);
+  framesToggle.setAttribute('aria-expanded', String(!collapsed));
+  const chev = framesToggle.querySelector('.frames-chev');
+  if (chev) chev.textContent = collapsed ? '▸' : '◂';
+  framesToggle.title = collapsed ? 'Show frames (F)' : 'Hide frames (F)';
+  try {
+    localStorage.setItem('tds-frames-collapsed', collapsed ? '1' : '0');
+  } catch {
+    /* storage unavailable — fine, just don't persist */
+  }
+  // Re-opening should land with the active frame in view (incl. mid-playback).
+  if (!collapsed) scrollActiveFrameIntoView();
+}
+framesToggle.addEventListener('click', () =>
+  setFramesCollapsed(!framesDock.classList.contains('collapsed')),
+);
+setFramesCollapsed(localStorage.getItem('tds-frames-collapsed') === '1');
+
+// Wheel over the strip pans it horizontally. The editor's zoom handler lives
+// on the canvas overlay underneath, so a wheel here can never zoom the canvas;
+// preventDefault also stops any residual ancestor scrolling.
+strip.addEventListener(
+  'wheel',
+  (e) => {
+    if (e.deltaY && !e.deltaX) {
+      // deltaMode 1 = lines (Firefox wheel default) — convert to ~pixels.
+      strip.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+      e.preventDefault();
+    }
+  },
+  { passive: false },
+);
+
 /* Problems panel — runs the same checks as the MCP `validate_topology`
  * (semantic validation + layout analysis) live in the studio, so overlapping
  * zones, off-canvas nodes, dangling refs, etc. surface as you edit instead of
@@ -1007,8 +1061,8 @@ inspectorToggle.addEventListener('click', () =>
 );
 setInspectorCollapsed(localStorage.getItem('tds-inspector-collapsed') === '1');
 
-/* The properties panel is a docked right column (full stage height, above the
- * filmstrip), so its annotations / zones list is never clipped or overlapped.
+/* The properties panel is a docked right column (full stage height), so its
+ * annotations / zones list is never clipped or overlapped.
  * A left-edge grip resizes its width (persisted). */
 const inspectorResizer = app.querySelector<HTMLElement>('#inspector-resizer')!;
 const INSPECTOR_W_KEY = 'tds-inspector-width';
@@ -2249,6 +2303,29 @@ function startPlayback(): void {
   if (b) b.textContent = '⏸ pause';
 }
 
+/** Keep the frames pill's "current/total" readout live (playback included). */
+function updateFramesIndicator(): void {
+  framesInd.textContent = `${current + 1}/${doc.pages.length}`;
+}
+
+/**
+ * Bring the active chip into the strip's horizontal scroll window. Manual
+ * scrollLeft math (not scrollIntoView) so no ancestor — in particular the
+ * overflow-hidden canvas area — can ever be scrolled by a frame change.
+ */
+function scrollActiveFrameIntoView(): void {
+  const el = strip.querySelector<HTMLElement>('.frame.on');
+  if (!el) return;
+  const pad = 12; // keep a sliver of the neighbour chip visible
+  const left = el.offsetLeft;
+  const right = left + el.offsetWidth;
+  if (left - pad < strip.scrollLeft) {
+    strip.scrollLeft = Math.max(0, left - pad);
+  } else if (right + pad > strip.scrollLeft + strip.clientWidth) {
+    strip.scrollLeft = right + pad - strip.clientWidth;
+  }
+}
+
 function renderFilmstrip(): void {
   const canDelete = doc.pages.length > 1;
   strip.innerHTML = `
@@ -2321,6 +2398,9 @@ function renderFilmstrip(): void {
     gotoPage(current + 1);
     markDirty();
   });
+
+  updateFramesIndicator();
+  scrollActiveFrameIntoView();
 }
 
 /** Switch to a page AND rebuild the strip (after a structural change). */
@@ -2389,6 +2469,8 @@ function selectPage(i: number): void {
   strip
     .querySelectorAll<HTMLElement>('[data-page]')
     .forEach((el) => el.classList.toggle('on', Number(el.dataset.page) === i));
+  updateFramesIndicator();
+  scrollActiveFrameIntoView();
 }
 
 /* Toolbar */
@@ -2708,6 +2790,7 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['G', 'Toggle snap'],
       ['M / P', 'Toggle minimap / properties'],
       ['B', 'Toggle node library'],
+      ['F', 'Toggle frames strip'],
       ['C', 'Calm canvas (pause animation)'],
       ['T', 'Tidy layout'],
       ['Shift+T', 'Balance layout'],
@@ -2933,6 +3016,8 @@ window.addEventListener('keydown', (e) => {
     setPaletteCollapsed(!paletteEl.classList.contains('collapsed'));
   if (e.key === 'p' || e.key === 'P')
     setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed'));
+  if (e.key === 'f' || e.key === 'F')
+    setFramesCollapsed(!framesDock.classList.contains('collapsed'));
   if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
   if (e.key === 't') editor.tidy();
   if (e.key === 'T') editor.balance(); // Shift+T
