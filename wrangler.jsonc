@@ -97,7 +97,7 @@
         // accumulates real correction data (Packet P2). Production stays unset
         // (learner off) until the operator activates — the opposite default
         // from WORKSPACE_ENABLED; see worker/env.ts `profilesEnabled()`.
-        "PROFILES_ENABLED": "false",
+        "PROFILES_ENABLED": "true",
       },
       // Staging's own KV namespaces (operator checklist O2) — never the
       // production ids above.
