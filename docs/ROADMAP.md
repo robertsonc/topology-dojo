@@ -199,6 +199,12 @@ in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
   [`proposals/0003-adaptive-agent-authoring-profiles.md`](proposals/0003-adaptive-agent-authoring-profiles.md).
 - **More node/link art** — port additional renderers from the legacy monolith as
   needed; richer per-type inspector controls (ports, D2 waypoint UI).
+- **Resize link labels** — a per-link `labelScale` on the contract so a label
+  can be shrunk/enlarged, with a drag handle in the editor. The current
+  `labelOffset` drag already repositions labels; this adds sizing. Build fresh
+  against the current label-drag system (there is a stale June `pr-label-move-resize`
+  branch that predates it and edits the vendored engine — mine the idea, not the
+  code). Keep it on the document contract (a catalog field), not a UI-only surface.
 - **Adjustable viewer styling** — expose the render aesthetic as user-adjustable
   UI settings: flat vs. glow, emphasis-glow intensity, and canvas background.
   Builds on the flat-viewer seam (`flattenViewer` in `src/vendor/topology-ds.ts`)
