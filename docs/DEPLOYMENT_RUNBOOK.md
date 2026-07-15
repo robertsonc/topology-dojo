@@ -103,8 +103,10 @@ Review the effective configuration before continuing:
 
 - Worker name ends in `-staging`.
 - Both KV namespace ids are staging ids.
-- All three Durable Object bindings are present.
-- Migrations contain unique, ordered `v1`, `v2`, and `v3` tags.
+- Every Durable Object binding declared at the top level is present in
+  `env.staging` too (`check-wrangler-env.mjs` enforces this).
+- Migrations contain unique, ordered tags identical to the top-level list
+  (`v1`… through the current highest tag).
 - `PUBLIC_BASE_URL` and `GITHUB_CLIENT_ID` are staging values.
 - No binding uses production `script_name`.
 
