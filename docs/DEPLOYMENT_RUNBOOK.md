@@ -205,6 +205,39 @@ tripped stop threshold — is recovered by disabling the feature
 (`WORKSPACE_ENABLED=false`) and deploying a compatible forward version; do not
 roll back across `v3`. See "Activation observation window and thresholds".
 
+### Migration `v4` — `AuthoringProfile` (Packet P2, proposal 0003-A)
+
+The same three gates, with one simplification: `PROFILES_ENABLED` is **opt-in**
+(unset ⇒ off — the opposite default from `WORKSPACE_ENABLED`), so the
+production bootstrap needs **no config change at all**. Merging P2 and running
+the normal protected production deploy _is_ the flag-off bootstrap.
+
+1. **Gate A — staging proof.** Merge P2; dispatch `deploy-staging.yml`. This
+   applies `v4` to the staging script (staging has `PROFILES_ENABLED="true"`,
+   so its learner observes). Run smoke; exercise an accept → user-correction →
+   `create_checkpoint` sequence and confirm a candidate appears (via the DO —
+   or the P3 panel once it exists). Perform the forward-recovery drill for
+   `v4`: redeploy staging with `PROFILES_ENABLED` removed/`"false"`, verify the
+   app + workspace flows are unaffected, re-enable.
+2. **Gate B — production bootstrap (inert).** Dispatch `deploy-production.yml`
+   from `main` with approval. The bundle exports `AuthoringProfile`, binds
+   `AUTHORING_PROFILE`, and applies `v4`; with no top-level `PROFILES_ENABLED`
+   the learner is fully inert (zero storage writes, responses unchanged).
+   Verify `v4` applied and the binding exists; run the normal smoke; create no
+   profile data.
+3. **Gate C — activation (later, when P3/P4 make profiles useful).** A tiny PR
+   adding top-level `"PROFILES_ENABLED": "true"`; deploy with approval; watch
+   the observation window. Recover by forward-deploying with the flag removed —
+   never roll back across `v4`.
+
+**Sequencing with `v3`:** production has not yet run its `v3` bootstrap
+(operator O10). The first gated production deploy applies **all** pending
+migrations on the script — if P2 is merged before O10, that deploy carries
+`v1`–`v4` together. That is safe (workspace gates via `WORKSPACE_ENABLED:
+"false"` per Gate B above; profiles are inert by default), but record both tags
+in the deployment log and treat the combined deploy as the bootstrap for both
+features, each activated separately afterwards.
+
 ## Smoke checklist
 
 ### Automated HTTP smoke
