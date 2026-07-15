@@ -16,13 +16,15 @@ import OAuthProvider from '@cloudflare/workers-oauth-provider';
 import { TopologyMcp } from './mcp.js';
 import { TopologyRegistry } from './registry.js';
 import { TopologyDocument } from './document.js';
+import { AuthoringProfile } from './profile.js';
 import { defaultHandler } from './default-handler.js';
 import type { WorkerEnv } from './env.js';
 
-// Both Durable Object classes must be exported from the Worker entry so the
-// runtime can bind them (MCP_OBJECT → per-session agent; TOPOLOGY_REGISTRY →
-// per-user document store).
-export { TopologyDocument, TopologyMcp, TopologyRegistry };
+// Every Durable Object class must be exported from the Worker entry so the
+// runtime can construct them (MCP_OBJECT → per-session agent; TOPOLOGY_REGISTRY
+// → per-user document store; TOPOLOGY_DOCUMENT → per-topology coordinator;
+// AUTHORING_PROFILE → per-owner observe-only authoring profile, migration v4).
+export { TopologyDocument, TopologyMcp, TopologyRegistry, AuthoringProfile };
 
 // The MCP agent's Streamable HTTP handler, gated by the OAuth provider. Wrapped
 // so its (generic) fetch presents the concrete required signature the provider

@@ -6,6 +6,7 @@
 import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 import type { TopologyRegistry } from './registry.js';
 import type { TopologyDocument } from './document.js';
+import type { AuthoringProfile } from './profile.js';
 
 export interface WorkerEnv {
   /** Static-assets binding (the Vite build in ./dist). */
@@ -27,6 +28,14 @@ export interface WorkerEnv {
   TOPOLOGY_REGISTRY: DurableObjectNamespace<TopologyRegistry>;
   /** One canonical, revisioned coordinator per shared topology document. */
   TOPOLOGY_DOCUMENT: DurableObjectNamespace<TopologyDocument>;
+  /**
+   * Per-owner authoring-profile store (Packet P2 / proposal 0003-A). One DO per
+   * authenticated owner, keyed by the stable numeric uid — the same identity
+   * scheme the coordinator uses. It holds bounded, observe-only preference
+   * *candidates* learned asynchronously from attributed correction outcomes; it
+   * never changes agent output (retrieval/guidance is a later packet).
+   */
+  AUTHORING_PROFILE: DurableObjectNamespace<AuthoringProfile>;
   /** KV namespace where `share_topology` snapshots published documents. */
   TOPOLOGY_KV: KVNamespace;
   /** KV namespace where the OAuth provider stores grants/tokens. */
@@ -65,6 +74,21 @@ export interface WorkerEnv {
    * `/healthz` reports `sha: null`.
    */
   GIT_SHA?: string;
+  /**
+   * Feature flag gating the observe-only authoring-profile learner (Packet P2 /
+   * proposal 0003-A) — the coordinator's outcome-emission hook (`document.ts`)
+   * and, later, the profile read/manage surfaces. This is a brand-new Durable
+   * Object class (`AuthoringProfile`, migration `v4`), so unlike
+   * `WORKSPACE_ENABLED` it defaults **OFF**: only the literal string `"true"`
+   * enables it (unset ⇒ disabled). A new class must bootstrap disabled in
+   * production so the `v4` migration can ship inert (no coordinator overhead,
+   * no behavior change) and be activated by a later, explicit deploy that sets
+   * `"PROFILES_ENABLED": "true"` at the top level of `wrangler.jsonc`.
+   * `env.staging` sets it `"true"` so staging observes; production stays unset
+   * until the operator activates (see proposal 0004's bootstrap-then-activate
+   * pattern and DEPLOYMENT_RUNBOOK.md).
+   */
+  PROFILES_ENABLED?: string;
 }
 
 /**
@@ -77,4 +101,18 @@ export function workspaceEnabled(
   env: Pick<WorkerEnv, 'WORKSPACE_ENABLED'>,
 ): boolean {
   return env.WORKSPACE_ENABLED !== 'false';
+}
+
+/**
+ * Whether the observe-only authoring-profile learner should run. Defaults OFF —
+ * the OPPOSITE of `workspaceEnabled` (see the `PROFILES_ENABLED` field doc
+ * comment above): this is a brand-new DO class that must bootstrap disabled in
+ * production, so it is opt-in and only the exact string `"true"` enables it.
+ * Any other value (unset, `"false"`, a typo) fails closed to "disabled", so an
+ * un-activated production deploy never runs the learner.
+ */
+export function profilesEnabled(
+  env: Pick<WorkerEnv, 'PROFILES_ENABLED'>,
+): boolean {
+  return env.PROFILES_ENABLED === 'true';
 }

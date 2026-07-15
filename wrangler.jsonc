@@ -42,6 +42,10 @@
       // One document coordinator per shared topology. It owns revisions,
       // proposals, scoped leases and per-page snapshots.
       { "name": "TOPOLOGY_DOCUMENT", "class_name": "TopologyDocument" },
+      // Per-owner observe-only authoring profile (Packet P2 / proposal 0003-A).
+      // Populated asynchronously from attributed correction outcomes; gated at
+      // runtime by PROFILES_ENABLED (default off — see worker/env.ts).
+      { "name": "AUTHORING_PROFILE", "class_name": "AuthoringProfile" },
     ],
   },
   // TOPOLOGY_KV backs `share_topology` snapshots; OAUTH_KV backs the OAuth
@@ -55,6 +59,10 @@
     { "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] },
     { "tag": "v2", "new_sqlite_classes": ["TopologyRegistry"] },
     { "tag": "v3", "new_sqlite_classes": ["TopologyDocument"] },
+    // Packet P2: the new AuthoringProfile DO class. Append-only — never
+    // reorder/rename earlier tags. Bootstrapped inert in production (top-level
+    // has no PROFILES_ENABLED, so the learner is off) and activated later.
+    { "tag": "v4", "new_sqlite_classes": ["AuthoringProfile"] },
   ],
   "observability": { "enabled": true },
   // env.staging — isolated, production-like preview surface (proposal 0004,
@@ -85,6 +93,11 @@
         // Explicit (rather than relying on the unset-means-enabled default)
         // for clarity, per worker/env.ts `workspaceEnabled()`.
         "WORKSPACE_ENABLED": "true",
+        // Staging opts INTO the observe-only authoring-profile learner so it
+        // accumulates real correction data (Packet P2). Production stays unset
+        // (learner off) until the operator activates — the opposite default
+        // from WORKSPACE_ENABLED; see worker/env.ts `profilesEnabled()`.
+        "PROFILES_ENABLED": "true",
       },
       // Staging's own KV namespaces (operator checklist O2) — never the
       // production ids above.
@@ -100,14 +113,16 @@
           { "name": "MCP_OBJECT", "class_name": "TopologyMcp" },
           { "name": "TOPOLOGY_REGISTRY", "class_name": "TopologyRegistry" },
           { "name": "TOPOLOGY_DOCUMENT", "class_name": "TopologyDocument" },
+          { "name": "AUTHORING_PROFILE", "class_name": "AuthoringProfile" },
         ],
       },
       // Full migration history repeated verbatim — staging must apply the
-      // exact same v1-v3 sequence production does.
+      // exact same v1-v4 sequence production does.
       "migrations": [
         { "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] },
         { "tag": "v2", "new_sqlite_classes": ["TopologyRegistry"] },
         { "tag": "v3", "new_sqlite_classes": ["TopologyDocument"] },
+        { "tag": "v4", "new_sqlite_classes": ["AuthoringProfile"] },
       ],
     },
   },
