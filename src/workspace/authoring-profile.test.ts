@@ -1,0 +1,438 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  buildWorkerBundle,
+  startMiniflare,
+  type MiniflareHandle,
+} from '../testing/worker-harness.js';
+import { MAX_CANDIDATES_PER_OWNER } from '../profile/learner.js';
+
+/**
+ * Worker-level harness (Miniflare, CI only — fails to start locally with
+ * `File is not defined`, same as `document-do.test.ts`). It binds BOTH the
+ * `AuthoringProfile` DO (exercised directly for dedupe/burst/bounds/isolation)
+ * and the `TopologyDocument` coordinator (for the observe-only accept → correct
+ * → checkpoint end-to-end and the PROFILES_ENABLED gate). The coordinator's
+ * emission reaches the profile DO through the same `AUTHORING_PROFILE` binding
+ * this harness reads back, so identity resolution matches production.
+ */
+const harness = String.raw`
+import { TopologyDocument } from './worker/document.ts';
+import { AuthoringProfile } from './worker/profile.ts';
+export { TopologyDocument, AuthoringProfile };
+export default {
+  async fetch(request, env) {
+    try {
+      const input = await request.json();
+      const owner = String(input.owner ?? '42');
+      const workspace = String(input.workspace ?? 'w1');
+      const docStub = env.DOC.get(env.DOC.idFromName(owner + ':' + workspace));
+      const profStub = env.AUTHORING_PROFILE.get(env.AUTHORING_PROFILE.idFromName(owner));
+      const user = { kind: 'user', id: owner };
+      const agent = { kind: 'agent', id: owner };
+      let result;
+      switch (input.action) {
+        case 'recordOutcome': await profStub.recordOutcome(owner, input.outcome); result = { ok: true }; break;
+        case 'listPreferences': result = await profStub.listPreferences(owner); break;
+        case 'getProfile': result = await profStub.getProfile(owner); break;
+        case 'initialize': result = await docStub.initialize(owner, workspace, input.document); break;
+        case 'snapshot': result = await docStub.getSnapshot(owner); break;
+        case 'user': result = await docStub.applyUserOperations(owner, user, input.commit); break;
+        case 'agent': result = await docStub.applyAgentOperations(owner, agent, input.commit); break;
+        case 'propose': result = await docStub.propose(owner, agent, input.commit, String(input.title ?? 'Proposal')); break;
+        case 'accept': result = await docStub.acceptProposal(owner, user, String(input.proposalId), String(input.operationId)); break;
+        case 'lease': result = await docStub.grantPageLease(owner, user, String(input.pageId), 600); break;
+        case 'checkpoint': result = await docStub.createCheckpoint(owner, user, String(input.name)); break;
+        default: return Response.json({ error: 'bad action' }, { status: 400 });
+      }
+      return Response.json(result);
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
+    }
+  }
+};
+`;
+
+let on: MiniflareHandle; // PROFILES_ENABLED='true'
+let off: MiniflareHandle; // PROFILES_ENABLED unset
+
+async function call<T>(
+  handle: MiniflareHandle,
+  input: Record<string, unknown>,
+): Promise<T> {
+  const response = await handle.fetch('/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok)
+    throw new Error(`${response.status}: ${await response.text()}`);
+  return response.json() as Promise<T>;
+}
+
+interface StoredPref {
+  id: string;
+  ownerId: string;
+  status: string;
+  supportingOutcomes: number;
+  evidenceDocuments: number;
+  trigger: {
+    archetype?: string;
+    requiredTraits: string[];
+    excludedTraits?: string[];
+  };
+  sourceRevisionRefs: string[];
+}
+
+function outcome(over: Record<string, unknown> = {}) {
+  return {
+    archetype: 'multi-region-hub-spoke',
+    addedTraits: ['layered-regional', 'spokes-below-hub'],
+    removedTraits: ['radial-placement'],
+    scope: { kind: 'user' },
+    sourceRevisionRef: 'w1@r5',
+    documentRef: 'w1',
+    summary: 'radial → layered regional hub/spoke hierarchy',
+    ...over,
+  };
+}
+
+/* ── coordinator fixtures: a hub whose spokes are corrected radial→below ── */
+
+function node(id: string, x: number, y: number) {
+  return { id, type: 'ec', x, y, label: id };
+}
+function addNode(pageId: string, id: string, x: number, y: number) {
+  return {
+    type: 'element.add',
+    pageId,
+    kind: 'nodes',
+    element: node(id, x, y),
+  };
+}
+function addLink(pageId: string, id: string, from: string, to: string) {
+  return {
+    type: 'element.add',
+    pageId,
+    kind: 'links',
+    element: { id, type: 'line', from, to },
+  };
+}
+function patchNode(pageId: string, id: string, set: Record<string, unknown>) {
+  return {
+    type: 'element.patch',
+    pageId,
+    kind: 'nodes',
+    elementId: id,
+    patch: { set },
+  };
+}
+
+const HUB_DOC = {
+  title: 'Hub',
+  customNodes: [],
+  pages: [
+    {
+      id: 'p1',
+      name: 'p1',
+      viewBox: '0 0 1050 700',
+      nodes: [node('H', 500, 300)],
+      links: [],
+      anchors: [],
+      zones: [],
+      flowPaths: [],
+      policyMarkers: [],
+    },
+  ],
+};
+
+// Agent authorship: add three spokes ABOVE the hub (radial) plus their links.
+const AGENT_RADIAL_OPS = [
+  addNode('p1', 'S1', 400, 150),
+  addNode('p1', 'S2', 500, 150),
+  addNode('p1', 'S3', 600, 150),
+  addLink('p1', 'l1', 'H', 'S1'),
+  addLink('p1', 'l2', 'H', 'S2'),
+  addLink('p1', 'l3', 'H', 'S3'),
+];
+// User correction: move every spoke BELOW the hub.
+const USER_BELOW_OPS = [
+  patchNode('p1', 'S1', { y: 450 }),
+  patchNode('p1', 'S2', { y: 450 }),
+  patchNode('p1', 'S3', { y: 450 }),
+];
+
+/** Run the full accept → correct → checkpoint sequence on one handle and return
+ * every coordinator response plus the resulting profile. */
+async function runObserveSequence(handle: MiniflareHandle, owner: string) {
+  const workspace = 'obs';
+  await call(handle, {
+    action: 'initialize',
+    owner,
+    workspace,
+    document: HUB_DOC,
+  });
+  const proposed = await call<{ proposal: { id: string } }>(handle, {
+    action: 'propose',
+    owner,
+    workspace,
+    title: 'add spokes',
+    commit: {
+      baseRevision: 0,
+      operationId: 'pr1',
+      operations: AGENT_RADIAL_OPS,
+    },
+  });
+  const accept = await call<Record<string, unknown>>(handle, {
+    action: 'accept',
+    owner,
+    workspace,
+    proposalId: proposed.proposal.id,
+    operationId: 'acc1',
+  });
+  const userCommit = await call<Record<string, unknown>>(handle, {
+    action: 'user',
+    owner,
+    workspace,
+    commit: { baseRevision: 1, operationId: 'u1', operations: USER_BELOW_OPS },
+  });
+  const checkpoint = await call<{ revision: number; pageCount: number }>(
+    handle,
+    {
+      action: 'checkpoint',
+      owner,
+      workspace,
+      name: 'after correction',
+    },
+  );
+  return { accept, userCommit, checkpoint };
+}
+
+/** Poll the owner's profile until it has at least `min` candidates (the
+ * coordinator emits via `waitUntil`, after the checkpoint response returns). */
+async function pollProfile(
+  handle: MiniflareHandle,
+  owner: string,
+  min: number,
+  tries = 40,
+): Promise<StoredPref[]> {
+  let prefs: StoredPref[] = [];
+  for (let i = 0; i < tries; i++) {
+    prefs = await call<StoredPref[]>(handle, {
+      action: 'listPreferences',
+      owner,
+    });
+    if (prefs.length >= min) return prefs;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return prefs;
+}
+
+beforeAll(async () => {
+  const bundle = await buildWorkerBundle(harness, {
+    sourcefile: 'authoring-profile-harness.ts',
+  });
+  const durableObjects = {
+    DOC: { className: 'TopologyDocument', useSQLite: true },
+    AUTHORING_PROFILE: { className: 'AuthoringProfile', useSQLite: true },
+  };
+  on = await startMiniflare({
+    bundle,
+    durableObjects,
+    vars: { PROFILES_ENABLED: 'true' },
+  });
+  // A second instance shares the bundle file; dispose only the first handle's
+  // bundle to avoid a double unlink of the same path.
+  off = await startMiniflare({
+    bundle: { path: bundle.path, dispose: async () => {} },
+    durableObjects,
+  });
+}, 30_000);
+
+afterAll(async () => {
+  await off?.dispose();
+  await on?.dispose();
+});
+
+describe('AuthoringProfile Durable Object', () => {
+  it('dedupes by (rule, scope): repeated distinct outcomes strengthen one candidate', async () => {
+    const owner = 'dedupe-1';
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ sourceRevisionRef: 'w1@r5' }),
+    });
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ sourceRevisionRef: 'w1@r9' }),
+    });
+    const prefs = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(prefs).toHaveLength(1);
+    expect(prefs[0]!.supportingOutcomes).toBe(2);
+    expect(prefs[0]!.evidenceDocuments).toBe(1); // same document w1
+    expect(prefs[0]!.status).toBe('candidate');
+    expect(prefs[0]!.trigger.requiredTraits).toEqual([
+      'layered-regional',
+      'spokes-below-hub',
+    ]);
+    expect(prefs[0]!.trigger.excludedTraits).toEqual(['radial-placement']);
+  }, 30_000);
+
+  it('raises the evidence-document count across distinct documents', async () => {
+    const owner = 'dedupe-2';
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ sourceRevisionRef: 'w1@r5', documentRef: 'w1' }),
+    });
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ sourceRevisionRef: 'w2@r3', documentRef: 'w2' }),
+    });
+    const prefs = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(prefs).toHaveLength(1);
+    expect(prefs[0]!.supportingOutcomes).toBe(2);
+    expect(prefs[0]!.evidenceDocuments).toBe(2);
+  }, 30_000);
+
+  it('coalesces a burst: the same source ref never double-counts', async () => {
+    const owner = 'burst-1';
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ sourceRevisionRef: 'w1@r5' }),
+    });
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ sourceRevisionRef: 'w1@r5' }),
+    });
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ sourceRevisionRef: 'w1@r5' }),
+    });
+    const prefs = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(prefs).toHaveLength(1);
+    expect(prefs[0]!.supportingOutcomes).toBe(1);
+    expect(prefs[0]!.sourceRevisionRefs).toEqual(['w1@r5']);
+  }, 30_000);
+
+  it('keeps structurally different corrections as separate candidates', async () => {
+    const owner = 'distinct-1';
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ addedTraits: ['ta'], sourceRevisionRef: 'w1@r1' }),
+    });
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ addedTraits: ['tb'], sourceRevisionRef: 'w1@r2' }),
+    });
+    const prefs = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(prefs).toHaveLength(2);
+  }, 30_000);
+
+  it('enforces the per-owner candidate cap by evicting the weakest', async () => {
+    const owner = 'bounds-1';
+    const over = MAX_CANDIDATES_PER_OWNER + 5;
+    for (let i = 0; i < over; i++) {
+      await call(on, {
+        action: 'recordOutcome',
+        owner,
+        outcome: outcome({
+          addedTraits: [`trait-${i}`],
+          sourceRevisionRef: `w1@r${i}`,
+        }),
+      });
+    }
+    const prefs = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(prefs.length).toBe(MAX_CANDIDATES_PER_OWNER);
+  }, 120_000);
+
+  it('isolates candidates across owners', async () => {
+    const a = 'iso-a';
+    const b = 'iso-b';
+    await call(on, {
+      action: 'recordOutcome',
+      owner: a,
+      outcome: outcome({ addedTraits: ['only-a'], sourceRevisionRef: 'wa@r1' }),
+    });
+    await call(on, {
+      action: 'recordOutcome',
+      owner: b,
+      outcome: outcome({ addedTraits: ['only-b'], sourceRevisionRef: 'wb@r1' }),
+    });
+    const prefsA = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner: a,
+    });
+    const prefsB = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner: b,
+    });
+    expect(prefsA).toHaveLength(1);
+    expect(prefsB).toHaveLength(1);
+    expect(prefsA[0]!.trigger.requiredTraits).toEqual(['only-a']);
+    expect(prefsB[0]!.trigger.requiredTraits).toEqual(['only-b']);
+    expect(prefsA[0]!.ownerId).toBe(a);
+    expect(prefsB[0]!.ownerId).toBe(b);
+  }, 30_000);
+});
+
+describe('observe-only coordinator emission (PROFILES_ENABLED gate)', () => {
+  it('with the flag OFF: emits nothing and leaves coordinator responses unchanged', async () => {
+    const owner = 'e2e-off';
+    const offRun = await runObserveSequence(off, owner);
+    // Give any (non-scheduled) work a chance, then assert the profile is empty.
+    await new Promise((r) => setTimeout(r, 100));
+    const prefs = await call<StoredPref[]>(off, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(prefs).toHaveLength(0);
+
+    // The coordinator responses must be byte-for-byte identical to the flag-ON
+    // run: CommitResult carries no ids/timestamps, so it is directly comparable.
+    const onRun = await runObserveSequence(on, 'e2e-on');
+    expect(offRun.accept).toEqual(onRun.accept);
+    expect(offRun.userCommit).toEqual(onRun.userCommit);
+    expect(offRun.checkpoint.revision).toBe(onRun.checkpoint.revision);
+    expect(offRun.checkpoint.pageCount).toBe(onRun.checkpoint.pageCount);
+
+    // And the flag-ON run DID learn exactly one candidate from the correction.
+    const learned = await pollProfile(on, 'e2e-on', 1);
+    expect(learned).toHaveLength(1);
+    expect(learned[0]!.status).toBe('candidate');
+    expect(learned[0]!.trigger.requiredTraits).toContain('spokes-below-hub');
+    expect(learned[0]!.trigger.excludedTraits).toEqual(['radial-placement']);
+    expect(learned[0]!.supportingOutcomes).toBe(1);
+    expect(learned[0]!.evidenceDocuments).toBe(1);
+  }, 60_000);
+
+  it('with the flag ON: an accept → correct → checkpoint burst yields exactly one outcome', async () => {
+    const owner = 'e2e-one';
+    await runObserveSequence(on, owner);
+    const prefs = await pollProfile(on, owner, 1);
+    expect(prefs).toHaveLength(1);
+    expect(prefs[0]!.sourceRevisionRefs).toHaveLength(1); // one burst → one ref
+    expect(prefs[0]!.supportingOutcomes).toBe(1);
+  }, 60_000);
+});

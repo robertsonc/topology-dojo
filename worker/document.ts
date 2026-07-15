@@ -7,7 +7,7 @@
  * Durable Object per-value limit.
  */
 import { DurableObject } from 'cloudflare:workers';
-import type { WorkerEnv } from './env.js';
+import { profilesEnabled, type WorkerEnv } from './env.js';
 import type {
   Page,
   TopologyDocument as TopologyDocumentModel,
@@ -18,10 +18,13 @@ import {
   conflictingTargets,
   diffDocuments,
   operationPageIds,
+  operationTargets,
   subsetDependencyErrors,
   summarizeOperations,
   validateOperations,
 } from '../src/workspace/operations.js';
+import { extractFeatures } from '../src/profile/features.js';
+import type { AuthoringOutcome } from '../src/profile/model.js';
 import {
   ELEMENT_KINDS,
   type ChangesResult,
@@ -49,6 +52,8 @@ const CHANGE_PREFIX = 'change:';
 const PROPOSAL_PREFIX = 'proposal:';
 const CHECKPOINT_PREFIX = 'checkpoint:';
 const REQUEST_PREFIX = 'request:';
+/** Authoring-profile learner (Packet P2): the bounded agent-authorship window. */
+const AGENT_WINDOW_PREFIX = 'agentwin:';
 const MAX_BATCH_BYTES = 512 * 1024;
 const MAX_PAGE_BYTES = 1_800 * 1024;
 const MAX_META_BYTES = 1_800 * 1024;
@@ -59,6 +64,14 @@ const OPERATION_SCHEMA_REVISION = 1;
 const MAX_PENDING_PROPOSALS = 20;
 const MAX_PROPOSALS = 50;
 const MAX_CHECKPOINTS = 12;
+/** Hard bounds on the authoring-profile learner's coordinator-side window: at
+ * most this many agent-authorship entries are retained (oldest evicted), and
+ * the agent operations captured per entry are dropped past these limits so the
+ * window never grows without bound (Packet P2). */
+const MAX_AGENT_WINDOW = 8;
+const MAX_AGENT_WINDOW_OPS = 100;
+const MAX_AGENT_WINDOW_OPS_BYTES = 128 * 1024;
+const MAX_AGENT_CORRECTION_TARGETS = 200;
 
 interface StoredMeta {
   format: 1;
@@ -86,6 +99,34 @@ interface StoredCheckpoint {
   revision: number;
   pageIds: string[];
   head: Omit<TopologyDocumentModel, 'pages'>;
+}
+
+/**
+ * One bounded entry of the authoring-profile learner's agent-authorship window
+ * (Packet P2). Recorded when an agent authors content (a leased agent commit or
+ * an accepted proposal): it remembers WHICH field-granular targets the agent
+ * authored at revision R, keeps a compact copy of the agent operations (for the
+ * P1 target-overlap analysis), and snapshots the agent-authored document as the
+ * baseline the later user correction is diffed against. `corrected` /
+ * `correctionTargets` are set when a subsequent user revision overlaps those
+ * targets. All of it is plain storage — hibernation-safe — and the whole
+ * structure only ever exists when `PROFILES_ENABLED` is on.
+ */
+interface AgentWindowRecord {
+  revision: number;
+  targets: string[];
+  operations: WorkspaceOperation[];
+  baseline: TopologyDocumentModel;
+  corrected: boolean;
+  correctionTargets: string[];
+  createdAt: string;
+}
+
+/** Narrow RPC view of the per-owner authoring-profile DO (Packet P2). Kept
+ * explicit so the coordinator's cross-DO call typechecks without depending on
+ * Cloudflare's conservative Stubable<> inference. */
+interface AuthoringProfileRpc {
+  recordOutcome(ownerId: string, outcome: AuthoringOutcome): Promise<void>;
 }
 
 /**
@@ -602,6 +643,13 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
   ): Promise<CommitResult> {
     if (actor.kind !== 'user')
       throw new Error('only a browser user can accept proposals');
+    // Captured for the authoring-profile learner (Packet P2): an accepted
+    // proposal's operations are AGENT-authored content, even though a user
+    // triggered the accept. Recorded after the transaction commits.
+    let acceptedForWindow: {
+      ops: WorkspaceOperation[];
+      revision: number;
+    } | null = null;
     const outcome: CommitResult = await this.ctx.storage.transaction(
       async (tx) => {
         const meta = await this.requiredMeta(tx, ownerId);
@@ -703,6 +751,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
           id,
         );
         if (result.ok) {
+          acceptedForWindow = { ops: opsToApply, revision: result.revision };
           proposal.updatedAt = nowIso();
           delete proposal.conflictingTargets;
           if (residual.length) {
@@ -726,6 +775,13 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     );
     // Revision and/or proposal status may have changed — notify open editors.
     await this.broadcast();
+    // Authoring-profile learner (Packet P2): record the agent-authored accept
+    // as a window entry, gated + best-effort so it never affects the response.
+    if (acceptedForWindow && profilesEnabled(this.env)) {
+      const captured: { ops: WorkspaceOperation[]; revision: number } =
+        acceptedForWindow;
+      await this.recordAgentWindow(captured.ops, captured.revision);
+    }
     return outcome;
   }
 
@@ -765,7 +821,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     if (!trimmed) throw new Error('checkpoint name is required');
     if (trimmed.length > 120)
       throw new Error('checkpoint name exceeds 120 characters');
-    return this.ctx.storage.transaction(async (tx) => {
+    const summary = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const ids = meta.checkpointIds ?? [];
       // Hard cap: never silently evict a named checkpoint — the owner deletes one.
@@ -795,6 +851,13 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       await tx.put(META_KEY, meta);
       return checkpointSummary(record);
     });
+    // Authoring-profile learner (Packet P2): a checkpoint is the persistence
+    // guardrail — user corrections that survived to here are emitted as one
+    // compact structured outcome each, off the response path via waitUntil.
+    // Gated: when PROFILES_ENABLED is unset this is a no-op and the checkpoint
+    // response is unchanged.
+    this.scheduleAuthoringOutcomes();
+    return summary;
   }
 
   async listCheckpoints(ownerId: string): Promise<CheckpointSummary[]> {
@@ -998,6 +1061,16 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     // Broadcast only after the transaction commits, and only when a revision
     // was actually created — a conflict/lease rejection changes no state.
     if (result.ok) await this.broadcast();
+    // Authoring-profile learner (Packet P2), strictly gated + best-effort. A
+    // leased agent commit is agent authorship; a UI commit may be the user's
+    // correction of earlier agent authorship. When PROFILES_ENABLED is unset
+    // this branch is never entered, so the response is unchanged.
+    if (result.ok && profilesEnabled(this.env)) {
+      if (source === 'agent-lease')
+        await this.recordAgentWindow(request.operations, result.revision);
+      else if (source === 'ui')
+        await this.markAgentCorrection(request.operations);
+    }
     return result;
   }
 
@@ -1252,5 +1325,172 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
 
   private changeKey(revision: number): string {
     return CHANGE_PREFIX + String(revision).padStart(12, '0');
+  }
+
+  /* ── authoring-profile learner (Packet P2, observe-only) ──────────────
+   *
+   * Everything below is BEST-EFFORT and only runs when PROFILES_ENABLED is on.
+   * It records agent authorship, marks user corrections that overlap it, and —
+   * gated on the persistence checkpoint — emits one compact structured outcome
+   * per corrected window to the owner's AuthoringProfile DO. It never blocks or
+   * alters a commit/accept/checkpoint response, never sends raw documents or
+   * operations off-DO, and swallows every failure. */
+
+  private agentWindowKey(revision: number): string {
+    return AGENT_WINDOW_PREFIX + String(revision).padStart(12, '0');
+  }
+
+  /**
+   * Record agent authorship at `revision`: the targets it touched, a compacted
+   * copy of the agent operations, and the agent-authored document as the
+   * baseline a later user correction is diffed against. Bounded — the oldest
+   * entry is evicted past `MAX_AGENT_WINDOW`. Best-effort: any failure is
+   * swallowed so authorship-bookkeeping never affects the commit that already
+   * succeeded.
+   */
+  private async recordAgentWindow(
+    operations: WorkspaceOperation[],
+    revision: number,
+  ): Promise<void> {
+    try {
+      const meta = await this.ctx.storage.get<StoredMeta>(META_KEY);
+      if (!meta) return;
+      const baseline = await this.loadDocument(this.ctx.storage, meta);
+      const targets = [...new Set(operations.flatMap(operationTargets))];
+      // Compact the captured ops: keep them for target-overlap analysis, but
+      // drop them past the bounds (targets alone still detect overlap).
+      const compactOps =
+        operations.length <= MAX_AGENT_WINDOW_OPS &&
+        bytes(operations) <= MAX_AGENT_WINDOW_OPS_BYTES
+          ? structuredClone(operations)
+          : [];
+      const record: AgentWindowRecord = {
+        revision,
+        targets,
+        operations: compactOps,
+        baseline,
+        corrected: false,
+        correctionTargets: [],
+        createdAt: nowIso(),
+      };
+      const existing = await this.ctx.storage.list<AgentWindowRecord>({
+        prefix: AGENT_WINDOW_PREFIX,
+      });
+      const keys = [...existing.keys()].sort();
+      // Keys are zero-padded by revision, so the lexicographically smallest is
+      // the oldest — evict oldest-first to make room for the new entry.
+      while (keys.length >= MAX_AGENT_WINDOW) {
+        const oldest = keys.shift();
+        if (oldest) await this.ctx.storage.delete(oldest);
+      }
+      await this.ctx.storage.put(this.agentWindowKey(revision), record);
+    } catch {
+      // best-effort — learning must never affect editing
+    }
+  }
+
+  /**
+   * Mark any agent-authorship window whose targets a user commit overlapped as
+   * corrected, accumulating the overlapping targets (bounded). One editing
+   * burst of several user commits therefore folds into a single corrected
+   * window → a single emitted outcome at the next checkpoint. Best-effort.
+   */
+  private async markAgentCorrection(
+    operations: WorkspaceOperation[],
+  ): Promise<void> {
+    try {
+      const entries = await this.ctx.storage.list<AgentWindowRecord>({
+        prefix: AGENT_WINDOW_PREFIX,
+      });
+      if (!entries.size) return;
+      const userTargets = operations.flatMap(operationTargets);
+      for (const [key, entry] of entries) {
+        // Overlap against the captured agent ops when present, else fall back
+        // to a direct target-set comparison (ops may have been compacted out).
+        const overlap = entry.operations.length
+          ? conflictingTargets(operations, entry.operations)
+          : userTargets.filter((t) => entry.targets.includes(t));
+        if (!overlap.length) continue;
+        const nextTargets = [
+          ...new Set([...entry.correctionTargets, ...overlap]),
+        ].slice(0, MAX_AGENT_CORRECTION_TARGETS);
+        const updated: AgentWindowRecord = {
+          ...entry,
+          corrected: true,
+          correctionTargets: nextTargets,
+        };
+        await this.ctx.storage.put(key, updated);
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  /** Gate + schedule outcome emission off the checkpoint response path. */
+  private scheduleAuthoringOutcomes(): void {
+    if (!profilesEnabled(this.env)) return;
+    this.ctx.waitUntil(this.emitAuthoringOutcomes());
+  }
+
+  /**
+   * For every corrected agent-authorship window, compute the settled difference
+   * from the agent baseline to the current document, run P1 feature extraction,
+   * and — if the correction carried a real semantic change and survived to this
+   * checkpoint — send ONE compact outcome to the owner's profile DO. Each
+   * window is consumed (deleted) whether or not it emitted, so a burst yields
+   * exactly one outcome and nothing is re-counted at a later checkpoint. The
+   * whole method is wrapped so a failure anywhere is swallowed.
+   */
+  private async emitAuthoringOutcomes(): Promise<void> {
+    try {
+      const meta = await this.ctx.storage.get<StoredMeta>(META_KEY);
+      if (!meta) return;
+      const entries = await this.ctx.storage.list<AgentWindowRecord>({
+        prefix: AGENT_WINDOW_PREFIX,
+      });
+      const corrected = [...entries.entries()].filter(([, e]) => e.corrected);
+      if (!corrected.length) return;
+      const current = await this.loadDocument(this.ctx.storage, meta);
+      for (const [key, entry] of corrected) {
+        try {
+          // The settled difference (proposal: "only the settled difference is
+          // evaluated"). An empty diff means the correction was reverted before
+          // the checkpoint — it did not survive, so nothing is learned.
+          const settled = diffDocuments(entry.baseline, current);
+          if (!settled.length) continue;
+          const features = extractFeatures(settled, {
+            document: current,
+            agentDocument: entry.baseline,
+            agentOperations: entry.operations,
+          });
+          const { addedTraits, removedTraits } = features.correction;
+          // A purely cosmetic settled change (no trait added or removed) is
+          // evidence at most, never a candidate — skip it.
+          if (!addedTraits.length && !removedTraits.length) continue;
+          const outcome: AuthoringOutcome = {
+            archetype: features.archetype,
+            addedTraits,
+            removedTraits,
+            scope: { kind: 'user' },
+            sourceRevisionRef: `${meta.id}@r${entry.revision}`,
+            documentRef: meta.id,
+            summary: features.correction.summary,
+          };
+          const ns = this.env.AUTHORING_PROFILE;
+          const stub = ns.get(
+            ns.idFromName(meta.ownerId),
+          ) as unknown as AuthoringProfileRpc;
+          await stub.recordOutcome(meta.ownerId, outcome);
+        } catch {
+          // best-effort per entry
+        } finally {
+          // Consume the window either way: one burst → at most one outcome, and
+          // never a retry storm at the next checkpoint.
+          await this.ctx.storage.delete(key);
+        }
+      }
+    } catch {
+      // best-effort — learning must never affect editing
+    }
   }
 }
