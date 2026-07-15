@@ -1,95 +1,137 @@
-# Handoff — July 12 plan execution, session 1
+# Handoff — session 2 (R-train, S-train, flat viewer, P-train start)
 
-**Date:** 2026-07-13
-**Scope of this session:** authored the plan of record
-([`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)), then executed every
-packet that was runnable without pending operator input, and stood up the
-staging deployment pipeline end to end.
+**Date:** 2026-07-15
+**Supersedes** the July-12 session-1 handoff (its shipped list now lives in
+[`ROADMAP.md`](ROADMAP.md) "Shipped"). This is the current pick-up doc.
 
-## What shipped (all merged to `main`)
+**Scope of this session:** executed the R-train (workspace review/history),
+the S-train resilience packets, a flat-viewer rendering change, and started the
+P-train (adaptive authoring profiles, proposal 0003). Also did a full
+git/branch cleanup.
 
-| PR   | Packet | Delivered                                                                                                                      |
-| ---- | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| #143 | plan   | `docs/IMPLEMENTATION_PLAN.md` — the dependency-ordered packet plan for proposals 0002/0003/0004 + roadmap                      |
-| #144 | W1     | Shared esbuild+Miniflare worker test harness; first worker route tests (auth, share API, workspace 401, cross-owner isolation) |
-| #145 | B1     | Inline on-canvas layout warning badges (+ adversarial-review XSS fix: element ids escaped in overlay markup)                   |
-| #146 | D4     | `scripts/smoke.mjs` external deployment smoke suite                                                                            |
-| #147 | D2     | `WORKSPACE_ENABLED` feature flag: 503-gates `/api/workspaces*`, hides the 8 workspace MCP tools, panel disabled-state          |
-| #148 | D3     | `GET /healthz` (unauthenticated liveness + sha) and `GET /readyz` (owner-authenticated per-binding readiness)                  |
-| #149 | D1     | `env.staging` in `wrangler.jsonc` + `scripts/check-wrangler-env.mjs` CI guard; **`npm run deploy` deleted** (finding L1)       |
-| #150 | D5     | `deploy-staging.yml` + `deploy-production.yml` gated workflows; `ci.yml` reusable via `workflow_call`                          |
-| #151 | R0     | Agent Workspace panel extracted from `main.ts` (−609 lines) into `src/ui/workspace-panel.ts` with characterization tests       |
-| #152 | I1     | `src/import/legacy.ts` — legacy Topology Studio converter, 6 real fixtures, all validating clean                               |
-| #153 | R1     | Rendered before/after proposal preview with changed-element highlights                                                         |
-| #154 | I2     | Legacy import wired into the GUI open flow + `import_topology` `format` parameter                                              |
-| #155 | fix    | Node 22 in all workflows (wrangler requires ≥22 — found by live run #1)                                                        |
-| #156 | fix    | Smoke `--wait-live`: first-deploy DNS-propagation window (found by live run #2)                                                |
-| #157 | fix    | Sha-aware wait: redeploy version-propagation window (found by live run #3)                                                     |
+## Current state
 
-Test suite: **262 → 424** (as of the #156 CI run), all green. Roadmap items
-completed outright: inline layout badges, the legacy importer (both halves),
-and the rendered-proposal-preview follow-on from proposal 0002.
+- **`main`** contains everything below except P2: the R-train (R2/R3/R4), the
+  flat viewer, S1/S2/S3, P1, and the docs truth-up. Typecheck/lint/build green;
+  the DO/Miniflare + `session.ts` webcrypto test suites only run in **CI**
+  (this sandbox lacks `workerd`/`File`/`crypto`) — they are green on CI.
+- **Open PRs:**
+  - **#176 (draft) — Packet P2** `AuthoringProfile` DO + observe-only learner.
+    **Migration-bearing (`v4`); operator-gated deploy required** (see below).
+  - **#174 — roadmap** "resize link labels (`labelScale`)" item (docs-only).
+- **Git is clean:** local = `main` + the two open-PR branches; ~113 merged
+  remote branches pruned (whole project history). Only `main` + active PR
+  branches remain on `origin`.
 
-## Deployment state (verified live)
+## What shipped this session (all merged to `main`)
 
-- **Staging is live and healthy**: `topology-dojo-staging` exists with fully
-  isolated resources (KV `9919607c2b7941e7b258d2427da28fe4` /
-  `9aaf419994d74908b095989110375571`, own DO namespaces, staging OAuth client
-  id `Ov23liEpiupkYUA9L4vu`, `WORKSPACE_ENABLED="true"`), migrations v1–v3
-  applied.
-- **O8 evidence — first fully-green gated deploy:**
-  [Deploy Staging run #4](https://github.com/robertsonc/topology-dojo/actions/runs/29219841599)
-  (SHA `104b4d5`, smoke 7/7 incl. sha verification). Runs #1–#3 each found one
-  pipeline defect, fixed forward in #155/#156/#157.
-- **Production untouched** all session: still on the Workers Builds path from
-  `main`, single flat env, no `WORKSPACE_ENABLED` var set (unset ⇒ enabled —
-  production workspace behavior is unchanged).
+| PR        | Packet | Delivered                                                                                                     |
+| --------- | ------ | ------------------------------------------------------------------------------------------------------------- |
+| #159      | O7     | Activation observation window (2h active / 72h soak) + error-rate stop thresholds in `DEPLOYMENT_RUNBOOK.md`  |
+| #160      | —      | Slim hover-reveal scrollbars on editor chrome                                                                 |
+| #161      | D6     | Docs truth-up + evidence-backed findings closure (H7/M14/M15/L1)                                              |
+| #162      | —      | Move-Map UI: fix collapsed-palette black icons, dock minimap into left rail, pin Problems to the right rail   |
+| #163      | R2     | Selective proposal acceptance (coherent subset → one revision; residual stays reviewable)                     |
+| #164/#167 | R3     | Named checkpoints, restore (forward-only), fork; `create_checkpoint`/`list_checkpoints` MCP tools             |
+| #165/#171 | R4     | Revision timeline in the Agent Workspace panel                                                                |
+| #166      | —      | **Flat viewer** — glow is an emphasis-only channel (`flattenViewer` render seam); live canvas + exports match |
+| #168      | —      | Docs truth-up (roadmap Shipped) + adjustable-viewer roadmap item                                              |
+| #169      | S1     | WebSocket push + presence (DO hibernation API; compact notices; polling stays the baseline)                   |
+| #171      | S2     | Gesture-native operations with a referee fallback (retire the snapshot-diff adapter as the primary path)      |
+| #173      | S3     | IndexedDB offline cache + crash recovery (queue-through-cache, idempotent replay, `fake-indexeddb` dev dep)   |
+| #175      | P1     | Deterministic feature extraction (`src/profile/features.ts` → `SemanticFeatures`)                             |
 
-## Operator checklist status (IMPLEMENTATION_PLAN.md §4.7)
+**S4 (finer element-set leases) was deliberately skipped** — per-page agent
+leases are fine for now; revisit only on measured lease contention.
 
-| Item    | Status                                                                                                                                                                                           |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| O1      | ✅ Workers Builds non-production branch builds disabled                                                                                                                                          |
-| O2      | ✅ Staging KV namespaces created (ids above)                                                                                                                                                     |
-| O3      | ✅ Staging GitHub OAuth App created (callback `https://topology-dojo-staging.robertson-corey.workers.dev/callback`)                                                                              |
-| O4      | ✅ `GITHUB_CLIENT_SECRET` set on the `topology-dojo-staging` Worker; staging browser sign-in with GitHub credentials verified working                                                            |
-| O5/O6   | ✅ GitHub environments `staging`/`production` with Cloudflare secrets; production required reviewers + `main` restriction; `check` required status                                               |
-| O7      | ✅ Decided: manual-only staging dispatch; observation window (2h active / 72h soak) + error-rate stop thresholds set in `DEPLOYMENT_RUNBOOK.md` → "Activation observation window and thresholds" |
-| O8      | ✅ First gated staging deploy green (run #4)                                                                                                                                                     |
-| O9      | ⏳ Disconnect Workers Builds entirely once the production Actions path is also proven                                                                                                            |
-| O10/O11 | ⏳ Production v3 bootstrap (`WORKSPACE_ENABLED:"false"` PR → protected deploy → smoke `--expect-workspace-disabled`) then activation flip — protected human gates                                |
-| O12     | ⏳ Cloudflare error-rate alerting + failed-workflow notifications + nightly staging smoke                                                                                                        |
+## Open: Packet P2 (#176) — operator-gated deploy
 
-Also outstanding on the operator side: manual staging UAT (browser OAuth, MCP
-session, workspace propose/accept/lease flows) and the **forward-recovery
-exercise** in staging (deploy a flag-off build, verify, re-enable) —
-`DEPLOYMENT_RUNBOOK.md` has the steps; both are 0004 acceptance criteria.
+P2 is the first **migration-bearing (`v4`)** packet and rides the 0004 pipeline.
+It is **observe-only** (zero change to agent output) and gated by
+`PROFILES_ENABLED`, which is **unset in production (⇒ off)** and `"true"` in
+`env.staging`. Deploy is bootstrap-then-activate (`DEPLOYMENT_RUNBOOK.md`):
+
+1. **Staging deploy** (`deploy-staging.yml`) — applies `v1`–`v4`; staging
+   observes. Run smoke + the **forward-recovery drill**.
+2. **Production `v4` bootstrap (flag-off)** — deploy the bundle (exports
+   `AuthoringProfile`, binds `AUTHORING_PROFILE`, includes `v4`) with **no
+   top-level `PROFILES_ENABLED`**; verify `v4` applied + binding exists; create
+   no profile data.
+3. **Activation** — a tiny PR adding top-level `"PROFILES_ENABLED": "true"`,
+   deploy with approval. Recover a bad activation by forward-deploying flag-off
+   — **never roll back across `v4`**.
+
+Verified pre-merge: `wrangler deploy --env staging --dry-run` binds the DO;
+`check-wrangler-env` passes (migrations deeply identical across blocks);
+harness DO tests (dedupe, burst coalescing, over-cap eviction, cross-owner
+isolation, observe-only) run in CI.
+
+## Operator checklist (IMPLEMENTATION_PLAN.md §4.7) + additions
+
+| Item    | Status                                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| O1–O8   | ✅ done (staging isolated + live, CI-gated pipeline proven, O7 thresholds set)                                             |
+| O9      | ⏳ Disconnect Workers Builds entirely once the production Actions path is proven                                           |
+| O10/O11 | ⏳ Production `v3` bootstrap (`WORKSPACE_ENABLED:"false"`) → smoke → activation flip — protected human gates               |
+| O12     | ⏳ Cloudflare error-rate alerting + failed-workflow notifications + nightly staging smoke                                  |
+| **P2**  | ⏳ **New:** `v4` staging deploy + forward-recovery drill; production `v4` flag-off bootstrap; then `PROFILES_ENABLED` flip |
+
+Also outstanding (0004 acceptance criteria): manual staging **UAT** (browser
+OAuth, MCP session, workspace propose/accept/lease flows) and the
+**forward-recovery exercise** in staging.
+
+Staging resources (unchanged): `topology-dojo-staging`, KV
+`9919607c2b7941e7b258d2427da28fe4` / `9aaf419994d74908b095989110375571`, staging
+OAuth client `Ov23liEpiupkYUA9L4vu`, `WORKSPACE_ENABLED="true"`,
+`PROFILES_ENABLED="true"`. Production is still on the Workers Builds path from
+`main` (O9 pending); its `PROFILES_ENABLED` is unset (learner off).
 
 ## Next repo work, in order (per the plan)
 
-**Update (session 2, 2026-07-14):** items 1–2 below are ✅ shipped — D6 (PR
-#161), and the full **R-train R2→R3→R4** merged to `main` (R2 #163; R3+R4 landed
-via the stacked chain #164/#165 → #167). Also shipped this session: the O7
-activation thresholds (#159), slim scrollbars (#160), the Move-Map UI fixes
-(#162), and the **flat viewer** rendering change (#166). Next is the S-train.
+1. **Merge P2 (#176)** after review + the operator staging deploy/drill.
+2. **P3 (0003-A)** — Authoring Preferences panel (observe-only): owner-facing
+   list of candidates/evidence with pause/forget; new `src/ui/profile-panel.ts`
+   - a small owner-authed read/manage route. Low risk.
+3. **P4 (0003-B)** — confirmation/scoping + `get_authoring_guidance` (+
+   `list_/explain_authoring_preference`) MCP tools under hard token budgets;
+   agents disclose applied rules. Browser-owner-only confirmation (no MCP
+   confirm path). Medium risk; budgets are tests (≤5 rules, ≤400/800 tokens).
+4. **P5 (0003-C)** — outcome refinement (overrides/contradictions/decay).
+5. Deferred/open decisions: `IMPLEMENTATION_PLAN.md` §10–§11.
 
-1. ~~**D6 — docs truth-up + findings closure**~~ ✅ (PR #161).
-2. ~~**R2 → R3 → R4**~~ ✅ selective acceptance → checkpoints/restore/fork →
-   revision timeline, all merged.
-3. **S1–S4** (resilience) — now unblocked (the `worker/document.ts` serialization
-   with the R-train is cleared): IndexedDB offline cache, WebSocket
-   push/presence, collaborator/org ACLs, finer element-set leases. Then
-   **P1–P5** (proposal 0003) last — P2 is migration-bearing (`v4`) and rides the
-   now-proven pipeline.
-4. Deferred list and open decisions: see `IMPLEMENTATION_PLAN.md` §10–§11.
+## Working conventions established this session
 
-## Working conventions this session established
+- **Packet = branch = PR.** For substantial packets, the session model does
+  discovery, hands implementation to a focused sub-agent with a precise brief,
+  then **independently reviews the risky properties + runs the gate** before
+  committing. Migration/coordinator-concurrency packets get extra-careful
+  review (transaction ordering, hibernation-safety, non-blocking gating).
+- **Stacked branches** when packets serialize on `worker/document.ts`
+  (R2→R3→R4, S1→S2, P1→P2). After the user merges a stack, sync `main`, delete
+  merged locals, re-base the next packet on the fresh `main`. The stacked-merge
+  pattern lands child PRs into their parent branch first, then a follow-up PR
+  brings the branch to `main`.
+- **DO/Miniflare + `session.ts` suites fail to _start_ locally** (`File`/
+  `crypto`/`workerd` absent) — expected; they run in CI. Every packet's
+  correctness is otherwise made **locally verifiable** (pure referees, fake
+  IndexedDB, injected factories, dry-runs).
+- **Migrations** deploy via the gated Actions workflows, bootstrap-then-
+  activate, forward-recovery only across a migration boundary. Cloudflare
+  Workers Builds previews are the deprecated path (error 10211 on migrations)
+  and are **not** a gate — the GitHub Actions `check` is.
 
-- One packet ≈ one branch (`claude/packet-*`) ≈ one draft PR; Sonnet
-  implementer in an isolated worktree → adversarial review + independent
-  gate run (typecheck/test/lint/build) by the session model → push → draft
-  PR → human merge. Per `AGENTIC_IMPLEMENTATION_WORKFLOW.md`.
-- Deploys only via the GitHub Actions workflows; staging dispatches are safe
-  to run on request; production requires the protected environment approval.
-- `npm run smoke -- <origin> --sha <sha> --wait-live 180` is the external
-  verification for any deploy.
+## Key pointers for pickup
+
+- Coordinator: `worker/document.ts` (`TopologyDocument` DO — revisions,
+  proposals, leases, checkpoints, WS presence, P2 learner hook). One DO per
+  owner+topology.
+- Profiles (0003): `src/profile/features.ts` (P1, pure), `src/profile/{model,
+learner}.ts` + `worker/profile.ts` (P2), gated by `profilesEnabled()` in
+  `worker/env.ts`.
+- Workspace panel: `src/ui/workspace-panel.ts` (proposals, checkpoints,
+  timeline, presence, offline indicator) — pure render fns are characterization-
+  tested.
+- Editor: `src/editor/editor.ts` (gesture funnel → `takePendingOperations()`;
+  referee `chooseCommitOperations` in the panel). Client-only.
+- Rendering: `src/vendor/topology-ds.ts` `flattenViewer` (flat viewer seam),
+  `src/render/core.ts` (headless), `src/editor/export.ts` (exports).
