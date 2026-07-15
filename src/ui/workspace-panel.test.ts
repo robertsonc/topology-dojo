@@ -24,6 +24,7 @@ import {
   renderActiveWorkspaceHtml,
   renderChangedElementOverlay,
   renderCheckpointsHtml,
+  renderOfflineStatusHtml,
   renderTimelineHtml,
   renderPresenceHtml,
   renderProposalPreviewErrorHtml,
@@ -37,6 +38,7 @@ import {
 import type {
   ChangesResult,
   CheckpointSummary,
+  CommitRequest,
   ProposalSummary,
   WorkspaceListItem,
   WorkspaceManifest,
@@ -723,5 +725,56 @@ describe('renderPresenceHtml (Packet S1)', () => {
     );
     expect(html).toContain('Present (1)');
     expect(html).toContain('alice');
+  });
+});
+
+describe('renderOfflineStatusHtml (Packet S3)', () => {
+  const pendingBatch = (count: number): CommitRequest => ({
+    baseRevision: 7,
+    operationId: 'ui_offline',
+    operations: Array.from({ length: count }, () => ({
+      type: 'page.patch' as const,
+      pageId: 'p1',
+      patch: { set: { name: 'x' } },
+    })),
+  });
+
+  it('renders nothing when online with nothing pending (the quiet case)', () => {
+    expect(renderOfflineStatusHtml(activeWorkspace(), true)).toBe('');
+  });
+
+  it('shows the pending count when online with an unacked batch', () => {
+    const html = renderOfflineStatusHtml(
+      activeWorkspace({ pending: pendingBatch(3) }),
+      true,
+    );
+    expect(html).toContain('data-online="true"');
+    expect(html).toContain('3 pending');
+  });
+
+  it('shows "offline · N pending" when offline with a queued batch', () => {
+    const html = renderOfflineStatusHtml(
+      activeWorkspace({ pending: pendingBatch(2) }),
+      false,
+    );
+    expect(html).toContain('data-online="false"');
+    expect(html).toContain('offline · 2 pending');
+  });
+
+  it('shows "offline · cached" when offline with nothing pending', () => {
+    const html = renderOfflineStatusHtml(activeWorkspace(), false);
+    expect(html).toContain('data-online="false"');
+    expect(html).toContain('offline · cached');
+  });
+
+  it('surfaces in the active workspace panel body when offline', () => {
+    const html = renderActiveWorkspaceHtml(activeWorkspace(), false);
+    expect(html).toContain('ws-offline');
+    expect(html).toContain('offline · cached');
+  });
+
+  it('stays quiet in the panel body when online and synced', () => {
+    const html = renderActiveWorkspaceHtml(activeWorkspace(), true);
+    expect(html).not.toContain('ws-offline');
   });
 });
