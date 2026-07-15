@@ -192,6 +192,17 @@ export async function handleWorkspaceApi(
       }
     }
 
+    // WebSocket push + presence (Packet S1). Owner auth already held above
+    // (`currentUser`), so this only accepts an upgrade and hands off to the DO.
+    // A non-upgrade GET is rejected 426 so a client cleanly falls back to
+    // polling; this must run before the generic 404 below.
+    if (tail[0] === 'socket' && tail.length === 1) {
+      if (request.method !== 'GET') return methodNotAllowed();
+      if ((request.headers.get('Upgrade') ?? '').toLowerCase() !== 'websocket')
+        return json({ error: 'expected a websocket upgrade' }, 426);
+      return service.socket(id, request);
+    }
+
     return json({ error: 'not found' }, 404);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -36,7 +36,9 @@ import {
   type WorkspaceChange,
   type WorkspaceLease,
   type WorkspaceManifest,
+  type WorkspaceNotice,
   type WorkspaceOperation,
+  type WorkspacePresence,
   type WorkspaceProposal,
   type WorkspaceSnapshot,
 } from '../src/workspace/model.js';
@@ -84,6 +86,17 @@ interface StoredCheckpoint {
   revision: number;
   pageIds: string[];
   head: Omit<TopologyDocumentModel, 'pages'>;
+}
+
+/**
+ * The only per-connection state (Packet S1). It lives exclusively in the
+ * socket's serialized attachment so the Durable Object can hibernate/evict
+ * between messages and reconstruct presence purely from `getWebSockets()`.
+ */
+interface SocketAttachment {
+  actor: { kind: WorkspaceActor['kind']; label?: string };
+  /** The page this editor last reported viewing (absent until it reports one). */
+  pageId?: string;
 }
 
 interface WorkspaceStorage {
@@ -152,6 +165,146 @@ function checkpointSummary(record: StoredCheckpoint): CheckpointSummary {
 }
 
 export class TopologyDocument extends DurableObject<WorkerEnv> {
+  /**
+   * WebSocket upgrade entry (Packet S1). The browser route authenticates the
+   * owner before forwarding here and injects the actor identity as query
+   * params; this method only accepts the socket (via the hibernation API) and
+   * stashes the actor + requested page in the socket's attachment. No other
+   * state is kept — presence is reconstructed from `getWebSockets()`.
+   */
+  override async fetch(request: Request): Promise<Response> {
+    if ((request.headers.get('Upgrade') ?? '').toLowerCase() !== 'websocket') {
+      return new Response('expected a websocket upgrade', { status: 426 });
+    }
+    const url = new URL(request.url);
+    const kindParam = url.searchParams.get('actorKind');
+    const kind: WorkspaceActor['kind'] =
+      kindParam === 'agent' || kindParam === 'system' ? kindParam : 'user';
+    const label = url.searchParams.get('actorLabel') ?? undefined;
+    const pageId = url.searchParams.get('pageId') ?? undefined;
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    this.ctx.acceptWebSocket(server);
+    const attachment: SocketAttachment = {
+      actor: { kind, ...(label ? { label } : {}) },
+      ...(pageId ? { pageId } : {}),
+    };
+    server.serializeAttachment(attachment);
+    // Send the joining socket the current state immediately, and tell any
+    // already-connected editors that presence changed.
+    await this.broadcast();
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** Hibernation handler: the only client message is a presence update. */
+  override async webSocketMessage(
+    ws: WebSocket,
+    message: string | ArrayBuffer,
+  ): Promise<void> {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(
+        typeof message === 'string'
+          ? message
+          : new TextDecoder().decode(message),
+      );
+    } catch {
+      return; // ignore malformed frames — the socket stays a pure accelerant
+    }
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      (parsed as { type?: unknown }).type !== 'presence'
+    )
+      return;
+    const pageId = (parsed as { pageId?: unknown }).pageId;
+    const current = ws.deserializeAttachment() as SocketAttachment | null;
+    const next: SocketAttachment = {
+      actor: current?.actor ?? { kind: 'user' },
+      ...(typeof pageId === 'string' && pageId ? { pageId } : {}),
+    };
+    ws.serializeAttachment(next);
+    await this.broadcast();
+  }
+
+  /** Hibernation handler: a socket closed — recompute presence without it. */
+  override async webSocketClose(ws: WebSocket): Promise<void> {
+    try {
+      ws.close();
+    } catch {
+      // already closing/closed
+    }
+    await this.broadcast(ws);
+  }
+
+  /** Hibernation handler: a socket errored — treat it like a close. */
+  override async webSocketError(ws: WebSocket): Promise<void> {
+    await this.broadcast(ws);
+  }
+
+  /**
+   * Push a compact notice to every open socket. Reads live state cheaply (meta
+   * revision + lease, a proposal-prefix scan for the count, and presence from
+   * socket attachments) — never document content. Must only be called *after*
+   * any storage transaction has committed, so a rolled-back mutation never
+   * notifies. `exclude` drops a socket that is closing/erroring from both the
+   * recipient set and the presence roster.
+   */
+  private async broadcast(exclude?: WebSocket): Promise<void> {
+    const sockets = this.ctx.getWebSockets();
+    if (!sockets.length) return;
+    const meta = await this.ctx.storage.get<StoredMeta>(META_KEY);
+    if (!meta) return;
+    const proposals = await this.ctx.storage.list<WorkspaceProposal>({
+      prefix: PROPOSAL_PREFIX,
+    });
+    const proposalCount = [...proposals.values()].filter(
+      (proposal) =>
+        proposal.status === 'pending' ||
+        proposal.status === 'partially-accepted' ||
+        proposal.status === 'conflicted',
+    ).length;
+    const notice: WorkspaceNotice = {
+      type: 'notice',
+      revision: meta.revision,
+      proposalCount,
+      lease: activeLease(meta),
+      presence: this.presenceFrom(sockets, exclude),
+    };
+    const payload = JSON.stringify(notice);
+    for (const ws of sockets) {
+      if (ws === exclude) continue;
+      try {
+        ws.send(payload);
+      } catch {
+        try {
+          ws.close();
+        } catch {
+          // best-effort drop of a dead socket
+        }
+      }
+    }
+  }
+
+  private presenceFrom(
+    sockets: WebSocket[],
+    exclude?: WebSocket,
+  ): WorkspacePresence[] {
+    const presence: WorkspacePresence[] = [];
+    for (const ws of sockets) {
+      if (ws === exclude) continue;
+      const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+      if (!attachment) continue;
+      presence.push({
+        kind: attachment.actor.kind,
+        ...(attachment.actor.label ? { label: attachment.actor.label } : {}),
+        ...(attachment.pageId ? { pageId: attachment.pageId } : {}),
+      });
+    }
+    return presence;
+  }
+
   /** True only when this coordinator has been initialized for this owner. */
   async isInitialized(ownerId: string): Promise<boolean> {
     const meta = await this.ctx.storage.get<StoredMeta>(META_KEY);
@@ -353,7 +506,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       throw new Error('proposals require an agent actor');
     assertRequest(request);
     if (!title.trim()) throw new Error('proposal title is required');
-    return this.ctx.storage.transaction(async (tx) => {
+    const result = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const duplicate = await tx.get<ProposalResult>(
         REQUEST_PREFIX + request.operationId,
@@ -403,6 +556,9 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       await this.rememberRequest(tx, meta, request.operationId, result);
       return result;
     });
+    // A new proposal (or its resolution) changes the pending count editors show.
+    await this.broadcast();
+    return result;
   }
 
   async listProposals(
@@ -446,126 +602,131 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
   ): Promise<CommitResult> {
     if (actor.kind !== 'user')
       throw new Error('only a browser user can accept proposals');
-    return this.ctx.storage.transaction(async (tx) => {
-      const meta = await this.requiredMeta(tx, ownerId);
-      const requestKey = REQUEST_PREFIX + operationId;
-      const duplicate = await tx.get<CommitResult>(requestKey);
-      if (duplicate) return duplicate;
-      const proposal = await tx.get<WorkspaceProposal>(PROPOSAL_PREFIX + id);
-      if (!proposal) throw new Error(`unknown proposal "${id}"`);
-      if (proposal.status === 'accepted')
-        return {
-          ok: true,
-          revision: proposal.acceptedRevision ?? meta.revision,
-          rebased: proposal.baseRevision < meta.revision,
-          summary: proposal.summary,
-        };
-      if (proposal.status === 'rejected')
-        throw new Error('a rejected proposal cannot be accepted');
+    const outcome: CommitResult = await this.ctx.storage.transaction(
+      async (tx) => {
+        const meta = await this.requiredMeta(tx, ownerId);
+        const requestKey = REQUEST_PREFIX + operationId;
+        const duplicate = await tx.get<CommitResult>(requestKey);
+        if (duplicate) return duplicate;
+        const proposal = await tx.get<WorkspaceProposal>(PROPOSAL_PREFIX + id);
+        if (!proposal) throw new Error(`unknown proposal "${id}"`);
+        if (proposal.status === 'accepted')
+          return {
+            ok: true,
+            revision: proposal.acceptedRevision ?? meta.revision,
+            rebased: proposal.baseRevision < meta.revision,
+            summary: proposal.summary,
+          };
+        if (proposal.status === 'rejected')
+          throw new Error('a rejected proposal cannot be accepted');
 
-      // Resolve which operations this accept applies: a coherent subset when
-      // indices are given, otherwise the whole (remaining) proposal.
-      const total = proposal.operations.length;
-      let opsToApply = proposal.operations;
-      let residual: WorkspaceOperation[] = [];
-      if (selectedOperationIndices !== undefined) {
-        const indices = [...new Set(selectedOperationIndices)].sort(
-          (a, b) => a - b,
-        );
-        if (indices.some((i) => !Number.isInteger(i) || i < 0 || i >= total))
-          throw new Error('selected operation index out of range');
-        if (indices.length === 0)
-          throw new Error('no operations selected for acceptance');
-        if (indices.length < total) {
-          const depErrors = subsetDependencyErrors(
-            proposal.operations,
-            indices,
+        // Resolve which operations this accept applies: a coherent subset when
+        // indices are given, otherwise the whole (remaining) proposal.
+        const total = proposal.operations.length;
+        let opsToApply = proposal.operations;
+        let residual: WorkspaceOperation[] = [];
+        if (selectedOperationIndices !== undefined) {
+          const indices = [...new Set(selectedOperationIndices)].sort(
+            (a, b) => a - b,
           );
-          if (depErrors.length) {
-            const missing = [...new Set(depErrors.map((e) => e.missingId))];
-            const result: CommitResult = {
-              ok: false,
-              code: 'incoherent-subset',
-              revision: meta.revision,
-              message: `selected operations reference ${missing
-                .map((m) => `"${m}"`)
-                .join(', ')}, which only unselected operations create`,
-              missingDependencies: missing,
-            };
-            await this.rememberRequest(tx, meta, operationId, result);
-            return result;
+          if (indices.some((i) => !Number.isInteger(i) || i < 0 || i >= total))
+            throw new Error('selected operation index out of range');
+          if (indices.length === 0)
+            throw new Error('no operations selected for acceptance');
+          if (indices.length < total) {
+            const depErrors = subsetDependencyErrors(
+              proposal.operations,
+              indices,
+            );
+            if (depErrors.length) {
+              const missing = [...new Set(depErrors.map((e) => e.missingId))];
+              const result: CommitResult = {
+                ok: false,
+                code: 'incoherent-subset',
+                revision: meta.revision,
+                message: `selected operations reference ${missing
+                  .map((m) => `"${m}"`)
+                  .join(', ')}, which only unselected operations create`,
+                missingDependencies: missing,
+              };
+              await this.rememberRequest(tx, meta, operationId, result);
+              return result;
+            }
+            const chosen = new Set(indices);
+            opsToApply = proposal.operations.filter((_, i) => chosen.has(i));
+            residual = proposal.operations.filter((_, i) => !chosen.has(i));
           }
-          const chosen = new Set(indices);
-          opsToApply = proposal.operations.filter((_, i) => chosen.has(i));
-          residual = proposal.operations.filter((_, i) => !chosen.has(i));
         }
-      }
 
-      if (proposal.baseRevision < meta.historyFloor) {
-        const result: CommitResult = {
-          ok: false,
-          code: 'checkpoint-required',
-          revision: meta.revision,
-          message: 'proposal base revision is older than retained history',
-        };
-        await this.rememberRequest(tx, meta, operationId, result);
-        return result;
-      }
-      const conflicts = await this.conflictsSince(
-        tx,
-        proposal.baseRevision,
-        meta.revision,
-        opsToApply,
-      );
-      if (conflicts.length) {
-        proposal.status = 'conflicted';
-        proposal.conflictingTargets = conflicts;
-        proposal.updatedAt = nowIso();
-        await tx.put(PROPOSAL_PREFIX + id, proposal);
-        const result: CommitResult = {
-          ok: false,
-          code: 'conflict',
-          revision: meta.revision,
-          message:
-            'proposal overlaps changes committed after its base revision',
-          conflictingTargets: conflicts,
-        };
-        await this.rememberRequest(tx, meta, operationId, result);
-        return result;
-      }
-      const result = await this.commitWithin(
-        tx,
-        meta,
-        actor,
-        {
-          baseRevision: proposal.baseRevision,
-          operationId,
-          operations: opsToApply,
-        },
-        'proposal',
-        id,
-      );
-      if (result.ok) {
-        proposal.updatedAt = nowIso();
-        delete proposal.conflictingTargets;
-        if (residual.length) {
-          // Partial acceptance: keep the remainder reviewable, rebased onto the
-          // revision the accepted subset just produced (the residual ops were
-          // authored to run after the accepted ones), so its next accept/view
-          // re-validates against the new canonical state.
-          proposal.operations = residual;
-          proposal.summary = summarizeOperations(residual);
-          proposal.baseRevision = result.revision;
-          proposal.status = 'partially-accepted';
-          proposal.acceptedRevision = result.revision;
-        } else {
-          proposal.status = 'accepted';
-          proposal.acceptedRevision = result.revision;
+        if (proposal.baseRevision < meta.historyFloor) {
+          const result: CommitResult = {
+            ok: false,
+            code: 'checkpoint-required',
+            revision: meta.revision,
+            message: 'proposal base revision is older than retained history',
+          };
+          await this.rememberRequest(tx, meta, operationId, result);
+          return result;
         }
-        await tx.put(PROPOSAL_PREFIX + id, proposal);
-      }
-      return result;
-    });
+        const conflicts = await this.conflictsSince(
+          tx,
+          proposal.baseRevision,
+          meta.revision,
+          opsToApply,
+        );
+        if (conflicts.length) {
+          proposal.status = 'conflicted';
+          proposal.conflictingTargets = conflicts;
+          proposal.updatedAt = nowIso();
+          await tx.put(PROPOSAL_PREFIX + id, proposal);
+          const result: CommitResult = {
+            ok: false,
+            code: 'conflict',
+            revision: meta.revision,
+            message:
+              'proposal overlaps changes committed after its base revision',
+            conflictingTargets: conflicts,
+          };
+          await this.rememberRequest(tx, meta, operationId, result);
+          return result;
+        }
+        const result = await this.commitWithin(
+          tx,
+          meta,
+          actor,
+          {
+            baseRevision: proposal.baseRevision,
+            operationId,
+            operations: opsToApply,
+          },
+          'proposal',
+          id,
+        );
+        if (result.ok) {
+          proposal.updatedAt = nowIso();
+          delete proposal.conflictingTargets;
+          if (residual.length) {
+            // Partial acceptance: keep the remainder reviewable, rebased onto the
+            // revision the accepted subset just produced (the residual ops were
+            // authored to run after the accepted ones), so its next accept/view
+            // re-validates against the new canonical state.
+            proposal.operations = residual;
+            proposal.summary = summarizeOperations(residual);
+            proposal.baseRevision = result.revision;
+            proposal.status = 'partially-accepted';
+            proposal.acceptedRevision = result.revision;
+          } else {
+            proposal.status = 'accepted';
+            proposal.acceptedRevision = result.revision;
+          }
+          await tx.put(PROPOSAL_PREFIX + id, proposal);
+        }
+        return result;
+      },
+    );
+    // Revision and/or proposal status may have changed — notify open editors.
+    await this.broadcast();
+    return outcome;
   }
 
   async rejectProposal(
@@ -575,17 +736,20 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
   ): Promise<WorkspaceProposal> {
     if (actor.kind !== 'user')
       throw new Error('only a browser user can reject proposals');
-    return this.ctx.storage.transaction(async (tx) => {
+    const proposal = await this.ctx.storage.transaction(async (tx) => {
       await this.requiredMeta(tx, ownerId);
-      const proposal = await tx.get<WorkspaceProposal>(PROPOSAL_PREFIX + id);
-      if (!proposal) throw new Error(`unknown proposal "${id}"`);
-      if (proposal.status === 'accepted')
+      const record = await tx.get<WorkspaceProposal>(PROPOSAL_PREFIX + id);
+      if (!record) throw new Error(`unknown proposal "${id}"`);
+      if (record.status === 'accepted')
         throw new Error('an accepted proposal cannot be rejected');
-      proposal.status = 'rejected';
-      proposal.updatedAt = nowIso();
-      await tx.put(PROPOSAL_PREFIX + id, proposal);
-      return proposal;
+      record.status = 'rejected';
+      record.updatedAt = nowIso();
+      await tx.put(PROPOSAL_PREFIX + id, record);
+      return record;
     });
+    // The pending proposal count dropped — notify open editors.
+    await this.broadcast();
+    return proposal;
   }
 
   /** Snapshot the current document as a named checkpoint. Agents may checkpoint
@@ -677,7 +841,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
   ): Promise<CommitResult> {
     if (actor.kind !== 'user')
       throw new Error('only a browser user can restore checkpoints');
-    return this.ctx.storage.transaction(async (tx) => {
+    const restored = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const duplicate = await tx.get<CommitResult>(
         REQUEST_PREFIX + operationId,
@@ -723,6 +887,9 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       await this.rememberRequest(tx, meta, operationId, result);
       return result;
     });
+    // A successful restore may have produced a new revision — notify editors.
+    if (restored.ok) await this.broadcast();
+    return restored;
   }
 
   /** The checkpoint's full document — used by the fork path to seed a new
@@ -743,7 +910,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
   ): Promise<WorkspaceLease> {
     if (actor.kind !== 'user')
       throw new Error('only a browser user can grant an agent lease');
-    return this.ctx.storage.transaction(async (tx) => {
+    const leaseResult = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       if (!meta.pageIds.includes(pageId))
         throw new Error(`unknown page "${pageId}"`);
@@ -761,19 +928,25 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       await tx.put(META_KEY, meta);
       return lease;
     });
+    // The lease field changed — notify open editors so suggest-only vs.
+    // leased state updates without waiting for the next poll.
+    await this.broadcast();
+    return leaseResult;
   }
 
   async revokeLease(ownerId: string, actor: WorkspaceActor): Promise<boolean> {
     if (actor.kind !== 'user')
       throw new Error('only a browser user can revoke an agent lease');
-    return this.ctx.storage.transaction(async (tx) => {
+    const hadLease = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
-      const hadLease = Boolean(meta.lease);
+      const existed = Boolean(meta.lease);
       delete meta.lease;
       meta.updatedAt = nowIso();
       await tx.put(META_KEY, meta);
-      return hadLease;
+      return existed;
     });
+    await this.broadcast();
+    return hadLease;
   }
 
   private async commit(
@@ -784,7 +957,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     requireLease: boolean,
   ): Promise<CommitResult> {
     assertRequest(request);
-    return this.ctx.storage.transaction(async (tx) => {
+    const result = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const duplicate = await tx.get<CommitResult>(
         REQUEST_PREFIX + request.operationId,
@@ -822,6 +995,10 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       }
       return this.commitWithin(tx, meta, actor, request, source);
     });
+    // Broadcast only after the transaction commits, and only when a revision
+    // was actually created — a conflict/lease rejection changes no state.
+    if (result.ok) await this.broadcast();
+    return result;
   }
 
   private async commitWithin(

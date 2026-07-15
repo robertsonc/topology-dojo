@@ -174,6 +174,38 @@ export interface WorkspaceSnapshot {
   lease: WorkspaceLease | null;
 }
 
+/**
+ * One connected editor's presence, reconstructed by the coordinator purely from
+ * a socket's ephemeral attachment (Packet S1). Never persisted — it exists only
+ * for the lifetime of the WebSocket.
+ */
+export interface WorkspacePresence {
+  kind: WorkspaceActor['kind'];
+  label?: string;
+  /** The page id this editor is currently viewing, if it has reported one. */
+  pageId?: string;
+}
+
+/**
+ * The compact push payload broadcast over the workspace socket (Packet S1).
+ * Deliberately carries no document content — a client that receives it (or
+ * misses it) re-hydrates through the existing `getWorkspaceChanges` / element
+ * fetch path, so a lost notice degrades to exactly the polling behavior.
+ */
+export interface WorkspaceNotice {
+  type: 'notice';
+  revision: number;
+  proposalCount: number;
+  lease: WorkspaceLease | null;
+  presence: WorkspacePresence[];
+}
+
+/** Client → server socket message: report the page this editor is viewing. */
+export interface PresenceUpdateMessage {
+  type: 'presence';
+  pageId?: string;
+}
+
 export interface WorkspaceListItem {
   id: string;
   title: string;
