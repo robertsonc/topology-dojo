@@ -16,7 +16,7 @@
  * (document-replacement confirmation, the autosave→sync hook, sign-in
  * activation, and the beforeunload recovery write).
  */
-import { diffDocuments } from '../workspace/operations.js';
+import { applyOperations, diffDocuments } from '../workspace/operations.js';
 import {
   acceptWorkspaceProposal,
   commitWorkspaceOperations,
@@ -48,6 +48,7 @@ import type {
   WorkspaceManifest,
   WorkspaceListItem,
   WorkspaceNotice,
+  WorkspaceOperation,
   WorkspacePresence,
 } from '../workspace/model.js';
 import { serializeDoc } from '../pages/persist.js';
@@ -105,6 +106,13 @@ export interface WorkspacePanelHost {
   loadDoc(next: TopologyDocument, sync?: boolean): void;
   /** The page id the browser is currently viewing (for lease grants). */
   getCurrentPageId(): string;
+  /**
+   * Drain the semantic operations the editor emitted for gestures since the last
+   * call (Packet S2). The commit funnel prefers these intent-faithful ops when
+   * they reproduce the current document, and falls back to a snapshot diff
+   * otherwise. Returns [] when the editor emitted nothing.
+   */
+  takePendingOperations(): WorkspaceOperation[];
   /** The toolbar's autosave status text node. */
   savedEl: HTMLElement;
   /** The `#workspaceChip` toolbar button. */
@@ -675,6 +683,59 @@ export function mountWorkspacePanel(
     return `${prefix}_${crypto.randomUUID()}`;
   }
 
+  /**
+   * Choose the operations to commit for the local changes between `lastSynced`
+   * and `target` (Packet S2 — the runtime referee).
+   *
+   * The editor emits intent-faithful ops per gesture; the snapshot diff
+   * reconstructs ops from the two document states. We prefer the emitted ops,
+   * but only after proving they reproduce the exact same document the diff
+   * would — otherwise (an un-instrumented gesture, undo/redo, a page switch, or
+   * any emission bug) we fall back to the diff. Because the fallback is today's
+   * behavior and the emitted path is committed only when byte-identical to it,
+   * the resulting document is never corrupted; fidelity only improves as gesture
+   * coverage grows.
+   */
+  function chooseCommitOperations(
+    lastSynced: TopologyDocument,
+    target: TopologyDocument,
+  ): WorkspaceOperation[] {
+    const diffOps = diffDocuments(lastSynced, target);
+    const emitted = host.takePendingOperations();
+    // Nothing changed on net, or the editor emitted nothing → today's behavior.
+    if (!diffOps.length || !emitted.length) return diffOps;
+    try {
+      const viaEmitted = applyOperations(lastSynced, emitted);
+      const viaDiff = applyOperations(lastSynced, diffOps);
+      if (JSON.stringify(viaEmitted) === JSON.stringify(viaDiff))
+        return emitted;
+      warnRefereeDivergence(emitted, diffOps);
+    } catch (error) {
+      warnRefereeDivergence(emitted, diffOps, error);
+    }
+    return diffOps;
+  }
+
+  /** Dev-only: surface a gap between emitted intent and the snapshot diff so it
+   * is discoverable. Enabled via `localStorage['tds-op-referee']`. */
+  function warnRefereeDivergence(
+    emitted: WorkspaceOperation[],
+    diffOps: WorkspaceOperation[],
+    error?: unknown,
+  ): void {
+    let on = false;
+    try {
+      on = Boolean(localStorage.getItem('tds-op-referee'));
+    } catch {
+      on = false;
+    }
+    if (!on) return;
+    console.warn(
+      '[tds-op-referee] emitted operations did not reproduce the snapshot diff; falling back to diff.',
+      { emitted, diffOps, ...(error ? { error } : {}) },
+    );
+  }
+
   function workspaceHasLocalChanges(workspace: ActiveWorkspace): boolean {
     return diffDocuments(workspace.lastSynced, host.getDoc()).length > 0;
   }
@@ -704,7 +765,7 @@ export function mountWorkspacePanel(
     if (force) clearTimeout(workspaceSaveTimer);
     if (!request) {
       target = structuredClone(host.getDoc());
-      const operations = diffDocuments(workspace.lastSynced, target);
+      const operations = chooseCommitOperations(workspace.lastSynced, target);
       if (!operations.length) {
         workspace.status = 'synced';
         workspace.error = null;

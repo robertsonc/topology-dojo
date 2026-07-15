@@ -342,6 +342,7 @@ const workspacePanelHandle = mountWorkspacePanel({
   getDoc: () => doc,
   loadDoc,
   getCurrentPageId: () => editor.page.id,
+  takePendingOperations: () => editor.takePendingOperations(),
   savedEl,
   chip: app.querySelector<HTMLButtonElement>('#workspaceChip')!,
   chipLabel: app.querySelector<HTMLElement>('#workspaceLabel')!,
