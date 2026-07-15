@@ -114,6 +114,9 @@ interface DocumentRpc {
     operationId: string,
   ): Promise<CommitResult>;
   getCheckpointDocument(ownerId: string, id: string): Promise<TopologyDocument>;
+  /** WebSocket upgrade passthrough (Packet S1). `DurableObjectStub` already
+   * provides `.fetch`; typing it here lets the service forward the 101. */
+  fetch(request: Request): Promise<Response>;
 }
 
 function asWorkspaceUser(user: SessionUser): WorkspaceUser {
@@ -355,6 +358,23 @@ export class WorkspaceService {
     );
     const snapshot = await this.create(document);
     return { workspaceId: snapshot.id, snapshot };
+  }
+
+  /**
+   * Forward an owner-authenticated WebSocket upgrade to the coordinator
+   * (Packet S1). The caller (the browser route) has already authenticated the
+   * owner; we inject the actor identity as query params so the DO can seed
+   * presence, then hand the request to the stub's `fetch`, returning its 101
+   * (with the `webSocket`) verbatim. Presence identity is set here — never
+   * trusted from the client — while the client's own `pageId` query param is
+   * preserved.
+   */
+  async socket(id: string, request: Request): Promise<Response> {
+    const document = await this.ensure(id);
+    const url = new URL(request.url);
+    url.searchParams.set('actorKind', 'user');
+    url.searchParams.set('actorLabel', this.user.login);
+    return document.fetch(new Request(url.toString(), request));
   }
 
   async isMigrated(id: string): Promise<boolean> {

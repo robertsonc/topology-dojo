@@ -10,6 +10,7 @@ import type {
   WorkspaceLease,
   WorkspaceListItem,
   WorkspaceManifest,
+  WorkspaceNotice,
   WorkspaceProposal,
   WorkspaceSnapshot,
 } from './model.js';
@@ -246,4 +247,92 @@ export function revokeWorkspaceLease(
   return request(`/api/workspaces/${encodeURIComponent(id)}/lease`, {
     method: 'DELETE',
   });
+}
+
+/** A live workspace socket. `close()` tears it down without firing `onDown`. */
+export interface WorkspaceSocketHandle {
+  /** Report the page this editor is now viewing (best-effort; no-op if down). */
+  sendPresence(pageId: string): void;
+  /** Intentionally close the socket. Does not invoke the `onDown` callback. */
+  close(): void;
+}
+
+export interface WorkspaceSocketOptions {
+  /** A compact push notice arrived (new revision/proposal/lease/presence). */
+  onNotice: (notice: WorkspaceNotice) => void;
+  /**
+   * The socket is unavailable — closed, errored, or never opened (e.g. the
+   * server predates the `/socket` route and 404/426s the upgrade). The caller
+   * must keep/resume polling; the socket is only ever an accelerant.
+   */
+  onDown: () => void;
+  /** The page this editor is viewing at connect time, seeded into presence. */
+  pageId?: string;
+}
+
+/**
+ * Open the workspace push socket (Packet S1). It is a pure accelerant over the
+ * existing manifest polling: a `notice` should trigger an immediate cheap
+ * refresh, and any failure — a throw constructing the socket, an `error`, a
+ * `close`, or a server that lacks the route — routes to `onDown` so the caller
+ * degrades to exactly today's polling behavior. Never carries document content.
+ */
+export function openWorkspaceSocket(
+  id: string,
+  options: WorkspaceSocketOptions,
+): WorkspaceSocketHandle {
+  let socket: WebSocket | null = null;
+  // Guards double-firing `onDown` and suppresses it after an intentional close.
+  let settled = false;
+  const down = (): void => {
+    if (settled) return;
+    settled = true;
+    options.onDown();
+  };
+  try {
+    const base = location.origin.replace(/^http/, 'ws');
+    const params = options.pageId
+      ? `?pageId=${encodeURIComponent(options.pageId)}`
+      : '';
+    socket = new WebSocket(
+      `${base}/api/workspaces/${encodeURIComponent(id)}/socket${params}`,
+    );
+    socket.addEventListener('message', (event) => {
+      let notice: unknown;
+      try {
+        notice = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (
+        notice &&
+        typeof notice === 'object' &&
+        (notice as { type?: unknown }).type === 'notice'
+      )
+        options.onNotice(notice as WorkspaceNotice);
+    });
+    socket.addEventListener('error', () => down());
+    socket.addEventListener('close', () => down());
+  } catch {
+    // WebSocket construction itself failed — degrade immediately.
+    down();
+  }
+  return {
+    sendPresence(pageId: string): void {
+      try {
+        if (socket && socket.readyState === WebSocket.OPEN)
+          socket.send(JSON.stringify({ type: 'presence', pageId }));
+      } catch {
+        // best-effort; a failed presence ping never breaks the editor
+      }
+    },
+    close(): void {
+      settled = true; // an intentional close must not trigger the poll-resume
+      try {
+        socket?.close();
+      } catch {
+        // already closing/closed
+      }
+    },
+  };
 }

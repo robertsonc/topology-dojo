@@ -32,10 +32,12 @@ import {
   listWorkspaceCheckpoints,
   listWorkspaces,
   listWorkspaceProposals,
+  openWorkspaceSocket,
   rejectWorkspaceProposal,
   restoreWorkspaceCheckpoint,
   revokeWorkspaceLease,
   WorkspaceDisabledError,
+  type WorkspaceSocketHandle,
 } from '../workspace/client.js';
 import { computeProposalPreview } from '../workspace/preview.js';
 import type {
@@ -45,6 +47,8 @@ import type {
   ProposalSummary,
   WorkspaceManifest,
   WorkspaceListItem,
+  WorkspaceNotice,
+  WorkspacePresence,
 } from '../workspace/model.js';
 import { serializeDoc } from '../pages/persist.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
@@ -82,6 +86,9 @@ export interface ActiveWorkspace {
   checkpoints: CheckpointSummary[];
   /** Recent change log (summaries) + history floor for the revision timeline. */
   timeline: ChangesResult | null;
+  /** Live presence roster from the push socket (Packet S1). Empty when the
+   * socket is down — presence is an accelerant, never part of correctness. */
+  presence: WorkspacePresence[];
   pending: CommitRequest | null;
   pendingTarget: TopologyDocument | null;
   syncing: boolean;
@@ -118,6 +125,8 @@ export interface WorkspacePanelHandle {
   enable(): void;
   /** Best-effort recovery write on `beforeunload`. */
   flushBeforeUnload(): void;
+  /** The browser navigated to a different page — report it as presence. */
+  notifyPageChanged(): void;
 }
 
 export interface WorkspaceChipState {
@@ -267,6 +276,30 @@ export function renderTimelineHtml(workspace: ActiveWorkspace): string {
   );
 }
 
+/** Pure: the presence roster (Packet S1) — a small chip per connected editor,
+ * labeled with who they are and, when known, which page they're viewing. Empty
+ * output when nobody is reported present (socket down or nobody connected), so
+ * the section simply vanishes rather than claiming a stale roster. */
+export function renderPresenceHtml(presence: WorkspacePresence[]): string {
+  if (!presence.length) return '';
+  const chips = presence
+    .map((entry) => {
+      const who = esc(entry.label || entry.kind);
+      const where = entry.pageId
+        ? `<span class="ws-presence-page">${esc(entry.pageId)}</span>`
+        : '';
+      return (
+        `<span class="ws-presence-chip ws-presence-${esc(entry.kind)}">` +
+        `${who}${where}</span>`
+      );
+    })
+    .join('');
+  return (
+    `<div class="ws-section">Present (${presence.length})</div>` +
+    `<div class="ws-card ws-presence">${chips}</div>`
+  );
+}
+
 /** Pure: the panel body for an active workspace (revision/sync/lease/proposals). */
 export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
   const lease = workspace.manifest?.lease;
@@ -314,6 +347,7 @@ export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
       ? `<button class="tbtn" id="wsResume">Sync local copy</button>`
       : '') +
     `<button class="tbtn" id="wsReload">Reload server</button><button class="tbtn" id="wsDetach">Close workspace</button></div></div>` +
+    renderPresenceHtml(workspace.presence) +
     `<div class="ws-section">Agent control</div>` +
     `<div class="ws-card"><div class="ws-note">${
       leaseLive
@@ -424,6 +458,9 @@ export function mountWorkspacePanel(
   // offering actions that would just 503 (see WorkspaceDisabledError).
   let workspaceDisabled = false;
   let workspaceSaveTimer: ReturnType<typeof setTimeout> | undefined;
+  // The push socket (Packet S1) — a pure accelerant over the 8s poll below.
+  // Null whenever it is closed/down; the poll loop keeps running regardless.
+  let workspaceSocket: WorkspaceSocketHandle | null = null;
 
   // Rendered before/after proposal preview (Packet R1) state. Kept apart
   // from `ActiveWorkspace` because it's a lazy, per-proposal-id UI cache —
@@ -438,6 +475,41 @@ export function mountWorkspacePanel(
   function resetProposalPreviews(): void {
     previewOpen.clear();
     previewState.clear();
+  }
+
+  function closeWorkspaceSocket(): void {
+    workspaceSocket?.close();
+    workspaceSocket = null;
+  }
+
+  /**
+   * (Re)open the push socket for the active workspace. A notice just triggers an
+   * immediate cheap `refreshWorkspaceState` (same path the poll uses) and paints
+   * the presence roster; if the socket goes down the poll loop already covers
+   * correctness, so we only clear the roster and let polling continue. This is
+   * what makes "a lost message degrades to polling" true by construction.
+   */
+  function connectWorkspaceSocket(): void {
+    closeWorkspaceSocket();
+    const workspace = activeWorkspace;
+    if (!workspace || !workspaceAuthenticated) return;
+    workspaceSocket = openWorkspaceSocket(workspace.id, {
+      pageId: host.getCurrentPageId(),
+      onNotice: (notice: WorkspaceNotice) => {
+        // Ignore a notice that arrives after the workspace changed underneath.
+        if (activeWorkspace !== workspace) return;
+        workspace.presence = notice.presence;
+        // The notice carries no content — re-hydrate through the poll path.
+        void refreshWorkspaceState(true);
+      },
+      onDown: () => {
+        if (activeWorkspace !== workspace) return;
+        workspaceSocket = null;
+        workspace.presence = [];
+        renderWorkspacePanel();
+        // Polling (the 8s loop) remains the baseline — nothing else to do.
+      },
+    });
   }
 
   function findPreviewContainer(proposalId: string): HTMLElement | null {
@@ -547,6 +619,7 @@ export function mountWorkspacePanel(
     )
       return false;
     clearTimeout(workspaceSaveTimer);
+    closeWorkspaceSocket();
     activeWorkspace = null;
     workspaceChoices = [];
     resetProposalPreviews();
@@ -761,6 +834,7 @@ export function mountWorkspacePanel(
         proposals: [],
         checkpoints: [],
         timeline: null,
+        presence: [],
         pending: null,
         pendingTarget: null,
         syncing: false,
@@ -770,6 +844,7 @@ export function mountWorkspacePanel(
       };
       writeWorkspaceLink();
       updateWorkspaceChip();
+      connectWorkspaceSocket();
       await refreshWorkspaceState(false);
     } catch (error) {
       alert(
@@ -809,6 +884,7 @@ export function mountWorkspacePanel(
       proposals: [],
       checkpoints: [],
       timeline: null,
+      presence: [],
       pending: null,
       pendingTarget: null,
       syncing: false,
@@ -817,6 +893,7 @@ export function mountWorkspacePanel(
       error: null,
     };
     adoptWorkspaceSnapshot(snapshot, 'opened · synced');
+    connectWorkspaceSocket();
     await refreshWorkspaceState(false);
   }
 
@@ -833,6 +910,7 @@ export function mountWorkspacePanel(
         proposals: [],
         checkpoints: [],
         timeline: null,
+        presence: [],
         pending: saved.pending ?? null,
         pendingTarget: saved.pending ? structuredClone(host.getDoc()) : null,
         syncing: false,
@@ -858,6 +936,7 @@ export function mountWorkspacePanel(
         activeWorkspace.error =
           'This browser has local edits newer than its last confirmed workspace sync. Choose “sync local copy” or “reload server” below.';
       }
+      connectWorkspaceSocket();
       await refreshWorkspaceState(false);
     } catch (error) {
       activeWorkspace = null;
@@ -939,6 +1018,7 @@ export function mountWorkspacePanel(
       void (async () => {
         if (workspaceHasLocalChanges(workspace) && !(await syncWorkspace()))
           return;
+        closeWorkspaceSocket();
         activeWorkspace = null;
         resetProposalPreviews();
         localStorage.removeItem(WORKSPACE_LINK_KEY);
@@ -1205,10 +1285,15 @@ export function mountWorkspacePanel(
       void refreshWorkspaceState(true);
   }, 8000);
 
+  function notifyPageChanged(): void {
+    if (activeWorkspace) workspaceSocket?.sendPresence(host.getCurrentPageId());
+  }
+
   return {
     closeForDocumentReplacement: closeWorkspaceForDocumentReplacement,
     notifyDocChanged: scheduleWorkspaceSync,
     enable: enableWorkspaceUi,
     flushBeforeUnload,
+    notifyPageChanged,
   };
 }

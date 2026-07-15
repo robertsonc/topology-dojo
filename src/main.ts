@@ -2373,6 +2373,8 @@ function selectPage(i: number): void {
   if (i < 0 || i >= doc.pages.length) return;
   current = i;
   editor.setPage(doc.pages[current]!);
+  // Report the new page to the workspace presence socket (Packet S1).
+  workspacePanelHandle.notifyPageChanged();
   // Update highlight without rebuilding the strip (so dblclick-rename survives).
   strip
     .querySelectorAll<HTMLElement>('[data-page]')

@@ -25,6 +25,7 @@ import {
   renderChangedElementOverlay,
   renderCheckpointsHtml,
   renderTimelineHtml,
+  renderPresenceHtml,
   renderProposalPreviewErrorHtml,
   renderProposalPreviewHtml,
   renderWorkspaceChoicesHtml,
@@ -59,6 +60,7 @@ function activeWorkspace(
     proposals: [],
     checkpoints: [],
     timeline: null,
+    presence: [],
     pending: null,
     pendingTarget: null,
     syncing: false,
@@ -685,5 +687,41 @@ describe('renderProposalPreviewErrorHtml', () => {
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;x&lt;/script&gt; failed');
     expect(html).toContain('Preview unavailable');
+  });
+});
+
+describe('renderPresenceHtml (Packet S1)', () => {
+  it('renders nothing when no one is present (socket down or empty roster)', () => {
+    expect(renderPresenceHtml([])).toBe('');
+  });
+
+  it('renders a labeled chip per editor with page and count', () => {
+    const html = renderPresenceHtml([
+      { kind: 'user', label: 'alice', pageId: 'p1' },
+      { kind: 'agent', label: 'assistant' },
+    ]);
+    expect(html).toContain('Present (2)');
+    expect(html).toContain('ws-presence-user');
+    expect(html).toContain('alice');
+    expect(html).toContain('p1');
+    expect(html).toContain('ws-presence-agent');
+    expect(html).toContain('assistant');
+  });
+
+  it('falls back to the actor kind when no label is present and escapes content', () => {
+    const html = renderPresenceHtml([{ kind: 'user', pageId: '<b>p</b>' }]);
+    expect(html).toContain('>user<');
+    expect(html).not.toContain('<b>p</b>');
+    expect(html).toContain('&lt;b&gt;p&lt;/b&gt;');
+  });
+
+  it('surfaces in the active workspace panel body', () => {
+    const html = renderActiveWorkspaceHtml(
+      activeWorkspace({
+        presence: [{ kind: 'user', label: 'alice', pageId: 'p1' }],
+      }),
+    );
+    expect(html).toContain('Present (1)');
+    expect(html).toContain('alice');
   });
 });
