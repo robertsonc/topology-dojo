@@ -39,6 +39,11 @@ import {
   WorkspaceDisabledError,
   type WorkspaceSocketHandle,
 } from '../workspace/client.js';
+import {
+  cacheWorkspace,
+  clearCachedWorkspace,
+  readCachedWorkspace,
+} from '../workspace/offline.js';
 import { computeProposalPreview } from '../workspace/preview.js';
 import type {
   ChangesResult,
@@ -308,8 +313,33 @@ export function renderPresenceHtml(presence: WorkspacePresence[]): string {
   );
 }
 
+/** Pure: the offline / pending-replay indicator (Packet S3). Shows the browser's
+ * connectivity and how many unacknowledged operations are queued for replay. It
+ * renders nothing when online with nothing pending — the common, quiet case —
+ * so the panel only speaks up when there is something to say. `online` is the
+ * live `navigator.onLine` signal (defaulted for the pure render tests). */
+export function renderOfflineStatusHtml(
+  workspace: ActiveWorkspace,
+  online: boolean,
+): string {
+  const pendingOps = workspace.pending?.operations.length ?? 0;
+  if (online && pendingOps === 0) return '';
+  const label = !online
+    ? pendingOps > 0
+      ? `offline · ${pendingOps} pending`
+      : 'offline · cached'
+    : `${pendingOps} pending`;
+  return (
+    `<div class="ws-offline" data-online="${online ? 'true' : 'false'}">` +
+    `<span class="ws-offline-dot" aria-hidden="true"></span>${esc(label)}</div>`
+  );
+}
+
 /** Pure: the panel body for an active workspace (revision/sync/lease/proposals). */
-export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
+export function renderActiveWorkspaceHtml(
+  workspace: ActiveWorkspace,
+  online = true,
+): string {
   const lease = workspace.manifest?.lease;
   const leaseLive = lease && Date.parse(lease.expiresAt) > Date.now();
   const proposalHtml = workspace.proposals.length
@@ -350,6 +380,7 @@ export function renderActiveWorkspaceHtml(workspace: ActiveWorkspace): string {
     (workspace.error
       ? `<div class="ws-error">${esc(workspace.error)}</div>`
       : '') +
+    renderOfflineStatusHtml(workspace, online) +
     `<div class="ws-actions"><button class="tbtn" id="wsSync">Sync now</button>` +
     (workspace.paused
       ? `<button class="tbtn" id="wsResume">Sync local copy</button>`
@@ -490,6 +521,31 @@ export function mountWorkspacePanel(
     workspaceSocket = null;
   }
 
+  /** The browser's connectivity signal — defaults to online when `navigator`
+   * doesn't expose `onLine` (drives the offline/pending indicator only; sync
+   * correctness never depends on it). */
+  function isOnline(): boolean {
+    return typeof navigator === 'undefined' || navigator.onLine !== false;
+  }
+
+  /**
+   * Mirror the current workspace's confirmed snapshot + unacked batch into the
+   * IndexedDB cache (Packet S3). Fire-and-forget: `cacheWorkspace` never rejects
+   * and degrades to a no-op when IndexedDB is unavailable, so a cache failure can
+   * never block editing or sync. Paired with every `writeWorkspaceLink` call —
+   * the localStorage link stays the lightweight pointer/index, the IDB cache
+   * holds the heavy document + pending so state survives a fully offline reload.
+   */
+  function cacheActiveWorkspace(pending: CommitRequest | null = null): void {
+    const workspace = activeWorkspace;
+    if (!workspace) return;
+    void cacheWorkspace(workspace.id, {
+      revision: workspace.revision,
+      document: workspace.lastSynced,
+      pending,
+    });
+  }
+
   /**
    * (Re)open the push socket for the active workspace. A notice just triggers an
    * immediate cheap `refreshWorkspaceState` (same path the poll uses) and paints
@@ -628,6 +684,7 @@ export function mountWorkspacePanel(
       return false;
     clearTimeout(workspaceSaveTimer);
     closeWorkspaceSocket();
+    void clearCachedWorkspace(workspace.id);
     activeWorkspace = null;
     workspaceChoices = [];
     resetProposalPreviews();
@@ -786,6 +843,9 @@ export function mountWorkspacePanel(
     workspace.status = `syncing ${request.operations.length} change${request.operations.length === 1 ? '' : 's'}…`;
     workspace.error = null;
     writeWorkspaceLink(request);
+    // Persist the unacked batch alongside the confirmed snapshot so a crash
+    // mid-flight preserves it for idempotent replay (its operationId dedupes).
+    cacheActiveWorkspace(request);
     updateWorkspaceChip();
     renderWorkspacePanel();
     try {
@@ -796,6 +856,7 @@ export function mountWorkspacePanel(
         workspace.revision = result.revision;
         workspace.paused = true;
         writeWorkspaceLink(request);
+        cacheActiveWorkspace(request);
         return false;
       }
       workspace.revision = result.revision;
@@ -805,6 +866,7 @@ export function mountWorkspacePanel(
       workspace.status = result.rebased ? 'synced · rebased' : 'synced';
       workspace.error = null;
       writeWorkspaceLink();
+      cacheActiveWorkspace();
       host.savedEl.textContent = '✓ synced';
       if (workspaceHasLocalChanges(workspace)) scheduleWorkspaceSync();
       return true;
@@ -812,6 +874,7 @@ export function mountWorkspacePanel(
       workspace.status = 'offline · retry pending';
       workspace.error = error instanceof Error ? error.message : String(error);
       writeWorkspaceLink(request);
+      cacheActiveWorkspace(request);
       clearTimeout(workspaceSaveTimer);
       workspaceSaveTimer = setTimeout(() => void syncWorkspace(), 5000);
       return false;
@@ -837,6 +900,7 @@ export function mountWorkspacePanel(
     workspace.error = null;
     host.loadDoc(snapshot.document, false);
     writeWorkspaceLink();
+    cacheActiveWorkspace();
     updateWorkspaceChip();
   }
 
@@ -904,6 +968,7 @@ export function mountWorkspacePanel(
         error: null,
       };
       writeWorkspaceLink();
+      cacheActiveWorkspace();
       updateWorkspaceChip();
       connectWorkspaceSocket();
       await refreshWorkspaceState(false);
@@ -961,26 +1026,65 @@ export function mountWorkspacePanel(
   async function restoreWorkspace(): Promise<void> {
     const saved = readWorkspaceLink();
     if (!saved) return;
-    try {
-      const snapshot = await getWorkspace(saved.id);
+
+    // Packet S3: reconstruct the workspace from the IndexedDB cache *first*, so
+    // the chip/panel and the confirmed baseline (lastSynced + revision) come up
+    // even fully offline — no server round-trip required. The editor's live
+    // document is already restored by `main.ts`'s own autosave and may hold
+    // unsynced edits, so we never clobber it here; the cache supplies only the
+    // workspace baseline and any unacknowledged batch to replay. The cache is
+    // authoritative for the heavy pending batch; the localStorage link remains
+    // the lightweight pointer (which id to reopen) and a pending fallback.
+    const cached = await readCachedWorkspace(saved.id);
+    if (cached) {
+      const pending = cached.pending ?? saved.pending ?? null;
       activeWorkspace = {
         id: saved.id,
-        revision: snapshot.revision,
-        lastSynced: structuredClone(snapshot.document),
+        revision: cached.revision,
+        lastSynced: structuredClone(cached.document),
         manifest: null,
         proposals: [],
         checkpoints: [],
         timeline: null,
         presence: [],
-        pending: saved.pending ?? null,
-        pendingTarget: saved.pending ? structuredClone(host.getDoc()) : null,
+        pending,
+        pendingTarget: pending ? structuredClone(host.getDoc()) : null,
         syncing: false,
         paused: false,
-        status: 'reconnecting…',
+        status: isOnline() ? 'reconnecting…' : 'offline · cached',
         error: null,
       };
+      updateWorkspaceChip();
+      renderWorkspacePanel();
+    }
 
-      if (saved.pending) {
+    try {
+      const snapshot = await getWorkspace(saved.id);
+      // No cache (feature absent / first run on this browser) — reconstruct from
+      // the server exactly as before, preserving the original recovery behavior.
+      if (!activeWorkspace) {
+        activeWorkspace = {
+          id: saved.id,
+          revision: snapshot.revision,
+          lastSynced: structuredClone(snapshot.document),
+          manifest: null,
+          proposals: [],
+          checkpoints: [],
+          timeline: null,
+          presence: [],
+          pending: saved.pending ?? null,
+          pendingTarget: saved.pending ? structuredClone(host.getDoc()) : null,
+          syncing: false,
+          paused: false,
+          status: 'reconnecting…',
+          error: null,
+        };
+      }
+
+      // Replay the unacknowledged batch (idempotent — its operationId dedupes at
+      // the coordinator). A stale cached baseRevision rebases or reports a
+      // conflict through the existing commit path; no new conflict path here.
+      if (activeWorkspace.pending) {
         const ok = await syncWorkspace();
         if (ok)
           adoptWorkspaceSnapshot(
@@ -1000,8 +1104,16 @@ export function mountWorkspacePanel(
       connectWorkspaceSocket();
       await refreshWorkspaceState(false);
     } catch (error) {
-      activeWorkspace = null;
-      console.error('workspace reconnect failed', error);
+      // Offline (server unreachable). When we have a cached workspace, keep it
+      // live and wait for reconnect (the online listener + retry timer replay
+      // any pending batch); otherwise fall back to today's give-up behavior.
+      if (activeWorkspace && cached) {
+        activeWorkspace.status = 'offline · cached';
+        renderWorkspacePanel();
+      } else {
+        activeWorkspace = null;
+        console.error('workspace reconnect failed', error);
+      }
     }
     updateWorkspaceChip();
   }
@@ -1046,7 +1158,7 @@ export function mountWorkspacePanel(
       return;
     }
 
-    body.innerHTML = renderActiveWorkspaceHtml(workspace);
+    body.innerHTML = renderActiveWorkspaceHtml(workspace, isOnline());
 
     body.querySelector('#wsCopy')?.addEventListener('click', () => {
       void navigator.clipboard.writeText(workspace.id).catch(() => undefined);
@@ -1080,6 +1192,7 @@ export function mountWorkspacePanel(
         if (workspaceHasLocalChanges(workspace) && !(await syncWorkspace()))
           return;
         closeWorkspaceSocket();
+        void clearCachedWorkspace(workspace.id);
         activeWorkspace = null;
         resetProposalPreviews();
         localStorage.removeItem(WORKSPACE_LINK_KEY);
@@ -1345,6 +1458,31 @@ export function mountWorkspacePanel(
     if (activeWorkspace && !activeWorkspace.syncing)
       void refreshWorkspaceState(true);
   }, 8000);
+
+  // Packet S3: the browser's online/offline transitions drive the indicator and
+  // accelerate replay. Coming back online, flush any pending batch (idempotent
+  // replay) and re-hydrate; the 8s poll and the 5s retry timer already cover
+  // correctness, so these listeners are a pure accelerant, never a dependency.
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.addEventListener === 'function'
+  ) {
+    window.addEventListener('online', () => {
+      const workspace = activeWorkspace;
+      if (!workspace) return;
+      void (async () => {
+        if (!workspaceSocket) connectWorkspaceSocket();
+        if (workspace.pending && !workspace.paused) await syncWorkspace();
+        await refreshWorkspaceState(true);
+      })();
+    });
+    window.addEventListener('offline', () => {
+      if (!activeWorkspace) return;
+      activeWorkspace.status = 'offline · cached';
+      updateWorkspaceChip();
+      renderWorkspacePanel();
+    });
+  }
 
   function notifyPageChanged(): void {
     if (activeWorkspace) workspaceSocket?.sendPresence(host.getCurrentPageId());
