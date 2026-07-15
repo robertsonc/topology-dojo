@@ -44,6 +44,7 @@ import { STOCK_NODE_SPECS } from './nodes/stock.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
+import { mountProfilePanel } from './ui/profile-panel.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -164,6 +165,7 @@ app.innerHTML = `
       </span>
       <span class="bar-div" id="workspaceDiv" hidden></span>
       <button class="tbtn workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot"></span><span id="workspaceLabel">agent · local</span></button>
+      <button class="tbtn" id="profileChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Authoring Preferences" hidden>prefs</button>
       <span class="bar-div" id="userDiv" hidden></span>
       <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" hidden><span class="uc-dot">●</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">▾</span></button>
     </div>
@@ -347,6 +349,13 @@ const workspacePanelHandle = mountWorkspacePanel({
   chip: app.querySelector<HTMLButtonElement>('#workspaceChip')!,
   chipLabel: app.querySelector<HTMLElement>('#workspaceLabel')!,
   chipDivider: app.querySelector<HTMLElement>('#workspaceDiv')!,
+});
+/* Authoring Preferences (Packet P3, observe-only): a small toolbar chip next
+ * to the workspace chip, revealed with it on sign-in. The panel implementation
+ * (fetching, pause/forget wiring, panel DOM) lives in
+ * `src/ui/profile-panel.ts`. */
+const profilePanelHandle = mountProfilePanel({
+  chip: app.querySelector<HTMLButtonElement>('#profileChip')!,
 });
 function closeWorkspaceForDocumentReplacement(): boolean {
   return workspacePanelHandle.closeForDocumentReplacement();
@@ -2815,6 +2824,7 @@ async function showUserChip(): Promise<void> {
     if (me.login) {
       wireAccountMenu(me.login);
       enableWorkspaceUi();
+      profilePanelHandle.enable();
     }
   } catch {
     // No Worker (dev) or offline — leave the chip hidden.

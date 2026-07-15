@@ -34,6 +34,11 @@ export default {
         case 'recordOutcome': await profStub.recordOutcome(owner, input.outcome); result = { ok: true }; break;
         case 'listPreferences': result = await profStub.listPreferences(owner); break;
         case 'getProfile': result = await profStub.getProfile(owner); break;
+        // Packet P3 manage actions. 'asOwner' (default: the stub's owner) is the
+        // ownerId ASSERTED to the DO, so tests can prove the owner check rejects
+        // a mismatched caller against another owner's instance.
+        case 'setStatus': result = await profStub.setPreferenceStatus(String(input.asOwner ?? owner), String(input.preferenceId), input.status); break;
+        case 'deletePreference': await profStub.deletePreference(String(input.asOwner ?? owner), String(input.preferenceId)); result = { ok: true }; break;
         case 'initialize': result = await docStub.initialize(owner, workspace, input.document); break;
         case 'snapshot': result = await docStub.getSnapshot(owner); break;
         case 'user': result = await docStub.applyUserOperations(owner, user, input.commit); break;
@@ -394,6 +399,166 @@ describe('AuthoringProfile Durable Object', () => {
     expect(prefsB[0]!.trigger.requiredTraits).toEqual(['only-b']);
     expect(prefsA[0]!.ownerId).toBe(a);
     expect(prefsB[0]!.ownerId).toBe(b);
+  }, 30_000);
+});
+
+describe('owner manage actions (Packet P3: pause / resume / forget)', () => {
+  it('round-trips pause↔resume and bumps profileRevision once per real change', async () => {
+    const owner = 'manage-1';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    const before = await call<{ profileRevision: number }>(on, {
+      action: 'getProfile',
+      owner,
+    });
+    expect(before.profileRevision).toBe(0);
+
+    const paused = await call<StoredPref>(on, {
+      action: 'setStatus',
+      owner,
+      preferenceId: pref!.id,
+      status: 'paused',
+    });
+    expect(paused.status).toBe('paused');
+    // Paused candidates stay listed (visible, just held back from future P4
+    // retrieval) and the revision bumped for the change…
+    const listed = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.status).toBe('paused');
+    const afterPause = await call<{ profileRevision: number }>(on, {
+      action: 'getProfile',
+      owner,
+    });
+    expect(afterPause.profileRevision).toBe(1);
+
+    // …a repeated pause is a no-op (no revision bump)…
+    await call(on, {
+      action: 'setStatus',
+      owner,
+      preferenceId: pref!.id,
+      status: 'paused',
+    });
+    const afterRepeat = await call<{ profileRevision: number }>(on, {
+      action: 'getProfile',
+      owner,
+    });
+    expect(afterRepeat.profileRevision).toBe(1);
+
+    // …and resume restores 'candidate' with another bump.
+    const resumed = await call<StoredPref>(on, {
+      action: 'setStatus',
+      owner,
+      preferenceId: pref!.id,
+      status: 'candidate',
+    });
+    expect(resumed.status).toBe('candidate');
+    const afterResume = await call<{ profileRevision: number }>(on, {
+      action: 'getProfile',
+      owner,
+    });
+    expect(afterResume.profileRevision).toBe(2);
+  }, 30_000);
+
+  it('rejects any status outside the candidate↔paused transition (P4 authority)', async () => {
+    const owner = 'manage-2';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    await expect(
+      call(on, {
+        action: 'setStatus',
+        owner,
+        preferenceId: pref!.id,
+        status: 'confirmed',
+      }),
+    ).rejects.toThrow(/candidate\/paused/);
+    const listed = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(listed[0]!.status).toBe('candidate');
+  }, 30_000);
+
+  it('forget deletes the record, bumps the revision, and 404s a repeat', async () => {
+    const owner = 'manage-3';
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ addedTraits: ['keep'], sourceRevisionRef: 'w1@r1' }),
+    });
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ addedTraits: ['drop'], sourceRevisionRef: 'w1@r2' }),
+    });
+    const prefs = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    const victim = prefs.find((p) => p.trigger.requiredTraits.includes('drop'));
+    await call(on, {
+      action: 'deletePreference',
+      owner,
+      preferenceId: victim!.id,
+    });
+    const remaining = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.trigger.requiredTraits).toContain('keep');
+    const view = await call<{ profileRevision: number }>(on, {
+      action: 'getProfile',
+      owner,
+    });
+    expect(view.profileRevision).toBe(1);
+    await expect(
+      call(on, {
+        action: 'deletePreference',
+        owner,
+        preferenceId: victim!.id,
+      }),
+    ).rejects.toThrow(/unknown preference/);
+  }, 30_000);
+
+  it('asserts the owner: a mismatched caller can neither pause nor forget', async () => {
+    const owner = 'manage-a';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    await expect(
+      call(on, {
+        action: 'setStatus',
+        owner,
+        asOwner: 'manage-intruder',
+        preferenceId: pref!.id,
+        status: 'paused',
+      }),
+    ).rejects.toThrow(/access denied/);
+    await expect(
+      call(on, {
+        action: 'deletePreference',
+        owner,
+        asOwner: 'manage-intruder',
+        preferenceId: pref!.id,
+      }),
+    ).rejects.toThrow(/access denied/);
+    const listed = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.status).toBe('candidate');
   }, 30_000);
 });
 

@@ -11,7 +11,7 @@
  * screen (GitHub already shows one) so connecting is a single authorize click.
  */
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
-import { workspaceEnabled, type WorkerEnv } from './env.js';
+import { profilesEnabled, workspaceEnabled, type WorkerEnv } from './env.js';
 import {
   completeWebLogin,
   currentUser,
@@ -23,6 +23,7 @@ import {
   startWebLogin,
 } from './auth.js';
 import { handleWorkspaceApi } from './workspace-api.js';
+import { handleProfileApi } from './profile-api.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -38,6 +39,26 @@ const WORKSPACE_DISABLED_BODY = JSON.stringify({ error: 'workspace_disabled' });
  */
 function workspaceDisabledResponse(): Response {
   return new Response(WORKSPACE_DISABLED_BODY, {
+    status: 503,
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+    },
+  });
+}
+
+/** Stable 503 body for the `PROFILES_ENABLED` gate — the profile surface's
+ * mirror of `WORKSPACE_DISABLED_BODY` above (see `env.ts`'s `profilesEnabled`;
+ * unlike workspaces this flag defaults OFF). */
+const PROFILES_DISABLED_BODY = JSON.stringify({ error: 'profiles_disabled' });
+
+/**
+ * The authoring-profile surface is off for this deployment: reject before
+ * touching `handleProfileApi` (and therefore before the `AUTHORING_PROFILE`
+ * DO binding is read), so an un-activated production deploy stays inert.
+ */
+function profilesDisabledResponse(): Response {
+  return new Response(PROFILES_DISABLED_BODY, {
     status: 503,
     headers: {
       'content-type': 'application/json',
@@ -373,6 +394,10 @@ async function route(
   ) {
     if (!workspaceEnabled(env)) return workspaceDisabledResponse();
     return handleWorkspaceApi(request, env);
+  }
+  if (pathname === '/api/profile' || pathname.startsWith('/api/profile/')) {
+    if (!profilesEnabled(env)) return profilesDisabledResponse();
+    return handleProfileApi(request, env);
   }
 
   // MCP OAuth provider flow. `/callback` is shared: the browser login uses a
