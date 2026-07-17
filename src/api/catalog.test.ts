@@ -154,6 +154,14 @@ describe('capability catalog', () => {
     expect(labelColor?.kind).toBe('color');
   });
 
+  it('exposes labelScale as a numeric common field on every link type', () => {
+    for (const l of linkCatalog()) {
+      const f = l.fields.find((field) => field.key === 'labelScale');
+      expect(f, `link type ${l.type}`).toBeDefined();
+      expect(f!.kind).toBe('number');
+    }
+  });
+
   it('exposes the layer field on every node, link, and annotation type', () => {
     const hasLayer = (fields: { key: string; kind: string }[]): boolean =>
       fields.some((f) => f.key === 'layer' && f.kind === 'ref');

@@ -208,6 +208,21 @@ describe('MCP tools', () => {
     expect(node.labelOffset).toBe(30);
   });
 
+  it('add_link accepts a first-class labelScale that persists on the link', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    call('add_node', { topologyId: id, type: 'ec', x: 0, y: 0, nodeId: 'a' });
+    call('add_node', { topologyId: id, type: 'ec', x: 200, y: 0, nodeId: 'b' });
+    const link = call('add_link', {
+      topologyId: id,
+      type: 'line',
+      from: 'a',
+      to: 'b',
+      linkId: 'l',
+      labelScale: 1.5,
+    }) as { labelScale?: number };
+    expect(link.labelScale).toBe(1.5);
+  });
+
   it('tidy_topology resolves overlaps the layout checker flagged', () => {
     const { id } = call('create_topology', {}) as { id: string };
     call('add_node', {
