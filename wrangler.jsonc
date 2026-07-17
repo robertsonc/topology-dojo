@@ -1,5 +1,9 @@
 {
-  // Cloudflare Worker via the connected Git integration (Workers Builds).
+  // Cloudflare Worker, deployed EXCLUSIVELY through the gated GitHub Actions
+  // pipeline (deploy-staging.yml / deploy-production.yml — proposal 0004; the
+  // legacy Workers Builds Git integration was disconnected 2026-07-17,
+  // operator O9, after push-triggered `wrangler deploy` twice bypassed the
+  // production approval gate).
   // Serves the built SPA (dist/) through the ASSETS binding AND exposes the MCP
   // server at /mcp, wrapped in an OAuth 2.1 provider with GitHub as the upstream
   // identity provider (see worker/index.ts). The MCP agent is a Durable Object
