@@ -1,14 +1,15 @@
 /**
- * Authoring Preferences panel (Packet P3 / proposal 0003-A, observe-only).
+ * Authoring Preferences panel (Packets P3+P4 / proposal 0003-A/B).
  *
- * An owner-facing surface over the learned preference *candidates* the
- * `AuthoringProfile` DO accumulates (Packet P2): each row shows the candidate's
- * directive, rationale, scope, status, and evidence summary, with per-row
- * Pause/Resume and Forget actions. Strictly observe-only — nothing here (or in
- * the routes it calls) changes agent output; pause/forget affect only what the
- * owner sees and what a future Packet P4 retrieval would serve. Confirmation
- * and scoping ("Yes, for my multi-region diagrams…") are Packet P4, so no
- * confirm affordance exists here by construction.
+ * An owner-facing surface over the learned preference records the
+ * `AuthoringProfile` DO accumulates: each row shows the rule's directive,
+ * rationale, scope, status, and evidence summary, with per-row Pause/Resume
+ * and Forget actions. Packet P4 adds the confirmation flow — "Make this a
+ * preference…" opens an inline scope chooser (all my diagrams / only this
+ * archetype / only the evidence workspace / don't learn this), the proposal's
+ * §"Confirm and scope" question. This browser panel is the ONLY confirm
+ * surface: agents can retrieve and explain rules over MCP but never confirm,
+ * broaden, or undelete them.
  *
  * Follows `workspace-panel.ts` conventions: pure `render*Html` string builders
  * (characterization-testable without a DOM — see `profile-panel.test.ts`) plus
@@ -16,12 +17,15 @@
  * and action wiring behind a narrow host seam.
  */
 import {
+  confirmAuthoringPreference,
   forgetAuthoringPreference,
   listAuthoringPreferences,
   pauseAuthoringPreference,
   ProfilesDisabledError,
+  rejectAuthoringPreference,
   resumeAuthoringPreference,
 } from '../profile/client.js';
+import { documentRefOf } from '../profile/learner.js';
 import type { AuthoringPreference, PreferenceScope } from '../profile/model.js';
 
 // Local copy of main.ts's `esc()` — the codebase's established pattern for
@@ -66,16 +70,72 @@ export function renderProfileDisabledHtml(): string {
   );
 }
 
-/** Pure: one candidate's card — directive, status badge, rationale, scope,
- * the 2+ observation callout (proposal §"Create or strengthen a candidate":
- * one outcome is evidence only; two or more show a non-blocking "observed"
- * note), evidence summary, and the Pause/Resume + Forget actions. */
-function renderPreferenceCardHtml(pref: AuthoringPreference): string {
+/** The proposal's "ask" threshold (§"Create or strengthen a candidate"):
+ * three independent corrections across at least two documents is when the
+ * panel actively asks the causal question instead of a passive note. */
+export function shouldAskToConfirm(pref: AuthoringPreference): boolean {
+  return (
+    pref.status === 'candidate' &&
+    pref.supportingOutcomes >= 3 &&
+    pref.evidenceDocuments >= 2
+  );
+}
+
+/** Pure: the inline scope chooser for one candidate — the proposal's
+ * §"Confirm and scope" choices. The workspace option only appears when ALL
+ * evidence came from one workspace (its documentRef); the archetype option
+ * only when the trigger detected one. */
+export function renderScopeChooserHtml(pref: AuthoringPreference): string {
+  const id = esc(pref.id);
+  const archetype = pref.trigger.archetype;
+  const documentRefs = [...new Set(pref.sourceRevisionRefs.map(documentRefOf))];
+  const workspaceRef = documentRefs.length === 1 ? documentRefs[0]! : null;
+  return (
+    `<div class="ws-card pref-scope-chooser" data-pref="${id}">` +
+    `<div class="ws-note">Where should this preference apply?</div>` +
+    `<div class="ws-actions">` +
+    `<button class="tbtn pref-scope-option" data-pref-id="${id}" data-scope-kind="user">All my diagrams</button>` +
+    (archetype
+      ? `<button class="tbtn pref-scope-option" data-pref-id="${id}" data-scope-kind="archetype" data-scope-archetype="${esc(archetype)}">Only ${esc(archetype)} diagrams</button>`
+      : '') +
+    (workspaceRef
+      ? `<button class="tbtn pref-scope-option" data-pref-id="${id}" data-scope-kind="workspace" data-scope-workspace="${esc(workspaceRef)}">Only workspace ${esc(workspaceRef)}</button>`
+      : '') +
+    `<button class="tbtn pref-reject" data-pref-id="${id}">Don’t learn this</button>` +
+    `<button class="tbtn pref-confirm-cancel" data-pref-id="${id}">Cancel</button>` +
+    `</div></div>`
+  );
+}
+
+/** Pure: one rule's card — directive, status badge, rationale, scope, the
+ * repeated-pattern callout (a passive note at 2 observations; the active
+ * confirm question at the 3-outcomes/2-documents threshold), evidence
+ * summary, and the per-status actions. Only the browser owner ever sees a
+ * confirm affordance — there is no MCP equivalent. */
+function renderPreferenceCardHtml(
+  pref: AuthoringPreference,
+  confirmingId: string | null,
+): string {
   const paused = pref.status === 'paused';
-  const observed =
-    pref.supportingOutcomes >= 2
-      ? `<div class="ws-note pref-observed">◎ Observed ${pref.supportingOutcomes}× — a repeated pattern. It still changes nothing until you confirm it (coming in a later update).</div>`
-      : '';
+  const rejected = pref.status === 'rejected';
+  const confirmed = pref.status === 'confirmed';
+  let callout = '';
+  if (shouldAskToConfirm(pref)) {
+    callout = `<div class="ws-note pref-ask">◎ You have made this correction ${pref.supportingOutcomes} times across ${pref.evidenceDocuments} documents. Should Topology Dojo prefer it in future agent-authored diagrams?</div>`;
+  } else if (pref.status === 'candidate' && pref.supportingOutcomes >= 2) {
+    callout = `<div class="ws-note pref-observed">◎ Observed ${pref.supportingOutcomes}× — a repeated pattern. It changes nothing until you confirm it.</div>`;
+  } else if (confirmed) {
+    callout = `<div class="ws-note pref-confirmed-note">✓ Confirmed${pref.confirmedAt ? ` ${pref.confirmedAt.slice(0, 10)}` : ''} — supplied to agents when it applies.</div>`;
+  } else if (rejected) {
+    callout = `<div class="ws-note pref-rejected-note">✕ Rejected — this pattern will not be learned again. Forget it to clear the record.</div>`;
+  }
+  const actions = rejected
+    ? `<button class="tbtn pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>`
+    : (pref.status === 'candidate'
+        ? `<button class="tbtn pref-confirm-open" data-pref-id="${esc(pref.id)}">Make this a preference…</button>`
+        : '') +
+      `<button class="tbtn ${paused ? 'pref-resume' : 'pref-pause'}" data-pref-id="${esc(pref.id)}">${paused ? 'Resume' : 'Pause'}</button>` +
+      `<button class="tbtn pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>`;
   return (
     `<div class="ws-card pref-card" data-pref="${esc(pref.id)}">` +
     `<div class="ws-row"><span class="ws-v pref-directive">${esc(pref.directive)}</span>` +
@@ -84,28 +144,32 @@ function renderPreferenceCardHtml(pref: AuthoringPreference): string {
       ? `<div class="ws-note pref-rationale">${esc(pref.rationale)}</div>`
       : '') +
     `<div class="ws-note pref-scope">Scope: ${esc(preferenceScopeLabel(pref.scope))}</div>` +
-    observed +
+    callout +
     `<div class="ws-note pref-evidence">${esc(formatEvidenceSummary(pref))}</div>` +
-    `<div class="ws-actions">` +
-    `<button class="tbtn ${paused ? 'pref-resume' : 'pref-pause'}" data-pref-id="${esc(pref.id)}">${paused ? 'Resume' : 'Pause'}</button>` +
-    `<button class="tbtn pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>` +
-    `</div></div>`
+    `<div class="ws-actions">${actions}</div>` +
+    (confirmingId === pref.id ? renderScopeChooserHtml(pref) : '') +
+    `</div>`
   );
 }
 
-/** Pure: the list body — an observe-only explainer plus one card per learned
- * candidate (or the empty state). */
-export function renderPreferencesHtml(prefs: AuthoringPreference[]): string {
+/** Pure: the list body — an explainer plus one card per learned rule (or the
+ * empty state). */
+export function renderPreferencesHtml(
+  prefs: AuthoringPreference[],
+  confirmingId: string | null = null,
+): string {
   const intro =
     `<div class="ws-note">Patterns observed from your corrections to agent-authored diagrams. ` +
-    `Observe-only: nothing here changes agent behavior yet.</div>`;
+    `Only rules you confirm are supplied to agents — and you can pause or forget them at any time.</div>`;
   if (!prefs.length) {
     return (
       intro +
       `<div class="ws-card"><div class="ws-empty">No learned candidates yet. When you repeatedly correct agent work the same way, the pattern will appear here.</div></div>`
     );
   }
-  return intro + prefs.map(renderPreferenceCardHtml).join('');
+  return (
+    intro + prefs.map((p) => renderPreferenceCardHtml(p, confirmingId)).join('')
+  );
 }
 
 /** The panel controller's render state (kept pure-renderable for tests). */
@@ -116,6 +180,8 @@ export interface ProfilePanelState {
   /** Last action/fetch failure to surface (non-fatal; list stays shown). */
   error: string | null;
   preferences: AuthoringPreference[];
+  /** The card whose inline scope chooser is open (Packet P4), if any. */
+  confirmingId: string | null;
 }
 
 /** Pure: the whole panel body for a given state. */
@@ -125,7 +191,7 @@ export function renderProfileBodyHtml(state: ProfilePanelState): string {
     (state.error ? `<div class="ws-error">${esc(state.error)}</div>` : '') +
     (state.loading
       ? `<div class="ws-note">Loading preferences…</div>`
-      : renderPreferencesHtml(state.preferences))
+      : renderPreferencesHtml(state.preferences, state.confirmingId))
   );
 }
 
@@ -148,6 +214,7 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
     disabled: false,
     error: null,
     preferences: [],
+    confirmingId: null,
   };
 
   function closePanel(): void {
@@ -177,8 +244,10 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
   }
 
   /** Run one manage action, then re-fetch the list (the DO is the source of
-   * truth — no optimistic local mutation to drift). */
+   * truth — no optimistic local mutation to drift). Any open scope chooser
+   * closes: after an action the list re-renders from fresh server state. */
   function runAction(action: Promise<unknown>): void {
+    state.confirmingId = null;
     void action
       .then(() => refresh())
       .catch((error) => {
@@ -207,6 +276,49 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
       .forEach((button) =>
         button.addEventListener('click', () =>
           runAction(resumeAuthoringPreference(button.dataset.prefId!)),
+        ),
+      );
+    body
+      .querySelectorAll<HTMLButtonElement>('.pref-confirm-open')
+      .forEach((button) =>
+        button.addEventListener('click', () => {
+          state.confirmingId = button.dataset.prefId!;
+          renderPanel();
+        }),
+      );
+    body
+      .querySelectorAll<HTMLButtonElement>('.pref-confirm-cancel')
+      .forEach((button) =>
+        button.addEventListener('click', () => {
+          state.confirmingId = null;
+          renderPanel();
+        }),
+      );
+    body
+      .querySelectorAll<HTMLButtonElement>('.pref-scope-option')
+      .forEach((button) =>
+        button.addEventListener('click', () => {
+          const kind = button.dataset.scopeKind;
+          const scope: PreferenceScope =
+            kind === 'workspace'
+              ? {
+                  kind: 'workspace',
+                  workspaceId: button.dataset.scopeWorkspace!,
+                }
+              : kind === 'archetype'
+                ? {
+                    kind: 'archetype',
+                    archetype: button.dataset.scopeArchetype!,
+                  }
+                : { kind: 'user' };
+          runAction(confirmAuthoringPreference(button.dataset.prefId!, scope));
+        }),
+      );
+    body
+      .querySelectorAll<HTMLButtonElement>('.pref-reject')
+      .forEach((button) =>
+        button.addEventListener('click', () =>
+          runAction(rejectAuthoringPreference(button.dataset.prefId!)),
         ),
       );
     body.querySelectorAll<HTMLButtonElement>('.pref-forget').forEach((button) =>

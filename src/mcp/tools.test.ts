@@ -846,6 +846,71 @@ describe('MCP tools', () => {
     });
   });
 
+  it('registers the read-only authoring-profile tools only when wired — and no confirm surface', () => {
+    const unavailable = async (): Promise<never> => {
+      throw new Error('not called');
+    };
+    const profile: NonNullable<ToolDeps['profile']> = {
+      guidance: async () => ({
+        profileRevision: 0,
+        guidanceRevision: 1,
+        rules: [],
+        tokenEstimate: 0,
+      }),
+      list: async () => [],
+      explain: unavailable,
+    };
+    const withProfile = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      profile,
+    });
+    const names = [
+      'get_authoring_guidance',
+      'list_authoring_preferences',
+      'explain_authoring_preference',
+    ];
+    for (const name of names)
+      expect(withProfile.some((tool) => tool.name === name)).toBe(true);
+    for (const name of names)
+      expect(tools.some((tool) => tool.name === name)).toBe(false);
+
+    const readme = readFileSync(
+      fileURLToPath(new URL('./README.md', import.meta.url)),
+      'utf8',
+    );
+    for (const name of names) expect(readme).toContain(`\`${name}\``);
+
+    // Authority boundary (proposal 0003 guardrail #5 / acceptance criterion
+    // 7): wiring the profile dep must add ONLY the three read-only tools —
+    // nothing named like a confirm/edit/forget surface can exist over MCP.
+    const added = withProfile
+      .map((tool) => tool.name)
+      .filter((name) => !tools.some((tool) => tool.name === name));
+    expect(added.sort()).toEqual([...names].sort());
+    for (const name of added)
+      expect(name).not.toMatch(/confirm|reject|pause|resume|forget|delete/);
+
+    // Argument bounds: the budget escape hatch is capped at the 800 absolute
+    // ceiling, so not even a malformed call can request an unbounded reply.
+    const guidance = withProfile.find(
+      (tool) => tool.name === 'get_authoring_guidance',
+    )!;
+    expect(() => parseToolArgs(guidance, { maxTokens: 100_000 })).toThrow(
+      /maxTokens/,
+    );
+    const parsed = parseToolArgs(guidance, {
+      archetype: 'multi-region-hub-spoke',
+      lastProfileRevision: 3,
+      lastGuidanceRevision: 1,
+    });
+    expect(parsed.archetype).toBe('multi-region-hub-spoke');
+
+    const explain = withProfile.find(
+      (tool) => tool.name === 'explain_authoring_preference',
+    )!;
+    expect(() => parseToolArgs(explain, {})).toThrow(/preferenceId/);
+  });
+
   it('queries the fabric and authors a sourced topology end to end', async () => {
     const live = createTools(store, {
       renderDocument: renderDocumentToSVG,

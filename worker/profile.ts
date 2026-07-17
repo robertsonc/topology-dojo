@@ -6,15 +6,19 @@
  * identity scheme the coordinator uses, which is what guarantees cross-owner
  * isolation: one owner's outcomes only ever reach that owner's DO.
  *
- * It holds bounded, OBSERVE-ONLY preference *candidates* learned asynchronously
- * from attributed correction outcomes. It changes no agent output: there is no
- * retrieval/guidance method here, and every record stays within
- * `status: 'candidate' | 'paused'` — the owner's Packet P3 panel can pause,
- * resume, or forget a candidate, but confirmation/promotion is Packet P4.
+ * It holds bounded preference records learned asynchronously from attributed
+ * correction outcomes. Learning only ever writes `candidate`s; the browser
+ * owner promotes them through `confirmPreference` / `rejectPreference`
+ * (Packet P4 / 0003-B) — those are the ONLY confirm paths, and they are
+ * reachable exclusively via the owner-cookie `/api/profile` routes, never via
+ * MCP. Agent retrieval is `getGuidance`: a bounded compile of CONFIRMED rules
+ * plus the versioned product pack (`src/profile/guidance.ts`).
  *
- * Hibernation-safe: the only state is `ctx.storage`. Nothing is cached in
- * memory, so the DO may be evicted between calls and reconstruct everything
- * from storage — the candidate set is (re)read on every operation.
+ * Hibernation-safe: the only STATE is `ctx.storage`; the record set is
+ * (re)read on every operation. The one in-memory member is the compiled
+ * guidance cache — pure derived data keyed by
+ * `(profileRevision, guidanceRevision, workspace, archetype, budget)`, so an
+ * eviction merely costs one recompute.
  *
  * @see docs/proposals/0003-adaptive-agent-authoring-profiles.md
  */
@@ -31,14 +35,29 @@ import {
   MAX_TRAITS,
   documentRefOf,
   newCandidate,
-  preferenceRuleIdentity,
-  ruleIdentity,
+  outcomeDisposition,
   strengthenCandidate,
   weakestCandidateIndex,
 } from '../src/profile/learner.js';
+import {
+  clampGuidanceBudget,
+  compileGuidance,
+  guidanceNotModified,
+  type CompiledGuidance,
+  type GuidanceQuery,
+  type GuidanceResult,
+} from '../src/profile/guidance.js';
+import {
+  GUIDANCE_PACK_RULES,
+  GUIDANCE_REVISION,
+} from '../src/profile/guidance-packs.js';
 
 const META_KEY = 'meta';
 const CANDIDATE_PREFIX = 'candidate:';
+/** Max in-memory compiled-guidance entries (distinct workspace/archetype/
+ * budget combinations per revision pair). Insertion-order eviction — plenty
+ * for one owner's realistic concurrent tasks. */
+const GUIDANCE_CACHE_MAX = 64;
 const MAX_REF_LEN = 200;
 const MAX_DOC_REF_LEN = 120;
 const MAX_SUMMARY_LEN = 300;
@@ -51,10 +70,12 @@ interface ProfileMeta {
   format: 1;
   ownerId: string;
   /**
-   * Bumped whenever what a (future P4) guidance retrieval could serve changes:
-   * every owner manage action — pause/resume (`setPreferenceStatus`) and
-   * forget (`deletePreference`). Passive learning (`recordOutcome`) does NOT
-   * bump it in observe-only P2/P3. P4's compiled-guidance cache keys on it.
+   * Bumped whenever what `getGuidance` could serve changes: every owner
+   * manage action — pause/resume (`setPreferenceStatus`), forget
+   * (`deletePreference`), confirm (`confirmPreference`), and reject
+   * (`rejectPreference`). Passive learning (`recordOutcome`) does NOT bump it:
+   * strengthening never alters a rule's compiled (id, directive, scope) form.
+   * The compiled-guidance cache and callers' `notModified` checks key on it.
    */
   profileRevision: number;
   createdAt: string;
@@ -105,6 +126,47 @@ function normalizeScope(value: unknown): PreferenceScope {
 }
 
 /**
+ * STRICT scope parse for the owner's confirm action. Unlike `normalizeScope`
+ * (which quietly defaults a malformed learning-path scope to `user`), a
+ * malformed CONFIRM scope throws: silently confirming at a wider scope than
+ * the owner chose would be an authority bug, not a tolerable coercion.
+ */
+function parseConfirmScope(value: unknown): PreferenceScope {
+  const scope = value as {
+    kind?: unknown;
+    workspaceId?: unknown;
+    archetype?: unknown;
+  } | null;
+  if (scope?.kind === 'user') return { kind: 'user' };
+  if (
+    scope?.kind === 'workspace' &&
+    typeof scope.workspaceId === 'string' &&
+    scope.workspaceId.length > 0
+  )
+    return {
+      kind: 'workspace',
+      workspaceId: scope.workspaceId.slice(0, MAX_DOC_REF_LEN),
+    };
+  if (
+    scope?.kind === 'archetype' &&
+    typeof scope.archetype === 'string' &&
+    scope.archetype.length > 0
+  )
+    return { kind: 'archetype', archetype: scope.archetype.slice(0, 60) };
+  throw new Error('invalid preference scope');
+}
+
+/**
+ * Initial calibrated confidence at confirmation: explicit owner confirmation
+ * is strong evidence (floor 0.5), each additional independent supporting
+ * outcome adds a little, capped well below 1 — confidence is reporting, never
+ * permission (the proposal), and Packet P5 recalibrates it from outcomes.
+ */
+function confirmationConfidence(supportingOutcomes: number): number {
+  return Math.min(0.9, 0.5 + 0.1 * Math.max(0, supportingOutcomes - 1));
+}
+
+/**
  * Coerce and bound an inbound outcome at the DO trust boundary. Returns `null`
  * when there is no semantic lesson (no traits added or removed) — a cosmetic
  * move is evidence at most, never a candidate (proposal: "one-off edit is
@@ -143,13 +205,26 @@ function normalizeOutcome(raw: AuthoringOutcome): AuthoringOutcome | null {
 
 export class AuthoringProfile extends DurableObject<WorkerEnv> {
   /**
+   * Compiled-guidance cache keyed
+   * `(profileRevision, guidanceRevision, workspace, archetype, budget)`.
+   * Pure DERIVED data — never authoritative state — so it is intentionally
+   * in-memory only: hibernation/eviction clears it and the next `getGuidance`
+   * recomputes from storage. Every key embeds `profileRevision`, so a manage
+   * action (which bumps the revision) can never be served a stale compile.
+   */
+  private guidanceCache = new Map<string, CompiledGuidance>();
+
+  /**
    * Record one attributed correction outcome (called via `ctx.waitUntil` from
    * the coordinator, so it is already off the editing path). Deduplicates by
    * (semantic rule, scope): an outcome whose rule identity matches an existing
-   * candidate strengthens it (bumps supporting outcomes, appends a compacted
+   * record strengthens it (bumps supporting outcomes, appends a compacted
    * source ref, recounts distinct evidence documents) instead of creating a
-   * near-duplicate. A repeated source ref is a no-op (burst coalescing). New
-   * rules over the per-owner cap evict the weakest candidate first.
+   * near-duplicate; a re-scoped confirmed rule still owns its structural
+   * correction, and a matching `rejected` record drops the outcome outright
+   * ("do not learn this" — see `outcomeDisposition`). A repeated source ref
+   * is a no-op (burst coalescing). New rules over the per-owner cap evict the
+   * weakest non-confirmed record first.
    */
   async recordOutcome(
     ownerId: string,
@@ -158,16 +233,23 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
     const normalized = normalizeOutcome(outcome);
     if (!normalized) return;
     const now = nowIso();
-    const ruleId = ruleIdentity(normalized);
     await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.ensureMeta(tx, ownerId);
       const candidates = await tx.list<AuthoringPreference>({
         prefix: CANDIDATE_PREFIX,
       });
+      const entries = [...candidates.entries()];
 
-      // Dedupe: find an existing candidate with the same (rule, scope) identity.
-      for (const [key, existing] of candidates) {
-        if (preferenceRuleIdentity(existing) !== ruleId) continue;
+      // Dedupe/authority decision (pure — see learner.ts): strengthen the
+      // owning record, drop the outcome when the owner rejected the rule, or
+      // fall through to create a fresh candidate.
+      const disposition = outcomeDisposition(
+        entries.map(([, p]) => p),
+        normalized,
+      );
+      if (disposition.action === 'skip') return;
+      if (disposition.action === 'strengthen') {
+        const [key, existing] = entries[disposition.index]!;
         const next = strengthenCandidate(existing, normalized, now);
         if (next !== existing) {
           await tx.put(key, next);
@@ -178,12 +260,13 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
       }
 
       // New rule. Enforce the hard per-owner cap before inserting: evict the
-      // weakest candidate rather than growing without bound.
+      // weakest non-confirmed record rather than growing without bound. When
+      // every slot holds an owner-confirmed rule there is no victim (-1) —
+      // the NEW candidate is dropped instead of an owner decision.
       if (candidates.size >= MAX_CANDIDATES_PER_OWNER) {
-        const entries = [...candidates.entries()];
-        const victim =
-          entries[weakestCandidateIndex(entries.map(([, p]) => p))];
-        if (victim) await tx.delete(victim[0]);
+        const victimIndex = weakestCandidateIndex(entries.map(([, p]) => p));
+        if (victimIndex === -1) return;
+        await tx.delete(entries[victimIndex]![0]);
       }
       const id = `pref_${crypto.randomUUID().replace(/-/g, '').slice(0, 18)}`;
       const record = newCandidate(id, ownerId, normalized, now);
@@ -220,11 +303,70 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
   }
 
   /**
-   * Owner manage action (Packet P3 panel): pause or resume one candidate.
-   * ONLY the candidate↔paused transition is allowed here — `confirmed` and
-   * `rejected` are Packet P4's authority domain, so a record in (or a request
-   * for) any other status throws rather than silently widening this surface.
-   * Setting the status a record already has is a no-op (no revision bump).
+   * Bounded agent retrieval (Packet P4 / 0003-B): confirmed rules + the
+   * versioned product pack, compiled under the hard token budgets in
+   * `src/profile/guidance.ts`. Matching `lastProfileRevision` AND
+   * `lastGuidanceRevision` short-circuits to `notModified` with no
+   * instruction body (acceptance criterion 6). Read-only: nothing here can
+   * change a stored record.
+   */
+  async getGuidance(
+    ownerId: string,
+    query: GuidanceQuery & {
+      lastProfileRevision?: number;
+      lastGuidanceRevision?: number;
+    },
+  ): Promise<GuidanceResult> {
+    const meta = await this.ctx.storage.get<ProfileMeta>(META_KEY);
+    if (meta) assertOwner(meta, ownerId);
+    const revisions = {
+      profileRevision: meta?.profileRevision ?? 0,
+      guidanceRevision: GUIDANCE_REVISION,
+    };
+    if (guidanceNotModified(revisions, query))
+      return { notModified: true, ...revisions };
+
+    // Re-bound the RPC-crossing inputs, then serve from the derived cache.
+    const bounded: GuidanceQuery = {
+      ...(typeof query.archetype === 'string' && query.archetype
+        ? { archetype: query.archetype.slice(0, 60) }
+        : {}),
+      ...(typeof query.workspaceId === 'string' && query.workspaceId
+        ? { workspaceId: query.workspaceId.slice(0, MAX_DOC_REF_LEN) }
+        : {}),
+      maxTokens: clampGuidanceBudget(query.maxTokens),
+    };
+    const key = [
+      revisions.profileRevision,
+      revisions.guidanceRevision,
+      bounded.workspaceId ?? '',
+      bounded.archetype ?? '',
+      bounded.maxTokens,
+    ].join('|');
+    let compiled = this.guidanceCache.get(key);
+    if (!compiled) {
+      compiled = compileGuidance(
+        await this.listPreferences(ownerId),
+        GUIDANCE_PACK_RULES,
+        bounded,
+      );
+      if (this.guidanceCache.size >= GUIDANCE_CACHE_MAX)
+        this.guidanceCache.delete(
+          this.guidanceCache.keys().next().value as string,
+        );
+      this.guidanceCache.set(key, compiled);
+    }
+    return { ...revisions, ...compiled };
+  }
+
+  /**
+   * Owner manage action (panel): pause or resume one rule. Pause suspends a
+   * `candidate` or `confirmed` record; resume (`status: 'candidate'`) brings a
+   * paused record back to what it was — `confirmed` when it carries
+   * `confirmedAt`, else `candidate` — so pausing never silently demotes an
+   * owner-blessed rule. A `rejected` record cannot be paused/resumed (unreject
+   * does not exist; the owner can only forget it). Setting the state a record
+   * already has is a no-op (no revision bump).
    */
   async setPreferenceStatus(
     ownerId: string,
@@ -234,16 +376,82 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
     // Runtime re-check: this argument crosses the RPC trust boundary.
     if (status !== 'candidate' && status !== 'paused')
       throw new Error(
-        'only the candidate/paused transition is allowed here (Packet P4 owns confirm/reject)',
+        'only pause/resume is allowed here (confirm/reject have their own owner-only methods)',
       );
     return this.ctx.storage.transaction(async (tx) => {
       const existing = await this.loadOwned(tx, ownerId, preferenceId);
-      if (existing.status !== 'candidate' && existing.status !== 'paused')
-        throw new Error(
-          'only the candidate/paused transition is allowed here (Packet P4 owns confirm/reject)',
-        );
-      if (existing.status === status) return existing;
-      const next: AuthoringPreference = { ...existing, status };
+      if (existing.status === 'rejected')
+        throw new Error('a rejected preference can only be forgotten');
+      const resolved: AuthoringPreference['status'] =
+        status === 'paused'
+          ? 'paused'
+          : existing.confirmedAt
+            ? 'confirmed'
+            : 'candidate';
+      if (existing.status === resolved) return existing;
+      const next: AuthoringPreference = { ...existing, status: resolved };
+      await tx.put(CANDIDATE_PREFIX + preferenceId, next);
+      await this.bumpRevision(tx);
+      return next;
+    });
+  }
+
+  /**
+   * Owner CONFIRM (Packet P4 / 0003-B): promote a rule to `confirmed` at the
+   * scope the owner chose. This is the ONLY path to `confirmed`, and it is
+   * reachable exclusively through the owner-cookie `/api/profile` routes —
+   * no MCP tool calls it, by construction (proposal guardrail #5: agents may
+   * nominate or explain; the user controls confirmation and scope).
+   * Re-confirming an already-confirmed rule re-scopes it. Idempotent when
+   * nothing changes (no revision bump).
+   */
+  async confirmPreference(
+    ownerId: string,
+    preferenceId: string,
+    scope: PreferenceScope,
+  ): Promise<AuthoringPreference> {
+    const parsed = parseConfirmScope(scope);
+    return this.ctx.storage.transaction(async (tx) => {
+      const existing = await this.loadOwned(tx, ownerId, preferenceId);
+      if (existing.status === 'rejected')
+        throw new Error('a rejected preference can only be forgotten');
+      if (
+        existing.status === 'confirmed' &&
+        JSON.stringify(existing.scope) === JSON.stringify(parsed)
+      )
+        return existing;
+      const next: AuthoringPreference = {
+        ...existing,
+        status: 'confirmed',
+        scope: parsed,
+        confidence: confirmationConfidence(existing.supportingOutcomes),
+        confirmedAt: existing.confirmedAt ?? nowIso(),
+      };
+      await tx.put(CANDIDATE_PREFIX + preferenceId, next);
+      await this.bumpRevision(tx);
+      return next;
+    });
+  }
+
+  /**
+   * Owner REJECT ("No, do not learn this"): the record is kept as a tombstone
+   * so the learner never re-creates the same rule (`outcomeDisposition`
+   * drops matching outcomes), but it is never served, and its confirmed-ness
+   * (if any) is revoked. Terminal apart from `deletePreference`.
+   */
+  async rejectPreference(
+    ownerId: string,
+    preferenceId: string,
+  ): Promise<AuthoringPreference> {
+    return this.ctx.storage.transaction(async (tx) => {
+      const existing = await this.loadOwned(tx, ownerId, preferenceId);
+      if (existing.status === 'rejected') return existing;
+      const next: AuthoringPreference = {
+        ...existing,
+        status: 'rejected',
+        confidence: 0,
+      };
+      delete next.confirmedAt;
       await tx.put(CANDIDATE_PREFIX + preferenceId, next);
       await this.bumpRevision(tx);
       return next;

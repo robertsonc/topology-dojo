@@ -4,7 +4,7 @@
  * fetch wrappers plus one typed error for the deployment-level feature gate so
  * the panel can show a clean "disabled" state instead of a raw 503.
  */
-import type { AuthoringPreference } from './model.js';
+import type { AuthoringPreference, PreferenceScope } from './model.js';
 
 /**
  * Thrown instead of a generic `Error` when the server reports the
@@ -80,7 +80,30 @@ export function resumeAuthoringPreference(
   });
 }
 
-/** Forget a candidate outright — the owner's "No, do not learn this". */
+/** Confirm a rule at the owner-chosen scope (Packet P4) — the ONLY promotion
+ * path, and it lives on the cookie-authenticated browser surface. */
+export function confirmAuthoringPreference(
+  id: string,
+  scope: PreferenceScope,
+): Promise<AuthoringPreference> {
+  return request(`/api/profile/preferences/${encodeURIComponent(id)}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ scope }),
+  });
+}
+
+/** Reject a rule — "No, do not learn this". Kept as a tombstone that blocks
+ * re-learning; use forget to delete it entirely. */
+export function rejectAuthoringPreference(
+  id: string,
+): Promise<AuthoringPreference> {
+  return request(`/api/profile/preferences/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
+/** Forget a rule outright — deletes the record and its evidence. */
 export function forgetAuthoringPreference(
   id: string,
 ): Promise<{ deleted: string }> {

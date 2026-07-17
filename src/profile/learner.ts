@@ -85,6 +85,61 @@ export function preferenceRuleIdentity(pref: AuthoringPreference): string {
   });
 }
 
+/** {@link ruleIdentity} without the scope component. Confirmation (Packet P4)
+ * can re-scope a rule away from the learner's `{ kind: 'user' }` emission, so
+ * an owner-decided record must keep owning its structural correction under any
+ * scope — this is the key that finds it. */
+export function unscopedRuleIdentity(
+  input: Omit<RuleIdentityInput, 'scope'>,
+): string {
+  return ruleIdentity({ ...input, scope: { kind: 'user' } });
+}
+
+function preferenceUnscopedIdentity(pref: AuthoringPreference): string {
+  return unscopedRuleIdentity({
+    archetype: pref.trigger.archetype ?? 'unknown',
+    addedTraits: pref.trigger.requiredTraits,
+    removedTraits: pref.trigger.excludedTraits ?? [],
+  });
+}
+
+/** What `recordOutcome` should do with an inbound outcome, given the stored
+ * records (P4). Decided here, pure, so the owner-authority consequences are
+ * locally testable:
+ *
+ * - exact (rule, scope) identity match — the P2 dedupe key — wins first;
+ * - otherwise an owner-DECIDED record (confirmed/rejected) with the same
+ *   unscoped rule identity still owns the correction, even after the owner
+ *   re-scoped it away from the learner's `user` emission scope — never spawn
+ *   a shadow user-scoped candidate beside it;
+ * - a matching `rejected` record means the owner said "do not learn this":
+ *   the outcome is dropped entirely, never strengthened or re-created.
+ */
+export type OutcomeDisposition =
+  | { action: 'create' }
+  | { action: 'skip' }
+  | { action: 'strengthen'; index: number };
+
+export function outcomeDisposition(
+  existing: readonly AuthoringPreference[],
+  outcome: AuthoringOutcome,
+): OutcomeDisposition {
+  const scoped = ruleIdentity(outcome);
+  let index = existing.findIndex((p) => preferenceRuleIdentity(p) === scoped);
+  if (index === -1) {
+    const unscoped = unscopedRuleIdentity(outcome);
+    index = existing.findIndex(
+      (p) =>
+        (p.status === 'confirmed' || p.status === 'rejected') &&
+        preferenceUnscopedIdentity(p) === unscoped,
+    );
+  }
+  if (index === -1) return { action: 'create' };
+  return existing[index]!.status === 'rejected'
+    ? { action: 'skip' }
+    : { action: 'strengthen', index };
+}
+
 /* ── evidence refs ────────────────────────────────────────────────────── */
 
 /** The `<documentRef>` prefix of a `"<documentRef>@r<revision>"` source ref. */
@@ -147,7 +202,8 @@ export function newCandidate(
  * a NEW record, or the SAME reference unchanged when the outcome's source ref
  * is already recorded — that is the burst-coalescing / idempotency guard: an
  * outcome carrying a source ref we've already counted must not bump anything.
- * Status stays `candidate` (no auto-promotion in observe-only P2).
+ * Status is never changed here: no auto-promotion, and a confirmed rule that
+ * keeps accruing evidence stays confirmed.
  */
 export function strengthenCandidate(
   existing: AuthoringPreference,
@@ -172,16 +228,22 @@ export function strengthenCandidate(
 /* ── eviction ─────────────────────────────────────────────────────────── */
 
 /**
- * Index of the weakest candidate to evict when over the per-owner cap: fewest
+ * Index of the weakest record to evict when over the per-owner cap: fewest
  * supporting outcomes, then fewest evidence documents, then oldest last-observed
- * (stably tie-broken by id). Never touches confirmed rules in P2 because every
- * stored record is a candidate.
+ * (stably tie-broken by id). `confirmed` rules are NEVER eviction victims — the
+ * owner explicitly blessed them (P4), so when every stored record is confirmed
+ * this returns -1 and the caller drops the NEW candidate instead.
  */
 export function weakestCandidateIndex(
   candidates: readonly AuthoringPreference[],
 ): number {
-  let worst = 0;
-  for (let i = 1; i < candidates.length; i++) {
+  let worst = -1;
+  for (let i = 0; i < candidates.length; i++) {
+    if (candidates[i]!.status === 'confirmed') continue;
+    if (worst === -1) {
+      worst = i;
+      continue;
+    }
     const a = candidates[i]!;
     const b = candidates[worst]!;
     if (a.supportingOutcomes !== b.supportingOutcomes) {

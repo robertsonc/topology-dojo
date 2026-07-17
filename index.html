@@ -488,14 +488,31 @@
         color: var(--accent);
         border-color: var(--accent);
       }
-      /* Authoring Preferences panel (Packet P3): reuses the ws-* card styles;
-         only the observation callout and the paused badge need accents. */
-      .pref-observed {
+      /* Authoring Preferences panel (Packets P3+P4): reuses the ws-* card
+         styles; only the callouts and status badges need accents. */
+      .pref-observed,
+      .pref-ask,
+      .pref-confirmed-note {
         color: var(--accent);
+      }
+      .pref-ask {
+        font-weight: 600;
       }
       .pref-status-paused {
         color: #e0a44a;
         border-color: #e0a44a;
+      }
+      .pref-status-confirmed {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .pref-status-rejected,
+      .pref-rejected-note {
+        color: var(--muted);
+      }
+      .pref-scope-chooser {
+        margin-top: 6px;
+        border-style: dashed;
       }
       .ws-src-restore {
         color: #e0a44a;

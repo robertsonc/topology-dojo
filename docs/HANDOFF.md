@@ -86,24 +86,28 @@ fine; revisit only on measured contention.
 
 ## Next repo work, in order
 
-1. **Deploy staging from `main`** (anyone can dispatch) — puts the P3 prefs
-   panel live so the learner's accumulated candidates become visible. Quick
-   sanity: sign in → prefs button → candidates listed.
-2. **P4 (0003-B)** — confirmation & scoping in the panel (browser-owner only —
-   no MCP confirm path, by construction) + `get_authoring_guidance` /
-   `list_authoring_preferences` / `explain_authoring_preference` MCP tools
-   under **hard token budgets as tests** (≤5 rules, ≤400 default / 800
-   absolute, `notModified` on unchanged `profileRevision`, ids + omission
-   count on overflow). Files: `worker/profile.ts` (confirmation +
-   compiled-guidance cache keyed `(profileRevision, guidanceRevision,
-workspace, archetype)`), `worker/mcp.ts` + `src/mcp/register.ts` +
-   README tool table, `src/ui/profile-panel.ts`, a versioned
-   `src/profile/guidance-packs.ts`. Medium risk (authority boundary + token
-   discipline). Note: P3 already bumps `profileRevision` on manage actions.
+1. ~~**Deploy staging from `main`**~~ — DONE 2026-07-17 (run 29589426103,
+   `main`@35ae08d, green): the P3 prefs panel is live on staging. Owner
+   sanity when convenient: sign in → prefs button → candidates listed.
+2. ~~**P4 (0003-B)**~~ — DONE (this branch/PR): confirmation & scoping in the
+   panel (browser-owner only — no MCP confirm path, by construction; the
+   cookie-authed `/api/profile/*` confirm/reject routes are the only
+   promotion path) + `get_authoring_guidance` / `list_authoring_preferences`
+   / `explain_authoring_preference` read-only MCP tools under **hard token
+   budgets as tests** (≤5 rules, ≤400 default / 800 absolute, `notModified`
+   on unchanged revisions, ids + omission count on overflow — see
+   `src/profile/guidance.test.ts`). Compiled-guidance cache keyed
+   `(profileRevision, guidanceRevision, workspace, archetype, budget)` in
+   `worker/profile.ts`; versioned `src/profile/guidance-packs.ts`
+   (`GUIDANCE_REVISION` must bump with any pack edit). After merge: dispatch
+   `deploy-staging.yml` from `main` so the confirm flow + guidance tools go
+   live on staging.
 3. **P5 (0003-C)** — outcome refinement: overrides/contradictions narrow
-   triggers + recalibrate confidence; stale candidates decay toward review.
+   triggers + recalibrate confidence (`contradictingOutcomes` is stored but
+   never incremented yet); stale candidates decay toward review.
    Deterministic decay/contradiction unit tests; 0003 acceptance criteria 3–4
-   as named tests.
+   as named tests (P4 ships criterion 3's coarse archetype-match form;
+   trigger-TRAIT matching is P5's).
 4. Then: 0003-D (governed product guidance) is out of scope per the plan;
    remaining roadmap candidates in `ROADMAP.md` §Next.
 
