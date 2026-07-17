@@ -23,9 +23,12 @@ with a successful forward-recovery drill.
   `workspace_disabled` bootstrap smoke green — followed by a combined
   activation deploy (`WORKSPACE_ENABLED:"true"` + `PROFILES_ENABLED:"true"`,
   operator decision to activate both at once after P4 staging UAT). Recovery
-  for either feature is forward-only flag-off. O9 (disconnect Workers
-  Builds) and O12 (alerting) remain open — the activation soak runs without
-  O12 alerts by explicit operator choice.
+  for either feature is forward-only flag-off. O9 was completed later the
+  same day after the still-connected Workers Builds integration push-deployed
+  `main` past the approval gate twice (un-attested `sha: null` deploys of the
+  P4-activation and P5 merges); the gated pipeline is now the only deploy
+  path. O12 (alerting) remains open — the activation soak runs without
+  alerts by explicit operator choice.
 - **Git**: clean. All session branches merged + pruned (local and remote);
   ~113 historical merged remotes also deleted. One unrelated branch
   `claude/hideable-frames-panel-ohlc73` appeared on origin from another
@@ -83,7 +86,7 @@ fine; revisit only on measured contention.
 | O1–O8                             | ✅ (staging isolated + live; CI-gated pipeline proven; O7 thresholds set)                                                                                                                                                |
 | v4 Gate A (staging + drill)       | ✅ **done this session** (evidence above)                                                                                                                                                                                |
 | Staging UAT (MCP workspace flows) | ✅ confirmed by operator                                                                                                                                                                                                 |
-| O9                                | ⏳ Disconnect Workers Builds — the Actions path is now proven (O10 green), so this is ready to do                                                                                                                        |
+| O9                                | ✅ 2026-07-17: Workers Builds Git integration disconnected (its push-triggered `wrangler deploy` had bypassed the gate twice); verified by the next `main` merge deploying nothing un-gated                              |
 | O10                               | ✅ 2026-07-17: first gated production deploy (run 29593411599) applied `v1`–`v4`; `workspace_disabled` bootstrap smoke green                                                                                             |
 | O11                               | ✅ 2026-07-17: `WORKSPACE_ENABLED:"true"` activation (combined deploy with profiles); T0 smoke on deploy, owner runs T1/T2                                                                                               |
 | O12                               | ⏳ Cloudflare error-rate alerting + failed-workflow notifications + nightly staging smoke — NOTE: activation soak is running WITHOUT these alerts (operator-accepted); configuring them is now the top operator priority |
