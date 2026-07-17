@@ -1,0 +1,120 @@
+name: Nightly Staging Smoke
+
+# Unauthenticated nightly liveness check of the staging deployment (operator
+# O12 / proposal 0004 Phase 6). Reuses scripts/smoke.mjs — the same external,
+# credential-free checks the deploy pipeline runs — so a staging outage or
+# regression that lands between manual deploys is caught within a day instead
+# of at the next dispatch.
+#
+# Notification is GitHub-native (no secrets): a failure files or updates a
+# single `nightly-smoke`-labelled issue, which notifies watchers/assignees
+# through normal GitHub issue notifications; a subsequent green run comments
+# and closes it. Never asserts a specific `--sha` — staging is a mutable
+# release-candidate environment whose SHA changes with every dispatch.
+on:
+  schedule:
+    - cron: '0 8 * * *' # 08:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# A slow run must not overlap the next night's run; never cancel an in-flight
+# check (we want its result), just queue behind it.
+concurrency:
+  group: nightly-staging-smoke
+  cancel-in-progress: false
+
+env:
+  STAGING_URL: https://topology-dojo-staging.robertson-corey.workers.dev
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # smoke.mjs is a standalone Node script (only built-in fetch/URL/etc.),
+      # so no `npm ci` is needed. `pipefail` keeps node's exit code through the
+      # `tee`, so a failed check fails the step.
+      - name: Smoke test staging
+        run: |
+          set -o pipefail
+          node scripts/smoke.mjs "$STAGING_URL" --wait-live 60 --json \
+            | tee smoke-output.txt
+
+      - name: File or update the failure issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let summary = '';
+            try {
+              summary = fs.readFileSync('smoke-output.txt', 'utf8').trim();
+            } catch {}
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const label = 'nightly-smoke';
+            const body = [
+              'The nightly staging smoke check **failed**.',
+              '',
+              `- Run: ${runUrl}`,
+              `- Target: ${process.env.STAGING_URL}`,
+              '',
+              '```json',
+              summary || '(no smoke output captured)',
+              '```',
+            ].join('\n');
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+            if (open.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Nightly staging smoke failed',
+                labels: [label],
+                body,
+              });
+            }
+
+      - name: Close the failure issue on recovery
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = 'nightly-smoke';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+            for (const issue of open) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Staging smoke recovered — closing. Run: ${runUrl}`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+              });
+            }
