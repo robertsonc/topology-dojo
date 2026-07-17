@@ -22,18 +22,18 @@ the operational companion to
 
 Populate this table in the private operator record. Do not commit secret values.
 
-| Item                   | Staging                     | Production                                          |
-| ---------------------- | --------------------------- | --------------------------------------------------- |
-| Worker name            | `topology-dojo-staging`     | `topology-dojo`                                     |
-| Public origin          | `<staging-origin>`          | `https://topology-dojo.robertson-corey.workers.dev` |
-| GitHub OAuth App       | `<staging-app>`             | `<production-app>`                                  |
-| OAuth callback         | `<staging-origin>/callback` | `<production-origin>/callback`                      |
-| `OAUTH_KV` id          | `<staging-id>`              | Managed in `wrangler.jsonc`                         |
-| `TOPOLOGY_KV` id       | `<staging-id>`              | Managed in `wrangler.jsonc`                         |
-| GitHub Environment     | `staging`                   | `production`                                        |
-| Cloudflare token owner | `<owner>`                   | `<owner>`                                           |
-| Last deployment SHA    | `<sha>`                     | `<sha>`                                             |
-| Applied migration tag  | `<tag>`                     | `<tag>`                                             |
+| Item                   | Staging                     | Production                              |
+| ---------------------- | --------------------------- | --------------------------------------- |
+| Worker name            | `topology-dojo-staging`     | `topology-dojo`                         |
+| Public origin          | `<staging-origin>`          | `https://topology-dojo.harnessed.cloud` |
+| GitHub OAuth App       | `<staging-app>`             | `<production-app>`                      |
+| OAuth callback         | `<staging-origin>/callback` | `<production-origin>/callback`          |
+| `OAUTH_KV` id          | `<staging-id>`              | Managed in `wrangler.jsonc`             |
+| `TOPOLOGY_KV` id       | `<staging-id>`              | Managed in `wrangler.jsonc`             |
+| GitHub Environment     | `staging`                   | `production`                            |
+| Cloudflare token owner | `<owner>`                   | `<owner>`                               |
+| Last deployment SHA    | `<sha>`                     | `<sha>`                                 |
+| Applied migration tag  | `<tag>`                     | `<tag>`                                 |
 
 The staging KV ids must differ from production. The staging GitHub OAuth App
 must not accept the production callback URL, and vice versa.

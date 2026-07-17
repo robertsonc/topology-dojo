@@ -19,7 +19,7 @@
   "vars": {
     // Public origin used to build absolute share links from `share_topology`.
     // Set to your deployment's domain; if blank, links are site-relative.
-    "PUBLIC_BASE_URL": "https://topology-dojo.robertson-corey.workers.dev",
+    "PUBLIC_BASE_URL": "https://topology-dojo.harnessed.cloud",
     // GitHub OAuth App client id (public; the secret is a dashboard secret).
     "GITHUB_CLIENT_ID": "Ov23liAsmD1WV2yT4yzw",
     // Production activation (runbook Gate C / operator O11, after the O10

@@ -82,7 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://topology-dojo.robertson-corey.workers.dev
+      url: https://topology-dojo.harnessed.cloud
     steps:
       - uses: actions/checkout@v4
         with:
@@ -128,7 +128,7 @@ jobs:
           if [ "$EXPECT_WORKSPACE_DISABLED" = "true" ]; then
             ARGS+=(--expect-workspace-disabled)
           fi
-          node scripts/smoke.mjs https://topology-dojo.robertson-corey.workers.dev "${ARGS[@]}" | tee smoke-output.txt
+          node scripts/smoke.mjs https://topology-dojo.harnessed.cloud "${ARGS[@]}" | tee smoke-output.txt
       # Dynamic values are passed through `env:` (never interpolated
       # directly into the script) since `recovery_sha` is free-text
       # `workflow_dispatch` input and must not be treated as shell code.
