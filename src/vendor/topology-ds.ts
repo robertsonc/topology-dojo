@@ -63,6 +63,13 @@ export interface LinkConfig {
   labelOffset?: { x: number; y: number };
   fromLabelOffset?: { x: number; y: number };
   toLabelOffset?: { x: number; y: number };
+  /**
+   * Per-link label size multiplier, applied to every one of this link's labels
+   * (centre + endpoint) about their anchor so the glass chip and text stay in
+   * proportion. Absent = `1` (the default size); the renderer clamps to
+   * [0.25, 4]. Backward-compatible: unset documents render unchanged.
+   */
+  labelScale?: number;
   waypoints?: { x: number; y: number }[];
   lineStyle?: 'orthogonal' | 'curved';
   /**

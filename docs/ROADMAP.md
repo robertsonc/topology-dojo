@@ -192,19 +192,23 @@ in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
 - **Workspace resilience/collaboration** — IndexedDB offline cache, WebSocket
   push/presence, explicit collaborator/organization ACLs, and finer element-set
   leases. Add CRDTs only if offline multi-master editing becomes a measured need.
-- **Adaptive authoring profiles** — learn repeated, durable user corrections as
-  scoped preference candidates; require confirmation before application; fetch
-  only task-relevant rules under a hard token budget. MCP schemas remain stable,
-  while product guidance evolves through reviewed/versioned packs. See
+- ~~**Adaptive authoring profiles**~~ — **shipped** (proposal 0003, packets
+  P1–P5): deterministic feature extraction, observe-only learner
+  (`AuthoringProfile` DO, migration `v4`), the Authoring Preferences panel,
+  browser-owner confirmation & scoping, bounded read-only guidance MCP tools
+  under hard token budgets, and outcome refinement (contradictions →
+  workspace-scoped exceptions + decay toward review). Live in production.
+  0003-D (governed product guidance) remains deliberately out of scope. See
   [`proposals/0003-adaptive-agent-authoring-profiles.md`](proposals/0003-adaptive-agent-authoring-profiles.md).
 - **More node/link art** — port additional renderers from the legacy monolith as
   needed; richer per-type inspector controls (ports, D2 waypoint UI).
-- **Resize link labels** — a per-link `labelScale` on the contract so a label
-  can be shrunk/enlarged, with a drag handle in the editor. The current
-  `labelOffset` drag already repositions labels; this adds sizing. Build fresh
-  against the current label-drag system (there is a stale June `pr-label-move-resize`
-  branch that predates it and edits the vendored engine — mine the idea, not the
-  code). Keep it on the document contract (a catalog field), not a UI-only surface.
+- **Resize link labels** — per-link `labelScale` on the document contract:
+  **shipped** as a catalog field (`Label size`, `LINK_COMMON`) that scales all
+  of a link's labels (centre + endpoints, every link type) about their anchor
+  in the renderer, settable via the inspector Label group, MCP `add_link` /
+  `update_element`, validated to [0.25, 4]. **Follow-up:** an in-canvas drag
+  handle beside the existing `labelOffset` label-drag (the numeric inspector
+  control ships now; the drag gesture is the next increment).
 - **Adjustable viewer styling** — expose the render aesthetic as user-adjustable
   UI settings: flat vs. glow, emphasis-glow intensity, and canvas background.
   Builds on the flat-viewer seam (`flattenViewer` in `src/vendor/topology-ds.ts`)

@@ -214,6 +214,15 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         err(`${at} link "${l.id}"`, `'from' references missing "${l.from}"`);
       if (!endpoints.has(l.to))
         err(`${at} link "${l.id}"`, `'to' references missing "${l.to}"`);
+      const scale = (l as Record<string, unknown>).labelScale;
+      if (
+        scale !== undefined &&
+        (typeof scale !== 'number' || !(scale >= 0.25 && scale <= 4))
+      )
+        warn(
+          `${at} link "${l.id}"`,
+          `labelScale ${String(scale)} should be between 0.25 and 4`,
+        );
       checkLayer(l, `${at} link "${l.id}"`);
       checkSource(l, `${at} link "${l.id}"`);
     }

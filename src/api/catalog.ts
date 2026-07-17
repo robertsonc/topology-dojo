@@ -256,6 +256,9 @@ const LINK_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string' },
   { key: 'fromLabel', label: 'From interface (A)', kind: 'string' },
   { key: 'toLabel', label: 'To interface (Z)', kind: 'string' },
+  // Per-link label size multiplier (1 = default). Scales all of this link's
+  // labels about their anchor; the renderer clamps to [0.25, 4].
+  { key: 'labelScale', label: 'Label size', kind: 'number' },
   // B.2 first-class link metadata — renderable on the wire (see showMeta).
   // Stable per-field properties a future data feed can populate.
   { key: 'vlan', label: 'VLAN', kind: 'string' },

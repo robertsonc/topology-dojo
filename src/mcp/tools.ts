@@ -585,6 +585,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         to: z.string(),
         label: z.string().optional(),
         color: z.string().optional(),
+        labelScale: z
+          .number()
+          .optional()
+          .describe(
+            'Per-link label size multiplier (1 = default; clamped to 0.25–4).',
+          ),
         lineStyle: z.enum(['straight', 'orthogonal', 'curved']).optional(),
         flowSpeed: z
           .number()
@@ -612,6 +618,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             to: String(a.to),
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.labelScale !== undefined
+              ? { labelScale: Number(a.labelScale) }
+              : {}),
             ...(a.lineStyle !== undefined
               ? { lineStyle: a.lineStyle as 'orthogonal' | 'curved' }
               : {}),

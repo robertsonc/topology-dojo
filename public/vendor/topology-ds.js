@@ -3069,7 +3069,7 @@ ${grid}`;
   }
 
   /** IPsec-style tunnel — ethereal multi-layer glow with bloom, tube volume & filmic grading */
-  _renderTunnel(stepId, phaseNum, path, color, label, lx, ly, op, dots = true, flow) {
+  _renderTunnel(stepId, phaseNum, path, color, label, lx, ly, op, dots = true, flow, scale = 1) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const ad = anim ? ` class="tds-draw-phase" style="animation-delay:${delay}s"` : '';
@@ -3110,14 +3110,14 @@ ${grid}`;
           `<circle r="2" fill="${color}" opacity=".5"><animateMotion dur="2.5s" repeatCount="indefinite" begin="1.2s" path="${path}"/></circle>` +
           `<circle r="4" fill="${color}" opacity=".2"><animateMotion dur="2.8s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="${path}"/></circle>`)
       : '') +
-      (label && lx != null ? `<rect x="${lx-61}" y="${ly-10}" width="122" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
+      (label && lx != null ? this._scaleLabel(`<rect x="${lx-61}" y="${ly-10}" width="122" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
         `<rect x="${lx-60}" y="${ly-9}" width="120" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
-        `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="${color}" font-size="8" font-weight="600">${_esc(label)}</text>` : '') +
+        `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="${color}" font-size="8" font-weight="600">${_esc(label)}</text>`, lx, ly, scale) : '') +
       '</g>';
   }
 
   /** WireGuard-style dashed tunnel */
-  _renderWG(stepId, phaseNum, x1, y1, x2, y2, label, op, dots = true, labelOffset, flow) {
+  _renderWG(stepId, phaseNum, x1, y1, x2, y2, label, op, dots = true, labelOffset, flow, scale = 1) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -3129,14 +3129,14 @@ ${grid}`;
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="6" opacity=".03" filter="url(#tds-glow-blue)"/>` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="1.2" stroke-dasharray="5 3" opacity=".5"/>` +
       (dots && !this.reducedMotion ? (this._hasFlowCfg(flow) ? this._flowParticles(`M${x1},${y1} L${x2},${y2}`, '#65aef9', flow) : `<circle r="2.5" fill="#65aef9" opacity=".8" filter="url(#tds-bloom)"><animateMotion dur="2.5s" repeatCount="indefinite" path="M${x1},${y1} L${x2},${y2}"/></circle>`) : '') +
-      (label ? `<rect x="${lx-47}" y="${ly-9}" width="94" height="18" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
+      (label ? this._scaleLabel(`<rect x="${lx-47}" y="${ly-9}" width="94" height="18" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
         `<rect x="${lx-46}" y="${ly-8}" width="92" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
-        `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="#65aef9" font-size="7" font-weight="600">${_esc(label)}</text>` : '') +
+        `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="#65aef9" font-size="7" font-weight="600">${_esc(label)}</text>`, lx, ly, scale) : '') +
       '</g>';
   }
 
   /** Animated flow path (with optional custom SVG path) */
-  _renderFlow(stepId, phaseNum, path, color, label, lx, ly, op, dots = true, flow) {
+  _renderFlow(stepId, phaseNum, path, color, label, lx, ly, op, dots = true, flow, scale = 1) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -3147,14 +3147,14 @@ ${grid}`;
       (dots && !this.reducedMotion ? (this._hasFlowCfg(flow) ? this._flowParticles(path, color, flow) :
         `<circle r="3.5" fill="${color}" opacity=".9" filter="url(#tds-bloom)"><animateMotion dur="3s" repeatCount="indefinite" path="${path}"/></circle>` +
         `<circle r="2" fill="${color}" opacity=".5"><animateMotion dur="3s" repeatCount="indefinite" begin="1s" path="${path}"/></circle>`) : '') +
-      (label && lx != null ? `<rect x="${lx-55}" y="${ly-10}" width="110" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
+      (label && lx != null ? this._scaleLabel(`<rect x="${lx-55}" y="${ly-10}" width="110" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
         `<rect x="${lx-54}" y="${ly-9}" width="108" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
-        `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="${color}" font-size="7.5" font-weight="600">${_esc(label)}</text>` : '') +
+        `<text x="${lx}" y="${ly+3}" text-anchor="middle" fill="${color}" font-size="7.5" font-weight="600">${_esc(label)}</text>`, lx, ly, scale) : '') +
       '</g>';
   }
 
   /** Packet burst */
-  _renderPacket(stepId, phaseNum, x1, y1, x2, y2, color, label, sub, op, labelOffset) {
+  _renderPacket(stepId, phaseNum, x1, y1, x2, y2, color, label, sub, op, labelOffset, scale = 1) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -3167,10 +3167,10 @@ ${grid}`;
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="4" opacity=".03" filter="url(#tds-glow)"/>` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 7" opacity=".35"/>` +
       (!this.reducedMotion ? `<circle r="4.5" fill="${color}" filter="url(#tds-bloom)"><animateMotion dur="1.5s" repeatCount="indefinite" path="M${x1},${y1} L${x2},${y2}"/></circle>` : '') +
-      (label ? `<rect x="${mx+ox-69}" y="${my+oy-(sub?19:13)}" width="138" height="${h}" rx="6" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
+      (label ? this._scaleLabel(`<rect x="${mx+ox-69}" y="${my+oy-(sub?19:13)}" width="138" height="${h}" rx="6" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
         `<rect x="${mx+ox-68}" y="${my+oy-(sub?18:12)}" width="136" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
         `<text x="${mx+ox}" y="${my+oy-(sub?4:0)}" text-anchor="middle" fill="${color}" font-size="9" font-weight="600">${_esc(label)}</text>` +
-        (sub ? `<text x="${mx+ox}" y="${my+oy+9}" text-anchor="middle" fill="${color}" font-size="7.5" opacity=".8">${_esc(sub)}</text>` : '') : '') +
+        (sub ? `<text x="${mx+ox}" y="${my+oy+9}" text-anchor="middle" fill="${color}" font-size="7.5" opacity=".8">${_esc(sub)}</text>` : ''), mx+ox, my+oy, scale) : '') +
       '</g>';
   }
 
@@ -3193,7 +3193,7 @@ ${grid}`;
   }
 
   /** Wifi link — wireless with prominent signal wave arcs and wifi icon */
-  _renderWifi(stepId, phaseNum, x1, y1, x2, y2, color, label, op, labelOffset) {
+  _renderWifi(stepId, phaseNum, x1, y1, x2, y2, color, label, op, labelOffset, scale = 1) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -3255,16 +3255,16 @@ ${grid}`;
     }
     // Label
     if (label) {
-      s += `<rect x="${lx - 55}" y="${ly - 10}" width="110" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
+      s += this._scaleLabel(`<rect x="${lx - 55}" y="${ly - 10}" width="110" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
         `<rect x="${lx - 54}" y="${ly - 9}" width="108" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
-        `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${c}" font-size="8" font-weight="600">${_esc(label)}</text>`;
+        `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${c}" font-size="8" font-weight="600">${_esc(label)}</text>`, lx, ly, scale);
     }
     s += '</g>';
     return s;
   }
 
   /** PoE link — power over ethernet with voltage/lightning icon */
-  _renderPoE(stepId, phaseNum, x1, y1, x2, y2, color, label, op, labelOffset) {
+  _renderPoE(stepId, phaseNum, x1, y1, x2, y2, color, label, op, labelOffset, scale = 1) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -3290,16 +3290,16 @@ ${grid}`;
     }
     // Label
     if (label) {
-      s += `<rect x="${lx - 45}" y="${ly - 9}" width="90" height="18" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>`;
-      s += `<rect x="${lx - 44}" y="${ly - 8}" width="88" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>`;
-      s += `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${c}" font-size="7.5" font-weight="600">${_esc(label)}</text>`;
+      s += this._scaleLabel(`<rect x="${lx - 45}" y="${ly - 9}" width="90" height="18" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
+        `<rect x="${lx - 44}" y="${ly - 8}" width="88" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
+        `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${c}" font-size="7.5" font-weight="600">${_esc(label)}</text>`, lx, ly, scale);
     }
     s += '</g>';
     return s;
   }
 
   /** Optical link — fiber optic with laser warning icon */
-  _renderOptical(stepId, phaseNum, x1, y1, x2, y2, color, label, op, labelOffset) {
+  _renderOptical(stepId, phaseNum, x1, y1, x2, y2, color, label, op, labelOffset, scale = 1) {
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
@@ -3331,9 +3331,9 @@ ${grid}`;
     }
     // Label
     if (label) {
-      s += `<rect x="${lx - 45}" y="${ly - 9}" width="90" height="18" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>`;
-      s += `<rect x="${lx - 44}" y="${ly - 8}" width="88" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>`;
-      s += `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${c}" font-size="7.5" font-weight="600">${_esc(label)}</text>`;
+      s += this._scaleLabel(`<rect x="${lx - 45}" y="${ly - 9}" width="90" height="18" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
+        `<rect x="${lx - 44}" y="${ly - 8}" width="88" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
+        `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${c}" font-size="7.5" font-weight="600">${_esc(label)}</text>`, lx, ly, scale);
     }
     s += '</g>';
     return s;
@@ -3487,7 +3487,28 @@ ${grid}`;
    * label renderer). Floats just above the wire's midpoint; `labelOffset`
    * {x,y} shifts it (so it's moveable), and the chip sizes to the text.
    */
-  _renderLinkLabel(from, to, label, color, op, labelOffset) {
+  /**
+   * Clamp a link's `labelScale` to [0.25, 4], defaulting to 1 for an unset or
+   * invalid value — one per-link multiplier applied to all of its labels.
+   */
+  _labelScaleOf(cfg) {
+    const s = Number(cfg && cfg.labelScale);
+    return Number.isFinite(s) && s > 0 ? Math.max(0.25, Math.min(4, s)) : 1;
+  }
+
+  /**
+   * Wrap a label's SVG in a uniform scale about its anchor (cx,cy) so the glass
+   * chip and text stay in proportion (scaling font-size alone would overflow
+   * the fixed chip). Returns `inner` unchanged at the default scale so unscaled
+   * documents render byte-identically.
+   */
+  _scaleLabel(inner, cx, cy, s) {
+    return s === 1
+      ? inner
+      : `<g transform="translate(${cx} ${cy}) scale(${s}) translate(${-cx} ${-cy})">${inner}</g>`;
+  }
+
+  _renderLinkLabel(from, to, label, color, op, labelOffset, scale = 1) {
     const a = Math.atan2(to.y - from.y, to.x - from.x);
     const mx = (from.x + to.x) / 2,
       my = (from.y + to.y) / 2;
@@ -3495,11 +3516,14 @@ ${grid}`;
     const lx = mx - Math.sin(a) * 12 + (labelOffset?.x || 0);
     const ly = my + Math.cos(a) * 12 + (labelOffset?.y || 0);
     const w = String(label).length * 5.6 + 14;
-    return (
+    return this._scaleLabel(
       `<g class="tds-fade" style="opacity:${op}">` +
-      `<rect x="${lx - w / 2}" y="${ly - 10}" width="${w}" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
-      `<rect x="${lx - w / 2 + 1}" y="${ly - 9}" width="${w - 2}" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
-      `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${color}" font-size="7.5" font-weight="600">${_esc(label)}</text></g>`
+        `<rect x="${lx - w / 2}" y="${ly - 10}" width="${w}" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
+        `<rect x="${lx - w / 2 + 1}" y="${ly - 9}" width="${w - 2}" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
+        `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${color}" font-size="7.5" font-weight="600">${_esc(label)}</text></g>`,
+      lx,
+      ly,
+      scale,
     );
   }
 
@@ -3521,20 +3545,23 @@ ${grid}`;
     // Chip sizes to its text (short labels like "lan0" stay compact; long ones
     // like "ge-0/0/23" no longer clip).
     const chipW = (t) => Math.max(20, String(t).length * 5.2 + 12);
+    // A link's labelScale sizes its endpoint labels too, about each chip's
+    // anchor (so chip + text stay in proportion).
+    const scale = this._labelScaleOf(linkCfg);
     let s = '';
     if (fromLabel) {
       const bx = x1 + dx + px + (fo.x || 0), by = y1 + dy + py + (fo.y || 0);
       const w = chipW(fromLabel);
-      s += `<g opacity="${op}">` +
+      s += this._scaleLabel(`<g opacity="${op}">` +
         `<rect x="${bx - w / 2}" y="${by - 8}" width="${w}" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
-        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${fromLabel}</text></g>`;
+        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${fromLabel}</text></g>`, bx, by, scale);
     }
     if (toLabel) {
       const bx = x2 - dx + px + (to.x || 0), by = y2 - dy + py + (to.y || 0);
       const w = chipW(toLabel);
-      s += `<g opacity="${op}">` +
+      s += this._scaleLabel(`<g opacity="${op}">` +
         `<rect x="${bx - w / 2}" y="${by - 8}" width="${w}" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
-        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${toLabel}</text></g>`;
+        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${toLabel}</text></g>`, bx, by, scale);
     }
     return s;
   }
@@ -3695,6 +3722,9 @@ ${grid}`;
     }
     const op = linkCfg.opacity != null ? linkCfg.opacity : Math.min(this._dimFor(linkCfg.from), this._dimFor(linkCfg.to));
     const color = linkCfg.color || '#01a982';
+    // Per-link label size multiplier (1 = default), threaded into every label
+    // renderer below so all of this link's labels scale uniformly.
+    const labelScale = this._labelScaleOf(linkCfg);
     const _flow = { speed: linkCfg.flowSpeed, particles: linkCfg.flowParticles, reverse: linkCfg.reverseFlow };
     let svg = '';
 
@@ -3740,7 +3770,7 @@ ${grid}`;
         // Line links carry a centre label too — every other link type renders
         // its own, but the line/flow renderers don't, so do it here. Honors the
         // link's labelOffset (so the label is moveable, like the others).
-        if (linkCfg.label) svg += this._renderLinkLabel(from, to, linkCfg.label, color, op, linkCfg.labelOffset);
+        if (linkCfg.label) svg += this._renderLinkLabel(from, to, linkCfg.label, color, op, linkCfg.labelOffset, labelScale);
         break;
       case 'tunnel': {
         const tunnelPath = waypointPath || routedPath || `M${from.x},${from.y} L${to.x},${to.y}`;
@@ -3749,15 +3779,15 @@ ${grid}`;
         const tloX = linkCfg.labelOffset?.x || 0, tloY = linkCfg.labelOffset?.y || 0;
         const tlx = tmx + Math.sin(ta) * 16 + Math.cos(ta) * tloX + Math.sin(ta) * tloY;
         const tly = tmy - Math.cos(ta) * 16 + Math.sin(ta) * tloX - Math.cos(ta) * tloY;
-        svg = this._renderTunnel(stepId, phaseNum, tunnelPath, color, linkCfg.label, tlx, tly, op, linkCfg.dots !== false, _flow);
+        svg = this._renderTunnel(stepId, phaseNum, tunnelPath, color, linkCfg.label, tlx, tly, op, linkCfg.dots !== false, _flow, labelScale);
         break;
       }
       case 'wireguard': {
         if (waypointPath) {
           const mx = (from.x + to.x) / 2 + (linkCfg.labelOffset?.x || 0), my = (from.y + to.y) / 2 + (linkCfg.labelOffset?.y || 0);
-          svg = this._renderFlow(stepId, phaseNum, waypointPath, '#65aef9', linkCfg.label, mx, my, op, linkCfg.dots !== false, _flow);
+          svg = this._renderFlow(stepId, phaseNum, waypointPath, '#65aef9', linkCfg.label, mx, my, op, linkCfg.dots !== false, _flow, labelScale);
         } else {
-          svg = this._renderWG(stepId, phaseNum, from.x, from.y, to.x, to.y, linkCfg.label, op, linkCfg.dots !== false, linkCfg.labelOffset, _flow);
+          svg = this._renderWG(stepId, phaseNum, from.x, from.y, to.x, to.y, linkCfg.label, op, linkCfg.dots !== false, linkCfg.labelOffset, _flow, labelScale);
         }
         break;
       }
@@ -3765,23 +3795,23 @@ ${grid}`;
         const path = waypointPath || linkCfg.path || `M${from.x},${from.y} L${to.x},${to.y}`;
         const lpos = linkCfg.labelPos || {};
         const lo = linkCfg.labelOffset;
-        svg = this._renderFlow(stepId, phaseNum, path, color, linkCfg.label, (lpos.x || 0) + (lo?.x || 0) || lpos.x, (lpos.y || 0) + (lo?.y || 0) || lpos.y, op, linkCfg.dots !== false, _flow);
+        svg = this._renderFlow(stepId, phaseNum, path, color, linkCfg.label, (lpos.x || 0) + (lo?.x || 0) || lpos.x, (lpos.y || 0) + (lo?.y || 0) || lpos.y, op, linkCfg.dots !== false, _flow, labelScale);
         break;
       }
       case 'packet':
-        svg = this._renderPacket(stepId, phaseNum, from.x, from.y, to.x, to.y, color, linkCfg.label, linkCfg.sublabel, op, linkCfg.labelOffset);
+        svg = this._renderPacket(stepId, phaseNum, from.x, from.y, to.x, to.y, color, linkCfg.label, linkCfg.sublabel, op, linkCfg.labelOffset, labelScale);
         break;
       case 'blocked':
         svg = this._renderBlocked(stepId, phaseNum, from.x, from.y, to.x, to.y, linkCfg.reason);
         break;
       case 'wifi':
-        svg = this._renderWifi(stepId, phaseNum, from.x, from.y, to.x, to.y, color, linkCfg.label, op, linkCfg.labelOffset);
+        svg = this._renderWifi(stepId, phaseNum, from.x, from.y, to.x, to.y, color, linkCfg.label, op, linkCfg.labelOffset, labelScale);
         break;
       case 'poe':
-        svg = this._renderPoE(stepId, phaseNum, from.x, from.y, to.x, to.y, color, linkCfg.label, op, linkCfg.labelOffset);
+        svg = this._renderPoE(stepId, phaseNum, from.x, from.y, to.x, to.y, color, linkCfg.label, op, linkCfg.labelOffset, labelScale);
         break;
       case 'optical':
-        svg = this._renderOptical(stepId, phaseNum, from.x, from.y, to.x, to.y, color, linkCfg.label, op, linkCfg.labelOffset);
+        svg = this._renderOptical(stepId, phaseNum, from.x, from.y, to.x, to.y, color, linkCfg.label, op, linkCfg.labelOffset, labelScale);
         break;
       default: {
         // Check for plugin link types

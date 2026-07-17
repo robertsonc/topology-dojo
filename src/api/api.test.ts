@@ -115,6 +115,32 @@ describe('validateDocument', () => {
     expect(isValid(doc)).toBe(true);
   });
 
+  it('warns (advisory) on a link labelScale outside [0.25, 4]', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'ec', x: 1, y: 1 })
+      .link({ id: 'l', type: 'line', from: 'a', to: 'b', labelScale: 9 })
+      .build();
+    const probs = validateDocument(doc);
+    expect(
+      probs.some((p) => p.level === 'warning' && /labelScale/.test(p.message)),
+    ).toBe(true);
+    expect(isValid(doc)).toBe(true);
+  });
+
+  it('accepts an in-range labelScale with no warning', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'ec', x: 1, y: 1 })
+      .link({ id: 'l', type: 'line', from: 'a', to: 'b', labelScale: 2 })
+      .build();
+    expect(
+      validateDocument(doc).some((p) => /labelScale/.test(p.message)),
+    ).toBe(false);
+  });
+
   it('passes a document with a well-formed annotation layer', () => {
     const doc = createDocument()
       .page()
