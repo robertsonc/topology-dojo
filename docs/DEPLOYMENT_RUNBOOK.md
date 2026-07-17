@@ -22,18 +22,18 @@ the operational companion to
 
 Populate this table in the private operator record. Do not commit secret values.
 
-| Item                   | Staging                     | Production                                          |
-| ---------------------- | --------------------------- | --------------------------------------------------- |
-| Worker name            | `topology-dojo-staging`     | `topology-dojo`                                     |
-| Public origin          | `<staging-origin>`          | `https://topology-dojo.robertson-corey.workers.dev` |
-| GitHub OAuth App       | `<staging-app>`             | `<production-app>`                                  |
-| OAuth callback         | `<staging-origin>/callback` | `<production-origin>/callback`                      |
-| `OAUTH_KV` id          | `<staging-id>`              | Managed in `wrangler.jsonc`                         |
-| `TOPOLOGY_KV` id       | `<staging-id>`              | Managed in `wrangler.jsonc`                         |
-| GitHub Environment     | `staging`                   | `production`                                        |
-| Cloudflare token owner | `<owner>`                   | `<owner>`                                           |
-| Last deployment SHA    | `<sha>`                     | `<sha>`                                             |
-| Applied migration tag  | `<tag>`                     | `<tag>`                                             |
+| Item                   | Staging                     | Production                              |
+| ---------------------- | --------------------------- | --------------------------------------- |
+| Worker name            | `topology-dojo-staging`     | `topology-dojo`                         |
+| Public origin          | `<staging-origin>`          | `https://topology-dojo.harnessed.cloud` |
+| GitHub OAuth App       | `<staging-app>`             | `<production-app>`                      |
+| OAuth callback         | `<staging-origin>/callback` | `<production-origin>/callback`          |
+| `OAUTH_KV` id          | `<staging-id>`              | Managed in `wrangler.jsonc`             |
+| `TOPOLOGY_KV` id       | `<staging-id>`              | Managed in `wrangler.jsonc`             |
+| GitHub Environment     | `staging`                   | `production`                            |
+| Cloudflare token owner | `<owner>`                   | `<owner>`                               |
+| Last deployment SHA    | `<sha>`                     | `<sha>`                                 |
+| Applied migration tag  | `<tag>`                     | `<tag>`                                 |
 
 The staging KV ids must differ from production. The staging GitHub OAuth App
 must not accept the production callback URL, and vice versa.
@@ -239,6 +239,39 @@ migrations on the script — if P2 is merged before O10, that deploy carries
 "false"` per Gate B above; profiles are inert by default), but record both tags
 in the deployment log and treat the combined deploy as the bootstrap for both
 features, each activated separately afterwards.
+
+### Migration `v5` — `AnalyticsLog` (admin/analytics dashboard MVP)
+
+Identical shape to `v4`: `ANALYTICS_ENABLED` is **opt-in** (unset ⇒ off), so the
+production bootstrap needs **no config change** — merging the admin dashboard PR
+and running the normal protected production deploy _is_ the flag-off bootstrap.
+`ADMIN_GITHUB_ID` (the owner's numeric GitHub id) is set at the top level from
+the start; it is harmless while the surface is off (`isAdmin()` only matters once
+`/api/admin` is reachable, which requires `ANALYTICS_ENABLED`), and the admin
+gate fails **closed** if it is ever unset.
+
+1. **Gate A — staging proof.** Merge the PR; dispatch `deploy-staging.yml`. This
+   applies `v5` to the staging script (staging has `ANALYTICS_ENABLED="true"` +
+   `ADMIN_GITHUB_ID`, so the dashboard is live for UAT). Run smoke; sign in as
+   the admin → the Admin chip appears → the roster lists your own just-recorded
+   login → click a user → their workspace names/counts (metadata only). Confirm
+   a non-admin session (or an unauthenticated `/api/admin/summary`) gets
+   `403`/`401` and never sees the chip. Perform the forward-recovery drill for
+   `v5`: redeploy staging with `ANALYTICS_ENABLED` removed/`"false"`, verify the
+   app + login flow are unaffected (logins simply stop being recorded, the
+   `/api/admin` routes `503`), re-enable.
+2. **Gate B — production bootstrap (inert).** Dispatch `deploy-production.yml`
+   from `main` with approval. The bundle exports `AnalyticsLog`, binds
+   `ANALYTICS`, and applies `v5`; with no top-level `ANALYTICS_ENABLED` the store
+   is fully inert (zero login writes, `/api/admin` returns the stable
+   `admin_disabled` 503, `/api/me` reports `admin: false`). Verify `v5` applied
+   and the binding exists; run the normal smoke; create no analytics data.
+3. **Gate C — activation (when the dashboard is wanted in prod).** A tiny PR
+   adding top-level `"ANALYTICS_ENABLED": "true"`; deploy with approval. From
+   then on logins are recorded and the owner's Admin chip is live. Recover by
+   forward-deploying with the flag removed — never roll back across `v5`.
+   Note: analytics only capture data **going forward**; there is no historical
+   backfill of logins that happened before activation.
 
 ## Smoke checklist
 

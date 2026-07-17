@@ -46,6 +46,7 @@ import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
+import { mountAdminDashboard } from './ui/admin-dashboard.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -167,6 +168,7 @@ app.innerHTML = `
       <span class="bar-div" id="workspaceDiv" hidden></span>
       <button class="tbtn workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot"></span><span id="workspaceLabel">agent · local</span></button>
       <button class="tbtn" id="profileChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Authoring Preferences" hidden>prefs</button>
+      <button class="tbtn" id="adminChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Admin dashboard" hidden>admin</button>
       <span class="bar-div" id="userDiv" hidden></span>
       <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" hidden><span class="uc-dot">●</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">▾</span></button>
     </div>
@@ -372,6 +374,11 @@ const workspacePanelHandle = mountWorkspacePanel({
  * `src/ui/profile-panel.ts`. */
 const profilePanelHandle = mountProfilePanel({
   chip: app.querySelector<HTMLButtonElement>('#profileChip')!,
+});
+/** Owner-only admin dashboard — revealed only when `/api/me` reports `admin`;
+ * the panel + fetching live in `src/ui/admin-dashboard.ts`. */
+const adminDashboardHandle = mountAdminDashboard({
+  chip: app.querySelector<HTMLButtonElement>('#adminChip')!,
 });
 function closeWorkspaceForDocumentReplacement(): boolean {
   return workspacePanelHandle.closeForDocumentReplacement();
@@ -2907,11 +2914,18 @@ async function showUserChip(): Promise<void> {
       headers: { accept: 'application/json' },
     });
     if (!res.ok) return;
-    const me = (await res.json()) as { login?: string; name?: string };
+    const me = (await res.json()) as {
+      login?: string;
+      name?: string;
+      admin?: boolean;
+    };
     if (me.login) {
       wireAccountMenu(me.login);
       enableWorkspaceUi();
       profilePanelHandle.enable();
+      // The Admin chip is revealed only for the deployment owner; the real gate
+      // is the /api/admin routes, so this is a cosmetic reveal.
+      if (me.admin) adminDashboardHandle.enable();
     }
   } catch {
     // No Worker (dev) or offline — leave the chip hidden.

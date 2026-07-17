@@ -200,6 +200,20 @@ in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
   workspace-scoped exceptions + decay toward review). Live in production.
   0003-D (governed product guidance) remains deliberately out of scope. See
   [`proposals/0003-adaptive-agent-authoring-profiles.md`](proposals/0003-adaptive-agent-authoring-profiles.md).
+- **Owner analytics / admin dashboard** — an owner-only dashboard (reachable
+  only by the deployment owner's GitHub login) over a new `AnalyticsLog` SQLite
+  Durable Object (migration `v5`, single global instance): a login roster
+  (`{ uid, login, name?, firstSeenAt, lastLoginAt, loginCount }`) + a bounded
+  recent-login log, recorded best-effort off the browser-login success path
+  (`ctx.waitUntil`, never blocking a login). The owner-gated `/api/admin/*`
+  routes serve the roster/totals and, per user, their workspace names/counts
+  read **live** from the existing registries — **metadata only, never diagram
+  contents**. Gated server-side and fail-closed (no `ADMIN_GITHUB_ID` match ⇒
+  403); shipped inert behind `ANALYTICS_ENABLED` (opt-in, like profiles) so `v5`
+  bootstraps off in production and activates later. Captures data going forward
+  only (no historical backfill). **Follow-ups (deferred from the MVP):** session
+  duration / "last active" (needs activity heartbeats), and agents / MCP-session
+  detail (instrument the `TopologyMcp` DO `init()`).
 - **More node/link art** — port additional renderers from the legacy monolith as
   needed; richer per-type inspector controls (ports, D2 waypoint UI).
 - **Resize link labels** — per-link `labelScale` on the document contract:

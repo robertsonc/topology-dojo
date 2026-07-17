@@ -19,7 +19,7 @@
   "vars": {
     // Public origin used to build absolute share links from `share_topology`.
     // Set to your deployment's domain; if blank, links are site-relative.
-    "PUBLIC_BASE_URL": "https://topology-dojo.robertson-corey.workers.dev",
+    "PUBLIC_BASE_URL": "https://topology-dojo.harnessed.cloud",
     // GitHub OAuth App client id (public; the secret is a dashboard secret).
     "GITHUB_CLIENT_ID": "Ov23liAsmD1WV2yT4yzw",
     // Production activation (runbook Gate C / operator O11, after the O10
@@ -33,6 +33,12 @@
     // P4 passed staging UAT. Same forward-only recovery: redeploy with this
     // entry removed to disable the learner + profile surfaces.
     "PROFILES_ENABLED": "true",
+    // Admin dashboard identity (migration v5): the GitHub numeric id allowed to
+    // reach /api/admin. Safe to set at bootstrap — the admin surface stays
+    // inert until ANALYTICS_ENABLED (which prod deliberately omits so v5 ships
+    // inert; a later deploy flips it on). Fail-closed if unset. See
+    // worker/env.ts isAdmin().
+    "ADMIN_GITHUB_ID": "17257145",
   },
   "assets": {
     "directory": "./dist",
@@ -61,6 +67,10 @@
       // Populated asynchronously from attributed correction outcomes; gated at
       // runtime by PROFILES_ENABLED (default off — see worker/env.ts).
       { "name": "AUTHORING_PROFILE", "class_name": "AuthoringProfile" },
+      // Owner-analytics login roster for the admin dashboard (migration v5).
+      // One global instance; gated at runtime by ANALYTICS_ENABLED (default
+      // off — see worker/env.ts). Metadata only, never diagram content.
+      { "name": "ANALYTICS", "class_name": "AnalyticsLog" },
     ],
   },
   // TOPOLOGY_KV backs `share_topology` snapshots; OAUTH_KV backs the OAuth
@@ -78,6 +88,10 @@
     // reorder/rename earlier tags. Bootstrapped inert in production (top-level
     // has no PROFILES_ENABLED, so the learner is off) and activated later.
     { "tag": "v4", "new_sqlite_classes": ["AuthoringProfile"] },
+    // Admin dashboard: the new AnalyticsLog DO class. Append-only. Bootstrapped
+    // inert in production (top-level has no ANALYTICS_ENABLED) and activated
+    // later. Must stay identical to the env.staging migrations array below.
+    { "tag": "v5", "new_sqlite_classes": ["AnalyticsLog"] },
   ],
   "observability": { "enabled": true },
   // env.staging — isolated, production-like preview surface (proposal 0004,
@@ -113,6 +127,13 @@
         // (learner off) until the operator activates — the opposite default
         // from WORKSPACE_ENABLED; see worker/env.ts `profilesEnabled()`.
         "PROFILES_ENABLED": "true",
+        // Staging opts INTO owner-analytics (migration v5) so the admin
+        // dashboard is live for UAT. ADMIN_GITHUB_ID is the same owner in both
+        // environments (the deployment owner is the admin everywhere), so —
+        // unlike PUBLIC_BASE_URL / GITHUB_CLIENT_ID — it is intentionally not
+        // an isolated value.
+        "ANALYTICS_ENABLED": "true",
+        "ADMIN_GITHUB_ID": "17257145",
       },
       // Staging's own KV namespaces (operator checklist O2) — never the
       // production ids above.
@@ -129,15 +150,18 @@
           { "name": "TOPOLOGY_REGISTRY", "class_name": "TopologyRegistry" },
           { "name": "TOPOLOGY_DOCUMENT", "class_name": "TopologyDocument" },
           { "name": "AUTHORING_PROFILE", "class_name": "AuthoringProfile" },
+          { "name": "ANALYTICS", "class_name": "AnalyticsLog" },
         ],
       },
       // Full migration history repeated verbatim — staging must apply the
-      // exact same v1-v4 sequence production does.
+      // exact same v1-v5 sequence production does (check-wrangler-env.mjs
+      // deep-equals this against the top-level array).
       "migrations": [
         { "tag": "v1", "new_sqlite_classes": ["TopologyMcp"] },
         { "tag": "v2", "new_sqlite_classes": ["TopologyRegistry"] },
         { "tag": "v3", "new_sqlite_classes": ["TopologyDocument"] },
         { "tag": "v4", "new_sqlite_classes": ["AuthoringProfile"] },
+        { "tag": "v5", "new_sqlite_classes": ["AnalyticsLog"] },
       ],
     },
   },

@@ -17,14 +17,22 @@ import { TopologyMcp } from './mcp.js';
 import { TopologyRegistry } from './registry.js';
 import { TopologyDocument } from './document.js';
 import { AuthoringProfile } from './profile.js';
+import { AnalyticsLog } from './analytics.js';
 import { defaultHandler } from './default-handler.js';
 import type { WorkerEnv } from './env.js';
 
 // Every Durable Object class must be exported from the Worker entry so the
 // runtime can construct them (MCP_OBJECT → per-session agent; TOPOLOGY_REGISTRY
 // → per-user document store; TOPOLOGY_DOCUMENT → per-topology coordinator;
-// AUTHORING_PROFILE → per-owner observe-only authoring profile, migration v4).
-export { TopologyDocument, TopologyMcp, TopologyRegistry, AuthoringProfile };
+// AUTHORING_PROFILE → per-owner observe-only authoring profile, migration v4;
+// ANALYTICS → owner-analytics login roster, migration v5).
+export {
+  TopologyDocument,
+  TopologyMcp,
+  TopologyRegistry,
+  AuthoringProfile,
+  AnalyticsLog,
+};
 
 // The MCP agent's Streamable HTTP handler, gated by the OAuth provider. Wrapped
 // so its (generic) fetch presents the concrete required signature the provider
