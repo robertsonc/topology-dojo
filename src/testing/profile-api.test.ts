@@ -53,6 +53,18 @@ export default {
         .recordOutcome(String(owner), outcome);
       return Response.json({ ok: true });
     }
+    if (url.pathname === '/__guidance' && request.method === 'POST') {
+      // Drives the DO's getGuidance through the same identity key the MCP
+      // profile service uses (idFromName(<bare uid>) — see
+      // TopologyMcp.profileService), so the P4 retrieval tests exercise the
+      // real DO compile/cache/notModified path.
+      const { owner, query } = await request.json();
+      const ns = env.AUTHORING_PROFILE;
+      const result = await ns
+        .get(ns.idFromName(String(owner)))
+        .getGuidance(String(owner), query ?? {});
+      return Response.json(result);
+    }
     const stubbedEnv = Object.assign({}, env, {
       OAUTH_PROVIDER: {
         parseAuthRequest: unimplemented('parseAuthRequest'),
@@ -229,7 +241,106 @@ describe('PROFILES_ENABLED="true" — owner-authed profile routes', () => {
       headers: { cookie },
     });
     expect(get.status).toBe(405);
+    const confirmGet = await handle.fetch(
+      '/api/profile/preferences/p1/confirm',
+      { headers: { cookie } },
+    );
+    expect(confirmGet.status).toBe(405);
   });
+
+  it('confirm serves the rule to guidance, reject tombstones it, and revisions drive notModified', async () => {
+    const uid = 'u6';
+    const cookie = await sessionCookie(uid, 'frank');
+    await handle.fetch('/__seed', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ owner: uid, outcome: outcome() }),
+    });
+    const [seeded] = (await (
+      await handle.fetch('/api/profile/preferences', { headers: { cookie } })
+    ).json()) as PrefRow[];
+    const id = seeded!.id;
+
+    const guidance = async (query: Record<string, unknown>) =>
+      (await (
+        await handle.fetch('/__guidance', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ owner: uid, query }),
+        })
+      ).json()) as {
+        notModified?: boolean;
+        profileRevision: number;
+        guidanceRevision: number;
+        rules?: { id: string; scope: string; directive: string }[];
+      };
+    const query = { archetype: 'multi-region-hub-spoke' };
+
+    // Unconfirmed candidates never reach an agent: product pack only.
+    const before = await guidance(query);
+    expect(before.rules!.every((rule) => rule.scope === 'product')).toBe(true);
+
+    // Malformed scope is rejected outright — never silently widened.
+    const badConfirm = await handle.fetch(
+      `/api/profile/preferences/${id}/confirm`,
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ scope: { kind: 'workspace' } }),
+      },
+    );
+    expect(badConfirm.status).toBe(400);
+
+    // Owner confirm at archetype scope (the browser-only authority path).
+    const confirmRes = await handle.fetch(
+      `/api/profile/preferences/${id}/confirm`,
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          scope: { kind: 'archetype', archetype: 'multi-region-hub-spoke' },
+        }),
+      },
+    );
+    expect(confirmRes.status).toBe(200);
+    expect(((await confirmRes.json()) as PrefRow).status).toBe('confirmed');
+
+    const after = await guidance(query);
+    expect(after.profileRevision).toBe(before.profileRevision + 1);
+    expect(after.rules![0]!.id).toBe(id); // user rule outranks product pack
+
+    // Unchanged revisions short-circuit with no instruction body.
+    const unchanged = await guidance({
+      ...query,
+      lastProfileRevision: after.profileRevision,
+      lastGuidanceRevision: after.guidanceRevision,
+    });
+    expect(unchanged.notModified).toBe(true);
+    expect(unchanged.rules).toBeUndefined();
+
+    // Reject: the rule stops being served AND stays as a tombstone that
+    // blocks re-learning the same correction.
+    const rejectRes = await handle.fetch(
+      `/api/profile/preferences/${id}/reject`,
+      { method: 'POST', headers: { cookie } },
+    );
+    expect(((await rejectRes.json()) as PrefRow).status).toBe('rejected');
+    const afterReject = await guidance(query);
+    expect(afterReject.rules!.some((rule) => rule.id === id)).toBe(false);
+    await handle.fetch('/__seed', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        owner: uid,
+        outcome: outcome({ sourceRevisionRef: 'w9@r2', documentRef: 'w9' }),
+      }),
+    });
+    const rows = (await (
+      await handle.fetch('/api/profile/preferences', { headers: { cookie } })
+    ).json()) as PrefRow[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('rejected');
+  }, 30_000);
 });
 
 describe('PROFILES_ENABLED unset — disabled by default (opt-in flag)', () => {

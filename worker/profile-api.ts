@@ -4,13 +4,17 @@
  *
  * Mirrors `workspace-api.ts`: the owner always comes from the session cookie
  * (`currentUser`), never from request input, so cross-owner isolation holds by
- * construction. The route set is deliberately tiny — list, pause/resume, and
- * forget — because confirmation/scoping is Packet P4's authority domain and no
- * agent-facing surface exists here.
+ * construction. The route set is deliberately tiny — list, pause/resume,
+ * confirm/reject (Packet P4), and forget. These cookie-authenticated routes
+ * are the ONLY confirm/reject path: the MCP guidance tools (`worker/mcp.ts`)
+ * are read-only by construction, so an agent can never promote its own lesson.
  */
 import type { WorkerEnv } from './env.js';
 import { currentUser } from './auth.js';
-import type { AuthoringPreference } from '../src/profile/model.js';
+import type {
+  AuthoringPreference,
+  PreferenceScope,
+} from '../src/profile/model.js';
 
 /** Narrow RPC view of the per-owner authoring-profile DO. Kept explicit so the
  * cross-DO call typechecks without depending on Cloudflare's conservative
@@ -21,6 +25,15 @@ interface AuthoringProfileRpc {
     ownerId: string,
     preferenceId: string,
     status: 'candidate' | 'paused',
+  ): Promise<AuthoringPreference>;
+  confirmPreference(
+    ownerId: string,
+    preferenceId: string,
+    scope: PreferenceScope,
+  ): Promise<AuthoringPreference>;
+  rejectPreference(
+    ownerId: string,
+    preferenceId: string,
   ): Promise<AuthoringPreference>;
   deletePreference(ownerId: string, preferenceId: string): Promise<void>;
 }
@@ -56,7 +69,7 @@ export async function handleProfileApi(
     ns.idFromName(user.uid),
   ) as unknown as AuthoringProfileRpc;
   const url = new URL(request.url);
-  // ['api', 'profile', 'preferences', :id?, 'pause' | 'resume'?]
+  // ['api', 'profile', 'preferences', :id?, 'pause'|'resume'|'confirm'|'reject'?]
   const parts = url.pathname.split('/').filter(Boolean);
 
   try {
@@ -78,7 +91,7 @@ export async function handleProfileApi(
       return json({ deleted: id });
     }
 
-    // /api/profile/preferences/:id/pause | /resume (candidate↔paused only).
+    // /api/profile/preferences/:id/pause | /resume (suspend/restore).
     if (parts.length === 5 && (parts[4] === 'pause' || parts[4] === 'resume')) {
       if (request.method !== 'POST') return methodNotAllowed();
       return json(
@@ -88,6 +101,29 @@ export async function handleProfileApi(
           parts[4] === 'pause' ? 'paused' : 'candidate',
         ),
       );
+    }
+
+    // /api/profile/preferences/:id/confirm — the owner's promotion decision
+    // (Packet P4). The chosen scope rides in the JSON body; the DO re-parses
+    // it strictly and throws (→ 400) on anything malformed.
+    if (parts.length === 5 && parts[4] === 'confirm') {
+      if (request.method !== 'POST') return methodNotAllowed();
+      let scope: unknown;
+      try {
+        scope = ((await request.json()) as { scope?: unknown }).scope;
+      } catch {
+        return json({ error: 'a JSON body with a scope is required' }, 400);
+      }
+      return json(
+        await profile.confirmPreference(user.uid, id, scope as PreferenceScope),
+      );
+    }
+
+    // /api/profile/preferences/:id/reject — "No, do not learn this": kept as
+    // a tombstone that blocks re-learning (forget deletes it outright).
+    if (parts.length === 5 && parts[4] === 'reject') {
+      if (request.method !== 'POST') return methodNotAllowed();
+      return json(await profile.rejectPreference(user.uid, id));
     }
 
     return json({ error: 'not found' }, 404);

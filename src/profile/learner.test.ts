@@ -7,6 +7,7 @@ import {
   distinctDocuments,
   documentRefOf,
   newCandidate,
+  outcomeDisposition,
   preferenceRuleIdentity,
   ruleIdentity,
   scopeKey,
@@ -277,5 +278,74 @@ describe('weakestCandidateIndex (over-cap eviction)', () => {
 
   it('the cap constant is a positive bound', () => {
     expect(MAX_CANDIDATES_PER_OWNER).toBeGreaterThan(0);
+  });
+
+  it('never picks an owner-confirmed rule; -1 when every record is confirmed', () => {
+    const list = [
+      pref({ id: 'a', status: 'confirmed', supportingOutcomes: 1 }),
+      pref({ id: 'b', supportingOutcomes: 9 }),
+      pref({ id: 'c', status: 'confirmed', supportingOutcomes: 2 }),
+    ];
+    // 'a' is weakest overall but confirmed — the unconfirmed 'b' is evicted.
+    expect(weakestCandidateIndex(list)).toBe(1);
+    expect(
+      weakestCandidateIndex([
+        pref({ id: 'a', status: 'confirmed' }),
+        pref({ id: 'b', status: 'confirmed' }),
+      ]),
+    ).toBe(-1);
+  });
+});
+
+describe('outcomeDisposition (P4 authority consequences)', () => {
+  function stored(over: Partial<AuthoringPreference>): AuthoringPreference {
+    return { ...newCandidate('id', 'owner', outcome(), 't0'), ...over };
+  }
+
+  it('strengthens an exact (rule, scope) match', () => {
+    const existing = [stored({ id: 'a' })];
+    expect(outcomeDisposition(existing, outcome())).toEqual({
+      action: 'strengthen',
+      index: 0,
+    });
+  });
+
+  it('creates a fresh candidate for an unseen rule', () => {
+    const existing = [stored({ id: 'a' })];
+    expect(
+      outcomeDisposition(existing, outcome({ addedTraits: ['other-trait'] })),
+    ).toEqual({ action: 'create' });
+  });
+
+  it('a re-scoped CONFIRMED rule still owns its correction — no shadow candidate', () => {
+    const confirmedRescoped = stored({
+      id: 'a',
+      status: 'confirmed',
+      scope: { kind: 'archetype', archetype: 'multi-region-hub-spoke' },
+    });
+    // The learner emits { kind: 'user' } scope, which no longer matches the
+    // scoped identity — the unscoped fallback must find the confirmed rule.
+    expect(outcomeDisposition([confirmedRescoped], outcome())).toEqual({
+      action: 'strengthen',
+      index: 0,
+    });
+  });
+
+  it('a rejected rule drops matching outcomes outright ("do not learn this")', () => {
+    expect(
+      outcomeDisposition([stored({ id: 'a', status: 'rejected' })], outcome()),
+    ).toEqual({ action: 'skip' });
+  });
+
+  it('a plain candidate does NOT capture differently-scoped outcomes', () => {
+    const workspaceScoped = stored({
+      id: 'a',
+      scope: { kind: 'workspace', workspaceId: 'w_1' },
+    });
+    // Same structural rule, different scope, no owner decision → new record
+    // (the P2 dedupe key is (rule, scope); only owner-decided records widen).
+    expect(outcomeDisposition([workspaceScoped], outcome())).toEqual({
+      action: 'create',
+    });
   });
 });

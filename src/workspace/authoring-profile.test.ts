@@ -38,6 +38,9 @@ export default {
         // ownerId ASSERTED to the DO, so tests can prove the owner check rejects
         // a mismatched caller against another owner's instance.
         case 'setStatus': result = await profStub.setPreferenceStatus(String(input.asOwner ?? owner), String(input.preferenceId), input.status); break;
+        case 'confirm': result = await profStub.confirmPreference(String(input.asOwner ?? owner), String(input.preferenceId), input.scope); break;
+        case 'reject': result = await profStub.rejectPreference(String(input.asOwner ?? owner), String(input.preferenceId)); break;
+        case 'guidance': result = await profStub.getGuidance(String(input.asOwner ?? owner), input.query ?? {}); break;
         case 'deletePreference': await profStub.deletePreference(String(input.asOwner ?? owner), String(input.preferenceId)); result = { ok: true }; break;
         case 'initialize': result = await docStub.initialize(owner, workspace, input.document); break;
         case 'snapshot': result = await docStub.getSnapshot(owner); break;
@@ -80,12 +83,24 @@ interface StoredPref {
   status: string;
   supportingOutcomes: number;
   evidenceDocuments: number;
+  confidence: number;
+  scope: { kind: string; workspaceId?: string; archetype?: string };
   trigger: {
     archetype?: string;
     requiredTraits: string[];
     excludedTraits?: string[];
   };
   sourceRevisionRefs: string[];
+  confirmedAt?: string;
+}
+
+interface GuidanceBody {
+  notModified?: boolean;
+  profileRevision: number;
+  guidanceRevision: number;
+  rules?: { id: string; directive: string; scope: string }[];
+  omitted?: { ids: string[]; count: number };
+  tokenEstimate?: number;
 }
 
 function outcome(over: Record<string, unknown> = {}) {
@@ -465,7 +480,7 @@ describe('owner manage actions (Packet P3: pause / resume / forget)', () => {
     expect(afterResume.profileRevision).toBe(2);
   }, 30_000);
 
-  it('rejects any status outside the candidate↔paused transition (P4 authority)', async () => {
+  it('setStatus only pauses/resumes — a confirm smuggled through it is refused', async () => {
     const owner = 'manage-2';
     await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
     const [pref] = await call<StoredPref[]>(on, {
@@ -479,7 +494,7 @@ describe('owner manage actions (Packet P3: pause / resume / forget)', () => {
         preferenceId: pref!.id,
         status: 'confirmed',
       }),
-    ).rejects.toThrow(/candidate\/paused/);
+    ).rejects.toThrow(/only pause\/resume/);
     const listed = await call<StoredPref[]>(on, {
       action: 'listPreferences',
       owner,
@@ -558,6 +573,199 @@ describe('owner manage actions (Packet P3: pause / resume / forget)', () => {
       owner,
     });
     expect(listed).toHaveLength(1);
+    expect(listed[0]!.status).toBe('candidate');
+  }, 30_000);
+});
+
+describe('owner confirm / reject + bounded guidance retrieval (Packet P4)', () => {
+  it('confirm promotes at the chosen scope, bumps the revision, and guidance serves the rule', async () => {
+    const owner = 'p4-confirm';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+
+    // Candidates are never served (acceptance criterion 1: one correction
+    // changes nothing without confirmation) — product pack only.
+    const query = { archetype: 'multi-region-hub-spoke' };
+    const before = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query,
+    });
+    expect(before.rules!.every((rule) => rule.scope === 'product')).toBe(true);
+
+    const confirmed = await call<StoredPref>(on, {
+      action: 'confirm',
+      owner,
+      preferenceId: pref!.id,
+      scope: { kind: 'archetype', archetype: 'multi-region-hub-spoke' },
+    });
+    expect(confirmed.status).toBe('confirmed');
+    expect(confirmed.scope).toEqual({
+      kind: 'archetype',
+      archetype: 'multi-region-hub-spoke',
+    });
+    expect(confirmed.confidence).toBeGreaterThan(0);
+    expect(confirmed.confirmedAt).toBeTruthy();
+
+    const after = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query,
+    });
+    expect(after.profileRevision).toBe(before.profileRevision + 1);
+    expect(after.rules![0]!.id).toBe(pref!.id);
+    expect(after.rules![0]!.scope).toBe('archetype:multi-region-hub-spoke');
+
+    // Unchanged revisions → notModified with no instruction body.
+    const unchanged = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query: {
+        ...query,
+        lastProfileRevision: after.profileRevision,
+        lastGuidanceRevision: after.guidanceRevision,
+      },
+    });
+    expect(unchanged.notModified).toBe(true);
+    expect(unchanged.rules).toBeUndefined();
+
+    // A malformed confirm scope throws instead of silently widening.
+    await expect(
+      call(on, {
+        action: 'confirm',
+        owner,
+        preferenceId: pref!.id,
+        scope: { kind: 'workspace' },
+      }),
+    ).rejects.toThrow(/invalid preference scope/);
+  }, 30_000);
+
+  it('pausing a confirmed rule stops serving it; resume restores confirmed, not candidate', async () => {
+    const owner = 'p4-pause';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    await call(on, {
+      action: 'confirm',
+      owner,
+      preferenceId: pref!.id,
+      scope: { kind: 'user' },
+    });
+    const query = { archetype: 'multi-region-hub-spoke' };
+
+    const paused = await call<StoredPref>(on, {
+      action: 'setStatus',
+      owner,
+      preferenceId: pref!.id,
+      status: 'paused',
+    });
+    expect(paused.status).toBe('paused');
+    const whilePaused = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query,
+    });
+    expect(whilePaused.rules!.some((rule) => rule.id === pref!.id)).toBe(false);
+
+    const resumed = await call<StoredPref>(on, {
+      action: 'setStatus',
+      owner,
+      preferenceId: pref!.id,
+      status: 'candidate',
+    });
+    expect(resumed.status).toBe('confirmed'); // confirmedAt survives the pause
+    const afterResume = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query,
+    });
+    expect(afterResume.rules![0]!.id).toBe(pref!.id);
+  }, 30_000);
+
+  it('reject tombstones the rule: not served, not re-learnable, only forgettable', async () => {
+    const owner = 'p4-reject';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    const rejected = await call<StoredPref>(on, {
+      action: 'reject',
+      owner,
+      preferenceId: pref!.id,
+    });
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.confidence).toBe(0);
+
+    // The same structural correction from a NEW burst is dropped, not
+    // re-created and not strengthened.
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: outcome({ sourceRevisionRef: 'w7@r1', documentRef: 'w7' }),
+    });
+    const listed = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.status).toBe('rejected');
+    expect(listed[0]!.supportingOutcomes).toBe(1);
+
+    // Pause/resume and re-confirm are refused; forget remains available.
+    await expect(
+      call(on, {
+        action: 'setStatus',
+        owner,
+        preferenceId: pref!.id,
+        status: 'paused',
+      }),
+    ).rejects.toThrow(/only be forgotten/);
+    await expect(
+      call(on, {
+        action: 'confirm',
+        owner,
+        preferenceId: pref!.id,
+        scope: { kind: 'user' },
+      }),
+    ).rejects.toThrow(/only be forgotten/);
+  }, 30_000);
+
+  it('asserts the owner on confirm, reject, and guidance', async () => {
+    const owner = 'p4-owner';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    for (const action of ['confirm', 'reject'] as const) {
+      await expect(
+        call(on, {
+          action,
+          owner,
+          asOwner: 'p4-intruder',
+          preferenceId: pref!.id,
+          scope: { kind: 'user' },
+        }),
+      ).rejects.toThrow(/access denied/);
+    }
+    await expect(
+      call(on, {
+        action: 'guidance',
+        owner,
+        asOwner: 'p4-intruder',
+        query: {},
+      }),
+    ).rejects.toThrow(/access denied/);
+    const listed = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
     expect(listed[0]!.status).toBe('candidate');
   }, 30_000);
 });

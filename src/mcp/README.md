@@ -144,47 +144,69 @@ to the task's affected region and change summaries, not total document size.
 
 ## Tools
 
-| Tool                                                   | Purpose                                                                                                  |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                     |
-| `create_topology`                                      | New document (one empty page)                                                                            |
-| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                |
-| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                    |
-| `import_topology`                                      | Load from document JSON (string or object); `format` auto-detects/converts a legacy Topology Studio save |
-| `set_document_title`                                   | Rename a document                                                                                        |
-| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox                                                   |
-| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                            |
-| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                         |
-| `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                              |
-| `upsert_by_source`                                     | Converge an element onto external data by source identity                                                |
-| `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane               |
-| `define_node_type`                                     | Add a custom node type (merged over defaults)                                                            |
-| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                         |
-| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key                                                 |
-| `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                   |
-| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                            |
-| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)                                            |
-| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                    |
-| `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                         |
-| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)                                            |
-| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters)                                       |
-| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations                                             |
-| `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                |
-| `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                                                        |
-| `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                             |
-| `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                               |
-| `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                              |
-| `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)                                         |
-| `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                             |
-| `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                    |
-| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; lazily migrates a legacy id                           |
-| `describe_workspace_operations`                        | On-demand versioned operation vocabulary; call only when its revision changes                            |
-| `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                                   |
-| `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                       |
-| `propose_workspace_changes`                            | Submit a semantic change set for browser-owner review (default write path)                               |
-| `apply_workspace_changes`                              | Direct semantic commit only inside a live UI-granted page lease                                          |
-| `create_checkpoint`                                    | Snapshot the workspace as a named checkpoint (restore/fork stay browser-owner)                           |
-| `list_checkpoints`                                     | List named checkpoints (id, name, revision, page count, author)                                          |
+| Tool                                                   | Purpose                                                                                                   |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                      |
+| `create_topology`                                      | New document (one empty page)                                                                             |
+| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                 |
+| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                     |
+| `import_topology`                                      | Load from document JSON (string or object); `format` auto-detects/converts a legacy Topology Studio save  |
+| `set_document_title`                                   | Rename a document                                                                                         |
+| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox                                                    |
+| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                             |
+| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                          |
+| `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                               |
+| `upsert_by_source`                                     | Converge an element onto external data by source identity                                                 |
+| `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                |
+| `define_node_type`                                     | Add a custom node type (merged over defaults)                                                             |
+| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                          |
+| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key                                                  |
+| `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                    |
+| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                             |
+| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)                                             |
+| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                     |
+| `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                          |
+| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)                                             |
+| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters)                                        |
+| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations                                              |
+| `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                 |
+| `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                                                         |
+| `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                              |
+| `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                                |
+| `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                               |
+| `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)                                          |
+| `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                              |
+| `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                     |
+| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; lazily migrates a legacy id                            |
+| `describe_workspace_operations`                        | On-demand versioned operation vocabulary; call only when its revision changes                             |
+| `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                                    |
+| `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                        |
+| `propose_workspace_changes`                            | Submit a semantic change set for browser-owner review (default write path)                                |
+| `apply_workspace_changes`                              | Direct semantic commit only inside a live UI-granted page lease                                           |
+| `create_checkpoint`                                    | Snapshot the workspace as a named checkpoint (restore/fork stay browser-owner)                            |
+| `list_checkpoints`                                     | List named checkpoints (id, name, revision, page count, author)                                           |
+| `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`) |
+| `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                            |
+| `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                         |
+
+### Authoring preferences (adaptive guidance)
+
+The three `*_authoring_*` tools register only where the deployment enables
+profiles (`PROFILES_ENABLED="true"`) for an authenticated owner. Before
+authoring or laying out a topology, call `get_authoring_guidance` with the
+task archetype (and workspace id, when working in one); it returns at most 5
+concise directives — the owner's confirmed preferences ranked above versioned
+product guidance — under a hard token budget, with overflow reported as rule
+ids plus an omission count, never truncated prose. Pass the returned
+`profileRevision`/`guidanceRevision` back on later calls: an unchanged profile
+answers `notModified` with no instruction body. When a proposal applies a
+confirmed preference, say so in its summary (e.g. "Applied your confirmed
+'regional hubs as spine tier' preference").
+
+These tools are strictly read-only. Confirmation, scoping, pause, and forget
+are browser-owner actions in the Authoring Preferences panel — by
+construction there is no MCP path that confirms, broadens, or undeletes a
+preference.
 
 ### Shared workspace concurrency
 

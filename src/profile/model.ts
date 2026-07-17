@@ -8,9 +8,10 @@
  * it is client-safe and workerd-safe alike.
  *
  * `AuthoringPreference` mirrors the "Preference record" in proposal 0003
- * (~L160). In this observe-only packet every stored preference is a
- * `status: 'candidate'` — confirmation/promotion (and `directive` delivery to
- * agents) arrive in Packet P4; nothing here changes agent output.
+ * (~L160). Learning (Packet P2) only ever writes `status: 'candidate'`;
+ * `confirmed` and `rejected` are browser-owner decisions made through the
+ * Packet P4 confirmation flow, and only `confirmed` rules are ever compiled
+ * into agent guidance (`src/profile/guidance.ts`).
  *
  * @see docs/proposals/0003-adaptive-agent-authoring-profiles.md
  */
@@ -70,6 +71,13 @@ export interface AuthoringPreference {
   createdAt: string;
   lastObservedAt: string;
   lastAppliedAt?: string;
+  /**
+   * When the browser owner confirmed this rule (Packet P4). Present on every
+   * record that has ever been confirmed — a paused rule with `confirmedAt`
+   * resumes back to `confirmed`, not `candidate`, so pausing never silently
+   * demotes an owner-blessed rule. Absent on P2/P3-era records.
+   */
+  confirmedAt?: string;
 }
 
 /**

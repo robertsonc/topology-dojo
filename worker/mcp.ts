@@ -8,6 +8,7 @@
 import { McpAgent } from 'agents/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTopologyTools } from '../src/mcp/register.js';
+import type { ToolDeps } from '../src/mcp/tools.js';
 import { TopologyStore } from '../src/mcp/store.js';
 import {
   persistStore,
@@ -21,6 +22,14 @@ import { renderDocument } from './render.js';
 import type { WorkerEnv } from './env.js';
 import { WorkspaceService } from './workspaces.js';
 import { workspaceToolNames } from './workspace-tools.js';
+import { profileToolNames } from './profile-tools.js';
+import {
+  explainPreference,
+  preferenceSummary,
+  type GuidanceQuery,
+  type GuidanceResult,
+} from '../src/profile/guidance.js';
+import type { AuthoringPreference } from '../src/profile/model.js';
 
 /** Short, URL-safe id for a published snapshot (collision-negligible for this use). */
 function shareId(): string {
@@ -62,6 +71,9 @@ const NO_LEGACY_PERSIST_TOOLS = new Set<string>([
   'apply_workspace_changes',
   'create_checkpoint',
   'list_checkpoints',
+  'get_authoring_guidance',
+  'list_authoring_preferences',
+  'explain_authoring_preference',
 ]);
 
 export class TopologyMcp extends McpAgent<WorkerEnv> {
@@ -94,6 +106,14 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     ).length
       ? workspaceService
       : undefined;
+    // Same shape for the read-only profile guidance tools: profileToolNames
+    // (worker/profile-tools.ts) holds the pure PROFILES_ENABLED × authenticated
+    // decision, so gating stays unit-testable outside this Durable Object.
+    const profileService = this.profileService();
+    const profile = profileToolNames(this.env, profileService !== undefined)
+      .length
+      ? profileService
+      : undefined;
     registerTopologyTools(
       this.server,
       {
@@ -101,6 +121,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
         publishTopology: (doc: TopologyDocument) => this.publish(doc),
         ...(provider ? { provider } : {}),
         ...(workspace ? { workspace } : {}),
+        ...(profile ? { profile } : {}),
       },
       this.store,
       (toolName) => this.persistAfter(toolName),
@@ -192,6 +213,44 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       login: props.login,
       ...(props.name ? { name: props.name } : {}),
     });
+  }
+
+  /**
+   * The read-only profile dep for the three guidance/inspection tools
+   * (Packet P4). Addressed by the bare stable uid — the SAME key the
+   * coordinator's outcome emission and the `/api/profile` routes use, so the
+   * agent reads exactly the profile the owner manages. Strictly read-only:
+   * only `getGuidance`/`listPreferences` are in the RPC view; the DO's
+   * confirm/reject/pause/delete methods are deliberately not reachable from
+   * any MCP tool (proposal guardrail #5).
+   */
+  private profileService(): NonNullable<ToolDeps['profile']> | undefined {
+    const props = this.props as { id?: number } | undefined;
+    if (props?.id === undefined) return undefined;
+    const ownerId = String(props.id);
+    const ns = this.env.AUTHORING_PROFILE;
+    const stub = ns.get(ns.idFromName(ownerId)) as unknown as {
+      listPreferences(ownerId: string): Promise<AuthoringPreference[]>;
+      getGuidance(
+        ownerId: string,
+        query: GuidanceQuery & {
+          lastProfileRevision?: number;
+          lastGuidanceRevision?: number;
+        },
+      ): Promise<GuidanceResult>;
+    };
+    return {
+      guidance: (query) => stub.getGuidance(ownerId, query),
+      list: async () =>
+        (await stub.listPreferences(ownerId)).map(preferenceSummary),
+      explain: async (preferenceId) => {
+        const pref = (await stub.listPreferences(ownerId)).find(
+          (p) => p.id === preferenceId,
+        );
+        if (!pref) throw new Error(`unknown preference "${preferenceId}"`);
+        return explainPreference(pref);
+      },
+    };
   }
 
   /** Store a document snapshot in KV and return the link that opens it. */

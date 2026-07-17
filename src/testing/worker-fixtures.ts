@@ -68,3 +68,26 @@ export default {
   },
 };
 `;
+
+/**
+ * `WORKSPACE_TOOL_NAMES_FIXTURE`'s Packet P4 sibling: exercises
+ * `worker/profile-tools.ts`'s pure `profileToolNames` — the PROFILES_ENABLED
+ * gate (opt-in, unlike workspaces) on the three read-only guidance tools
+ * registered by `TopologyMcp.init()`.
+ */
+export const PROFILE_TOOL_NAMES_FIXTURE = String.raw`
+import { profileToolNames } from './worker/profile-tools.ts';
+
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    const flag = url.searchParams.get('flag');
+    const hasProfileService = url.searchParams.get('hasProfileService') === 'true';
+    const env = flag === null ? {} : { PROFILES_ENABLED: flag };
+    return new Response(
+      JSON.stringify(profileToolNames(env, hasProfileService)),
+      { headers: { 'content-type': 'application/json' } },
+    );
+  },
+};
+`;

@@ -1,11 +1,12 @@
 /**
- * Characterization tests for the Authoring Preferences panel (Packet P3,
- * observe-only). Same approach as `workspace-panel.test.ts`: the repo's test
- * environment is plain Node (no jsdom/happy-dom), so these exercise the pure
+ * Characterization tests for the Authoring Preferences panel (Packets P3+P4).
+ * Same approach as `workspace-panel.test.ts`: the repo's test environment is
+ * plain Node (no jsdom/happy-dom), so these exercise the pure
  * `render*Html`/format helpers `mountProfilePanel` builds its DOM writes from,
  * over fixture profiles — list rendering (directive/scope/status/evidence),
- * the 2+ observation callout, empty + disabled states, escaping of untrusted
- * directive/rationale text, and the pause/forget affordances.
+ * the observation/ask callouts, the P4 confirm flow (scope chooser, confirmed
+ * and rejected cards), empty + disabled states, escaping of untrusted
+ * directive/rationale text, and the per-status action affordances.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -14,6 +15,8 @@ import {
   renderPreferencesHtml,
   renderProfileBodyHtml,
   renderProfileDisabledHtml,
+  renderScopeChooserHtml,
+  shouldAskToConfirm,
   type ProfilePanelState,
 } from './profile-panel.js';
 import type { AuthoringPreference } from '../profile/model.js';
@@ -51,6 +54,7 @@ function state(overrides: Partial<ProfilePanelState> = {}): ProfilePanelState {
     disabled: false,
     error: null,
     preferences: [],
+    confirmingId: null,
     ...overrides,
   };
 }
@@ -84,9 +88,9 @@ describe('formatEvidenceSummary', () => {
 });
 
 describe('renderPreferencesHtml', () => {
-  it('renders the observe-only explainer and the empty state with no candidates', () => {
+  it('renders the confirm-gated explainer and the empty state with no candidates', () => {
     const html = renderPreferencesHtml([]);
-    expect(html).toContain('Observe-only: nothing here changes agent behavior');
+    expect(html).toContain('Only rules you confirm are supplied to agents');
     expect(html).toContain('No learned candidates yet');
   });
 
@@ -146,6 +150,105 @@ describe('renderPreferencesHtml', () => {
       preference({ scope: { kind: 'workspace', workspaceId: 'w_9' } }),
     ]);
     expect(html).toContain('Scope: workspace w_9');
+  });
+
+  it('asks the causal confirm question at 3 outcomes across 2 documents', () => {
+    const below = preference({ supportingOutcomes: 3, evidenceDocuments: 1 });
+    expect(shouldAskToConfirm(below)).toBe(false);
+    const at = preference({ supportingOutcomes: 3, evidenceDocuments: 2 });
+    expect(shouldAskToConfirm(at)).toBe(true);
+    const html = renderPreferencesHtml([at]);
+    expect(html).toContain('pref-ask');
+    expect(html).toContain('3 times across 2 documents');
+    expect(html).not.toContain('pref-observed');
+  });
+
+  it('offers the confirm affordance on candidates only', () => {
+    expect(renderPreferencesHtml([preference()])).toContain(
+      'pref-confirm-open',
+    );
+    for (const status of ['confirmed', 'paused', 'rejected'] as const) {
+      expect(renderPreferencesHtml([preference({ status })])).not.toContain(
+        'pref-confirm-open',
+      );
+    }
+  });
+
+  it('opens the scope chooser only for the confirming card', () => {
+    const prefs = [preference(), preference({ id: 'pref_other' })];
+    expect(renderPreferencesHtml(prefs, null)).not.toContain(
+      'pref-scope-chooser',
+    );
+    const html = renderPreferencesHtml(prefs, 'pref_abc123');
+    expect(html).toContain('pref-scope-chooser" data-pref="pref_abc123"');
+    expect(html).not.toContain('pref-scope-chooser" data-pref="pref_other"');
+  });
+
+  it('scope chooser offers user + archetype + single-evidence-workspace scopes, reject, and cancel', () => {
+    const html = renderScopeChooserHtml(preference());
+    expect(html).toContain('data-scope-kind="user"');
+    expect(html).toContain(
+      'data-scope-kind="archetype" data-scope-archetype="multi-region-hub-spoke"',
+    );
+    expect(html).toContain(
+      'data-scope-kind="workspace" data-scope-workspace="w1"',
+    );
+    expect(html).toContain('pref-reject');
+    expect(html).toContain('pref-confirm-cancel');
+  });
+
+  it('omits archetype/workspace scope options without a detected archetype or with multi-workspace evidence', () => {
+    const html = renderScopeChooserHtml(
+      preference({
+        trigger: { requiredTraits: ['t'] },
+        sourceRevisionRefs: ['w1@r5', 'w2@r3'],
+      }),
+    );
+    expect(html).not.toContain('data-scope-kind="archetype"');
+    expect(html).not.toContain('data-scope-kind="workspace"');
+    expect(html).toContain('data-scope-kind="user"');
+  });
+
+  it('renders a confirmed rule with its note and no ask callout', () => {
+    const html = renderPreferencesHtml([
+      preference({
+        status: 'confirmed',
+        confidence: 0.7,
+        confirmedAt: '2026-07-15T09:00:00.000Z',
+        supportingOutcomes: 3,
+        evidenceDocuments: 2,
+      }),
+    ]);
+    expect(html).toContain('pref-status-confirmed');
+    expect(html).toContain('Confirmed 2026-07-15');
+    expect(html).toContain('supplied to agents when it applies');
+    expect(html).not.toContain('pref-ask');
+    expect(html).toContain('pref-pause');
+  });
+
+  it('renders a rejected rule with Forget as its only action', () => {
+    const html = renderPreferencesHtml([preference({ status: 'rejected' })]);
+    expect(html).toContain('pref-rejected-note');
+    expect(html).toContain('will not be learned again');
+    expect(html).toContain('pref-forget');
+    expect(html).not.toContain('pref-pause');
+    expect(html).not.toContain('pref-resume');
+    expect(html).not.toContain('pref-confirm-open');
+  });
+
+  it('escapes untrusted archetype/workspace text in the scope chooser', () => {
+    const html = renderScopeChooserHtml(
+      preference({
+        trigger: {
+          archetype: '"onmouseover="x',
+          requiredTraits: ['t'],
+        },
+        sourceRevisionRefs: ['<b>ws</b>@r1'],
+      }),
+    );
+    expect(html).toContain('data-scope-archetype="&quot;onmouseover=&quot;x"');
+    expect(html).toContain('data-scope-workspace="&lt;b&gt;ws&lt;/b&gt;"');
+    expect(html).not.toContain('<b>ws</b>');
   });
 
   it('escapes untrusted directive, rationale, and id text', () => {

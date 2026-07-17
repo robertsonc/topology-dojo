@@ -53,6 +53,13 @@ import type { RenderOptions } from '../render/core.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { convertLegacyStudio, detectLegacyStudio } from '../import/legacy.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
+import {
+  ABSOLUTE_GUIDANCE_TOKENS,
+  MAX_GUIDANCE_RULES,
+  type GuidanceResult,
+  type PreferenceExplanation,
+  type PreferenceSummary,
+} from '../profile/guidance.js';
 import { TopologyStore } from './store.js';
 import {
   ELEMENT_KINDS,
@@ -102,6 +109,23 @@ export interface ToolDeps {
    * tool arguments. When absent, the live-data tools are not registered.
    */
   provider?: TopologyProvider;
+  /**
+   * Read-only authoring-profile guidance (remote-only, Packet P4 / proposal
+   * 0003-B). Deliberately exposes NOTHING that mutates the profile —
+   * confirmation, scoping, pause, and forget stay browser-owner actions, so
+   * an agent can never promote its own lesson through MCP.
+   */
+  profile?: {
+    guidance(query: {
+      archetype?: string;
+      workspaceId?: string;
+      lastProfileRevision?: number;
+      lastGuidanceRevision?: number;
+      maxTokens?: number;
+    }): Promise<GuidanceResult>;
+    list(): Promise<PreferenceSummary[]>;
+    explain(preferenceId: string): Promise<PreferenceExplanation>;
+  };
   /** Canonical owner workspace (remote-only). Keeping this injected preserves
    * the pure/local MCP server and makes the tool protocol unit-testable. */
   workspace?: {
@@ -1361,6 +1385,97 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           'List this workspace’s named checkpoints (id, name, revision, page count, author). Restore and fork remain browser-owner actions.',
         inputShape: { workspaceId },
         handler: (a) => workspace.listCheckpoints(String(a.workspaceId)),
+      },
+    );
+  }
+
+  // Read-only authoring-profile guidance (Packet P4 / proposal 0003-B).
+  // Bounded and delta-oriented like the workspace loop: pass the last-seen
+  // revisions and an unchanged profile costs one tiny notModified response.
+  // There is intentionally NO tool that confirms, edits, pauses, or forgets a
+  // preference — those stay browser-owner actions.
+  if (deps.profile) {
+    const profile = deps.profile;
+    tools.push(
+      {
+        name: 'get_authoring_guidance',
+        description:
+          'Get the owner’s confirmed authoring preferences plus product guidance applicable to this task, compiled into at most 5 concise directives under a hard token budget, ordered most-specific first. Call before authoring or laying out a topology; pass profileRevision/guidanceRevision from the previous response and an unchanged profile returns notModified with no instruction body. Rules that match but exceed the budget are returned as ids with an omission count, never truncated prose.',
+        inputShape: {
+          archetype: z
+            .string()
+            .max(60)
+            .optional()
+            .describe(
+              'Task topology archetype (e.g. multi-region-hub-spoke), when known.',
+            ),
+          workspaceId: z
+            .string()
+            .max(120)
+            .optional()
+            .describe(
+              'Workspace being authored in, for workspace conventions.',
+            ),
+          lastProfileRevision: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe('profileRevision from the previous guidance response.'),
+          lastGuidanceRevision: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe('guidanceRevision from the previous guidance response.'),
+          maxTokens: z
+            .number()
+            .int()
+            .min(1)
+            .max(ABSOLUTE_GUIDANCE_TOKENS)
+            .optional()
+            .describe(
+              `Raise the ${MAX_GUIDANCE_RULES}-rule response budget above the 400-token default (absolute ceiling ${ABSOLUTE_GUIDANCE_TOKENS}) when the user explicitly asks for profile inspection.`,
+            ),
+        },
+        handler: (a) =>
+          profile.guidance({
+            ...(a.archetype !== undefined
+              ? { archetype: String(a.archetype) }
+              : {}),
+            ...(a.workspaceId !== undefined
+              ? { workspaceId: String(a.workspaceId) }
+              : {}),
+            ...(a.lastProfileRevision !== undefined
+              ? { lastProfileRevision: Number(a.lastProfileRevision) }
+              : {}),
+            ...(a.lastGuidanceRevision !== undefined
+              ? { lastGuidanceRevision: Number(a.lastGuidanceRevision) }
+              : {}),
+            ...(a.maxTokens !== undefined
+              ? { maxTokens: Number(a.maxTokens) }
+              : {}),
+          }),
+      },
+      {
+        name: 'list_authoring_preferences',
+        description:
+          'List the owner’s learned authoring preferences as compact summaries (id, status, scope, directive, evidence counts) for profile inspection. Read-only management support: confirmation, scoping, pause, and forget happen in the browser, never over MCP.',
+        inputShape: {},
+        handler: () => profile.list(),
+      },
+      {
+        name: 'explain_authoring_preference',
+        description:
+          'Explain one authoring preference: scope, trigger, rationale, confidence, and an evidence summary (counts and dates only — never document content). Use it to tell the user why a rule applies; only the user can confirm or change it.',
+        inputShape: {
+          preferenceId: z
+            .string()
+            .min(1)
+            .max(64)
+            .describe('Preference id from guidance or the summaries list.'),
+        },
+        handler: (a) => profile.explain(String(a.preferenceId)),
       },
     );
   }
