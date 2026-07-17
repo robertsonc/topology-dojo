@@ -26,6 +26,7 @@ import {
   resumeAuthoringPreference,
 } from '../profile/client.js';
 import { documentRefOf } from '../profile/learner.js';
+import { staleForReview } from '../profile/refinement.js';
 import type { AuthoringPreference, PreferenceScope } from '../profile/model.js';
 
 // Local copy of main.ts's `esc()` — the codebase's established pattern for
@@ -108,19 +109,25 @@ export function renderScopeChooserHtml(pref: AuthoringPreference): string {
 }
 
 /** Pure: one rule's card — directive, status badge, rationale, scope, the
- * repeated-pattern callout (a passive note at 2 observations; the active
- * confirm question at the 3-outcomes/2-documents threshold), evidence
- * summary, and the per-status actions. Only the browser owner ever sees a
- * confirm affordance — there is no MCP equivalent. */
+ * callouts (needs-review from contradictions first, then the ask/observed
+ * ladder, confirmed/rejected notes, and the stale-toward-review note),
+ * the exceptions line, evidence summary, and the per-status actions. Only
+ * the browser owner ever sees a confirm affordance — there is no MCP
+ * equivalent. */
 function renderPreferenceCardHtml(
   pref: AuthoringPreference,
   confirmingId: string | null,
+  now: string | null,
 ): string {
   const paused = pref.status === 'paused';
   const rejected = pref.status === 'rejected';
   const confirmed = pref.status === 'confirmed';
   let callout = '';
-  if (shouldAskToConfirm(pref)) {
+  if (pref.needsReview) {
+    callout = confirmed
+      ? `<div class="ws-note pref-review">⚠ Overridden ${pref.contradictingOutcomes}× by your corrections — review it: re-confirm, rescope, or reject.</div>`
+      : `<div class="ws-note pref-review">⚠ Conflicting evidence (${pref.contradictingOutcomes} contradiction${pref.contradictingOutcomes === 1 ? '' : 's'}) — confirm the direction you want, or forget it.</div>`;
+  } else if (shouldAskToConfirm(pref)) {
     callout = `<div class="ws-note pref-ask">◎ You have made this correction ${pref.supportingOutcomes} times across ${pref.evidenceDocuments} documents. Should Topology Dojo prefer it in future agent-authored diagrams?</div>`;
   } else if (pref.status === 'candidate' && pref.supportingOutcomes >= 2) {
     callout = `<div class="ws-note pref-observed">◎ Observed ${pref.supportingOutcomes}× — a repeated pattern. It changes nothing until you confirm it.</div>`;
@@ -129,10 +136,19 @@ function renderPreferenceCardHtml(
   } else if (rejected) {
     callout = `<div class="ws-note pref-rejected-note">✕ Rejected — this pattern will not be learned again. Forget it to clear the record.</div>`;
   }
+  const stale =
+    now && staleForReview(pref, now)
+      ? `<div class="ws-note pref-stale">◌ Not observed since ${pref.lastObservedAt.slice(0, 10)} — stale. Keep, pause, or forget it.</div>`
+      : '';
+  const exceptions = pref.exceptionWorkspaceIds?.length
+    ? `<div class="ws-note pref-exceptions">Except in: ${pref.exceptionWorkspaceIds.map((id) => esc(id)).join(', ')}</div>`
+    : '';
+  const confirmable =
+    pref.status === 'candidate' || (confirmed && pref.needsReview);
   const actions = rejected
     ? `<button class="tbtn pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>`
-    : (pref.status === 'candidate'
-        ? `<button class="tbtn pref-confirm-open" data-pref-id="${esc(pref.id)}">Make this a preference…</button>`
+    : (confirmable
+        ? `<button class="tbtn pref-confirm-open" data-pref-id="${esc(pref.id)}">${confirmed ? 'Re-confirm…' : 'Make this a preference…'}</button>`
         : '') +
       `<button class="tbtn ${paused ? 'pref-resume' : 'pref-pause'}" data-pref-id="${esc(pref.id)}">${paused ? 'Resume' : 'Pause'}</button>` +
       `<button class="tbtn pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>`;
@@ -144,7 +160,9 @@ function renderPreferenceCardHtml(
       ? `<div class="ws-note pref-rationale">${esc(pref.rationale)}</div>`
       : '') +
     `<div class="ws-note pref-scope">Scope: ${esc(preferenceScopeLabel(pref.scope))}</div>` +
+    exceptions +
     callout +
+    stale +
     `<div class="ws-note pref-evidence">${esc(formatEvidenceSummary(pref))}</div>` +
     `<div class="ws-actions">${actions}</div>` +
     (confirmingId === pref.id ? renderScopeChooserHtml(pref) : '') +
@@ -153,10 +171,12 @@ function renderPreferenceCardHtml(
 }
 
 /** Pure: the list body — an explainer plus one card per learned rule (or the
- * empty state). */
+ * empty state). `now` (an ISO timestamp) enables the stale-toward-review
+ * notes; omit it for time-independent rendering. */
 export function renderPreferencesHtml(
   prefs: AuthoringPreference[],
   confirmingId: string | null = null,
+  now: string | null = null,
 ): string {
   const intro =
     `<div class="ws-note">Patterns observed from your corrections to agent-authored diagrams. ` +
@@ -168,7 +188,8 @@ export function renderPreferencesHtml(
     );
   }
   return (
-    intro + prefs.map((p) => renderPreferenceCardHtml(p, confirmingId)).join('')
+    intro +
+    prefs.map((p) => renderPreferenceCardHtml(p, confirmingId, now)).join('')
   );
 }
 
@@ -182,6 +203,8 @@ export interface ProfilePanelState {
   preferences: AuthoringPreference[];
   /** The card whose inline scope chooser is open (Packet P4), if any. */
   confirmingId: string | null;
+  /** Render-time ISO timestamp for stale notes (Packet P5); null disables. */
+  now: string | null;
 }
 
 /** Pure: the whole panel body for a given state. */
@@ -191,7 +214,7 @@ export function renderProfileBodyHtml(state: ProfilePanelState): string {
     (state.error ? `<div class="ws-error">${esc(state.error)}</div>` : '') +
     (state.loading
       ? `<div class="ws-note">Loading preferences…</div>`
-      : renderPreferencesHtml(state.preferences, state.confirmingId))
+      : renderPreferencesHtml(state.preferences, state.confirmingId, state.now))
   );
 }
 
@@ -215,6 +238,7 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
     error: null,
     preferences: [],
     confirmingId: null,
+    now: null,
   };
 
   function closePanel(): void {
@@ -230,6 +254,7 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
   async function refresh(): Promise<void> {
     state.loading = true;
     state.error = null;
+    state.now = new Date().toISOString();
     renderPanel();
     try {
       state.preferences = await listAuthoringPreferences();

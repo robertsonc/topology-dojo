@@ -55,6 +55,7 @@ function state(overrides: Partial<ProfilePanelState> = {}): ProfilePanelState {
     error: null,
     preferences: [],
     confirmingId: null,
+    now: null,
     ...overrides,
   };
 }
@@ -234,6 +235,53 @@ describe('renderPreferencesHtml', () => {
     expect(html).not.toContain('pref-pause');
     expect(html).not.toContain('pref-resume');
     expect(html).not.toContain('pref-confirm-open');
+  });
+
+  it('shows the needs-review callout above the ask ladder, with Re-confirm on confirmed rules', () => {
+    const flagged = preference({
+      status: 'confirmed',
+      needsReview: true,
+      contradictingOutcomes: 2,
+      supportingOutcomes: 3,
+      evidenceDocuments: 2,
+    });
+    const html = renderPreferencesHtml([flagged]);
+    expect(html).toContain('pref-review');
+    expect(html).toContain('Overridden 2×');
+    expect(html).not.toContain('pref-ask');
+    expect(html).toContain('>Re-confirm…</button>');
+
+    const candidateFlagged = renderPreferencesHtml([
+      preference({ needsReview: true, contradictingOutcomes: 2 }),
+    ]);
+    expect(candidateFlagged).toContain(
+      'Conflicting evidence (2 contradictions)',
+    );
+    expect(candidateFlagged).toContain('>Make this a preference…</button>');
+  });
+
+  it('lists exception workspaces, escaped', () => {
+    const html = renderPreferencesHtml([
+      preference({
+        status: 'confirmed',
+        exceptionWorkspaceIds: ['w9', '<b>ws</b>'],
+      }),
+    ]);
+    expect(html).toContain('Except in: w9, &lt;b&gt;ws&lt;/b&gt;');
+    expect(html).not.toContain('<b>ws</b>');
+  });
+
+  it('renders the stale note only when now is provided and the rule is stale', () => {
+    const old = preference({ lastObservedAt: '2026-05-01T00:00:00.000Z' });
+    expect(renderPreferencesHtml([old], null, null)).not.toContain(
+      'pref-stale',
+    );
+    const html = renderPreferencesHtml([old], null, '2026-07-17T12:00:00.000Z');
+    expect(html).toContain('pref-stale');
+    expect(html).toContain('Not observed since 2026-05-01');
+    expect(
+      renderPreferencesHtml([old], null, '2026-05-02T00:00:00.000Z'),
+    ).not.toContain('pref-stale');
   });
 
   it('escapes untrusted archetype/workspace text in the scope chooser', () => {

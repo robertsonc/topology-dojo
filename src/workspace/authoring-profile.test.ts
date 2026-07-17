@@ -92,6 +92,9 @@ interface StoredPref {
   };
   sourceRevisionRefs: string[];
   confirmedAt?: string;
+  contradictingOutcomes?: number;
+  exceptionWorkspaceIds?: string[];
+  needsReview?: boolean;
 }
 
 interface GuidanceBody {
@@ -767,6 +770,135 @@ describe('owner confirm / reject + bounded guidance retrieval (Packet P4)', () =
       owner,
     });
     expect(listed[0]!.status).toBe('candidate');
+  }, 30_000);
+});
+
+describe('outcome refinement: contradictions, exceptions, review (Packet P5)', () => {
+  it('an overriding correction records a scoped exception, bumps the revision, and narrows serving', async () => {
+    const owner = 'p5-contra';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    await call(on, {
+      action: 'confirm',
+      owner,
+      preferenceId: pref!.id,
+      scope: { kind: 'user' },
+    });
+    const query = { archetype: 'multi-region-hub-spoke' };
+    const before = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query,
+    });
+
+    // The user overrides the rule in workspace w9: the reverse trait diff.
+    const reversalOutcome = outcome({
+      addedTraits: ['radial-placement'],
+      removedTraits: ['layered-regional', 'spokes-below-hub'],
+      sourceRevisionRef: 'w9@r3',
+      documentRef: 'w9',
+      summary: 'layered regional → radial hub placement',
+    });
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: reversalOutcome,
+    });
+
+    const prefs = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    const rule = prefs.find((p) => p.id === pref!.id)!;
+    expect(rule.contradictingOutcomes).toBe(1);
+    expect(rule.exceptionWorkspaceIds).toEqual(['w9']);
+    expect(rule.status).toBe('confirmed'); // never silently disabled
+    // The reverse correction ALSO becomes its own fresh candidate.
+    expect(prefs.filter((p) => p.id !== pref!.id)).toHaveLength(1);
+    expect(prefs.find((p) => p.id !== pref!.id)!.status).toBe('candidate');
+
+    // The contradiction bumped the revision (exceptions change serving)…
+    const after = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query,
+    });
+    expect(after.profileRevision).toBe(before.profileRevision + 1);
+    // …and the rule no longer serves in w9 while serving elsewhere.
+    const inW9 = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query: { ...query, workspaceId: 'w9' },
+    });
+    expect(inW9.rules!.some((r) => r.id === pref!.id)).toBe(false);
+    const inW1 = await call<GuidanceBody>(on, {
+      action: 'guidance',
+      owner,
+      query: { ...query, workspaceId: 'w1' },
+    });
+    expect(inW1.rules!.some((r) => r.id === pref!.id)).toBe(true);
+
+    // Burst coalescing: re-delivering the same reversal changes nothing.
+    await call(on, {
+      action: 'recordOutcome',
+      owner,
+      outcome: reversalOutcome,
+    });
+    const repeat = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    expect(repeat.find((p) => p.id === pref!.id)!.contradictingOutcomes).toBe(
+      1,
+    );
+  }, 30_000);
+
+  it('a second independent contradiction flags review; re-confirm clears it', async () => {
+    const owner = 'p5-review';
+    await call(on, { action: 'recordOutcome', owner, outcome: outcome() });
+    const [pref] = await call<StoredPref[]>(on, {
+      action: 'listPreferences',
+      owner,
+    });
+    await call(on, {
+      action: 'confirm',
+      owner,
+      preferenceId: pref!.id,
+      scope: { kind: 'user' },
+    });
+    for (const [ref, doc] of [
+      ['w8@r1', 'w8'],
+      ['w9@r1', 'w9'],
+    ] as const) {
+      await call(on, {
+        action: 'recordOutcome',
+        owner,
+        outcome: outcome({
+          addedTraits: ['radial-placement'],
+          removedTraits: ['layered-regional'],
+          sourceRevisionRef: ref,
+          documentRef: doc,
+        }),
+      });
+    }
+    const flagged = (
+      await call<StoredPref[]>(on, { action: 'listPreferences', owner })
+    ).find((p) => p.id === pref!.id)!;
+    expect(flagged.contradictingOutcomes).toBe(2);
+    expect(flagged.needsReview).toBe(true);
+    expect(flagged.exceptionWorkspaceIds).toEqual(['w8', 'w9']);
+
+    const reconfirmed = await call<StoredPref>(on, {
+      action: 'confirm',
+      owner,
+      preferenceId: pref!.id,
+      scope: { kind: 'user' },
+    });
+    expect(reconfirmed.needsReview).toBeUndefined();
+    expect(reconfirmed.exceptionWorkspaceIds).toEqual(['w8', 'w9']); // kept
   }, 30_000);
 });
 

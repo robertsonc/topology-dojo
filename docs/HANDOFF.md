@@ -107,12 +107,22 @@ fine; revisit only on measured contention.
    (`GUIDANCE_REVISION` must bump with any pack edit). After merge: dispatch
    `deploy-staging.yml` from `main` so the confirm flow + guidance tools go
    live on staging.
-3. **P5 (0003-C)** — outcome refinement: overrides/contradictions narrow
-   triggers + recalibrate confidence (`contradictingOutcomes` is stored but
-   never incremented yet); stale candidates decay toward review.
-   Deterministic decay/contradiction unit tests; 0003 acceptance criteria 3–4
-   as named tests (P4 ships criterion 3's coarse archetype-match form;
-   trigger-TRAIT matching is P5's).
+3. ~~**P5 (0003-C)**~~ — DONE (this branch/PR): outcome refinement.
+   A correction that REVERSES a stored rule's trait direction (same
+   archetype, re-adds excluded / removes required traits) is a
+   contradiction: it recalibrates confidence (`calibratedConfidence` —
+   confirmation base × supporting share), records a bounded per-workspace
+   **exception** (guidance stops serving the rule in that workspace only —
+   the rule itself is never mutated), and at 2 contradictions flags
+   `needsReview` for the panel's re-confirm/rescope/reject prompt. Stale
+   rules (45 days unobserved) decay toward review as a render-time panel
+   note. All pure logic in `src/profile/refinement.ts` with deterministic
+   tests (`refinement.test.ts`) including **0003 acceptance criteria 3 and 4
+   as named tests**; DO-level end-to-end in
+   `src/workspace/authoring-profile.test.ts`. Contradictions are the one
+   learning path that bumps `profileRevision` (exceptions change serving).
+   After merge: dispatch `deploy-staging.yml`, UAT, then the normal gated
+   production deploy.
 4. Then: 0003-D (governed product guidance) is out of scope per the plan;
    remaining roadmap candidates in `ROADMAP.md` §Next.
 
