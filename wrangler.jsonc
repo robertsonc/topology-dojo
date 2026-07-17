@@ -18,14 +18,17 @@
     "PUBLIC_BASE_URL": "https://topology-dojo.robertson-corey.workers.dev",
     // GitHub OAuth App client id (public; the secret is a dashboard secret).
     "GITHUB_CLIENT_ID": "Ov23liAsmD1WV2yT4yzw",
-    // Production v3 bootstrap posture (runbook Gate B / operator O10): the
-    // first gated production deploy applies migrations v1–v4 with the
-    // workspace surfaces held OFF, so the TopologyDocument namespace ships
-    // inert. Flipped to "true" by the separate Gate C activation deploy
-    // (O11) after bootstrap smoke — see DEPLOYMENT_RUNBOOK.md. Note
-    // PROFILES_ENABLED needs no bootstrap entry: it is opt-in (unset ⇒ off,
-    // worker/env.ts), so its absence here IS the profiles bootstrap.
-    "WORKSPACE_ENABLED": "false",
+    // Production activation (runbook Gate C / operator O11, after the O10
+    // v1–v4 bootstrap deploy + green workspace_disabled smoke). Recovery for
+    // any tripped stop condition is FORWARD-only: redeploy with this set back
+    // to "false" — never roll back across v3 (DEPLOYMENT_RUNBOOK.md).
+    "WORKSPACE_ENABLED": "true",
+    // Profiles activation (proposal 0003 / migration v4): opt-in flag
+    // (worker/env.ts profilesEnabled — only the literal "true" enables),
+    // turned on together with the workspace flip by operator decision after
+    // P4 passed staging UAT. Same forward-only recovery: redeploy with this
+    // entry removed to disable the learner + profile surfaces.
+    "PROFILES_ENABLED": "true",
   },
   "assets": {
     "directory": "./dist",
