@@ -7,6 +7,7 @@ import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 import type { TopologyRegistry } from './registry.js';
 import type { TopologyDocument } from './document.js';
 import type { AuthoringProfile } from './profile.js';
+import type { AnalyticsLog } from './analytics.js';
 
 export interface WorkerEnv {
   /** Static-assets binding (the Vite build in ./dist). */
@@ -36,6 +37,13 @@ export interface WorkerEnv {
    * never changes agent output (retrieval/guidance is a later packet).
    */
   AUTHORING_PROFILE: DurableObjectNamespace<AuthoringProfile>;
+  /**
+   * Owner-analytics store for the admin dashboard (migration `v5`). One global
+   * DO instance holding a bounded login roster + recent-login log — metadata
+   * only. Gated by `ANALYTICS_ENABLED` (opt-in, like `PROFILES_ENABLED`): the
+   * migration ships inert in production and a later deploy activates it.
+   */
+  ANALYTICS: DurableObjectNamespace<AnalyticsLog>;
   /** KV namespace where `share_topology` snapshots published documents. */
   TOPOLOGY_KV: KVNamespace;
   /** KV namespace where the OAuth provider stores grants/tokens. */
@@ -89,6 +97,23 @@ export interface WorkerEnv {
    * pattern and DEPLOYMENT_RUNBOOK.md).
    */
   PROFILES_ENABLED?: string;
+  /**
+   * Feature flag gating the owner-analytics store + admin dashboard (migration
+   * `v5`). Like `PROFILES_ENABLED` this is a brand-new Durable Object class, so
+   * it defaults **OFF**: only the literal string `"true"` enables it (unset ⇒
+   * disabled). It must bootstrap disabled in production so the `v5` migration
+   * can ship inert (no login recording, no admin API), then be activated by a
+   * later deploy that sets `"ANALYTICS_ENABLED": "true"` at the top level.
+   * `env.staging` sets it `"true"`.
+   */
+  ANALYTICS_ENABLED?: string;
+  /**
+   * The single GitHub numeric id (as a string) allowed to reach the admin
+   * dashboard (`/api/admin/*`). The gate is **fail-closed**: with this unset,
+   * `isAdmin` returns false for everyone, so the admin surface is inert even if
+   * `ANALYTICS_ENABLED` is on. Set it to the deployment owner's GitHub id.
+   */
+  ADMIN_GITHUB_ID?: string;
 }
 
 /**
@@ -115,4 +140,29 @@ export function profilesEnabled(
   env: Pick<WorkerEnv, 'PROFILES_ENABLED'>,
 ): boolean {
   return env.PROFILES_ENABLED === 'true';
+}
+
+/**
+ * Whether the owner-analytics store + admin dashboard should run. Opt-in like
+ * `profilesEnabled` (only the exact string `"true"` enables); any other value
+ * — unset, `"false"`, a typo — fails closed to "disabled", so an un-activated
+ * production deploy never records logins or serves the admin API.
+ */
+export function analyticsEnabled(
+  env: Pick<WorkerEnv, 'ANALYTICS_ENABLED'>,
+): boolean {
+  return env.ANALYTICS_ENABLED === 'true';
+}
+
+/**
+ * Whether `uid` is the deployment's admin. Fail-closed: with `ADMIN_GITHUB_ID`
+ * unset there is no admin, so the dashboard stays inaccessible even when
+ * analytics is enabled. Compared against the stable GitHub numeric id (never
+ * the mutable login).
+ */
+export function isAdmin(
+  env: Pick<WorkerEnv, 'ADMIN_GITHUB_ID'>,
+  uid: string,
+): boolean {
+  return !!env.ADMIN_GITHUB_ID && uid === env.ADMIN_GITHUB_ID;
 }

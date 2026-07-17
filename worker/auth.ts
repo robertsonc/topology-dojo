@@ -14,6 +14,7 @@
  * configured server secret) — no new secret to provision.
  */
 import type { WorkerEnv } from './env.js';
+import { analyticsEnabled, isAdmin } from './env.js';
 import {
   parseCookies,
   signSession,
@@ -21,6 +22,40 @@ import {
   SESSION_TTL_SEC,
   type SessionUser,
 } from '../src/server/session.js';
+
+/** Narrow RPC view of the analytics DO — kept explicit so the cross-DO call
+ * typechecks without Cloudflare's conservative Stubable<> inference (same
+ * pattern as `profile-api.ts`). */
+interface AnalyticsRecordRpc {
+  recordLogin(input: {
+    uid: string;
+    login: string;
+    name?: string;
+    at: string;
+  }): Promise<void>;
+}
+
+/**
+ * Best-effort: record a browser login into the owner-analytics store. Wrapped
+ * so a storage hiccup can never fail the login (it runs under `ctx.waitUntil`,
+ * off the response path). Gated by the caller via `analyticsEnabled`.
+ */
+async function recordLogin(env: WorkerEnv, user: SessionUser): Promise<void> {
+  try {
+    const ns = env.ANALYTICS;
+    const stub = ns.get(
+      ns.idFromName('global'),
+    ) as unknown as AnalyticsRecordRpc;
+    await stub.recordLogin({
+      uid: user.uid,
+      login: user.login,
+      ...(user.name ? { name: user.name } : {}),
+      at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('login analytics record failed', err);
+  }
+}
 
 const COOKIE_SESSION = 'tdg_session';
 const COOKIE_STATE = 'tdg_oauth_state';
@@ -80,10 +115,13 @@ export function isWebCallback(state: string | null): boolean {
   return !!state && state.startsWith(WEB_STATE_PREFIX);
 }
 
-/** Finish the browser login: validate state, exchange code, set the session. */
+/** Finish the browser login: validate state, exchange code, set the session.
+ * `ctx` is threaded through so a successful login can be recorded off the
+ * response path (`ctx.waitUntil`, best-effort, gated by `ANALYTICS_ENABLED`). */
 export async function completeWebLogin(
   request: Request,
   env: WorkerEnv,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
@@ -139,10 +177,15 @@ export async function completeWebLogin(
     return new Response('Could not read GitHub profile\n', { status: 401 });
   }
   const user = (await userRes.json()) as GitHubUser;
-  const session = await signSession(
-    { uid: String(user.id), login: user.login, name: user.name ?? undefined },
-    env.GITHUB_CLIENT_SECRET,
-  );
+  const sessionUser: SessionUser = {
+    uid: String(user.id),
+    login: user.login,
+    ...(user.name ? { name: user.name } : {}),
+  };
+  const session = await signSession(sessionUser, env.GITHUB_CLIENT_SECRET);
+  // Owner-analytics: record the login off the response path, gated + best-effort
+  // (never blocks or fails the sign-in). Inert unless ANALYTICS_ENABLED.
+  if (analyticsEnabled(env)) ctx.waitUntil(recordLogin(env, sessionUser));
   const headers = new Headers();
   headers.append('location', safePath(go ?? '/'));
   headers.append(
@@ -172,9 +215,16 @@ export async function handleMe(
 ): Promise<Response> {
   const user = await currentUser(request, env);
   if (!user) return new Response('{}', { status: 401, headers: json });
-  return new Response(JSON.stringify({ login: user.login, name: user.name }), {
-    headers: json,
-  });
+  // `admin` lets the app reveal the owner-only Admin chip without exposing the
+  // configured admin id; the real gate is the `/api/admin` routes, not this.
+  return new Response(
+    JSON.stringify({
+      login: user.login,
+      name: user.name,
+      admin: isAdmin(env, user.uid),
+    }),
+    { headers: json },
+  );
 }
 
 const json = { 'content-type': 'application/json' };

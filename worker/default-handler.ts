@@ -11,7 +11,12 @@
  * screen (GitHub already shows one) so connecting is a single authorize click.
  */
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
-import { profilesEnabled, workspaceEnabled, type WorkerEnv } from './env.js';
+import {
+  analyticsEnabled,
+  profilesEnabled,
+  workspaceEnabled,
+  type WorkerEnv,
+} from './env.js';
 import {
   completeWebLogin,
   currentUser,
@@ -24,6 +29,7 @@ import {
 } from './auth.js';
 import { handleWorkspaceApi } from './workspace-api.js';
 import { handleProfileApi } from './profile-api.js';
+import { handleAdminApi } from './admin-api.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -59,6 +65,25 @@ const PROFILES_DISABLED_BODY = JSON.stringify({ error: 'profiles_disabled' });
  */
 function profilesDisabledResponse(): Response {
   return new Response(PROFILES_DISABLED_BODY, {
+    status: 503,
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+    },
+  });
+}
+
+/** Stable 503 body for the `ANALYTICS_ENABLED` gate on `/api/admin/*` — the
+ * admin surface's mirror of the profile gate (also opt-in, default off). */
+const ADMIN_DISABLED_BODY = JSON.stringify({ error: 'admin_disabled' });
+
+/**
+ * The owner-analytics surface is off for this deployment: reject before
+ * touching `handleAdminApi` (and therefore before the `ANALYTICS` DO binding
+ * is read), so an un-activated production deploy stays inert.
+ */
+function adminDisabledResponse(): Response {
+  return new Response(ADMIN_DISABLED_BODY, {
     status: 503,
     headers: {
       'content-type': 'application/json',
@@ -371,7 +396,7 @@ export const defaultHandler = {
 async function route(
   request: Request,
   env: WorkerEnv,
-  _ctx: ExecutionContext,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const { pathname } = url;
@@ -399,13 +424,17 @@ async function route(
     if (!profilesEnabled(env)) return profilesDisabledResponse();
     return handleProfileApi(request, env);
   }
+  if (pathname === '/api/admin' || pathname.startsWith('/api/admin/')) {
+    if (!analyticsEnabled(env)) return adminDisabledResponse();
+    return handleAdminApi(request, env);
+  }
 
   // MCP OAuth provider flow. `/callback` is shared: the browser login uses a
   // `web.`-prefixed state, the MCP client flow does not.
   if (pathname === '/authorize') return handleAuthorize(request, env);
   if (pathname === '/callback') {
     return isWebCallback(url.searchParams.get('state'))
-      ? completeWebLogin(request, env)
+      ? completeWebLogin(request, env, ctx)
       : handleCallback(request, env);
   }
 

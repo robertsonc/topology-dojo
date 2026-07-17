@@ -91,6 +91,7 @@ fine; revisit only on measured contention.
 | O11                               | ✅ 2026-07-17: `WORKSPACE_ENABLED:"true"` activation (combined deploy with profiles); T0 smoke on deploy, owner runs T1/T2                                                                                                                                                                                                                                                                                                                                                                     |
 | O12                               | ◑ Partial. **Nightly staging smoke** ✅ (`nightly-staging-smoke.yml`, 08:00 UTC, files/closes a `nightly-smoke` issue via GitHub-native notification — no secrets). **Failed-deploy notifications**: GitHub's built-in Actions failure emails (per-user Settings → Notifications; no repo change). **Cloudflare error-rate alerting** ⏳ still open — dashboard-only, thresholds in `DEPLOYMENT_RUNBOOK.md` §"Rate-based stops"; this is the one gating the activation soak (owner working it) |
 | Profiles activation (prod)        | ✅ 2026-07-17: top-level `"PROFILES_ENABLED": "true"` shipped in the combined activation deploy after P4 staging UAT                                                                                                                                                                                                                                                                                                                                                                           |
+| Analytics dashboard (`v5`)        | ◑ In progress (this branch/PR). Staging opts in (`ANALYTICS_ENABLED="true"`); prod bootstraps `v5` inert (no top-level flag), then a later tiny PR flips `ANALYTICS_ENABLED:"true"`. See runbook §"Migration `v5`" for the three gates.                                                                                                                                                                                                                                                        |
 
 ## Next repo work, in order
 
@@ -128,6 +129,24 @@ fine; revisit only on measured contention.
    production deploy.
 4. Then: 0003-D (governed product guidance) is out of scope per the plan;
    remaining roadmap candidates in `ROADMAP.md` §Next.
+5. **Owner analytics / admin dashboard (MVP)** — IN PROGRESS (this branch/PR).
+   A new `AnalyticsLog` SQLite DO (migration `v5`, single `idFromName('global')`
+   instance) records a login roster + bounded recent-login log best-effort off
+   `completeWebLogin` (`ctx.waitUntil`, gated by `analyticsEnabled()`). Owner-only
+   `/api/admin/summary` + `/api/admin/users/:uid/workspaces` (fail-closed:
+   `analyticsEnabled` else 503; `uid === ADMIN_GITHUB_ID` else 403) serve the
+   roster and per-user workspace **metadata** (names/counts), the latter read
+   live via `WorkspaceService.list()` — never diagram contents. Browser panel
+   `src/ui/admin-dashboard.ts` (mirrors `profile-panel.ts`), revealed by the new
+   `admin` field on `/api/me`. Shipped inert: prod has no top-level
+   `ANALYTICS_ENABLED` (so `v5` bootstraps off), staging opts in; `ADMIN_GITHUB_ID`
+   (owner id `17257145`) is set top-level from the start (harmless while off).
+   Pure logic + render + a Miniflare admin-api harness all covered. Rollout:
+   merge → `deploy-staging.yml` (live for UAT) → gated prod bootstrap (`v5`
+   inert) → tiny activation PR (`ANALYTICS_ENABLED:"true"`). Runbook §"Migration
+   `v5`" has the three gates. **Deferred follow-ups** (explicit MVP non-goals):
+   session duration / "last active" (activity heartbeats) and agents / MCP-session
+   detail (instrument `TopologyMcp.init()`).
 
 ## Working conventions (unchanged from session 2)
 

@@ -133,6 +133,7 @@ describe('GET /api/me', () => {
     await expect(res.json()).resolves.toEqual({
       login: 'octocat',
       name: 'The Octocat',
+      admin: false,
     });
   });
 });
