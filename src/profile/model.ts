@@ -64,7 +64,7 @@ export interface AuthoringPreference {
   evidenceDocuments: number;
   /** Independent supporting outcomes (one editing burst = one outcome). */
   supportingOutcomes: number;
-  /** Outcomes that contradicted the rule (tracked from P5; 0 in P2). */
+  /** Outcomes that contradicted the rule (Packet P5 outcome refinement). */
   contradictingOutcomes: number;
   /** Bounded, compacted opaque refs — never embedded documents/operations. */
   sourceRevisionRefs: string[];
@@ -78,6 +78,29 @@ export interface AuthoringPreference {
    * demotes an owner-blessed rule. Absent on P2/P3-era records.
    */
   confirmedAt?: string;
+  /**
+   * Workspaces where the owner overrode this rule (Packet P5): a correction
+   * that REVERSED the rule's trait direction records the workspace it came
+   * from here, and guidance stops serving the rule in those workspaces — the
+   * proposal's "exceptions narrow a trigger instead of forcing a global
+   * winner" (acceptance criterion 4). Bounded and compacted; never mutates
+   * the rule's directive or trigger. Absent on pre-P5 records.
+   */
+  exceptionWorkspaceIds?: string[];
+  /**
+   * Bounded opaque refs of the outcomes already counted as contradictions —
+   * the contradiction path's burst-coalescing/idempotency guard, mirroring
+   * `sourceRevisionRefs` on the supporting side. Absent on pre-P5 records.
+   */
+  contradictionRevisionRefs?: string[];
+  /**
+   * Set when contradictions (or staleness surfaced by the panel) push this
+   * rule toward owner review (Packet P5): the panel asks the owner to
+   * re-confirm, rescope, or reject. Serving is NOT silently disabled — decay
+   * is "toward review", never deletion (proposal §"Measure and correct").
+   * Cleared by an explicit owner confirm or reject.
+   */
+  needsReview?: boolean;
 }
 
 /**

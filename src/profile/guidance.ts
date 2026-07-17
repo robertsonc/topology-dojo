@@ -106,13 +106,22 @@ export function guidanceNotModified(
 /* ── applicability + ranking ──────────────────────────────────────────── */
 
 /** A confirmed preference applies when its scope and trigger both match the
- * task. Trigger-TRAIT matching (acceptance criterion 3) is Packet P5; here an
- * archetype-conditioned rule simply requires the matching task archetype. */
+ * task: the trigger's archetype is its structural context condition
+ * (acceptance criterion 3 — `multi-region-hub-spoke` IS "multiple regions
+ * with hub-only interconnect" in the P1 feature vocabulary), and a workspace
+ * on the rule's exception list never receives it (acceptance criterion 4 —
+ * an owner override narrows where the rule serves; everywhere else it still
+ * applies, uncorrupted). */
 function preferenceApplies(
   pref: AuthoringPreference,
   query: GuidanceQuery,
 ): boolean {
   if (pref.status !== 'confirmed') return false;
+  if (
+    query.workspaceId &&
+    pref.exceptionWorkspaceIds?.includes(query.workspaceId)
+  )
+    return false;
   if (
     pref.scope.kind === 'workspace' &&
     pref.scope.workspaceId !== query.workspaceId

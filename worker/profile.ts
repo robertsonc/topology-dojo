@@ -51,6 +51,10 @@ import {
   GUIDANCE_PACK_RULES,
   GUIDANCE_REVISION,
 } from '../src/profile/guidance-packs.js';
+import {
+  calibratedConfidence,
+  contradictionUpdates,
+} from '../src/profile/refinement.js';
 
 const META_KEY = 'meta';
 const CANDIDATE_PREFIX = 'candidate:';
@@ -72,9 +76,11 @@ interface ProfileMeta {
   /**
    * Bumped whenever what `getGuidance` could serve changes: every owner
    * manage action — pause/resume (`setPreferenceStatus`), forget
-   * (`deletePreference`), confirm (`confirmPreference`), and reject
-   * (`rejectPreference`). Passive learning (`recordOutcome`) does NOT bump it:
-   * strengthening never alters a rule's compiled (id, directive, scope) form.
+   * (`deletePreference`), confirm (`confirmPreference`), reject
+   * (`rejectPreference`) — plus the ONE learning path that alters compiled
+   * output: a contradiction (Packet P5), whose scoped exception can remove a
+   * rule from a workspace's guidance. Plain strengthening still does not
+   * bump it (it never alters a rule's compiled id/directive/scope form).
    * The compiled-guidance cache and callers' `notModified` checks key on it.
    */
   profileRevision: number;
@@ -157,16 +163,6 @@ function parseConfirmScope(value: unknown): PreferenceScope {
 }
 
 /**
- * Initial calibrated confidence at confirmation: explicit owner confirmation
- * is strong evidence (floor 0.5), each additional independent supporting
- * outcome adds a little, capped well below 1 — confidence is reporting, never
- * permission (the proposal), and Packet P5 recalibrates it from outcomes.
- */
-function confirmationConfidence(supportingOutcomes: number): number {
-  return Math.min(0.9, 0.5 + 0.1 * Math.max(0, supportingOutcomes - 1));
-}
-
-/**
  * Coerce and bound an inbound outcome at the DO trust boundary. Returns `null`
  * when there is no semantic lesson (no traits added or removed) — a cosmetic
  * move is evidence at most, never a candidate (proposal: "one-off edit is
@@ -224,7 +220,10 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
    * correction, and a matching `rejected` record drops the outcome outright
    * ("do not learn this" — see `outcomeDisposition`). A repeated source ref
    * is a no-op (burst coalescing). New rules over the per-owner cap evict the
-   * weakest non-confirmed record first.
+   * weakest non-confirmed record first. Packet P5: the outcome is also run
+   * against every OTHER stored rule as a possible contradiction
+   * (`contradictionUpdates`) — reversed rules gain a scoped exception,
+   * recalibrated confidence, and eventually a review flag.
    */
   async recordOutcome(
     ownerId: string,
@@ -239,40 +238,68 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
         prefix: CANDIDATE_PREFIX,
       });
       const entries = [...candidates.entries()];
+      const records = entries.map(([, p]) => p);
+      let changed = false;
+      let guidanceChanged = false;
 
       // Dedupe/authority decision (pure — see learner.ts): strengthen the
       // owning record, drop the outcome when the owner rejected the rule, or
       // fall through to create a fresh candidate.
-      const disposition = outcomeDisposition(
-        entries.map(([, p]) => p),
-        normalized,
-      );
-      if (disposition.action === 'skip') return;
+      const disposition = outcomeDisposition(records, normalized);
+      let strengthenedIndex = -1;
       if (disposition.action === 'strengthen') {
+        strengthenedIndex = disposition.index;
         const [key, existing] = entries[disposition.index]!;
         const next = strengthenCandidate(existing, normalized, now);
         if (next !== existing) {
           await tx.put(key, next);
-          meta.updatedAt = now;
-          await tx.put(META_KEY, meta);
+          changed = true;
         }
-        return;
       }
 
-      // New rule. Enforce the hard per-owner cap before inserting: evict the
-      // weakest non-confirmed record rather than growing without bound. When
-      // every slot holds an owner-confirmed rule there is no victim (-1) —
-      // the NEW candidate is dropped instead of an owner decision.
-      if (candidates.size >= MAX_CANDIDATES_PER_OWNER) {
-        const victimIndex = weakestCandidateIndex(entries.map(([, p]) => p));
-        if (victimIndex === -1) return;
-        await tx.delete(entries[victimIndex]![0]);
+      // Refinement pass (Packet P5, pure — see refinement.ts): every OTHER
+      // stored rule this outcome reverses gains a contradiction — lowered
+      // calibrated confidence, a scoped exception for the workspace the
+      // override came from, and (at the threshold) a review flag. Exceptions
+      // change what `getGuidance` serves, so this is the one learning path
+      // that bumps `profileRevision`.
+      const updates = contradictionUpdates(
+        records,
+        normalized,
+        now,
+        strengthenedIndex,
+      );
+      for (const [index, next] of updates) {
+        await tx.put(entries[index]![0], next);
+        changed = true;
+        guidanceChanged = true;
       }
-      const id = `pref_${crypto.randomUUID().replace(/-/g, '').slice(0, 18)}`;
-      const record = newCandidate(id, ownerId, normalized, now);
-      await tx.put(CANDIDATE_PREFIX + id, record);
-      meta.updatedAt = now;
-      await tx.put(META_KEY, meta);
+
+      // New rule (unless the outcome was owned by an existing/rejected one).
+      // Enforce the hard per-owner cap before inserting: evict the weakest
+      // non-confirmed record rather than growing without bound. When every
+      // slot holds an owner-confirmed rule there is no victim (-1) — the NEW
+      // candidate is dropped instead of an owner decision.
+      if (disposition.action === 'create') {
+        let capOk = true;
+        if (candidates.size >= MAX_CANDIDATES_PER_OWNER) {
+          const victimIndex = weakestCandidateIndex(records);
+          if (victimIndex === -1) capOk = false;
+          else await tx.delete(entries[victimIndex]![0]);
+        }
+        if (capOk) {
+          const id = `pref_${crypto.randomUUID().replace(/-/g, '').slice(0, 18)}`;
+          const record = newCandidate(id, ownerId, normalized, now);
+          await tx.put(CANDIDATE_PREFIX + id, record);
+          changed = true;
+        }
+      }
+
+      if (guidanceChanged) meta.profileRevision += 1;
+      if (changed || guidanceChanged) {
+        meta.updatedAt = now;
+        await tx.put(META_KEY, meta);
+      }
     });
   }
 
@@ -417,16 +444,27 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
         throw new Error('a rejected preference can only be forgotten');
       if (
         existing.status === 'confirmed' &&
+        !existing.needsReview &&
         JSON.stringify(existing.scope) === JSON.stringify(parsed)
       )
         return existing;
+      // An explicit (re-)confirm IS the owner's review: the review flag
+      // clears. Recorded exceptions are kept — they are facts about where
+      // the owner overrode the rule, not part of the flag.
       const next: AuthoringPreference = {
         ...existing,
         status: 'confirmed',
         scope: parsed,
-        confidence: confirmationConfidence(existing.supportingOutcomes),
+        // P5's calibrated form: the confirmation base scaled by the
+        // supporting share of ALL evidence, so a re-confirm after
+        // contradictions does not silently restore full confidence.
+        confidence: calibratedConfidence(
+          existing.supportingOutcomes,
+          existing.contradictingOutcomes,
+        ),
         confirmedAt: existing.confirmedAt ?? nowIso(),
       };
+      delete next.needsReview;
       await tx.put(CANDIDATE_PREFIX + preferenceId, next);
       await this.bumpRevision(tx);
       return next;
@@ -452,6 +490,7 @@ export class AuthoringProfile extends DurableObject<WorkerEnv> {
         confidence: 0,
       };
       delete next.confirmedAt;
+      delete next.needsReview;
       await tx.put(CANDIDATE_PREFIX + preferenceId, next);
       await this.bumpRevision(tx);
       return next;
