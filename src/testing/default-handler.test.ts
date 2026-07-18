@@ -43,12 +43,13 @@ describe('GET /login', () => {
     const res = await handle.fetch('/login');
     const body = await res.text();
     expect(body).toContain('class="strip"');
-    // Each showcase still is referenced (and duplicated for the seamless loop).
+    // Each showcase frame (an animated WebP) is referenced twice — the
+    // duplication that makes the -50% marquee loop seamless.
     for (const src of [
-      '/showcase/hub-spoke.png',
-      '/showcase/spine-leaf.png',
-      '/showcase/sdwan.png',
-      '/showcase/three-tier.png',
+      '/showcase/hub-spoke.webp',
+      '/showcase/spine-leaf.webp',
+      '/showcase/sdwan.webp',
+      '/showcase/three-tier.webp',
     ]) {
       expect(body.split(src).length - 1).toBe(2);
     }
@@ -58,8 +59,8 @@ describe('GET /login', () => {
     // Image sub-resources are not document navigations, so the editor gate must
     // fall through to ASSETS rather than 302-redirecting to /login. (The test
     // harness stubs ASSETS, so a non-redirect status is the signal.)
-    const res = await handle.fetch('/showcase/spine-leaf.png', {
-      headers: { accept: 'image/png' },
+    const res = await handle.fetch('/showcase/spine-leaf.webp', {
+      headers: { accept: 'image/webp' },
       redirect: 'manual',
     });
     expect(res.status).not.toBe(302);
