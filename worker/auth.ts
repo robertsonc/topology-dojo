@@ -235,24 +235,74 @@ export function isDocumentNavigation(request: Request): boolean {
   return (request.headers.get('accept') ?? '').includes('text/html');
 }
 
-/** The branded login page (self-contained — no app assets, so it isn't gated). */
+/**
+ * The branded login page. Self-contained HTML/CSS; the only sub-resources are
+ * the showcase filmstrip stills under `/showcase/*` (static assets copied from
+ * `public/`), which the Worker serves ungated because image requests are not
+ * document navigations (see `isDocumentNavigation` / the gate in
+ * default-handler.ts). The stills are self-contained — no dependency on any
+ * ephemeral `/v/:id` share snapshot — so the page never rots.
+ */
 export function loginPage(go = '/'): Response {
   const auth = `/auth/github?go=${encodeURIComponent(safePath(go))}`;
+  // A pre-login showcase of diagrams authored in Topology Dojo, so a visitor
+  // gets a feel for the tool before signing in. Rendered twice back-to-back so
+  // the marquee can loop seamlessly with a -50% translate.
+  const shots = [
+    {
+      src: '/showcase/hub-spoke.png',
+      alt: 'Hub-and-spoke WAN: six tunneled branch sites converging on a central hub',
+    },
+    {
+      src: '/showcase/spine-leaf.png',
+      alt: 'Data-center spine-leaf fabric with dual-homed hosts and an EdgeConnect pair to an ISP',
+    },
+    {
+      src: '/showcase/sdwan.png',
+      alt: 'SD-WAN branch routed through a SASE point of presence to the internet and SaaS',
+    },
+    {
+      src: '/showcase/three-tier.png',
+      alt: 'Three-tier web application with a firewall and a DMZ web tier',
+    },
+  ];
+  const frames = [...shots, ...shots]
+    .map(
+      (s) =>
+        `<div class="frame"><img src="${s.src}" alt="${s.alt}" loading="lazy" width="232" height="155"/></div>`,
+    )
+    .join('');
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Sign in · Topology Dojo</title><style>
 :root{--bg:#1d1f27;--panel:#22252e;--border:#3e4550;--text:#e6e8e9;--muted:#7d8a92;--accent:#01a982;--font:ui-monospace,SFMono-Regular,Menlo,monospace}
-*{box-sizing:border-box}html,body{margin:0;height:100%}
-body{background:radial-gradient(1200px 600px at 50% -10%,rgba(1,169,130,.12),transparent),var(--bg);color:var(--text);font-family:var(--font);display:flex;align-items:center;justify-content:center}
+*{box-sizing:border-box}html{height:100%}
+body{margin:0;min-height:100%;background:radial-gradient(1200px 600px at 50% -10%,rgba(1,169,130,.12),transparent),var(--bg);color:var(--text);font-family:var(--font);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:36px 16px}
 .card{width:340px;max-width:90vw;background:rgba(34,37,46,.9);border:1px solid var(--border);border-radius:14px;padding:28px;text-align:center;backdrop-filter:blur(8px);box-shadow:0 20px 60px rgba(0,0,0,.4)}
 .mark{width:46px;height:46px;border-radius:11px;border:1px solid var(--accent);display:inline-flex;align-items:center;justify-content:center;color:var(--accent);font-size:22px;margin-bottom:14px}
 h1{font-size:16px;margin:0 0 4px;letter-spacing:.3px}p{color:var(--muted);font-size:12px;margin:0 0 20px;line-height:1.5}
 a.btn{display:flex;align-items:center;justify-content:center;gap:10px;text-decoration:none;background:var(--accent);color:#08130f;font-weight:700;font-size:13px;padding:11px 14px;border-radius:9px}
 a.btn:hover{filter:brightness(1.07)}svg{width:18px;height:18px;fill:currentColor}.foot{margin-top:16px;color:var(--muted);font-size:10px}
+.showcase{width:min(880px,94vw);text-align:center}
+.showcase .cap{color:var(--muted);font-size:11px;margin:0 0 10px;line-height:1.5}
+.strip{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:12px;background:linear-gradient(#191b22,#141117);padding:15px 0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.strip::before,.strip::after{content:"";position:absolute;left:0;right:0;height:6px;background:repeating-linear-gradient(90deg,transparent 0 9px,rgba(255,255,255,.13) 9px 15px);pointer-events:none}
+.strip::before{top:3px}.strip::after{bottom:3px}
+.reel{display:flex;gap:14px;width:max-content;padding:0 7px;animation:reel 48s linear infinite}
+.strip:hover .reel{animation-play-state:paused}
+.frame{flex:0 0 auto;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#0e1613;box-shadow:0 6px 18px rgba(0,0,0,.35);transition:transform .2s,box-shadow .2s,border-color .2s}
+.frame:hover{transform:translateY(-2px) scale(1.02);border-color:var(--accent);box-shadow:0 10px 26px rgba(1,169,130,.25)}
+.frame img{display:block;width:232px;height:155px;object-fit:cover}
+@keyframes reel{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.reel{animation:none}}
 </style></head><body><div class="card">
 <div class="mark">△</div><h1>Topology Dojo</h1><p>Sign in with GitHub to open the editor.</p>
 <a class="btn" href="${auth}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Sign in with GitHub</a>
 <div class="foot">Open to any GitHub account — sign-in identifies your workspaces.</div>
+</div>
+<div class="showcase">
+<p class="cap">Built with Topology Dojo — network topologies authored by AI agents through its MCP server. Sign in to make your own.</p>
+<div class="strip"><div class="reel">${frames}</div></div>
 </div></body></html>`;
   return new Response(html, {
     headers: {
