@@ -22,6 +22,7 @@ import {
   SESSION_TTL_SEC,
   type SessionUser,
 } from '../src/server/session.js';
+import { safePath } from '../src/server/safe-path.js';
 
 /** Narrow RPC view of the analytics DO — kept explicit so the cross-DO call
  * typechecks without Cloudflare's conservative Stubable<> inference (same
@@ -71,9 +72,6 @@ interface GitHubUser {
 }
 
 /** A path is a safe same-origin redirect target (no open-redirect). */
-function safePath(p: string | null): string {
-  return p && p.startsWith('/') && !p.startsWith('//') ? p : '/';
-}
 
 function cookie(name: string, value: string, maxAgeSec: number): string {
   return (

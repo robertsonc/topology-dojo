@@ -29,6 +29,19 @@ with a successful forward-recovery drill.
   P4-activation and P5 merges); the gated pipeline is now the only deploy
   path. O12 (alerting) remains open — the activation soak runs without
   alerts by explicit operator choice.
+- **Production domain + analytics (2026-07-18)**: the production origin moved
+  from the `workers.dev` subdomain to **`topology-dojo.harnessed.cloud`** (custom
+  domain in the Cloudflare dashboard; the production GitHub OAuth App callback
+  was repointed to match). `PUBLIC_BASE_URL` and the production deploy/smoke
+  references were truth-upped (PR #190). The **admin/analytics dashboard (`v5`)**
+  then rolled out straight to production (staging UAT skipped by operator
+  choice — the bootstrap is inert and `v5` mirrors the staging-proven `v4`):
+  Gate B run 29622343320 applied `v5` **inert** + cut the domain over (verified:
+  `/healthz` served the new sha, `/api/admin` returned the inert
+  `admin_disabled` 503); Gate C run 29622993652 flipped
+  `ANALYTICS_ENABLED:"true"` (PR #191), verified live by `/api/admin` switching
+  from 503 to a 401 auth challenge and owner UAT of the dashboard. Recovery is
+  forward-only flag-off; never roll back across `v5`.
 - **Git**: clean. All session branches merged + pruned (local and remote);
   ~113 historical merged remotes also deleted. One unrelated branch
   `claude/hideable-frames-panel-ohlc73` appeared on origin from another
@@ -91,7 +104,7 @@ fine; revisit only on measured contention.
 | O11                               | ✅ 2026-07-17: `WORKSPACE_ENABLED:"true"` activation (combined deploy with profiles); T0 smoke on deploy, owner runs T1/T2                                                                                                                                                                                                                                                                                                                                                                     |
 | O12                               | ◑ Partial. **Nightly staging smoke** ✅ (`nightly-staging-smoke.yml`, 08:00 UTC, files/closes a `nightly-smoke` issue via GitHub-native notification — no secrets). **Failed-deploy notifications**: GitHub's built-in Actions failure emails (per-user Settings → Notifications; no repo change). **Cloudflare error-rate alerting** ⏳ still open — dashboard-only, thresholds in `DEPLOYMENT_RUNBOOK.md` §"Rate-based stops"; this is the one gating the activation soak (owner working it) |
 | Profiles activation (prod)        | ✅ 2026-07-17: top-level `"PROFILES_ENABLED": "true"` shipped in the combined activation deploy after P4 staging UAT                                                                                                                                                                                                                                                                                                                                                                           |
-| Analytics dashboard (`v5`)        | ◑ In progress (this branch/PR). Staging opts in (`ANALYTICS_ENABLED="true"`); prod bootstraps `v5` inert (no top-level flag), then a later tiny PR flips `ANALYTICS_ENABLED:"true"`. See runbook §"Migration `v5`" for the three gates.                                                                                                                                                                                                                                                        |
+| Analytics dashboard (`v5`)        | ✅ 2026-07-18: shipped + live in production. Gate B (run 29622343320) applied `v5` inert + the `harnessed.cloud` cutover; Gate C (run 29622993652, PR #191) flipped `ANALYTICS_ENABLED:"true"`. Verified live (`/api/admin` 503→401) + owner UAT. Staging also runs the flag on. See runbook §"Migration `v5`".                                                                                                                                                                                |
 
 ## Next repo work, in order
 
@@ -129,7 +142,8 @@ fine; revisit only on measured contention.
    production deploy.
 4. Then: 0003-D (governed product guidance) is out of scope per the plan;
    remaining roadmap candidates in `ROADMAP.md` §Next.
-5. **Owner analytics / admin dashboard (MVP)** — IN PROGRESS (this branch/PR).
+5. ~~**Owner analytics / admin dashboard (MVP)**~~ — DONE + live in prod
+   2026-07-18 (PRs #190/#191; Gate B run 29622343320, Gate C run 29622993652).
    A new `AnalyticsLog` SQLite DO (migration `v5`, single `idFromName('global')`
    instance) records a login roster + bounded recent-login log best-effort off
    `completeWebLogin` (`ctx.waitUntil`, gated by `analyticsEnabled()`). Owner-only
