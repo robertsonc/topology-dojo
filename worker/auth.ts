@@ -246,30 +246,31 @@ export function isDocumentNavigation(request: Request): boolean {
 export function loginPage(go = '/'): Response {
   const auth = `/auth/github?go=${encodeURIComponent(safePath(go))}`;
   // A pre-login showcase of diagrams authored in Topology Dojo, so a visitor
-  // gets a feel for the tool before signing in. Rendered twice back-to-back so
-  // the marquee can loop seamlessly with a -50% translate.
+  // gets a feel for the tool before signing in. Each still is an animated WebP
+  // (the traffic particles keep flowing), rendered twice back-to-back so the
+  // marquee can loop seamlessly with a -50% translate.
   const shots = [
     {
-      src: '/showcase/hub-spoke.png',
+      src: '/showcase/hub-spoke.webp',
       alt: 'Hub-and-spoke WAN: six tunneled branch sites converging on a central hub',
     },
     {
-      src: '/showcase/spine-leaf.png',
+      src: '/showcase/spine-leaf.webp',
       alt: 'Data-center spine-leaf fabric with dual-homed hosts and an EdgeConnect pair to an ISP',
     },
     {
-      src: '/showcase/sdwan.png',
+      src: '/showcase/sdwan.webp',
       alt: 'SD-WAN branch routed through a SASE point of presence to the internet and SaaS',
     },
     {
-      src: '/showcase/three-tier.png',
+      src: '/showcase/three-tier.webp',
       alt: 'Three-tier web application with a firewall and a DMZ web tier',
     },
   ];
   const frames = [...shots, ...shots]
     .map(
       (s) =>
-        `<div class="frame"><img src="${s.src}" alt="${s.alt}" loading="lazy" width="232" height="155"/></div>`,
+        `<div class="frame"><img src="${s.src}" alt="${s.alt}" loading="lazy" width="300" height="200"/></div>`,
     )
     .join('');
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
@@ -283,16 +284,16 @@ body{margin:0;min-height:100%;background:radial-gradient(1200px 600px at 50% -10
 h1{font-size:16px;margin:0 0 4px;letter-spacing:.3px}p{color:var(--muted);font-size:12px;margin:0 0 20px;line-height:1.5}
 a.btn{display:flex;align-items:center;justify-content:center;gap:10px;text-decoration:none;background:var(--accent);color:#08130f;font-weight:700;font-size:13px;padding:11px 14px;border-radius:9px}
 a.btn:hover{filter:brightness(1.07)}svg{width:18px;height:18px;fill:currentColor}.foot{margin-top:16px;color:var(--muted);font-size:10px}
-.showcase{width:min(880px,94vw);text-align:center}
+.showcase{width:min(940px,94vw);text-align:center}
 .showcase .cap{color:var(--muted);font-size:11px;margin:0 0 10px;line-height:1.5}
 .strip{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:12px;background:linear-gradient(#191b22,#141117);padding:15px 0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
 .strip::before,.strip::after{content:"";position:absolute;left:0;right:0;height:6px;background:repeating-linear-gradient(90deg,transparent 0 9px,rgba(255,255,255,.13) 9px 15px);pointer-events:none}
 .strip::before{top:3px}.strip::after{bottom:3px}
-.reel{display:flex;gap:14px;width:max-content;padding:0 7px;animation:reel 48s linear infinite}
+.reel{display:flex;gap:14px;width:max-content;padding:0 7px;animation:reel 60s linear infinite}
 .strip:hover .reel{animation-play-state:paused}
 .frame{flex:0 0 auto;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#0e1613;box-shadow:0 6px 18px rgba(0,0,0,.35);transition:transform .2s,box-shadow .2s,border-color .2s}
 .frame:hover{transform:translateY(-2px) scale(1.02);border-color:var(--accent);box-shadow:0 10px 26px rgba(1,169,130,.25)}
-.frame img{display:block;width:232px;height:155px;object-fit:cover}
+.frame img{display:block;width:300px;height:200px;object-fit:cover}
 @keyframes reel{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion:reduce){.reel{animation:none}}
 </style></head><body><div class="card">
