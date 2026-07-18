@@ -9,3 +9,10 @@
 # biggest repeat-visit win.
 /vendor/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Login-page showcase stills (public/showcase/, un-fingerprinted). Served to
+# unauthenticated visitors as ordinary image sub-resources. Cache a day so the
+# login page stays snappy without pinning a stale image for a year — a refreshed
+# showcase ships on the next deploy and is picked up within the window.
+/showcase/*
+  Cache-Control: public, max-age=86400

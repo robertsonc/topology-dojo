@@ -38,6 +38,32 @@ describe('GET /login', () => {
     expect(body).toContain('Sign in with GitHub');
     expect(body).toContain('/auth/github?go=%2F');
   });
+
+  it('includes the pre-login showcase filmstrip (ungated static stills)', async () => {
+    const res = await handle.fetch('/login');
+    const body = await res.text();
+    expect(body).toContain('class="strip"');
+    // Each showcase still is referenced (and duplicated for the seamless loop).
+    for (const src of [
+      '/showcase/hub-spoke.png',
+      '/showcase/spine-leaf.png',
+      '/showcase/sdwan.png',
+      '/showcase/three-tier.png',
+    ]) {
+      expect(body.split(src).length - 1).toBe(2);
+    }
+  });
+
+  it('does not gate showcase image requests behind sign-in', async () => {
+    // Image sub-resources are not document navigations, so the editor gate must
+    // fall through to ASSETS rather than 302-redirecting to /login. (The test
+    // harness stubs ASSETS, so a non-redirect status is the signal.)
+    const res = await handle.fetch('/showcase/spine-leaf.png', {
+      headers: { accept: 'image/png' },
+      redirect: 'manual',
+    });
+    expect(res.status).not.toBe(302);
+  });
 });
 
 describe('GET /auth/github', () => {
