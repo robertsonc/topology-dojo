@@ -33,10 +33,18 @@
     // P4 passed staging UAT. Same forward-only recovery: redeploy with this
     // entry removed to disable the learner + profile surfaces.
     "PROFILES_ENABLED": "true",
+    // Admin dashboard activation (migration v5 / runbook Gate C): opt-in flag
+    // turned on after the v5 inert bootstrap deployed cleanly (run 29622343320:
+    // /healthz served the new sha, /api/admin returned the inert
+    // "admin_disabled" 503). Enables best-effort login recording + the
+    // owner-gated /api/admin surface. Same forward-only recovery: redeploy with
+    // this entry removed to disable — never roll back across v5. See
+    // worker/env.ts analyticsEnabled().
+    "ANALYTICS_ENABLED": "true",
     // Admin dashboard identity (migration v5): the GitHub numeric id allowed to
-    // reach /api/admin. Safe to set at bootstrap — the admin surface stays
-    // inert until ANALYTICS_ENABLED (which prod deliberately omits so v5 ships
-    // inert; a later deploy flips it on). Fail-closed if unset. See
+    // reach /api/admin. Fail-closed if unset (isAdmin returns false for
+    // everyone), so the surface stays inaccessible even with ANALYTICS_ENABLED
+    // on. Compared against the stable numeric id, never the mutable login. See
     // worker/env.ts isAdmin().
     "ADMIN_GITHUB_ID": "17257145",
   },
