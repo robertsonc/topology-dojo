@@ -271,6 +271,33 @@ export function checkWranglerConfig(config) {
     }
   }
 
+  // (g) Staging-only diagnostics can never reach production config. The
+  // synthetic-fault route (worker/staging-fault.ts) activates only when
+  // DIAGNOSTICS_ENV === "staging" plus a staging-only secret; this rule makes
+  // the var half impossible to ship through the sole authorized deploy path:
+  // both deploy workflows and CI run this script before `wrangler deploy`,
+  // so a top-level (production) DIAGNOSTICS_* var fails the build outright.
+  for (const key of Object.keys(topVars)) {
+    if (key.startsWith('DIAGNOSTICS_')) {
+      violations.push(
+        `[diagnostics-in-production] top-level (production) vars defines ` +
+          `"${key}"; DIAGNOSTICS_* keys are staging-only diagnostics controls ` +
+          '(worker/staging-fault.ts) and must never be configured for ' +
+          'production.',
+      );
+    }
+  }
+  if (
+    'DIAGNOSTICS_ENV' in stagingVars &&
+    stagingVars.DIAGNOSTICS_ENV !== 'staging'
+  ) {
+    violations.push(
+      `[diagnostics-env-invalid] env.staging.vars.DIAGNOSTICS_ENV is ` +
+        `"${stagingVars.DIAGNOSTICS_ENV}"; when present it must be exactly ` +
+        '"staging" (the only value worker/staging-fault.ts accepts).',
+    );
+  }
+
   // Sanity: the top-level config itself should also declare all three DO
   // bindings and both KV bindings — otherwise the "differs from production"
   // checks above are comparing against an incomplete baseline.

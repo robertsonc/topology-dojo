@@ -35,11 +35,17 @@ As of this reset (`main` @ `d169274`, PR #195 merged 2026-07-18):
   fully isolated (`check-wrangler-env.mjs` enforces this in CI).
 - **723 tests passing**, 63 test files (`npm test`).
 - **The one confirmed operational gap**: Cloudflare error-rate alerting is
-  not configured. Production runs without automated alerts by explicit,
-  documented operator choice (nightly staging smoke + GitHub-native failure
-  notifications are the current safety net). This is `IMPLEMENTATION_PLAN.md`
-  initiative O, packets O1–O3, and it's ready to start any time — no code
-  dependency blocks it.
+  not configured. The repo-side half of `IMPLEMENTATION_PLAN.md` initiative
+  O landed 2026-07-19: alert matrix + severity model (`docs/ALERTS.md`),
+  Cloudflare human checklist (`docs/CLOUDFLARE_OPERATOR_RUNBOOK.md`),
+  game-day framework + evidence template (`docs/GAME_DAY.md`), daily +
+  on-demand production verification (`production-verify.yml`, deduplicated
+  `production-smoke` issues, `expected_sha` mismatch detection), a 14-check
+  smoke with per-flag disabled-contract flags, staging flag-override deploy
+  inputs, and a staging-only synthetic-fault route
+  (`worker/staging-fault.ts`). Still human-only: the Cloudflare dashboard
+  configuration (O1) and actually executing/recording the game day (O2).
+  Until then the GitHub synthetic layer is the active safety net.
 - **Zero open PRs, zero open issues.** This repo does not use GitHub Issues
   as a planning tool — all planning lives in `docs/`. 174 PRs merged to date
   (#1–#195). 7 stale-but-fully-merged branches exist on origin (safe to
@@ -64,14 +70,14 @@ documentation reset.
 
 Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 
-| #   | Initiative                                  | Status                                 | Blocking dependency                                                      |
-| --- | ------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
-| N   | Documentation reset                         | **In progress — packet N3 is this PR** | None                                                                     |
-| O   | Cloudflare alerting + production game day   | Not started                            | None — can start immediately                                             |
-| A   | Agent activity + explainability             | Not started                            | None — soft dependency on N landing                                      |
-| B   | Guided topology briefs + semantic templates | Not started                            | None — soft dependency on N landing                                      |
-| E   | EdgeConnect live-import hardening + UI      | Not started                            | None — soft dependency on N landing                                      |
-| T   | Time-aware flow/failure storytelling        | Not started                            | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
+| #   | Initiative                                  | Status                                                    | Blocking dependency                                                      |
+| --- | ------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ |
+| N   | Documentation reset                         | **In progress — packet N3 is this PR**                    | None                                                                     |
+| O   | Cloudflare alerting + production game day   | Repo-side done 2026-07-19; O1/O2 human halves outstanding | None — human can start immediately                                       |
+| A   | Agent activity + explainability             | Not started                                               | None — soft dependency on N landing                                      |
+| B   | Guided topology briefs + semantic templates | Not started                                               | None — soft dependency on N landing                                      |
+| E   | EdgeConnect live-import hardening + UI      | Not started                                               | None — soft dependency on N landing                                      |
+| T   | Time-aware flow/failure storytelling        | Not started                                               | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
 
 **Immediate next packet after this PR merges: O1** (configure Cloudflare
 alerting) or **A1/B1/T1** (pure-types packets, no dependencies, safe to start
@@ -205,14 +211,23 @@ Things no agent in this repo can complete alone:
 
 1. **Approve production deploys** — the protected `production` GitHub
    Environment gate requires a human click every time, by design.
-2. **Configure Cloudflare error-rate alerting** (`IMPLEMENTATION_PLAN.md`
-   packet O1) — a Cloudflare dashboard action.
-3. **Run the staging forward-recovery game day** (packet O2) — needs a human
-   operator observing/confirming each step of a live drill.
-4. **Provision EdgeConnect credentials** (packet E5) — `wrangler secret put`
+2. **Configure Cloudflare alerting** (`IMPLEMENTATION_PLAN.md` packet O1) —
+   a Cloudflare dashboard action; the exact steps + evidence requirements
+   are `docs/CLOUDFLARE_OPERATOR_RUNBOOK.md` (CF-1..CF-6 checklist).
+3. **Run the game day** (packet O2) — `docs/GAME_DAY.md`, a human operator
+   observing/confirming each step of a live drill; production steps each
+   require the environment-approval click. Note Phase 1 finding
+   (2026-07-19): staging serves `da8f704`, behind `main` — scenario S-0
+   (routine staging deploy) is the first action.
+4. **Provision the staging-only `DIAGNOSTICS_TOKEN` secret** (for game-day
+   scenarios S-2..S-4): `npx wrangler secret put DIAGNOSTICS_TOKEN --env
+staging` with a generated ≥16-char value kept only in the operator's
+   password manager. Never set any `DIAGNOSTICS_*` value for production —
+   CI (`check:wrangler`) rejects the var half outright.
+5. **Provision EdgeConnect credentials** (packet E5) — `wrangler secret put`
    for `ORCH_BASE_URL`/`ORCH_API_KEY`, staging only, a deliberate separate
    decision never bundled into a feature deploy.
-5. **Delete the 7 stale merged branches** — this environment's git push has
+6. **Delete the 7 stale merged branches** — this environment's git push has
    been observed to reject `--delete` pushes to origin; do it from GitHub's
    UI or a different environment if that's still the case.
 

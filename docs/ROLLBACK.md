@@ -7,16 +7,17 @@ defines the supported response for both.
 See also [`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md) and
 [`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md).
 
-> **Note (2026-07-19):** the worked examples below were written around
-> migration `v3` (`TopologyDocument`), the first one this pipeline shipped.
-> The principles are migration-agnostic and apply identically to every
-> migration since (`v4`/`AuthoringProfile`, `v5`/`AnalyticsLog`, and any
-> future tag) — substitute the current highest tag from `wrangler.jsonc`
-> wherever `v3` appears below. `DEPLOYMENT_RUNBOOK.md` has per-migration gate
-> sections for `v4` and `v5` specifically if you need the concrete bootstrap/
-> activation steps rather than the general recovery principle. See
-> `IMPLEMENTATION_PLAN.md` packet O3 for the tracked follow-up to generalize
-> this document's examples explicitly.
+> **Note (2026-07-19, packet O3):** this document is migration-agnostic.
+> Where a worked example names `v3`/`TopologyDocument` (the first migration
+> this pipeline shipped), read it as "the migration boundary in question" —
+> the identical procedure applies to `v4`/`AuthoringProfile` (flag
+> `PROFILES_ENABLED`), `v5`/`AnalyticsLog` (flag `ANALYTICS_ENABLED`), and
+> any future tag. The current highest applied tag is always the last entry
+> of `wrangler.jsonc`'s `migrations` array. Per-migration bootstrap and
+> activation gates live in `DEPLOYMENT_RUNBOOK.md`; the per-flag
+> forward-disable/forward-enable procedures (values, expected degraded
+> behavior, verification commands) live in `GAME_DAY.md`
+> §"Forward-recovery reference".
 
 ## First principle
 
@@ -89,9 +90,15 @@ If compatibility cannot be proven, use forward recovery.
 
 ## Forward recovery: migration applied
 
-For migration `v3`, the new namespace is initially empty and legacy data moves
-only when the application performs lazy migration. The namespace must remain
-declared even if workspace traffic is disabled.
+The worked example below is `v3` (`TopologyDocument` /
+`WORKSPACE_ENABLED`); for `v4` substitute `AuthoringProfile` /
+`AUTHORING_PROFILE` / `PROFILES_ENABLED`, and for `v5` substitute
+`AnalyticsLog` / `ANALYTICS` / `ANALYTICS_ENABLED` — the disable values and
+verification commands for each flag are tabulated in `GAME_DAY.md`
+§"Forward-recovery reference". For `v3`, the new namespace is initially
+empty and legacy data moves only when the application performs lazy
+migration. The namespace must remain declared even if the feature's traffic
+is disabled.
 
 Procedure:
 
@@ -160,16 +167,16 @@ At minimum verify:
 
 ## Staging game day
 
-Before production activation of `v3`, perform and record this exercise:
-
-1. Deploy a known-good staging release with all migrations.
-2. Create a disposable private draft and canonical workspace.
-3. Deploy a deliberately broken but non-destructive workspace behavior.
-4. Confirm the team chooses forward recovery rather than crossing `v3`.
-5. Disable the workspace and deploy a compatible forward fix.
-6. Verify the canonical revision/page data and legacy draft remain readable.
-7. Re-enable and complete the smoke checklist.
-8. Record duration, gaps, and runbook corrections.
+Superseded (2026-07-19, packet O2/O3): the full, repeatable drill —
+staging-first, covering every current migration and feature flag, with
+controlled synthetic faults, alert verification, production-safe
+forward-disable exercises, and a reusable evidence record — is now
+[`GAME_DAY.md`](GAME_DAY.md) with
+[`GAME_DAY_EVIDENCE_TEMPLATE.md`](GAME_DAY_EVIDENCE_TEMPLATE.md). The
+original 8-step exercise this section defined is contained within its
+Phase 2/Phase 4 scenarios. Run it before relying on these recovery
+procedures in an actual incident, and after any change to the deploy
+pipeline or flag set.
 
 ## Incident record template
 

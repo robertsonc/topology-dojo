@@ -191,6 +191,32 @@ describe('check-wrangler-env: synthetic fixtures', () => {
     expect(codesOf(violations)).toContain('kv-binding-missing');
   });
 
+  it('flags any DIAGNOSTICS_* var in the top-level (production) vars', () => {
+    const config = structuredClone(validConfig());
+    (config.vars as Record<string, string>).DIAGNOSTICS_ENV = 'staging';
+    (config.vars as Record<string, string>).DIAGNOSTICS_TOKEN = 'oops';
+    const violations = checkWranglerConfig(config);
+    const codes = codesOf(violations);
+    expect(codes.filter((c) => c === 'diagnostics-in-production')).toHaveLength(
+      2,
+    );
+  });
+
+  it('flags a staging DIAGNOSTICS_ENV that is not exactly "staging"', () => {
+    const config = structuredClone(validConfig());
+    (config.env.staging.vars as Record<string, string>).DIAGNOSTICS_ENV =
+      'production';
+    const violations = checkWranglerConfig(config);
+    expect(codesOf(violations)).toContain('diagnostics-env-invalid');
+  });
+
+  it('accepts DIAGNOSTICS_ENV="staging" in env.staging vars', () => {
+    const config = structuredClone(validConfig());
+    (config.env.staging.vars as Record<string, string>).DIAGNOSTICS_ENV =
+      'staging';
+    expect(checkWranglerConfig(config)).toEqual([]);
+  });
+
   it('flags env.staging missing entirely', () => {
     const config = structuredClone(validConfig()) as Record<string, unknown>;
     delete config.env;

@@ -9,33 +9,50 @@
  *
  * Usage:
  *   node scripts/smoke.mjs <baseUrl> [--sha <expected-sha>] \
- *     [--expect-workspace-disabled] [--json]
+ *     [--expect-workspace-disabled] [--expect-profiles-disabled] \
+ *     [--expect-analytics-disabled] [--json]
  *
  * All checks run regardless of earlier failures. The process exits non-zero
  * only if at least one check FAILED; SKIPPED checks (a route that does not
  * exist on this deployment yet) do not fail the run.
  *
+ * The `--expect-*-disabled` flags flip the corresponding feature-flag
+ * contract check from its enabled shape (401 for an unauthenticated caller)
+ * to the disabled shape (the stable 503 body) — used by the game-day
+ * forward-disable drills (docs/GAME_DAY.md) and the bootstrap deploys.
+ *
  * See docs/DEPLOYMENT_RUNBOOK.md ("Smoke checklist") for the manual checks
  * (browser OAuth, MCP session, shared workspace flows) this script does not
  * and cannot cover unauthenticated.
+ *
+ * The check/runner functions are exported so
+ * `src/testing/smoke-checks.test.ts` can exercise them against a
+ * Miniflare-served worker without shelling out; `main()` runs only when the
+ * script is executed directly (same pattern as check-wrangler-env.mjs).
  */
 /* global fetch, AbortSignal, URL, console, process, setTimeout */
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 /** Per-request timeout: a hung deployment must fail the run, not hang CI. */
 const TIMEOUT_MS = 15_000;
 
 const WORKSPACE_DISABLED_BODY = { error: 'workspace_disabled' };
+const PROFILES_DISABLED_BODY = { error: 'profiles_disabled' };
+const ADMIN_DISABLED_BODY = { error: 'admin_disabled' };
 
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = {
     baseUrl: undefined,
     sha: undefined,
     waitLiveSeconds: 0,
     expectWorkspaceDisabled: false,
+    expectProfilesDisabled: false,
+    expectAnalyticsDisabled: false,
     json: false,
     help: false,
   };
@@ -48,6 +65,10 @@ function parseArgs(argv) {
       args.waitLiveSeconds = Number(argv[++i]);
     } else if (arg === '--expect-workspace-disabled') {
       args.expectWorkspaceDisabled = true;
+    } else if (arg === '--expect-profiles-disabled') {
+      args.expectProfilesDisabled = true;
+    } else if (arg === '--expect-analytics-disabled') {
+      args.expectAnalyticsDisabled = true;
     } else if (arg === '--json') {
       args.json = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -62,7 +83,7 @@ function parseArgs(argv) {
 
 function usage() {
   return [
-    'Usage: node scripts/smoke.mjs <baseUrl> [--sha <expected-sha>] [--wait-live <seconds>] [--expect-workspace-disabled] [--json]',
+    'Usage: node scripts/smoke.mjs <baseUrl> [--sha <expected-sha>] [--wait-live <seconds>] [--expect-workspace-disabled] [--expect-profiles-disabled] [--expect-analytics-disabled] [--json]',
     '',
     'Runs an unauthenticated HTTP smoke suite against a deployed Topology Dojo',
     'origin (e.g. https://topology-dojo-staging.<account>.workers.dev). Never',
@@ -75,6 +96,12 @@ function usage() {
     '                                failure instead of a skip)',
     '  --expect-workspace-disabled   assert GET /api/workspaces returns the',
     '                                503 workspace_disabled contract instead',
+    '                                of the normal 401',
+    '  --expect-profiles-disabled    assert GET /api/profile/preferences',
+    '                                returns the 503 profiles_disabled',
+    '                                contract instead of the normal 401',
+    '  --expect-analytics-disabled   assert GET /api/admin/summary returns',
+    '                                the 503 admin_disabled contract instead',
     '                                of the normal 401',
     '  --json                       also print a one-line JSON summary after',
     '                                the human-readable table',
@@ -428,22 +455,319 @@ async function checkShare404(base) {
   return pass(name, '404 for a nonexistent share id');
 }
 
+/**
+ * GET /readyz unauthenticated → 401. The deeper readiness probe is
+ * owner-authenticated (worker/default-handler.ts `handleReadyz`); an
+ * unauthenticated caller must always be refused BEFORE any binding probe
+ * runs. A 200/503 here would mean the auth gate on the probe was lost. Uses
+ * the same not-implemented recognition as /healthz (bare 404, or the SPA
+ * shell served as a non-JSON 200) so older deployments skip instead of fail.
+ */
+async function checkReadyzUnauth(base) {
+  const name = 'readyz-unauth';
+  let res;
+  try {
+    res = await request(new URL('/readyz', base));
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  const contentType = res.headers.get('content-type') ?? '';
+  const looksUnimplemented =
+    res.status === 404 ||
+    (res.status === 200 && !contentType.includes('application/json'));
+  if (looksUnimplemented) {
+    return skip(
+      name,
+      `/readyz is not implemented on this deployment yet (status ${res.status}, content-type "${contentType}")`,
+    );
+  }
+  if (res.status !== 401) {
+    return fail(
+      name,
+      `expected 401 for an unauthenticated caller, got ${res.status} — the readiness probe must never run without a session`,
+    );
+  }
+  return pass(name, '401 without a session, as required');
+}
+
+/** GET /api/me unauthenticated → 401 (the session-identity endpoint). */
+async function checkMeUnauth(base) {
+  const name = 'me-unauth';
+  let res;
+  try {
+    res = await request(new URL('/api/me', base));
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  if (res.status !== 401) return fail(name, `expected 401, got ${res.status}`);
+  return pass(name, '401 without a session, as expected');
+}
+
+/**
+ * GET /api/profile/preferences unauthenticated. Normally 401 (profiles
+ * enabled, caller has no session); with --expect-profiles-disabled, asserts
+ * the stable 503 profiles_disabled contract instead
+ * (worker/default-handler.ts `profilesDisabledResponse`). A deployment
+ * predating the profile surface is SKIPPED.
+ */
+async function checkProfileUnauth(base, expectProfilesDisabled) {
+  const name = 'profile-unauth';
+  let res;
+  try {
+    res = await request(new URL('/api/profile/preferences', base));
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  const contentType = res.headers.get('content-type') ?? '';
+  const looksUnimplemented =
+    (res.status === 404 && !contentType.includes('application/json')) ||
+    (res.status === 200 && !contentType.includes('application/json'));
+  if (looksUnimplemented) {
+    return skip(
+      name,
+      `the profile API is not implemented on this deployment yet (status ${res.status}, content-type "${contentType}")`,
+    );
+  }
+  if (expectProfilesDisabled) {
+    if (res.status !== 503) {
+      return fail(name, `expected 503 (profiles disabled), got ${res.status}`);
+    }
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      return fail(name, '503 response body was not valid JSON');
+    }
+    if (JSON.stringify(data) !== JSON.stringify(PROFILES_DISABLED_BODY)) {
+      return fail(
+        name,
+        `expected exactly ${JSON.stringify(PROFILES_DISABLED_BODY)}, got ${JSON.stringify(data)}`,
+      );
+    }
+    return pass(
+      name,
+      `503 ${JSON.stringify(PROFILES_DISABLED_BODY)} as expected`,
+    );
+  }
+  if (res.status !== 401) return fail(name, `expected 401, got ${res.status}`);
+  return pass(name, '401 without a session, as expected');
+}
+
+/**
+ * GET /api/admin/summary unauthenticated. Normally 401 (analytics enabled,
+ * caller has no session — the admin identity check comes after auth); with
+ * --expect-analytics-disabled, asserts the stable 503 admin_disabled
+ * contract (worker/default-handler.ts `adminDisabledResponse`). A deployment
+ * predating the admin surface is SKIPPED.
+ */
+async function checkAdminUnauth(base, expectAnalyticsDisabled) {
+  const name = 'admin-unauth';
+  let res;
+  try {
+    res = await request(new URL('/api/admin/summary', base));
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  const contentType = res.headers.get('content-type') ?? '';
+  const looksUnimplemented =
+    (res.status === 404 && !contentType.includes('application/json')) ||
+    (res.status === 200 && !contentType.includes('application/json'));
+  if (looksUnimplemented) {
+    return skip(
+      name,
+      `the admin API is not implemented on this deployment yet (status ${res.status}, content-type "${contentType}")`,
+    );
+  }
+  if (expectAnalyticsDisabled) {
+    if (res.status !== 503) {
+      return fail(name, `expected 503 (analytics disabled), got ${res.status}`);
+    }
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      return fail(name, '503 response body was not valid JSON');
+    }
+    if (JSON.stringify(data) !== JSON.stringify(ADMIN_DISABLED_BODY)) {
+      return fail(
+        name,
+        `expected exactly ${JSON.stringify(ADMIN_DISABLED_BODY)}, got ${JSON.stringify(data)}`,
+      );
+    }
+    return pass(name, `503 ${JSON.stringify(ADMIN_DISABLED_BODY)} as expected`);
+  }
+  if (res.status !== 401) return fail(name, `expected 401, got ${res.status}`);
+  return pass(name, '401 without a session, as expected');
+}
+
+/**
+ * GET /showcase/hub-spoke.webp → 200 image. The login page's pre-login
+ * showcase filmstrip depends on these static assets serving UNGATED (image
+ * requests are not document navigations, so the sign-in gate must not
+ * apply). A redirect to /login here is a gating regression that would blank
+ * the login page's showcase. Missing entirely (older deployment) → skip.
+ */
+async function checkShowcase(base) {
+  const name = 'showcase';
+  let res;
+  try {
+    res = await request(new URL('/showcase/hub-spoke.webp', base));
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  if (res.status === 302 || res.status === 303) {
+    return fail(
+      name,
+      `showcase asset redirected (${res.status} → "${res.headers.get('location') ?? ''}") — static assets must serve ungated`,
+    );
+  }
+  const contentType = res.headers.get('content-type') ?? '';
+  if (
+    res.status === 404 ||
+    (res.status === 200 && contentType.includes('text/html'))
+  ) {
+    return skip(
+      name,
+      `showcase assets not present on this deployment (status ${res.status}, content-type "${contentType}")`,
+    );
+  }
+  if (res.status !== 200 || !contentType.includes('image/')) {
+    return fail(
+      name,
+      `expected 200 image, got ${res.status} content-type "${contentType}"`,
+    );
+  }
+  return pass(
+    name,
+    `200 ${contentType} (login-page showcase asset serves ungated)`,
+  );
+}
+
+/**
+ * GET /v/<nonexistent id> as a document navigation → 200 HTML app shell.
+ * Public read-only shared views must stay reachable WITHOUT sign-in (the
+ * carve-out in worker/default-handler.ts's navigation gate); the SPA itself
+ * then renders "not found" client-side after /api/topology/:id 404s. A
+ * redirect to /login here means the public share surface got gated — a
+ * regression for every previously shared link.
+ */
+async function checkViewerShell(base) {
+  const name = 'viewer-shell';
+  let res;
+  try {
+    res = await request(new URL('/v/nonexistent-smoke-probe', base), {
+      headers: { accept: 'text/html' },
+    });
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  if (res.status === 302 || res.status === 303) {
+    return fail(
+      name,
+      `${res.status} redirect to "${res.headers.get('location') ?? ''}" — the public /v/:id shared view must not require sign-in`,
+    );
+  }
+  if (res.status !== 200) {
+    return fail(name, `expected 200 HTML app shell, got ${res.status}`);
+  }
+  const contentType = res.headers.get('content-type') ?? '';
+  if (!contentType.includes('text/html')) {
+    return fail(name, `expected HTML, got content-type "${contentType}"`);
+  }
+  const body = await res.text();
+  if (!body.includes('id="app"')) {
+    return fail(name, '200 HTML did not look like the app shell');
+  }
+  return pass(name, '200 app shell served without sign-in (public share view)');
+}
+
+/**
+ * GET /__staging/fault WITHOUT a diagnostics token must never fire a
+ * synthetic fault, in any environment. In production the route is fully
+ * inert (worker/staging-fault.ts returns null and the path falls through to
+ * the SPA/login behavior); in a configured staging it must answer 403
+ * without the token. The ONLY failing shape is an actual synthetic fault
+ * response — the x-synthetic-fault marker header, or a 500 whose JSON body
+ * says synthetic:true — which would mean the fault gate fired without
+ * credentials.
+ */
+async function checkFaultInert(base) {
+  const name = 'fault-inert';
+  let res;
+  try {
+    res = await request(new URL('/__staging/fault', base));
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  const marker = res.headers.get('x-synthetic-fault');
+  if (marker) {
+    return fail(
+      name,
+      `synthetic fault fired without a token (x-synthetic-fault: ${marker}) — the staging fault gate is broken`,
+    );
+  }
+  if (res.status === 500) {
+    let synthetic = false;
+    try {
+      const data = await res.json();
+      synthetic = data?.synthetic === true;
+    } catch {
+      // Non-JSON 500: a real server error, not the synthetic contract.
+    }
+    if (synthetic) {
+      return fail(
+        name,
+        '500 synthetic fault body without a token — the staging fault gate is broken',
+      );
+    }
+    return fail(name, 'unexpected (non-synthetic) 500 from the fault path');
+  }
+  if (res.status === 403) {
+    return pass(
+      name,
+      '403 without a token (staging gate configured; fault did not fire)',
+    );
+  }
+  return pass(
+    name,
+    `inert (${res.status} — behaves like any unknown path; no synthetic fault without a token)`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
 
-async function runSmoke(baseUrl, { sha, expectWorkspaceDisabled }) {
+export async function runSmoke(
+  baseUrl,
+  {
+    sha,
+    expectWorkspaceDisabled = false,
+    expectProfilesDisabled = false,
+    expectAnalyticsDisabled = false,
+  },
+) {
   const tasks = [
     ['healthz', () => checkHealthz(baseUrl, sha)],
+    ['readyz-unauth', () => checkReadyzUnauth(baseUrl)],
     ['app', () => checkApp(baseUrl)],
     ['login', () => checkLogin(baseUrl)],
+    ['me-unauth', () => checkMeUnauth(baseUrl)],
     ['oauth-metadata', () => checkOAuthMetadata(baseUrl)],
     ['mcp-unauth', () => checkMcpUnauth(baseUrl)],
     [
       'workspaces-unauth',
       () => checkWorkspacesUnauth(baseUrl, expectWorkspaceDisabled),
     ],
+    [
+      'profile-unauth',
+      () => checkProfileUnauth(baseUrl, expectProfilesDisabled),
+    ],
+    ['admin-unauth', () => checkAdminUnauth(baseUrl, expectAnalyticsDisabled)],
     ['share-404', () => checkShare404(baseUrl)],
+    ['viewer-shell', () => checkViewerShell(baseUrl)],
+    ['showcase', () => checkShowcase(baseUrl)],
+    ['fault-inert', () => checkFaultInert(baseUrl)],
   ];
   // allSettled (not fail-fast): every check runs and reports independently,
   // even if a check function throws something its own try/catch didn't
@@ -518,6 +842,8 @@ async function main() {
   const results = await runSmoke(baseUrl, {
     sha: args.sha,
     expectWorkspaceDisabled: args.expectWorkspaceDisabled,
+    expectProfilesDisabled: args.expectProfilesDisabled,
+    expectAnalyticsDisabled: args.expectAnalyticsDisabled,
   });
 
   printTable(baseUrl, results);
@@ -526,7 +852,12 @@ async function main() {
   process.exit(results.some((r) => r.status === 'fail') ? 1 : 0);
 }
 
-main().catch((err) => {
-  console.error('smoke run crashed:', err);
-  process.exit(1);
-});
+const isMain =
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMain) {
+  main().catch((err) => {
+    console.error('smoke run crashed:', err);
+    process.exit(1);
+  });
+}

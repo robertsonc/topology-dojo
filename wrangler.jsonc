@@ -142,6 +142,13 @@
         // an isolated value.
         "ANALYTICS_ENABLED": "true",
         "ADMIN_GITHUB_ID": "17257145",
+        // Staging-only synthetic-fault gate (worker/staging-fault.ts, game-day
+        // drills — docs/GAME_DAY.md). Must be exactly "staging", must exist
+        // ONLY here: check-wrangler-env.mjs fails the build if any
+        // DIAGNOSTICS_* key appears in the top-level (production) vars. The
+        // companion DIAGNOSTICS_TOKEN is a staging-only dashboard secret
+        // (`wrangler secret put DIAGNOSTICS_TOKEN --env staging`), never a var.
+        "DIAGNOSTICS_ENV": "staging",
       },
       // Staging's own KV namespaces (operator checklist O2) — never the
       // production ids above.

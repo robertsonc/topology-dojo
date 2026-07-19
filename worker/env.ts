@@ -116,6 +116,22 @@ export interface WorkerEnv {
    * `ANALYTICS_ENABLED` is on. Set it to the deployment owner's GitHub id.
    */
   ADMIN_GITHUB_ID?: string;
+  /**
+   * Staging-only diagnostics environment marker (`worker/staging-fault.ts`).
+   * Set to the literal `"staging"` ONLY in `env.staging.vars`; any other
+   * value (including unset — production's state) keeps the synthetic-fault
+   * route fully inert. `scripts/check-wrangler-env.mjs` fails the build if
+   * any `DIAGNOSTICS_*` key ever appears in the top-level (production) vars.
+   */
+  DIAGNOSTICS_ENV?: string;
+  /**
+   * Staging-only shared secret for `GET /__staging/fault` (set via
+   * `wrangler secret put DIAGNOSTICS_TOKEN --env staging`; never configured
+   * for production, never committed). Unset or shorter than 16 characters ⇒
+   * the fault route stays inert even in staging. See
+   * `worker/staging-fault.ts` for the full gate chain.
+   */
+  DIAGNOSTICS_TOKEN?: string;
 }
 
 /**
