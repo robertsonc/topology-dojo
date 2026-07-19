@@ -7,6 +7,17 @@ defines the supported response for both.
 See also [`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md) and
 [`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md).
 
+> **Note (2026-07-19):** the worked examples below were written around
+> migration `v3` (`TopologyDocument`), the first one this pipeline shipped.
+> The principles are migration-agnostic and apply identically to every
+> migration since (`v4`/`AuthoringProfile`, `v5`/`AnalyticsLog`, and any
+> future tag) — substitute the current highest tag from `wrangler.jsonc`
+> wherever `v3` appears below. `DEPLOYMENT_RUNBOOK.md` has per-migration gate
+> sections for `v4` and `v5` specifically if you need the concrete bootstrap/
+> activation steps rather than the general recovery principle. See
+> `IMPLEMENTATION_PLAN.md` packet O3 for the tracked follow-up to generalize
+> this document's examples explicitly.
+
 ## First principle
 
 Do not cross a Durable Object migration boundary with a rollback. Once a

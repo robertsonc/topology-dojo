@@ -1,6 +1,11 @@
 # Proposal 0004 — Isolated Staging and Durable Object Deployment Pipeline
 
-**Status:** Proposed implementation plan
+**Status:** Implemented. The isolated staging environment, CI-gated deploy
+pipeline, and feature-flag bootstrap pattern are all live; production has
+completed the full activation sequence this proposal describes (see
+`../DEPLOYMENT_RUNBOOK.md` and `../HANDOFF.md`). Status corrected 2026-07-19;
+see `../DISCREPANCY_REGISTER.md` row 6 and the updated acceptance-criteria
+checklist below.
 
 **Captured:** 2026-07-12
 
@@ -305,23 +310,40 @@ thresholds for the agreed observation period.
 
 ## Acceptance criteria
 
-- [ ] Production non-production branch builds are disabled.
-- [ ] Staging and production share no KV ids, OAuth clients/secrets, Worker
-      names, or Durable Object namespaces.
-- [ ] No deployment script or workflow uses `wrangler versions upload` for a
-      Worker containing an unapplied migration.
-- [ ] PR checks run typecheck, 262+ tests, lint, production build, and Worker
-      bundle validation.
-- [ ] Staging is deployed only after the required check succeeds.
-- [ ] Production is deployed only from protected `main` with approval.
-- [ ] Migration `v3` is applied and tested in staging before production.
-- [ ] Production namespace bootstrap occurs with workspace entry points
-      disabled.
-- [ ] Automated smoke results are attached to each deployment.
+_Checked off 2026-07-19 against verified current state — see
+`../DISCREPANCY_REGISTER.md` row 6. Two items remain genuinely open and are
+tracked as `../IMPLEMENTATION_PLAN.md` packets O2/O3._
+
+- [x] Production non-production branch builds are disabled. (Operator O9,
+      2026-07-17 — Workers Builds Git integration disconnected.)
+- [x] Staging and production share no KV ids, OAuth clients/secrets, Worker
+      names, or Durable Object namespaces. (`scripts/check-wrangler-env.mjs`,
+      enforced in CI.)
+- [x] No deployment script or workflow uses `wrangler versions upload` for a
+      Worker containing an unapplied migration. (`deploy-production.yml` uses
+      `wrangler deploy`.)
+- [x] PR checks run typecheck, 262+ tests, lint, production build, and Worker
+      bundle validation. (Now 723 tests; `ci.yml`.)
+- [x] Staging is deployed only after the required check succeeds.
+      (`deploy-staging.yml`.)
+- [x] Production is deployed only from protected `main` with approval.
+      (`deploy-production.yml`'s `guard` job + `production` GitHub Environment.)
+- [x] Migration `v3` is applied and tested in staging before production.
+      (Operator O10, 2026-07-17 — and `v4`/`v5` have since followed the same
+      pattern.)
+- [x] Production namespace bootstrap occurs with workspace entry points
+      disabled. (Operator O10 — `workspace_disabled` bootstrap smoke green.)
+- [x] Automated smoke results are attached to each deployment.
+      (`scripts/smoke.mjs`, deployment-run summaries.)
 - [ ] The rollback/forward-recovery exercise has been performed once in
-      staging.
+      staging **against the current `v3`–`v5` reality** — a `v4` drill was
+      performed (`docs/HANDOFF.md` "Gate A"), but the full `ROLLBACK.md`
+      "Staging game day" checklist has not been executed and recorded as a
+      single dated exercise. Tracked as `../IMPLEMENTATION_PLAN.md` packet O2.
 - [ ] H7, M14, M15, and L1 have evidence-backed closure notes in the findings
-      register.
+      register. H7, M14, and L1 are now closed; **M15 remains "substantially
+      addressed"** — Cloudflare alerting and the game day above are the
+      remaining gap. Tracked as `../IMPLEMENTATION_PLAN.md` packets O1/O2.
 
 ## Risks and controls
 

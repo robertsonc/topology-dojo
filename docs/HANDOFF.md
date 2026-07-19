@@ -1,187 +1,243 @@
-# Handoff — session 2 close (2026-07-15, end of day)
+# Handoff
 
-The current pick-up doc. Session 2 ran 2026-07-13 → 07-15 and shipped the
-R-train, the S-train (minus S4), the flat viewer, and proposal 0003 packets
-P1–P3 — including the **first `v4` migration deploy through the 0004 pipeline**
-with a successful forward-recovery drill.
+_The primary entry point for picking up work on this repo. Rewritten
+2026-07-19 as part of a full documentation reset (see
+[`ROADMAP.md`](ROADMAP.md), [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md),
+[`DISCREPANCY_REGISTER.md`](DISCREPANCY_REGISTER.md)). Earlier handoff notes
+and the pre-reset implementation plan are preserved under
+[`archive/`](archive/) — do not treat anything there as current status; each
+carries a banner pointing back here._
 
-## Where things stand (everything merged; no open PRs)
+## What Topology Dojo is
 
-- **`main` is the complete state**: R2/R3/R4, flat viewer, S1/S2/S3, P1
-  (feature extraction), P2 (`AuthoringProfile` DO + observe-only learner,
-  migration `v4`), P3 (Authoring Preferences panel + `/api/profile*` routes),
-  the session handoff + runbook v4 gates, and all docs truth-ups.
-- **Staging** (`topology-dojo-staging`): running with **`v4` applied** and
-  **`PROFILES_ENABLED="true"`** — the observe-only learner is live and
-  accumulating candidates from the owner's MCP correction loops. Last verified
-  deploy + smoke: 7/7 green (see Gate A evidence below). NOTE: `main` has moved
-  past the last staging deploy (P3 merged after) — **dispatch
-  `deploy-staging.yml` from `main`** to get the prefs panel onto staging and
-  see the learner's candidates.
-- **Production**: the first gated Actions deploy (O10) ran 2026-07-17 — run
-  29593411599 applied `v1`–`v4` together from `main`@f4b8921 with the
-  `workspace_disabled` bootstrap smoke green — followed by a combined
-  activation deploy (`WORKSPACE_ENABLED:"true"` + `PROFILES_ENABLED:"true"`,
-  operator decision to activate both at once after P4 staging UAT). Recovery
-  for either feature is forward-only flag-off. O9 was completed later the
-  same day after the still-connected Workers Builds integration push-deployed
-  `main` past the approval gate twice (un-attested `sha: null` deploys of the
-  P4-activation and P5 merges); the gated pipeline is now the only deploy
-  path. O12 (alerting) remains open — the activation soak runs without
-  alerts by explicit operator choice.
-- **Production domain + analytics (2026-07-18)**: the production origin moved
-  from the `workers.dev` subdomain to **`topology-dojo.harnessed.cloud`** (custom
-  domain in the Cloudflare dashboard; the production GitHub OAuth App callback
-  was repointed to match). `PUBLIC_BASE_URL` and the production deploy/smoke
-  references were truth-upped (PR #190). The **admin/analytics dashboard (`v5`)**
-  then rolled out straight to production (staging UAT skipped by operator
-  choice — the bootstrap is inert and `v5` mirrors the staging-proven `v4`):
-  Gate B run 29622343320 applied `v5` **inert** + cut the domain over (verified:
-  `/healthz` served the new sha, `/api/admin` returned the inert
-  `admin_disabled` 503); Gate C run 29622993652 flipped
-  `ANALYTICS_ENABLED:"true"` (PR #191), verified live by `/api/admin` switching
-  from 503 to a 401 auth challenge and owner UAT of the dashboard. Recovery is
-  forward-only flag-off; never roll back across `v5`.
-- **Git**: clean. All session branches merged + pruned (local and remote);
-  ~113 historical merged remotes also deleted. One unrelated branch
-  `claude/hideable-frames-panel-ohlc73` appeared on origin from another
-  session.
+A production-hosted, collaborative, AI-agent-assisted network-topology
+authoring platform. A human authors multi-page flipbook diagrams in a
+browser editor; an AI agent authors the same documents through an MCP server
+(local stdio or remote Cloudflare, OAuth-gated) using the identical
+catalog-driven API; the two collaborate in a shared workspace with
+proposals, leases, checkpoints, and a revision timeline. An observe-only
+learner adapts agent behavior to a human's confirmed authoring preferences
+over time. See `ROADMAP.md` §"Current production baseline" for the full
+picture with evidence citations.
 
-## Gate A — v4 staging proof (DONE, 2026-07-15)
+## Current production state
 
-| Step                                    | Evidence                                                                                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `v4` applied to staging (P2 build)      | [run 29386077720](https://github.com/robertsonc/topology-dojo/actions/runs/29386077720) — CI (incl. workerd DO suites) + deploy green      |
-| External smoke, learner observing       | 7/7 incl. sha assertion                                                                                                                    |
-| Forward-recovery drill: flag-off deploy | [run 29386230142](https://github.com/robertsonc/topology-dojo/actions/runs/29386230142) — smoke 7/7, learner disabled cleanly forward-only |
-| Re-enable                               | [run 29386327844](https://github.com/robertsonc/topology-dojo/actions/runs/29386327844) — smoke 7/7                                        |
+As of this reset (`main` @ `d169274`, PR #195 merged 2026-07-18):
 
-This satisfies the runbook's v4 Gate A **and** constitutes a real
-forward-recovery exercise performed in staging (a 0004 acceptance criterion).
-Owner UAT of MCP workspace flows (propose/accept/lease) was confirmed done by
-the operator. Full evidence also posted on PR #176.
+- **All three major feature flags are live**: `WORKSPACE_ENABLED`,
+  `PROFILES_ENABLED`, `ANALYTICS_ENABLED` are all `"true"` in the top-level
+  (production) `wrangler.jsonc`. Nothing is bootstrapped-but-inert right now.
+- **Migrations `v1`–`v5` are all applied** in production: `TopologyMcp`,
+  `TopologyRegistry`, `TopologyDocument`, `AuthoringProfile`, `AnalyticsLog`.
+- **Production origin**: `https://topology-dojo.harnessed.cloud` (moved from
+  the `workers.dev` subdomain 2026-07-18; the GitHub OAuth App callback was
+  repointed to match). Staging stays on its own `workers.dev` subdomain,
+  fully isolated (`check-wrangler-env.mjs` enforces this in CI).
+- **723 tests passing**, 63 test files (`npm test`).
+- **The one confirmed operational gap**: Cloudflare error-rate alerting is
+  not configured. Production runs without automated alerts by explicit,
+  documented operator choice (nightly staging smoke + GitHub-native failure
+  notifications are the current safety net). This is `IMPLEMENTATION_PLAN.md`
+  initiative O, packets O1–O3, and it's ready to start any time — no code
+  dependency blocks it.
+- **Zero open PRs, zero open issues.** This repo does not use GitHub Issues
+  as a planning tool — all planning lives in `docs/`. 174 PRs merged to date
+  (#1–#195). 7 stale-but-fully-merged branches exist on origin (safe to
+  delete, no unique commits) — deleting them is a human/operator task (this
+  environment's git push has been observed to reject `--delete` pushes; if
+  that's still true, it needs to be done from a different environment).
 
-Merge-history footnote: P2's content reached `main` via **#178** (the drill
-branch was stacked on P2, and its auto-created PR was merged), which also
-briefly pinned staging's flag off; **#179** restored `PROFILES_ENABLED="true"`.
-GitHub therefore shows #176 as merged without its own merge commit.
+## Recently completed (this session)
 
-## What shipped in session 2 (chronological, all on `main`)
+In order: the adaptive-authoring-profiles packets P4/P5 (confirmation/
+scoping/guidance MCP tools, then outcome refinement); a labelScale contract
+field for link labels; the nightly staging smoke workflow; the owner-only
+admin/analytics dashboard (migration `v5`, two-gate bootstrap-then-activate
+rollout); the production domain cutover to `harnessed.cloud`; two security
+fixes (finding M18, an open-redirect bypass in the post-login redirect
+guard; finding M19, a login-page copy correction to match the actual
+open-signup posture); a pre-login showcase filmstrip on the login page
+(four topologies authored via MCP, animated WebP frames); and this
+documentation reset.
 
-| PR        | What                                                                     |
-| --------- | ------------------------------------------------------------------------ |
-| #159      | O7 activation observation window + stop thresholds (runbook)             |
-| #160      | Slim hover-reveal scrollbars                                             |
-| #161      | D6 docs truth-up + findings closure (H7/M14/M15/L1)                      |
-| #162      | Collapsed-palette icon fix; minimap docked left; Problems pinned right   |
-| #163      | **R2** selective proposal acceptance                                     |
-| #164/#167 | **R3** checkpoints, forward-only restore, fork (+ 2 MCP tools)           |
-| #165/#171 | **R4** revision timeline                                                 |
-| #166      | **Flat viewer** (glow = emphasis-only channel; exports match)            |
-| #168      | Roadmap truth-up + adjustable-viewer item                                |
-| #169      | **S1** WebSocket push + presence (hibernation-friendly)                  |
-| #171      | **S2** gesture-native operations + referee fallback                      |
-| #173      | **S3** IndexedDB offline cache + crash recovery                          |
-| #174      | Roadmap: resize link labels (`labelScale`)                               |
-| #175      | **P1** deterministic feature extraction (`SemanticFeatures`)             |
-| #176/#178 | **P2** `AuthoringProfile` DO + observe-only learner (**migration `v4`**) |
-| #177      | Session handoff + runbook v4 gates                                       |
-| #179      | Restore staging `PROFILES_ENABLED="true"`                                |
-| #180      | **P3** Authoring Preferences panel (prefs button, pause/forget)          |
+## Active implementation program
 
-**S4 (finer element-set leases) deliberately skipped** — per-page leases are
-fine; revisit only on measured contention.
+Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 
-## Operator checklist
+| #   | Initiative                                  | Status                                 | Blocking dependency                                                      |
+| --- | ------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| N   | Documentation reset                         | **In progress — packet N3 is this PR** | None                                                                     |
+| O   | Cloudflare alerting + production game day   | Not started                            | None — can start immediately                                             |
+| A   | Agent activity + explainability             | Not started                            | None — soft dependency on N landing                                      |
+| B   | Guided topology briefs + semantic templates | Not started                            | None — soft dependency on N landing                                      |
+| E   | EdgeConnect live-import hardening + UI      | Not started                            | None — soft dependency on N landing                                      |
+| T   | Time-aware flow/failure storytelling        | Not started                            | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
 
-| Item                              | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| O1–O8                             | ✅ (staging isolated + live; CI-gated pipeline proven; O7 thresholds set)                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| v4 Gate A (staging + drill)       | ✅ **done this session** (evidence above)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Staging UAT (MCP workspace flows) | ✅ confirmed by operator                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| O9                                | ✅ 2026-07-17: Workers Builds Git integration disconnected (its push-triggered `wrangler deploy` had bypassed the gate twice); verified by the next `main` merge deploying nothing un-gated                                                                                                                                                                                                                                                                                                    |
-| O10                               | ✅ 2026-07-17: first gated production deploy (run 29593411599) applied `v1`–`v4`; `workspace_disabled` bootstrap smoke green                                                                                                                                                                                                                                                                                                                                                                   |
-| O11                               | ✅ 2026-07-17: `WORKSPACE_ENABLED:"true"` activation (combined deploy with profiles); T0 smoke on deploy, owner runs T1/T2                                                                                                                                                                                                                                                                                                                                                                     |
-| O12                               | ◑ Partial. **Nightly staging smoke** ✅ (`nightly-staging-smoke.yml`, 08:00 UTC, files/closes a `nightly-smoke` issue via GitHub-native notification — no secrets). **Failed-deploy notifications**: GitHub's built-in Actions failure emails (per-user Settings → Notifications; no repo change). **Cloudflare error-rate alerting** ⏳ still open — dashboard-only, thresholds in `DEPLOYMENT_RUNBOOK.md` §"Rate-based stops"; this is the one gating the activation soak (owner working it) |
-| Profiles activation (prod)        | ✅ 2026-07-17: top-level `"PROFILES_ENABLED": "true"` shipped in the combined activation deploy after P4 staging UAT                                                                                                                                                                                                                                                                                                                                                                           |
-| Analytics dashboard (`v5`)        | ✅ 2026-07-18: shipped + live in production. Gate B (run 29622343320) applied `v5` inert + the `harnessed.cloud` cutover; Gate C (run 29622993652, PR #191) flipped `ANALYTICS_ENABLED:"true"`. Verified live (`/api/admin` 503→401) + owner UAT. Staging also runs the flag on. See runbook §"Migration `v5`".                                                                                                                                                                                |
+**Immediate next packet after this PR merges: O1** (configure Cloudflare
+alerting) or **A1/B1/T1** (pure-types packets, no dependencies, safe to start
+in parallel) — see `IMPLEMENTATION_PLAN.md`'s dependency graph for the full
+picture of what can run concurrently.
 
-## Next repo work, in order
+## Important architectural rules
 
-1. ~~**Deploy staging from `main`**~~ — DONE 2026-07-17 (run 29589426103,
-   `main`@35ae08d, green): the P3 prefs panel is live on staging. Owner
-   sanity when convenient: sign in → prefs button → candidates listed.
-2. ~~**P4 (0003-B)**~~ — DONE (this branch/PR): confirmation & scoping in the
-   panel (browser-owner only — no MCP confirm path, by construction; the
-   cookie-authed `/api/profile/*` confirm/reject routes are the only
-   promotion path) + `get_authoring_guidance` / `list_authoring_preferences`
-   / `explain_authoring_preference` read-only MCP tools under **hard token
-   budgets as tests** (≤5 rules, ≤400 default / 800 absolute, `notModified`
-   on unchanged revisions, ids + omission count on overflow — see
-   `src/profile/guidance.test.ts`). Compiled-guidance cache keyed
-   `(profileRevision, guidanceRevision, workspace, archetype, budget)` in
-   `worker/profile.ts`; versioned `src/profile/guidance-packs.ts`
-   (`GUIDANCE_REVISION` must bump with any pack edit). After merge: dispatch
-   `deploy-staging.yml` from `main` so the confirm flow + guidance tools go
-   live on staging.
-3. ~~**P5 (0003-C)**~~ — DONE (this branch/PR): outcome refinement.
-   A correction that REVERSES a stored rule's trait direction (same
-   archetype, re-adds excluded / removes required traits) is a
-   contradiction: it recalibrates confidence (`calibratedConfidence` —
-   confirmation base × supporting share), records a bounded per-workspace
-   **exception** (guidance stops serving the rule in that workspace only —
-   the rule itself is never mutated), and at 2 contradictions flags
-   `needsReview` for the panel's re-confirm/rescope/reject prompt. Stale
-   rules (45 days unobserved) decay toward review as a render-time panel
-   note. All pure logic in `src/profile/refinement.ts` with deterministic
-   tests (`refinement.test.ts`) including **0003 acceptance criteria 3 and 4
-   as named tests**; DO-level end-to-end in
-   `src/workspace/authoring-profile.test.ts`. Contradictions are the one
-   learning path that bumps `profileRevision` (exceptions change serving).
-   After merge: dispatch `deploy-staging.yml`, UAT, then the normal gated
-   production deploy.
-4. Then: 0003-D (governed product guidance) is out of scope per the plan;
-   remaining roadmap candidates in `ROADMAP.md` §Next.
-5. ~~**Owner analytics / admin dashboard (MVP)**~~ — DONE + live in prod
-   2026-07-18 (PRs #190/#191; Gate B run 29622343320, Gate C run 29622993652).
-   A new `AnalyticsLog` SQLite DO (migration `v5`, single `idFromName('global')`
-   instance) records a login roster + bounded recent-login log best-effort off
-   `completeWebLogin` (`ctx.waitUntil`, gated by `analyticsEnabled()`). Owner-only
-   `/api/admin/summary` + `/api/admin/users/:uid/workspaces` (fail-closed:
-   `analyticsEnabled` else 503; `uid === ADMIN_GITHUB_ID` else 403) serve the
-   roster and per-user workspace **metadata** (names/counts), the latter read
-   live via `WorkspaceService.list()` — never diagram contents. Browser panel
-   `src/ui/admin-dashboard.ts` (mirrors `profile-panel.ts`), revealed by the new
-   `admin` field on `/api/me`. Shipped inert: prod has no top-level
-   `ANALYTICS_ENABLED` (so `v5` bootstraps off), staging opts in; `ADMIN_GITHUB_ID`
-   (owner id `17257145`) is set top-level from the start (harmless while off).
-   Pure logic + render + a Miniflare admin-api harness all covered. Rollout:
-   merge → `deploy-staging.yml` (live for UAT) → gated prod bootstrap (`v5`
-   inert) → tiny activation PR (`ANALYTICS_ENABLED:"true"`). Runbook §"Migration
-   `v5`" has the three gates. **Deferred follow-ups** (explicit MVP non-goals):
-   session duration / "last active" (activity heartbeats) and agents / MCP-session
-   detail (instrument `TopologyMcp.init()`).
+Read these before touching code — violating any of them has caused a
+production incident or a launch-blocking finding in this repo's history:
 
-## Working conventions (unchanged from session 2)
+- **Every workspace write goes through one path.** Human GUI edits, agent
+  proposals, agent leased commits, restore, and fork all flow through
+  `TopologyDocument`'s single commit pipeline (`worker/document.ts`). Never
+  add a second write path for convenience or performance.
+- **Pages are independent, full-frame documents — no cross-page
+  inheritance, ever.** This is a locked architecture decision
+  (`docs/decisions/0001-flipbook-vs-beats.md`, `DESIGN.md` #1). If a feature
+  seems to need one page to reference/inherit from another, that's a design
+  smell — see how the time-aware-storytelling initiative (T) works around
+  this by fully compiling each page independently.
+- **Agents never write silently.** Every agent mutation to a shared
+  workspace is either a reviewable proposal or a time-bounded,
+  browser-granted, page-scoped lease commit — no "just write it" path exists
+  by construction (`worker/document.ts` `commit()` requires either
+  `source: 'proposal'` acceptance or an active lease for
+  `source: 'agent-lease'`). Keep it that way.
+- **Never treat a transient provider-fetch failure as deletion evidence.**
+  The flow compiler's `upsertBySource` model updates/creates from what a
+  provider _returns_; an empty or failed fetch must never cascade-delete
+  previously-compiled elements. This is enforced by a specific test
+  (`IMPLEMENTATION_PLAN.md` packet E2) precisely because it's an easy mistake
+  to make when "simplifying" sync logic.
+- **No raw prompt/conversation logging, anywhere.** The authoring-profile
+  learner and the planned agent-explainability work both operate on
+  structured, deterministic feature extraction from document _operations_ —
+  never on raw LLM prompts, completions, or transcripts.
+- **One catalog is the source of truth.** Anything a human can set through
+  the inspector, an agent can set identically through the same
+  catalog-driven contract (`src/api/catalog.ts`) — no UI-only fields, no
+  agent-only fields. See `DESIGN.md` #2/#3.
 
-- Packet = branch = PR; session model does discovery → sub-agent implements
-  from a precise brief → session model **independently verifies the risky
-  properties + runs the gate** before committing.
-- DO/Miniflare + `session.ts` webcrypto suites fail to _start_ locally (no
-  `workerd`/`File`/`crypto`) — they run in CI; keep packet correctness locally
-  verifiable via pure helpers/fakes.
-- Staging deploys are safe to dispatch on request (`deploy-staging.yml`,
-  optional `ref`); production requires the protected environment approval.
-  Migration recovery is forward-only.
+## Deployment rules
 
-## Key pointers
+- **Production deploys exclusively through `deploy-production.yml`** —
+  restricted to `main`, requires a protected `production` GitHub Environment
+  approval, re-runs the full CI check first. There is no other path;
+  `npm run deploy` was deleted (finding L1). Workers Builds' Git integration
+  is disconnected (operator O9) specifically because it once bypassed this
+  gate.
+- **Staging is isolated and safe to dispatch freely**
+  (`deploy-staging.yml`, optional `ref` input) — separate KV namespaces, DO
+  namespaces, GitHub OAuth App, and origin from production.
+  `scripts/check-wrangler-env.mjs` (run in CI and locally via
+  `npm run check:wrangler`) enforces the isolation invariants and fails loudly
+  on drift.
+- **Recovery is always forward-only.** Never roll back across a migration
+  boundary — redeploy with the offending flag turned off instead. See
+  `docs/ROLLBACK.md`.
 
-- Coordinator: `worker/document.ts` (revisions, proposals, leases, checkpoints,
-  WS presence, P2 learner window/emission).
-- Profiles: `src/profile/{features,model,learner,client}.ts`,
-  `worker/profile.ts` (DO), `worker/profile-api.ts` (routes),
-  `src/ui/profile-panel.ts` (panel); all gated by `profilesEnabled()`
-  (opt-in, unlike `workspaceEnabled`).
-- Workspace panel: `src/ui/workspace-panel.ts`; editor gesture funnel:
-  `src/editor/editor.ts` + referee in the panel; render seam:
-  `flattenViewer` in `src/vendor/topology-ds.ts`.
+## ⚠️ Durable Object migration warning
+
+**None of the six active initiatives in `IMPLEMENTATION_PLAN.md` are
+designed to require a new migration.** If you're implementing a packet from
+that plan and find yourself needing one anyway, **stop and get explicit
+human sign-off before proceeding** — this repo has never added a migration
+without a full bootstrap-then-activate cycle (ship the new DO class inert
+behind a flag in one deploy, activate it in a separate deploy after
+verification), and skipping that discipline is the single highest-risk
+mistake a new agent could make here. See `docs/DEPLOYMENT_RUNBOOK.md`'s
+per-migration gate sections (`v3`, `v4`, `v5`) for the pattern to follow if
+one genuinely becomes necessary.
+
+## Test commands
+
+```bash
+npm run typecheck   # tsc --noEmit (app) + tsc -p worker/tsconfig.json --noEmit (worker)
+npm run lint         # eslint . && prettier --check .
+npm test             # vitest run — 723 tests, 63 files
+npm run build        # tsc --noEmit && vite build
+npm run check:wrangler   # node scripts/check-wrangler-env.mjs — staging isolation + migration parity
+```
+
+Run all five before opening any PR. Durable Object / Miniflare and
+`session.ts` WebCrypto suites fail to **start** locally (no `workerd`/
+`File`/`crypto` in this environment) — they run in CI. Keep new
+DO-adjacent logic locally verifiable by splitting it into pure
+helpers/fakes the way `src/admin/roster.ts`, `src/profile/learner.ts`, and
+`src/workspace/operations.ts` already do — that pattern is why this repo's
+test suite stays fast and mostly local-runnable despite the DO-heavy
+architecture.
+
+## Key files
+
+| Area                             | Files                                                                                                                                   |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Document model + persistence     | `src/pages/model.ts`, `src/pages/persist.ts`                                                                                            |
+| Headless authoring API           | `src/api/{builder,edit,validate,layout,autolayout,catalog,tidy}.ts`                                                                     |
+| MCP tools (both transports)      | `src/mcp/tools.ts` (source of truth), `src/mcp/register.ts`, `src/mcp/server.ts` (stdio), `worker/mcp.ts` (remote)                      |
+| Connector/flow-compiler platform | `src/connect/{types,mock,edgeconnect,compile}.ts`                                                                                       |
+| Shared workspace coordinator     | `worker/document.ts` (revisions/proposals/leases/checkpoints/presence), `worker/registry.ts`, `worker/workspaces.ts`                    |
+| Workspace client                 | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                       |
+| Adaptive authoring profiles      | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`        |
+| Admin/analytics dashboard        | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`                                                 |
+| Auth + login page + showcase     | `worker/auth.ts`, `public/showcase/*.webp`                                                                                              |
+| Deployment config                | `wrangler.jsonc`, `.github/workflows/{deploy-staging,deploy-production,ci,nightly-staging-smoke}.yml`, `scripts/check-wrangler-env.mjs` |
+| Flags                            | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `isAdmin`)                                                  |
+
+## Known risks (from the launch-readiness findings register)
+
+51 findings from the 2026-07-04 adversarial review; 8 now closed (this
+reset closed C1–C4 and H7, previously M14/M18/M19/L1 were closed). No
+Critical findings remain open. Two open findings worth knowing about because
+they're small and well-scoped if picked up:
+
+- **H1** — `layout_topology` doesn't carry anchors/manual link waypoints
+  through its own algorithmic node movement (`tidy_topology`/
+  `balance_topology` are unaffected). Fix is small: capture `orig` positions
+  in `layoutPage` and call `carryAttachments(page, orig)` after the
+  algorithm runs (`src/api/autolayout.ts:344-362`).
+- **M20** — published share links (`/v/:id`) have no revoke/unpublish path:
+  public, unauthenticated, 30-day KV retention, 24h immutable cache. Fix
+  needs an authenticated delete endpoint plus dropping the `immutable`
+  cache directive.
+
+Full register: `docs/launch-readiness/FINDINGS_REGISTER.md`.
+
+## Human-only operational tasks
+
+Things no agent in this repo can complete alone:
+
+1. **Approve production deploys** — the protected `production` GitHub
+   Environment gate requires a human click every time, by design.
+2. **Configure Cloudflare error-rate alerting** (`IMPLEMENTATION_PLAN.md`
+   packet O1) — a Cloudflare dashboard action.
+3. **Run the staging forward-recovery game day** (packet O2) — needs a human
+   operator observing/confirming each step of a live drill.
+4. **Provision EdgeConnect credentials** (packet E5) — `wrangler secret put`
+   for `ORCH_BASE_URL`/`ORCH_API_KEY`, staging only, a deliberate separate
+   decision never bundled into a feature deploy.
+5. **Delete the 7 stale merged branches** — this environment's git push has
+   been observed to reject `--delete` pushes to origin; do it from GitHub's
+   UI or a different environment if that's still the case.
+
+## Where historical plans are stored
+
+- `docs/archive/IMPLEMENTATION_PLAN_2026-07-12.md` — the previous
+  implementation plan (proposals 0002 follow-ons, 0003, 0004), fully
+  executed. Carries a banner; do not treat as current.
+- `docs/launch-readiness/{FINDINGS_REGISTER,QA_TEST_PLAN,UAT_PLAN}.md` — the
+  2026-07-04 pre-launch review and launch-readiness plans. The findings
+  register is still live/maintained (see "Known risks" above); the QA/UAT
+  plans are frozen historical snapshots of a launch window that has since
+  passed.
+- `docs/proposals/000{1,2,3,4}-*.md` — the original design proposals for
+  live-flow-visualization, the shared workspace, adaptive authoring
+  profiles, and the deployment pipeline. All four are implemented; 0001's
+  status header already said so, 0003/0004's were corrected as part of this
+  reset (see `DISCREPANCY_REGISTER.md`).
+
+## Working conventions (unchanged, proven across ~20 packets)
+
+- Packet = branch = PR; one active writer per branch; small enough to be one
+  reviewable PR (see `IMPLEMENTATION_PLAN.md`'s packet specs for the target
+  size).
+- Independently verify the risky properties and run the full gate before
+  committing — don't trust a sub-agent's self-report on correctness.
+- Staging deploys are safe to dispatch on request; production requires the
+  protected environment approval every time, no exceptions.

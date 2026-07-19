@@ -1,5 +1,14 @@
 # Topology Dojo — Production Launch QA Test Plan
 
+> **Historical pre-launch snapshot (2026-07-04), superseded by the live
+> production system.** Several items this plan names as "out of scope for
+> launch" (in-GUI layout badges, the legacy importer) have since shipped; the
+> deploy mechanism it describes (`npx wrangler deploy`) has since been
+> replaced by a gated pipeline. For current status, see
+> [`../ROADMAP.md`](../ROADMAP.md) and
+> [`../CAPABILITY_MATRIX.md`](../CAPABILITY_MATRIX.md). Preserved as a record
+> of the original launch-readiness bar, not as current guidance.
+
 **Version:** 1.0 · **Date:** 2026-07-04 · **Target launch:** T+30 days
 **System under test:** Topology Dojo — canvas topology editor + headless API + MCP server, deployed as a Cloudflare Worker (Durable Object MCP sessions, GitHub OAuth 2.1, KV-backed share links)
 

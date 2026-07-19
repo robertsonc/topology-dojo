@@ -237,9 +237,13 @@ refused. See
 - Local stdio and pre-handoff remote authoring remain private draft workflows.
   Once handed off, the canonical workspace survives MCP transport/session
   turnover; legacy tools are intentionally rejected for that document.
-- The first workspace slice is single-owner. Organization ACLs, multi-human
-  presence, visual proposal diffs, IndexedDB offline recovery, and CRDT-style
-  offline multi-master editing are follow-on work.
+- The first workspace slice is single-owner. Multi-human presence, visual
+  proposal diffs, and IndexedDB offline recovery have since shipped (Packets
+  S1, R1, S3 — see `ROADMAP.md`'s "Completed historical milestones").
+  Organization ACLs and CRDT-style offline multi-master editing remain
+  follow-on work; the latter is explicitly evidence-triggered — see
+  `ROADMAP.md` §"Evidence-triggered." _(Corrected 2026-07-19; see
+  `DISCREPANCY_REGISTER.md` row 10.)_
 - The vendored engine is treated as an opaque renderer; we drive a small, typed
   slice of its surface and avoid editing it. Sanctioned exceptions so far, both
   additive and default-preserving: (1) a per-marker `icon` override so the

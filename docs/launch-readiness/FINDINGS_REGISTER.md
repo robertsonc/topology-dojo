@@ -3,6 +3,12 @@
 _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent verification agents (2 candidate findings refuted and dropped)._
 
 **Confirmed:** 4 critical · 9 high · 29 medium · 9 low
+**Closed (as of 2026-07-19):** 4 critical (C1–C4) · 1 high (H7) · 3 medium
+(M14, M18, M19) · 1 low (L1) — 9 of 51 total. Substantially addressed, not
+fully closed: M15 (alerting + game day remain open). See each finding's own
+Status note for evidence; see
+[`../DISCREPANCY_REGISTER.md`](../DISCREPANCY_REGISTER.md) rows 1–3 for how
+this pass reconciled the register against code.
 
 ## CRITICAL (4)
 
@@ -11,24 +17,47 @@ _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent ve
 - **Area:** Headless API | **Location:** `src/api/layout.ts:229` | **Type:** data-corruption
 - **Problem:** parseViewBox uses `?? ` against Number() results, but NaN is not nullish, so a malformed viewBox yields NaN width/height. tidyPage's clampNode then computes a NaN fallback center and assigns it to every node; Math.round(NaN) is NaN. Reproduced: create page with viewBox '0 0 800px 600px' (accepted verbatim by the MCP tools set_page_properties/add_page, which take z.string() with no format check, and by parseDoc on import), add two nodes, call tidy_topology → all node x/y become NaN. The mutation is in place and persistAfter writes it to Durable Object storage, so the user's hand-placed coordinates are irrecoverably destroyed. Neither validateDocument nor analyzeLayout ever inspects viewBox, and NaN coordinates pass validation (see separate finding), so nothing flags the corruption. A '0 0 0 0' viewBox similarly piles all nodes at (0,0).
 - **Fix:** Make parseViewBox reject non-finite/non-positive width/height (fall back to defaults per component: `Number.isFinite(p[2]) && p[2] > 0 ? p[2] : 1050`). Additionally validate the viewBox format in set_page_properties/add_page (regex or 4-finite-numbers parse) and flag malformed viewBox in validateDocument.
+- **Status (2026-07-19): Closed.** Fixed in commit `a958bce` (2026-07-04).
+  `parseViewBox` (`src/api/layout.ts:227-245`) now guards every component
+  with `Number.isFinite`/positivity checks and falls back to safe defaults;
+  `isValidViewBox` backs a hard validation error in `validateDocument`
+  (`src/api/validate.ts:95-99`). This closure was verified directly in code
+  during the 2026-07-19 documentation audit; the fix predates the audit by
+  two weeks but was never annotated here.
 
 ### C2. Stored XSS: node/link `type` rendered unescaped into the inspector
 
 - **Area:** Editor & Client | **Location:** `src/main.ts:1010` | **Type:** security
 - **Problem:** typeRow() interpolates the selected element's `type` string into inspector HTML with no escaping (every other interpolation site uses esc(), this one does not). `node.type` is attacker-controlled: parseDoc() blind-casts page.nodes (src/pages/persist.ts:95 `nodes: Array.isArray(p.nodes) ? (p.nodes as Page['nodes']) : []`) so a crafted document loaded via a /v/<id> share link (published by anyone through the MCP share_topology tool), an opened JSON file, or a poisoned localStorage doc carries an arbitrary `type`. When the user clicks that node, renderInspector() does `inspector.innerHTML = html` with typeRow(node.type, ...) inside, and a payload such as type = '"><img src=x onerror=alert(document.cookie)>' executes in the OAuth-gated app origin (session cookies, /api/\* access). Same hole for link.type at line 1356.
 - **Fix:** Escape `t` with esc() in both the value attribute and option text (and audit annoFieldControl enum options similarly). Better: have parseDoc validate node/link `type` against an id-safe pattern (e.g. /^[\w:-]+$/) so hostile strings never enter the model.
+- **Status (2026-07-19): Closed.** Fixed in commit `a958bce` (2026-07-04).
+  `typeRow()` (`src/main.ts`) now escapes with `esc()`; `parseDoc`
+  additionally sanitizes element `type`/custom-node `typeName` on the way in
+  (`src/pages/persist.ts`, `safeType`). A strict Content-Security-Policy
+  (`script-src 'self'`, no inline handlers) was added to every browser-facing
+  worker response as defense in depth. Verified directly in code during the
+  2026-07-19 documentation audit.
 
 ### C3. persistStore deletes every stored topology after any rehydrate failure — total session data loss
 
 - **Area:** MCP Server | **Location:** `src/mcp/persist-store.ts:47` | **Type:** data-loss
 - **Problem:** persistStore treats the in-memory registry as the source of truth and deletes any DO-storage key whose id is not currently in memory. In worker/mcp.ts, rehydrate() catches ALL errors and 'starts empty' (lines 82-89), and rehydrateStore silently skips any doc for which parseDoc returns null. So: DO hibernates -> cold start -> storage.list() has a transient error OR one stored doc fails/throws in parseDoc -> registry is empty -> the agent's next successful mutating call (e.g. create_topology, which an agent will naturally issue when it finds its topology 'unknown') runs persistStore, which permanently DELETES every tdoc: key. A single corrupted document (see the update_element finding — trivially producible via tool input) aborts the whole rehydrate loop because parseDoc's zone self-heal throws, converting one bad doc into loss of ALL of the session's topologies. There is no distinction between 'doc was removed by delete_topology' and 'doc failed to load'.
 - **Fix:** Track deletions explicitly (delete the key inside store.remove / a tombstone set) instead of mirroring by set-difference; never delete keys that failed to load. If rehydrate fails, either fail tool registration or mark the store degraded and skip the delete pass in persistStore. In rehydrateStore, wrap parseDoc per-document so one corrupt doc cannot abort loading the rest, and keep (not skip) unparseable payloads under their key.
+- **Status (2026-07-19): Closed.** Fixed in commit `a958bce` (2026-07-04).
+  `src/mcp/persist-store.ts` no longer mirrors deletions by set-difference —
+  verified directly in code during the 2026-07-19 documentation audit.
 
 ### C4. Stored XSS in shared topologies via unvalidated element color fields
 
 - **Area:** Injection & Rendering | **Location:** `src/pages/persist.ts:95` | **Type:** xss
 - **Problem:** Any authenticated GitHub user can publish a topology through the share_topology MCP tool; the snapshot is stored verbatim in KV and served publicly at /v/<id> (worker/default-handler.ts serveSnapshot, no auth). When a victim opens /v/<id>, main.ts fetches the JSON and runs it through parseDoc, which passes node/link/zone/marker/layer arrays straight through with `p.nodes as Page['nodes']` — it validates ids and enums but NEVER validates the `color` fields. Those colors are interpolated raw (no \_esc) into SVG attribute values by the vendored engine, then injected into the live DOM via `svg.innerHTML` in renderPageInto. A node color of `#000"/><image href=x onerror=alert(document.domain)/><rect fill="` breaks out of the `stroke="..."`/`fill="..."` attribute and injects an <image onerror> that executes on render (innerHTML-inserted SVG event handlers fire even though <script> would not). There is NO Content-Security-Policy header anywhere in the worker, so nothing blocks it. Result: attacker-published document → victim opens shared link → JS runs on the app origin, able to read the victim's saved documents in localStorage and act inside their authenticated editor session.
 - **Fix:** Validate every color-typed field on import (reuse the existing hexColor() gate in persist.ts that already guards the palette) and drop/normalize anything that isn't a strict `#rgb`/`#rrggbb` (or a small allowlist of named tokens). Defense in depth: escape color values at the render sinks and add a strict CSP (script-src 'self'; no inline handlers) on all worker responses.
+- **Status (2026-07-19): Closed.** Fixed in commit `a958bce` (2026-07-04).
+  `parseDoc` (`src/pages/persist.ts`) now sanitizes every color-typed field
+  via `safeColor`/`scrubColors`/`sanitizeElements` (strict hex/rgb(a)/hsl(a)/
+  keyword, drop-or-fallback otherwise); the same commit added a strict CSP to
+  every browser-facing worker response. Verified directly in code during the
+  2026-07-19 documentation audit.
 
 ## HIGH (9)
 
@@ -70,19 +99,20 @@ _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent ve
 
 ### H7. Production deploy is not gated on CI: Workers Builds auto-deploys every push to main regardless of test results
 
-- **Status (2026-07-13): Pipeline delivered and proven on staging; open pending
-  production cutover.** The CI-gated Actions deploy path now exists —
+- **Status (2026-07-19): Closed.** The CI-gated Actions deploy path exists —
   `deploy-production.yml` re-runs `ci.yml` (via `workflow_call` / `needs:
 check`), requires the `production` GitHub environment approval, and is
   restricted to `main` with the CI `check` as a required status (Packet D5,
   PR #150; environments + branch protection, operator O5/O6). It was exercised
   end to end on staging by
   [Deploy Staging run #4](https://github.com/robertsonc/topology-dojo/actions/runs/29219841599)
-  (SHA `104b4d5`). This finding stays **open** only because production still
-  auto-deploys through Workers Builds: the residual cutover is operator O9
-  (disconnect Workers Builds) followed by O10 (first gated production deploy).
-  A Node 22 pin across all workflows (PR #155) resolved the CI/deploy toolchain
-  mismatch this finding also flagged.
+  (SHA `104b4d5`). This finding's own stated closure bar — operator O9
+  (disconnect Workers Builds) followed by O10 (first gated production
+  deploy) — was met **2026-07-17** (see `docs/HANDOFF.md` operator
+  checklist); the register was not updated to reflect that until this pass.
+  The gated pipeline is now production's only deploy path; Workers Builds'
+  Git integration is disconnected. A Node 22 pin across all workflows (PR
+  #155) resolved the CI/deploy toolchain mismatch this finding also flagged.
 
 - **Area:** CI/CD & Release | **Location:** `.github/workflows/ci.yml:8` | **Type:** deploy-pipeline-safety
 - **Problem:** The GitHub Actions workflow only runs checks; deployment happens through the Cloudflare Workers Builds Git integration, which triggers on push to main and runs its own build/deploy command ('npx wrangler deploy' per the repo's own docs) in parallel with — and independent of — CI. A commit whose vitest suite or lint fails but which still compiles ships straight to production at 100% traffic (no gradual rollout is possible because the DO migration forbids 'versions upload'). Worse, the artifact that reaches production is not the one CI built: Workers Builds rebuilds under its own default Node version while CI tests on Node 20 (there is no engines field or .nvmrc pinning). Direct pushes to main are clearly anticipated (the workflow has a push: main trigger), so nothing in the repo assumes branch protection either.

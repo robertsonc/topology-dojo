@@ -92,9 +92,11 @@ export interface WorkerEnv {
    * production so the `v4` migration can ship inert (no coordinator overhead,
    * no behavior change) and be activated by a later, explicit deploy that sets
    * `"PROFILES_ENABLED": "true"` at the top level of `wrangler.jsonc`.
-   * `env.staging` sets it `"true"` so staging observes; production stays unset
-   * until the operator activates (see proposal 0004's bootstrap-then-activate
-   * pattern and DEPLOYMENT_RUNBOOK.md).
+   * The mechanism is opt-in regardless of environment; the *current* value in
+   * each environment is whatever `wrangler.jsonc` says today (as of the O11
+   * activation, production has set this `"true"` too — check `wrangler.jsonc`
+   * for the live value rather than trusting this comment). See proposal
+   * 0004's bootstrap-then-activate pattern and DEPLOYMENT_RUNBOOK.md.
    */
   PROFILES_ENABLED?: string;
   /**

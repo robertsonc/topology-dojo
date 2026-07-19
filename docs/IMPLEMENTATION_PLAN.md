@@ -1,685 +1,1217 @@
-# Implementation Plan — July 12 proposals + roadmap
+# Implementation Plan — Active
 
 **Status:** Accepted plan of record
-**Captured:** 2026-07-12
-**Covers:** [Proposal 0002](proposals/0002-shared-human-agent-workspace.md)
-follow-ons, [Proposal 0003](proposals/0003-adaptive-agent-authoring-profiles.md)
-(phases A–C), [Proposal 0004](proposals/0004-isolated-staging-and-deployment-pipeline.md)
-(all phases), and the [`ROADMAP.md`](ROADMAP.md) "Next / candidate" list.
+**Captured:** 2026-07-19
+**Supersedes:** [`archive/IMPLEMENTATION_PLAN_2026-07-12.md`](archive/IMPLEMENTATION_PLAN_2026-07-12.md)
+(fully executed — see that file's banner)
 **Executed as:** bounded implementation packets per
 [`AGENTIC_IMPLEMENTATION_WORKFLOW.md`](AGENTIC_IMPLEMENTATION_WORKFLOW.md) —
 one packet ≈ one reviewable PR, one active writer per branch, human
-merge/release gates throughout.
+merge/release gates throughout. That discipline held for ~20 packets across
+the previous plan; nothing here changes it.
 
-## Current state (verified 2026-07-12)
+This plan covers the six active initiatives from [`ROADMAP.md`](ROADMAP.md)
+§"Now": documentation reset (N), Cloudflare alerting + production game day
+(O), agent activity + explainability (A), guided topology briefs + semantic
+templates (B), EdgeConnect live-import hardening (E), and time-aware flow/
+failure storytelling (T).
 
-- **Proposal 0002 Phase 0 is shipped** (PR #141): the `TopologyDocument`
-  coordinator (`worker/document.ts` — revisions, proposals, current-page leases
-  with 60–900 s TTL, history floor/compaction, actor attribution on every
-  change), the full workspace REST surface (`worker/workspace-api.ts`), the
-  eight remote MCP workspace tools, the Agent Workspace panel in `src/main.ts`,
-  and the pure operation layer (`src/workspace/operations.ts`:
-  `applyOperations`, `diffDocuments`, `operationTargets`,
-  `summarizeOperations`).
-- **Proposal 0004 is unimplemented**: `wrangler.jsonc` is a single flat
-  environment with production KV ids; the only workflow is a checks-only
-  `ci.yml`; there is no `/healthz`, no `WORKSPACE_ENABLED` flag in code (the
-  runbooks reference it aspirationally), and `npm run deploy` still ships a
-  local working tree straight to production. Launch-readiness findings **H7,
-  M14, M15, L1** are open and are closed by this phase.
-- **Proposal 0003 is unimplemented**; its stated prerequisite — actor-attributed
-  operation batches and revisions — exists.
-- **Roadmap gaps**: layout warnings appear in the problems panel
-  (`renderProblems()` in `src/main.ts`) but not as on-canvas badges; GUI
-  per-page SVG/PNG export ships while flipbook export and share links are
-  MCP-only; there is no legacy Topology Studio importer; remote MCP auth is
-  already OAuth 2.1 (per-key credentials remain a conditional item); `worker/`
-  has zero test coverage (findings M16/M21/M22 — the vitest include is
-  `src/**` only).
-- Baseline: 262 tests green.
+## How to use this document
 
-## 1. Ground rules
+1. Read `ROADMAP.md` §"Current production baseline" first if you haven't —
+   it's the ground truth this plan builds on, verified against code on
+   2026-07-19 (see `CAPABILITY_MATRIX.md`).
+2. Find the next unstarted packet in the dependency graph below, respecting
+   the "can run in parallel" notes.
+3. Each packet's spec is under its initiative's "Implementation packets"
+   subsection — that's the actual work order (outcome, scope, files,
+   non-goals, tests, acceptance criteria). The packet register at the bottom
+   is a flat index for cross-referencing, not a duplicate spec.
+4. Packet = branch = PR. Run the full gate before opening a PR:
+   `npm run typecheck && npm run lint && npm test && npm run build`, plus
+   `node scripts/check-wrangler-env.mjs` for anything touching
+   `wrangler.jsonc`.
+5. **None of the six initiatives in this plan require a new Durable Object
+   migration** under the architecture proposed below (see each initiative's
+   "Migration impact"). If an implementing agent finds a design in this plan
+   genuinely requires one, treat that as a signal to stop and get explicit
+   human sign-off before proceeding — migrations are the one class of change
+   this repo has never taken lightly (see `DEPLOYMENT_RUNBOOK.md`).
 
-Every packet below is specified with **Outcome**, **Files**, **Approach**,
-**Risk** (low / medium / high), **Validation**, and **Deployment impact**
-(none / routine / binding-or-secret / migration-bearing). When picked up, a
-packet is expanded into the full template from
-`AGENTIC_IMPLEMENTATION_WORKFLOW.md` inside its PR.
+## Dependency graph
 
-Non-negotiable constraints carried through the whole plan:
+```mermaid
+graph TD
+    N1[N1: Repository discovery] --> N2[N2: Rewrite ROADMAP + archive old plan]
+    N2 --> N3[N3: Rewrite HANDOFF + doc truthfulness fixes + PR]
 
-- `DESIGN.md` #2/#3: no UI-only surfaces; the catalog parity test stays green;
-  new document-affecting capabilities get API/MCP parity in the same packet.
-- Locked decision 6: operations, not checkout. Nothing below introduces a
-  second write path around the `TopologyDocument` coordinator.
-- The vendored engine stays opaque; all rendering goes through
-  `src/render/core.ts`.
-- Baseline gates for every packet:
-  `npm run typecheck && npm test && npm run lint && npm run build`.
-- **Migration-bearing changes (anything adding a Durable Object class) are
-  forbidden until the Phase 1 pipeline exists and has been exercised once.**
-  This is the single most important sequencing rule in this plan.
+    O3[O3: Generalize ROLLBACK.md to v3-v5] --> O2[O2: Staging game day]
+    O1[O1: Configure Cloudflare alerting]
 
-### Shared-file hotspots (concurrency planning)
+    A1[A1: Agent-session activity model] --> A2[A2: Instrument TopologyMcp]
+    A2 --> A3[A3: Owner-gated read API]
+    A3 --> A4[A4: Explainability linkage]
+    A3 --> A5[A5: Admin dashboard UI]
+    A4 --> A6[A6: Tests + gate + rollout]
+    A5 --> A6
 
-- `src/main.ts` — app shell, Agent Workspace panel, problems panel. Packets
-  touching it serialize; Packet R0 (panel extraction) exists specifically to
-  shrink this hotspot before the workspace-UI packets stack up.
-- `worker/document.ts` — the `TopologyDocument` DO. Packets R2, R3, S1, S4,
-  and P2 all touch it; they are strictly serialized in the order given.
-- `worker/default-handler.ts` and `worker/env.ts` — Phase 1 owns these; later
-  phases only extend.
+    B1[B1: Brief contract types] --> B2[B2: Semantic template compiler x3]
+    B2 --> B3[B3: MCP tool create_from_brief]
+    B2 --> B4[B4: GUI brief wizard]
+    B2 --> B5[B5: Expand archetype coverage]
+    B3 --> B6[B6: Validation guardrails]
+    B4 --> B6
+    B6 --> B7[B7: Tests + gate + rollout]
+    B5 --> B7
 
-## 2. Phase order and rationale
+    E1[E1: Recorded-fixture verification] --> E4[E4: Live-import GUI]
+    E2[E2: No-delete-on-transient-failure test] --> E4
+    E3[E3: Retry/partial-failure handling] --> E4
+    E4 --> E7[E7: Tests + gate + rollout]
+    E5[E5: Credential provisioning runbook] --> E7
+    E6[E6: Staleness/freshness UI] --> E7
 
-| Order | Phase                                           | Depends on            |
-| ----- | ----------------------------------------------- | --------------------- |
-| 1a    | W1 — worker test harness                        | —                     |
-| 1     | D1–D6 — proposal 0004 deployment safety         | W1                    |
-| 2     | B1 — inline layout badges (parallel pilot)      | — (file-disjoint)     |
-| 3     | R0–R4 — workspace review polish                 | Phase 1 (DO releases) |
-| 4     | S1–S4 — workspace resilience                    | Phase 3               |
-| 5     | I1–I2 — legacy importer (parallel from Phase 3) | — (file-disjoint)     |
-| 6     | P1–P5 — adaptive authoring profiles (0003 A–C)  | Phases 1 + 3          |
+    T1[T1: Scenario contract types] --> T2[T2: Story compiler]
+    T2 --> T3[T3: Failure-moment annotations]
+    T2 --> T4[T4: MCP tool compile_flow_story]
+    T3 --> T5[T5: GUI scenario-timeline authoring]
+    T4 --> T5
+    T5 --> T6[T6: Playback caption polish]
+    T6 --> T7[T7: Tests + gate + rollout]
 
-**Why this order:**
+    N3 -.blocks nothing, but should land first for a clean baseline.-> O1
+    N3 -.-> A1
+    N3 -.-> B1
+    N3 -.-> E1
+    N3 -.-> T1
+    E2 -.compile.ts hotspot, land before.-> T2
+```
 
-1. **Phase 1 (0004) is first and is the designated first pilot of the agentic
-   workflow.** It closes H7 (uncontrolled production deploys), M14 (no
-   staging), M15 (no smoke/rollback), L1 (laptop deploy path) — and it gates
-   everything else: Phases 3–4 repeatedly modify the production
-   `TopologyDocument` DO, and Phase 6 requires a brand-new DO class
-   (migration `v4`). Shipping any of that without isolated staging, CI-gated
-   deploys, and forward-recovery practice would recreate the situation 0004
-   was written to end.
-2. **Phase 1a (worker test harness) lands before/with the 0004 packets.** The
-   `WORKSPACE_ENABLED` gate and `/healthz` need Worker-level tests to be
-   trustworthy, and the harness pattern already exists in-repo
-   (`src/workspace/document-do.test.ts` builds the DO with esbuild and runs it
-   under Miniflare). Generalizing it is a small, high-leverage packet that also
-   starts paying down M16/M21/M22.
-3. **Phase 2 (inline layout badges) runs in parallel** as the second workflow
-   pilot mandated by `AGENTIC_IMPLEMENTATION_WORKFLOW.md` ("one small
-   diagram-editor quality-of-life feature"). It is file-disjoint from Phase 1
-   (pure editor/GUI; no worker, no deploy surface).
-4. **Phase 3 (review polish) before Phase 4 (resilience).** Preview, selective
-   acceptance, and checkpoints make the existing suggest-review loop _good_;
-   push/offline/gesture-native make it _robust_. Polish is also lower-risk
-   (R1 is client-only) and produces the checkpoint primitive that 0003's
-   "persistence test" guardrail depends on ("only corrections that survive a
-   later checkpoint count").
-5. **Phase 5 (importer) is order-independent** — a pure module plus two thin
-   adapters, disjoint from everything except a small `main.ts` open-flow
-   touch. Schedule it opportunistically from Phase 3 onward.
-6. **Phase 6 (0003) is last.** Its practical dependencies are: (a) the
-   deployment pipeline, because the profile store is a new DO class →
-   migration `v4`; (b) checkpoints (Phase 3), for the persistence guardrail;
-   (c) real accumulated workspace usage, so the learner has genuine correction
-   data and thresholds can be tuned against reality instead of guesses.
+**Reading this graph:** solid arrows are hard dependencies (can't start until
+the source packet is merged). Dotted arrows from N3 are soft — nothing is
+blocked on documentation, but starting the other five initiatives against an
+already-corrected baseline avoids compounding the exact kind of doc drift
+this reset just fixed. The one hard cross-initiative dependency is **E2 → T2**
+(both touch `src/connect/compile.ts`; land E-series's safeguard first so
+T-series's story compiler is built on the hardened version, not the other way
+around).
 
-Legitimate parallel packets at any given time: one Phase-1-track packet + one
-editor-track packet (badges or importer) + at most one client-only workspace
-packet (R1) — all with disjoint file scopes declared up front.
+**What can run fully in parallel once N3 lands:** O-series, A-series,
+B-series, and E-series have zero shared dependencies on each other and touch
+almost entirely disjoint files (see "Shared-file hotspots" below for the
+exceptions). T-series should start after E2 specifically, not all of
+E-series — T1 (pure types) can start immediately in parallel with everything.
 
-## 3. Phase 1a — worker test harness
+## Shared-file hotspots
 
-### Packet W1 — generalize the Miniflare harness; first worker route tests
+Concurrency planning, in the spirit of the previous plan's §1.1 (which this
+one inherits — it worked for ~20 packets with zero merge disasters):
 
-- **Outcome:** `worker/` code is testable under `npm test`; auth routing, the
-  share API, and workspace API boundaries have deterministic Worker-level
-  tests. Findings M16/M21 get their first real coverage; M22 (the MCP DO path)
-  gets a tracked follow-up test.
-- **Files:** new `src/testing/worker-harness.ts` (extract/generalize the
-  esbuild + Miniflare pattern from `src/workspace/document-do.test.ts`); new
-  worker test files; `src/workspace/document-do.test.ts` (refactor onto the
-  shared harness); `vite.config.ts` if the include glob changes.
-- **Approach:**
-  - Harness API: `buildWorkerBundle(entry)` (esbuild, temp file, cleanup) +
-    `startMiniflare({ bundle, kvNamespaces, durableObjects, vars })` returning
-    a fetchable handle.
-  - **Decision: reuse esbuild + Miniflare, not
-    `@cloudflare/vitest-pool-workers`.** The in-repo pattern is proven, needs
-    zero new dependencies, and already handles SQLite DO classes. Revisit
-    trigger: adopt pool-workers if harness friction becomes a repeated cost
-    across three packets.
-  - First test targets: `/login` / `/logout` / `/callback` redirect + cookie
-    shapes (M18 regression guard), `GET /api/topology/:id`, `/api/me`, the
-    `/api/workspaces` auth boundary (401 unauthenticated), and cross-owner
-    isolation on one workspace route.
-  - Test entry point: a thin fixture worker that mounts
-    `worker/default-handler.ts` with stubbed OAuth helpers, so tests never
-    need a live GitHub round-trip.
-- **Risk:** low (test-only). **Validation:** baseline gates; new tests run in
-  CI. **Deployment impact:** none.
+| File                                               | Touched by                                                                                                                  | Discipline                                                                                                                                                                                                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/mcp/tools.ts`                                 | B3 (`create_from_brief`), T4 (`compile_flow_story`)                                                                         | One packet merges before the next starts editing this file. Both are late in their initiative's sequence, so natural staggering likely avoids collision — but don't assume it; check the file's HEAD before starting B3 or T4. |
+| `src/connect/compile.ts`                           | E2, E3 (safeguards/retry), T2 (story compiler calls into it)                                                                | **Hard sequencing**: E2 must merge before T2 starts (see dependency graph). E3 can land before or after T2 since it's additive (retry wrapping), but coordinate if both are in flight.                                         |
+| `worker/env.ts`, `wrangler.jsonc`                  | Any packet introducing a new flag (only if A-series decides against reusing `ANALYTICS_ENABLED` — see A1's "open decision") | Same discipline as every prior flag-introducing packet (D2, P2, the admin-dashboard work): one packet, one flag, one PR.                                                                                                       |
+| `docs/HANDOFF.md`                                  | Every initiative's completion update                                                                                        | Expected and fine — HANDOFF is a living status doc; each packet's "N/A" or completion note is a small, non-conflicting append in practice (this repo's history shows this working cleanly ~20 times).                          |
+| `worker/admin-api.ts`, `src/ui/admin-dashboard.ts` | A3, A5 only                                                                                                                 | No cross-initiative conflict expected.                                                                                                                                                                                         |
 
-## 4. Phase 1 — proposal 0004: isolated staging and deployment pipeline
+## Migration, flag, secret, and tool inventory (what to watch for)
 
-This phase maps 0004's Phases 0–6 onto repo packets D1–D6 plus an operator
-checklist (§4.7) for everything that cannot live in the repo. 0004 Phase 0 and
-Phases 4–6 are predominantly operator work; Phases 1–3 are where the repo
-changes live.
+Per-initiative call-outs, consolidated:
 
-### Packet D1 — `env.staging` + config safety check _(0004 Phase 1, repo half)_
+| Initiative            | New DO?                                                                                                              | New migration? | New MCP tool(s)?                                        | New secret?                                                                                                                                              | New flag?                                                                                   | Production operator step?                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| N (docs)              | No                                                                                                                   | No             | No                                                      | No                                                                                                                                                       | No                                                                                          | No                                                                                        |
+| O (alerting/game day) | No                                                                                                                   | No             | No                                                      | No                                                                                                                                                       | No                                                                                          | **Yes** — O1 (Cloudflare dashboard config) and O2 (running the drill) are both human-only |
+| A (explainability)    | No — reuses `AnalyticsLog` (v5) for the owner-scoped index and `TopologyMcp`'s own per-session storage for the trail | No             | No — HTTP-only admin routes, no MCP surface planned     | No                                                                                                                                                       | **Open decision**: reuse `ANALYTICS_ENABLED` (recommended) or introduce a new flag — see A1 | Only if a new flag is introduced                                                          |
+| B (briefs/templates)  | No                                                                                                                   | No             | **Yes** — `create_from_brief` (name TBD by implementer) | No                                                                                                                                                       | No                                                                                          | No                                                                                        |
+| E (EdgeConnect)       | No                                                                                                                   | No             | No (uses existing live-fabric tools)                    | **Yes, if verifying against a real Orchestrator** — `ORCH_BASE_URL`/`ORCH_API_KEY` on staging only (never production without an explicit human decision) | No                                                                                          | **Yes** — E5 (secret provisioning) is human-only                                          |
+| T (storytelling)      | No                                                                                                                   | No             | **Yes** — `compile_flow_story` (name TBD)               | No                                                                                                                                                       | No                                                                                          | No                                                                                        |
 
-- **Outcome:** `wrangler deploy --env staging` produces a fully isolated
-  `topology-dojo-staging` Worker; CI fails if staging ever shares a production
-  resource id.
-- **Files:** `wrangler.jsonc`; new `scripts/check-wrangler-env.mjs`;
-  `.github/workflows/ci.yml`; `package.json`.
-- **Approach:**
-  - Add the `env.staging` block per the proposal's shape: staging
-    `PUBLIC_BASE_URL`, staging `GITHUB_CLIENT_ID`,
-    `"WORKSPACE_ENABLED": "true"`, both KV bindings with staging ids (supplied
-    by the operator — blocked on checklist item O2), all three DO bindings
-    **without `script_name`**, and the full `v1`–`v3` migration history
-    repeated.
-  - `scripts/check-wrangler-env.mjs`: strip JSONC comments, parse, assert
-    (a) every staging KV id differs from every top-level id, (b) no staging DO
-    binding sets `script_name`, (c) the staging migrations array is identical
-    to top-level, (d) the staging worker name and `PUBLIC_BASE_URL` differ
-    from production. Run it in the CI `check` job.
-  - **Close L1:** delete the `deploy` npm script. Add `deploy:staging` =
-    `npm run build && node scripts/check-wrangler-env.mjs && wrangler deploy --env staging`
-    as the only wrangler-invoking script. No script deploys production from a
-    laptop.
-- **Risk:** medium (mis-scoped bindings would be a production-data incident —
-  exactly what the check script prevents). **Validation:** unit-test the check
-  script against good/bad fixture configs;
-  `wrangler deploy --env staging --dry-run` as bundle validation.
-  **Deployment impact:** binding-or-secret (staging resources; production
-  untouched).
+If any implementing agent finds a design in §"Implementation packets" below
+actually requires a new DO or migration, that's a deviation from this plan —
+stop and confirm with a human before proceeding (see "How to use this
+document" above).
 
-### Packet D2 — `WORKSPACE_ENABLED` feature flag _(0004 Phase 4 precondition)_
+---
 
-- **Outcome:** one runtime flag cleanly severs workspace entry points from the
-  migration deploy, making the production `v3` bootstrap operationally inert.
-- **Files:** `worker/env.ts` (add `WORKSPACE_ENABLED?: string` + a
-  `workspaceEnabled(env)` helper); `worker/default-handler.ts` (gate
-  `/api/workspaces` and `/api/workspaces/*` — return 503 with a stable JSON
-  body `{ "error": "workspace_disabled" }`); `worker/mcp.ts` (skip
-  registration of the eight workspace MCP tools when disabled, so they don't
-  appear in discovery); `src/main.ts` (the Agent Workspace panel shows a
-  "not enabled on this deployment" state on 503 instead of a raw error);
-  `DEPLOYMENT_RUNBOOK.md` / `ROLLBACK.md` (make their existing references
-  true).
-- **Approach:** unset ⇒ enabled (preserves local dev and staging behavior);
-  only the explicit string `"false"` disables. The production bootstrap deploy
-  sets `"WORKSPACE_ENABLED": "false"` at the top level of `wrangler.jsonc`;
-  the activation deploy flips it. The bootstrap bundle still exports
-  `TopologyDocument`, keeps its binding and migration `v3` — the flag gates
-  _traffic_, not the class. The default-on choice must be re-challenged by the
-  adversarial reviewer (default-off is safer but breaks every existing dev
-  flow; mitigations are the explicit production value plus a smoke assertion).
-- **Risk:** medium (auth/routing surface). **Validation:** W1 harness tests
-  for both flag states — routes 503 vs 200, MCP tool list excludes/includes
-  workspace tools. **Deployment impact:** routine (flag var only; the deploys
-  that use it are checklist items).
+## Initiative N — Documentation and roadmap reset
 
-### Packet D3 — `/healthz` + authenticated readiness _(0004 Phase 3, endpoints)_
+**Goal:** Replace stale planning docs with a plan of record that distinguishes
+shipped/partial/pending/deferred/evidence-triggered/excluded work, backed by
+code evidence, so a new agent can act without reconstructing months of
+history.
 
-- **Outcome:** an unauthenticated liveness endpoint proving worker + version,
-  and a deeper authenticated readiness check proving bindings.
-- **Files:** `worker/default-handler.ts` (both routes; `/healthz` joins the
-  unauthenticated allow-set alongside `/v/:id` and the OAuth endpoints);
-  `worker/env.ts` (optional `GIT_SHA?: string` var); deploy workflows pass
-  `--var GIT_SHA:$GITHUB_SHA`.
-- **Approach:** `GET /healthz` → `200 { ok, sha, workspaceEnabled }` — touches
-  no bindings, exposes no state or secrets. `GET /readyz` — owner-authenticated
-  (reuse the session check behind `/api/me`); performs a `TOPOLOGY_KV`
-  round-trip, a `TOPOLOGY_REGISTRY` DO echo, and (when the flag is on) a
-  `TOPOLOGY_DOCUMENT` DO echo; returns per-binding pass/fail; never enumerates
+**Current baseline:** `docs/IMPLEMENTATION_PLAN.md` (as of 2026-07-12) called
+Proposals 0003 and 0004 "unimplemented" when both are fully shipped and live
+in production; `docs/ROADMAP.md` had one stale "Next/candidate" bullet;
+`docs/HANDOFF.md`'s title undersold how current its body actually was;
+`docs/launch-readiness/FINDINGS_REGISTER.md` understated closure progress
+(4 Critical findings fixed in code but never annotated closed). Full detail
+in `docs/DISCREPANCY_REGISTER.md`.
+
+**Dependencies:** None — this is the first initiative, by design.
+
+**Architecture:** N/A — pure documentation, plus tiny, evidence-backed
+correction edits (findings-register closure notes, proposal status-header
+flips, a `worker/env.ts` comment fix) that make existing docs/comments
+truthful without changing behavior.
+
+**Implementation packets:**
+
+### N1 — Repository discovery + capability matrix + discrepancy register
+
+- **Outcome:** `docs/CAPABILITY_MATRIX.md` and `docs/DISCREPANCY_REGISTER.md`
+  exist, every row cites file:line evidence, and both were produced by
+  auditing code directly (not by trusting prior docs).
+- **Dependencies:** None.
+- **Scope:** Six parallel subsystem audits (MCP/connector platform, shared
+  workspace, adaptive authoring, core topology editor, docs-claims inventory,
+  GitHub state) plus direct verification of operations/deployment config and
+  the public login/showcase surface.
+- **Likely files:** `docs/CAPABILITY_MATRIX.md`, `docs/DISCREPANCY_REGISTER.md`
+  (new).
+- **Non-goals:** No product code changes.
+- **Risk level:** None (read-only research).
+- **Migration/deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** None (not code).
+- **Acceptance criteria:** Every capability-matrix row and discrepancy-register
+  row has a file:line citation; classifications match what a second
+  independent read of the same code would conclude.
+- **Status: done, this PR.**
+
+### N2 — Rewrite ROADMAP.md, archive the old plan, write the new plan
+
+- **Outcome:** `docs/ROADMAP.md` restructured into Current Production
+  Baseline / Now / Next / Later / Evidence-Triggered / Deliberately Excluded
+  / Completed Historical Milestones; the old `docs/IMPLEMENTATION_PLAN.md`
+  moved to `docs/archive/IMPLEMENTATION_PLAN_2026-07-12.md` with an
+  unmistakable historical banner; this document exists as the new active
+  plan.
+- **Dependencies:** N1 (needs the capability matrix as evidence).
+- **Scope:** As described.
+- **Likely files:** `docs/ROADMAP.md`, `docs/archive/IMPLEMENTATION_PLAN_2026-07-12.md`
+  (moved + banner), `docs/IMPLEMENTATION_PLAN.md` (new).
+- **Non-goals:** No product code changes.
+- **Risk level:** None.
+- **Migration/deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** None.
+- **Acceptance criteria:** No shipped feature is described as future work in
+  the new `ROADMAP.md`; the archived plan cannot be mistaken for current (a
+  reader hitting it via search/link sees the banner before any stale claim).
+- **Status: done, this PR.**
+
+### N3 — Rewrite HANDOFF.md, findings-register truthfulness fixes, packet-ready issues, validation gate, PR
+
+- **Outcome:** `docs/HANDOFF.md` becomes the primary, accurate entry point;
+  `docs/launch-readiness/FINDINGS_REGISTER.md` gets closure annotations for
+  C1–C4 and H7 plus a refreshed top-line count; `docs/proposals/0003-*.md`
+  and `docs/proposals/0004-*.md` status headers flip from
+  "Candidate"/"Proposed" to "Implemented"; small pointer-note fixes to
+  `docs/ROLLBACK.md` and `docs/ARCHITECTURE.md`; `docs/PACKET_ISSUES.md`
+  (issue-ready Markdown for every packet in this plan); full validation gate
+  run; draft PR opened.
+- **Dependencies:** N2.
+- **Scope:** As described — see `docs/DISCREPANCY_REGISTER.md` rows 1–14 for
+  the exact set of corrections.
+- **Likely files:** `docs/HANDOFF.md`, `docs/launch-readiness/FINDINGS_REGISTER.md`,
+  `docs/proposals/0003-adaptive-agent-authoring-profiles.md`,
+  `docs/proposals/0004-isolated-staging-and-deployment-pipeline.md`,
+  `docs/ROLLBACK.md`, `docs/ARCHITECTURE.md`, `worker/env.ts` (comment only),
+  `docs/PACKET_ISSUES.md` (new).
+- **Non-goals:** No product code changes beyond the one comment fix; no
+  rewrite of `docs/launch-readiness/QA_TEST_PLAN.md`/`UAT_PLAN.md` bodies
+  (banner only, if time permits).
+- **Risk level:** Low (doc + comment edits; the `worker/env.ts` comment
+  change has zero runtime effect — verify with `npm run typecheck` anyway).
+- **Migration/deployment impact:** None.
+- **Human action required:** Merge the PR (same as every prior packet in this
+  repo's history — no special approval beyond the normal review).
+- **Required tests:** Full gate (`typecheck`, `lint`, `test`, `build`,
+  `check-wrangler-env`) must stay green; this is a docs change, so the bar is
+  "nothing regresses," not new test coverage.
+- **Acceptance criteria:** Matches `ROADMAP.md`'s "Completion criteria" list
+  (see the original assignment) — no shipped feature described as future,
+  no incomplete feature described as production-ready, historical plans
+  can't be mistaken for current, a new agent can determine the next action
+  from `HANDOFF.md` alone.
+- **Status: in progress, this PR.**
+
+**Testing strategy:** No new automated tests (documentation initiative); the
+existing full gate must stay green throughout.
+
+**Deferred work:** Full generalization of `docs/ROLLBACK.md` to a
+migration-agnostic template (N3 adds only a pointer note; see O3 for the
+fuller fix); `docs/launch-readiness/QA_TEST_PLAN.md`/`UAT_PLAN.md` body
+rewrites (banner only).
+
+---
+
+## Initiative O — Cloudflare alerting and production game day
+
+**Goal:** Close the one confirmed operational gap: production currently runs
+with all three feature flags live and zero automated error-rate alerting.
+Wire Cloudflare's dashboard to the thresholds already defined in
+`docs/DEPLOYMENT_RUNBOOK.md`, and complete a recorded staging
+forward-recovery game day exercising the current (`v3`–`v5`) rollback
+procedures end-to-end.
+
+**Current baseline:** Nightly staging smoke ships and works
+(`nightly-staging-smoke.yml`). GitHub's built-in Actions failure emails
+cover deploy-pipeline failures. Nothing in `wrangler.jsonc` or
+`.github/workflows/*` configures Cloudflare-side alert policies — this is
+purely a dashboard gap, not a code gap. `docs/ROLLBACK.md`'s "Staging game
+day" procedure has never been generalized past its original `v3`-only
+framing, and no dated completion record exists for a full game day covering
+the current `v4`/`v5` reality.
+
+**Dependencies:** None — can start immediately, in parallel with everything
+else.
+
+**Architecture:** No code. Cloudflare Notifications (dashboard: Notifications
+→ Create → "Workers" alert types for error rate / CPU time / subrequest
+errors, or the Cloudflare API if scripting the policy is preferred) routed to
+the owner's email, matching the exact thresholds already written in
+`docs/DEPLOYMENT_RUNBOOK.md` §"Rate-based stops" and §"Hard stops."
+
+**Implementation packets:**
+
+### O1 — Configure Cloudflare alerting
+
+- **Outcome:** Cloudflare Notification policies exist for the production
+  Worker matching `DEPLOYMENT_RUNBOOK.md`'s documented thresholds; the
+  runbook is updated with the actual policy names/ids so it's no longer
+  purely aspirational prose.
+- **Dependencies:** None.
+- **Scope:** Cloudflare dashboard configuration (or API scripting of the
+  same); a small `DEPLOYMENT_RUNBOOK.md` update recording what was
+  configured.
+- **Likely files:** `docs/DEPLOYMENT_RUNBOOK.md` (update only).
+- **Non-goals:** No new code-side monitoring/instrumentation — reuse what
+  `/healthz` and Cloudflare's own platform metrics already expose.
+- **Risk level:** Low (a misconfigured alert threshold produces noisy or
+  missing alerts, not an outage).
+- **Migration/deployment impact:** None.
+- **Human action required:** 100% — this is a Cloudflare dashboard action; no
+  agent can complete it.
+- **Required tests:** None (not code). Verification: trigger a synthetic
+  error spike against staging (not production) and confirm the alert fires.
+- **Acceptance criteria:** `docs/HANDOFF.md` operator checklist item O12
+  flips from "◑ Partial" to "✅ done," citing the configured policy.
+
+### O2 — Staging forward-recovery game day
+
+- **Outcome:** A dated, recorded execution of `docs/ROLLBACK.md`'s "Staging
+  game day" checklist against the current system state (not just `v3`).
+- **Dependencies:** O3 (the rollback doc should be accurate before running
+  the drill against it).
+- **Scope:** Deploy known-good staging → create a disposable draft →
+  deliberately deploy broken workspace behavior → confirm forward recovery →
+  re-enable → record the result.
+- **Likely files:** `docs/ROLLBACK.md` or `docs/HANDOFF.md` (completion
+  record only).
+- **Non-goals:** No code changes beyond whatever the drill's "deliberately
+  broken" deploy requires (should be a flag flip, not new code, to keep this
+  low-risk).
+- **Risk level:** Low if confined to staging (by design — never run this
+  drill against production).
+- **Migration/deployment impact:** None (uses existing migrations/flags).
+- **Human action required:** Significant — must be run against live staging
+  with an operator observing/confirming each step; not something to automate
+  away given its purpose is building operator confidence in the real
+  procedure.
+- **Required tests:** The drill itself is the test.
+- **Acceptance criteria:** A dated completion record exists, matching the
+  8-step checklist in `docs/ROLLBACK.md`.
+
+### O3 — Generalize `docs/ROLLBACK.md` beyond `v3`
+
+- **Outcome:** `docs/ROLLBACK.md`'s worked examples and the game-day checklist
+  reference the current migration set (`v3`–`v5`) or a genuinely
+  migration-agnostic template, not just `v3`.
+- **Dependencies:** None.
+- **Scope:** Small doc edit — either generalize the language (preferred: "the
+  currently-highest migration tag, see `wrangler.jsonc`") or add explicit
+  `v4`/`v5` worked examples alongside the existing `v3` one, cross-referencing
+  `DEPLOYMENT_RUNBOOK.md`'s per-migration gate sections.
+- **Likely files:** `docs/ROLLBACK.md`.
+- **Non-goals:** No process changes — the underlying forward-only recovery
+  principle is unchanged; this is purely making the document's language keep
+  up with the migration count.
+- **Risk level:** None (pure doc edit).
+- **Migration/deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** None.
+- **Acceptance criteria:** `docs/ROLLBACK.md` no longer implies `v3` is the
+  only or latest migration.
+
+**Testing strategy:** O1/O3 have no automated tests (config/docs); O2's
+"test" is the drill itself, with a pass/fail recorded outcome.
+
+**Deferred work:** Automating the game day itself (a scripted chaos-drill) —
+not proposed; the value here is a human operator building confidence in a
+manual procedure they'll need to execute for real during an actual incident.
+
+---
+
+## Initiative A — Agent activity and explainability
+
+**Goal:** Give the workspace owner (and eventually the agent itself)
+visibility into what an AI agent did across MCP sessions and why — closing
+the admin dashboard's explicit MVP deferral ("agents / MCP-session detail")
+and the workspace revision timeline's current per-document-only scope.
+
+**Current baseline:** Workspace revision entries already carry
+actor/summary/source badges (`worker/document.ts`), but that's scoped to one
+workspace, not cross-workspace or per-MCP-session. `TopologyMcp` (the
+per-session Durable Object) records nothing beyond its in-memory document
+store — no session start/end, no tool-call trail. The authoring-profile
+guidance tools (`get_authoring_guidance` etc.) are called at an agent's sole
+discretion with zero record of whether/when they were consulted before a
+given edit.
+
+**Dependencies:** None on other initiatives; soft dependency on N3 landing
+first for a clean baseline.
+
+**Architecture — the key design decision, made here rather than left open:**
+**no new Durable Object migration.** Two existing pieces of infrastructure
+already have exactly the right shape:
+
+1. **Per-call activity trail**: `TopologyMcp` is _already_ a Durable Object
+   instantiated fresh per MCP session (`worker/mcp.ts`). It can record its
+   own bounded ring buffer of `{toolName, at, outcome}` events to its own
+   `ctx.storage` — zero new migration, zero new DO class, the data is
+   naturally scoped and already cleaned up when the session DO's storage is
+   eventually evicted.
+2. **Cross-session discovery index**: a human needs to list "my recent agent
+   sessions" without knowing individual session DO ids in advance. Extend
+   `AnalyticsLog` (migration `v5`, already live) with a second bounded,
+   per-owner index — record `{sessionId, startedAt, toolCallCount}` when
+   `TopologyMcp.init()` runs, mirroring the exact `recordLogin`/bounded-log
+   discipline `AnalyticsLog` already implements for the login roster. This
+   keeps the privacy posture identical (metadata only, owner-gated,
+   fail-closed) and reuses a store this repo has already built, tested, and
+   activated in production — rather than standing up a sixth DO class for a
+   closely related concern.
+
+**Open decision for the implementing agent:** gate this behind
+`ANALYTICS_ENABLED` (recommended — same owner-visibility posture as the
+admin dashboard it extends) or a new flag. If a new flag, follow the exact
+D2/P2 precedent (opt-in, unset ⇒ off, documented in both `wrangler.jsonc`
+blocks).
+
+**Implementation packets:**
+
+### A1 — Agent-session activity data model
+
+- **Outcome:** Pure types + pure shaping/eviction helpers for the per-session
+  ring buffer and the per-owner session index, mirroring `src/admin/roster.ts`'s
+  split (pure helpers, unit-tested, DO is a thin shell).
+- **Dependencies:** None.
+- **Scope:** `src/agent-activity/model.ts` (types: `SessionSummary`,
+  `ToolCallEvent`), `src/agent-activity/trail.ts` (bounded ring-buffer
+  append/evict, pure).
+- **Likely files:** `src/agent-activity/model.ts`, `src/agent-activity/trail.ts`
+  (new), plus their `.test.ts` files.
+- **Non-goals:** No raw prompt/argument logging — tool name, timestamp, and a
+  coarse outcome (success/error) only, consistent with "Deliberately
+  Excluded" in `ROADMAP.md`.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None (not wired to anything yet).
+- **Human action required:** None.
+- **Required tests:** Ring-buffer append/evict bounds; index upsert
+  (first-seen vs. returning), mirroring `src/admin/roster.test.ts`'s pattern.
+- **Acceptance criteria:** Pure, deterministic, 100% locally testable (no
+  workerd needed), matching this repo's established pattern for DO-adjacent
+  logic.
+
+### A2 — Instrument `TopologyMcp` session lifecycle + tool dispatch
+
+- **Outcome:** Every MCP tool call on the remote server appends a bounded
+  event to its own session DO's storage; session start appends an entry to
+  the owner's `AnalyticsLog` session index (best-effort, `ctx.waitUntil`,
+  never blocking a tool call — same discipline as `recordLogin`).
+- **Dependencies:** A1.
+- **Scope:** Wire `A1`'s pure helpers into `worker/mcp.ts`'s `init()` and
+  tool-dispatch path.
+- **Likely files:** `worker/mcp.ts`, `worker/analytics.ts` (extend with the
+  session-index RPC).
+- **Non-goals:** No behavior change to any existing tool's response — this
+  is purely additive, best-effort recording.
+- **Risk level:** Medium — touches the hot path every tool call goes through;
+  must be provably non-blocking and provably unable to throw back into a
+  tool response (mirror the try/catch discipline in `worker/auth.ts`'s
+  `recordLogin`).
+- **Migration impact:** None.
+- **Deployment impact:** Gated by whichever flag was chosen in A1's open
+  decision; inert until that flag is on.
+- **Human action required:** None beyond the normal deploy approval.
+- **Required tests:** A Miniflare-harness test proving a tool call still
+  succeeds and returns unchanged output even if the activity-recording call
+  is made to fail/throw internally (the "never blocks or breaks the primary
+  path" property, mirroring how login recording is tested).
+- **Acceptance criteria:** No existing MCP tool test's expected output
+  changes; a new test proves the trail is recorded.
+
+### A3 — Owner-gated read API
+
+- **Outcome:** `GET /api/admin/sessions` (recent sessions across the owner's
+  workspaces) and `GET /api/admin/sessions/:id` (that session's tool-call
+  trail, read directly from its own `TopologyMcp` DO instance) — mirrors
+  `worker/admin-api.ts`'s existing gate pattern exactly (401/403/fail-closed).
+- **Dependencies:** A2.
+- **Scope:** New routes in `worker/admin-api.ts` (or a sibling
+  `worker/agent-activity-api.ts` if the file is getting large).
+- **Likely files:** `worker/admin-api.ts` or new file, `src/admin/model.ts`
+  (extend types).
+- **Non-goals:** No MCP-facing read tool for this data in this packet (an
+  agent reading its own activity trail is a plausible future extension, not
+  in scope here).
+- **Risk level:** Low (read-only, same auth pattern as the existing admin
+  API).
+- **Migration impact:** None.
+- **Deployment impact:** None beyond A2's flag.
+- **Human action required:** None.
+- **Required tests:** Mirror `src/testing/admin-api.test.ts`'s pattern (401
+  unauth, 403 non-admin, 200 for the owner).
+- **Acceptance criteria:** Same fail-closed guarantees as the existing admin
+  API, verified by tests.
+
+### A4 — Explainability linkage on the revision timeline
+
+- **Outcome:** A workspace revision-timeline entry authored by an agent shows
+  whether `get_authoring_guidance` was called earlier in the same MCP
+  session — an honest "guidance was consulted before this edit" signal, not
+  a causal claim (the audit found consumption is advisory/discretionary, and
+  this feature must not overstate that).
+- **Dependencies:** A3.
+- **Scope:** Cross-reference a revision's session id (if the revision-log
+  actor can be tied to a session — may require adding a `sessionId` field to
+  agent-authored revisions/proposals, a small, additive schema change, not a
+  new migration) against that session's tool-call trail.
+- **Likely files:** `worker/document.ts` (add `sessionId` to agent-actor
+  metadata if not already derivable), `src/ui/workspace-panel.ts` (surface
+  the signal).
+- **Non-goals:** No causal inference beyond "guidance tool X was called
+  before this commit in the same session" — do not claim the guidance
+  _caused_ the edit.
+- **Risk level:** Medium — touches the revision/proposal write path
+  (`worker/document.ts`), a well-tested but sensitive file; keep the change
+  purely additive (an optional field, never required, never changes existing
+  behavior for callers that omit it).
+- **Migration impact:** None (additive field on an existing revision record,
+  not a schema version bump — verify this holds; if it doesn't, treat as a
+  signal to stop per this plan's top-level warning).
+- **Deployment impact:** None beyond A2/A3's flag.
+- **Human action required:** None.
+- **Required tests:** A workspace-level test proving an agent commit made
+  after a guidance call shows the linkage, and one made without a prior
+  guidance call does not falsely show it.
+- **Acceptance criteria:** The signal is visibly present in the panel and
+  provably accurate against the test cases above.
+
+### A5 — Admin dashboard "Agent Sessions" UI
+
+- **Outcome:** A new tab/section in the existing admin dashboard
+  (`src/ui/admin-dashboard.ts`) listing recent agent sessions per user, with
+  drill-down into a session's tool-call trail.
+- **Dependencies:** A3.
+- **Scope:** UI only, mirrors the existing roster/workspace-list rendering
+  pattern in `src/ui/admin-dashboard.ts`.
+- **Likely files:** `src/ui/admin-dashboard.ts`, `src/admin/client.ts`.
+- **Non-goals:** No new visual design system — match the existing dashboard's
+  look exactly.
+- **Risk level:** Low (pure UI, same pattern as an already-shipped feature).
+- **Migration impact:** None.
+- **Deployment impact:** None beyond A2/A3's flag.
+- **Human action required:** None.
+- **Required tests:** Pure render tests mirroring `src/ui/admin-dashboard.test.ts`.
+- **Acceptance criteria:** Visually and behaviorally consistent with the
+  existing dashboard; escapes untrusted text (tool names, session ids) exactly
+  like the roster rendering does.
+
+### A6 — Tests, docs, gate, rollout
+
+- **Outcome:** Full gate green; `docs/HANDOFF.md`/`docs/ROADMAP.md` truth-up
+  marking the initiative shipped; PR merged and (if a new flag was
+  introduced) deployed through the standard bootstrap-then-activate sequence
+  — otherwise a normal deploy suffices since it reuses the already-live
+  `ANALYTICS_ENABLED` flag.
+- **Dependencies:** A4, A5.
+- **Scope:** Standard closeout packet, mirrors every prior initiative's final
+  packet in this repo's history.
+- **Likely files:** `docs/HANDOFF.md`, `docs/ROADMAP.md`.
+- **Non-goals:** None.
+- **Risk level:** Low.
+- **Migration impact:** None (per this initiative's design).
+- **Deployment impact:** A normal gated deploy; no bootstrap-then-activate
+  ceremony needed if `ANALYTICS_ENABLED` was reused (it's already on).
+- **Human action required:** Approve the production deploy (standard).
+- **Required tests:** Full existing gate stays green plus everything added in
+  A1–A5.
+- **Acceptance criteria:** Owner can see "what has my agent been doing"
+  end-to-end in production.
+
+**Testing strategy:** Pure-logic packets (A1) are locally testable without
+workerd; DO-touching packets (A2, A3) need the Miniflare harness (CI-only,
+per this repo's established pattern — write tests that at least parse/compile
+locally even though they only execute in CI).
+
+**Deferred work:** An MCP-facing tool for an agent to read its own activity
+trail (plausible follow-on, not required for the owner-visibility goal this
+initiative targets); long-term/unbounded activity retention (explicitly
+evidence-triggered — see `ROADMAP.md`).
+
+---
+
+## Initiative B — Guided topology briefs and semantic templates
+
+**Goal:** Replace "pick one of 6 static templates" with a structured "brief"
+(archetype + parameters) that compiles into a scaffolded, validated starting
+document — usable identically by a human (a form) and an agent (an MCP tool).
+
+**Current baseline:** `list_templates`/`create_from_template` are static,
+unparameterized fixtures (confirmed in the MCP/connector audit). The
+capability catalog (`src/api/catalog.ts`) and the fluent builder
+(`src/api/builder.ts`) already provide everything a compiler would need to
+target. The authoring-profile learner already has an archetype taxonomy
+(`src/profile/features.ts`) worth reusing for naming consistency rather than
+inventing a second one.
+
+**Dependencies:** None on other initiatives; soft dependency on N3.
+
+**Architecture:** A "brief" is a structured input: `{archetype, params}`
+where `archetype` reuses (or closely aligns with) the existing profile
+feature-extraction archetype vocabulary, and `params` is archetype-specific
+(site count, tiers, security posture flags). A "semantic template" is a pure
+function `(brief) => DocumentBuilder program`, replacing today's static JSON
+fixtures with parametric generators — each one calls `src/api/builder.ts`,
+then `layout_topology`/`tidy_topology`, then `validateDocument`/`analyzeLayout`
+as a hard gate before returning. This exact "compile → layout → validate"
+shape already exists once in this codebase (`compileFlowTopology` in
+`src/connect/compile.ts`) — B-series's compiler should follow that precedent,
+not invent a new one.
+
+**Implementation packets:**
+
+### B1 — Brief contract types
+
+- **Outcome:** `src/briefs/model.ts` defines the `TopologyBrief` type
+  (archetype enum + per-archetype params), aligned with
+  `src/profile/features.ts`'s existing archetype taxonomy.
+- **Dependencies:** None.
+- **Scope:** Pure types only.
+- **Likely files:** `src/briefs/model.ts` (new).
+- **Non-goals:** No compiler logic yet.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** Type-level only (compiles); no runtime test needed for
+  pure types with no logic.
+- **Acceptance criteria:** Archetype enum values match or cleanly map to
+  `src/profile/features.ts`'s taxonomy (confirm no naming collision/drift
+  between the two systems).
+
+### B2 — Semantic template compiler (3 initial archetypes)
+
+- **Outcome:** A pure `compileBrief(brief): Document` function covering the 3
+  archetypes that already have static templates (hub-spoke, spine-leaf,
+  three-tier-DMZ), each parametric (e.g., hub-spoke takes a site count,
+  three-tier-DMZ takes a "with firewall inspection" flag).
+- **Dependencies:** B1.
+- **Scope:** `src/briefs/compile.ts`, one generator function per archetype.
+- **Likely files:** `src/briefs/compile.ts` (new), `src/briefs/archetypes/*.ts`
+  (new, one file per archetype for readability).
+- **Non-goals:** No MCP or GUI surface yet (B3/B4); no archetypes beyond the
+  initial 3 (B5).
+- **Risk level:** Medium — this is genuinely new generative logic; get the
+  compile→layout→validate discipline right here since every later archetype
+  copies this pattern.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** For each archetype: brief → document → assert
+  `validateDocument`/`analyzeLayout` both return clean (this is the core
+  acceptance property — a brief-compiled document must never need manual
+  cleanup), plus parameter-variation tests (e.g., site count 2 vs. 6 produces
+  the right node count).
+- **Acceptance criteria:** `compileBrief` is pure, deterministic (same brief
+  → byte-identical document, mirroring the flow compiler's determinism), and
+  every output passes validation with zero warnings.
+
+### B3 — MCP tool `create_from_brief`
+
+- **Outcome:** A new MCP tool taking a `TopologyBrief` (Zod schema) and
+  returning a `topologyId`, mirroring `create_from_template`'s existing
+  shape and registration pattern.
+- **Dependencies:** B2.
+- **Scope:** Wire `compileBrief` into `src/mcp/tools.ts`.
+- **Likely files:** `src/mcp/tools.ts`, `src/mcp/README.md` (tool table —
+  the existing sync test will force this).
+- **Non-goals:** No changes to `create_from_template` (keep both — a brief is
+  additive, not a replacement for the fixed templates).
+- **Risk level:** Low (additive tool, same registration pattern as every
+  other tool).
+- **Migration impact:** None.
+- **Deployment impact:** None (always-registered, like `create_from_template`).
+- **Human action required:** None.
+- **Required tests:** Tool-registration test (name appears, Zod schema
+  round-trips); `src/mcp/tools.test.ts`'s README-sync test will fail loudly
+  if the README isn't updated — treat that as the acceptance gate it already
+  is for every other tool.
+- **Acceptance criteria:** An agent can call `create_from_brief` and get back
+  a validated, laid-out document in one round trip.
+
+### B4 — GUI "New from brief" wizard
+
+- **Outcome:** A form-based wizard in the app (archetype picker + parameter
+  fields) that calls the same `compileBrief` function headlessly — no
+  duplicated compiler logic between MCP and GUI.
+- **Dependencies:** B2 (not B3 — the GUI can call `compileBrief` directly,
+  it doesn't need to go through the MCP tool).
+- **Scope:** New UI module, likely `src/ui/brief-wizard.ts`, wired into the
+  existing "new document" entry point in `src/main.ts`.
+- **Likely files:** `src/ui/brief-wizard.ts` (new), `src/main.ts`.
+- **Non-goals:** No redesign of the existing template picker — the wizard is
+  a new, additional entry point.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** Pure render tests for the wizard form states, mirroring
+  the panel-testing pattern used throughout `src/ui/*.test.ts`.
+- **Acceptance criteria:** A human can produce the same document a
+  `create_from_brief` MCP call would, through the GUI.
+
+### B5 — Expand archetype coverage
+
+- **Outcome:** Additional archetypes beyond the initial 3 (SD-WAN/SASE and
+  any others with demonstrated demand), following B2's established pattern.
+- **Dependencies:** B2 (parallel-friendly with B3/B4 once B2's pattern is
+  proven).
+- **Scope:** One generator file per new archetype.
+- **Likely files:** `src/briefs/archetypes/*.ts`.
+- **Non-goals:** None beyond what B2 already excluded.
+- **Risk level:** Low (repeating an established pattern).
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** Same shape as B2's per-archetype tests.
+- **Acceptance criteria:** Same as B2, per new archetype.
+
+### B6 — Validation guardrails as an explicit acceptance gate
+
+- **Outcome:** A repo-wide test asserting every registered archetype's
+  compiler output passes `validateDocument`/`analyzeLayout` cleanly — a
+  parity test in the same spirit as `src/api/catalog.test.ts`'s catalog
+  coverage test, so a future archetype addition can't accidentally ship
+  broken.
+- **Dependencies:** B3, B4.
+- **Scope:** One new test file iterating every registered archetype.
+- **Likely files:** `src/briefs/compile.test.ts` (extend or add a parity
+  section).
+- **Non-goals:** None.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** The parity test itself.
+- **Acceptance criteria:** The test fails loudly if any archetype's output
+  has a validation/layout warning.
+
+### B7 — Tests, docs, gate, rollout
+
+- **Outcome:** Full gate green; `docs/HANDOFF.md`/`docs/ROADMAP.md` truth-up;
+  PR merged and deployed (no flag needed — always-on, additive tool/UI).
+- **Dependencies:** B5, B6.
+- **Scope:** Standard closeout packet.
+- **Likely files:** `docs/HANDOFF.md`, `docs/ROADMAP.md`.
+- **Non-goals:** None.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** Normal gated deploy.
+- **Human action required:** Approve the production deploy (standard).
+- **Required tests:** Full gate.
+- **Acceptance criteria:** A human or agent can go from "describe what I
+  want" to a validated starting topology in one step, in both the GUI and
+  over MCP.
+
+**Testing strategy:** Entirely local-testable (pure compiler functions, no
+Durable Object involvement) — a genuinely easy initiative to develop against
+compared to A/E/T, which all touch worker/DO code somewhere.
+
+**Deferred work:** Reusable/shareable component libraries (parameterized
+sub-topologies a user can save and reuse) — noted in `ROADMAP.md` §"Next" as
+a natural follow-on once the brief contract exists, not in scope here.
+
+---
+
+## Initiative E — EdgeConnect live-import hardening and UI
+
+**Goal:** Verify the EdgeConnect provider against real/recorded data (closing
+the "integration-unverified" gap the audit found), add explicit safeguards
+against the "transient failure looks like deletion" failure mode, and give a
+human a GUI path to trigger and review a live import (today it's
+MCP-tool-only, and requires secrets no current deployment has configured).
+
+**Current baseline:** `src/connect/edgeconnect.ts` is a real HTTP client
+against the HPE Aruba EdgeConnect Orchestrator REST API, tested only via an
+injectable mock `fetchImpl` — never against a real or recorded live payload.
+No deployment (staging or production) has `ORCH_BASE_URL`/`ORCH_API_KEY`
+configured, so the 7 live-fabric MCP tools do not appear anywhere today. The
+flow compiler (`src/connect/compile.ts`) is solid, tested, and uses
+`upsertBySource` throughout for convergent re-import.
+
+**Dependencies:** None on other initiatives; T-series has a soft dependency
+on E2 specifically (shared-file hotspot on `compile.ts`).
+
+**Architecture:** No new abstractions — this initiative hardens and exposes
+what already exists rather than building new provider machinery.
+
+**Implementation packets:**
+
+### E1 — Recorded-fixture verification
+
+- **Outcome:** `EdgeConnectProvider` is exercised against a realistic
+  recorded (or carefully hand-constructed, if no real Orchestrator access
+  exists) fixture set covering the field-name variance its own code comments
+  already flag as a risk ("release-dependent... to be pinned against
+  recorded fixtures").
+- **Dependencies:** None.
+- **Scope:** New fixture files + tests using the existing injectable
+  `fetchImpl` seam.
+- **Likely files:** `src/connect/edgeconnect.test.ts` (extend), new fixture
+  JSON under `fixtures/edgeconnect/`.
+- **Non-goals:** No changes to `edgeconnect.ts`'s actual field-normalization
+  logic unless the fixtures reveal a real bug.
+- **Risk level:** Low (test-only, unless it reveals and requires fixing a
+  real normalization bug — treat that as an in-scope fix, small and
+  well-contained).
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** Ideally, access to a real Orchestrator's API
+  responses (even anonymized) to build genuinely representative fixtures —
+  flag this as a request if no such access exists; hand-constructed fixtures
+  are the fallback, clearly labeled as such.
+- **Required tests:** The fixture-driven tests themselves.
+- **Acceptance criteria:** `edgeconnect.ts`'s own "to be pinned against
+  recorded fixtures" comment can be updated to reference the fixtures that
+  now exist, or removed if fully satisfied.
+
+### E2 — No-delete-on-transient-failure safeguard + test
+
+- **Outcome:** An explicit test proving a failed or empty provider fetch
+  never causes `compileFabric`/`compileFlow`/`upsertBySource` to remove
+  previously-compiled elements — codifying the "Deliberately Excluded"
+  principle from `ROADMAP.md` as an enforced behavior, not just a stated
+  intent.
+- **Dependencies:** None.
+- **Scope:** Audit `src/connect/compile.ts`'s call sites for any implicit
+  "absence means delete" logic; add the explicit regression test either way.
+- **Likely files:** `src/connect/compile.ts` (only if the audit finds an
+  actual gap — otherwise test-only), `src/connect/compile.test.ts`.
+- **Non-goals:** No broader retry/backoff logic (that's E3).
+- **Risk level:** Low if the audit confirms current behavior is already
+  safe (likely, per this session's read of `upsertBySource`); Medium if it
+  finds a real gap requiring a code change.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** A fetch-returns-empty / fetch-throws scenario asserting
+  prior compiled elements survive unchanged.
+- **Acceptance criteria:** The test exists and passes; **this packet must
+  land before T2 starts** (shared-file hotspot on `compile.ts`).
+
+### E3 — Retry / partial-failure / staleness handling
+
+- **Outcome:** `EdgeConnectProvider` surfaces a staleness signal when a
+  sub-fetch fails partway through a multi-call operation, rather than
+  silently returning partial data as if it were complete.
+- **Dependencies:** None (can run parallel to E1/E2).
+- **Scope:** `edgeconnect.ts`'s fetch orchestration.
+- **Likely files:** `src/connect/edgeconnect.ts`, `src/connect/types.ts` (if
+  a staleness field needs adding to a return type).
+- **Non-goals:** No general-purpose retry framework — scope this to what
+  EdgeConnect's own multi-call patterns (e.g., the appliance-flow-table
+  proxy) actually need.
+- **Risk level:** Medium (touches real request logic; get the failure-mode
+  semantics right, since this directly serves the "don't misread a transient
+  failure" principle E2 tests for).
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** Injected partial-failure scenarios via the existing
+  mock `fetchImpl` seam.
+- **Acceptance criteria:** A partial failure is visibly distinguishable from
+  a complete, fresh result by any caller.
+
+### E4 — Live-import GUI
+
+- **Outcome:** An authenticated HTTP route + panel letting a human trigger a
+  live import into a workspace and review it as a diff before accepting —
+  reusing the existing proposal-preview machinery (R1, already shipped)
+  rather than inventing new diff UI.
+- **Dependencies:** E1, E2, E3.
+- **Scope:** New route wrapping `compileFlowTopology`, presented through the
+  workspace panel's existing proposal-review flow.
+- **Likely files:** `worker/workspace-api.ts` or a new
+  `worker/live-import-api.ts`, `src/ui/workspace-panel.ts` (extend).
+- **Non-goals:** No new diff-rendering component — must reuse R1's existing
+  preview machinery, not fork it.
+- **Risk level:** Medium (new authenticated write path, though it composes
+  entirely from already-shipped, already-tested primitives — the proposal
+  pipeline, the flow compiler).
+- **Migration impact:** None.
+- **Deployment impact:** None (uses existing workspace infrastructure).
+- **Human action required:** None beyond normal review.
+- **Required tests:** An end-to-end Miniflare test: trigger a live import
+  against a mock provider, confirm it lands as a reviewable proposal, confirm
+  accept/reject both work through the existing pipeline.
+- **Acceptance criteria:** A human can go from "I have a real fabric" to "I
+  can see and accept/reject a live import as a normal proposal" without
+  touching MCP tools directly.
+
+### E5 — Credential provisioning runbook
+
+- **Outcome:** A documented procedure for provisioning `ORCH_BASE_URL`/
+  `ORCH_API_KEY` as Worker secrets, plus confirmation that
+  `describe_data_source` (or an extension of it) can smoke-test connectivity
+  without importing anything.
+- **Dependencies:** None.
+- **Scope:** Documentation + a small connectivity-check enhancement to
+  `describe_data_source` if it doesn't already cover this.
+- **Likely files:** `docs/DEPLOYMENT_RUNBOOK.md` (new section), possibly
+  `src/mcp/tools.ts` (`describe_data_source` extension).
+- **Non-goals:** Do not provision real secrets in this repo's CI/CD — this
+  packet documents the _procedure_ for a human operator to do so on
+  **staging only**, matching this repo's established pattern of never
+  activating a new capability in production without a separate, explicit
+  operator decision.
+- **Risk level:** Low (docs + a read-only connectivity check).
+- **Migration impact:** None.
+- **Deployment impact:** None until a human actually provisions the secrets.
+- **Human action required:** Provisioning the actual secret values (via
+  `wrangler secret put`) is 100% human-only, and should happen on staging
+  first, matching every prior activation in this repo's history.
+- **Required tests:** A test that `describe_data_source` behaves sanely with
+  no provider configured (already covered) and with a provider configured
+  but unreachable (new).
+- **Acceptance criteria:** An operator can follow the runbook to stand up a
+  real EdgeConnect connection on staging and verify it's working before any
+  production decision.
+
+### E6 — Staleness/freshness UI
+
+- **Outcome:** The inspector shows "this element was last confirmed live at
+  T" for provider-sourced elements, surfacing the existing `source.freshness`
+  field that's already part of the contract but not yet shown anywhere.
+- **Dependencies:** None (parallel-friendly with E4/E5).
+- **Scope:** Inspector UI extension.
+- **Likely files:** `src/main.ts` (inspector field rendering).
+- **Non-goals:** No new data model — `source.freshness` already exists
+  (`src/api/source.ts`); this is purely a display gap.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** Pure render test for the new inspector field.
+- **Acceptance criteria:** A provider-sourced element visibly shows its
+  freshness in the inspector.
+
+### E7 — Tests, docs, gate, rollout
+
+- **Outcome:** Full gate green; docs truth-up; PR merged.
+- **Dependencies:** E4, E5, E6.
+- **Scope:** Standard closeout packet.
+- **Likely files:** `docs/HANDOFF.md`, `docs/ROADMAP.md`.
+- **Non-goals:** None.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** Normal gated deploy.
+- **Human action required:** Approve the production deploy (standard); E5's
+  secret provisioning remains a separate, explicit follow-up decision, not
+  bundled into this deploy.
+- **Required tests:** Full gate.
+- **Acceptance criteria:** The EdgeConnect provider is verified, safe against
+  transient failures, and has a real GUI path — but is still not active in
+  any production deployment until a human explicitly provisions credentials
+  (E5), consistent with this repo's activation discipline throughout.
+
+**Testing strategy:** E1–E3 are fully local-testable via the existing
+injectable `fetchImpl` seam; E4 needs the Miniflare harness (workspace/DO
+code); E5/E6 are docs/pure-UI respectively.
+
+**Deferred work:** A second real provider implementation (evidence-triggered
+in `ROADMAP.md` §"Next" — not started until this one is proven).
+
+---
+
+## Initiative T — Time-aware flow and failure storytelling
+
+**Goal:** Extend the flow compiler's point-in-time snapshot into a
+multi-page scenario — "before, during, and after a failure" — built entirely
+on the existing flipbook contract (independent pages, no inheritance) rather
+than inventing a new cross-page mechanism.
+
+**Current baseline:** Flipbook pages are independent, full-frame documents by
+design (`DESIGN.md` #1, `docs/decisions/0001-flipbook-vs-beats.md`) — this is
+a hard architectural constraint T-series must respect, not work around. Flow
+paths already animate per-hop. The flow compiler produces one point-in-time
+snapshot per compile. Pages already have `duration`/`transition` and the
+filmstrip UI already supports reordering/renaming.
+
+**Dependencies:** E2 must land first (shared-file hotspot on
+`src/connect/compile.ts`); otherwise independent of the other initiatives.
+
+**Architecture — respecting the "no cross-page inheritance" constraint
+explicitly:** A "scenario" is an ordered sequence of named steps, each fully
+describing a fabric-state delta (e.g., "tunnel X down, flow Y reroutes via
+Z"). The **story compiler runs the full flow compiler independently for each
+step**, producing N fully-materialized, independent pages — it is a compiler
+that happens to run N times and call `add_page` N times, never a mechanism
+that stores steps as diffs against a base page. This is a deliberate
+design choice to keep T-series compliant with `ROADMAP.md`'s "Deliberately
+Excluded" list; if an implementing agent finds themselves building anything
+that stores one page as a delta from another, stop — that's the excluded
+pattern.
+
+**Implementation packets:**
+
+### T1 — Scenario contract types
+
+- **Outcome:** `src/stories/model.ts` defines a `FlowScenario` (ordered
+  named steps, each a fabric-state delta description reusing existing
+  `src/connect/types.ts` shapes wherever possible).
+- **Dependencies:** None (can start immediately, in parallel with
+  everything).
+- **Scope:** Pure types.
+- **Likely files:** `src/stories/model.ts` (new).
+- **Non-goals:** No compiler logic yet.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** Type-level only.
+- **Acceptance criteria:** Each step's delta description is expressive enough
+  to represent "a tunnel goes down" and "a flow reroutes" without needing a
+  future breaking change.
+
+### T2 — Story compiler
+
+- **Outcome:** `compileFlowStory(scenario): Document` — runs the flow
+  compiler once per step, producing N independent, fully-materialized pages
+  wired together via `add_page`/`set_page_properties` (duration/transition),
+  never as deltas.
+- **Dependencies:** T1, **and E2** (shared-file hotspot on `compile.ts` —
+  land E2 first).
+- **Scope:** `src/stories/compile.ts`, composing (not modifying) the existing
+  `compileFlowTopology`.
+- **Likely files:** `src/stories/compile.ts` (new); should not need to
+  modify `src/connect/compile.ts` at all if it only calls the existing
+  exported `compileFlowTopology` per step — confirm this holds, since it's
+  the cleanest way to avoid the E/T hotspot entirely for everything except
+  the E2 ordering.
+- **Non-goals:** No cross-page delta storage (see architecture note above —
+  this is the one behavior this packet must not implement).
+- **Risk level:** Medium (new generative logic, though composed from
+  already-tested primitives).
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** A 3-step scenario (before/during/after) compiles to 3
+  independent, individually-valid pages; each page passes
+  `validateDocument`/`analyzeLayout` on its own (same discipline as B2's
+  brief compiler).
+- **Acceptance criteria:** Deleting or corrupting one page in a compiled
+  scenario has zero effect on the others (proves independence, not just
+  by-construction claim).
+
+### T3 — Failure-moment annotations
+
+- **Outcome:** Visual markers for "this link is down here" / "this flow
+  rerouted here" on the relevant scenario page, reusing
+  `add_policy_marker`'s existing machinery (new marker types if the existing
+  enum doesn't cover it) rather than inventing a new annotation kind.
+- **Dependencies:** T2.
+- **Scope:** Extend the policy-marker catalog if needed; wire into the story
+  compiler's per-step output.
+- **Likely files:** `src/api/catalog.ts` (only if new marker types are
+  needed), `src/stories/compile.ts`.
+- **Non-goals:** No new annotation kind unless policy markers genuinely can't
+  express this (check first — `deny`/`redirect`/`log` marker types may
+  already cover "link down"/"rerouted" semantically).
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** A scenario step with a failure produces the expected
+  marker(s) on the expected element(s).
+- **Acceptance criteria:** A viewer can visually identify what changed
+  between two adjacent scenario pages without needing prose explanation.
+
+### T4 — MCP tool `compile_flow_story`
+
+- **Outcome:** A new MCP tool taking a `FlowScenario` and returning a
+  `topologyId` with all scenario pages populated.
+- **Dependencies:** T2.
+- **Scope:** Wire `compileFlowStory` into `src/mcp/tools.ts`, mirroring
+  `build_flow_topology`'s existing registration pattern (gated on
+  `deps.provider`, same as every other live-fabric tool).
+- **Likely files:** `src/mcp/tools.ts`, `src/mcp/README.md`.
+- **Non-goals:** None beyond what T2 already excluded.
+- **Risk level:** Low (additive tool, established registration pattern).
+- **Migration impact:** None.
+- **Deployment impact:** None (gated the same way the other 7 live-fabric
+  tools already are — inert without `ORCH_*` secrets, same as today).
+- **Human action required:** None.
+- **Required tests:** Tool-registration test; README-sync test (existing,
+  will force the table update).
+- **Acceptance criteria:** An agent with live-fabric access can produce a
+  multi-page failure-scenario flipbook in one call.
+
+### T5 — GUI scenario-timeline authoring affordance
+
+- **Outcome:** A labeling/authoring layer on the existing filmstrip UI so a
+  human can see and edit scenario step names/order — no new rendering, just
+  making the existing page-reorder/rename affordances scenario-aware.
+- **Dependencies:** T3, T4.
+- **Scope:** Small UI extension to the existing filmstrip.
+- **Likely files:** `src/main.ts` (filmstrip UI).
+- **Non-goals:** No new canvas/rendering work — this is purely an authoring
+  affordance on data the story compiler already produced.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** Pure UI test for the new labeling affordance.
+- **Acceptance criteria:** A human can rename/reorder scenario steps the same
+  way they already can with ordinary flipbook pages.
+
+### T6 — Playback caption polish
+
+- **Outcome:** `export_flipbook`'s playback bar shows each page's `name` as a
+  caption during autoplay (if not already surfaced) — makes an exported
+  scenario self-narrating without extra authoring work, since `Page.name` is
+  already part of the contract.
+- **Dependencies:** T5.
+- **Scope:** Small extension to `src/render/flipbook.ts`'s playback bar, if
+  the name isn't already shown.
+- **Likely files:** `src/render/flipbook.ts`.
+- **Non-goals:** No new narration/audio — text caption only, from existing
   data.
-- **Risk:** low. **Validation:** W1 harness tests (unauthenticated `/healthz`
-  200; `/readyz` 401 without a session, per-binding results with one).
-  **Deployment impact:** routine.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** None.
+- **Human action required:** None.
+- **Required tests:** Export a scenario, confirm the caption appears in the
+  generated HTML.
+- **Acceptance criteria:** An exported failure-scenario flipbook is
+  understandable standalone (no accompanying prose needed) because each page
+  is captioned.
 
-### Packet D4 — smoke script _(0004 Phase 3, automation)_
+### T7 — Tests, docs, gate, rollout
 
-- **Outcome:** one command that verifies a deployment from outside, safe
-  against staging or production, wired into both deploy workflows.
-- **Files:** new `scripts/smoke.mjs`; `package.json` (`smoke` script taking a
-  base URL).
-- **Approach (unauthenticated-safe subset):** `GET /healthz` (200, expected
-  sha when passed); `GET /` (200 HTML referencing the built bundle);
-  `GET /login` (redirect shape to GitHub);
-  `GET /.well-known/oauth-authorization-server` (valid metadata);
-  unauthenticated `POST /mcp` → 401; `GET /api/workspaces` → 401; with
-  `--expect-workspace-disabled`, assert the 503 body instead. Non-zero exit on
-  any failure; JSON summary for the workflow step summary. Browser OAuth,
-  proposal acceptance, lease enforcement, and lazy migration remain manual
-  staging UAT (they need a real GitHub session) — listed in the runbook, not
-  the script.
-- **Risk:** low. **Validation:** run against local `wrangler dev` and against
-  staging once it exists. **Deployment impact:** none.
+- **Outcome:** Full gate green; docs truth-up; PR merged.
+- **Dependencies:** T6.
+- **Scope:** Standard closeout packet.
+- **Likely files:** `docs/HANDOFF.md`, `docs/ROADMAP.md`.
+- **Non-goals:** None.
+- **Risk level:** Low.
+- **Migration impact:** None.
+- **Deployment impact:** Normal gated deploy; inert until `ORCH_*` secrets
+  exist (same posture as E-series/the existing live-fabric tools).
+- **Human action required:** Approve the production deploy (standard).
+- **Required tests:** Full gate.
+- **Acceptance criteria:** A human or agent with live-fabric access can
+  produce and play back a self-narrating "before/during/after a failure"
+  flipbook.
 
-### Packet D5 — deploy workflows _(0004 Phase 2)_
+**Testing strategy:** T1–T3 are fully local-testable (pure compiler
+functions composing already-tested primitives); T4 needs the same MCP
+tool-registration test pattern as every other tool; T5/T6 are pure UI.
 
-- **Outcome:** GitHub Actions is the only path that can change staging or
-  production; production requires green checks plus protected approval; every
-  deploy leaves an audit trail.
-- **Files:** new `.github/workflows/deploy-staging.yml`, new
-  `.github/workflows/deploy-production.yml`; `.github/workflows/ci.yml`
-  (convert the `check` job to `workflow_call` so deploy workflows re-run the
-  identical gate; pin the Node version; SHA-pin actions per finding L2 as a
-  stretch goal).
-- **Approach:**
-  - **deploy-staging.yml:** `workflow_dispatch` (input: ref);
-    `concurrency: { group: topology-dojo-staging, cancel-in-progress: true }`;
-    call the shared check; then a job with `environment: staging` that checks
-    out the exact dispatched SHA, `npm ci && npm run build`, runs
-    `check-wrangler-env.mjs`, `wrangler deploy --env staging` (secrets
-    `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` from the environment),
-    then `scripts/smoke.mjs` against the staging origin; write SHA, actor,
-    deployment id, migration tags, and the smoke JSON to
-    `$GITHUB_STEP_SUMMARY`.
-  - **deploy-production.yml:** `workflow_dispatch` with an optional
-    `recovery_sha` input, guarded to `main` (fail unless
-    `github.ref == refs/heads/main` or an explicit recovery SHA);
-    `concurrency: topology-dojo-production` without cancel-in-progress;
-    `environment: production` with required reviewers (checklist O6); same
-    check → deploy (`wrangler deploy`, no `--env`) → smoke → summary chain.
-  - No workflow anywhere runs `wrangler versions upload`.
-- **Risk:** high (this _is_ the production control plane). **Validation:**
-  workflow dry-run on a branch; first real execution is the staging bootstrap
-  (O8); the production path is proven during the `v3` bootstrap (O10).
-  **Deployment impact:** binding-or-secret (GitHub environments + scoped
-  Cloudflare tokens).
+**Deferred work:** Live, real-time scenario replay (as opposed to a
+pre-compiled flipbook) — a materially different and much larger feature
+(would need streaming flow data, not point-in-time compiles); not proposed
+here and would need its own evidence-triggered justification.
 
-### Packet D6 — documentation truth-up + findings closure
+---
 
-- **Outcome:** `DEPLOYMENT_RUNBOOK.md` and `ROLLBACK.md` describe the pipeline
-  that actually exists; H7, M14, M15, L1 carry evidence-backed closure notes.
-- **Files:** `docs/DEPLOYMENT_RUNBOOK.md`, `docs/ROLLBACK.md`,
-  `docs/launch-readiness/FINDINGS_REGISTER.md`, `docs/ROADMAP.md` (move the
-  item to Shipped), `docs/ARCHITECTURE.md` (deployment section: "target" →
-  "current").
-- **Risk:** low (docs-only). **Validation:** link/format checks; each closure
-  note cites the workflow run URL / config lines as evidence.
-  **Deployment impact:** none.
+## Packet register (flat index)
 
-### 4.7 Operator-action checklist for 0004 (cannot be done from the repo)
+_Full specs are in each initiative's section above; this is a cross-reference
+index only._
 
-Ordered; items reference the packets they unblock. Per the workflow authority
-model, none of these may be performed by an implementation agent.
+| Packet | Initiative        | Depends on | Migration? | New flag/tool/secret? | Human action?              |
+| ------ | ----------------- | ---------- | ---------- | --------------------- | -------------------------- |
+| N1     | Docs reset        | —          | No         | No                    | No — **done**              |
+| N2     | Docs reset        | N1         | No         | No                    | No — **done**              |
+| N3     | Docs reset        | N2         | No         | No                    | Merge PR — **in progress** |
+| O1     | Alerting/game day | —          | No         | No                    | **Yes, 100%**              |
+| O2     | Alerting/game day | O3         | No         | No                    | **Yes, significant**       |
+| O3     | Alerting/game day | —          | No         | No                    | No                         |
+| A1     | Explainability    | —          | No         | No                    | No                         |
+| A2     | Explainability    | A1         | No         | Flag (open decision)  | No                         |
+| A3     | Explainability    | A2         | No         | No                    | No                         |
+| A4     | Explainability    | A3         | No         | No                    | No                         |
+| A5     | Explainability    | A3         | No         | No                    | No                         |
+| A6     | Explainability    | A4, A5     | No         | No                    | Deploy approval            |
+| B1     | Briefs/templates  | —          | No         | No                    | No                         |
+| B2     | Briefs/templates  | B1         | No         | No                    | No                         |
+| B3     | Briefs/templates  | B2         | No         | New tool              | No                         |
+| B4     | Briefs/templates  | B2         | No         | No                    | No                         |
+| B5     | Briefs/templates  | B2         | No         | No                    | No                         |
+| B6     | Briefs/templates  | B3, B4     | No         | No                    | No                         |
+| B7     | Briefs/templates  | B5, B6     | No         | No                    | Deploy approval            |
+| E1     | EdgeConnect       | —          | No         | No                    | Real API access, ideally   |
+| E2     | EdgeConnect       | —          | No         | No                    | No                         |
+| E3     | EdgeConnect       | —          | No         | No                    | No                         |
+| E4     | EdgeConnect       | E1, E2, E3 | No         | No                    | No                         |
+| E5     | EdgeConnect       | —          | No         | New secret (staging)  | **Yes, 100%**              |
+| E6     | EdgeConnect       | —          | No         | No                    | No                         |
+| E7     | EdgeConnect       | E4, E5, E6 | No         | No                    | Deploy approval            |
+| T1     | Storytelling      | —          | No         | No                    | No                         |
+| T2     | Storytelling      | T1, **E2** | No         | No                    | No                         |
+| T3     | Storytelling      | T2         | No         | No                    | No                         |
+| T4     | Storytelling      | T2         | No         | New tool              | No                         |
+| T5     | Storytelling      | T3, T4     | No         | No                    | No                         |
+| T6     | Storytelling      | T5         | No         | No                    | No                         |
+| T7     | Storytelling      | T6         | No         | No                    | Deploy approval            |
 
-| #   | Action                                                                                                                                                                                                                                                                                                            | Where                | Unblocks / follows                                |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------- |
-| O1  | Disable Workers Builds non-production branch builds on the production Worker (stops the broken `versions upload` previews / error 10211)                                                                                                                                                                          | Cloudflare dashboard | 0004 Phase 0 — do immediately                     |
-| O2  | Create staging KV namespaces (`OAUTH_KV`, `TOPOLOGY_KV`); record ids                                                                                                                                                                                                                                              | Cloudflare           | D1 needs the ids                                  |
-| O3  | Create the staging GitHub OAuth App with only the staging callback; record client id                                                                                                                                                                                                                              | GitHub settings      | D1 (staging `GITHUB_CLIENT_ID`)                   |
-| O4  | Set the staging `GITHUB_CLIENT_SECRET` (`wrangler secret put --env staging`)                                                                                                                                                                                                                                      | Cloudflare           | first staging deploy                              |
-| O5  | Create GitHub environments `staging` and `production`; store a scoped `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` in each                                                                                                                                                                                    | GitHub settings      | D5                                                |
-| O6  | Configure `production` required reviewers, restrict to `main`; branch protection with the CI `check` as a required status                                                                                                                                                                                         | GitHub settings      | D5; 0004 decision 3                               |
-| O7  | ✅ Decided: staging hostname (via O3), approvers (O6), manual-only staging dispatch, and the observation window / error-rate stop thresholds (see `DEPLOYMENT_RUNBOOK.md` → "Activation observation window and thresholds")                                                                                       | Humans               | D5 finalization                                   |
-| O8  | First staging deploy via `deploy-staging.yml` — applies `v1`–`v3` to the staging script; run smoke + manual OAuth/MCP/workspace UAT; perform the forward-recovery exercise (deploy a flag-off build, verify, re-enable)                                                                                           | GitHub Actions       | 0004 Phase 1/3 exits; rollback-exercise criterion |
-| O9  | Disconnect Workers Builds entirely once both Actions paths are proven                                                                                                                                                                                                                                             | Cloudflare           | 0004 Phase 2 exit                                 |
-| O10 | Production `v3` bootstrap: set top-level `"WORKSPACE_ENABLED": "false"` (tiny PR), run `deploy-production.yml` with approval; verify smoke (`--expect-workspace-disabled`), migration `v3` applied, `TopologyDocument` bound; create no workspaces                                                                | Actions + dashboard  | 0004 Phase 4                                      |
-| O11 | Workspace activation: flip the flag (tiny PR), deploy with approval, run the full manual workspace smoke (create, hand off, propose, accept/reject, lease grant/revoke, reconnect, lazy-migrate a disposable legacy draft); watch error rates for the O7 window; forward-deploy flag-off if a stop condition hits | Actions + dashboard  | 0004 Phase 5                                      |
-| O12 | Configure Cloudflare alerting for Worker error rate + notifications for failed deploy workflows; schedule the nightly staging smoke                                                                                                                                                                               | Cloudflare + GitHub  | 0004 Phase 3/6                                    |
+## Risk register (cross-cutting)
 
-## 5. Phase 2 — inline canvas layout badges (parallel workflow pilot)
+Beyond each packet's individual risk level:
 
-### Packet B1 — on-canvas warning badges
+| Risk                                                                                                               | Likelihood | Impact                                                    | Mitigation                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------ | ---------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| An implementing agent discovers A4's "additive field" on agent revisions actually requires a schema/migration bump | Low        | High (migrations are this repo's highest-ceremony change) | Explicit stop-and-confirm instruction at the top of A4 and at the top of this document                                                          |
+| E3/T2 concurrent edits to `src/connect/compile.ts` cause merge conflicts                                           | Medium     | Low (conflict, not correctness)                           | Explicit hotspot table + hard T2-after-E2 dependency                                                                                            |
+| B-series or T-series archetype/scenario compilers silently ship a document with layout warnings                    | Medium     | Medium (defeats the "always clean" value proposition)     | B6 and T2's acceptance criteria both make "zero warnings" an explicit, tested gate                                                              |
+| O2 (game day) is run against production instead of staging by mistake                                              | Low        | Critical                                                  | O2's scope explicitly states "staging only"; this mirrors the existing, already-proven ROLLBACK.md discipline                                   |
+| E5's credential provisioning accidentally targets production                                                       | Low        | High                                                      | E5 explicitly scopes to staging-only; matches this repo's established pattern (every flag activation in this repo's history went staging-first) |
+| Flag sprawl (A-series introduces a new flag instead of reusing `ANALYTICS_ENABLED`)                                | Medium     | Low                                                       | A1 explicitly recommends reuse and frames the alternative as an "open decision," not a default                                                  |
 
-- **Outcome:** `analyzeLayout` / `validateDocument` problems appear as small
-  badges anchored to the offending elements on the canvas, in addition to the
-  existing clickable problems panel. Closes the roadmap item "Surface layout
-  warnings in the GUI (inline badges)".
-- **Files:** new `src/editor/problem-badges.ts`; `src/main.ts`
-  (`renderProblems()` — extract the problem→element-id mapping it already
-  computes into a shared helper feeding both the panel and the badge layer);
-  `src/editor/editor.ts` (expose a hook to mount a non-interactive overlay
-  group in the interaction SVG; reuse `src/api/geometry.ts` AABBs for anchor
-  points).
-- **Approach:** a pure function `(problems, page) → badge placements`; render
-  into a dedicated overlay group above art, below interaction handles;
-  `pointer-events: none` except the badge hit-target so drags never snag;
-  click badge ⇒ select element + scroll the panel entry into view; a toolbar
-  toggle hides badges (view state — an explicit `DESIGN.md` #2 carve-out like
-  pan/zoom, since the underlying data is already API-reachable via
-  `validate_topology`); badges refresh on the same debounce as the problems
-  panel.
-- **Risk:** low. **Validation:** unit tests for placement math; manual UAT per
-  the diagram-UX workflow template (pointer, keyboard reachability of the
-  toggle, no drag interference, zoom behavior). **Deployment impact:** routine
-  (static assets only).
+## Human/operator prerequisite list
 
-## 6. Phase 3 — workspace review polish
+Consolidated from every packet above:
 
-Serialized within the phase where noted; all `worker/document.ts` changes come
-after Phase 1 so their releases ride the staging pipeline.
+1. **O1** — Configure Cloudflare Notification policies (dashboard action).
+2. **O2** — Execute and observe the staging forward-recovery game day.
+3. **E1** — Ideally, provide (even anonymized) real Orchestrator API
+   responses for fixture-building; otherwise hand-constructed fixtures are
+   used with that limitation documented.
+4. **E5** — Provision `ORCH_BASE_URL`/`ORCH_API_KEY` as staging Worker
+   secrets via `wrangler secret put --env staging` — a deliberate, separate
+   decision, never bundled into a feature-shipping deploy.
+5. **Every initiative's final packet (N3, A6, B7, E7, T7)** — approve the
+   production deploy through the existing protected-environment gate (no
+   different from any prior packet in this repo's history).
 
-### Packet R0 — extract the Agent Workspace panel (enabling refactor)
-
-- **Outcome:** the workspace panel moves out of `src/main.ts` into
-  `src/ui/workspace-panel.ts` with a narrow mount API, so R1/R2/R4 and later
-  S-packets don't all contend on `main.ts`.
-- **Files:** `src/main.ts`, new `src/ui/workspace-panel.ts`.
-- **Approach:** behavior-preserving move per the architecture/refactor
-  template — characterization tests of the panel render states first, then
-  relocate; no logic changes.
-- **Risk:** medium (M25: `main.ts` untested). **Validation:** characterization
-  tests pass before and after; manual panel walkthrough.
-  **Deployment impact:** routine.
-
-### Packet R1 — rendered before/after proposal preview _(client-only)_
-
-- **Outcome:** reviewing a proposal shows per-affected-page before/after
-  rendered SVG side by side, with changed elements highlighted.
-- **Files:** new `src/workspace/preview.ts` (pure);
-  `src/ui/workspace-panel.ts`; reuses `src/workspace/operations.ts`
-  (`applyOperations`, `operationPageIds`, `operationTargets` — all exported)
-  and `src/render/core.ts`.
-- **Approach:** pure `computeProposalPreview(snapshotPages, operations)` — for
-  each affected page id, `structuredClone` the page, run `applyOperations` on
-  the copy, return `{ before, after, changedElementIds }`; render both frames
-  with the already-loaded browser engine class (`{ calm: true }` for static
-  parity); highlight changed ids with overlay outline rects from
-  `api/geometry.ts` AABBs — never touch the engine output; render lazily on
-  proposal expand and cap preview pages with an "n more pages affected" note.
-- **Risk:** low (no server change, no writes). **Validation:** unit tests on
-  `computeProposalPreview` (add/update/remove/multi-page, agreement with the
-  coordinator's own application); manual review UAT.
-  **Deployment impact:** routine.
-
-### Packet R2 — selective acceptance
-
-- **Outcome:** the owner can accept a coherent subset of a proposal's
-  operations as one revision; the remainder stays reviewable or is rejected.
-- **Files:** `worker/document.ts` (`acceptProposal` gains
-  `selectedOperationIndices` + subset-coherence validation);
-  `worker/workspace-api.ts` (accept route body); `src/workspace/model.ts`,
-  `src/workspace/client.ts`; `src/ui/workspace-panel.ts` (per-operation
-  checkboxes grouped by page/target, driven by `describeOperation` /
-  `summarizeOperations`); manifest proposal status reflects partial
-  acceptance.
-- **Approach:** validate the subset server-side — an operation referencing an
-  element created by an _unselected_ operation in the same proposal is
-  rejected with an explicit dependency error (computed via `operationTargets`
-  ordering); the accepted subset applies atomically as one attributed
-  revision; residual operations remain in the proposal, re-validated against
-  the new revision on next view.
-- **Risk:** medium (data integrity in the coordinator). **Validation:** W1
-  harness DO tests — dependency rejection, partial accept + residual
-  re-validation, idempotency semantics, conflict with an interleaved user
-  revision. **Deployment impact:** routine (staging smoke before production).
-
-### Packet R3 — named checkpoints, restore, fork
-
-- **Outcome:** the owner (and agents, for create/list) can snapshot a named
-  checkpoint, restore one as a new forward revision, or fork one into a new
-  workspace.
-- **Files:** `worker/document.ts`; `worker/workspace-api.ts`;
-  `worker/workspaces.ts` (fork = initialize a new directory entry from a
-  checkpoint snapshot via the existing initialize path);
-  `src/workspace/model.ts`, `src/workspace/client.ts`;
-  `src/ui/workspace-panel.ts`; MCP tools in `worker/mcp.ts` + the
-  `src/mcp/README.md` tool table (the sync test enforces it).
-- **Approach:**
-  - Storage (bounded, per 0002's layout): `checkpoint:<id>` meta
-    `{ id, name, actor, createdAt, revision, pageIds }` +
-    `checkpoint:<id>:page:<pageId>` copies, respecting the existing 1.8 MiB
-    per-page cap. Hard cap on checkpoint count (~12); creating beyond the cap
-    requires deleting one — never silent eviction of a named checkpoint;
-    oversize fails visibly before mutation.
-  - Restore is forward-only: materialize the checkpoint as replace-page
-    operations applied as one new revision — history is never rewritten.
-  - Fork: new workspace id initialized from the checkpoint pages.
-  - Authority split: `create_checkpoint` / `list_checkpoints` become MCP tools
-    (agents legitimately checkpoint before risky batches); restore and fork
-    stay browser-owner actions in this slice, mirroring the
-    proposal-acceptance authority boundary. Recorded as an explicit, temporary
-    `DESIGN.md` #2 carve-out (workspace _authority_, not document vocabulary).
-- **Risk:** medium (DO storage growth + new mutation paths). **Validation:**
-  harness DO tests — create/list/restore/fork round-trip, cap enforcement,
-  restore-as-revision attribution, fork isolation; staging smoke.
-  **Deployment impact:** routine (same DO class, new keys — no migration).
-
-### Packet R4 — revision timeline UI
-
-- **Outcome:** a timeline in the workspace panel: revisions with actor,
-  summary (already stored per `change:<revision>`), proposal-acceptance
-  markers, checkpoint markers, and the history floor ("older revisions
-  compacted").
-- **Files:** `src/ui/workspace-panel.ts`; `src/workspace/client.ts` (add the
-  missing paged `getChanges` accessor — the REST route already exists); minor
-  `worker/workspace-api.ts` if a summaries-only projection is needed.
-- **Risk:** low. **Validation:** UI tests over fixture change logs; manual
-  UAT. **Deployment impact:** routine.
-
-## 7. Phase 4 — workspace resilience
-
-### Packet S1 — WebSocket push + presence (hibernation-friendly)
-
-- **Outcome:** open editors learn of new revisions/proposals/lease changes in
-  near-real time and see who else is present; polling remains the fallback.
-- **Files:** `worker/document.ts` (hibernation WebSocket API:
-  `state.acceptWebSocket`, `webSocketMessage` / `webSocketClose`, serialized
-  attachments for actor + last-seen revision); `worker/workspace-api.ts`
-  (upgrade route `GET /api/workspaces/:id/socket`, owner-authenticated before
-  DO handoff); `src/workspace/client.ts` (socket lifecycle + automatic
-  downgrade to the existing manifest polling on failure);
-  `src/ui/workspace-panel.ts` (presence chips, live status).
-- **Approach:** push payloads are compact notices only —
-  `{ revision, proposalCount, lease, presence }` — never document content;
-  clients then use the existing `getChanges` / element hydration, so a lost
-  message degrades to exactly the current polling behavior. Broadcast from the
-  coordinator's existing revision/proposal/lease choke points. Presence lives
-  in ephemeral socket attachments (actor kind/label, current page id) — no
-  storage writes. Hibernation-safe: no in-memory state that isn't
-  reconstructible from attachments.
-- **Risk:** medium-high (concurrency on the production coordinator).
-  **Validation:** harness tests with Miniflare WebSockets (connect, notice on
-  revision, reconnect resume, fallback when the route 404s); staging soak
-  before production. **Deployment impact:** routine (same DO class; the
-  client falls back cleanly if the server predates the route).
-
-### Packet S2 — gesture-native operations (retire the snapshot-diff adapter)
-
-- **Outcome:** editor gestures emit semantic operations directly (drag-end →
-  move, inspector commit → update, palette drop → add, delete → remove)
-  instead of reconstructing them via `diffDocuments`; agent-visible change
-  summaries become faithful to user intent.
-- **Files:** `src/editor/editor.ts` (mutation seam), `src/main.ts` /
-  `src/ui/workspace-panel.ts` (commit funnel), `src/workspace/operations.ts`
-  (keep `diffDocuments`), new tests.
-- **Approach (architecture/refactor template):** characterization tests for
-  the existing diff-adapter commit path first (M24 mitigation); introduce one
-  funnel through which all editor document mutations pass, emitting
-  `{ operation, undoInverse }`; a referee assertion — emitted operations,
-  applied via `applyOperations`, must equal the post-gesture document
-  (`diffDocuments` as the referee) — runs in tests and behind a dev flag; then
-  flip the workspace commit path to emitted operations, keeping
-  `diffDocuments` for the import/open path and as the referee.
-- **Risk:** high (touches the ~3,000-line untested editor core; silent
-  divergence would corrupt agent-visible history). **Validation:** the
-  referee assertion across a recorded gesture corpus; undo/redo equivalence
-  tests; full manual editor UAT. **Deployment impact:** routine (client-only).
-
-### Packet S3 — IndexedDB offline cache + crash recovery
-
-- **Outcome:** the browser caches the workspace snapshot and any
-  unacknowledged operation batch in IndexedDB; after a crash or offline
-  period, the editor reopens the last state and replays the pending batch
-  (idempotency ids make replay safe — the protocol already supports this).
-- **Files:** new `src/workspace/offline.ts`; `src/workspace/client.ts`
-  (queue-through-cache, replay on reconnect, stale-revision conflicts surfaced
-  via the existing rebase/conflict path); `src/ui/workspace-panel.ts`
-  (offline/pending indicator).
-- **Risk:** medium (client data integrity). **Validation:** unit tests with a
-  fake IndexedDB; simulated offline/replay/conflict tests; manual kill-tab
-  UAT. **Deployment impact:** routine.
-
-### Packet S4 — finer element-set leases _(demand-permitting; last in phase)_
-
-- **Outcome:** a lease can scope to an explicit element-id set, not only the
-  current page; the coordinator checks coverage via `operationTargets`.
-- **Files:** `worker/document.ts` (lease shape + enforcement),
-  `worker/workspace-api.ts`, `src/workspace/model.ts`,
-  `src/ui/workspace-panel.ts` (grant-from-selection), lease surfaces in
-  `worker/mcp.ts`.
-- **Approach:** additive lease scope union
-  `{ kind: 'page' } | { kind: 'elements'; ids: string[] }` with a bounded id
-  set; page leases unchanged; element leases must not block the human editor
-  (locked decision 6 — leases are authority, not mutexes).
-- **Risk:** medium. **Validation:** harness tests — coverage checks, expiry,
-  revocation, human-edit non-blocking. **Deployment impact:** routine.
-  _Slip criterion:_ if no concrete multi-agent contention appears by the time
-  S3 ships, park it in the deferred list.
-
-## 8. Phase 5 — legacy Topology Studio importer _(parallel from Phase 3)_
-
-### Packet I1 — pure conversion module
-
-- **Outcome:** `convertLegacyStudio(json)` → `{ document, warnings }`: a
-  best-effort mapping of legacy Topology Studio JSON to flipbook pages, with
-  every unmapped construct reported, never silently dropped.
-- **Files:** new `src/import/legacy.ts`; fixtures extracted from
-  `reference/legacy-studio.zip` into `fixtures/legacy/`; tests.
-- **Approach:** first sub-task is a written mapping table (legacy
-  scenes/acts/steps → pages; legacy node/link types → catalog types via
-  `api/builtins.ts`, unknown types → nearest builtin + warning; legacy
-  annotations → zones/flow paths/policy markers where expressible); the
-  converter is pure and DOM-free; output is always run through
-  `validateDocument` in tests — fixtures must validate clean or with expected,
-  asserted warnings; ids are regenerated for uniqueness; malformed input
-  returns typed errors, never raw throws (the M1/M13 lesson — do not extend
-  `parseDoc`'s blind-cast pattern).
-- **Risk:** low-medium (pure, but format archaeology). **Validation:** fixture
-  round-trips + `validateDocument`; baseline gates. **Deployment impact:**
-  none.
-
-### Packet I2 — GUI + MCP surfaces
-
-- **Outcome:** the GUI open flow detects and converts legacy files (with a
-  warnings summary before load); `import_topology` accepts the legacy format.
-- **Files:** `src/main.ts` (open flow: sniff legacy shape →
-  `convertLegacyStudio` → existing load path; `parseDoc` stays strict and
-  untouched); `src/mcp/tools.ts` + `src/mcp/register.ts` (`import_topology`
-  gains `format: 'auto' | 'topology-dojo' | 'legacy-studio'` and returns
-  warnings); `src/mcp/README.md` tool table.
-- **Risk:** low. **Validation:** MCP schema/runtime-validation tests; GUI open
-  UAT with fixture files. **Deployment impact:** routine.
-
-## 9. Phase 6 — proposal 0003: adaptive authoring profiles (phases A–C)
-
-Sequencing restated: P2 is **migration-bearing** (new DO class ⇒ migration
-`v4`) and must ride the proven Phase 1 pipeline; the learner's persistence
-guardrail consumes Phase 3 checkpoints; thresholds want real usage data.
-
-### Packet P1 (0003-A) — deterministic feature extraction
-
-- **Outcome:** pure `src/profile/features.ts`:
-  `(operations, documentContext) → SemanticFeatures` — archetype heuristics
-  (hub-and-spoke, leaf/spine, multi-region), tier/grouping/alignment
-  relations, agent-target vs user-correction overlap — geometry in, intent
-  out, no pixel coordinates retained.
-- **Files:** new `src/profile/features.ts` + tests; reuses
-  `src/api/geometry.ts`, `src/api/layout.ts`,
-  `src/workspace/operations.ts` (`operationTargets`).
-- **Risk:** low (pure). **Validation:** heavy unit tests including the
-  proposal's motivating example (radial → layered regional) as a named
-  fixture. **Deployment impact:** none.
-
-### Packet P2 (0003-A) — `AuthoringProfile` DO + observe-only learner
-
-- **Outcome:** a per-owner candidate store populated asynchronously from
-  attributed outcomes; zero change to agent output.
-- **Files:** new `worker/profile.ts` (DO class `AuthoringProfile`, keyed by
-  the stable numeric owner id — same identity scheme as
-  `worker/workspaces.ts`); `worker/env.ts` (`AUTHORING_PROFILE` binding);
-  `wrangler.jsonc` (binding in both top-level and `env.staging`, migration
-  `"v4": { "new_sqlite_classes": ["AuthoringProfile"] }` in both);
-  `worker/document.ts` (outcome-emission hook); shared `AuthoringPreference`
-  type per the proposal's record shape.
-- **Approach:**
-  - Storage decision — a new DO, not `TopologyRegistry`: the registry is the
-    legacy lazy-migration source scheduled to shrink, and profile
-    compaction/decay lifecycle is alien to it. The cost (migration `v4`) is
-    exactly what the Phase 1 pipeline exists to absorb. Gate behind a
-    `PROFILES_ENABLED` var using the same bootstrap-then-activate pattern as
-    `WORKSPACE_ENABLED`.
-  - Learner: on an accepted proposal or leased agent commit, the coordinator
-    records a bounded outcome window; when later owner revisions touch the
-    same targets _and survive the next checkpoint_ (persistence guardrail,
-    from R3), it emits one compact structured outcome — P1 features, never
-    raw documents or operations — to the owner's profile DO via
-    `ctx.waitUntil`, never blocking editing.
-  - Candidate dedupe by (semantic rule, scope); one editing burst = one
-    outcome; conservative thresholds per the proposal; bounded, compacted
-    evidence refs.
-- **Risk:** high (migration-bearing; a new async path in the coordinator).
-  **Validation:** harness DO tests (dedupe, burst coalescing, bound
-  enforcement, cross-owner isolation); full staging deploy +
-  forward-recovery check with `PROFILES_ENABLED=false` per the migration
-  template. **Deployment impact:** **migration-bearing** (`v4`; staging
-  first, production bootstrap flag-off, then activate).
-
-### Packet P3 (0003-A) — Authoring Preferences panel (observe-only)
-
-- **Outcome:** an owner-facing surface listing candidates, evidence
-  summaries, and observations, with pause/forget actions. No agent behavior
-  change yet.
-- **Files:** new `src/ui/profile-panel.ts`; `src/main.ts` (mount); a small
-  owner-authenticated read/manage route set (`worker/profile-api.ts` or an
-  extension of `worker/workspace-api.ts`).
-- **Risk:** low. **Validation:** UI tests over fixture profiles; manual UAT.
-  **Deployment impact:** routine.
-
-### Packet P4 (0003-B) — confirmation, scoping, `get_authoring_guidance`
-
-- **Outcome:** repeated candidates trigger the confirm-and-scope question in
-  the panel (browser-owner only — no MCP confirmation path exists, by
-  construction); confirmed rules are served to agents through
-  `get_authoring_guidance` under hard budgets; agents disclose applied rules
-  in proposal summaries.
-- **Files:** `worker/profile.ts` (confirmation, `profileRevision`,
-  compiled-guidance cache keyed
-  `(profileRevision, guidanceRevision, workspace, archetype)`);
-  `worker/mcp.ts` + `src/mcp/register.ts` (tools `get_authoring_guidance`,
-  `list_authoring_preferences`, `explain_authoring_preference`);
-  `src/mcp/README.md`; `src/ui/profile-panel.ts`; a static versioned
-  `src/profile/guidance-packs.ts` exposing `guidanceRevision`.
-- **Approach:** the budgets are tests, not aspirations — unit tests assert
-  ≤5 rules, ≤400-token default / 800 absolute, `notModified` on unchanged
-  revisions, and ids + omission count on overflow.
-- **Risk:** medium (authority boundary + token discipline). **Validation:**
-  budget tests; harness tests proving MCP cannot confirm/broaden/undelete a
-  preference (acceptance criterion 7); staging smoke.
-  **Deployment impact:** routine.
-
-### Packet P5 (0003-C) — outcome refinement
-
-- **Outcome:** overrides, contradictions, and "not for this diagram" feedback
-  narrow triggers, recalibrate confidence, and decay stale candidates toward
-  review.
-- **Files:** `worker/profile.ts`; `src/profile/features.ts`
-  (trigger-narrowing); `src/ui/profile-panel.ts`.
-- **Risk:** medium. **Validation:** deterministic decay/contradiction unit
-  tests; 0003 acceptance criteria 3–4 as named tests.
-  **Deployment impact:** routine.
-
-## 10. Explicitly deferred
-
-| Deferred item                                   | Rationale / revisit trigger                                                                                                                                                                                     |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CRDTs / offline multi-master                    | 0002 says add only on _measured_ need; S3's idempotent replay covers single-writer offline. Revisit on real multi-device concurrent editing demand.                                                             |
-| Collaborator/organization ACLs + org workspaces | The single-owner model has no second user yet; speculative auth surface is the riskiest kind. Revisit at the first concrete multi-user request; prerequisite for 0003-C workspace conventions beyond the owner. |
-| Comments, mentions, review threads              | Multi-user feature; deferred with ACLs.                                                                                                                                                                         |
-| Per-key MCP auth (mint/revoke/label)            | Remote MCP already runs OAuth 2.1 via GitHub; the roadmap item is self-described as conditional. Revisit if multiple independently revocable credentials are needed.                                            |
-| 0003 Phase D (governed product guidance)        | Requires aggregate signals that only exist after A–C run in production, plus a maintainer review pipeline. Nothing in A–C blocks on it.                                                                         |
-| Per-PR ephemeral Worker environments            | 0004 non-goal; revisit only if Cloudflare ships stateful preview isolation.                                                                                                                                     |
-| S4 finer leases (conditional)                   | Ships only if multi-agent lease contention is observed; see the slip criterion in §7.                                                                                                                           |
-| More node/link art, richer inspector controls   | Continuous demand-driven work, not plannable packets; pull individual items as standard-feature packets when a concrete need names them.                                                                        |
-
-## 11. Open decisions to confirm before execution
-
-1. `WORKSPACE_ENABLED` default semantics (unset ⇒ enabled; D2) — confirm or
-   flip to default-off.
-2. 0004's required decisions 2–5 (staging hostname, approvers, observation
-   window, manual-only staging dispatch) — operator checklist O7.
-3. Worker test location: extend the vitest `include` to worker test files vs
-   keeping them under `src/` (W1).
-4. Checkpoint cap value and the restore/fork authority carve-out (R3).
-5. `AuthoringProfile` as a new DO class (migration `v4`) vs piggybacking
-   `TopologyRegistry` (P2) — this plan recommends the new class.
+None of these require inventing new process — every one matches a pattern
+this repo has already executed successfully (staging-first activation,
+protected production approval, a documented drill before trusting a
+recovery procedure).

@@ -3,7 +3,253 @@
 Built methodically, one reviewable PR at a time, each reviewed against
 [`DESIGN.md`](DESIGN.md).
 
-## Shipped
+_Reset 2026-07-19 after a full-repository documentation audit (see
+[`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md) for the evidence and
+[`DISCREPANCY_REGISTER.md`](DISCREPANCY_REGISTER.md) for what this reset
+corrected). The active implementation plan is
+[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md); its predecessor is
+preserved at [`archive/IMPLEMENTATION_PLAN_2026-07-12.md`](archive/IMPLEMENTATION_PLAN_2026-07-12.md)._
+
+## Current production baseline
+
+Topology Dojo is a **production-hosted, collaborative, AI-agent-assisted
+network-topology authoring platform** — not merely a diagram editor. As of
+this reset, all three major feature flags are live in production
+(`WORKSPACE_ENABLED`, `PROFILES_ENABLED`, `ANALYTICS_ENABLED` are all
+`"true"` in the top-level `wrangler.jsonc`), and every Durable Object
+migration through `v5` is applied and active. Concretely, today a user can:
+
+- Sign in with GitHub and author multi-page flipbook topology diagrams by
+  hand, with full editing (selection, alignment guides, waypoint-edited
+  links, custom node types), validation (semantic + layout), and export (SVG,
+  self-playing HTML flipbook; PNG is browser-only).
+- Connect an AI agent (Claude or any MCP client) to the same account, either
+  locally over stdio or remotely at `/mcp` (OAuth 2.1, GitHub upstream,
+  Durable-Object-per-session isolation), and have it author through the same
+  53-tool-strong catalog-driven API the GUI uses underneath.
+- **Collaborate with that agent in a shared workspace**: the agent proposes
+  changes as one attributed revision (review/accept/reject, including a
+  selective/partial accept), or — with a browser-granted, revocable
+  page-scoped lease — commits directly. Named checkpoints, forward-only
+  restore, fork, a revision timeline, live WebSocket presence, an IndexedDB
+  offline cache with crash recovery, and gesture-native optimistic editing
+  with a correctness-preserving referee fallback are all live.
+- **Get the agent to author more like the user does over time**: an
+  observe-only learner extracts deterministic features from every
+  agent↔human correction, builds candidate authoring preferences, and — once
+  the human explicitly confirms and scopes one in the Authoring Preferences
+  panel — serves it back to the agent as bounded, token-budgeted guidance
+  (≤5 rules, ≤400/800 tokens). Contradictions recalibrate confidence and
+  flag rules for re-review; nothing is ever auto-promoted or agent-confirmed.
+- **Pull from a real SD-WAN fabric**: a vendor-neutral provider abstraction
+  and a flow compiler exist and are tested, with a real (if
+  integration-unverified) EdgeConnect Orchestrator HTTP client — but no
+  production or staging deployment currently has the `ORCH_BASE_URL`/
+  `ORCH_API_KEY` secrets configured, so the 7 live-fabric MCP tools do not
+  appear in any live deployment today. This is real, shipped code sitting
+  idle for lack of a connected fabric, not aspirational code.
+- **See who's using it**: the deployment owner has a private admin dashboard
+  (login roster, per-user workspace metadata — never diagram content) behind
+  their own GitHub identity, and a pre-login showcase filmstrip demonstrates
+  the tool's output to visitors before they sign in.
+
+Every production deploy goes through a CI-gated, protected-environment-approval
+GitHub Actions pipeline (`deploy-production.yml`); Durable Object migrations
+are append-only and ship inert-behind-a-flag before a separate activation
+deploy flips them on; recovery from any activation is forward-only (a new
+deploy with the flag removed, never a rollback across a migration boundary).
+The one significant operational gap: **Cloudflare error-rate alerting is not
+yet wired up**, so the current production activation runs without automated
+alerts by explicit, documented operator choice (nightly staging smoke and
+GitHub-native failure notifications are the only automated safety net today).
+
+51 findings remain in `docs/launch-readiness/FINDINGS_REGISTER.md` from the
+2026-07-04 adversarial review; 8 are now closed (see the discrepancy register
+for the closures this reset made), 43 remain open across High/Medium/Low —
+none Critical. Two specific still-open findings worth knowing about because
+they're small, well-scoped, and evidence shows they matter: **H1**
+(`layout_topology` doesn't carry anchors/waypoints through its own algorithmic
+node movement — `tidy_topology`/`balance_topology` are unaffected) and **M20**
+(published share links have no revoke/unpublish path — public, unauthenticated,
+30-day KV retention, 24h immutable cache).
+
+## Now
+
+The active initiatives, roughly in the order a blocking-prerequisite analysis
+suggests (see the dependency graph in `IMPLEMENTATION_PLAN.md` for the full
+packet-level ordering and what can run in parallel):
+
+1. **Documentation and roadmap reset** _(this work)_ — replace the stale
+   `IMPLEMENTATION_PLAN.md` (archived, see above), reconcile every planning
+   doc against verified code state, close/annotate the findings register
+   entries that were actually fixed but never marked closed. Packets: N1–N3.
+2. **Cloudflare alerting + production game day** — the one remaining
+   operational gap blocking a fully-monitored production posture. The
+   thresholds are already defined (`docs/DEPLOYMENT_RUNBOOK.md` §"Rate-based
+   stops"/"Hard stops") — what's missing is wiring Cloudflare's dashboard to
+   fire on them, plus a recorded staging forward-recovery game day exercising
+   `docs/ROLLBACK.md`'s procedure end-to-end. Packets: O1–O3. **Human-only**:
+   configuring Cloudflare notification policies is a dashboard action, not
+   code.
+3. **Agent activity + explainability** — today an agent's authoring session
+   leaves almost no visible trace beyond the revision history's actor/summary
+   fields; there's no way for the owner (or the agent itself) to see "what did
+   the agent do and why" in one place, and the admin dashboard's "agents /
+   MCP-session detail" was an explicit MVP deferral. Packets: A1–A6.
+4. **Guided topology briefs + semantic templates** — today an agent (or a
+   human) starts from either a blank page or one of six static starter
+   templates (`list_templates`/`create_from_template`); there's no structured
+   "describe the topology you want" contract that compiles into a scaffolded,
+   validated starting document. Packets: B1–B7.
+5. **EdgeConnect live-import hardening + UI** — the provider/compiler code is
+   shipped and tested against injectable mocks, but has never been run against
+   a real or recorded Orchestrator payload, and there's no GUI surface for a
+   human to trigger/review a live import (today it's MCP-tool-only). Packets:
+   E1–E7.
+6. **Time-aware flow and failure storytelling** — the flow compiler already
+   produces animated, per-hop flow paths for a point-in-time fabric snapshot;
+   there's no scenario model for "walk through this fabric before, during,
+   and after a failure" the way the flipbook already does for static topology
+   states. Packets: T1–T7.
+
+Items 3–6 can be scoped and start in parallel once items 1–2 land (see the
+dependency graph); none of them share a Durable Object or migration, so they
+don't block each other structurally. See `IMPLEMENTATION_PLAN.md` for full
+packet specs, risk, and acceptance criteria for all six initiatives.
+
+## Next
+
+Capabilities that logically follow the active program, not yet scoped into
+packets:
+
+- **Additional network providers** — the `TopologyProvider` abstraction is
+  vendor-neutral by design (`src/connect/types.ts`); a second real
+  implementation (any SD-WAN/SDN controller with a fabric-state API) would
+  prove the abstraction rather than just assert it.
+- **Organization-level collaboration** — explicit collaborator/organization
+  ACLs beyond the current single-owner-per-workspace model (proposal 0002's
+  "Follow-on work" item 6, still deferred).
+- **Reusable topology components / shared template libraries** — beyond the
+  current 6 static starter templates: user-authored, shareable component
+  groups (a "sub-topology" a person or agent can drop in and parameterize).
+  Builds naturally on the guided-briefs work above once that contract exists.
+- **Source-drift reconciliation** — `upsert_by_source` already converges a
+  re-import instead of duplicating; there's no surface yet for "this element's
+  source data changed since last import, review the diff" the way workspace
+  proposals do for human/agent edits.
+- **Richer explainability analytics** — once agent-activity foundation (Now
+  item 3) ships, aggregate views (which guidance rules actually change agent
+  behavior, correction-rate trends) become possible.
+- **`layout_topology` attachment-carrying fix (finding H1)** — small,
+  well-scoped: capture `orig` positions in `layoutPage` and call
+  `carryAttachments(page, orig)` after the algorithm runs, mirroring what
+  `tidyPage`/`balancePage` already do (`src/api/autolayout.ts:344-362`).
+- **Share-link revocation (finding M20)** — an authenticated unpublish
+  endpoint for `doc:<id>` KV entries, plus dropping the `immutable` cache
+  directive so revocation can actually take effect.
+- **More node/link art** — port additional renderers from the legacy
+  monolith as needed; richer per-type inspector controls (ports, D2 waypoint
+  UI).
+- **In-canvas `labelScale` drag handle** — the numeric inspector control
+  ships today (validated `[0.25, 4]`); a drag gesture beside the existing
+  `labelOffset` label-drag is the next increment.
+- **Adjustable viewer styling** — expose the render aesthetic as
+  user-adjustable UI settings (flat vs. glow, emphasis-glow intensity, canvas
+  background). Builds on the flat-viewer seam (`flattenViewer` in
+  `src/vendor/topology-ds.ts`); per `DESIGN.md` #2 this stays a presentation
+  preference (no document-schema/agent surface), living with pan/zoom as a
+  human-only view control.
+- **Server-side / MCP PNG export** — PNG export is currently browser-only
+  (canvas rasterization, `src/editor/export.ts`); an MCP-callable equivalent
+  would need a server-side rasterizer.
+- **`docs/ROLLBACK.md` generalization** — the rollback procedure and staging
+  game-day checklist are written narrowly around `v3`; generalize to a
+  template covering any migration, referencing `DEPLOYMENT_RUNBOOK.md`'s
+  per-migration gate sections (currently `v3`–`v5`).
+
+## Later
+
+Valuable but non-blocking; no current evidence anything is waiting on these:
+
+- **Finer element-set leases** — today leases are page-scoped only (proposal
+  0002's "S4," explicitly skipped: "per-page leases are fine; revisit only on
+  measured contention," `docs/HANDOFF.md`).
+- **Comments, mentions, and review threads** on workspace proposals/revisions
+  (proposal 0002's "Follow-on work" item 8, still deferred).
+- **Per-key MCP auth** (mint/revoke/label individual credentials) — current
+  auth is already full OAuth 2.1 per-user; this would only matter for a
+  multi-service-account or machine-credential use case that doesn't exist yet.
+- **Standalone HTML/PNG export polish** — flipbook HTML export exists;
+  further export format work (beyond the MCP-PNG gap already in "Next") is
+  low-urgency.
+
+## Evidence-triggered
+
+Do not start until the repository shows the specific evidence listed:
+
+- **CRDT-based multi-writer merge** — start only if the current
+  field-granular optimistic-rebase-with-explicit-reject model
+  (`src/workspace/operations.ts`) produces a measured pattern of rejected
+  concurrent edits from genuinely simultaneous human+agent writers (not just
+  theoretical possibility). No such measurement exists today; the current
+  model has never been the source of a filed finding or incident.
+- **Broad enterprise ACL system** (roles, groups, org-wide policies) — start
+  only once "Organization-level collaboration" (Next) ships and a second
+  real organization is using it with a concrete permission gap the simple
+  owner+collaborator model can't express.
+- **High-volume, long-term agent-trace retention** — start only if
+  "Agent activity + explainability" (Now item 3) ships and actual usage
+  shows the bounded/ephemeral trace model it establishes is insufficient
+  (e.g., an owner needs to audit agent behavior from more than N days ago).
+  Building unbounded retention up front risks exactly the kind of storage/PII
+  surface the admin dashboard's MVP deliberately avoided.
+- **Finer-grained (element-set) leases** — see "Later"; the trigger is
+  measured lease contention (an agent's write blocked by another actor's
+  lease on the same page often enough to matter), not a schedule.
+
+## Deliberately excluded
+
+Architectural or product directions this project is intentionally not taking,
+so a future contributor doesn't have to re-litigate them:
+
+- **A second document-mutation path.** Every write — human GUI, agent
+  proposal, agent leased-commit, restore, fork — goes through the same
+  `TopologyDocument` commit pipeline (`worker/document.ts`). No shortcut
+  write path is introduced for performance or convenience.
+- **Hidden cross-page inheritance.** Pages are independent, full-frame
+  documents by design (`docs/decisions/0001-flipbook-vs-beats.md`); no
+  delta/override machinery between pages, ever — see `DESIGN.md` #1.
+- **Laptop-driven production deployment.** `npm run deploy` was deleted
+  (finding L1, closed); the only production deploy path is the gated GitHub
+  Actions pipeline with protected-environment approval.
+- **Raw prompt/conversation logging.** The authoring-profile learner and the
+  agent-explainability initiative (Now item 3) both operate on structured,
+  deterministic _feature_ extraction from document operations — never on raw
+  LLM prompts, completions, or conversation transcripts.
+- **Silent agent writes without a proposal or a lease.** Every agent
+  mutation to a shared workspace is either a reviewable proposal or a
+  time-bounded, browser-granted, page-scoped lease commit. There is no
+  "just write it" path for an agent, by construction (`worker/document.ts`
+  `commit()` requires either `source: 'proposal'` acceptance or an active
+  lease for `source: 'agent-lease'`).
+- **Automatic deletion of provider-sourced objects on a single missing API
+  response.** The flow compiler's `upsert_by_source` convergence model
+  updates/creates from what a provider _does_ return; a transient empty or
+  failed fetch must never be interpreted as "this appliance/tunnel/flow no
+  longer exists" and cascade-delete it. Any future live-import hardening work
+  (initiative 5, EdgeConnect) must preserve this — a real vendor API's
+  transient failure is not evidence of a topology change.
+- **A separate viewer/presenter codebase.** The editor and any renderer share
+  one render path (`flattenViewer`); no second, divergent presentation
+  engine.
+- **UI-only capabilities that don't exist on the document.** See `DESIGN.md`
+  #2 — anything a human can set, an agent can set identically through the
+  same catalog-driven contract.
+
+## Completed historical milestones
+
+_Preserved from the original roadmap; corrected only where the discrepancy
+register found something no longer true (see `DISCREPANCY_REGISTER.md`)._
 
 ### Foundation — flipbook + vendored renderer
 
@@ -58,10 +304,10 @@ Built methodically, one reviewable PR at a time, each reviewed against
 - **Connector layer** (`src/connect/`): vendor-neutral `TopologyProvider`
   (appliances / underlay+overlay tunnels / overlay policies / fabric-wide flow
   tables incl. ended flows), EdgeConnect Orchestrator client (appliance-API
-  proxy, injectable fetch), fixture `MockProvider`, env/secret credential
-  wiring (stdio + Worker), read-only MCP tools, and runtime Zod validation of
-  all tool arguments ([proposal](proposals/0001-live-flow-visualization.md),
-  E3).
+  proxy, injectable fetch — real HTTP client, integration-unverified against a
+  live Orchestrator), fixture `MockProvider` (stdio-only), env/secret
+  credential wiring, read-only MCP tools, and runtime Zod validation of all
+  tool arguments ([proposal](proposals/0001-live-flow-visualization.md), E3).
 - **Flow-to-topology compiler** (`src/connect/compile.ts`): provider records →
   layered, sourced, laid-out document — appliances as nodes, sites as zones,
   underlay/overlay tunnels as links on their layers, flows as animated flow
@@ -74,12 +320,15 @@ Built methodically, one reviewable PR at a time, each reviewed against
   pure timing model (`pages/playback.ts`), the filmstrip **play** control +
   inspector playback fields, and `export_flipbook` — a standalone,
   self-playing HTML artifact of every page on its duration
-  ([proposal](proposals/0001-live-flow-visualization.md), E5; also delivers
-  the "standalone HTML export" roadmap candidate).
+  ([proposal](proposals/0001-live-flow-visualization.md), E5).
 - **Legacy importer** (`src/import/legacy.ts`): best-effort converter from
   legacy Topology Studio JSON → pages, validated against real fixtures, wired
   into the GUI open flow and exposed through a `format` parameter on the
   `import_topology` MCP tool.
+- **Per-link `labelScale`**: a catalog field (`Label size`, `LINK_COMMON`)
+  that scales all of a link's labels (centre + endpoints, every link type)
+  about their anchor in the renderer, settable via the inspector Label group,
+  MCP `add_link` / `update_element`, validated to `[0.25, 4]`.
 
 ### Layout for AI
 
@@ -93,15 +342,17 @@ Built methodically, one reviewable PR at a time, each reviewed against
 - **stdio** server (`src/mcp`) exposing the whole API as MCP tools
   (`describe_capabilities`, create/get/list/import/delete, templates,
   add_page/node/link/anchor, add_zone/flow_path/policy_marker, set_node_metadata,
-  define_node_type, validate, tidy, layout_guidelines, render_svg,
-  share_topology). See [`src/mcp/README.md`](../src/mcp/README.md) for the full
-  table — a unit test keeps it in sync with the server.
-- **Remote on Cloudflare** (`worker/`): the same tools over Streamable HTTP at
-  `/mcp`, a transport/private-draft Durable Object plus durable per-owner draft
-  registry, OAuth 2.1 (GitHub) auth; the Worker also serves the app. Verified
-  live end-to-end (auth → build → validate → tidy → render).
+  define_node_type, validate, tidy, layout, balance, layout_guidelines,
+  render_svg, export_flipbook). See [`src/mcp/README.md`](../src/mcp/README.md)
+  for the full table — a unit test keeps it in sync with the server.
+- **Remote on Cloudflare** (`worker/`): the same base tools over Streamable
+  HTTP at `/mcp`, plus workspace/proposal/lease/checkpoint tools, read-only
+  authoring-guidance tools, live-fabric tools (when a provider is
+  configured), and `share_topology` — OAuth 2.1 (GitHub) auth, one Durable
+  Object per MCP session. Verified live end-to-end (auth → build → validate →
+  tidy → render).
 
-### Phase 0 — shared human-agent workspace (vertical slice)
+### Phase 0 — shared human-agent workspace (vertical slice + follow-ons)
 
 - One canonical `TopologyDocument` coordinator per owner/document with atomic
   revisions, idempotent semantic operation batches, field-level optimistic
@@ -123,8 +374,7 @@ Built methodically, one reviewable PR at a time, each reviewed against
   and leased operations. See
   [`proposals/0002-shared-human-agent-workspace.md`](proposals/0002-shared-human-agent-workspace.md).
 - **Rendered proposal preview**: a before/after render of a pending agent
-  proposal with changed elements highlighted, shown in the review flow (first
-  of the workspace review-polish follow-ons).
+  proposal with changed elements highlighted, shown in the review flow.
 - **Selective proposal acceptance**: the owner accepts a coherent subset of a
   proposal's operations as one attributed revision; the coordinator rejects a
   subset that references an element only an unselected op would create; the
@@ -133,115 +383,84 @@ Built methodically, one reviewable PR at a time, each reviewed against
 - **Named checkpoints, restore & fork**: snapshot the document as a named
   checkpoint (agents may create/list; restore & fork are browser-owner actions),
   restore one forward-only as a new revision, or fork one into a fresh
-  workspace. `create_checkpoint` / `list_checkpoints` MCP tools (a temporary
-  DESIGN #2 authority carve-out).
+  workspace.
 - **Revision timeline**: the Agent Workspace panel shows recent revisions with
   actor, summary, a source badge (edit / agent / proposal / restore), and
   proposal-acceptance + checkpoint markers, from the stored change log.
+- **WebSocket push + presence**: hibernation-friendly live presence and
+  change notification, degrading cleanly to polling on any connection failure.
+- **Gesture-native operations + referee fallback**: the editor emits
+  field-granular operations at the gesture site; a referee always computes the
+  reference diff and falls back to it whenever the emitted ops don't reproduce
+  it byte-for-byte, so correctness can never regress from partial gesture
+  coverage.
+- **IndexedDB offline cache + crash recovery**: a feature-detected,
+  fail-safe-to-no-op local cache of the confirmed snapshot plus any
+  unacknowledged pending batch, replayed idempotently on reconnect.
+
+**S4 (finer element-set leases) deliberately skipped** — per-page leases are
+fine; revisit only on measured contention (see "Evidence-triggered" above).
 
 ### Deployment & release safety (proposal 0004)
 
-Infrastructure delivered and proven on staging; production activation of the
-shared workspace remains a protected operator step (see the residual item under
-Next / candidate).
+Infrastructure delivered, proven on staging, **and now fully activated in
+production** (workspace, profiles, and analytics flags are all `"true"` at
+the top level as of this reset — see "Current production baseline" above).
 
 - **Isolated staging environment**: a stable `topology-dojo-staging` Worker
   with its own KV namespaces, Durable Object namespaces, GitHub OAuth
   App/secret, and origin; a `check-wrangler-env.mjs` CI guard enforces that
-  staging and production share no resource ids. Closes finding M14.
+  staging and production share no resource ids. Closed finding M14.
 - **CI-gated deployment pipeline**: `deploy-staging.yml` and
   `deploy-production.yml` re-run the CI `check` before deploying (`ci.yml` is
   reusable via `workflow_call`); production is restricted to `main`, requires a
   protected environment approval, and the CI `check` is a required status. The
-  ungoverned `npm run deploy` laptop path was removed. Closes finding L1;
-  closes H7 once Workers Builds is disconnected from production (operator O9/O10).
-- **Feature flag + migration bootstrap**: a `WORKSPACE_ENABLED` flag 503-gates
-  the workspace API, hides the workspace MCP tools, and disables the panel, so
-  migration `v3` can bootstrap the `TopologyDocument` namespace in production
-  with workspace entry points disabled.
+  ungoverned `npm run deploy` laptop path was removed. Closed finding L1;
+  closed finding H7 once Workers Builds was disconnected from production
+  (operator O9, 2026-07-17) and the first gated production deploy ran
+  (operator O10, 2026-07-17).
+- **Feature flag + migration bootstrap, executed through `v5`**: `v1`–`v5`
+  are all applied in production. Each new Durable Object class ships inert
+  behind an opt-in/opt-out flag in its bootstrap deploy, then a separate
+  activation deploy flips the flag — exercised for `WORKSPACE_ENABLED` (O11,
+  2026-07-17), `PROFILES_ENABLED` (2026-07-17), and `ANALYTICS_ENABLED`
+  (Gate C, 2026-07-18).
 - **Smoke + health + recovery docs**: `scripts/smoke.mjs` external smoke suite
   (deployed-sha assertion, live-propagation wait), `GET /healthz` and
   `GET /readyz` endpoints, and written rollback / forward-recovery runbooks.
-  First fully-green gated staging deploy: run #4. Substantially closes M15
-  (alerting + staging game day remain — operator O12 and the ROLLBACK.md game
-  day).
+  Multiple fully-green gated production deploys since (O10 through the
+  admin-dashboard Gate B/C, plus the M18/M19 security-fix deploy).
+- **Nightly staging smoke** (`nightly-staging-smoke.yml`): unauthenticated
+  daily liveness check, files/closes a GitHub issue on failure/recovery — no
+  secrets required. Substantially closed finding M15; **Cloudflare
+  error-rate alerting and a recorded staging game day remain open** (see "Now"
+  item 2).
 
-## Next / candidate
+### Owner analytics / admin dashboard
 
-The items below are sequenced into dependency-ordered implementation packets
-in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+Shipped (MVP) and live in production: a new `AnalyticsLog` SQLite Durable
+Object (migration `v5`, single global instance) records a login roster and a
+bounded recent-login log, best-effort, off the browser-login success path
+(never blocking a login). The owner-gated `/api/admin/*` routes serve the
+roster/totals and, per user, their workspace names/counts read live from the
+existing registries — metadata only, never diagram contents — fail-closed if
+`ADMIN_GITHUB_ID` is unset. Captures data going forward only (no historical
+backfill). **Deferred from the MVP:** session duration / "last active"
+(needs activity heartbeats), and agents / MCP-session detail — the latter is
+now folded into "Now" item 3 (agent activity + explainability).
 
-- **Production workspace activation** — the residual operator steps after the
-  staging pipeline (now shipped, above): run the staging forward-recovery game
-  day; bootstrap migration `v3` in production with `WORKSPACE_ENABLED=false`;
-  disconnect Workers Builds and make GitHub Actions the sole production deploy
-  authority; configure Cloudflare error-rate alerting + nightly staging smoke;
-  then flip the workspace flag under the agreed observation window. See
-  [`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md)
-  and the operator checklist in
-  [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) §4.7.
-- **Agentic implementation workflows** — build roadmap features from bounded
-  implementation packets with explicit ownership, risk-based validation,
-  adversarial architecture/UX review, durable Git handoff, and protected human
-  merge/deployment gates. Pilot on deployment safety and one editor
-  quality-of-life feature. See
-  [`AGENTIC_IMPLEMENTATION_WORKFLOW.md`](AGENTIC_IMPLEMENTATION_WORKFLOW.md).
-- **MCP auth hardening** — graduate the single shared secret to per-key KV
-  (mint / revoke / label) or full OAuth, if multiple revocable credentials are
-  needed.
-- **Workspace resilience/collaboration** — IndexedDB offline cache, WebSocket
-  push/presence, explicit collaborator/organization ACLs, and finer element-set
-  leases. Add CRDTs only if offline multi-master editing becomes a measured need.
-- ~~**Adaptive authoring profiles**~~ — **shipped** (proposal 0003, packets
-  P1–P5): deterministic feature extraction, observe-only learner
-  (`AuthoringProfile` DO, migration `v4`), the Authoring Preferences panel,
-  browser-owner confirmation & scoping, bounded read-only guidance MCP tools
-  under hard token budgets, and outcome refinement (contradictions →
-  workspace-scoped exceptions + decay toward review). Live in production.
-  0003-D (governed product guidance) remains deliberately out of scope. See
-  [`proposals/0003-adaptive-agent-authoring-profiles.md`](proposals/0003-adaptive-agent-authoring-profiles.md).
-- ~~**Owner analytics / admin dashboard**~~ — **shipped (MVP), live in
-  production**. An owner-only dashboard (reachable only by the deployment
-  owner's GitHub login) over a new `AnalyticsLog` SQLite Durable Object
-  (migration `v5`, single global instance): a login roster
-  (`{ uid, login, name?, firstSeenAt, lastLoginAt, loginCount }`) + a bounded
-  recent-login log, recorded best-effort off the browser-login success path
-  (`ctx.waitUntil`, never blocking a login). The owner-gated `/api/admin/*`
-  routes serve the roster/totals and, per user, their workspace names/counts
-  read **live** from the existing registries — **metadata only, never diagram
-  contents**. Gated server-side and fail-closed (no `ADMIN_GITHUB_ID` match ⇒
-  403). Shipped inert behind `ANALYTICS_ENABLED` (opt-in, like profiles): `v5`
-  bootstrapped off in production (Gate B) then activated by a flag-flip deploy
-  (Gate C). Captures data going forward only (no historical backfill).
-  **Follow-ups (deferred from the MVP):** session duration / "last active"
-  (needs activity heartbeats), and agents / MCP-session detail (instrument the
-  `TopologyMcp` DO `init()`).
-- **More node/link art** — port additional renderers from the legacy monolith as
-  needed; richer per-type inspector controls (ports, D2 waypoint UI).
-- **Resize link labels** — per-link `labelScale` on the document contract:
-  **shipped** as a catalog field (`Label size`, `LINK_COMMON`) that scales all
-  of a link's labels (centre + endpoints, every link type) about their anchor
-  in the renderer, settable via the inspector Label group, MCP `add_link` /
-  `update_element`, validated to [0.25, 4]. **Follow-up:** an in-canvas drag
-  handle beside the existing `labelOffset` label-drag (the numeric inspector
-  control ships now; the drag gesture is the next increment).
-- **Adjustable viewer styling** — expose the render aesthetic as user-adjustable
-  UI settings: flat vs. glow, emphasis-glow intensity, and canvas background.
-  Builds on the flat-viewer seam (`flattenViewer` in `src/vendor/topology-ds.ts`)
-  and the `--canvas-bg` / `--glow-none` / `--glow-emphasis` tokens; per DESIGN #2
-  it stays a presentation preference (no document-schema/agent surface), so it
-  lives with pan/zoom as a human-only view control.
-- **Export / share** — standalone HTML or PNG/SVG export of a page or flipbook.
+### Public showcase
+
+A pre-login film-strip on the sign-in page shows four topologies authored
+through the MCP server (a hub-and-spoke WAN, a data-center spine-leaf fabric,
+an SD-WAN/SASE path, a three-tier app with a DMZ) as looping animated WebP
+stills, served ungated (image sub-resources aren't document navigations, so
+they're never behind the sign-in gate) and self-contained (no dependency on
+any ephemeral `/v/:id` share snapshot, so the landing page never rots).
 
 ## Retired (kept dormant)
 
 - The **beat / Act-Step-Phase choreography model**: `src/core` (`model` /
   `resolve` / `tween`), `src/render-svg`, `src/sample-scene.ts`. Preserved for
-  reference per the "keep it alongside" decision; not wired into the app.
-
-## Out of scope (deliberately)
-
-- A separate viewer/presenter codebase — the editor and any renderer share one
-  render path.
-- Cross-page inheritance / deltas — pages are independent by design.
-- UI-only capabilities — see [`DESIGN.md`](DESIGN.md) #2.
+  reference per the "keep it alongside" decision
+  (`docs/decisions/0001-flipbook-vs-beats.md`); not wired into the app.
