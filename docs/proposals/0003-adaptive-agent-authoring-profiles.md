@@ -1,6 +1,9 @@
 # Proposal 0003: Adaptive agent authoring profiles
 
-**Status:** Candidate for a future phase
+**Status:** Implemented (Phases A–C, packets P1–P5). Live in production
+(migration `v4`, `PROFILES_ENABLED:"true"`). Phase D (governed product
+guidance) remains deliberately out of scope — see `../ROADMAP.md`. Status
+corrected 2026-07-19; see `../DISCREPANCY_REGISTER.md` row 5.
 
 **Captured:** 2026-07-12
 **Depends on:** Proposal 0002 revisions, semantic operations, proposals, and actor attribution

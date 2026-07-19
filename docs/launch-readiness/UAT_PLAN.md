@@ -1,5 +1,12 @@
 # Topology Dojo — Production Launch UAT Plan
 
+> **Historical pre-launch snapshot (2026-07-04), superseded by the live
+> production system.** The launch window this plan describes has passed;
+> production has been live and iterating for weeks. For current status, see
+> [`../ROADMAP.md`](../ROADMAP.md) and
+> [`../CAPABILITY_MATRIX.md`](../CAPABILITY_MATRIX.md). Preserved as a record
+> of the original UAT script, not as current guidance.
+
 **Version:** 1.0 · **Date:** 2026-07-04 · **UAT window:** 30 days (Day 0 = kickoff, Day 30 = go/no-go)
 **Product under test:** Topology Dojo — the canvas editor, the headless authoring API as exposed over MCP (stdio + remote Cloudflare `/mcp`), and shared services (validation, tidy/layout, render, share links, flipbook export).
 **Environments:** Stable isolated staging Worker (app + `/mcp`, staging OAuth App, KV, and Durable Object namespaces) as the production candidate; production only for final smoke; local stdio MCP server for the agent-operator track; `TOPOLOGY_PROVIDER=mock` fixture fabric for live-data scenarios (plus one real EdgeConnect Orchestrator if available). Every UAT result records the active staging SHA; see [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md).
