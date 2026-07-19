@@ -14,6 +14,31 @@ on:
         required: false
         type: string
         default: ''
+      # Game-day drill controls (docs/GAME_DAY.md): per-deploy feature-flag
+      # overrides, STAGING ONLY. "config" (the default) deploys exactly what
+      # wrangler.jsonc says; "true"/"false" pass `--var` overrides so a
+      # forward-disable/forward-enable drill needs no commit. The smoke step
+      # below automatically asserts the matching disabled contract. The
+      # production workflow deliberately has no such inputs — production flag
+      # changes are always a reviewed wrangler.jsonc commit.
+      workspace_enabled:
+        description: 'WORKSPACE_ENABLED override (game-day drills)'
+        required: false
+        type: choice
+        options: [config, 'true', 'false']
+        default: config
+      profiles_enabled:
+        description: 'PROFILES_ENABLED override (game-day drills)'
+        required: false
+        type: choice
+        options: [config, 'true', 'false']
+        default: config
+      analytics_enabled:
+        description: 'ANALYTICS_ENABLED override (game-day drills)'
+        required: false
+        type: choice
+        options: [config, 'true', 'false']
+        default: config
 
 permissions:
   contents: read
@@ -75,20 +100,54 @@ jobs:
             console.log((cfg.env?.staging?.migrations ?? []).map((m) => m.tag).join(", "));
           ')
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+      # Flag overrides come from workflow_dispatch choice inputs (a closed
+      # value set), passed through `env:` and appended as discrete `--var`
+      # arguments only when explicitly "true"/"false" — "config" (or an empty
+      # value) deploys wrangler.jsonc verbatim.
       - name: Deploy to staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SHA: ${{ needs.resolve-ref.outputs.sha }}
-        run: npx wrangler deploy --env staging --var "GIT_SHA:$SHA"
+          WORKSPACE_OVERRIDE: ${{ inputs.workspace_enabled }}
+          PROFILES_OVERRIDE: ${{ inputs.profiles_enabled }}
+          ANALYTICS_OVERRIDE: ${{ inputs.analytics_enabled }}
+        run: |
+          ARGS=(--env staging --var "GIT_SHA:$SHA")
+          if [ "$WORKSPACE_OVERRIDE" = "true" ] || [ "$WORKSPACE_OVERRIDE" = "false" ]; then
+            ARGS+=(--var "WORKSPACE_ENABLED:$WORKSPACE_OVERRIDE")
+          fi
+          if [ "$PROFILES_OVERRIDE" = "true" ] || [ "$PROFILES_OVERRIDE" = "false" ]; then
+            ARGS+=(--var "PROFILES_ENABLED:$PROFILES_OVERRIDE")
+          fi
+          if [ "$ANALYTICS_OVERRIDE" = "true" ] || [ "$ANALYTICS_OVERRIDE" = "false" ]; then
+            ARGS+=(--var "ANALYTICS_ENABLED:$ANALYTICS_OVERRIDE")
+          fi
+          npx wrangler deploy "${ARGS[@]}"
+      # When a drill disabled a feature above, smoke must assert the disabled
+      # contract (503) instead of the enabled one (401) — mirrors the
+      # production workflow's expect_workspace_disabled handling.
       - name: Smoke test staging
         id: smoke
         env:
           SHA: ${{ needs.resolve-ref.outputs.sha }}
+          WORKSPACE_OVERRIDE: ${{ inputs.workspace_enabled }}
+          PROFILES_OVERRIDE: ${{ inputs.profiles_enabled }}
+          ANALYTICS_OVERRIDE: ${{ inputs.analytics_enabled }}
         run: |
           set -o pipefail
+          ARGS=(--sha "$SHA" --wait-live 180 --json)
+          if [ "$WORKSPACE_OVERRIDE" = "false" ]; then
+            ARGS+=(--expect-workspace-disabled)
+          fi
+          if [ "$PROFILES_OVERRIDE" = "false" ]; then
+            ARGS+=(--expect-profiles-disabled)
+          fi
+          if [ "$ANALYTICS_OVERRIDE" = "false" ]; then
+            ARGS+=(--expect-analytics-disabled)
+          fi
           node scripts/smoke.mjs https://topology-dojo-staging.robertson-corey.workers.dev \
-            --sha "$SHA" --wait-live 180 --json | tee smoke-output.txt
+            "${ARGS[@]}" | tee smoke-output.txt
       # Dynamic values are passed through `env:` (never interpolated
       # directly into the script) since `ref` is free-text
       # `workflow_dispatch` input and must not be treated as shell code.
@@ -99,6 +158,9 @@ jobs:
           ACTOR: ${{ github.actor }}
           DISPATCHED_REF: ${{ inputs.ref || github.ref }}
           MIGRATION_TAGS: ${{ steps.migrations.outputs.tags }}
+          WORKSPACE_OVERRIDE: ${{ inputs.workspace_enabled }}
+          PROFILES_OVERRIDE: ${{ inputs.profiles_enabled }}
+          ANALYTICS_OVERRIDE: ${{ inputs.analytics_enabled }}
         run: |
           {
             echo "### Topology Dojo staging deployment"
@@ -109,6 +171,7 @@ jobs:
             echo "| Actor | \`$ACTOR\` |"
             echo "| Dispatched ref | \`$DISPATCHED_REF\` |"
             echo "| Migration tags | \`$MIGRATION_TAGS\` |"
+            echo "| Flag overrides | \`workspace=${WORKSPACE_OVERRIDE:-config} profiles=${PROFILES_OVERRIDE:-config} analytics=${ANALYTICS_OVERRIDE:-config}\` |"
             echo ""
             echo "#### Smoke result"
             echo ""

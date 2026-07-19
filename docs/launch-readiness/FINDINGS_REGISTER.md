@@ -230,19 +230,29 @@ check`), requires the `production` GitHub environment approval, and is
 
 ### M15. No post-deploy smoke test, no alerting, and no rollback procedure — observability:true is the entire ops story
 
-- **Status (2026-07-13): Substantially addressed; open pending alerting +
-  game-day.** Post-deploy smoke shipped as `scripts/smoke.mjs` (Packet D4,
-  PR #146) and runs on every gated deploy, with `--sha` deployed-commit
-  assertion and a `--wait-live` propagation window; `GET /healthz`
-  (unauthenticated liveness + sha) and `GET /readyz` (owner-authenticated
-  per-binding readiness) were added in Packet D3 (PR #148); a written rollback
-  and migration-boundary forward-recovery procedure exists in
-  [`../ROLLBACK.md`](../ROLLBACK.md). Still **open**: Cloudflare error-rate
-  alerting, failed-workflow notifications, and a nightly staging smoke
-  (operator O12 — the trip thresholds are set in
-  [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md) §"Activation observation
-  window and thresholds"), plus the one-time staging forward-recovery game day
-  ([`../ROLLBACK.md`](../ROLLBACK.md) §"Staging game day").
+- **Status (2026-07-19): Substantially addressed; open pending two
+  human-only actions.** Repo-side coverage is now complete: post-deploy
+  smoke (`scripts/smoke.mjs`, every gated deploy, `--sha` assertion) has
+  grown to 14 checks including per-flag disabled-contract assertions;
+  `GET /healthz` + `GET /readyz` shipped in Packet D3 (PR #148); the nightly
+  staging smoke ships with GitHub-issue dedup + recovery closure
+  (`nightly-staging-smoke.yml`, PR #189); production is now verified daily
+  and on demand with the same issue pattern and deployed-SHA-mismatch
+  detection (`production-verify.yml`, initiative O); a full production alert
+  matrix + severity model exists ([`../ALERTS.md`](../ALERTS.md)) with
+  thresholds labeled approved vs provisional; rollback/forward-recovery
+  procedures are migration-agnostic ([`../ROLLBACK.md`](../ROLLBACK.md))
+  with per-flag disable/enable tables ([`../GAME_DAY.md`](../GAME_DAY.md));
+  and a staging-only, triple-gated synthetic-fault mechanism exists for
+  drills (`worker/staging-fault.ts` — CI-excluded from production config,
+  production rejection proven by tests). Still **open**, both human-only:
+  (1) Cloudflare-side notification policies
+  ([`../CLOUDFLARE_OPERATOR_RUNBOOK.md`](../CLOUDFLARE_OPERATOR_RUNBOOK.md),
+  packet O1 — note the notification catalog's Workers alert types could not
+  be verified from documentation and must be surveyed in the dashboard);
+  (2) executing and recording the game day
+  ([`../GAME_DAY.md`](../GAME_DAY.md), packet O2). Close this finding only
+  when both have dated evidence.
 
 - **Area:** CI/CD & Release | **Location:** `wrangler.jsonc:47` | **Type:** release-verification
 - **Problem:** Nothing verifies a deploy after it lands. The whole site — SPA, login gate, share API, and MCP — sits behind one OAuthProvider wrapper in worker/index.ts, so a single bad change (rotated GITHUB_CLIENT_SECRET not updated, KV binding renamed, broken migration) takes down everything at once, and the first signal would be a user report. There is no health endpoint, no post-deploy curl check, no alerting configured (observability only enables logs), and no docs mention rollback anywhere in README/docs/. Rollback is also nontrivial here: `wrangler rollback` cannot cross the Durable Object SQLite migration boundary declared in migrations, so the team needs a written procedure before launch, not during an incident.

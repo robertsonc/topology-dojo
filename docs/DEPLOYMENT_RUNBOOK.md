@@ -277,22 +277,42 @@ gate fails **closed** if it is ever unset.
 
 ### Automated HTTP smoke
 
-| Request                                       | Expected                                                  |
-| --------------------------------------------- | --------------------------------------------------------- |
-| `GET /healthz`                                | `200 { ok: true, sha, workspaceEnabled }`, no secret data |
-| `GET /login`                                  | `200`, login page                                         |
-| `GET /` without session                       | Redirect to `/login`                                      |
-| `GET /.well-known/oauth-authorization-server` | `200`, valid metadata                                     |
-| `GET /api/topology/nonexistent`               | `404`, controlled JSON error                              |
+`scripts/smoke.mjs` — credential-free, non-mutating, safe against any
+environment at any time. The full check list (locked by
+`src/testing/smoke-checks.test.ts`; update both together):
 
-`scripts/smoke.mjs` runs the `/healthz` check unauthenticated against any
-environment; pass `--sha <deployed-sha>` to assert the deployed commit
-matches. `GET /readyz` is a deeper, owner-authenticated readiness check (a
+| Check               | Request                                       | Expected                                                                                              |
+| ------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `healthz`           | `GET /healthz`                                | `200 { ok: true, sha, workspaceEnabled }`, no secret data; with `--sha`, the deployed-commit assert   |
+| `readyz-unauth`     | `GET /readyz`                                 | `401` — the deep probe must never run unauthenticated                                                 |
+| `app`               | `GET /` without session                       | Redirect to `/login`                                                                                  |
+| `login`             | `GET /login`                                  | `200`, login page with the GitHub affordance                                                          |
+| `me-unauth`         | `GET /api/me`                                 | `401`                                                                                                 |
+| `oauth-metadata`    | `GET /.well-known/oauth-authorization-server` | `200`, valid metadata                                                                                 |
+| `mcp-unauth`        | `POST /mcp` without credentials               | `401`                                                                                                 |
+| `workspaces-unauth` | `GET /api/workspaces`                         | `401`; with `--expect-workspace-disabled`, exactly `503 {"error":"workspace_disabled"}`               |
+| `profile-unauth`    | `GET /api/profile/preferences`                | `401`; with `--expect-profiles-disabled`, exactly `503 {"error":"profiles_disabled"}`                 |
+| `admin-unauth`      | `GET /api/admin/summary`                      | `401`; with `--expect-analytics-disabled`, exactly `503 {"error":"admin_disabled"}`                   |
+| `share-404`         | `GET /api/topology/nonexistent`               | `404`, controlled JSON error                                                                          |
+| `viewer-shell`      | `GET /v/<nonexistent>` as navigation          | `200` app shell **without** sign-in (public share view stays ungated)                                 |
+| `showcase`          | `GET /showcase/hub-spoke.webp`                | `200` image, ungated (login-page filmstrip asset)                                                     |
+| `fault-inert`       | `GET /__staging/fault` (no token)             | Anything **except** a synthetic fault — proves the staging-only fault gate never fires uncredentialed |
+
+`GET /readyz` with a signed-in session is the deeper readiness check (a
 `TOPOLOGY_KV` round-trip, a `TOPOLOGY_REGISTRY` DO echo, and — when
 `WORKSPACE_ENABLED` — a `TOPOLOGY_DOCUMENT` DO echo; `200` when every binding
 is reachable, `503` naming the failing binding otherwise). It requires a
-signed-in session, so it is a manual/UAT check, not part of the
-unauthenticated-safe automated smoke subset above.
+session cookie, so it stays a manual/UAT check; the unauthenticated smoke
+covers only its auth gate (`readyz-unauth`).
+
+Production can be verified on demand — and is verified daily on a schedule —
+by [`production-verify.yml`](../.github/workflows/production-verify.yml)
+(optional `expected_sha` input for deployed-SHA-mismatch detection; failures
+file a deduplicated `production-smoke` issue that a later green run closes).
+Staging drills can temporarily override feature flags per deploy through
+`deploy-staging.yml`'s `workspace_enabled` / `profiles_enabled` /
+`analytics_enabled` inputs (staging-only; production flag changes are always
+a reviewed `wrangler.jsonc` commit) — see `GAME_DAY.md`.
 
 ### Browser OAuth smoke
 
@@ -344,8 +364,12 @@ The concrete go/no-go criteria for the workspace-activation flip (Gate C / plan
 O11). These are the "approved threshold" the Stop conditions refer to. Tuned for
 this deployment's reality — a single-owner, low-traffic Worker — so absolute
 counts lead and percentage rates apply only once a window has enough samples to
-be meaningful. Configure Cloudflare alerting (plan O12) to fire at these exact
-values **before** the flip, so the soak tier is covered by alerts.
+be meaningful. These same numbers are the `[A]`-marked rows of the standing
+production alert matrix ([`ALERTS.md`](ALERTS.md)); the human dashboard steps
+to wire them into Cloudflare notifications are
+[`CLOUDFLARE_OPERATOR_RUNBOOK.md`](CLOUDFLARE_OPERATOR_RUNBOOK.md) (packet O1
+— **not yet configured** as of 2026-07-19; the GitHub synthetic layer in
+`ALERTS.md` §"Detection layers" is the active safety net meanwhile).
 
 Every trip recovers the same way: **forward-deploy `WORKSPACE_ENABLED=false`**
 (never roll back across `v3`).

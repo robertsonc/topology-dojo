@@ -30,6 +30,7 @@ import {
 import { handleWorkspaceApi } from './workspace-api.js';
 import { handleProfileApi } from './profile-api.js';
 import { handleAdminApi } from './admin-api.js';
+import { handleStagingFault, STAGING_FAULT_PATH } from './staging-fault.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -413,6 +414,17 @@ async function route(
   // it must stay reachable, unauthenticated, from outside at all times.
   if (pathname === '/healthz') return handleHealthz(request, env);
   if (pathname === '/readyz') return handleReadyz(request, env);
+  // Staging-only synthetic fault injection (game-day drills). Inert — the
+  // handler returns null and the path falls through to the normal
+  // unknown-path behavior below — unless this deployment says
+  // DIAGNOSTICS_ENV="staging" AND the staging-only DIAGNOSTICS_TOKEN secret
+  // is configured; see worker/staging-fault.ts for the full gate chain and
+  // scripts/check-wrangler-env.mjs for the CI rule keeping both out of
+  // production config.
+  if (pathname === STAGING_FAULT_PATH) {
+    const fault = handleStagingFault(request, env);
+    if (fault) return fault;
+  }
   if (
     pathname === '/api/workspaces' ||
     pathname.startsWith('/api/workspaces/')

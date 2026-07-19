@@ -258,28 +258,47 @@ Wire Cloudflare's dashboard to the thresholds already defined in
 forward-recovery game day exercising the current (`v3`–`v5`) rollback
 procedures end-to-end.
 
-**Current baseline:** Nightly staging smoke ships and works
+**Current baseline (updated 2026-07-19 — the repo-side half of this
+initiative has landed):** Nightly staging smoke ships and works
 (`nightly-staging-smoke.yml`). GitHub's built-in Actions failure emails
-cover deploy-pipeline failures. Nothing in `wrangler.jsonc` or
-`.github/workflows/*` configures Cloudflare-side alert policies — this is
-purely a dashboard gap, not a code gap. `docs/ROLLBACK.md`'s "Staging game
-day" procedure has never been generalized past its original `v3`-only
-framing, and no dated completion record exists for a full game day covering
-the current `v4`/`v5` reality.
+cover deploy-pipeline failures. The observability PR added: a production
+alert matrix + severity model (`docs/ALERTS.md`), the exact human dashboard
+checklist (`docs/CLOUDFLARE_OPERATOR_RUNBOOK.md`), a repeatable game-day
+framework + evidence template (`docs/GAME_DAY.md`,
+`docs/GAME_DAY_EVIDENCE_TEMPLATE.md`), daily + on-demand production
+verification with issue dedup and deployed-SHA-mismatch detection
+(`production-verify.yml`), smoke growth to 14 checks with per-flag
+disabled-contract assertions, staging-only flag-override inputs on
+`deploy-staging.yml`, and a triple-gated staging-only synthetic-fault route
+(`worker/staging-fault.ts`). What remains is exactly the human-only half:
+the Cloudflare dashboard configuration (O1) and executing/recording the
+drill (O2).
 
 **Dependencies:** None — can start immediately, in parallel with everything
 else.
 
-**Architecture:** No code. Cloudflare Notifications (dashboard: Notifications
-→ Create → "Workers" alert types for error rate / CPU time / subrequest
-errors, or the Cloudflare API if scripting the policy is preferred) routed to
-the owner's email, matching the exact thresholds already written in
-`docs/DEPLOYMENT_RUNBOOK.md` §"Rate-based stops" and §"Hard stops."
+**Architecture:** Cloudflare Notifications routed to the owner's
+email/webhook destination, matching `docs/ALERTS.md` (which inherits
+`docs/DEPLOYMENT_RUNBOOK.md`'s approved thresholds). **Correction to this
+plan's earlier assumption:** specific "Workers" alert types for error
+rate/CPU could **not** be verified in current Cloudflare documentation —
+the operator runbook therefore starts with a verbatim catalog survey
+(CF-3) and records what actually exists on this account/plan, with the
+GitHub synthetic layer as the plan-independent baseline and Health
+Checks / zone HTTP alerts / OTLP-export-to-external as the plan-dependent
+options.
 
 **Implementation packets:**
 
 ### O1 — Configure Cloudflare alerting
 
+- **Status (2026-07-19): specification complete, awaiting the human
+  dashboard action.** Everything an agent can produce exists —
+  `docs/ALERTS.md` (what + thresholds) and
+  `docs/CLOUDFLARE_OPERATOR_RUNBOOK.md` (exact steps CF-1..CF-6 with
+  evidence requirements). Completion = the operator checklist at the bottom
+  of that runbook fully checked, with the catalog-survey result recorded in
+  `ALERTS.md`'s L3 rows.
 - **Outcome:** Cloudflare Notification policies exist for the production
   Worker matching `DEPLOYMENT_RUNBOOK.md`'s documented thresholds; the
   runbook is updated with the actual policy names/ids so it's no longer
@@ -303,10 +322,19 @@ the owner's email, matching the exact thresholds already written in
 
 ### O2 — Staging forward-recovery game day
 
-- **Outcome:** A dated, recorded execution of `docs/ROLLBACK.md`'s "Staging
-  game day" checklist against the current system state (not just `v3`).
-- **Dependencies:** O3 (the rollback doc should be accurate before running
-  the drill against it).
+- **Status (2026-07-19): framework + tooling complete, drill NOT executed.**
+  The runnable plan is `docs/GAME_DAY.md` (Phases 1–4, scenarios
+  S-0..S-12 / P-1..P-12) with `docs/GAME_DAY_EVIDENCE_TEMPLATE.md`;
+  supporting mechanisms (staging fault route, staging flag-override deploy
+  inputs, disabled-contract smoke flags, production-verify) all shipped.
+  Remaining: a human operator runs it and files the dated evidence record.
+- **Outcome:** A dated, recorded execution of the game-day drill
+  (`docs/GAME_DAY.md`, which supersedes `docs/ROLLBACK.md`'s original
+  "Staging game day" checklist) against the current system state.
+- **Dependencies:** O3 (done — the rollback doc is accurate before running
+  the drill against it). Scenarios S-2..S-4 additionally need the
+  staging-only `DIAGNOSTICS_TOKEN` secret provisioned (human, see
+  `CLOUDFLARE_OPERATOR_RUNBOOK.md` CF-4).
 - **Scope:** Deploy known-good staging → create a disposable draft →
   deliberately deploy broken workspace behavior → confirm forward recovery →
   re-enable → record the result.
@@ -328,6 +356,11 @@ the owner's email, matching the exact thresholds already written in
 
 ### O3 — Generalize `docs/ROLLBACK.md` beyond `v3`
 
+- **Status (2026-07-19): DONE** (observability PR): the header note makes
+  the document explicitly migration-agnostic, the forward-recovery section
+  names the `v4`/`v5` substitutions inline, the per-flag procedures live in
+  `GAME_DAY.md` §"Forward-recovery reference", and the old `v3`-only
+  "Staging game day" section now points at the full framework.
 - **Outcome:** `docs/ROLLBACK.md`'s worked examples and the game-day checklist
   reference the current migration set (`v3`–`v5`) or a genuinely
   migration-agnostic template, not just `v3`.
