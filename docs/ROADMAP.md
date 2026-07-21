@@ -84,13 +84,15 @@ packet-level ordering and what can run in parallel):
    doc against verified code state, close/annotate the findings register
    entries that were actually fixed but never marked closed. Packets: N1–N3.
 2. **Cloudflare alerting + production game day** — the one remaining
-   operational gap blocking a fully-monitored production posture. The
-   thresholds are already defined (`docs/DEPLOYMENT_RUNBOOK.md` §"Rate-based
-   stops"/"Hard stops") — what's missing is wiring Cloudflare's dashboard to
-   fire on them, plus a recorded staging forward-recovery game day exercising
-   `docs/ROLLBACK.md`'s procedure end-to-end. Packets: O1–O3. **Human-only**:
-   configuring Cloudflare notification policies is a dashboard action, not
-   code.
+   operational gap blocking a fully-monitored production posture. _Repo-side
+   half landed 2026-07-19 (PR #197)_: alert matrix + severity model
+   (`docs/ALERTS.md`), Cloudflare operator checklist
+   (`docs/CLOUDFLARE_OPERATOR_RUNBOOK.md`), game-day framework + evidence
+   template (`docs/GAME_DAY.md`), daily/on-demand production verification
+   (`production-verify.yml`), a 14-check smoke suite, and a staging-only
+   synthetic-fault mechanism; packet O3 (rollback generalization) is done.
+   **Remaining, human-only**: configuring the Cloudflare notification
+   policies (O1) and executing/recording the drill (O2).
 3. **Agent activity + explainability** — today an agent's authoring session
    leaves almost no visible trace beyond the revision history's actor/summary
    fields; there's no way for the owner (or the agent itself) to see "what did
@@ -162,10 +164,21 @@ packets:
 - **Server-side / MCP PNG export** — PNG export is currently browser-only
   (canvas rasterization, `src/editor/export.ts`); an MCP-callable equivalent
   would need a server-side rasterizer.
-- **`docs/ROLLBACK.md` generalization** — the rollback procedure and staging
-  game-day checklist are written narrowly around `v3`; generalize to a
-  template covering any migration, referencing `DEPLOYMENT_RUNBOOK.md`'s
-  per-migration gate sections (currently `v3`–`v5`).
+- **Path analysis between elements ("visual traceroute")** — select two
+  nodes (e.g. two hosts), right-click → "Analyze path": compute the
+  traversal across the page's drawn link graph and present it as a focused
+  view — the traversal set spotlit, everything else dimmed — with the hops
+  optionally overlaid as an animated flow. Both rendering primitives already
+  exist: the per-frame `emphasis` option (`src/render/core.ts` — spotlight a
+  node/link id set, dim the rest to 25%) and page `flowPaths`
+  (`add_flow_path` waypoints). The new pieces are a deterministic
+  shortest/all-paths computation over the in-document graph, the two-node
+  selection + context-menu UX, and — per the one-catalog rule (`DESIGN.md`
+  #2/#3) — an agent-callable `analyze_path` equivalent of the same action.
+  Static first: answers come only from what the document already draws
+  (multiple candidate paths → present alternatives; disconnected → say so,
+  which is itself diagnostic). Page-scoped presentation state (or emitted as
+  a new flipbook page), never cross-page inheritance (decision 0001).
 
 ## Later
 
@@ -182,6 +195,26 @@ Valuable but non-blocking; no current evidence anything is waiting on these:
 - **Standalone HTML/PNG export polish** — flipbook HTML export exists;
   further export format work (beyond the MCP-PNG gap already in "Next") is
   low-urgency.
+- **Reverse agentic dispatch — live path discovery ("examine path to
+  Teams")** — extend "Path analysis between elements" (Next) from _what the
+  diagram says_ to _what the network actually does_: right-click a host →
+  "examine path to <application or endpoint>", where answering requires live
+  discovery (traceroute, SD-WAN policy/app-path lookup) that the Worker
+  cannot and should not perform itself. This inverts today's flow — agents
+  currently call _into_ Topology Dojo over MCP; here Topology Dojo
+  dispatches a discovery task _out_ to an agent that has network access
+  (the planned **SASE agentic harness** project is the intended executor,
+  with the EdgeConnect provider work — initiative E — as the nearest
+  existing live-data seam). The natural shape given existing machinery: a
+  workspace-scoped "discovery request" an authorized agent picks up and
+  answers **through the existing proposal pipeline** — the discovered path
+  lands as a reviewable proposal adding flow paths/emphasis, preserving the
+  agents-never-write-silently rule and the single commit path. Prerequisites
+  before starting: the static path-analysis feature shipped; an agent
+  runtime with real network reach; and an authorization story for which
+  agents may receive dispatches. Pairs naturally with time-aware
+  storytelling (initiative T) for before/during/after views of a discovered
+  path.
 
 ## Evidence-triggered
 
