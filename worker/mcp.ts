@@ -208,11 +208,19 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       | { id?: number; login?: string; name?: string | null }
       | undefined;
     if (props?.id === undefined || !props.login) return undefined;
-    return new WorkspaceService(this.env, {
-      uid: String(props.id),
-      login: props.login,
-      ...(props.name ? { name: props.name } : {}),
-    });
+    return new WorkspaceService(
+      this.env,
+      {
+        uid: String(props.id),
+        login: props.login,
+        ...(props.name ? { name: props.name } : {}),
+      },
+      // The one-way legacy→workspace hand-off is an owner decision made in
+      // the browser. Agent tools must never trigger it implicitly — a
+      // workspace read on a legacy draft errors instead of migrating, so the
+      // direct authoring tools keep working on that draft.
+      { migrateLegacyOnAccess: false },
+    );
   }
 
   /**

@@ -143,6 +143,62 @@ export default {
 `;
 
 /**
+ * Drives `worker/workspaces.ts`'s `WorkspaceService` directly (no HTTP auth
+ * layer) so tests can exercise the `migrateLegacyOnAccess` split between the
+ * owner-facing browser surface (default: lazily migrates a legacy draft) and
+ * the agent-facing MCP surface (`mode=agent`: rejects a legacy id without
+ * migrating). `/seed` plants a raw legacy `tdoc:` value in the login-keyed
+ * registry the way the legacy authoring tools' persist path does.
+ */
+export const WORKSPACE_MIGRATION_FIXTURE = String.raw`
+import { WorkspaceService } from './worker/workspaces.ts';
+export { TopologyDocument } from './worker/document.ts';
+export { TopologyRegistry } from './worker/registry.ts';
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const uid = url.searchParams.get('uid') ?? '1';
+    const login = url.searchParams.get('login') ?? 'alice';
+    const id = url.searchParams.get('id') ?? '';
+    const json = (value, status = 200) =>
+      new Response(JSON.stringify(value), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    if (url.pathname === '/seed' && request.method === 'POST') {
+      const ns = env.TOPOLOGY_REGISTRY;
+      await ns.get(ns.idFromName('user:' + login)).put('tdoc:' + id, await request.text());
+      return json({ seeded: id });
+    }
+
+    const service = new WorkspaceService(
+      env,
+      { uid, login },
+      { migrateLegacyOnAccess: url.searchParams.get('mode') !== 'agent' },
+    );
+    try {
+      if (url.pathname === '/migrated')
+        return json({ migrated: await service.isMigrated(id) });
+      if (url.pathname === '/manifest')
+        return json(await service.manifest(id));
+      if (url.pathname === '/elements')
+        return json(
+          await service.elements(id, url.searchParams.get('pageId') ?? ''),
+        );
+      return json({ error: 'not found' }, 404);
+    } catch (error) {
+      return json(
+        { error: error instanceof Error ? error.message : String(error) },
+        400,
+      );
+    }
+  },
+};
+`;
+
+/**
  * `WORKSPACE_TOOL_NAMES_FIXTURE`'s Packet P4 sibling: exercises
  * `worker/profile-tools.ts`'s pure `profileToolNames` — the PROFILES_ENABLED
  * gate (opt-in, unlike workspaces) on the three read-only guidance tools

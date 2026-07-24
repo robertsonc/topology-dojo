@@ -30,6 +30,19 @@ export interface WorkspaceUser {
   name?: string;
 }
 
+export interface WorkspaceServiceOptions {
+  /**
+   * Whether `ensure()` may lazily hand a legacy `tdoc:` draft into the
+   * canonical document coordinator on first access. Defaults to true for the
+   * owner-facing browser surfaces. The agent-facing MCP surface disables it:
+   * migration is one-way (legacy mutation tools refuse the topology
+   * afterwards), so an agent inspecting a draft with a workspace read tool
+   * must never silently commit the owner to the proposal/lease model —
+   * hand-off stays an owner decision made in the browser.
+   */
+  migrateLegacyOnAccess?: boolean;
+}
+
 /** Explicit RPC facade avoids Cloudflare's conservative Stubable<> inference
  * reducing rich document-model return types to `never`. */
 interface DocumentRpc {
@@ -125,12 +138,15 @@ function asWorkspaceUser(user: SessionUser): WorkspaceUser {
 
 export class WorkspaceService {
   private readonly user: WorkspaceUser;
+  private readonly migrateLegacyOnAccess: boolean;
 
   constructor(
     private readonly env: WorkerEnv,
     user: WorkspaceUser | SessionUser,
+    options: WorkspaceServiceOptions = {},
   ) {
     this.user = asWorkspaceUser(user);
+    this.migrateLegacyOnAccess = options.migrateLegacyOnAccess ?? true;
   }
 
   async list(): Promise<WorkspaceListItem[]> {
@@ -386,9 +402,10 @@ export class WorkspaceService {
   }
 
   /**
-   * Return the coordinator, lazily migrating a legacy registry snapshot first.
-   * The legacy value is deliberately retained; the marker is written only after
-   * the coordinator's atomic initialization succeeds.
+   * Return the coordinator, lazily migrating a legacy registry snapshot first
+   * when this service is allowed to (`migrateLegacyOnAccess`). The legacy
+   * value is deliberately retained; the marker is written only after the
+   * coordinator's atomic initialization succeeds.
    */
   private async ensure(id: string): Promise<DocumentRpc> {
     const registry = this.directory();
@@ -402,6 +419,12 @@ export class WorkspaceService {
 
     const legacy = await this.legacyRegistry().legacyDocument(id);
     if (!legacy) throw new Error(`unknown workspace "${id}"`);
+    if (!this.migrateLegacyOnAccess)
+      throw new Error(
+        `topology "${id}" is a legacy draft, not a shared workspace; it was left untouched. ` +
+          'Keep using the direct topology tools (get_topology, update_element, …) for it, ' +
+          'or have the owner hand it off from the browser Agent Workspace panel.',
+      );
     const parsed = parseDoc(legacy);
     if (!parsed)
       throw new Error(
