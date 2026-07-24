@@ -112,6 +112,14 @@ Once the marker exists, legacy MCP mutation tools must refuse that topology and
 direct the caller to workspace tools. This prevents old sessions from writing a
 stale copy after handoff without requiring a dual-write window.
 
+> **Amendment (2026-07):** "first workspace access" now means first _owner_
+> access. Because migration is one-way and switches all agent writes to the
+> proposal/lease model, agent-facing MCP workspace tools no longer trigger it:
+> calling any of them with a legacy topology id is rejected with guidance and
+> the draft is left untouched. Lazy migration still happens on the
+> owner-authenticated browser routes (and the Agent Workspace panel's explicit
+> hand-off), where it is an owner decision.
+
 ## Storage layout
 
 The coordinator does not store a complete multi-page document in one Durable

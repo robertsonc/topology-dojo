@@ -72,10 +72,12 @@ Apps, secrets, or KV namespace ids across environments.
    automatically.
 
 > State note: legacy authoring tools create private drafts in the per-user
-> registry. Once the browser hands one into a workspace (or an agent calls
-> `get_workspace_manifest` with its id), it is lazily migrated and all further
-> writes use workspace tools. The old snapshot is retained as migration rollback
-> material but stale legacy mutation is refused.
+> registry. Hand-off into a shared workspace is an owner decision made in the
+> browser — agent-facing workspace tools never migrate a draft; calling one
+> with a legacy topology id is rejected with guidance and the draft is left
+> untouched. Once the browser hands a draft off, all further writes use
+> workspace tools. The old snapshot is retained as migration rollback material
+> but stale legacy mutation is refused.
 
 ### Share links (`share_topology`)
 
@@ -177,7 +179,7 @@ to the task's affected region and change summaries, not total document size.
 | `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)                                          |
 | `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                              |
 | `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                     |
-| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; lazily migrates a legacy id                            |
+| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it               |
 | `describe_workspace_operations`                        | On-demand versioned operation vocabulary; call only when its revision changes                             |
 | `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                                    |
 | `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                        |

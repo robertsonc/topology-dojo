@@ -1247,14 +1247,14 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       {
         name: 'list_workspaces',
         description:
-          'List this owner’s canonical workspaces and legacy drafts available for lazy migration. Does not return document contents.',
+          'List this owner’s canonical workspaces and legacy drafts. Legacy drafts (migrated: false) stay editable with the direct topology tools until the owner hands them off from the browser. Does not return document contents.',
         inputShape: {},
         handler: () => workspace.list(),
       },
       {
         name: 'get_workspace_manifest',
         description:
-          'Get compact workspace status: revision, page ids/names, element counts, pending proposal count, and active lease. Calling this on a legacy topology id lazily hands it into the canonical workspace.',
+          'Get compact workspace status: revision, page ids/names, element counts, pending proposal count, and active lease. Only valid for ids already handed off as shared workspaces; a legacy topology id is rejected without being migrated.',
         inputShape: { workspaceId },
         handler: (a) => workspace.manifest(String(a.workspaceId)),
       },
