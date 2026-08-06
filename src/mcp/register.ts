@@ -58,10 +58,11 @@ export function registerTopologyTools(
           await beforeToolCall?.(tool.name, parsed);
           const result = await tool.handler(parsed);
           await afterToolCall?.(tool.name);
+          // Compact JSON (no pretty-printing): tool results feed an agent's
+          // context window, where indentation is pure token overhead — on large
+          // payloads (documents, catalogs) it roughly doubles the size.
           const text =
-            typeof result === 'string'
-              ? result
-              : JSON.stringify(result, null, 2);
+            typeof result === 'string' ? result : JSON.stringify(result);
           return { content: [{ type: 'text' as const, text }] };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);

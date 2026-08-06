@@ -113,18 +113,25 @@ The local stdio server and the remote private-draft path hold topologies keyed b
 an id. The usual draft-building flow is:
 
 1. `create_topology` → returns an `id` (seeded with one empty page).
-2. add elements against that id (`add_node`, `add_link`, `add_zone`, …).
+2. add elements against that id — prefer one `edit_topology` batch (many
+   operations in a single call) over per-element `add_node` / `add_link` /
+   `add_zone` calls, which can exhaust an agent's per-turn tool budget.
 3. `validate_topology` → list of problems (empty = valid).
-4. `render_svg` → a standalone SVG string.
+4. `render_svg` → a standalone SVG string (large — render once at the end, not
+   after every edit).
 5. `get_topology` / `import_topology` → round-trip the document JSON, which is
    the portable, canonical contract (server state is just a convenience).
+   `get_topology` also offers `summary:true` (compact counts) and `pageIndex`
+   (a single page) so agents don't reload the whole document.
 
 Page targeting: the `add_*` tools default to the **most recently added page**;
 pass `pageIndex` to target another. `render_svg` defaults to page `0`.
 
-Call `describe_capabilities` first to discover every node type, link type, and
-annotation kind with its editable fields (pass a `topologyId` to include that
-document's custom node types).
+Call `describe_capabilities` first to discover the vocabulary. It defaults to a
+compact **index** (type names/categories only); request editable fields with
+`detail:"full"`, or — cheaper — narrow with `types:[…]` / `query:"…"` to get
+full fields for just the types the task needs (pass a `topologyId` to include
+that document's custom node types).
 
 For a document shared with the browser, use the bounded workspace loop instead:
 
@@ -157,6 +164,7 @@ to the task's affected region and change summaries, not total document size.
 | `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox                                                    |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                             |
 | `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                          |
+| `edit_topology`                                        | **Batch**: many authoring operations in one call (atomic, ordered) — preferred for building diagrams      |
 | `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                               |
 | `upsert_by_source`                                     | Converge an element onto external data by source identity                                                 |
 | `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                |

@@ -37,6 +37,7 @@ describe('MCP tools', () => {
         'define_node_type',
         'delete_topology',
         'describe_capabilities',
+        'edit_topology',
         'export_flipbook',
         'get_topology',
         'import_topology',
@@ -510,22 +511,146 @@ describe('MCP tools', () => {
     );
   });
 
-  it('describe_capabilities lists built-in vocabulary + annotations', () => {
+  it('describe_capabilities defaults to a compact index (no fields)', () => {
     const caps = call('describe_capabilities', {}) as {
-      nodeTypes: unknown[];
+      nodeTypes: { type: string; fields?: unknown }[];
       linkTypes: unknown[];
-      annotations: { kind: string }[];
-      layers: { kinds: string[] };
+      annotationKinds: string[];
+      layerKinds: string[];
     };
     expect(caps.nodeTypes.length).toBeGreaterThan(5);
     expect(caps.linkTypes.length).toBeGreaterThan(3);
+    expect(caps.nodeTypes.every((n) => n.fields === undefined)).toBe(true);
+    expect(caps.annotationKinds.sort()).toEqual([
+      'flowPath',
+      'policyMarker',
+      'zone',
+    ]);
+    expect(caps.layerKinds).toContain('underlay');
+    expect(caps.layerKinds).toContain('overlay');
+    // The index is a fraction of the full catalog — the point of the default.
+    const index = JSON.stringify(caps).length;
+    const full = JSON.stringify(
+      call('describe_capabilities', { detail: 'full' }),
+    ).length;
+    expect(index).toBeLessThan(full / 5);
+  });
+
+  it('describe_capabilities detail:"full" returns editable fields + annotations', () => {
+    const caps = call('describe_capabilities', { detail: 'full' }) as {
+      nodeTypes: { type: string; fields: { key: string }[] }[];
+      linkTypes: { fields: unknown[] }[];
+      annotations: { kind: string }[];
+      layers: { kinds: string[] };
+    };
+    expect(caps.nodeTypes.every((n) => n.fields.length > 0)).toBe(true);
     expect(caps.annotations.map((a) => a.kind).sort()).toEqual([
       'flowPath',
       'policyMarker',
       'zone',
     ]);
     expect(caps.layers.kinds).toContain('underlay');
-    expect(caps.layers.kinds).toContain('overlay');
+  });
+
+  it('describe_capabilities narrows to full fields via types / query', () => {
+    const byType = call('describe_capabilities', {
+      types: ['ec', 'tunnel'],
+    }) as {
+      nodeTypes: { type: string; fields: unknown[] }[];
+      linkTypes: { type: string; fields: unknown[] }[];
+    };
+    expect(byType.nodeTypes.map((n) => n.type)).toEqual(['ec']);
+    expect(byType.linkTypes.map((l) => l.type)).toEqual(['tunnel']);
+    expect(byType.nodeTypes[0]!.fields.length).toBeGreaterThan(0);
+
+    const byQuery = call('describe_capabilities', { query: 'firewall' }) as {
+      nodeTypes: { type: string; fields: unknown[] }[];
+    };
+    expect(byQuery.nodeTypes.some((n) => n.type === 'firewall')).toBe(true);
+    expect(byQuery.nodeTypes[0]!.fields.length).toBeGreaterThan(0);
+  });
+
+  it('get_topology summary + pageIndex return bounded slices', () => {
+    const { id } = call('create_topology', { title: 'Big' }) as { id: string };
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 100,
+      y: 100,
+      nodeId: 'a',
+    });
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 300,
+      y: 100,
+      nodeId: 'b',
+    });
+    call('add_link', { topologyId: id, type: 'line', from: 'a', to: 'b' });
+
+    const summary = call('get_topology', { topologyId: id, summary: true }) as {
+      title: string;
+      pages: { nodes: number; links: number }[];
+    };
+    expect(summary.title).toBe('Big');
+    expect(summary.pages[0]).toMatchObject({ nodes: 2, links: 1 });
+
+    const page = call('get_topology', { topologyId: id, pageIndex: 0 }) as {
+      pageCount: number;
+      page: { nodes: unknown[] };
+    };
+    expect(page.pageCount).toBe(1);
+    expect(page.page.nodes.length).toBe(2);
+    expect(() =>
+      call('get_topology', { topologyId: id, pageIndex: 9 }),
+    ).toThrow(/out of range/);
+  });
+
+  it('edit_topology applies a batch of operations in one call', () => {
+    const { id } = call('create_topology', { title: 'Batch' }) as {
+      id: string;
+    };
+    const result = call('edit_topology', {
+      topologyId: id,
+      operations: [
+        { op: 'add_node', type: 'ec', x: 120, y: 80, nodeId: 'a', label: 'A' },
+        { op: 'add_node', type: 'cloud', x: 420, y: 80, nodeId: 'b' },
+        { op: 'add_link', type: 'tunnel', from: 'a', to: 'b', linkId: 'l1' },
+        { op: 'add_zone', nodes: ['a'], label: 'Site', zoneId: 'z1' },
+        { op: 'update_element', elementId: 'a', set: { label: 'A2' } },
+      ],
+    }) as { applied: number; results: { op: string; id?: string }[] };
+    expect(result.applied).toBe(5);
+    expect(result.results[0]).toMatchObject({ op: 'add_node', id: 'a' });
+    const doc = store.get(id);
+    expect(doc.pages[0]!.nodes.map((n) => n.id).sort()).toEqual(['a', 'b']);
+    expect(doc.pages[0]!.nodes.find((n) => n.id === 'a')!.label).toBe('A2');
+    expect(doc.pages[0]!.links.length).toBe(1);
+    expect(doc.pages[0]!.zones?.length).toBe(1);
+  });
+
+  it('edit_topology is atomic: a failing op rolls the document back', () => {
+    const { id } = call('create_topology', { title: 'Atomic' }) as {
+      id: string;
+    };
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 50,
+      y: 50,
+      nodeId: 'keep',
+    });
+    expect(() =>
+      call('edit_topology', {
+        topologyId: id,
+        operations: [
+          { op: 'add_node', type: 'ec', x: 200, y: 200, nodeId: 'n1' },
+          { op: 'not_a_real_op' },
+        ],
+      }),
+    ).toThrow(/operations\[1\]: unknown op/);
+    // The first (successful) op must have been rolled back too.
+    expect(store.get(id).pages[0]!.nodes.map((n) => n.id)).toEqual(['keep']);
   });
 
   it('updates, removes (with cascade), and upserts by source via tools', () => {
