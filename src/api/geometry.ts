@@ -40,10 +40,77 @@ const HALF: Record<string, { w: number; h: number }> = {
   'shape:cross': { w: 18, h: 18 },
 };
 
+/** Number to use when a config field is a positive number, else undefined. */
+function posNum(v: unknown): number | undefined {
+  return typeof v === 'number' && v > 0 ? v : undefined;
+}
+
+/**
+ * Estimated line count for a text node's label/sublabel, mirroring the engine's
+ * greedy word-wrap (~0.6em per glyph; explicit newlines respected).
+ */
+function wrappedLines(text: string, width: number, fontSize: number): number {
+  const maxChars = Math.max(1, Math.floor(width / (fontSize * 0.6)));
+  let count = 0;
+  for (const para of text.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    let line = '';
+    for (const word of words) {
+      const cand = line ? `${line} ${word}` : word;
+      if (cand.length <= maxChars || !line) line = cand;
+      else {
+        count++;
+        line = word;
+      }
+    }
+    count++;
+  }
+  return count;
+}
+
 export function nodeHalf(node: NodeConfig): { w: number; h: number } {
-  if (node.type === 'text' && typeof node.sublabel === 'string') {
-    const lines = node.sublabel.split('\n').length;
-    return { w: 50, h: 10 + lines * 7 };
+  if (node.type === 'text') {
+    // Mirror the engine's text-box metrics (renderText): wrap width, padding,
+    // main + sublabel blocks — so selection and overlap checks track the box.
+    const fontSize = posNum(node.fontSize) ?? 14;
+    const padding = posNum(node.padding) ?? 8;
+    const width = posNum(node.width);
+    const label =
+      typeof node.label === 'string' && node.label ? node.label : 'Text';
+    const sublabel = typeof node.sublabel === 'string' ? node.sublabel : '';
+    const innerW = width
+      ? Math.max(8, width - padding * 2)
+      : Number.MAX_SAFE_INTEGER;
+    const lines = width
+      ? wrappedLines(label, innerW, fontSize)
+      : label.split('\n').length;
+    const subSize = Math.max(8, fontSize * 0.7);
+    const subLines = sublabel
+      ? width
+        ? wrappedLines(sublabel, innerW, subSize)
+        : sublabel.split('\n').length
+      : 0;
+    const blockH =
+      lines * fontSize * 1.3 +
+      (subLines ? subLines * subSize * 1.4 + subSize * 0.3 : 0);
+    const estW =
+      width ?? Math.max(50, label.length * fontSize * 0.6 + padding * 2);
+    return { w: estW / 2, h: (blockH + padding * 2) / 2 };
+  }
+  if (node.type.startsWith('shape:')) {
+    // Honor explicit sizing (shapeSize, or shapeWidth/shapeHeight where the
+    // renderer supports them) so bounds track the drawn shape.
+    const base = HALF[node.type] ?? HALF.custom!;
+    const size = posNum(node.shapeSize);
+    // Only rectangle/ellipse render independent width/height; the rest are
+    // uniform shapes driven by shapeSize alone.
+    const wh = node.type === 'shape:rectangle' || node.type === 'shape:ellipse';
+    const w = (wh ? posNum(node.shapeWidth) : undefined) ?? size;
+    const h = (wh ? posNum(node.shapeHeight) : undefined) ?? size;
+    return {
+      w: w !== undefined ? w / 2 : base.w,
+      h: h !== undefined ? h / 2 : base.h,
+    };
   }
   return HALF[node.type] ?? HALF.custom!;
 }
