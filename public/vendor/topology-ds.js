@@ -827,10 +827,14 @@ class TopologyDesigner {
 
       let nodeSvg = this._renderNodeSVG(nodeCfg);
 
-      if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud') {
-        const labelX = nodeCfg.x + (nodeCfg.labelOffsetX || 0);
-        const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || 24));
-        nodeSvg += this._renderNodeLabel(labelX, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
+      if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text') {
+        if (this._ownLabelNode(nodeCfg)) {
+          nodeSvg += this._renderShapeLabel(nodeCfg);
+        } else {
+          const labelX = nodeCfg.x + (nodeCfg.labelOffsetX || 0);
+          const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || 24));
+          nodeSvg += this._renderNodeLabel(labelX, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
+        }
       }
 
       if (this.showNodeIds) {
@@ -2852,19 +2856,68 @@ ${grid}`;
     return s;
   }
 
-  /** Freeform text label node with optional multi-line sublabel */
+  /**
+   * Greedy word-wrap on estimated glyph width (~0.6em per char). Explicit
+   * newlines are respected; a single word longer than the width overflows
+   * rather than being broken mid-word.
+   */
+  static _wrapText(text, maxWidth, fontSize) {
+    const maxChars = Math.max(1, Math.floor(maxWidth / (fontSize * 0.6)));
+    const lines = [];
+    for (const para of String(text).split('\n')) {
+      let line = '';
+      for (const word of para.split(/\s+/).filter(Boolean)) {
+        const cand = line ? line + ' ' + word : word;
+        if (cand.length <= maxChars || !line) line = cand;
+        else { lines.push(line); line = word; }
+      }
+      lines.push(line);
+    }
+    return lines;
+  }
+
+  /**
+   * Freeform text node. `width` turns it into a sized text box: the label (and
+   * sublabel) word-wrap to fit. `fill` draws a background panel for legibility,
+   * `borderColor` outlines it, `align` sets left/center/right within the box.
+   * Without those options it renders exactly like the classic centered label.
+   */
   static renderText(x, y, cfg = {}) {
-    const { label = '', color = '#e6e8e9', fontSize = 14, fontWeight = '600', sublabel = '' } = cfg;
+    const { label = '', color = '#e6e8e9', fontSize = 14, fontWeight = '600', sublabel = '',
+            width = 0, fill = '', borderColor = '', align = 'center', padding = 8 } = cfg;
     const text = label || 'Text';
-    let s = `<text x="${x}" y="${y + 5}" text-anchor="middle" fill="${color}" font-size="${fontSize}" font-weight="${fontWeight}" opacity=".9">${_esc(text)}</text>`;
-    if (sublabel) {
-      const subLines = sublabel.split('\n');
-      const subSize = Math.max(8, fontSize * 0.7);
-      const lineHeight = subSize * 1.4;
-      const startY = y + 5 + fontSize * 0.9;
-      subLines.forEach((line, i) => {
-        s += `<text x="${x}" y="${startY + i * lineHeight}" text-anchor="middle" fill="${color}" font-size="${subSize}" font-weight="400" opacity=".65">${_esc(line)}</text>`;
-      });
+    const innerW = width > 0 ? Math.max(8, width - padding * 2) : 0;
+    const lines = width > 0 ? TopologyDesigner._wrapText(text, innerW, fontSize) : String(text).split('\n');
+    const subSize = Math.max(8, fontSize * 0.7);
+    const subLines = sublabel
+      ? (width > 0 ? TopologyDesigner._wrapText(sublabel, innerW, subSize) : String(sublabel).split('\n'))
+      : [];
+    const lineH = fontSize * 1.3;
+    const subLineH = subSize * 1.4;
+    const blockH = lines.length * lineH + (subLines.length ? subLines.length * subLineH + subSize * 0.3 : 0);
+    const estW = Math.max(
+      ...lines.map(l => l.length * fontSize * 0.6),
+      ...(subLines.length ? subLines.map(l => l.length * subSize * 0.6) : [0]),
+    );
+    const boxW = width > 0 ? width : estW + padding * 2;
+    const boxH = blockH + padding * 2;
+    const boxX = x - boxW / 2, boxY = y - boxH / 2;
+    let s = '';
+    if (fill || borderColor) {
+      s += `<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="6" fill="${fill || 'none'}"${borderColor ? ` stroke="${borderColor}" stroke-width="1.2"` : ''}/>`;
+    }
+    const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
+    const tx = align === 'left' ? boxX + padding : align === 'right' ? boxX + boxW - padding : x;
+    let ty = y - blockH / 2 + fontSize * 0.9;
+    for (const line of lines) {
+      s += `<text x="${tx}" y="${ty}" text-anchor="${anchor}" fill="${color}" font-size="${fontSize}" font-weight="${fontWeight}" opacity=".9">${_esc(line)}</text>`;
+      ty += lineH;
+    }
+    // Re-anchor from the main block's bottom edge: gap + first sub baseline.
+    ty += subSize * 1.2 - fontSize * 0.9;
+    for (const line of subLines) {
+      s += `<text x="${tx}" y="${ty}" text-anchor="${anchor}" fill="${color}" font-size="${subSize}" font-weight="400" opacity=".65">${_esc(line)}</text>`;
+      ty += subLineH;
     }
     return s;
   }
@@ -3358,6 +3411,33 @@ ${grid}`;
       `<rect x="${x-60}" y="${y}" width="120" height="18" rx="4" fill="${color}" opacity=".07" stroke="${color}" stroke-width=".5" stroke-dasharray="3 2"/>` +
       `<text x="${x}" y="${y+12}" text-anchor="middle" fill="${color}" font-size="9" font-weight="600" opacity=".9">${_esc(label)}</text>`
     );
+  }
+
+  /**
+   * Whether a node type draws its label itself: text nodes render their label
+   * as the content; shape nodes get a centered, wrapped label inside the shape
+   * (unless an explicit labelOffset asks for the classic below-node label).
+   */
+  _ownLabelNode(nodeCfg) {
+    if (nodeCfg.type === 'text') return true;
+    return String(nodeCfg.type).startsWith('shape:') && nodeCfg.labelOffset == null;
+  }
+
+  /** Centered, word-wrapped label inside a basic shape (shape:* node types). */
+  _renderShapeLabel(cfg) {
+    const color = cfg.labelColor || '#e6e8e9';
+    const fs = 10;
+    const w = cfg.shapeWidth || cfg.shapeSize ||
+      ({ 'shape:rectangle': 52, 'shape:ellipse': 52 }[cfg.type] || 36);
+    const lines = TopologyDesigner._wrapText(cfg.label, Math.max(12, w - 8), fs);
+    const lineH = fs * 1.25;
+    let ty = cfg.y - ((lines.length - 1) * lineH) / 2 + fs * 0.35;
+    let s = '';
+    for (const line of lines) {
+      s += `<text x="${cfg.x}" y="${ty}" text-anchor="middle" fill="${color}" font-size="${fs}" font-weight="600">${_esc(line)}</text>`;
+      ty += lineH;
+    }
+    return s;
   }
 
   /** Node label (text below/beside a node) */
@@ -4100,10 +4180,14 @@ ${grid}`;
 
             let nodeSvg = this._renderNodeSVG(nodeCfg);
 
-            // Add label if configured
-            if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud') {
-              const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || 24));
-              nodeSvg += this._renderNodeLabel(nodeCfg.x, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
+            // Add label if configured (text/shape nodes draw their own — see _ownLabelNode)
+            if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text') {
+              if (this._ownLabelNode(nodeCfg)) {
+                nodeSvg += this._renderShapeLabel(nodeCfg);
+              } else {
+                const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || 24));
+                nodeSvg += this._renderNodeLabel(nodeCfg.x, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
+              }
             }
 
             // Show Node ID if enabled

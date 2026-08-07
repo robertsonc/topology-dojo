@@ -154,6 +154,28 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
   text: [
     { key: 'fontSize', label: 'Font size', kind: 'number' },
     { key: 'fontWeight', label: 'Font weight', kind: 'string' },
+    { key: 'width', label: 'Box width (wraps text)', kind: 'number' },
+    { key: 'fill', label: 'Background fill', kind: 'color' },
+    { key: 'borderColor', label: 'Border color', kind: 'color' },
+    {
+      key: 'align',
+      label: 'Align',
+      kind: 'enum',
+      options: ['left', 'center', 'right'],
+    },
+    { key: 'padding', label: 'Padding', kind: 'number' },
+  ],
+};
+
+/** Per-shape extra fields beyond the shared shape set (see NODE_CATALOG). */
+const SHAPE_EXTRAS: Record<string, FieldSpec[]> = {
+  'shape:rectangle': [
+    { key: 'shapeWidth', label: 'Width', kind: 'number' },
+    { key: 'shapeHeight', label: 'Height', kind: 'number' },
+  ],
+  'shape:ellipse': [
+    { key: 'shapeWidth', label: 'Width', kind: 'number' },
+    { key: 'shapeHeight', label: 'Height', kind: 'number' },
   ],
 };
 
@@ -212,8 +234,10 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
       ? [
           ...POSITION,
           { key: 'label', label: 'Label', kind: 'string' as const },
+          { key: 'labelColor', label: 'Label color', kind: 'color' as const },
           { key: 'color', label: 'Color', kind: 'color' as const },
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
+          ...(SHAPE_EXTRAS[type] ?? []),
           { key: 'locked', label: 'Locked', kind: 'boolean' as const },
           LAYER_FIELD,
           SOURCE_FIELD,

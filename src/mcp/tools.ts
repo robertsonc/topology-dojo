@@ -24,6 +24,7 @@ import {
 } from '../api/builder.js';
 import {
   annotationCatalog,
+  filterNodeCatalog,
   layerCatalog,
   linkCatalog,
   nodeCatalog,
@@ -217,17 +218,66 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'describe_capabilities',
       description:
-        'List every node type, link type, and annotation kind with its editable fields. This is the discovery surface: call it first to learn what you can set. Pass a topologyId to include that document’s custom node types.',
-      inputShape: { topologyId: topologyId.optional() },
+        'Discover what a topology can express. By default returns a compact INDEX (node/link type names, labels, categories + annotation and layer kinds) — cheap to call first. To get editable fields, either pass detail:"full" (the whole catalog — large) or, better, narrow with types:[…] and/or query:"…" which return full fields for just the matches. Pass a topologyId to include that document’s custom node types.',
+      inputShape: {
+        topologyId: topologyId.optional(),
+        detail: z
+          .enum(['index', 'full'])
+          .optional()
+          .describe(
+            'index (default) = names/categories only; full = include every editable field.',
+          ),
+        types: z
+          .array(z.string())
+          .max(50)
+          .optional()
+          .describe('Return full fields for just these node/link type names.'),
+        query: z
+          .string()
+          .optional()
+          .describe(
+            'Free-text node-type filter (matches type/label/category/aliases); returns full fields for the matches.',
+          ),
+      },
       handler: (a) => {
         const custom = a.topologyId
           ? store.get(String(a.topologyId)).customNodes
           : [];
+        const types = a.types as string[] | undefined;
+        const query = a.query as string | undefined;
+        const full = a.detail === 'full' || !!types?.length || !!query;
+        let nodes = query
+          ? filterNodeCatalog(query, custom)
+          : nodeCatalog(custom);
+        let links = linkCatalog();
+        if (types?.length) {
+          const want = new Set(types);
+          nodes = nodes.filter((n) => want.has(n.type));
+          links = links.filter((l) => want.has(l.type));
+        }
+        if (full) {
+          return {
+            nodeTypes: nodes,
+            linkTypes: links,
+            annotations: annotationCatalog(),
+            layers: layerCatalog(),
+          };
+        }
         return {
-          nodeTypes: nodeCatalog(custom),
-          linkTypes: linkCatalog(),
-          annotations: annotationCatalog(),
-          layers: layerCatalog(),
+          nodeTypes: nodes.map((n) => ({
+            type: n.type,
+            label: n.label,
+            category: n.category,
+            ...(n.custom ? { custom: true } : {}),
+          })),
+          linkTypes: links.map((l) => ({
+            type: l.type,
+            label: l.label,
+            ...(l.animated ? { animated: true } : {}),
+          })),
+          annotationKinds: annotationCatalog().map((x) => x.kind),
+          layerKinds: layerCatalog().kinds,
+          note: 'Index view. For editable fields, call again with detail:"full" or narrow with types:[…] / query:"…".',
         };
       },
     },
@@ -274,9 +324,56 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'get_topology',
       description:
-        'Return the full document JSON for a topology (the canonical, portable contract).',
-      inputShape: { topologyId },
-      handler: (a) => store.get(String(a.topologyId)),
+        'Return the document JSON for a topology (the canonical, portable contract). The full document can be large: pass summary:true for a compact overview (page names + element counts), or pageIndex to fetch a single page — prefer those unless the whole document is really needed.',
+      inputShape: {
+        topologyId,
+        summary: z
+          .boolean()
+          .optional()
+          .describe('Compact overview instead of the full document.'),
+        pageIndex: z
+          .number()
+          .int()
+          .optional()
+          .describe('Return only this page (with document title/page count).'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        if (a.summary) {
+          return {
+            title: doc.title,
+            pages: doc.pages.map((p, index) => ({
+              index,
+              name: p.name,
+              viewBox: p.viewBox,
+              nodes: p.nodes.length,
+              links: p.links.length,
+              anchors: p.anchors.length,
+              zones: p.zones?.length ?? 0,
+              flowPaths: p.flowPaths?.length ?? 0,
+              policyMarkers: p.policyMarkers?.length ?? 0,
+            })),
+            ...(doc.layers?.length
+              ? { layers: doc.layers.map((l) => l.id) }
+              : {}),
+            ...(doc.customNodes?.length
+              ? { customNodeTypes: doc.customNodes.map((c) => c.typeName) }
+              : {}),
+          };
+        }
+        if (a.pageIndex !== undefined) {
+          const page = doc.pages[Number(a.pageIndex)];
+          if (!page)
+            throw new Error(`page index ${Number(a.pageIndex)} out of range`);
+          return {
+            title: doc.title,
+            pageCount: doc.pages.length,
+            pageIndex: Number(a.pageIndex),
+            page,
+          };
+        }
+        return doc;
+      },
     },
     {
       name: 'import_topology',
@@ -1039,7 +1136,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay.',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. NOTE: the returned SVG is large (often 20–300KB) — do not call this after every edit. Use validate_topology for correctness checks while iterating, and render (or share_topology, where available) once at the end.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -1072,6 +1169,98 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         ),
     },
   ];
+
+  // Batch authoring — one tool call applying many operations, so building a
+  // diagram is O(1) tool calls instead of one per element (which exhausts
+  // per-turn tool-call budgets in agent sessions). Dispatches to the same
+  // validated handlers as the individual tools; atomic via snapshot/restore.
+  const BATCH_OPS = [
+    'add_page',
+    'define_layer',
+    'define_node_type',
+    'add_node',
+    'add_link',
+    'add_anchor',
+    'add_zone',
+    'add_flow_path',
+    'add_policy_marker',
+    'set_node_metadata',
+    'update_element',
+    'remove_element',
+    'upsert_by_source',
+  ] as const;
+  const batchTargets = new Map(
+    tools
+      .filter((t) => (BATCH_OPS as readonly string[]).includes(t.name))
+      .map((t) => [t.name, t] as const),
+  );
+  tools.push({
+    name: 'edit_topology',
+    description:
+      'Apply a BATCH of authoring operations to a topology in ONE call — strongly preferred over per-element tool calls when adding or editing more than a couple of elements. Each operation is {op, …args}: op is one of ' +
+      BATCH_OPS.join(', ') +
+      ' and the remaining keys are that tool’s arguments (topologyId and pageIndex are inherited from this call; a per-op pageIndex overrides). Operations apply in order, so later ops can reference ids created earlier. Atomic: if any operation fails the document is left unchanged and the failing index is reported. Returns compact per-op results (ids), not full elements.',
+    inputShape: {
+      topologyId,
+      pageIndex,
+      operations: z
+        .array(z.record(z.string(), z.unknown()))
+        .min(1)
+        .max(200)
+        .describe(
+          'Ordered operations, e.g. [{op:"add_node", type:"ec", x:120, y:80, nodeId:"a", label:"Branch"}, {op:"add_link", type:"line", from:"a", to:"b"}].',
+        ),
+    },
+    handler: (a) => {
+      const tid = String(a.topologyId);
+      const doc = store.get(tid);
+      const snapshot = structuredClone(doc);
+      const ops = a.operations as Record<string, unknown>[];
+      const results: Record<string, unknown>[] = [];
+      try {
+        ops.forEach((raw, i) => {
+          const { op, ...rest } = raw;
+          const name = String(op ?? '');
+          const tool = batchTargets.get(name);
+          if (!tool)
+            throw new Error(
+              `operations[${i}]: unknown op "${name}" (expected one of ${BATCH_OPS.join(', ')})`,
+            );
+          const args = {
+            topologyId: tid,
+            ...(a.pageIndex !== undefined ? { pageIndex: a.pageIndex } : {}),
+            ...rest,
+          };
+          const parsed = z.object(tool.inputShape).safeParse(args);
+          if (!parsed.success)
+            throw new Error(
+              `operations[${i}] (${name}): ${parsed.error.issues
+                .map((is) => `${is.path.join('.') || '(args)'}: ${is.message}`)
+                .join('; ')}`,
+            );
+          const result = tool.handler(parsed.data);
+          const r = (result ?? {}) as Record<string, unknown>;
+          const el = r.element as Record<string, unknown> | undefined;
+          results.push({
+            op: name,
+            ...(typeof r.id === 'string' ? { id: r.id } : {}),
+            ...(el && typeof el.id === 'string' ? { id: el.id } : {}),
+            ...(typeof r.pageIndex === 'number'
+              ? { pageIndex: r.pageIndex }
+              : {}),
+          });
+        });
+      } catch (err) {
+        // Atomic: restore the pre-batch document in place (the store holds the
+        // same object reference, so mutating it back undoes every applied op).
+        for (const key of Object.keys(doc))
+          delete (doc as unknown as Record<string, unknown>)[key];
+        Object.assign(doc, snapshot);
+        throw err;
+      }
+      return { applied: results.length, results };
+    },
+  });
 
   // Live fabric data — registered only when a provider is wired in (from env
   // credentials on the stdio server / Worker secrets remotely). All read-only:
