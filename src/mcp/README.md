@@ -116,16 +116,20 @@ an id. The usual draft-building flow is:
 2. add elements against that id — prefer one `edit_topology` batch (many
    operations in a single call) over per-element `add_node` / `add_link` /
    `add_zone` calls, which can exhaust an agent's per-turn tool budget.
-3. `validate_topology` → list of problems (empty = valid).
-4. `render_svg` → a standalone SVG string (large — render once at the end, not
-   after every edit).
-5. `get_topology` / `import_topology` → round-trip the document JSON, which is
+3. `validate_topology` → list of problems (empty = valid); fix layout warnings
+   with `tidy_topology` / `balance_topology`.
+4. `inspect_render` → a compact visual-quality report (crop, label legibility,
+   link routing, density) — the cheap final QA step before rendering.
+5. `render_svg` → a standalone SVG string (large — render once at the end,
+   after the inspection report is clean, not after every edit).
+6. `get_topology` / `import_topology` → round-trip the document JSON, which is
    the portable, canonical contract (server state is just a convenience).
    `get_topology` also offers `summary:true` (compact counts) and `pageIndex`
    (a single page) so agents don't reload the whole document.
 
 Page targeting: the `add_*` tools default to the **most recently added page**;
-pass `pageIndex` to target another. `render_svg` defaults to page `0`.
+pass `pageIndex` to target another. `render_svg` and `inspect_render` default
+to page `0`.
 
 Call `describe_capabilities` first to discover the vocabulary. It defaults to a
 compact **index** (type names/categories only); request editable fields with
@@ -177,6 +181,7 @@ to the task's affected region and change summaries, not total document size.
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                     |
 | `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                          |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)                                             |
+| `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA          |
 | `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters)                                        |
 | `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations                                              |
 | `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                 |
@@ -265,8 +270,26 @@ When a generated layout has issues, **`tidy_topology`** resolves them
 automatically: it snaps nodes to the grid, pushes apart overlapping/crowded
 nodes, and keeps them inside the page (zones auto-resize around their tidied
 members). A typical agent loop is generate → `validate_topology` →
-`tidy_topology` → `render_svg`. In the editor, the **Tidy** button (`T`) runs the
-same pass on the current frame.
+`tidy_topology` / `balance_topology` → `inspect_render` → `render_svg`. In the
+editor, the **Tidy** button (`T`) runs the same pass on the current frame.
+
+## Visual QA (`inspect_render`)
+
+`validate_topology` checks semantics and layout rules; it cannot tell you
+whether the **rendered page reads well**. `inspect_render` closes that gap
+without the SVG payload: it estimates the drawn geometry (glyphs, labels, link
+label chips, zone boxes) from the renderer's own metrics and returns a compact
+report — page/viewBox vs content bounds and margins, crop/clipping problems,
+text-legibility findings (labels overflowing nodes or colliding with
+neighbours, link labels stacking, zone labels overlapped by content,
+24-character truncation), routing quality (link/link crossings, links through
+unrelated node boxes, degenerate link/flow geometry), and density/balance
+signals (overlaps, crowding clusters, unbalanced whitespace). Findings are
+severity-tagged (`problem` vs `note`) and capped per category with true totals
+in `counts`, so the report stays a few KB. Inspect one page per call
+(`pageIndex`, default `0`). Use it as the cheap final visual QA step after
+validate/tidy/balance and **before** `render_svg` / `share_topology` /
+`export_flipbook`; only render once the report is clean.
 
 The tool handlers live in `tools.ts` (pure, unit-tested in `tools.test.ts`);
 `server.ts` registers them with the SDK and maps results to MCP text content.
