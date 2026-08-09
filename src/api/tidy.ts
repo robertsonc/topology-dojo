@@ -56,18 +56,30 @@ function clampTo(v: number, lo: number, hi: number, fallback: number): number {
  * but not themselves nodes: free-floating anchors (which model device ports,
  * placed against a node) and link waypoints (manual bend points). Without this a
  * pass that shifts nodes leaves ports detached and routes bending back through
- * stale waypoints — stray lines across the canvas. Each point follows the delta
- * of the node nearest its pre-move position; a no-op when there are no nodes.
+ * stale waypoints — stray lines across the canvas. An anchor follows the delta
+ * of the node nearest its pre-move position; a link waypoint follows the nearer
+ * of its own endpoint nodes (any node only when neither endpoint is one), so
+ * bends stay coherent with the route they belong to even when the pass shuffles
+ * unrelated nodes past them. `origNodes` must be index-aligned with `page.nodes`
+ * and captured before the pass moved them; a no-op when there are no nodes.
+ * A pass that calls this must cover exactly its own movement — chained passes
+ * (e.g. a layout algorithm, then the tidy finisher) each carry their own delta.
  */
-function carryAttachments(
+export function carryAttachments(
   page: Page,
   origNodes: { x: number; y: number }[],
 ): void {
   if (!page.nodes.length) return;
-  const delta = (x: number, y: number): { dx: number; dy: number } => {
+  const all = origNodes.map((_o, i) => i);
+  const byId = new Map(page.nodes.map((n, i) => [n.id, i]));
+  const delta = (
+    x: number,
+    y: number,
+    pool: number[],
+  ): { dx: number; dy: number } => {
     let best = -1;
     let bestD = Infinity;
-    for (let i = 0; i < origNodes.length; i++) {
+    for (const i of pool) {
       const o = origNodes[i]!;
       const d = (x - o.x) ** 2 + (y - o.y) ** 2;
       if (d < bestD) {
@@ -81,13 +93,19 @@ function carryAttachments(
       dy: page.nodes[best]!.y - origNodes[best]!.y,
     };
   };
-  const shift = (pt: { x: number; y: number }): void => {
-    const { dx, dy } = delta(pt.x, pt.y);
+  const shift = (pt: { x: number; y: number }, pool: number[]): void => {
+    const { dx, dy } = delta(pt.x, pt.y, pool);
     pt.x = Math.round(pt.x + dx);
     pt.y = Math.round(pt.y + dy);
   };
-  for (const a of page.anchors ?? []) shift(a);
-  for (const l of page.links ?? []) for (const w of l.waypoints ?? []) shift(w);
+  for (const a of page.anchors ?? []) shift(a, all);
+  for (const l of page.links ?? []) {
+    const ends = [byId.get(l.from), byId.get(l.to)].filter(
+      (i): i is number => i !== undefined,
+    );
+    const pool = ends.length ? ends : all;
+    for (const w of l.waypoints ?? []) shift(w, pool);
+  }
 }
 
 /** Tidy a single page's node positions in place; returns the count of nodes moved. */
@@ -156,33 +174,42 @@ export function tidyPage(page: Page, opts: TidyOptions = {}): number {
   return movedCount;
 }
 
+interface AxisCluster {
+  /** Node indices whose axis values snap together. */
+  indices: number[];
+  /** The rounded mean the cluster snaps to. */
+  mean: number;
+}
+
 /**
- * Cluster node centres on one axis and snap each cluster to its mean, so nodes
- * that *almost* share a row (y) or column (x) line up exactly. Greedy by
- * proximity: a new cluster starts when the gap to the previous node exceeds
- * `tol`. Returns the per-node target for that axis (keyed by node index).
+ * Cluster node centres on one axis so nodes that *almost* share a row (y) or
+ * column (x) can line up exactly. Greedy over the sorted values; a cluster is
+ * bounded by TOTAL spread (max − min ≤ `tol`), not consecutive gaps —
+ * neighbour-gap chaining is transitive and would collapse an arbitrarily wide
+ * span of closely-stepped values onto one mean. Singletons are omitted (nothing
+ * to align).
  */
-function alignAxis(values: number[], tol: number): number[] {
+function alignAxis(values: number[], tol: number): AxisCluster[] {
   const order = values
     .map((_v, i) => i)
     .sort((a, b) => values[a]! - values[b]!);
-  const out = values.slice();
+  const clusters: AxisCluster[] = [];
   let i = 0;
   while (i < order.length) {
     let j = i + 1;
-    while (
-      j < order.length &&
-      values[order[j]!]! - values[order[j - 1]!]! <= tol
-    )
+    while (j < order.length && values[order[j]!]! - values[order[i]!]! <= tol)
       j++;
     const group = order.slice(i, j);
-    const mean = Math.round(
-      group.reduce((s, k) => s + values[k]!, 0) / group.length,
-    );
-    for (const k of group) out[k] = mean;
+    if (group.length > 1)
+      clusters.push({
+        indices: group,
+        mean: Math.round(
+          group.reduce((s, k) => s + values[k]!, 0) / group.length,
+        ),
+      });
     i = j;
   }
-  return out;
+  return clusters;
 }
 
 /**
@@ -191,6 +218,10 @@ function alignAxis(values: number[], tol: number): number[] {
  * bounding box within the page — a deterministic nudge toward the balanced,
  * symmetric arrangement a clean topology wants. Assumes a non-overlapping
  * input (run `tidyPage` first if needed); returns how many nodes moved.
+ *
+ * Never worsens overlap: a cluster whose snap would add an overlapping node
+ * pair is reverted, degrading to fewer aligned axes rather than a broken
+ * layout (movedNodes reports only the moves that were kept).
  *
  * Pure node-positioning, like tidy — zones auto-size around their members.
  */
@@ -201,21 +232,37 @@ export function balancePage(page: Page, opts: BalanceOptions = {}): number {
   const tol = opts.alignTolerance ?? grid * 1.3;
   const orig = nodes.map((n) => ({ x: n.x, y: n.y }));
 
-  // Align rows (shared y) and columns (shared x).
-  const ys = alignAxis(
-    nodes.map((n) => n.y),
-    tol,
-  );
-  const xs = alignAxis(
-    nodes.map((n) => n.x),
-    tol,
-  );
-  nodes.forEach((n, k) => {
-    n.y = ys[k]!;
-    n.x = xs[k]!;
-  });
+  // Overlapping footprint pairs — the metric no cluster may increase.
+  const overlapPairs = (): number => {
+    const fps = nodes.map(nodeFootprint);
+    let count = 0;
+    for (let i = 0; i < fps.length; i++)
+      for (let j = i + 1; j < fps.length; j++)
+        if (rectGap(fps[i]!, fps[j]!) < 0) count++;
+    return count;
+  };
 
-  // Centre the layout's footprint bounding box within the page margins.
+  // Align rows (shared y) and columns (shared x), one cluster at a time.
+  const applyAxis = (axis: 'x' | 'y'): void => {
+    const clusters = alignAxis(
+      nodes.map((n) => n[axis]),
+      tol,
+    );
+    for (const c of clusters) {
+      const prev = c.indices.map((k) => nodes[k]![axis]);
+      const before = overlapPairs();
+      for (const k of c.indices) nodes[k]![axis] = c.mean;
+      if (overlapPairs() > before)
+        c.indices.forEach((k, ci) => {
+          nodes[k]![axis] = prev[ci]!;
+        });
+    }
+  };
+  applyAxis('y');
+  applyAxis('x');
+
+  // Centre the layout's footprint bounding box within the page margins — a
+  // uniform shift, so pairwise gaps (and the overlap guarantee) are preserved.
   if (opts.center ?? true) {
     const [vx, vy, vw, vh] = parseViewBox(page.viewBox);
     let minX = Infinity,

@@ -95,6 +95,55 @@ describe('tidy (auto-layout)', () => {
     ).toBeLessThan(40);
   });
 
+  it('balance does not collapse a transitive near-axis chain (x)', () => {
+    const d = createDocument().page();
+    // Each neighbour is within the default 26px tolerance, but the 80px span
+    // is far beyond it; y steps keep the rows from clustering.
+    for (let k = 0; k <= 10; k++)
+      d.node({ id: `n${k}`, type: 'ec', x: 200 + 8 * k, y: 100 + 120 * k });
+    const doc = d.build();
+    const origXs = doc.pages[0]!.nodes.map((n) => n.x);
+    balancePage(doc.pages[0]!, { center: false });
+    const xs = doc.pages[0]!.nodes.map((n) => n.x);
+    expect(new Set(xs).size).toBeGreaterThan(1); // not one giant column
+    // Spread-bounded clusters keep every node within tolerance of its start.
+    xs.forEach((x, k) =>
+      expect(Math.abs(x - origXs[k]!)).toBeLessThanOrEqual(26),
+    );
+  });
+
+  it('balance does not collapse a transitive near-axis chain (y)', () => {
+    const d = createDocument().page();
+    for (let k = 0; k <= 10; k++)
+      d.node({ id: `n${k}`, type: 'ec', x: 100 + 120 * k, y: 200 + 8 * k });
+    const doc = d.build();
+    const origYs = doc.pages[0]!.nodes.map((n) => n.y);
+    balancePage(doc.pages[0]!, { center: false });
+    const ys = doc.pages[0]!.nodes.map((n) => n.y);
+    expect(new Set(ys).size).toBeGreaterThan(1); // not one giant row
+    ys.forEach((y, k) =>
+      expect(Math.abs(y - origYs[k]!)).toBeLessThanOrEqual(26),
+    );
+  });
+
+  it('balance skips a cluster whose snap would create a node overlap', () => {
+    const doc = createDocument()
+      .page()
+      // Vertically clear of each other, but close enough horizontally that
+      // snapping them onto one row would overlap the footprints.
+      .node({ id: 'a', type: 'ec', x: 300, y: 300 })
+      .node({ id: 'b', type: 'ec', x: 340, y: 344 })
+      .build();
+    const overlapCount = () =>
+      analyzeLayout(doc).filter((p) => /" overlap/.test(p.message)).length;
+    expect(overlapCount()).toBe(0);
+    balancePage(doc.pages[0]!, { center: false, alignTolerance: 50 });
+    const [a, b] = doc.pages[0]!.nodes;
+    expect(overlapCount()).toBe(0); // the row snap was rejected
+    expect(a!.x).toBe(b!.x); // the safe column snap still landed
+    expect(a!.y).not.toBe(b!.y);
+  });
+
   it('balanceLayout is pure and leaves no overlaps', () => {
     const doc = createDocument()
       .page()
