@@ -60,40 +60,44 @@ function clampTo(v: number, lo: number, hi: number, fallback: number): number {
  * of the node nearest its pre-move position; a link waypoint follows the nearer
  * of its own endpoint nodes (any node only when neither endpoint is one), so
  * bends stay coherent with the route they belong to even when the pass shuffles
- * unrelated nodes past them. `origNodes` must be index-aligned with `page.nodes`
- * and captured before the pass moved them; a no-op when there are no nodes.
+ * unrelated nodes past them. `origNodes` snapshots `{ id, x, y }` captured
+ * before the pass moved the nodes; movement resolves by node ID (never array
+ * position), so a pass that reorders `page.nodes` cannot mis-attribute deltas.
+ * Snapshots whose node no longer exists are ignored; a no-op with no nodes.
  * A pass that calls this must cover exactly its own movement — chained passes
  * (e.g. a layout algorithm, then the tidy finisher) each carry their own delta.
  */
-export function carryAttachments(
-  page: Page,
-  origNodes: { x: number; y: number }[],
-): void {
+export interface NodeSnapshot {
+  id: string;
+  x: number;
+  y: number;
+}
+
+export function carryAttachments(page: Page, origNodes: NodeSnapshot[]): void {
   if (!page.nodes.length) return;
-  const all = origNodes.map((_o, i) => i);
-  const byId = new Map(page.nodes.map((n, i) => [n.id, i]));
+  const current = new Map(page.nodes.map((n) => [n.id, n]));
+  const all = origNodes.filter((o) => current.has(o.id));
+  if (!all.length) return;
+  const byId = new Map(all.map((o) => [o.id, o]));
   const delta = (
     x: number,
     y: number,
-    pool: number[],
+    pool: NodeSnapshot[],
   ): { dx: number; dy: number } => {
-    let best = -1;
+    let best: NodeSnapshot | null = null;
     let bestD = Infinity;
-    for (const i of pool) {
-      const o = origNodes[i]!;
+    for (const o of pool) {
       const d = (x - o.x) ** 2 + (y - o.y) ** 2;
       if (d < bestD) {
         bestD = d;
-        best = i;
+        best = o;
       }
     }
-    if (best < 0) return { dx: 0, dy: 0 };
-    return {
-      dx: page.nodes[best]!.x - origNodes[best]!.x,
-      dy: page.nodes[best]!.y - origNodes[best]!.y,
-    };
+    if (!best) return { dx: 0, dy: 0 };
+    const now = current.get(best.id)!;
+    return { dx: now.x - best.x, dy: now.y - best.y };
   };
-  const shift = (pt: { x: number; y: number }, pool: number[]): void => {
+  const shift = (pt: { x: number; y: number }, pool: NodeSnapshot[]): void => {
     const { dx, dy } = delta(pt.x, pt.y, pool);
     pt.x = Math.round(pt.x + dx);
     pt.y = Math.round(pt.y + dy);
@@ -101,7 +105,7 @@ export function carryAttachments(
   for (const a of page.anchors ?? []) shift(a, all);
   for (const l of page.links ?? []) {
     const ends = [byId.get(l.from), byId.get(l.to)].filter(
-      (i): i is number => i !== undefined,
+      (o): o is NodeSnapshot => o !== undefined,
     );
     const pool = ends.length ? ends : all;
     for (const w of l.waypoints ?? []) shift(w, pool);
@@ -118,7 +122,7 @@ export function tidyPage(page: Page, opts: TidyOptions = {}): number {
   const margin = LAYOUT_RULES.edgeMargin;
   const [vx, vy, vw, vh] = parseViewBox(page.viewBox);
   const nodes = page.nodes;
-  const orig = nodes.map((n) => ({ x: n.x, y: n.y }));
+  const orig = nodes.map((n) => ({ id: n.id, x: n.x, y: n.y }));
 
   const clampNode = (n: NodeConfig): void => {
     const f = nodeFootprint(n);
@@ -230,7 +234,7 @@ export function balancePage(page: Page, opts: BalanceOptions = {}): number {
   if (nodes.length === 0) return 0;
   const grid = LAYOUT_RULES.gridStep;
   const tol = opts.alignTolerance ?? grid * 1.3;
-  const orig = nodes.map((n) => ({ x: n.x, y: n.y }));
+  const orig = nodes.map((n) => ({ id: n.id, x: n.x, y: n.y }));
 
   // Overlapping footprint pairs — the metric no cluster may increase.
   const overlapPairs = (): number => {
