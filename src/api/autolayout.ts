@@ -345,7 +345,7 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
   if (page.nodes.length < 2) return 0;
   const vb = parseViewBox(page.viewBox);
   const spacing = opts.spacing ?? LAYOUT_RULES.minNodeGap * 1.5;
-  const orig = page.nodes.map((n) => ({ x: n.x, y: n.y }));
+  const orig = page.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y }));
 
   if ((page.zones?.length ?? 0) > 0) zoneAwareLayout(page, vb, spacing);
   else applyAlgorithm(page, vb, spacing, opts);
@@ -358,12 +358,16 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
 
   if (opts.tidy !== false) tidyPage(page, { snapToGrid: false });
 
+  // Moved-count resolves by id, like carryAttachments — an algorithm that
+  // reorders page.nodes must not mis-count (or worse, mis-carry) movement.
+  const before = new Map(orig.map((o) => [o.id, o]));
   let moved = 0;
-  page.nodes.forEach((n, i) => {
+  for (const n of page.nodes) {
     n.x = Math.round(n.x);
     n.y = Math.round(n.y);
-    if (n.x !== orig[i]!.x || n.y !== orig[i]!.y) moved++;
-  });
+    const o = before.get(n.id);
+    if (!o || n.x !== o.x || n.y !== o.y) moved++;
+  }
   return moved;
 }
 

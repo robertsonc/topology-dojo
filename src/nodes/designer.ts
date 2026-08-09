@@ -16,6 +16,7 @@ import { defaultSpec, type CustomNodeSpec } from './spec.js';
 import { renderCustomNode } from './render.js';
 import { nodeSpecToCode } from './codegen.js';
 import { engineDefs } from '../vendor/topology-ds.js';
+import { registerOverlay } from '../ui/overlay.js';
 
 /** Clipboard fallback for browsers/contexts without navigator.clipboard. */
 function fallbackCopy(text: string, done: (ok: boolean) => void): void {
@@ -42,7 +43,7 @@ function esc(s: string): string {
 
 function shapeThumb(shape: string): string {
   const g = shapeGeom(shape, 14, 14, 10, 2);
-  return `<svg viewBox="0 0 28 28"><${g.tag} ${g.attrs} fill="none" stroke="#b1b9be" stroke-width="1.2"/></svg>`;
+  return `<svg viewBox="0 0 28 28" aria-hidden="true"><${g.tag} ${g.attrs} fill="none" stroke="#b1b9be" stroke-width="1.2"/></svg>`;
 }
 
 function swatchRow(field: string, current: string): string {
@@ -50,7 +51,7 @@ function swatchRow(field: string, current: string): string {
     `<div class="nd-swatches" data-swatch="${field}">` +
     SWATCHES.map(
       (c) =>
-        `<button class="nd-sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}" title="${c}"></button>`,
+        `<button class="nd-sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === current}"></button>`,
     ).join('') +
     `</div>`
   );
@@ -80,7 +81,7 @@ export function openNodeDesigner(
           .filter(([, v]) => v.cat === cat)
           .map(
             ([key, v]) =>
-              `<button class="nd-icon ${spec.icon === key ? 'on' : ''}" data-icon="${key}" title="${key}"><svg viewBox="0 0 24 24"><path d="${v.d}" fill="#b1b9be"/></svg></button>`,
+              `<button class="nd-icon ${spec.icon === key ? 'on' : ''}" data-icon="${key}" title="${key}" aria-label="Icon ${key}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${v.d}" fill="#b1b9be"/></svg></button>`,
           )
           .join(''),
       )
@@ -90,10 +91,10 @@ export function openNodeDesigner(
     `<label class="nd-toggle"><input type="checkbox" data-bool="${field}" ${spec[field as keyof CustomNodeSpec] ? 'checked' : ''}/> ${label}</label>`;
 
   root.innerHTML = `
-    <div class="nd-dialog">
+    <div class="nd-dialog" role="dialog" aria-modal="true" aria-label="Node Designer">
       <div class="nd-head">
         <span class="nd-title">Node Designer</span>
-        <input class="nd-name" id="nd-name" value="${esc(spec.typeName)}" placeholder="type name"/>
+        <input class="nd-name" id="nd-name" value="${esc(spec.typeName)}" placeholder="type name" aria-label="Type name"/>
         <span class="nd-spacer"></span>
         <button class="nd-btn" id="nd-cancel">Cancel</button>
         <button class="nd-btn" id="nd-code" title="Copy a self-contained registerNodeType() snippet">Copy as code</button>
@@ -102,7 +103,7 @@ export function openNodeDesigner(
       <div class="nd-body">
         <div class="nd-col scroll-slim nd-left">
           <div class="nd-h">Base shape</div>
-          <div class="nd-shapes">${SHAPE_KEYS.map((s) => `<button class="nd-shape ${s === spec.shape ? 'on' : ''}" data-shape="${s}" title="${s}">${shapeThumb(s)}</button>`).join('')}</div>
+          <div class="nd-shapes">${SHAPE_KEYS.map((s) => `<button class="nd-shape ${s === spec.shape ? 'on' : ''}" data-shape="${s}" title="${s}" aria-label="Shape ${s}">${shapeThumb(s)}</button>`).join('')}</div>
           <div class="nd-h">Icon</div>
           <div class="nd-icons">${iconPicker}</div>
         </div>
@@ -160,7 +161,15 @@ export function openNodeDesigner(
 
   function close(): void {
     root.remove();
+    releaseOverlay();
   }
+
+  // Modal focus handling (issue #209): trap Tab inside the dialog, close on
+  // Escape, and return focus to the invoking palette button afterwards.
+  const releaseOverlay = registerOverlay(root, {
+    close,
+    initialFocus: $<HTMLInputElement>('#nd-name'),
+  });
 
   // Shapes
   root.querySelectorAll<HTMLButtonElement>('[data-shape]').forEach((b) =>

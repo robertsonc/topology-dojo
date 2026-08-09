@@ -21,6 +21,7 @@ import {
 } from '../admin/client.js';
 import type { AdminSummary, RosterEntry } from '../admin/model.js';
 import type { WorkspaceListItem } from '../workspace/model.js';
+import { registerOverlay } from './overlay.js';
 
 // Local copy of main.ts's `esc()` — the codebase's established per-module
 // pattern for this trivial helper (see `src/ui/profile-panel.ts`).
@@ -162,6 +163,7 @@ export function mountAdminDashboard(
   host: AdminDashboardHost,
 ): AdminDashboardHandle {
   let panel: HTMLElement | null = null;
+  let releaseOverlay: (() => void) | null = null;
   const state: AdminPanelState = {
     loading: false,
     disabled: false,
@@ -180,6 +182,8 @@ export function mountAdminDashboard(
     panel?.remove();
     panel = null;
     host.chip.setAttribute('aria-expanded', 'false');
+    releaseOverlay?.();
+    releaseOverlay = null;
   }
 
   async function refresh(): Promise<void> {
@@ -256,13 +260,15 @@ export function mountAdminDashboard(
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Admin dashboard');
     panel.innerHTML =
-      `<div class="ws-head"><h3>Admin dashboard</h3><button class="tbtn ticon" id="adminClose" title="Close">✕</button></div>` +
+      `<div class="ws-head"><h3>Admin dashboard</h3><button class="tbtn ticon" id="adminClose" title="Close" aria-label="Close">✕</button></div>` +
       `<div id="adminBody"></div>`;
     document.body.appendChild(panel);
     panel
       .querySelector('#adminClose')
       ?.addEventListener('click', () => closePanel());
     host.chip.setAttribute('aria-expanded', 'true');
+    // Focus trap + Escape + focus restore (issue #209).
+    releaseOverlay = registerOverlay(panel, { close: closePanel });
     void refresh();
   }
 

@@ -20,6 +20,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  computeChipAnnouncement,
   computeWorkspaceChipState,
   computeWorkspacePanelState,
   renderActiveWorkspaceHtml,
@@ -35,6 +36,7 @@ import {
   type ActiveWorkspace,
   type ChangeSummary,
   type RenderedPreviewFrame,
+  type WorkspacePanelState,
 } from './workspace-panel.js';
 import { computeProposalPreview } from '../workspace/preview.js';
 import type {
@@ -145,6 +147,141 @@ describe('computeWorkspaceChipState', () => {
     );
     expect(state.on).toBe(true);
     expect(state.conflict).toBe(true);
+  });
+
+  // Issue #212: the chip surfaces attention states as explicit text.
+  it('labels pending proposals with an explicit count', () => {
+    expect(
+      computeWorkspaceChipState(
+        activeWorkspace({ manifest: manifest({ pendingProposals: 2 }) }),
+      ).label,
+    ).toBe('agent · 2 proposals');
+    expect(
+      computeWorkspaceChipState(
+        activeWorkspace({ manifest: manifest({ pendingProposals: 1 }) }),
+      ).label,
+    ).toBe('agent · 1 proposal');
+  });
+
+  it('labels a conflict as text, taking precedence over pending proposals', () => {
+    const state = computeWorkspaceChipState(
+      activeWorkspace({
+        error: 'Revision conflict: rebase required',
+        manifest: manifest({ pendingProposals: 2 }),
+      }),
+    );
+    expect(state.label).toBe('agent · conflict');
+    expect(state.conflict).toBe(true);
+  });
+
+  it('labels offline with queued operations, but stays quiet offline with none', () => {
+    const pending: CommitRequest = {
+      baseRevision: 7,
+      operationId: 'ui_x',
+      operations: [
+        { type: 'page.patch', pageId: 'p1', patch: { set: { name: 'x' } } },
+        { type: 'page.patch', pageId: 'p1', patch: { set: { name: 'y' } } },
+        { type: 'page.patch', pageId: 'p1', patch: { set: { name: 'z' } } },
+      ],
+    };
+    expect(
+      computeWorkspaceChipState(activeWorkspace({ pending }), false).label,
+    ).toBe('agent · offline · 3 pending');
+    expect(computeWorkspaceChipState(activeWorkspace(), false).label).toBe(
+      'agent · r7',
+    );
+  });
+
+  it('keeps the plain revision label when quiet', () => {
+    expect(
+      computeWorkspaceChipState(
+        activeWorkspace({ manifest: manifest({ pendingProposals: 0 }) }),
+        true,
+      ).label,
+    ).toBe('agent · r7');
+  });
+});
+
+describe('computeChipAnnouncement (issue #212)', () => {
+  const state = (
+    over: Partial<WorkspacePanelState> = {},
+  ): WorkspacePanelState => ({
+    active: true,
+    revision: 7,
+    pendingProposals: 0,
+    conflict: false,
+    offline: false,
+    pendingOps: 0,
+    error: null,
+    ...over,
+  });
+
+  it('announces nothing for an unchanged quiet state (poll refresh)', () => {
+    expect(computeChipAnnouncement(state(), state())).toBeNull();
+    expect(computeChipAnnouncement(null, state())).toBeNull();
+  });
+
+  it('announces nothing when only the revision advances', () => {
+    expect(
+      computeChipAnnouncement(state({ revision: 7 }), state({ revision: 9 })),
+    ).toBeNull();
+  });
+
+  it('announces a proposal-count transition, including the first snapshot', () => {
+    expect(
+      computeChipAnnouncement(state(), state({ pendingProposals: 2 })),
+    ).toBe('2 agent proposals awaiting review.');
+    expect(computeChipAnnouncement(null, state({ pendingProposals: 1 }))).toBe(
+      '1 agent proposal awaiting review.',
+    );
+  });
+
+  it('announces a further proposal arriving but not an unchanged count', () => {
+    expect(
+      computeChipAnnouncement(
+        state({ pendingProposals: 1 }),
+        state({ pendingProposals: 2 }),
+      ),
+    ).toBe('2 agent proposals awaiting review.');
+    expect(
+      computeChipAnnouncement(
+        state({ pendingProposals: 2 }),
+        state({ pendingProposals: 2, revision: 9 }),
+      ),
+    ).toBeNull();
+  });
+
+  it('announces entering conflict once, with priority over proposals', () => {
+    expect(
+      computeChipAnnouncement(
+        state(),
+        state({ conflict: true, error: 'x', pendingProposals: 2 }),
+      ),
+    ).toBe('Agent workspace conflict — attention needed.');
+    expect(
+      computeChipAnnouncement(
+        state({ conflict: true, error: 'x' }),
+        state({ conflict: true, error: 'x', pendingOps: 1 }),
+      ),
+    ).toBeNull();
+  });
+
+  it('announces going offline with queued ops, and not on later op-count churn', () => {
+    expect(
+      computeChipAnnouncement(state(), state({ offline: true, pendingOps: 2 })),
+    ).toBe('Workspace offline — 2 changes pending sync.');
+    expect(
+      computeChipAnnouncement(
+        state({ offline: true, pendingOps: 2 }),
+        state({ offline: true, pendingOps: 5 }),
+      ),
+    ).toBeNull();
+  });
+
+  it('announces nothing when returning to quiet', () => {
+    expect(
+      computeChipAnnouncement(state({ conflict: true, error: 'x' }), state()),
+    ).toBeNull();
   });
 });
 

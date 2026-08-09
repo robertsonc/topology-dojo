@@ -56,6 +56,35 @@
         box-sizing: border-box;
       }
 
+      /* Shared keyboard-focus treatment (#210): one high-contrast ring for
+         every interactive control — toolbar/canvas/frame buttons, swatches,
+         menu items, inputs. :focus-visible keeps mouse clicks quiet. --accent
+         reads on both themes' panel + canvas surfaces. Never reintroduce a
+         bare `outline: none` without a visible replacement. */
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      a:focus-visible,
+      summary:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* Visually hidden but exposed to assistive tech (aria-live region). */
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
       /* Root SVG defs sprite: present in the render tree but visually absent.
          Never use display:none here — it disables the paint servers that canvas
          nodes and palette previews reference by url(#…). */
@@ -292,7 +321,11 @@
         cursor: pointer;
         text-decoration: underline;
       }
-      /* Banner shown while the canvas holds a /v/<id> shared snapshot (#202). */
+      /* Banner shown while the canvas holds a /v/<id> shared snapshot (#202).
+         The explicit display beats the UA's [hidden] rule, so restate it. */
+      .shared-banner[hidden] {
+        display: none;
+      }
       .shared-banner {
         display: flex;
         align-items: center;
@@ -397,6 +430,24 @@
       .workspace-chip.conflict .ws-dot {
         background: #fc6161;
       }
+      /* Transient new-proposal toast near the chip (issue #212): clicks
+         through to the proposal card; auto-dismisses. */
+      .ws-toast {
+        position: fixed;
+        z-index: 65;
+        padding: 7px 11px;
+        background: var(--panel2);
+        border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+        border-radius: 9px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .ws-toast:hover {
+        border-color: var(--accent);
+      }
       .workspace-panel {
         position: fixed;
         z-index: 70;
@@ -468,7 +519,6 @@
         font-size: 12px;
       }
       .ws-input:focus {
-        outline: none;
         border-color: var(--accent);
       }
       .ws-checkpoint {
@@ -804,7 +854,6 @@
           var(--sw1) 0 60%,
           var(--sw2) 60% 100%
         );
-        outline: none;
         transition: transform 0.08s ease;
       }
       .display-pop .dp-swatch:hover {
@@ -986,7 +1035,6 @@
         margin-bottom: 4px;
       }
       .palette-search:focus {
-        outline: none;
         border-color: var(--accent);
       }
       .palette-search::placeholder {
@@ -1377,7 +1425,8 @@
         padding: 0;
       }
       .sw.on {
-        outline: 2px solid #fff;
+        /* Selected marker — --text so it stays visible in the light theme. */
+        outline: 2px solid var(--text);
         outline-offset: 1px;
       }
 
@@ -1688,7 +1737,8 @@
         padding: 0;
       }
       .nd-sw.on {
-        outline: 2px solid #fff;
+        /* Selected marker — --text so it stays visible in the light theme. */
+        outline: 2px solid var(--text);
         outline-offset: 1px;
       }
       .stage .tds-root,
@@ -2129,7 +2179,6 @@
         font-family: var(--font);
         font-size: 13px;
         padding: 7px 9px;
-        outline: none;
       }
       .find input:focus {
         border-color: var(--accent);

@@ -4,6 +4,7 @@ import { analyzeLayout } from './layout.js';
 import {
   balanceLayout,
   balancePage,
+  carryAttachments,
   tidyDocument,
   tidyLayout,
   tidyPage,
@@ -167,5 +168,32 @@ describe('tidy (auto-layout)', () => {
     const tidied = tidyLayout(doc);
     expect(JSON.stringify(doc)).toBe(before); // original unchanged
     expect(overlapWarnings(tidied)).toBe(0); // copy is clean
+  });
+
+  it('carryAttachments resolves movement by node id, not array position', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 150, y: 150 })
+      .node({ id: 'b', type: 'ec', x: 600, y: 200 })
+      .anchor(178, 140, 'porta') // pinned against a (offset +28, −10)
+      .link({
+        id: 'l',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        waypoints: [{ x: 180, y: 170 }], // manual bend near a (+30, +20)
+      })
+      .build();
+    const page = doc.pages[0]!;
+    const orig = page.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y }));
+    // A future algorithm may reorder the node array as well as move it — the
+    // carry must attribute each delta to the right node regardless.
+    page.nodes.reverse();
+    const a = page.nodes.find((n) => n.id === 'a')!;
+    a.x += 200;
+    a.y += 100;
+    carryAttachments(page, orig);
+    expect(page.anchors[0]!).toMatchObject({ x: 378, y: 240 });
+    expect(page.links[0]!.waypoints![0]!).toMatchObject({ x: 380, y: 270 });
   });
 });
