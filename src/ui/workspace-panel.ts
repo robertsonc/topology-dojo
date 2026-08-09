@@ -44,7 +44,11 @@ import {
   clearCachedWorkspace,
   readCachedWorkspace,
 } from '../workspace/offline.js';
-import { computeProposalPreview } from '../workspace/preview.js';
+import {
+  computeProposalPreview,
+  operationElementIds,
+  type ElementChange,
+} from '../workspace/preview.js';
 import type {
   ChangesResult,
   CheckpointSummary,
@@ -58,8 +62,9 @@ import type {
 } from '../workspace/model.js';
 import { serializeDoc } from '../pages/persist.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
+import type { ZoneConfig } from '../vendor/topology-ds.js';
 import { pageToSVG } from '../editor/export.js';
-import { nodeBounds } from '../api/geometry.js';
+import { nodeBounds, type BoundsRect } from '../api/geometry.js';
 
 /** One revision's stored summary (the timeline reads exactly this — no ops). */
 export type ChangeSummary = ChangesResult['changes'][number];
@@ -128,6 +133,28 @@ export interface WorkspacePanelHost {
   chipDivider: HTMLElement;
 }
 
+/**
+ * Snapshot of workspace state the app shell may surface outside the panel
+ * (issue #212 — the toolbar chip's badge/conflict/offline indicators).
+ * Computed by `computeWorkspacePanelState`, delivered via `onStateChange`.
+ */
+export interface WorkspacePanelState {
+  /** Whether a workspace is active at all. */
+  active: boolean;
+  /** Canonical revision, or null with no active workspace. */
+  revision: number | null;
+  /** Pending agent proposals awaiting review. */
+  pendingProposals: number;
+  /** A sync/accept conflict (or any workspace error) needs attention. */
+  conflict: boolean;
+  /** The browser is offline (indicator only — sync retries regardless). */
+  offline: boolean;
+  /** Unacknowledged operations queued for replay. */
+  pendingOps: number;
+  /** The current error message, when `conflict` is true. */
+  error: string | null;
+}
+
 /** The call sites `main.ts` still needs into workspace behavior. */
 export interface WorkspacePanelHandle {
   /** Confirms/tears down an active workspace before New/Open replace `doc`. */
@@ -140,6 +167,17 @@ export interface WorkspacePanelHandle {
   flushBeforeUnload(): void;
   /** The browser navigated to a different page — report it as presence. */
   notifyPageChanged(): void;
+  /**
+   * Subscribe to workspace-state changes (issue #212). The listener fires
+   * immediately with the current state, then on every change (deduped).
+   * Returns an unsubscribe function.
+   */
+  onStateChange(listener: (state: WorkspacePanelState) => void): () => void;
+  /** Open the panel scrolled to the given pending proposal (or the first
+   * one), briefly calling attention to its card. */
+  openToProposal(id?: string): void;
+  /** Open the panel scrolled to the current conflict/error notice. */
+  openToConflict(): void;
 }
 
 export interface WorkspaceChipState {
@@ -160,6 +198,27 @@ export function computeWorkspaceChipState(
     title: workspace
       ? `${workspace.id} · ${workspace.status}`
       : 'Hand this local document to an agent workspace',
+  };
+}
+
+/** Pure: the shell-facing state snapshot for a given workspace (or none).
+ * `pendingProposals` prefers the server manifest's count (authoritative) and
+ * falls back to the fetched proposal list. */
+export function computeWorkspacePanelState(
+  workspace: ActiveWorkspace | null,
+  online: boolean,
+): WorkspacePanelState {
+  return {
+    active: Boolean(workspace),
+    revision: workspace?.revision ?? null,
+    pendingProposals: workspace
+      ? (workspace.manifest?.pendingProposals ??
+        workspace.proposals.filter((p) => p.status === 'pending').length)
+      : 0,
+    conflict: Boolean(workspace?.error),
+    offline: !online,
+    pendingOps: workspace?.pending?.operations.length ?? 0,
+    error: workspace?.error ?? null,
   };
 }
 
@@ -352,10 +411,14 @@ export function renderActiveWorkspaceHtml(
             (proposal.rationale
               ? `<div class="ws-note">${esc(proposal.rationale)}</div>`
               : '') +
+            // The description is a button (interactive content inside the
+            // label, so clicking it never toggles the checkbox): it opens the
+            // preview and flashes the operation's changed geometry.
             `<ul class="ws-ops">${proposal.summary.descriptions
               .map(
                 (line, i) =>
-                  `<li><label class="ws-op"><input type="checkbox" class="ws-op-check" data-pid="${esc(proposal.id)}" data-op-index="${i}" checked> <span>${esc(line)}</span></label></li>`,
+                  `<li><label class="ws-op"><input type="checkbox" class="ws-op-check" data-pid="${esc(proposal.id)}" data-op-index="${i}" checked> ` +
+                  `<button type="button" class="ws-op-jump" data-pid="${esc(proposal.id)}" data-op-index="${i}" title="Locate this change in the preview">${esc(line)}</button></label></li>`,
               )
               .join('')}${
               proposal.summary.count > proposal.summary.descriptions.length
@@ -415,28 +478,179 @@ export interface RenderedPreviewFrame {
   afterSvg: string | null;
 }
 
-/** Pure: highlight-outline `<g>` for changed node ids on `page`, appended as
- * a sibling of the engine's own SVG markup (never edits it in place). Only
- * node elements have an AABB source (`api/geometry.ts`) today, so a changed
- * link/zone/anchor/flowPath/policyMarker id draws no outline — a known,
- * documented gap rather than a silent inaccuracy. */
-export function renderChangedElementOverlay(
+/** CSS class per change type. Colors AND dash patterns differ (solid = add,
+ * dotted = remove, dashed = modify) so the distinction never rides on color
+ * alone — see the `.ws-hl-*` rules in index.html. */
+const HL_CHANGE_CLASS: Record<ElementChange['change'], string> = {
+  added: 'ws-hl-add',
+  removed: 'ws-hl-remove',
+  modified: 'ws-hl-mod',
+};
+
+/** The doc-space center of a link/flow-path endpoint: a node or an anchor. */
+function elementPoint(page: Page, id: string): { x: number; y: number } | null {
+  const node = page.nodes.find((n) => n.id === id);
+  if (node) return { x: node.x, y: node.y };
+  const anchor = page.anchors.find((a) => a.id === id);
+  return anchor ? { x: anchor.x, y: anchor.y } : null;
+}
+
+/** Member node ids of a zone including nested child zones, mirroring the
+ * engine's `_getZoneNodesRecursive`; `seen` guards a parentZone cycle. */
+function zoneMemberIds(
   page: Page,
-  changedElementIds: string[],
-): string {
-  const pad = 6;
-  const rects = changedElementIds
-    .map((id) => page.nodes.find((n) => n.id === id))
-    .filter((n): n is NonNullable<typeof n> => Boolean(n))
-    .map((node) => {
+  zone: ZoneConfig,
+  seen = new Set<string>(),
+): string[] {
+  if (seen.has(zone.id)) return [];
+  seen.add(zone.id);
+  const ids = [...zone.nodes];
+  for (const child of page.zones)
+    if (child.parentZone === zone.id)
+      ids.push(...zoneMemberIds(page, child, seen));
+  return ids;
+}
+
+/** The zone's drawn rectangle, mirroring the engine's `_renderZoneRect` math
+ * (member node centers ± 40×30, expanded by `padding` (default 40)). Null
+ * when no member resolves — the engine draws nothing then, so neither do we. */
+function zoneRect(page: Page, zone: ZoneConfig): BoundsRect | null {
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const id of zoneMemberIds(page, zone)) {
+    const pos = elementPoint(page, id);
+    if (!pos) continue;
+    minX = Math.min(minX, pos.x - 40);
+    minY = Math.min(minY, pos.y - 30);
+    maxX = Math.max(maxX, pos.x + 40);
+    maxY = Math.max(maxY, pos.y + 30);
+  }
+  if (!isFinite(minX)) return null;
+  const pad = zone.padding || 40;
+  return {
+    x: minX - pad,
+    y: minY - pad,
+    w: maxX - minX + pad * 2,
+    h: maxY - minY + pad * 2,
+  };
+}
+
+/** SVG `points` attribute for a polyline through resolved doc-space points. */
+function polylinePoints(points: Array<{ x: number; y: number }>): string {
+  return points.map((p) => `${p.x},${p.y}`).join(' ');
+}
+
+/**
+ * Pure: the highlight markup for one changed element on `page`, or '' when
+ * its geometry can't be resolved (dangling endpoint, empty zone, unknown id).
+ * Per-kind geometry, all doc-space:
+ * - nodes: padded AABB rect (`api/geometry.ts`), the original behavior;
+ * - links: a stroked halo polyline from→waypoints→to through node/anchor
+ *   centers (not the engine's exact routed curve — close enough to point at);
+ * - flowPaths: the same halo through the waypoint node/anchor centers;
+ * - zones: a padded outline around the engine's computed zone rect;
+ * - anchors: a ring at the anchor's coordinates;
+ * - policyMarkers: a ring at the badge position (node AABB + align offset,
+ *   mirroring the engine's `_markerPos` margin of 14, stacking ignored).
+ */
+function changeHighlightMarkup(page: Page, change: ElementChange): string {
+  const attrs = (shape: string): string =>
+    `class="ws-hl ws-hl-${shape} ${HL_CHANGE_CLASS[change.change]}" data-el="${esc(change.elementId)}"`;
+  const id = change.elementId;
+  switch (change.kind) {
+    case 'nodes': {
+      const node = page.nodes.find((n) => n.id === id);
+      if (!node) return '';
+      const pad = 6;
       const b = nodeBounds(node);
       return (
-        `<rect x="${b.x - pad}" y="${b.y - pad}" width="${b.w + pad * 2}" height="${b.h + pad * 2}" ` +
-        `rx="6" class="ws-preview-highlight-rect"/>`
+        `<rect x="${b.x - pad}" y="${b.y - pad}" width="${b.w + pad * 2}" ` +
+        `height="${b.h + pad * 2}" rx="6" ${attrs('node')}/>`
       );
-    })
+    }
+    case 'links': {
+      const link = page.links.find((l) => l.id === id);
+      if (!link) return '';
+      const from = elementPoint(page, link.from);
+      const to = elementPoint(page, link.to);
+      const points = [from, ...(link.waypoints ?? []), to].filter(
+        (p): p is { x: number; y: number } => Boolean(p),
+      );
+      if (points.length < 2) return '';
+      return `<polyline points="${polylinePoints(points)}" ${attrs('link')}/>`;
+    }
+    case 'flowPaths': {
+      const path = page.flowPaths.find((f) => f.id === id);
+      if (!path) return '';
+      const points = path.waypoints
+        .map((ref) => elementPoint(page, ref))
+        .filter((p): p is { x: number; y: number } => Boolean(p));
+      if (points.length < 2) return '';
+      return `<polyline points="${polylinePoints(points)}" ${attrs('flow')}/>`;
+    }
+    case 'zones': {
+      const zone = page.zones.find((z) => z.id === id);
+      const rect = zone ? zoneRect(page, zone) : null;
+      if (!rect) return '';
+      const pad = 5;
+      return (
+        `<rect x="${rect.x - pad}" y="${rect.y - pad}" width="${rect.w + pad * 2}" ` +
+        `height="${rect.h + pad * 2}" rx="10" ${attrs('zone')}/>`
+      );
+    }
+    case 'anchors': {
+      const anchor = page.anchors.find((a) => a.id === id);
+      if (!anchor) return '';
+      return `<circle cx="${anchor.x}" cy="${anchor.y}" r="10" ${attrs('anchor')}/>`;
+    }
+    case 'policyMarkers': {
+      const marker = page.policyMarkers.find((m) => m.id === id);
+      const node = marker
+        ? page.nodes.find((n) => n.id === marker.nodeId)
+        : null;
+      if (!marker || !node) return '';
+      const b = nodeBounds(node);
+      const margin = 14; // the engine's badge offset from the node AABB
+      const a = marker.align ?? 'NE';
+      const cx = a.includes('E')
+        ? node.x + b.w / 2 + margin
+        : a.includes('W')
+          ? node.x - b.w / 2 - margin
+          : node.x;
+      const cy = a.includes('N')
+        ? node.y - b.h / 2 - margin
+        : a.includes('S')
+          ? node.y + b.h / 2 + margin
+          : node.y;
+      return `<circle cx="${cx}" cy="${cy}" r="13" ${attrs('marker')}/>`;
+    }
+  }
+}
+
+/**
+ * Pure: highlight `<g>` for the changed elements on `page`, appended as a
+ * sibling of the engine's own SVG markup (never edits it in place). `frame`
+ * picks which changes belong on this side: removals highlight on "before",
+ * additions on "after", modifications on both. Every element kind gets
+ * geometry (see `changeHighlightMarkup`); each shape carries a
+ * `data-el="<id>"` hook for the operation-list click-to-flash wiring.
+ */
+export function renderChangedElementOverlay(
+  page: Page,
+  changes: ElementChange[],
+  frame: 'before' | 'after',
+): string {
+  const shapes = changes
+    .filter((change) =>
+      frame === 'before'
+        ? change.change !== 'added'
+        : change.change !== 'removed',
+    )
+    .map((change) => changeHighlightMarkup(page, change))
     .join('');
-  return rects ? `<g class="ws-preview-highlight">${rects}</g>` : '';
+  return shapes ? `<g class="ws-preview-highlight">${shapes}</g>` : '';
 }
 
 /** Pure: the preview body for one proposal from already-rendered SVG frames
@@ -506,7 +720,14 @@ export function mountWorkspacePanel(
   // reset whenever the active workspace changes, never part of sync/commit.
   type ProposalPreviewState =
     | { status: 'loading' }
-    | { status: 'ready'; frames: RenderedPreviewFrame[]; totalAffected: number }
+    | {
+        status: 'ready';
+        frames: RenderedPreviewFrame[];
+        totalAffected: number;
+        /** Per proposal-operation index: the element ids it touches, for the
+         * operation-list click → flash-in-preview wiring. */
+        opElements: string[][];
+      }
     | { status: 'error'; message: string };
   const previewOpen = new Set<string>();
   const previewState = new Map<string, ProposalPreviewState>();
@@ -610,8 +831,9 @@ export function mountWorkspacePanel(
    * Lazily fetch proposal detail (operations) + the current canonical
    * snapshot, compute the pure preview, and render each affected page (capped
    * at 3) through the same browser SVG engine path the editor/export use
-   * (`pageToSVG`, `{ calm: true }` for a static frame), with a changed-element
-   * highlight overlay on the "after" frame. Never mutates the live document —
+   * (`pageToSVG`, `{ calm: true }` for a static frame), with geometry-aware
+   * change-highlight overlays on both frames (removals on "before", additions
+   * on "after", modifications on both). Never mutates the live document —
    * `computeProposalPreview` and the snapshot are both clones/fresh fetches.
    * Any failure (network, invalid operations, engine render) degrades to the
    * existing semantic summary already shown above the toggle; it never
@@ -635,12 +857,18 @@ export function mountWorkspacePanel(
       const frames: RenderedPreviewFrame[] = shown.map((page) => ({
         pageId: page.pageId,
         pageName: page.pageName,
-        beforeSvg: page.before ? pageToSVG(page.before, { calm: true }) : null,
+        beforeSvg: page.before
+          ? pageToSVG(
+              page.before,
+              { calm: true },
+              renderChangedElementOverlay(page.before, page.changes, 'before'),
+            )
+          : null,
         afterSvg: page.after
           ? pageToSVG(
               page.after,
               { calm: true },
-              renderChangedElementOverlay(page.after, page.changedElementIds),
+              renderChangedElementOverlay(page.after, page.changes, 'after'),
             )
           : null,
       }));
@@ -649,6 +877,7 @@ export function mountWorkspacePanel(
         status: 'ready',
         frames,
         totalAffected: pages.length,
+        opElements: detail.operations.map(operationElementIds),
       });
     } catch (error) {
       previewState.set(proposalId, {
@@ -670,6 +899,49 @@ export function mountWorkspacePanel(
     if (container) container.hidden = false;
     if (previewState.has(proposalId)) paintProposalPreview(proposalId);
     else void loadProposalPreview(proposalId);
+  }
+
+  /** Scroll the first highlight shape for `opIndex`'s elements into view and
+   * pulse a stronger outline on all of them (both frames), so a click on an
+   * operation description points straight at the geometry it changes. */
+  function flashOperationGeometry(proposalId: string, opIndex: number): void {
+    const state = previewState.get(proposalId);
+    const container = findPreviewContainer(proposalId);
+    if (!container || state?.status !== 'ready') return;
+    const ids = state.opElements[opIndex] ?? [];
+    const targets: Element[] = [];
+    for (const id of ids)
+      container
+        .querySelectorAll(`[data-el="${CSS.escape(id)}"]`)
+        .forEach((el) => targets.push(el));
+    if (!targets.length) return;
+    targets[0]!.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    for (const el of targets) el.classList.remove('ws-hl-focus');
+    // Re-add on the next frame so a repeat click restarts the CSS animation.
+    requestAnimationFrame(() => {
+      for (const el of targets) el.classList.add('ws-hl-focus');
+    });
+    setTimeout(() => {
+      for (const el of targets) el.classList.remove('ws-hl-focus');
+    }, 1800);
+  }
+
+  /** Operation-description click: make sure the proposal's preview is open
+   * and rendered (loading it on first use), then flash that operation's
+   * changed geometry. A load already in flight repaints on completion; the
+   * flash is then a no-op rather than a duplicate fetch. */
+  async function focusOperationGeometry(
+    proposalId: string,
+    opIndex: number,
+  ): Promise<void> {
+    if (!previewOpen.has(proposalId)) {
+      previewOpen.add(proposalId);
+      const container = findPreviewContainer(proposalId);
+      if (container) container.hidden = false;
+      if (previewState.has(proposalId)) paintProposalPreview(proposalId);
+    }
+    if (!previewState.has(proposalId)) await loadProposalPreview(proposalId);
+    flashOperationGeometry(proposalId, opIndex);
   }
 
   function closeWorkspaceForDocumentReplacement(): boolean {
@@ -797,12 +1069,28 @@ export function mountWorkspacePanel(
     return diffDocuments(workspace.lastSynced, host.getDoc()).length > 0;
   }
 
+  // Shell-facing state listeners (issue #212). Emission is deduped on the
+  // serialized snapshot, so hooking the two render chokepoints below is safe
+  // no matter how often they run.
+  const stateListeners = new Set<(state: WorkspacePanelState) => void>();
+  let lastEmittedState = '';
+
+  function emitPanelState(): void {
+    if (!stateListeners.size) return;
+    const state = computeWorkspacePanelState(activeWorkspace, isOnline());
+    const key = JSON.stringify(state);
+    if (key === lastEmittedState) return;
+    lastEmittedState = key;
+    for (const listener of stateListeners) listener(state);
+  }
+
   function updateWorkspaceChip(): void {
     const state = computeWorkspaceChipState(activeWorkspace);
     host.chip.classList.toggle('on', state.on);
     host.chip.classList.toggle('conflict', state.conflict);
     host.chipLabel.textContent = state.label;
     host.chip.title = state.title;
+    emitPanelState();
   }
 
   function scheduleWorkspaceSync(): void {
@@ -1125,6 +1413,7 @@ export function mountWorkspacePanel(
   }
 
   function renderWorkspacePanel(): void {
+    emitPanelState(); // proposal/pending changes reach here even when the chip text doesn't change
     if (!workspacePanel) return;
     const workspace = activeWorkspace;
     const body = workspacePanel.querySelector<HTMLElement>('#wsBody');
@@ -1310,6 +1599,16 @@ export function mountWorkspacePanel(
           toggleProposalPreview(button.dataset.pid!),
         );
       });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-op-jump')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          void focusOperationGeometry(
+            button.dataset.pid!,
+            Number(button.dataset.opIndex),
+          );
+        });
+      });
     // A poll-driven re-render replaces the whole body; repaint any preview
     // the owner had left open instead of silently collapsing it.
     body.querySelectorAll<HTMLElement>('.ws-preview').forEach((container) => {
@@ -1488,11 +1787,54 @@ export function mountWorkspacePanel(
     if (activeWorkspace) workspaceSocket?.sendPresence(host.getCurrentPageId());
   }
 
+  /** Scroll the panel to the first element `find` yields and flash it.
+   * Retries briefly: opening the panel kicks off an async refresh, so the
+   * target card may not be in the DOM yet. Best-effort — gives up quietly. */
+  function scrollPanelTo(find: () => HTMLElement | null, attempts = 6): void {
+    const el = find();
+    if (el) {
+      el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      el.classList.add('ws-attention');
+      setTimeout(() => el.classList.remove('ws-attention'), 1800);
+      return;
+    }
+    if (attempts > 0) setTimeout(() => scrollPanelTo(find, attempts - 1), 350);
+  }
+
+  function openToProposal(id?: string): void {
+    if (!workspacePanel) openWorkspacePanel();
+    scrollPanelTo(() => {
+      const cards = workspacePanel?.querySelectorAll<HTMLElement>(
+        '.ws-card[data-proposal]',
+      );
+      if (!cards?.length) return null;
+      if (!id) return cards[0] ?? null;
+      for (const card of cards) if (card.dataset.proposal === id) return card;
+      return null;
+    });
+  }
+
+  function openToConflict(): void {
+    if (!workspacePanel) openWorkspacePanel();
+    scrollPanelTo(
+      () => workspacePanel?.querySelector<HTMLElement>('.ws-error') ?? null,
+    );
+  }
+
   return {
     closeForDocumentReplacement: closeWorkspaceForDocumentReplacement,
     notifyDocChanged: scheduleWorkspaceSync,
     enable: enableWorkspaceUi,
     flushBeforeUnload,
     notifyPageChanged,
+    onStateChange(listener) {
+      stateListeners.add(listener);
+      listener(computeWorkspacePanelState(activeWorkspace, isOnline()));
+      return () => {
+        stateListeners.delete(listener);
+      };
+    },
+    openToProposal,
+    openToConflict,
   };
 }

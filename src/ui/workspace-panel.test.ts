@@ -21,6 +21,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeWorkspaceChipState,
+  computeWorkspacePanelState,
   renderActiveWorkspaceHtml,
   renderChangedElementOverlay,
   renderCheckpointsHtml,
@@ -35,6 +36,7 @@ import {
   type ChangeSummary,
   type RenderedPreviewFrame,
 } from './workspace-panel.js';
+import { computeProposalPreview } from '../workspace/preview.js';
 import type {
   ChangesResult,
   CheckpointSummary,
@@ -42,6 +44,7 @@ import type {
   ProposalSummary,
   WorkspaceListItem,
   WorkspaceManifest,
+  WorkspaceOperation,
 } from '../workspace/model.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 
@@ -385,6 +388,17 @@ describe('renderActiveWorkspaceHtml', () => {
     expect(html).toContain('&lt;b&gt;bold&lt;/b&gt; title');
   });
 
+  it('renders each operation description as a locate-in-preview button (issue #213)', () => {
+    const html = renderActiveWorkspaceHtml(
+      activeWorkspace({ proposals: [proposal({ id: 'prop_pending' })] }),
+    );
+    expect((html.match(/class="ws-op-jump"/g) ?? []).length).toBe(2);
+    expect(html).toContain(
+      '<button type="button" class="ws-op-jump" data-pid="prop_pending" data-op-index="0"',
+    );
+    expect(html).toContain('add node lb-1</button>');
+  });
+
   it('renders a collapsed Preview toggle and container for each proposal (Packet R1)', () => {
     const html = renderActiveWorkspaceHtml(
       activeWorkspace({
@@ -580,24 +594,38 @@ describe('renderTimelineHtml', () => {
 });
 
 describe('renderChangedElementOverlay', () => {
+  /** Two ec nodes, a link, an anchor, a zone, a flow path, and a marker —
+   * every visible element kind with hand-checkable coordinates. */
   function page(): Page {
     return {
       id: 'p1',
       name: 'Frame 1',
       viewBox: '0 0 1050 700',
-      nodes: [{ id: 'n1', type: 'ec', x: 100, y: 200, label: 'A' }],
-      links: [{ id: 'l1', type: 'line', from: 'n1', to: 'n1' }],
-      anchors: [],
-      zones: [],
-      flowPaths: [],
-      policyMarkers: [],
+      nodes: [
+        { id: 'n1', type: 'ec', x: 100, y: 200, label: 'A' },
+        { id: 'n2', type: 'ec', x: 300, y: 200, label: 'B' },
+      ],
+      links: [{ id: 'l1', type: 'line', from: 'n1', to: 'n2' }],
+      anchors: [{ id: 'a1', x: 500, y: 300 }],
+      zones: [{ id: 'z1', nodes: ['n1', 'n2'], label: 'Z' }],
+      flowPaths: [{ id: 'f1', waypoints: ['n1', 'a1'], label: 'F' }],
+      policyMarkers: [{ id: 'pm1', nodeId: 'n1', type: 'inspect' }],
     };
   }
+  const modified = (elementId: string, kind: string) =>
+    [{ elementId, kind, change: 'modified' }] as Parameters<
+      typeof renderChangedElementOverlay
+    >[1];
 
-  it('draws a highlight rect for a changed node id, offset by the node AABB + padding', () => {
-    const svg = renderChangedElementOverlay(page(), ['n1']);
+  it('draws a highlight rect for a changed node, offset by the node AABB + padding', () => {
+    const svg = renderChangedElementOverlay(
+      page(),
+      modified('n1', 'nodes'),
+      'after',
+    );
     expect(svg).toContain('<g class="ws-preview-highlight">');
-    expect(svg).toContain('class="ws-preview-highlight-rect"');
+    expect(svg).toContain('ws-hl-node');
+    expect(svg).toContain('data-el="n1"');
     // ec half-extent is 28x18 (api/geometry.ts) plus 6px padding each side.
     expect(svg).toContain('x="66"');
     expect(svg).toContain('y="176"');
@@ -605,17 +633,241 @@ describe('renderChangedElementOverlay', () => {
     expect(svg).toContain('height="48"');
   });
 
-  it('draws nothing for a changed id that is not a node (e.g. a link)', () => {
-    expect(renderChangedElementOverlay(page(), ['l1'])).toBe('');
+  it('draws a halo polyline through the endpoint node centers for a changed link', () => {
+    const svg = renderChangedElementOverlay(
+      page(),
+      modified('l1', 'links'),
+      'after',
+    );
+    expect(svg).toContain('<polyline points="100,200 300,200"');
+    expect(svg).toContain('ws-hl-link');
+    expect(svg).toContain('data-el="l1"');
+  });
+
+  it('threads a changed link halo through its coordinate waypoints', () => {
+    const p = page();
+    p.links[0]!.waypoints = [{ x: 200, y: 260 }];
+    const svg = renderChangedElementOverlay(
+      p,
+      modified('l1', 'links'),
+      'after',
+    );
+    expect(svg).toContain('points="100,200 200,260 300,200"');
+  });
+
+  it('draws a halo polyline through waypoint node/anchor centers for a changed flow path', () => {
+    const svg = renderChangedElementOverlay(
+      page(),
+      modified('f1', 'flowPaths'),
+      'after',
+    );
+    expect(svg).toContain('<polyline points="100,200 500,300"');
+    expect(svg).toContain('ws-hl-flow');
+    expect(svg).toContain('data-el="f1"');
+  });
+
+  it("draws a padded outline rect around a changed zone's computed region", () => {
+    const svg = renderChangedElementOverlay(
+      page(),
+      modified('z1', 'zones'),
+      'after',
+    );
+    // Engine zone rect: member centers ± 40x30, padding 40 → (20,130)–(380,270);
+    // the highlight adds 5px around that.
+    expect(svg).toContain('ws-hl-zone');
+    expect(svg).toContain('x="15"');
+    expect(svg).toContain('y="125"');
+    expect(svg).toContain('width="370"');
+    expect(svg).toContain('height="150"');
+    expect(svg).toContain('data-el="z1"');
+  });
+
+  it('draws a ring at a changed anchor', () => {
+    const svg = renderChangedElementOverlay(
+      page(),
+      modified('a1', 'anchors'),
+      'after',
+    );
+    expect(svg).toContain('<circle cx="500" cy="300" r="10"');
+    expect(svg).toContain('ws-hl-anchor');
+    expect(svg).toContain('data-el="a1"');
+  });
+
+  it("draws a ring at a changed policy marker's badge position (node AABB + NE offset)", () => {
+    const svg = renderChangedElementOverlay(
+      page(),
+      modified('pm1', 'policyMarkers'),
+      'after',
+    );
+    // n1 (ec, 28x18 half-extents) at (100,200), NE margin 14 → (142, 168).
+    expect(svg).toContain('<circle cx="142" cy="168" r="13"');
+    expect(svg).toContain('ws-hl-marker');
+    expect(svg).toContain('data-el="pm1"');
+  });
+
+  it('varies class (color + dash pattern) by change type', () => {
+    const p = page();
+    const changes = [
+      { elementId: 'n1', kind: 'nodes', change: 'added' },
+      { elementId: 'n2', kind: 'nodes', change: 'modified' },
+    ] as Parameters<typeof renderChangedElementOverlay>[1];
+    const svg = renderChangedElementOverlay(p, changes, 'after');
+    expect(svg).toContain('ws-hl-add');
+    expect(svg).toContain('ws-hl-mod');
+  });
+
+  it('shows removals only on the before frame and additions only on the after frame', () => {
+    const p = page();
+    const changes = [
+      { elementId: 'n1', kind: 'nodes', change: 'removed' },
+      { elementId: 'n2', kind: 'nodes', change: 'added' },
+    ] as Parameters<typeof renderChangedElementOverlay>[1];
+    const before = renderChangedElementOverlay(p, changes, 'before');
+    expect(before).toContain('data-el="n1"');
+    expect(before).toContain('ws-hl-remove');
+    expect(before).not.toContain('data-el="n2"');
+    const after = renderChangedElementOverlay(p, changes, 'after');
+    expect(after).toContain('data-el="n2"');
+    expect(after).toContain('ws-hl-add');
+    expect(after).not.toContain('data-el="n1"');
+  });
+
+  it('shows modifications on both frames', () => {
+    const p = page();
+    for (const frame of ['before', 'after'] as const) {
+      const svg = renderChangedElementOverlay(
+        p,
+        modified('n1', 'nodes'),
+        frame,
+      );
+      expect(svg).toContain('data-el="n1"');
+      expect(svg).toContain('ws-hl-mod');
+    }
   });
 
   it('draws nothing for an empty change list', () => {
-    expect(renderChangedElementOverlay(page(), [])).toBe('');
+    expect(renderChangedElementOverlay(page(), [], 'after')).toBe('');
   });
 
-  it('only draws rects for ids that resolve to a node, skipping unknown ids', () => {
-    const svg = renderChangedElementOverlay(page(), ['n1', 'ghost']);
+  it('skips changes whose geometry cannot be resolved (unknown ids, dangling refs)', () => {
+    const svg = renderChangedElementOverlay(
+      page(),
+      [
+        { elementId: 'n1', kind: 'nodes', change: 'modified' },
+        { elementId: 'ghost', kind: 'nodes', change: 'modified' },
+      ] as Parameters<typeof renderChangedElementOverlay>[1],
+      'after',
+    );
     expect((svg.match(/<rect/g) ?? []).length).toBe(1);
+  });
+});
+
+describe('proposal preview highlights per element kind (issue #213)', () => {
+  /** The end-to-end pure path: operations → computeProposalPreview →
+   * renderChangedElementOverlay, per single-kind proposal. */
+  function sourcePage(): Page {
+    return {
+      id: 'p1',
+      name: 'Frame 1',
+      viewBox: '0 0 1050 700',
+      nodes: [
+        { id: 'n1', type: 'ec', x: 100, y: 200, label: 'A' },
+        { id: 'n2', type: 'ec', x: 300, y: 200, label: 'B' },
+      ],
+      links: [{ id: 'l1', type: 'line', from: 'n1', to: 'n2' }],
+      anchors: [{ id: 'a1', x: 500, y: 300 }],
+      zones: [{ id: 'z1', nodes: ['n1', 'n2'], label: 'Z' }],
+      flowPaths: [{ id: 'f1', waypoints: ['n1', 'a1'], label: 'F' }],
+      policyMarkers: [{ id: 'pm1', nodeId: 'n1', type: 'inspect' }],
+    };
+  }
+  function overlaysFor(operations: WorkspaceOperation[]): {
+    before: string;
+    after: string;
+  } {
+    const [entry] = computeProposalPreview([sourcePage()], operations);
+    return {
+      before: entry!.before
+        ? renderChangedElementOverlay(entry!.before, entry!.changes, 'before')
+        : '',
+      after: entry!.after
+        ? renderChangedElementOverlay(entry!.after, entry!.changes, 'after')
+        : '',
+    };
+  }
+
+  it('link-only proposal: halo polyline on both frames for a patched link', () => {
+    const { before, after } = overlaysFor([
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'links',
+        elementId: 'l1',
+        patch: { set: { color: '#fc6161' } },
+      },
+    ]);
+    for (const svg of [before, after]) {
+      expect(svg).toContain('<polyline points="100,200 300,200"');
+      expect(svg).toContain('ws-hl-link');
+      expect(svg).toContain('ws-hl-mod');
+    }
+  });
+
+  it('zone-only proposal: removed zone outlines on the before frame only', () => {
+    const { before, after } = overlaysFor([
+      { type: 'element.remove', pageId: 'p1', kind: 'zones', elementId: 'z1' },
+    ]);
+    expect(before).toContain('ws-hl-zone');
+    expect(before).toContain('ws-hl-remove');
+    expect(before).toContain('x="15"');
+    expect(after).toBe('');
+  });
+
+  it('anchor-only proposal: added anchor rings on the after frame only', () => {
+    const { before, after } = overlaysFor([
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'anchors',
+        element: { id: 'a2', x: 640, y: 420 },
+      },
+    ]);
+    expect(before).toBe('');
+    expect(after).toContain('<circle cx="640" cy="420" r="10"');
+    expect(after).toContain('ws-hl-anchor');
+    expect(after).toContain('ws-hl-add');
+  });
+
+  it('flow-path-only proposal: halo through waypoint centers on both frames', () => {
+    const { before, after } = overlaysFor([
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'flowPaths',
+        elementId: 'f1',
+        patch: { set: { label: 'F2' } },
+      },
+    ]);
+    for (const svg of [before, after]) {
+      expect(svg).toContain('<polyline points="100,200 500,300"');
+      expect(svg).toContain('ws-hl-flow');
+    }
+  });
+
+  it('policy-marker-only proposal: badge ring at the marker position on both frames', () => {
+    const { before, after } = overlaysFor([
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'policyMarkers',
+        elementId: 'pm1',
+        patch: { set: { label: 'IDP' } },
+      },
+    ]);
+    for (const svg of [before, after]) {
+      expect(svg).toContain('<circle cx="142" cy="168" r="13"');
+      expect(svg).toContain('ws-hl-marker');
+    }
   });
 });
 
@@ -776,5 +1028,67 @@ describe('renderOfflineStatusHtml (Packet S3)', () => {
   it('stays quiet in the panel body when online and synced', () => {
     const html = renderActiveWorkspaceHtml(activeWorkspace(), true);
     expect(html).not.toContain('ws-offline');
+  });
+});
+
+describe('computeWorkspacePanelState (issue #212 groundwork)', () => {
+  it('reports the inactive baseline with no workspace', () => {
+    expect(computeWorkspacePanelState(null, true)).toEqual({
+      active: false,
+      revision: null,
+      pendingProposals: 0,
+      conflict: false,
+      offline: false,
+      pendingOps: 0,
+      error: null,
+    });
+  });
+
+  it('prefers the manifest pending-proposal count over the fetched list', () => {
+    const state = computeWorkspacePanelState(
+      activeWorkspace({
+        manifest: manifest({ pendingProposals: 3 }),
+        proposals: [proposal()],
+      }),
+      true,
+    );
+    expect(state.active).toBe(true);
+    expect(state.revision).toBe(7);
+    expect(state.pendingProposals).toBe(3);
+  });
+
+  it('falls back to counting pending proposals when no manifest is loaded yet', () => {
+    const state = computeWorkspacePanelState(
+      activeWorkspace({
+        manifest: null,
+        proposals: [
+          proposal({ id: 'a', status: 'pending' }),
+          proposal({ id: 'b', status: 'rejected' }),
+        ],
+      }),
+      true,
+    );
+    expect(state.pendingProposals).toBe(1);
+  });
+
+  it('reports conflict + error, offline, and queued pending ops', () => {
+    const state = computeWorkspacePanelState(
+      activeWorkspace({
+        error: 'Revision conflict: rebase required',
+        pending: {
+          baseRevision: 7,
+          operationId: 'ui_x',
+          operations: [
+            { type: 'page.patch', pageId: 'p1', patch: { set: { name: 'x' } } },
+            { type: 'page.patch', pageId: 'p1', patch: { set: { name: 'y' } } },
+          ],
+        },
+      }),
+      false,
+    );
+    expect(state.conflict).toBe(true);
+    expect(state.error).toBe('Revision conflict: rebase required');
+    expect(state.offline).toBe(true);
+    expect(state.pendingOps).toBe(2);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import { applyOperations } from './operations.js';
-import { computeProposalPreview } from './preview.js';
+import { computeProposalPreview, operationElementIds } from './preview.js';
 import type { WorkspaceOperation } from './model.js';
 
 function page(id: string, name: string): Page {
@@ -18,6 +18,22 @@ function page(id: string, name: string): Page {
     zones: [],
     flowPaths: [],
     policyMarkers: [],
+  };
+}
+
+/** A page with one element of every non-node kind, for change classification. */
+function richPage(id: string, name: string): Page {
+  const base = page(id, name);
+  return {
+    ...base,
+    anchors: [{ id: `${id}-anchor`, x: 500, y: 300 }],
+    zones: [{ id: `${id}-zone`, nodes: [`${id}-a`, `${id}-b`], label: 'Z' }],
+    flowPaths: [
+      { id: `${id}-flow`, waypoints: [`${id}-a`, `${id}-b`], label: 'F' },
+    ],
+    policyMarkers: [
+      { id: `${id}-pm`, nodeId: `${id}-a`, type: 'inspect', label: 'IDP' },
+    ],
   };
 }
 
@@ -171,6 +187,106 @@ describe('computeProposalPreview', () => {
     expect(entries[0]!.pageName).toBe('Frame 2');
   });
 
+  it('classifies an element.add as added, element.remove as removed, element.patch as modified', () => {
+    const p1 = page('p1', 'Frame 1');
+    const operations: WorkspaceOperation[] = [
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'nodes',
+        element: { id: 'p1-c', type: 'cloud', x: 500, y: 100, label: 'C' },
+      },
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'nodes',
+        elementId: 'p1-a',
+        patch: { set: { label: 'Updated A' } },
+      },
+      {
+        type: 'element.remove',
+        pageId: 'p1',
+        kind: 'nodes',
+        elementId: 'p1-b',
+      },
+    ];
+    const [entry] = computeProposalPreview([p1], operations);
+    expect(entry!.changes).toEqual([
+      { elementId: 'p1-a', kind: 'nodes', change: 'modified' },
+      { elementId: 'p1-b', kind: 'nodes', change: 'removed' },
+      { elementId: 'p1-c', kind: 'nodes', change: 'added' },
+    ]);
+  });
+
+  it('classifies changes for every non-node element kind', () => {
+    const p1 = richPage('p1', 'Frame 1');
+    const operations: WorkspaceOperation[] = [
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'links',
+        elementId: 'p1-ab',
+        patch: { set: { color: '#fc6161' } },
+      },
+      {
+        type: 'element.remove',
+        pageId: 'p1',
+        kind: 'zones',
+        elementId: 'p1-zone',
+      },
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'anchors',
+        elementId: 'p1-anchor',
+        patch: { set: { x: 520 } },
+      },
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'flowPaths',
+        elementId: 'p1-flow',
+        patch: { set: { label: 'F2' } },
+      },
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'policyMarkers',
+        element: { id: 'p1-pm2', nodeId: 'p1-b', type: 'deny' },
+      },
+    ];
+    const [entry] = computeProposalPreview([p1], operations);
+    expect(entry!.changes).toEqual([
+      { elementId: 'p1-ab', kind: 'links', change: 'modified' },
+      { elementId: 'p1-anchor', kind: 'anchors', change: 'modified' },
+      { elementId: 'p1-flow', kind: 'flowPaths', change: 'modified' },
+      { elementId: 'p1-pm2', kind: 'policyMarkers', change: 'added' },
+      { elementId: 'p1-zone', kind: 'zones', change: 'removed' },
+    ]);
+  });
+
+  it('drops changed ids that resolve to no element on either side, keeping them in changedElementIds', () => {
+    const p1 = page('p1', 'Frame 1');
+    // Added then removed within the same batch: net-nothing to draw.
+    const operations: WorkspaceOperation[] = [
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'nodes',
+        element: { id: 'p1-ghost', type: 'host', x: 10, y: 10 },
+      },
+      {
+        type: 'element.remove',
+        pageId: 'p1',
+        kind: 'nodes',
+        elementId: 'p1-ghost',
+      },
+    ];
+    const [entry] = computeProposalPreview([p1], operations);
+    expect(entry!.changedElementIds).toEqual(['p1-ghost']);
+    expect(entry!.changes).toEqual([]);
+  });
+
   it('does not mutate the source pages or operations', () => {
     const p1 = page('p1', 'Frame 1');
     const p1Clone = structuredClone(p1);
@@ -235,5 +351,43 @@ describe('computeProposalPreview', () => {
         wholeBatchAfter.pages.find((p) => p.id === entry.pageId) ?? null;
       expect(entry.after).toEqual(expected);
     }
+  });
+});
+
+describe('operationElementIds', () => {
+  it('names the element for element-scoped operations', () => {
+    expect(
+      operationElementIds({
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'links',
+        elementId: 'l1',
+        patch: { set: { color: '#fff' } },
+      }),
+    ).toEqual(['l1']);
+    expect(
+      operationElementIds({
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'zones',
+        element: { id: 'z1', nodes: [] },
+      }),
+    ).toEqual(['z1']);
+  });
+
+  it('names no elements for page/document-scoped operations', () => {
+    expect(
+      operationElementIds({
+        type: 'document.patch',
+        patch: { set: { title: 'X' } },
+      }),
+    ).toEqual([]);
+    expect(
+      operationElementIds({
+        type: 'page.patch',
+        pageId: 'p1',
+        patch: { set: { name: 'X' } },
+      }),
+    ).toEqual([]);
   });
 });
