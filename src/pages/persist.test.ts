@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { serializeDoc, parseDoc } from './persist.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  serializeDoc,
+  parseDoc,
+  saveLocal,
+  loadLocal,
+  clearLocal,
+} from './persist.js';
 import { sampleDocument, blankPage } from './model.js';
 
 describe('persist', () => {
@@ -245,6 +251,55 @@ describe('persist', () => {
       expect(doc.customNodes[0]!.colorFill).toMatch(/^#[0-9a-f]{3,8}$/i);
       // Inert: no attribute-breakout characters survive anywhere in the doc.
       expect(serializeDoc(doc)).not.toMatch(/[<>]/);
+    });
+  });
+
+  describe('localStorage slots + failure reporting (#202/#203)', () => {
+    let store: Map<string, string>;
+
+    beforeEach(() => {
+      store = new Map();
+      vi.stubGlobal('localStorage', {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          store.set(k, v);
+        },
+        removeItem: (k: string) => {
+          store.delete(k);
+        },
+      });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('saveLocal reports success and loadLocal round-trips', () => {
+      const doc = sampleDocument();
+      expect(saveLocal(doc)).toBe(true);
+      expect(loadLocal()?.title).toBe(doc.title);
+    });
+
+    it('saveLocal reports failure when storage throws (quota/policy)', () => {
+      vi.stubGlobal('localStorage', {
+        getItem: () => null,
+        setItem: () => {
+          throw new DOMException('quota', 'QuotaExceededError');
+        },
+        removeItem: () => {},
+      });
+      expect(saveLocal(sampleDocument())).toBe(false);
+    });
+
+    it('the shared slot never touches the local slot', () => {
+      const mine = parseDoc({ title: 'Mine', pages: [blankPage('F1')] })!;
+      const theirs = parseDoc({ title: 'Theirs', pages: [blankPage('F1')] })!;
+      expect(saveLocal(mine)).toBe(true);
+      expect(saveLocal(theirs, 'shared')).toBe(true);
+      expect(loadLocal()?.title).toBe('Mine');
+      expect(loadLocal('shared')?.title).toBe('Theirs');
+      clearLocal('shared');
+      expect(loadLocal('shared')).toBeNull();
+      expect(loadLocal()?.title).toBe('Mine');
     });
   });
 

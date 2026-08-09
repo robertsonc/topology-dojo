@@ -12,7 +12,7 @@
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
 import { LAYOUT_RULES, nodeFootprint, parseViewBox } from './layout.js';
-import { tidyPage } from './tidy.js';
+import { carryAttachments, tidyPage } from './tidy.js';
 
 export type LayoutAlgorithm = 'grid' | 'hierarchical' | 'circular' | 'force';
 
@@ -349,6 +349,12 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
 
   if ((page.zones?.length ?? 0) > 0) zoneAwareLayout(page, vb, spacing);
   else applyAlgorithm(page, vb, spacing, opts);
+
+  // Anchors and manual waypoints must follow the algorithm's wholesale node
+  // movement, keyed by the positions captured before it ran — the tidy
+  // finisher's own carry covers only the incremental tidy delta, so each
+  // attachment is shifted once per pass, never twice.
+  carryAttachments(page, orig);
 
   if (opts.tidy !== false) tidyPage(page, { snapToGrid: false });
 

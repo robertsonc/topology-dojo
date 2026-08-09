@@ -98,6 +98,36 @@ describe('auto-layout', () => {
       expect(near(id, ca)).toBeLessThan(near(id, cb));
   });
 
+  it.each(['grid', 'hierarchical', 'circular', 'force'] as const)(
+    '%s layout carries anchors and manual waypoints with their nodes',
+    (algorithm) => {
+      const doc = createDocument()
+        .page()
+        .node({ id: 'a', type: 'ec', x: 150, y: 150 })
+        .node({ id: 'b', type: 'ec', x: 600, y: 200 })
+        .node({ id: 'c', type: 'ec', x: 400, y: 500 })
+        .anchor(178, 140, 'porta') // pinned against a (offset +28, −10)
+        .link({
+          id: 'l',
+          type: 'line',
+          from: 'a',
+          to: 'b',
+          waypoints: [{ x: 180, y: 170 }], // manual bend near a (+30, +20)
+        })
+        .build();
+      const page = doc.pages[0]!;
+      layoutPage(page, { algorithm });
+      const a = page.nodes.find((n) => n.id === 'a')!;
+      const anchor = page.anchors[0]!;
+      const wp = page.links[0]!.waypoints![0]!;
+      // Offsets survive the algorithm + tidy passes (± rounding per pass).
+      expect(Math.abs(anchor.x - a.x - 28)).toBeLessThanOrEqual(2);
+      expect(Math.abs(anchor.y - a.y + 10)).toBeLessThanOrEqual(2);
+      expect(Math.abs(wp.x - a.x - 30)).toBeLessThanOrEqual(2);
+      expect(Math.abs(wp.y - a.y - 20)).toBeLessThanOrEqual(2);
+    },
+  );
+
   it('autoLayout is pure and a single node is a no-op', () => {
     const doc = piled();
     const before = JSON.stringify(doc);

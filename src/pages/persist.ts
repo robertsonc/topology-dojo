@@ -261,26 +261,46 @@ export function parseDoc(input: unknown): TopologyDocument | null {
   };
 }
 
-export function saveLocal(doc: TopologyDocument): void {
+/**
+ * Autosave slots. `local` is the user's own document. `shared` holds edits
+ * made while viewing a `/v/<id>` share-link snapshot, so opening a colleague's
+ * link can never clobber the primary autosave (#202).
+ */
+export type DocSlot = 'local' | 'shared';
+
+function slotKey(slot: DocSlot): string {
+  return slot === 'shared' ? `${KEY}:shared` : KEY;
+}
+
+/**
+ * Persist to localStorage. Returns whether the write actually succeeded —
+ * storage can be unavailable (private browsing, policy) or full (quota), and
+ * the UI must not claim "saved" when it wasn't (#203).
+ */
+export function saveLocal(
+  doc: TopologyDocument,
+  slot: DocSlot = 'local',
+): boolean {
   try {
-    localStorage.setItem(KEY, serializeDoc(doc));
+    localStorage.setItem(slotKey(slot), serializeDoc(doc));
+    return true;
   } catch {
-    // Storage unavailable / quota exceeded — non-fatal.
+    return false;
   }
 }
 
-export function loadLocal(): TopologyDocument | null {
+export function loadLocal(slot: DocSlot = 'local'): TopologyDocument | null {
   try {
-    const s = localStorage.getItem(KEY);
+    const s = localStorage.getItem(slotKey(slot));
     return s ? parseDoc(s) : null;
   } catch {
     return null;
   }
 }
 
-export function clearLocal(): void {
+export function clearLocal(slot: DocSlot = 'local'): void {
   try {
-    localStorage.removeItem(KEY);
+    localStorage.removeItem(slotKey(slot));
   } catch {
     // ignore
   }
