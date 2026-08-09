@@ -292,7 +292,11 @@
         cursor: pointer;
         text-decoration: underline;
       }
-      /* Banner shown while the canvas holds a /v/<id> shared snapshot (#202). */
+      /* Banner shown while the canvas holds a /v/<id> shared snapshot (#202).
+         The explicit display beats the UA's [hidden] rule, so restate it. */
+      .shared-banner[hidden] {
+        display: none;
+      }
       .shared-banner {
         display: flex;
         align-items: center;

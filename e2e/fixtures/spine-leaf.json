@@ -1,0 +1,109 @@
+{
+  "title": "Spine-leaf fabric",
+  "pages": [
+    {
+      "id": "pmsme1buv0",
+      "name": "Fabric",
+      "viewBox": "0 0 1050 700",
+      "nodes": [
+        {
+          "id": "s1",
+          "type": "switchEnterprise",
+          "x": 463,
+          "y": 308,
+          "label": "Spine 1"
+        },
+        {
+          "id": "s2",
+          "type": "switchEnterprise",
+          "x": 587,
+          "y": 308,
+          "label": "Spine 2"
+        },
+        {
+          "id": "l1",
+          "type": "switch",
+          "x": 339,
+          "y": 392,
+          "label": "L1"
+        },
+        {
+          "id": "l2",
+          "type": "switch",
+          "x": 463,
+          "y": 392,
+          "label": "L2"
+        },
+        {
+          "id": "l3",
+          "type": "switch",
+          "x": 587,
+          "y": 392,
+          "label": "L3"
+        },
+        {
+          "id": "l4",
+          "type": "switch",
+          "x": 711,
+          "y": 392,
+          "label": "L4"
+        }
+      ],
+      "links": [
+        {
+          "id": "l1-s1",
+          "type": "line",
+          "from": "s1",
+          "to": "l1"
+        },
+        {
+          "id": "l1-s2",
+          "type": "line",
+          "from": "s2",
+          "to": "l1"
+        },
+        {
+          "id": "l2-s1",
+          "type": "line",
+          "from": "s1",
+          "to": "l2"
+        },
+        {
+          "id": "l2-s2",
+          "type": "line",
+          "from": "s2",
+          "to": "l2"
+        },
+        {
+          "id": "l3-s1",
+          "type": "line",
+          "from": "s1",
+          "to": "l3"
+        },
+        {
+          "id": "l3-s2",
+          "type": "line",
+          "from": "s2",
+          "to": "l3"
+        },
+        {
+          "id": "l4-s1",
+          "type": "line",
+          "from": "s1",
+          "to": "l4"
+        },
+        {
+          "id": "l4-s2",
+          "type": "line",
+          "from": "s2",
+          "to": "l4"
+        }
+      ],
+      "anchors": [],
+      "zones": [],
+      "flowPaths": [],
+      "policyMarkers": []
+    }
+  ],
+  "customNodes": []
+}
