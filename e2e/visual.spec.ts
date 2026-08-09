@@ -4,6 +4,11 @@ import { bootEditor, openFixture } from './helpers.js';
 /**
  * Visual-regression baselines for representative diagrams (#216). Motion is
  * forced off (reduced-motion → calm mode) so frames are deterministic.
+ *
+ * Baselines are CANONICAL FOR CI's renderer: other environments rasterize
+ * fonts slightly differently (and can differ by a pixel of layout height), so
+ * run locally with `--ignore-snapshots`, and refresh baselines from the CI
+ * `playwright-report` artifact's `*-actual.png` files when a change is real.
  */
 test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
