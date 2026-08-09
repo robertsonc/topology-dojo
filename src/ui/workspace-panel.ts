@@ -61,6 +61,7 @@ import type {
   WorkspacePresence,
 } from '../workspace/model.js';
 import { serializeDoc } from '../pages/persist.js';
+import { registerOverlay } from './overlay.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { ZoneConfig } from '../vendor/topology-ds.js';
 import { pageToSVG } from '../editor/export.js';
@@ -187,18 +188,30 @@ export interface WorkspaceChipState {
   title: string;
 }
 
-/** Pure: the toolbar chip's visual state for a given workspace (or none). */
+/** Pure: the toolbar chip's visual state for a given workspace (or none).
+ * The label surfaces what needs attention as explicit text (issue #212), the
+ * dot color only reinforces it: conflict wins, then pending proposals, then
+ * offline-with-queued-ops; quiet workspaces keep the plain `agent · rN`. */
 export function computeWorkspaceChipState(
   workspace: ActiveWorkspace | null,
+  online = true,
 ): WorkspaceChipState {
-  return {
-    on: Boolean(workspace),
-    conflict: Boolean(workspace?.error),
-    label: workspace ? `agent · r${workspace.revision}` : 'agent · local',
-    title: workspace
-      ? `${workspace.id} · ${workspace.status}`
-      : 'Hand this local document to an agent workspace',
-  };
+  const title = workspace
+    ? `${workspace.id} · ${workspace.status}`
+    : 'Hand this local document to an agent workspace';
+  const on = Boolean(workspace);
+  const conflict = Boolean(workspace?.error);
+  let label = 'agent · local';
+  if (workspace) {
+    const state = computeWorkspacePanelState(workspace, online);
+    if (state.conflict) label = 'agent · conflict';
+    else if (state.pendingProposals > 0)
+      label = `agent · ${state.pendingProposals} proposal${state.pendingProposals === 1 ? '' : 's'}`;
+    else if (state.offline && state.pendingOps > 0)
+      label = `agent · offline · ${state.pendingOps} pending`;
+    else label = `agent · r${workspace.revision}`;
+  }
+  return { on, conflict, label, title };
 }
 
 /** Pure: the shell-facing state snapshot for a given workspace (or none).
@@ -220,6 +233,32 @@ export function computeWorkspacePanelState(
     pendingOps: workspace?.pending?.operations.length ?? 0,
     error: workspace?.error ?? null,
   };
+}
+
+/**
+ * Pure: what (if anything) the polite live region should announce for a state
+ * change (issue #212). Announces TRANSITIONS only — a poll refresh that leaves
+ * the state unchanged (or merely bumps `revision`/`pendingOps`) says nothing:
+ * - a conflict appearing;
+ * - the pending-proposal count changing to a new non-zero value (a fresh
+ *   proposal, or the first sight of existing ones when `prev` is null);
+ * - going offline with operations queued.
+ * Returns null when nothing needs announcing.
+ */
+export function computeChipAnnouncement(
+  prev: WorkspacePanelState | null,
+  next: WorkspacePanelState,
+): string | null {
+  if (next.conflict && !prev?.conflict)
+    return 'Agent workspace conflict — attention needed.';
+  if (
+    next.pendingProposals > 0 &&
+    next.pendingProposals !== (prev?.pendingProposals ?? 0)
+  )
+    return `${next.pendingProposals} agent proposal${next.pendingProposals === 1 ? '' : 's'} awaiting review.`;
+  if (next.offline && next.pendingOps > 0 && !prev?.offline)
+    return `Workspace offline — ${next.pendingOps} change${next.pendingOps === 1 ? '' : 's'} pending sync.`;
+  return null;
 }
 
 /** Pure: the panel body when workspaces are disabled on this deployment. */
@@ -1071,21 +1110,76 @@ export function mountWorkspacePanel(
 
   // Shell-facing state listeners (issue #212). Emission is deduped on the
   // serialized snapshot, so hooking the two render chokepoints below is safe
-  // no matter how often they run.
+  // no matter how often they run — announcements/toasts fire on transitions
+  // only, never on a poll refresh with unchanged state.
   const stateListeners = new Set<(state: WorkspacePanelState) => void>();
   let lastEmittedState = '';
+  let prevState: WorkspacePanelState | null = null;
+
+  /** Polite live region for chip-state announcements (issue #212). Created
+   * lazily so the test-friendly mount path stays DOM-light until needed. */
+  let liveRegion: HTMLElement | null = null;
+  function announce(text: string): void {
+    if (!liveRegion) {
+      liveRegion = document.createElement('div');
+      liveRegion.className = 'visually-hidden';
+      liveRegion.setAttribute('aria-live', 'polite');
+      document.body.appendChild(liveRegion);
+    }
+    // Clear first so an identical message later still re-announces.
+    liveRegion.textContent = '';
+    liveRegion.textContent = text;
+  }
+
+  /** Transient click-through toast near the chip when a NEW proposal arrives
+   * while the panel is closed (issue #212). */
+  let proposalToast: HTMLElement | null = null;
+  let proposalToastTimer: ReturnType<typeof setTimeout> | undefined;
+  function dismissProposalToast(): void {
+    clearTimeout(proposalToastTimer);
+    proposalToast?.remove();
+    proposalToast = null;
+  }
+  function showProposalToast(count: number): void {
+    dismissProposalToast();
+    const toast = document.createElement('button');
+    toast.type = 'button';
+    toast.className = 'ws-toast';
+    toast.textContent = `${count} agent proposal${count === 1 ? '' : 's'} awaiting review — click to open`;
+    const r = host.chip.getBoundingClientRect();
+    toast.style.top = `${Math.round(r.bottom + 8)}px`;
+    toast.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
+    toast.addEventListener('click', () => {
+      dismissProposalToast();
+      openToProposal();
+    });
+    document.body.appendChild(toast);
+    proposalToast = toast;
+    proposalToastTimer = setTimeout(dismissProposalToast, 8000);
+  }
 
   function emitPanelState(): void {
-    if (!stateListeners.size) return;
     const state = computeWorkspacePanelState(activeWorkspace, isOnline());
     const key = JSON.stringify(state);
     if (key === lastEmittedState) return;
     lastEmittedState = key;
+    const announcement = computeChipAnnouncement(prevState, state);
+    if (announcement) announce(announcement);
+    // Toast only for an increase while the panel is closed; the initial
+    // restore is covered by the chip text + announcement.
+    if (
+      prevState &&
+      !workspacePanel &&
+      state.pendingProposals > prevState.pendingProposals
+    )
+      showProposalToast(state.pendingProposals);
+    if (state.pendingProposals === 0) dismissProposalToast();
+    prevState = state;
     for (const listener of stateListeners) listener(state);
   }
 
   function updateWorkspaceChip(): void {
-    const state = computeWorkspaceChipState(activeWorkspace);
+    const state = computeWorkspaceChipState(activeWorkspace, isOnline());
     host.chip.classList.toggle('on', state.on);
     host.chip.classList.toggle('conflict', state.conflict);
     host.chipLabel.textContent = state.label;
@@ -1406,10 +1500,14 @@ export function mountWorkspacePanel(
     updateWorkspaceChip();
   }
 
+  let releasePanelOverlay: (() => void) | null = null;
+
   function closeWorkspacePanel(): void {
     workspacePanel?.remove();
     workspacePanel = null;
     host.chip.setAttribute('aria-expanded', 'false');
+    releasePanelOverlay?.();
+    releasePanelOverlay = null;
   }
 
   function renderWorkspacePanel(): void {
@@ -1711,13 +1809,18 @@ export function mountWorkspacePanel(
     workspacePanel.setAttribute('role', 'dialog');
     workspacePanel.setAttribute('aria-label', 'Agent Workspace');
     workspacePanel.innerHTML =
-      `<div class="ws-head"><h3>Agent Workspace</h3><button class="tbtn ticon" id="wsClose" title="Close">✕</button></div>` +
+      `<div class="ws-head"><h3>Agent Workspace</h3><button class="tbtn ticon" id="wsClose" title="Close" aria-label="Close">✕</button></div>` +
       `<div id="wsBody"></div>`;
     document.body.appendChild(workspacePanel);
     workspacePanel
       .querySelector('#wsClose')
       ?.addEventListener('click', () => closeWorkspacePanel());
     host.chip.setAttribute('aria-expanded', 'true');
+    // Focus trap + Escape + focus restore (issue #209).
+    releasePanelOverlay = registerOverlay(workspacePanel, {
+      close: closeWorkspacePanel,
+    });
+    dismissProposalToast(); // the panel itself now shows the proposals
     renderWorkspacePanel();
     if (activeWorkspace) void refreshWorkspaceState(true);
     else void refreshWorkspaceChoices();
@@ -1729,7 +1832,13 @@ export function mountWorkspacePanel(
     host.chipDivider.hidden = false;
     host.chip.addEventListener('click', (event) => {
       event.stopPropagation();
-      openWorkspacePanel();
+      // Attention-first click routing (issue #212): a conflict lands on the
+      // conflict notice, pending proposals on the first proposal card;
+      // otherwise the existing open/close toggle.
+      const state = computeWorkspacePanelState(activeWorkspace, isOnline());
+      if (state.conflict) openToConflict();
+      else if (state.pendingProposals > 0) openToProposal();
+      else openWorkspacePanel();
     });
     updateWorkspaceChip();
     void restoreWorkspace();

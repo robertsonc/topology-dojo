@@ -567,17 +567,20 @@ export class Editor {
   /**
    * Patch the page's storytelling/playback fields (caption / duration /
    * transition). Undoable — unlike name/viewBox these are frame content, and
-   * history must restore them (#205). `undefined` clears a field.
+   * history must restore them (#205). `undefined` clears a field. Pass
+   * `commit=false` during continuous edits (caption typing) so a run of
+   * keystrokes snapshots once, mirroring `updateNode`.
    */
   updatePageProps(
     patch: Partial<Pick<Page, 'caption' | 'duration' | 'transition'>>,
+    commit = true,
   ): void {
     const keys = Object.keys(patch) as (keyof typeof patch)[];
     const before: Record<string, unknown> = {};
     for (const key of keys) before[key] = this.page[key];
     const fp = this.patchFromChange(before, patch, keys);
     if (!fp) return;
-    this.snapshot();
+    if (commit) this.snapshot();
     for (const key of keys) {
       if (patch[key] === undefined) delete this.page[key];
       else (this.page as unknown as Record<string, unknown>)[key] = patch[key];

@@ -27,6 +27,7 @@ import {
 } from '../profile/client.js';
 import { documentRefOf } from '../profile/learner.js';
 import { staleForReview } from '../profile/refinement.js';
+import { registerOverlay } from './overlay.js';
 import type { AuthoringPreference, PreferenceScope } from '../profile/model.js';
 
 // Local copy of main.ts's `esc()` — the codebase's established pattern for
@@ -232,6 +233,7 @@ export interface ProfilePanelHandle {
 
 export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
   let panel: HTMLElement | null = null;
+  let releaseOverlay: (() => void) | null = null;
   const state: ProfilePanelState = {
     loading: false,
     disabled: false,
@@ -245,6 +247,8 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
     panel?.remove();
     panel = null;
     host.chip.setAttribute('aria-expanded', 'false');
+    releaseOverlay?.();
+    releaseOverlay = null;
   }
 
   function describe(error: unknown): string {
@@ -369,13 +373,15 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Authoring Preferences');
     panel.innerHTML =
-      `<div class="ws-head"><h3>Authoring Preferences</h3><button class="tbtn ticon" id="prefClose" title="Close">✕</button></div>` +
+      `<div class="ws-head"><h3>Authoring Preferences</h3><button class="tbtn ticon" id="prefClose" title="Close" aria-label="Close">✕</button></div>` +
       `<div id="prefBody"></div>`;
     document.body.appendChild(panel);
     panel
       .querySelector('#prefClose')
       ?.addEventListener('click', () => closePanel());
     host.chip.setAttribute('aria-expanded', 'true');
+    // Focus trap + Escape + focus restore (issue #209).
+    releaseOverlay = registerOverlay(panel, { close: closePanel });
     void refresh();
   }
 

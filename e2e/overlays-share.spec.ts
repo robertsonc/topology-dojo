@@ -8,9 +8,7 @@ import {
   statusCount,
 } from './helpers.js';
 
-// fixme: asserts the #209 overlay focus-management fix, which lands next —
-// flip to test() in the same change that ships it.
-test.fixme('canvas shortcuts stay inert while the help dialog is open (#209)', async ({
+test('canvas shortcuts stay inert while the help dialog is open (#209)', async ({
   page,
 }) => {
   await bootEditor(page);

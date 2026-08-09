@@ -51,6 +51,7 @@ import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
 import { mountAdminDashboard } from './ui/admin-dashboard.js';
+import { overlayActive, registerOverlay } from './ui/overlay.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -109,48 +110,48 @@ app.innerHTML = `
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn ticon" id="tUndo" title="Undo (Ctrl/Cmd+Z)">↶</button>
-        <button class="tbtn ticon" id="tRedo" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
+        <button class="tbtn ticon" id="tUndo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">↶</button>
+        <button class="tbtn ticon" id="tRedo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">↷</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
         <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
         <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
-        <select class="tbtn" id="fTemplate" title="New from a starter template"></select>
+        <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
       </div>
       <input type="file" id="fInput" accept="application/json,.json" hidden />
       <span class="saved" id="saved"></span>
     </div>
     <div class="bar-right">
       <div class="tgroup">
-        <button class="tbtn on" id="tSelect" title="Select/move tool (V)">⤧<span class="tlabel">select</span></button>
-        <button class="tbtn" id="tLink" title="Draw link tool (L)">🔗<span class="tlabel">link</span></button>
-        <button class="tbtn" id="tAnchor" title="Drop anchor tool (A) — free-floating link endpoints">◇<span class="tlabel">anchor</span></button>
+        <button class="tbtn on" id="tSelect" title="Select/move tool (V)" aria-label="Select/move tool">⤧<span class="tlabel">select</span></button>
+        <button class="tbtn" id="tLink" title="Draw link tool (L)" aria-label="Draw link tool">🔗<span class="tlabel">link</span></button>
+        <button class="tbtn" id="tAnchor" title="Drop anchor tool (A) — free-floating link endpoints" aria-label="Drop anchor tool">◇<span class="tlabel">anchor</span></button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn ticon on" id="tGrid" title="Toggle grid (R)">▦</button>
-        <button class="tbtn ticon on" id="tSnap" title="Toggle snap (G)">⌗</button>
-        <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)">◓</button>
+        <button class="tbtn ticon on" id="tGrid" title="Toggle grid (R)" aria-label="Toggle grid">▦</button>
+        <button class="tbtn ticon on" id="tSnap" title="Toggle snap (G)" aria-label="Toggle snap">⌗</button>
+        <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)" aria-label="Calm canvas — pause animations">◓</button>
         <button class="tbtn ticon on" id="tBadges" title="Toggle on-canvas problem badges" aria-label="Toggle on-canvas problem badges">⚠</button>
-        <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient, glass">⚙</button>
-        <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme">☀</button>
-        <button class="tbtn ticon" id="tFit" title="Fit view (0)">⤢</button>
-        <button class="tbtn ticon" id="tHelp" title="Keyboard shortcuts (?)">?</button>
+        <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient, glass" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">⚙</button>
+        <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">☀</button>
+        <button class="tbtn ticon" id="tFit" title="Fit view (0)" aria-label="Fit view">⤢</button>
+        <button class="tbtn ticon" id="tHelp" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn" id="tDelete" title="Delete selection (Del)">🗑<span class="tlabel">delete</span></button>
-        <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)">✦<span class="tlabel">tidy</span></button>
-        <button class="tbtn" id="tBalance" title="Balance layout — align rows/columns + centre (Shift+T)">⚖<span class="tlabel">balance</span></button>
-        <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm">
+        <button class="tbtn" id="tDelete" title="Delete selection (Del)" aria-label="Delete selection">🗑<span class="tlabel">delete</span></button>
+        <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)" aria-label="Tidy layout">✦<span class="tlabel">tidy</span></button>
+        <button class="tbtn" id="tBalance" title="Balance layout — align rows/columns + centre (Shift+T)" aria-label="Balance layout">⚖<span class="tlabel">balance</span></button>
+        <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm" aria-label="Auto-arrange with a layout algorithm">
           <option value="">⤢ arrange…</option>
           <option value="hierarchical">hierarchical</option>
           <option value="grid">grid</option>
           <option value="circular">circular</option>
           <option value="force">force-directed</option>
         </select>
-        <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion">
+        <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion" aria-label="Select nodes by a criterion">
           <option value="">⛶ select…</option>
           <option value="type">same type</option>
           <option value="color">same color</option>
@@ -160,21 +161,21 @@ app.innerHTML = `
         </select>
       </div>
       <span class="align-group" id="alignGroup" hidden>
-        <button class="tbtn ab" data-align="left" title="Align left">⇤</button>
-        <button class="tbtn ab" data-align="centerH" title="Align centers (h)">⇔</button>
-        <button class="tbtn ab" data-align="right" title="Align right">⇥</button>
-        <button class="tbtn ab" data-align="top" title="Align top">⤒</button>
-        <button class="tbtn ab" data-align="middleV" title="Align middles (v)">⇕</button>
-        <button class="tbtn ab" data-align="bottom" title="Align bottom">⤓</button>
-        <button class="tbtn ab" data-dist="h" title="Distribute horizontally" disabled>↔̲</button>
-        <button class="tbtn ab" data-dist="v" title="Distribute vertically" disabled>↕̲</button>
+        <button class="tbtn ab" data-align="left" title="Align left" aria-label="Align left">⇤</button>
+        <button class="tbtn ab" data-align="centerH" title="Align centers (h)" aria-label="Align horizontal centers">⇔</button>
+        <button class="tbtn ab" data-align="right" title="Align right" aria-label="Align right">⇥</button>
+        <button class="tbtn ab" data-align="top" title="Align top" aria-label="Align top">⤒</button>
+        <button class="tbtn ab" data-align="middleV" title="Align middles (v)" aria-label="Align vertical middles">⇕</button>
+        <button class="tbtn ab" data-align="bottom" title="Align bottom" aria-label="Align bottom">⤓</button>
+        <button class="tbtn ab" data-dist="h" title="Distribute horizontally" aria-label="Distribute horizontally" disabled>↔̲</button>
+        <button class="tbtn ab" data-dist="v" title="Distribute vertically" aria-label="Distribute vertically" disabled>↕̲</button>
       </span>
       <span class="bar-div" id="workspaceDiv" hidden></span>
-      <button class="tbtn workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot"></span><span id="workspaceLabel">agent · local</span></button>
+      <button class="tbtn workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot" aria-hidden="true"></span><span id="workspaceLabel">agent · local</span></button>
       <button class="tbtn" id="profileChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Authoring Preferences" hidden>prefs</button>
       <button class="tbtn" id="adminChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Admin dashboard" hidden>admin</button>
       <span class="bar-div" id="userDiv" hidden></span>
-      <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" hidden><span class="uc-dot">●</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">▾</span></button>
+      <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" aria-label="Account menu" hidden><span class="uc-dot" aria-hidden="true">●</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">▾</span></button>
     </div>
   </header>
 
@@ -204,11 +205,11 @@ app.innerHTML = `
             <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
             <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
             <div class="canvas-ctrls" id="canvasCtrls">
-              <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)">✋</button>
-              <button class="cc-btn" id="ccZoomIn" title="Zoom in">+</button>
-              <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)">100%</button>
-              <button class="cc-btn" id="ccZoomOut" title="Zoom out">−</button>
-              <button class="cc-btn" id="ccFit" title="Fit to content (0)">⤢</button>
+              <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">✋</button>
+              <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+              <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)" aria-label="Zoom level — fit view">100%</button>
+              <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+              <button class="cc-btn" id="ccFit" title="Fit to content (0)" aria-label="Fit to content">⤢</button>
             </div>
           </div>
         </div>
@@ -713,7 +714,7 @@ function statusProblemsHTML(): string {
   const title = total
     ? `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'} — open Problems`
     : 'No problems';
-  return `<button class="sb-problems ${cls}" id="sb-problems" title="${title}">${label}</button>`;
+  return `<button class="sb-problems ${cls}" id="sb-problems" title="${title}" aria-label="${title}">${label}</button>`;
 }
 function renderStatus(): void {
   if (!statusReady) return; // editor / statusbar not wired yet
@@ -1118,7 +1119,7 @@ function openFind(): void {
   findEl = document.createElement('div');
   findEl.className = 'find';
   findEl.innerHTML =
-    `<input type="text" placeholder="Find node by label / id / type…" />` +
+    `<input type="text" placeholder="Find node by label / id / type…" aria-label="Find node by label, id, or type" />` +
     `<div class="find-results scroll-slim"></div>`;
   app.appendChild(findEl);
   const input = findEl.querySelector('input')!;
@@ -1279,7 +1280,7 @@ function swatchRow(key: string, current: string | undefined): string {
     `<div class="swatches" data-swatch="${key}">` +
     SWATCHES.map(
       (c) =>
-        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}"></button>`,
+        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === current}"></button>`,
     ).join('') +
     `</div>`
   );
@@ -1322,7 +1323,7 @@ function metaHtml(meta?: Record<string, string | number | boolean>): string {
         `<div class="meta-row" data-mk="${esc(k)}">` +
         `<input class="meta-k" value="${esc(k)}" readonly />` +
         `<input class="meta-v" value="${esc(String(v))}" />` +
-        `<button class="meta-x" title="Remove">✕</button></div>`,
+        `<button class="meta-x" title="Remove" aria-label="Remove metadata ${esc(k)}">✕</button></div>`,
     )
     .join('');
   return (
@@ -1331,7 +1332,7 @@ function metaHtml(meta?: Record<string, string | number | boolean>): string {
     `<div class="meta-row meta-add">` +
     `<input class="meta-nk" placeholder="key" />` +
     `<input class="meta-nv" placeholder="value" />` +
-    `<button class="meta-addbtn" title="Add">＋</button></div>`
+    `<button class="meta-addbtn" title="Add" aria-label="Add metadata entry">＋</button></div>`
   );
 }
 
@@ -1547,9 +1548,9 @@ function layersHtml(): string {
       const op = Math.round((l.opacity ?? 1) * 100);
       return (
         `<div class="layer-row" data-li="${i}">` +
-        `<button class="layer-eye" data-li="${i}" title="Show / hide layer">${vis ? '👁' : '🚫'}</button>` +
+        `<button class="layer-eye" data-li="${i}" title="Show / hide layer" aria-label="${vis ? 'Hide' : 'Show'} layer ${esc(l.name ?? l.id)}" aria-pressed="${vis}">${vis ? '👁' : '🚫'}</button>` +
         `<span class="layer-name">${esc(l.name ?? l.id)}</span>` +
-        `<input class="layer-op" data-li="${i}" type="range" min="0" max="100" step="5" value="${op}" title="Layer opacity (${op}%)"/>` +
+        `<input class="layer-op" data-li="${i}" type="range" min="0" max="100" step="5" value="${op}" title="Layer opacity (${op}%)" aria-label="Opacity of layer ${esc(l.name ?? l.id)}"/>` +
         `</div>`
       );
     })
@@ -1614,18 +1615,19 @@ function wireProperties(): void {
     renderInspector();
   });
   // Playback timing — same fields the MCP set_page_properties tool sets.
+  // Routed through updatePageProps so the edits land on the undo stack (#205).
   const dur = inspector.querySelector<HTMLInputElement>('#p-dur');
   dur?.addEventListener('change', () => {
     const v = Number(dur.value);
-    if (Number.isFinite(v) && v > 0) editor.page.duration = v;
-    else delete editor.page.duration;
-    markDirty();
+    editor.updatePageProps({
+      duration: Number.isFinite(v) && v > 0 ? v : undefined,
+    });
   });
   const tr = inspector.querySelector<HTMLSelectElement>('#p-tr');
   tr?.addEventListener('change', () => {
-    if (tr.value === 'fade') editor.page.transition = 'fade';
-    else delete editor.page.transition;
-    markDirty();
+    editor.updatePageProps({
+      transition: tr.value === 'fade' ? 'fade' : undefined,
+    });
   });
   // Legend (B.1) — a per-document setting; redraw the overlay so it shows live.
   const legendOn = inspector.querySelector<HTMLInputElement>('#p-legend');
@@ -1651,9 +1653,9 @@ function wireProperties(): void {
 function wireFrameStory(): void {
   const cap = inspector.querySelector<HTMLInputElement>('#p-caption');
   cap?.addEventListener('input', () => {
-    editor.page.caption = cap.value || undefined;
-    editor.redrawOverlay();
-    markDirty();
+    // Undoable via updatePageProps; a typing run snapshots once (`editing`).
+    editor.updatePageProps({ caption: cap.value || undefined }, !editing);
+    editing = true;
   });
   inspector.querySelector('#p-emph-clear')?.addEventListener('click', () => {
     editor.clearEmphasis();
@@ -1726,7 +1728,8 @@ function renderInspector(): void {
       typeRow(node.type, types) +
       groupedFieldsHtml(info, node as Record<string, unknown>, NODE_GROUPS) +
       metaHtml(node.meta) +
-      arrangeRow();
+      arrangeRow() +
+      formatRow();
   } else if (link) {
     const info = getLinkType(link.type);
     const types = linkCatalog().map((l) => l.type);
@@ -1739,7 +1742,8 @@ function renderInspector(): void {
           : ''
       }</span></div>` +
       groupedFieldsHtml(info, link as Record<string, unknown>, LINK_GROUPS) +
-      arrangeRow();
+      arrangeRow() +
+      formatRow();
   } else if (anchor) {
     html +=
       `<div class="insp-h">Anchor</div>` +
@@ -1752,7 +1756,13 @@ function renderInspector(): void {
     // surface as the annotations list, wired by wireAnnotations()).
     html += `<div class="insp-h">Zone</div>` + zoneEditorHtml(zone);
   } else {
-    // Nothing selected — show document + page properties.
+    // Multi-node selection: no single-element editor, but the format painter
+    // still applies (pasteFormat brushes every selected node — #211).
+    if (editor.selectionCount() > 1)
+      html +=
+        `<div class="insp-h">Selection (${editor.selectionCount()} nodes)</div>` +
+        formatRow();
+    // Nothing (singly) selected — show document + page properties.
     html += propertiesHtml();
   }
   // The annotations list shows every zone/flow/marker; skip the one already
@@ -1823,6 +1833,7 @@ function renderInspector(): void {
     editor.sendToBack();
     renderInspector();
   });
+  wireFormatRow();
   wireGroups();
   wireAnnotations();
 }
@@ -1831,12 +1842,34 @@ function renderInspector(): void {
 function arrangeRow(): string {
   return (
     `<div class="insp-row"><span>Arrange</span><span class="arrange">` +
-    `<button class="tbtn ab" data-z="back" title="Send to back ([Ctrl+[)">⤓⤓</button>` +
-    `<button class="tbtn ab" data-z="backward" title="Send backward ([)">⤓</button>` +
-    `<button class="tbtn ab" data-z="forward" title="Bring forward (])">⤒</button>` +
-    `<button class="tbtn ab" data-z="front" title="Bring to front (Ctrl+])">⤒⤒</button>` +
+    `<button class="tbtn ab" data-z="back" title="Send to back ([Ctrl+[)" aria-label="Send to back">⤓⤓</button>` +
+    `<button class="tbtn ab" data-z="backward" title="Send backward ([)" aria-label="Send backward">⤓</button>` +
+    `<button class="tbtn ab" data-z="forward" title="Bring forward (])" aria-label="Bring forward">⤒</button>` +
+    `<button class="tbtn ab" data-z="front" title="Bring to front (Ctrl+])" aria-label="Bring to front">⤒⤒</button>` +
     `</span></div>`
   );
+}
+
+/** Format painter (issue #211): a touch/keyboard surface onto the same
+ * `copyFormat`/`pasteFormat` commands as the context menu + shortcuts. */
+function formatRow(): string {
+  return (
+    `<div class="insp-row"><span>Format</span><span class="insp-btns">` +
+    `<button class="tbtn ab" id="i-copyfmt" title="Copy format (Ctrl/Cmd+Alt+C)"${editor.canCopyFormat() ? '' : ' disabled'}>⧉ copy</button>` +
+    `<button class="tbtn ab" id="i-pastefmt" title="Paste format (Ctrl/Cmd+Alt+V)"${editor.canPasteFormat() ? '' : ' disabled'}>⤹ paste</button>` +
+    `</span></div>`
+  );
+}
+
+function wireFormatRow(): void {
+  inspector.querySelector('#i-copyfmt')?.addEventListener('click', () => {
+    editor.copyFormat();
+    renderInspector(); // paste becomes available
+  });
+  inspector.querySelector('#i-pastefmt')?.addEventListener('click', () => {
+    editor.pasteFormat();
+    renderInspector();
+  });
 }
 
 function wireType(onChange: (t: string) => void): void {
@@ -1893,7 +1926,7 @@ function aswatchRow(key: string, current: string | undefined): string {
     `<div class="swatches" data-aswatch="${key}">` +
     SWATCHES.map(
       (c) =>
-        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}"></button>`,
+        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === current}"></button>`,
     ).join('') +
     `</div>`
   );
@@ -1914,10 +1947,10 @@ function endpointLabel(id: string): string {
 function refChip(id: string): string {
   return (
     `<span class="refchip" data-id="${esc(id)}">` +
-    `<button type="button" class="refmv" data-refmove="-1" title="Move earlier">‹</button>` +
+    `<button type="button" class="refmv" data-refmove="-1" title="Move earlier" aria-label="Move ${esc(endpointLabel(id))} earlier">‹</button>` +
     `<span class="reflbl">${esc(endpointLabel(id))}</span>` +
-    `<button type="button" class="refmv" data-refmove="1" title="Move later">›</button>` +
-    `<button type="button" class="refx" data-refdel title="Remove">✕</button>` +
+    `<button type="button" class="refmv" data-refmove="1" title="Move later" aria-label="Move ${esc(endpointLabel(id))} later">›</button>` +
+    `<button type="button" class="refx" data-refdel title="Remove" aria-label="Remove ${esc(endpointLabel(id))}">✕</button>` +
     `</span>`
   );
 }
@@ -1984,9 +2017,9 @@ function zoneEditorHtml(zone: { id: string }): string {
   return (
     `<details class="anno selected" data-acol="zones" data-aid="${esc(zone.id)}" open>` +
     `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>` +
-    `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)">⤧</button>` +
-    `<button class="anno-x" data-azdup title="Duplicate zone with its contents">⧉</button>` +
-    `<button class="anno-x" data-adel title="Delete">✕</button></summary>` +
+    `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">⤧</button>` +
+    `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">⧉</button>` +
+    `<button class="anno-x" data-adel title="Delete" aria-label="Delete zone">✕</button></summary>` +
     info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
     `</details>`
   );
@@ -2023,12 +2056,12 @@ function annotationsHtml(skipId?: string): string {
       // Zones are containers (C.2): offer move-members + duplicate-with-contents.
       const zoneBtns =
         g.col === 'zones'
-          ? `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)">⤧</button>` +
-            `<button class="anno-x" data-azdup title="Duplicate zone with its contents">⧉</button>`
+          ? `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">⤧</button>` +
+            `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">⧉</button>`
           : '';
       html +=
         `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}">` +
-        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete">✕</button></summary>` +
+        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">✕</button></summary>` +
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
         `</details>`;
     }
@@ -2302,7 +2335,7 @@ function buildPalette(): void {
     for (const info of infos) {
       const item = `<button class="pitem" data-type="${esc(info.type)}">${nodePreviewSVG(info.type)}<span class="plabel">${esc(info.label)}</span></button>`;
       html += info.custom
-        ? `<div class="pcustom">${item}<button class="pedit" data-edit="${esc(info.type)}" title="Edit type">✎</button></div>`
+        ? `<div class="pcustom">${item}<button class="pedit" data-edit="${esc(info.type)}" title="Edit type" aria-label="Edit type ${esc(info.label)}">✎</button></div>`
         : item;
       // §5: surface the EC+Axis container form as its own palette entry — it
       // reads distinctly from a plain EC and from a standalone connector node.
@@ -2321,7 +2354,7 @@ function buildPalette(): void {
   if (stencils.length) {
     html += `<div class="palette-h">Stencils</div>`;
     for (const st of stencils) {
-      html += `<div class="pcustom"><button class="pitem" data-stencil="${esc(st.id)}" title="Stamp '${esc(st.name)}'">${stencilPreviewSVG(st)}<span class="plabel">${esc(st.name)}</span></button><button class="pedit" data-stencil-del="${esc(st.id)}" title="Delete stencil">✕</button></div>`;
+      html += `<div class="pcustom"><button class="pitem" data-stencil="${esc(st.id)}" title="Stamp '${esc(st.name)}'">${stencilPreviewSVG(st)}<span class="plabel">${esc(st.name)}</span></button><button class="pedit" data-stencil-del="${esc(st.id)}" title="Delete stencil" aria-label="Delete stencil ${esc(st.name)}">✕</button></div>`;
     }
   }
 
@@ -2458,7 +2491,7 @@ function renderFilmstrip(): void {
       <div class="frame ${i === current ? 'on' : ''}" data-page="${i}" draggable="true" title="${esc(p.name)} — double-click to rename, drag to reorder">
         <span class="frame-n">${i + 1}</span>
         <span class="frame-name" data-name="${i}">${esc(p.name)}</span>
-        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete frame">✕</button>` : ''}
+        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete frame" aria-label="Delete frame ${esc(p.name)}">✕</button>` : ''}
       </div>`,
       )
       .join('')}
@@ -2725,6 +2758,8 @@ const AMBIENT_KEY = 'tds-ambient';
 const GLASS_KEY = 'tds-glass';
 const displayPop = document.createElement('div');
 displayPop.className = 'display-pop';
+displayPop.setAttribute('role', 'dialog');
+displayPop.setAttribute('aria-label', 'Display settings');
 displayPop.hidden = true;
 displayPop.innerHTML =
   `<div class="dp-h">Display</div>` +
@@ -2802,6 +2837,7 @@ const presetBtns = PALETTE_PRESETS.map((p) => {
   b.type = 'button';
   b.dataset.id = p.id!;
   b.title = p.name!;
+  b.setAttribute('aria-label', `Brand palette ${p.name!}`);
   b.style.setProperty('--sw1', p.accent);
   b.style.setProperty('--sw2', p.secondary ?? p.accent);
   b.addEventListener('click', () => applyBrandPalette(p, true));
@@ -2862,9 +2898,13 @@ for (const inp of [dpAccent, dpSecondary, dpChrome])
 // Reflect whatever the booted document already carries.
 applyBrandPalette(doc.palette, false);
 
+let releaseDisplayOverlay: (() => void) | null = null;
 function closeDisplayPop(): void {
   displayPop.hidden = true;
   displayBtn.classList.remove('on');
+  displayBtn.setAttribute('aria-expanded', 'false');
+  releaseDisplayOverlay?.();
+  releaseDisplayOverlay = null;
 }
 displayBtn.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -2875,6 +2915,10 @@ displayBtn.addEventListener('click', (e) => {
     displayPop.style.left = 'auto';
     displayPop.hidden = false;
     displayBtn.classList.add('on');
+    displayBtn.setAttribute('aria-expanded', 'true');
+    releaseDisplayOverlay = registerOverlay(displayPop, {
+      close: closeDisplayPop,
+    });
   } else closeDisplayPop();
 });
 document.addEventListener('click', (e) => {
@@ -2921,6 +2965,8 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl/Cmd+Z', 'Undo'],
       ['Ctrl/Cmd+Shift+Z · Ctrl+Y', 'Redo'],
       ['Ctrl/Cmd+C / X / V', 'Copy / Cut / Paste'],
+      ['Ctrl/Cmd+Alt+C', 'Copy format (format painter)'],
+      ['Ctrl/Cmd+Alt+V', 'Paste format onto selection'],
       ['Ctrl/Cmd+D', 'Duplicate'],
       ['Ctrl/Cmd+L', 'Lock / unlock'],
       ['Del / Backspace', 'Delete selection'],
@@ -2954,11 +3000,22 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['? ', 'This shortcut reference'],
     ],
   },
+  {
+    group: 'Dialogs & menus',
+    items: [
+      ['Esc', 'Close the open dialog / menu'],
+      ['Tab / Shift+Tab', 'Cycle focus inside the dialog'],
+      ['↑↓ · Enter', 'Navigate / run context-menu items'],
+    ],
+  },
 ];
 let helpEl: HTMLElement | null = null;
+let releaseHelpOverlay: (() => void) | null = null;
 function closeHelp(): void {
   helpEl?.remove();
   helpEl = null;
+  releaseHelpOverlay?.();
+  releaseHelpOverlay = null;
 }
 function openHelp(): void {
   if (helpEl) {
@@ -2979,9 +3036,9 @@ function openHelp(): void {
       `</div>`,
   ).join('');
   helpEl.innerHTML =
-    `<div class="help-card scroll-slim" role="dialog" aria-label="Keyboard shortcuts">` +
+    `<div class="help-card scroll-slim" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">` +
     `<div class="help-head"><h3>Keyboard shortcuts</h3>` +
-    `<button class="tbtn ticon" id="helpClose" title="Close (Esc)">✕</button></div>` +
+    `<button class="tbtn ticon" id="helpClose" title="Close (Esc)" aria-label="Close">✕</button></div>` +
     `<div class="help-cols">${cols}</div></div>`;
   app.appendChild(helpEl);
   helpEl.addEventListener('click', (e) => {
@@ -2990,6 +3047,8 @@ function openHelp(): void {
   helpEl
     .querySelector('#helpClose')
     ?.addEventListener('click', () => closeHelp());
+  // Focus trap + Escape + focus restore (issue #209).
+  releaseHelpOverlay = registerOverlay(helpEl, { close: closeHelp });
 }
 app.querySelector('#tHelp')?.addEventListener('click', () => openHelp());
 
@@ -3022,9 +3081,12 @@ function wireAccountMenu(login: string): void {
   menu.querySelector('b')!.textContent = login;
   document.body.appendChild(menu);
 
+  let releaseMenuOverlay: (() => void) | null = null;
   const close = (): void => {
     menu.hidden = true;
     chip.setAttribute('aria-expanded', 'false');
+    releaseMenuOverlay?.();
+    releaseMenuOverlay = null;
   };
   const open = (): void => {
     const r = chip.getBoundingClientRect();
@@ -3033,19 +3095,18 @@ function wireAccountMenu(login: string): void {
     menu.style.left = 'auto';
     menu.hidden = false;
     chip.setAttribute('aria-expanded', 'true');
+    // Escape close + focus move/restore (issue #209).
+    releaseMenuOverlay = registerOverlay(menu, { close });
   };
   chip.addEventListener('click', (e) => {
     e.stopPropagation();
     if (menu.hidden) open();
     else close();
   });
-  // Dismiss on outside click or Esc.
+  // Dismiss on outside click (Esc is handled by the overlay primitive).
   document.addEventListener('click', (e) => {
     if (!menu.hidden && e.target !== chip && !menu.contains(e.target as Node))
       close();
-  });
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') close();
   });
   // Sign out via an explicit navigation — robust even if the anchor default is
   // ever intercepted; the localStorage autosave preserves the open document.
@@ -3080,8 +3141,12 @@ async function showUserChip(): Promise<void> {
 void showUserChip();
 
 /* Keyboard. Shortcuts are suppressed while typing in a form field so they don't
- * hijack the inspector / rename inputs (and Ctrl+C/V do native text edit there). */
+ * hijack the inspector / rename inputs (and Ctrl+C/V do native text edit there),
+ * and while any overlay (dialog / panel / popover / context menu) owns
+ * interaction — a Delete pressed in a modal must never reach the canvas (#209).
+ * The overlay primitive handles Escape/Tab itself, capture-phase. */
 window.addEventListener('keydown', (e) => {
+  if (overlayActive()) return;
   const t = e.target as HTMLElement | null;
   if (
     t &&
@@ -3092,16 +3157,10 @@ window.addEventListener('keydown', (e) => {
   )
     return;
 
-  // ? (Shift+/) opens the shortcut reference; Esc closes it (handled here so it
-  // takes priority over the selection-clearing Esc below).
+  // ? (Shift+/) opens the shortcut reference (Esc closes it via the overlay).
   if (e.key === '?') {
     e.preventDefault();
     openHelp();
-    return;
-  }
-  if (e.key === 'Escape' && helpEl) {
-    e.preventDefault();
-    closeHelp();
     return;
   }
 
@@ -3115,6 +3174,20 @@ window.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
   if (mod) {
     const k = e.key.toLowerCase();
+    // Format painter (#211) — checked before the plain copy/paste branches.
+    // Matched on e.code: Alt+letter yields a composed e.key on some layouts.
+    if (e.altKey && (e.code === 'KeyC' || k === 'c')) {
+      e.preventDefault();
+      editor.copyFormat();
+      renderInspector();
+      return;
+    }
+    if (e.altKey && (e.code === 'KeyV' || k === 'v')) {
+      e.preventDefault();
+      editor.pasteFormat();
+      renderInspector();
+      return;
+    }
     if (k === 'z') {
       e.preventDefault();
       if (e.shiftKey) editor.redo();
@@ -3217,10 +3290,13 @@ type CtxItem =
   | { label: string; run: () => void; disabled?: boolean };
 
 let ctxMenu: HTMLDivElement | null = null;
+let releaseCtxOverlay: (() => void) | null = null;
 
 function closeCtxMenu(): void {
   ctxMenu?.remove();
   ctxMenu = null;
+  releaseCtxOverlay?.();
+  releaseCtxOverlay = null;
 }
 
 function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
@@ -3325,6 +3401,7 @@ function openCtxMenu(clientX: number, clientY: number): void {
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
   menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Canvas context menu');
   for (const item of items) {
     if ('sep' in item) {
       const hr = document.createElement('div');
@@ -3335,6 +3412,7 @@ function openCtxMenu(clientX: number, clientY: number): void {
     const btn = document.createElement('button');
     btn.className = 'ctx-item';
     btn.type = 'button';
+    btn.setAttribute('role', 'menuitem');
     btn.textContent = item.label;
     btn.disabled = !!item.disabled;
     btn.addEventListener('click', () => {
@@ -3344,6 +3422,27 @@ function openCtxMenu(clientX: number, clientY: number): void {
     });
     menu.appendChild(btn);
   }
+
+  // Keyboard operation (#209): ArrowUp/Down cycle the enabled items, Home/End
+  // jump, Enter/Space activate the focused button natively; Escape closes and
+  // restores focus via the overlay primitive.
+  menu.addEventListener('keydown', (e) => {
+    const enabled = [
+      ...menu.querySelectorAll<HTMLButtonElement>('.ctx-item:not(:disabled)'),
+    ];
+    if (!enabled.length) return;
+    const i = enabled.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number | null = null;
+    if (e.key === 'ArrowDown') next = i < 0 ? 0 : (i + 1) % enabled.length;
+    else if (e.key === 'ArrowUp')
+      next =
+        i < 0 ? enabled.length - 1 : (i - 1 + enabled.length) % enabled.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = enabled.length - 1;
+    if (next === null) return;
+    e.preventDefault();
+    enabled[next]!.focus();
+  });
 
   // Place at the cursor, then nudge back on-screen if it would overflow.
   menu.style.left = '0px';
@@ -3355,6 +3454,7 @@ function openCtxMenu(clientX: number, clientY: number): void {
   menu.style.left = `${Math.max(4, x)}px`;
   menu.style.top = `${Math.max(4, y)}px`;
   ctxMenu = menu;
+  releaseCtxOverlay = registerOverlay(menu, { close: closeCtxMenu });
 }
 
 // Attached to the canvas host (an HTML box) rather than the overlay <svg>,
@@ -3375,9 +3475,7 @@ window.addEventListener('resize', () => {
   closeCtxMenu();
   editor.resync();
 });
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeCtxMenu();
-});
+// Escape-to-close is owned by the overlay primitive (src/ui/overlay.ts).
 
 // Release hand mode when Space lifts (or the window loses focus while held).
 window.addEventListener('keyup', (e) => {
