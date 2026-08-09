@@ -284,6 +284,30 @@
         min-width: 46px;
         padding-left: 4px;
       }
+      /* Persistence failure is a recovery affordance, not a status: it stays
+         loud and clickable (download JSON) until a save succeeds (#203). */
+      .saved.save-failed {
+        color: #ff6b6b;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      /* Banner shown while the canvas holds a /v/<id> shared snapshot (#202). */
+      .shared-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 6px 12px;
+        font-size: 12px;
+        color: var(--text);
+        background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+        border-bottom: 1px solid
+          color-mix(in srgb, var(--accent) 35%, transparent);
+      }
+      .shared-banner .tbtn {
+        border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+      }
       /* Cohesive, low-chrome buttons: borderless until hover/active. */
       .tbtn {
         background: transparent;
@@ -646,12 +670,67 @@
       .ws-preview-more {
         margin-top: 2px;
       }
-      .ws-preview-highlight-rect {
+      /* Geometry-aware change highlights (issue #213). Add/remove/modify are
+         distinguished by color AND dash pattern (solid / dotted / dashed), so
+         the encoding never rides on color alone. Strokes are non-scaling so
+         halos stay legible in the compact panel frames. */
+      .ws-hl {
         fill: none;
-        stroke: #ffcc55;
         stroke-width: 2;
-        stroke-dasharray: 4 3;
         vector-effect: non-scaling-stroke;
+        pointer-events: none;
+      }
+      .ws-hl-link,
+      .ws-hl-flow {
+        stroke-width: 5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        opacity: 0.85;
+      }
+      .ws-hl-add {
+        stroke: #2fd07f; /* solid = added */
+      }
+      .ws-hl-remove {
+        stroke: #fc6161;
+        stroke-dasharray: 2 5; /* dotted = removed */
+      }
+      .ws-hl-mod {
+        stroke: #ffcc55;
+        stroke-dasharray: 8 4; /* dashed = modified */
+      }
+      .ws-hl-focus {
+        stroke-width: 4;
+        animation: ws-hl-flash 0.5s ease-in-out 3;
+      }
+      @keyframes ws-hl-flash {
+        50% {
+          opacity: 0.15;
+        }
+      }
+      /* Operation descriptions double as locate-in-preview buttons. */
+      .ws-op-jump {
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .ws-op-jump:hover {
+        color: var(--text);
+        text-decoration: underline dotted;
+      }
+      /* openToProposal / openToConflict landing flash (issue #212). */
+      .ws-attention {
+        animation: ws-attention-flash 0.6s ease-in-out 3;
+      }
+      @keyframes ws-attention-flash {
+        50% {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+        }
       }
       /* Display-settings popover (ambient + glass). */
       .display-pop {

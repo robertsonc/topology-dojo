@@ -23,17 +23,21 @@ import {
 import {
   blankPage,
   duplicatePage,
+  pageHasContent,
   sampleDocument,
+  type Page,
   type TopologyDocument,
   type Stencil,
   type BrandPalette,
 } from './pages/model.js';
 import { captureStencil, stencilViewBox } from './editor/stencil.js';
 import {
+  clearLocal,
   loadLocal,
   parseDoc,
   saveLocal,
   serializeDoc,
+  type DocSlot,
 } from './pages/persist.js';
 import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
 import { exportPagePNG, exportPageSVG } from './editor/export.js';
@@ -100,7 +104,7 @@ app.innerHTML = `
       <span class="bar-div"></span>
       <div class="tgroup">
         <button class="tbtn" id="fNew" title="New document">new</button>
-        <button class="tbtn" id="fSave" title="Download as JSON">save</button>
+        <button class="tbtn" id="fSave" title="Download the document as a JSON file">download</button>
         <button class="tbtn" id="fOpen" title="Open a JSON file">open</button>
       </div>
       <span class="bar-div"></span>
@@ -174,6 +178,15 @@ app.innerHTML = `
     </div>
   </header>
 
+  <!-- Shown while the document on canvas is a /v/<id> shared snapshot: edits
+       autosave to a separate slot so the user's own document stays intact
+       until they explicitly adopt the copy (#202). -->
+  <div class="shared-banner" id="sharedBanner" role="status" hidden>
+    <span class="shared-banner-text">Viewing a shared copy — your own document is untouched.</span>
+    <button class="tbtn" id="sharedKeep" title="Replace your locally saved document with this shared copy">keep this copy</button>
+    <button class="tbtn" id="sharedBack" title="Return to your own locally saved document">back to my document</button>
+  </div>
+
   <div class="stage">
     <div class="canvas-area" id="canvas-area">
       <aside class="palette" id="palette">
@@ -243,15 +256,69 @@ const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
 const savedEl = app.querySelector<HTMLElement>('#saved')!;
 
-/* Autosave to localStorage (debounced) whenever the document changes. */
+/* Autosave to localStorage (debounced) whenever the document changes.
+ *
+ * Persistence is honest (#203): saveLocal reports whether the write actually
+ * landed, and the status chip never claims "saved" after a failure — instead
+ * it becomes a click-to-download recovery affordance that stays until a save
+ * succeeds. While viewing a shared /v/<id> snapshot (#202) the autosave goes
+ * to a separate slot and the canonical workspace sync is suspended, so a
+ * colleague's document can never replace the user's own local autosave or
+ * workspace without an explicit adoption. */
+let activeSlot: DocSlot = 'local';
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+function downloadDocJSON(): void {
+  const blob = new Blob([serializeDoc(doc)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Reflect a persistence attempt in the status chip. */
+function reportSave(ok: boolean, okText?: string): void {
+  if (ok) {
+    savedEl.textContent =
+      okText ?? (activeSlot === 'shared' ? '✓ saved · shared copy' : '✓ saved');
+    savedEl.title =
+      activeSlot === 'shared'
+        ? 'Autosaved separately — your own document is untouched'
+        : 'Autosaved to this browser';
+    savedEl.classList.remove('save-failed');
+    savedEl.removeAttribute('role');
+    savedEl.removeAttribute('tabindex');
+  } else {
+    savedEl.textContent = '⚠ not saved — download JSON';
+    savedEl.title =
+      'Browser storage failed (full or unavailable). ' +
+      'Click to download the document as JSON so no work is lost.';
+    savedEl.classList.add('save-failed');
+    savedEl.setAttribute('role', 'button');
+    savedEl.tabIndex = 0;
+  }
+}
+savedEl.addEventListener('click', () => {
+  if (savedEl.classList.contains('save-failed')) downloadDocJSON();
+});
+savedEl.addEventListener('keydown', (e) => {
+  if (
+    (e.key === 'Enter' || e.key === ' ') &&
+    savedEl.classList.contains('save-failed')
+  ) {
+    e.preventDefault();
+    downloadDocJSON();
+  }
+});
+
 function markDirty(): void {
   savedEl.textContent = '…';
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    saveLocal(doc);
-    savedEl.textContent = '✓ saved';
-    scheduleWorkspaceSync();
+    reportSave(saveLocal(doc, activeSlot));
+    if (activeSlot === 'local') scheduleWorkspaceSync();
   }, 400);
 }
 function onDocChange(): void {
@@ -325,8 +392,18 @@ editor.setViewInsets(() => {
 // Initial fit once the canvas has real dimensions (constructor ran pre-layout).
 requestAnimationFrame(() => editor.resetView());
 
-/* Replace the whole document (open / new) and refresh everything. */
-function loadDoc(next: TopologyDocument, sync = true): void {
+/* Replace the whole document (open / new) and refresh everything.
+ * `slot` is the autosave destination: every explicit replacement (new, open,
+ * template, workspace adoption) is the user's own document again, so the
+ * default exits shared-copy mode and releases its slot (#202). */
+function loadDoc(
+  next: TopologyDocument,
+  sync = true,
+  slot: DocSlot = 'local',
+): void {
+  activeSlot = slot;
+  if (slot === 'local') clearLocal('shared');
+  updateSharedBanner();
   doc.title = next.title;
   doc.pages = structuredClone(next.pages);
   doc.customNodes = structuredClone(next.customNodes);
@@ -336,6 +413,7 @@ function loadDoc(next: TopologyDocument, sync = true): void {
   }
   registerCustomNodes(doc.customNodes);
   invalidatePreview(); // custom types replaced — clear cached previews
+  finalizeFrameDelete(); // a pending frame restore can't outlive its document
   current = 0;
   buildPalette();
   // Adopt the incoming document's brand palette (canvas + chrome + inputs).
@@ -344,10 +422,11 @@ function loadDoc(next: TopologyDocument, sync = true): void {
   renderFilmstrip();
   renderProblems();
   if (sync) markDirty();
-  else {
-    saveLocal(doc);
-    savedEl.textContent = '✓ synced';
-  }
+  else
+    reportSave(
+      saveLocal(doc, activeSlot),
+      activeSlot === 'shared' ? '👁 shared copy' : '✓ synced',
+    );
 }
 
 /* Shared Agent Workspace ---------------------------------------------------
@@ -390,16 +469,41 @@ function enableWorkspaceUi(): void {
   workspacePanelHandle.enable();
 }
 window.addEventListener('beforeunload', () => {
-  saveLocal(doc);
+  saveLocal(doc, activeSlot);
   workspacePanelHandle.flushBeforeUnload();
 });
 
 /*
  * Share links: opening "/v/<id>" loads a topology published by the MCP
  * `share_topology` tool (a snapshot stored in KV, fetched via /api/topology).
- * We load it over whatever booted from localStorage, then drop the /v/<id> path
- * so a refresh doesn't refetch and further edits stay in this local session.
+ * The snapshot opens as a SEPARATE shared copy (#202): it autosaves to its own
+ * slot, the canonical-workspace sync is suspended, and a banner offers either
+ * adopting the copy or returning to the user's own document — clicking a link
+ * from chat can never silently replace locally autosaved work. The /v/<id>
+ * path is dropped after load; a refresh resumes the shared copy from its slot.
  */
+const sharedBanner = app.querySelector<HTMLElement>('#sharedBanner')!;
+function updateSharedBanner(): void {
+  sharedBanner.hidden = activeSlot !== 'shared';
+}
+sharedBanner.querySelector('#sharedKeep')?.addEventListener('click', () => {
+  if (
+    !confirm(
+      'Keep this shared copy as your document? Your previous locally saved ' +
+        'document will be replaced. (Cancel and use "back to my document" ' +
+        'to return to it, downloading a JSON copy of this first if needed.)',
+    )
+  )
+    return;
+  activeSlot = 'local';
+  clearLocal('shared');
+  updateSharedBanner();
+  markDirty();
+});
+sharedBanner.querySelector('#sharedBack')?.addEventListener('click', () => {
+  loadDoc(loadLocal() ?? sampleDocument());
+});
+
 const shareMatch = location.pathname.match(/^\/v\/([\w-]+)\/?$/);
 if (shareMatch) {
   void (async () => {
@@ -413,12 +517,17 @@ if (shareMatch) {
         );
       const parsed = parseDoc(await res.json());
       if (!parsed) throw new Error('The shared topology was invalid.');
-      loadDoc(parsed);
+      loadDoc(parsed, false, 'shared');
       history.replaceState({}, '', '/');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not load shared link.');
     }
   })();
+} else {
+  // A tab closed (or refreshed) while viewing a shared copy resumes it —
+  // edits made to the copy survive, and the local document stays parked.
+  const sharedResume = loadLocal('shared');
+  if (sharedResume) loadDoc(sharedResume, false, 'shared');
 }
 
 /* File actions: new / save (download) / open (upload). */
@@ -432,15 +541,7 @@ app.querySelector('#fNew')?.addEventListener('click', () => {
     customNodes: [],
   });
 });
-app.querySelector('#fSave')?.addEventListener('click', () => {
-  const blob = new Blob([serializeDoc(doc)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-});
+app.querySelector('#fSave')?.addEventListener('click', downloadDocJSON);
 
 /* Image export: SVG (vector, honors calm) and PNG (always a static raster). */
 function exportBase(): string {
@@ -2286,6 +2387,12 @@ buildPalette();
 
 let dragFrom = -1;
 
+/* A just-deleted frame, held so the strip can offer "↩ undo delete" until the
+ * chip times out or another frame is deleted. Its stashed editor history is
+ * kept alive with it, so restoring the frame restores its undo stack too. */
+let pendingFrameDelete: { page: Page; index: number; timer: number } | null =
+  null;
+
 /* Flipbook playback: step through pages on their durations (loop). The same
  * timing model drives the MCP export_flipbook artifact (pages/playback). */
 let playTimer: number | null = null;
@@ -2357,6 +2464,11 @@ function renderFilmstrip(): void {
       .join('')}
     <button class="frame add" id="dupPage" title="Duplicate current frame">⧉ duplicate</button>
     <button class="frame add" id="addPage" title="Add blank frame">＋ frame</button>
+    ${
+      pendingFrameDelete
+        ? `<button class="frame add" id="undoDel" title="Restore the deleted frame &quot;${esc(pendingFrameDelete.page.name)}&quot;">↩ undo delete</button>`
+        : ''
+    }
   `;
 
   strip.querySelectorAll<HTMLElement>('[data-page]').forEach((el) => {
@@ -2409,6 +2521,7 @@ function renderFilmstrip(): void {
     gotoPage(current + 1);
     markDirty();
   });
+  strip.querySelector('#undoDel')?.addEventListener('click', undoFrameDelete);
 
   updateFramesIndicator();
   scrollActiveFrameIntoView();
@@ -2444,14 +2557,47 @@ function startRename(i: number, span: HTMLElement): void {
   });
 }
 
+/** The pending delete becomes final: forget the page and its history stash. */
+function finalizeFrameDelete(): void {
+  if (!pendingFrameDelete) return;
+  clearTimeout(pendingFrameDelete.timer);
+  editor.dropPageHistory(pendingFrameDelete.page.id);
+  pendingFrameDelete = null;
+}
+
+/** Restore the just-deleted frame at its old position (the strip's undo chip). */
+function undoFrameDelete(): void {
+  if (!pendingFrameDelete) return;
+  const { page, index, timer } = pendingFrameDelete;
+  clearTimeout(timer);
+  pendingFrameDelete = null;
+  doc.pages.splice(Math.min(index, doc.pages.length), 0, page);
+  gotoPage(doc.pages.indexOf(page));
+  markDirty();
+}
+
 function deletePage(i: number): void {
   if (doc.pages.length <= 1) return;
   stopPlayback();
   const page = doc.pages[i]!;
-  const hasContent = page.nodes.length > 0 || page.links.length > 0;
-  if (hasContent && !confirm(`Delete "${page.name}"? This frame has content.`))
+  // Every content-bearing field counts (nodes, links, zones, anchors, flow
+  // paths, markers, caption, emphasis) — an annotation-only frame must not
+  // delete silently (pageHasContent, pages/model).
+  if (
+    pageHasContent(page) &&
+    !confirm(`Delete "${page.name}"? This frame has content.`)
+  )
     return;
+  finalizeFrameDelete(); // only the most recent delete stays recoverable
   doc.pages.splice(i, 1);
+  pendingFrameDelete = {
+    page,
+    index: i,
+    timer: window.setTimeout(() => {
+      finalizeFrameDelete();
+      renderFilmstrip();
+    }, 8000),
+  };
   if (current >= doc.pages.length) current = doc.pages.length - 1;
   else if (i < current) current -= 1;
   editor.setPage(doc.pages[current]!);

@@ -41,6 +41,7 @@ describe('MCP tools', () => {
         'export_flipbook',
         'get_topology',
         'import_topology',
+        'inspect_render',
         'layout_guidelines',
         'layout_topology',
         'list_templates',
@@ -324,6 +325,73 @@ describe('MCP tools', () => {
     expect(() =>
       call('set_node_metadata', { topologyId: id, nodeId: 'ghost', meta: {} }),
     ).toThrow(/unknown node/);
+  });
+
+  it('inspect_render returns a compact, bounded visual-quality report', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    // Visual defects validate_topology cannot describe: an off-page node, two
+    // long labels colliding across narrow columns, and crossing links.
+    call('edit_topology', {
+      topologyId: id,
+      operations: [
+        { op: 'add_node', type: 'ec', x: 1200, y: 350, nodeId: 'off' },
+        {
+          op: 'add_node',
+          type: 'ec',
+          x: 320,
+          y: 200,
+          nodeId: 'a',
+          label: 'core-aggregation-router-1',
+        },
+        {
+          op: 'add_node',
+          type: 'ec',
+          x: 440,
+          y: 200,
+          nodeId: 'b',
+          label: 'core-aggregation-router-2',
+        },
+        { op: 'add_node', type: 'ec', x: 320, y: 400, nodeId: 'c' },
+        { op: 'add_node', type: 'ec', x: 440, y: 400, nodeId: 'd' },
+        { op: 'add_link', type: 'line', from: 'a', to: 'd', linkId: 'x1' },
+        { op: 'add_link', type: 'line', from: 'b', to: 'c', linkId: 'x2' },
+      ],
+    });
+    const r = call('inspect_render', { topologyId: id }) as {
+      pageIndex: number;
+      pageName: string;
+      clean: boolean;
+      counts: Record<string, { problems: number; notes: number }>;
+      findings: { severity: string; category: string; message: string }[];
+      contentBounds: object;
+      margins: object;
+    };
+    expect(r.pageIndex).toBe(0);
+    expect(r.clean).toBe(false);
+    expect(r.counts.crop!.problems).toBeGreaterThan(0);
+    expect(r.counts.text!.problems).toBeGreaterThan(0);
+    expect(r.counts.routing!.problems).toBeGreaterThan(0);
+    const text = r.findings.map((f) => f.message).join('\n');
+    expect(text).toMatch(/node "off".*past the right page edge/);
+    expect(text).toMatch(/collide/);
+    expect(text).toMatch(/links "x1" and "x2" cross/);
+    // Compact: a few KB even for a defective page (vs 20–300KB of SVG).
+    expect(JSON.stringify(r).length).toBeLessThan(4096);
+
+    // The findings cap bounds output; true totals survive in counts.
+    const capped = call('inspect_render', {
+      topologyId: id,
+      maxFindingsPerCategory: 1,
+    }) as typeof r & { omitted: number };
+    for (const cat of ['crop', 'text', 'routing', 'density'])
+      expect(
+        capped.findings.filter((f) => f.category === cat).length,
+      ).toBeLessThanOrEqual(1);
+    expect(capped.counts).toEqual(r.counts);
+
+    expect(() =>
+      call('inspect_render', { topologyId: id, pageIndex: 9 }),
+    ).toThrow(/out of range/);
   });
 
   it('builds, validates, and renders a topology end to end', () => {

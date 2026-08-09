@@ -51,6 +51,7 @@ import { layoutDocument, type LayoutAlgorithm } from '../api/autolayout.js';
 import { POLICY_MARKER_TYPES } from '../api/markers.js';
 import { buildTemplate, listTemplates } from '../api/templates.js';
 import type { RenderOptions } from '../render/core.js';
+import { inspectPage } from '../render/inspect.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { convertLegacyStudio, detectLegacyStudio } from '../import/legacy.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
@@ -1102,7 +1103,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'balance_topology',
       description:
-        'Tidy then BALANCE a topology in place: de-overlap, snap nodes onto shared rows/columns, and centre the whole layout in the page. The crisp follow-up to tidy_topology — run it last to make a generated diagram look hand-arranged. Returns how many nodes moved plus the layout-warning count before/after.',
+        'Tidy then BALANCE a topology in place: de-overlap, snap nodes onto shared rows/columns, and centre the whole layout in the page. The crisp follow-up to tidy_topology — run it last to make a generated diagram look hand-arranged, then confirm with inspect_render before rendering. Returns how many nodes moved plus the layout-warning count before/after.',
       inputShape: {
         topologyId,
         alignTolerance: z
@@ -1134,9 +1135,45 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       handler: () => layoutGuidelines(),
     },
     {
+      name: 'inspect_render',
+      description:
+        'Inspect the VISUAL quality of one rendered page and return a compact report (a few KB) instead of the SVG: page/viewBox vs content bounds with margins, crop/clipping diagnostics, text-legibility warnings (labels overflowing nodes, label/label and label/node collisions, zone labels overlapped by content), routing quality (link crossings, links through unrelated nodes, degenerate link/flow geometry), and density/balance signals (overlaps, crowding clusters, unbalanced whitespace). Findings are severity-tagged (problem vs note), actionable, and capped per category with true totals in `counts`. Complements validate_topology (which checks semantics + layout rules, not legibility) — use this as the cheap final visual QA step after validate/tidy/balance and BEFORE render_svg / share_topology / export_flipbook; only render once the report is clean.',
+      inputShape: {
+        topologyId,
+        pageIndex: z
+          .number()
+          .int()
+          .optional()
+          .describe('0-based page index; defaults to 0 (like render_svg).'),
+        maxFindingsPerCategory: z
+          .number()
+          .int()
+          .min(1)
+          .max(25)
+          .optional()
+          .describe('Cap reported findings per category (default 8).'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        const index = (a.pageIndex as number | undefined) ?? 0;
+        const page = doc.pages[index];
+        if (!page) throw new Error(`page index ${index} out of range`);
+        return {
+          pageIndex: index,
+          pageName: page.name,
+          ...inspectPage(
+            page,
+            a.maxFindingsPerCategory !== undefined
+              ? { maxPerCategory: Number(a.maxFindingsPerCategory) }
+              : {},
+          ),
+        };
+      },
+    },
+    {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. NOTE: the returned SVG is large (often 20–300KB) — do not call this after every edit. Use validate_topology for correctness checks while iterating, and render (or share_topology, where available) once at the end.',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. NOTE: the returned SVG is large (often 20–300KB) — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
       inputShape: {
         topologyId,
         pageIndex: z

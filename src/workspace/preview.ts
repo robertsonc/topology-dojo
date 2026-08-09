@@ -4,8 +4,10 @@
  * browser's already-loaded SVG engine (`src/editor/export.ts`'s `pageToSVG`).
  * This module never touches the DOM or the engine; it only figures out,
  * per affected page, what the page looked like before the proposal's
- * operations and what it would look like after, plus which element ids
- * changed (for highlight overlays the panel draws on the "after" frame).
+ * operations and what it would look like after, plus which elements changed
+ * and how (for the geometry-aware highlight overlays the panel draws on the
+ * before/after frames — removals on "before", additions on "after",
+ * modifications on both).
  *
  * `document.patch` operations touch no page (`operationPageIds` returns `[]`
  * for them per `src/workspace/operations.ts`), so they never produce an
@@ -19,7 +21,26 @@ import {
   operationPageIds,
   operationTargets,
 } from './operations.js';
-import type { WorkspaceOperation } from './model.js';
+import {
+  ELEMENT_KINDS,
+  type ElementKind,
+  type WorkspaceOperation,
+} from './model.js';
+
+/** How a proposal changes one element, relative to the page's before state. */
+export type ElementChangeType = 'added' | 'removed' | 'modified';
+
+/**
+ * One changed element with enough identity for the panel to draw
+ * geometry-aware highlights: which collection it lives in (`kind`) and
+ * whether it was added / removed / modified. Removed elements resolve
+ * against `before`, added against `after`, modified against both.
+ */
+export interface ElementChange {
+  elementId: string;
+  kind: ElementKind;
+  change: ElementChangeType;
+}
 
 export interface ProposalPreviewPage {
   pageId: string;
@@ -28,8 +49,12 @@ export interface ProposalPreviewPage {
   before: Page | null;
   /** The page after the proposal — null when the proposal removes this page. */
   after: Page | null;
-  /** Element ids changed on this page, for highlight overlays on `after`. */
+  /** Element ids changed on this page (every kind, including ids that no
+   * longer resolve to an element — e.g. a bare reorder target). */
   changedElementIds: string[];
+  /** The subset of `changedElementIds` that resolves to a real element in
+   * `before` and/or `after`, classified for highlight overlays. */
+  changes: ElementChange[];
 }
 
 /** Every page id touched by the batch, in first-appearance order. */
@@ -46,13 +71,27 @@ function affectedPageIds(operations: WorkspaceOperation[]): string[] {
 }
 
 /**
- * Element ids this page's relevant operations touch, parsed from
- * `operationTargets` (the same field-granular target strings the coordinator
- * uses for conflict detection) rather than re-deriving them ad hoc — a
+ * The element id a single target string names, or null. Targets are the same
+ * field-granular strings the coordinator uses for conflict detection — a
  * `page/<id>/element/<kind>/<elementId>/...` or
  * `page/<id>/collection/<kind>/order/<elementId>` target names one element;
  * a bare `.../order/**` (a full `element.reorder`) names none.
  */
+function targetElementId(parts: string[]): string | null {
+  if (parts[0] !== 'page') return null;
+  if (parts[2] === 'element' && parts[4] && parts[4] !== '**') return parts[4];
+  if (
+    parts[2] === 'collection' &&
+    parts[4] === 'order' &&
+    parts[5] &&
+    parts[5] !== '**'
+  )
+    return parts[5];
+  return null;
+}
+
+/** Element ids this page's relevant operations touch, via `operationTargets`
+ * rather than re-deriving them ad hoc. */
 function elementIdsForPage(
   pageId: string,
   relevant: WorkspaceOperation[],
@@ -61,18 +100,55 @@ function elementIdsForPage(
   for (const operation of relevant)
     for (const target of operationTargets(operation)) {
       const parts = target.split('/');
-      if (parts[0] !== 'page' || parts[1] !== pageId) continue;
-      if (parts[2] === 'element' && parts[4] && parts[4] !== '**')
-        ids.add(parts[4]);
-      else if (
-        parts[2] === 'collection' &&
-        parts[4] === 'order' &&
-        parts[5] &&
-        parts[5] !== '**'
-      )
-        ids.add(parts[5]);
+      if (parts[1] !== pageId) continue;
+      const id = targetElementId(parts);
+      if (id) ids.add(id);
     }
   return [...ids].sort();
+}
+
+/**
+ * Pure: every element id one operation touches, across all pages — the
+ * panel's operation-list → preview-geometry link (click an operation, flash
+ * its elements). Same target parse as `elementIdsForPage`, unfiltered.
+ */
+export function operationElementIds(operation: WorkspaceOperation): string[] {
+  const ids = new Set<string>();
+  for (const target of operationTargets(operation)) {
+    const id = targetElementId(target.split('/'));
+    if (id) ids.add(id);
+  }
+  return [...ids].sort();
+}
+
+/** The collection an element id lives in on `page`, or null when absent. */
+function elementKindOn(page: Page, elementId: string): ElementKind | null {
+  for (const kind of ELEMENT_KINDS)
+    if ((page[kind] as Array<{ id: string }>).some((el) => el.id === elementId))
+      return kind;
+  return null;
+}
+
+/** Classify each changed id against the before/after pages. Ids that resolve
+ * to no element on either side (nothing to draw) are dropped. */
+function classifyChanges(
+  before: Page | null,
+  after: Page | null,
+  changedElementIds: string[],
+): ElementChange[] {
+  const changes: ElementChange[] = [];
+  for (const elementId of changedElementIds) {
+    const beforeKind = before ? elementKindOn(before, elementId) : null;
+    const afterKind = after ? elementKindOn(after, elementId) : null;
+    const kind = afterKind ?? beforeKind;
+    if (!kind) continue;
+    changes.push({
+      elementId,
+      kind,
+      change: !beforeKind ? 'added' : !afterKind ? 'removed' : 'modified',
+    });
+  }
+  return changes;
 }
 
 /**
@@ -127,12 +203,14 @@ export function computeProposalPreview(
       after = applied.pages.find((page) => page.id === pageId) ?? null;
     }
 
+    const changedElementIds = elementIdsForPage(pageId, relevant);
     return {
       pageId,
       pageName: before?.name ?? after?.name ?? pageId,
       before,
       after,
-      changedElementIds: elementIdsForPage(pageId, relevant),
+      changedElementIds,
+      changes: classifyChanges(before, after, changedElementIds),
     };
   });
 }

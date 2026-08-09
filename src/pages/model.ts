@@ -120,6 +120,24 @@ export function duplicatePage(page: Page, name?: string): Page {
   return copy;
 }
 
+/**
+ * Whether a page carries anything a user could lose — elements OR page-level
+ * storytelling (caption / emphasis). Drives destructive-action confirmations
+ * (frame delete): an annotation-only frame is still content.
+ */
+export function pageHasContent(page: Page): boolean {
+  return (
+    page.nodes.length > 0 ||
+    page.links.length > 0 ||
+    page.anchors.length > 0 ||
+    page.zones.length > 0 ||
+    page.flowPaths.length > 0 ||
+    page.policyMarkers.length > 0 ||
+    (page.caption?.trim().length ?? 0) > 0 ||
+    (page.emphasis?.length ?? 0) > 0
+  );
+}
+
 /** An empty page sized to the standard canvas. */
 export function blankPage(name: string): Page {
   return {
