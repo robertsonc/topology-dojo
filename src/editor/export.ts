@@ -9,14 +9,21 @@
 import { renderPageSVG, type RenderOptions } from '../vendor/topology-ds.js';
 import type { Page } from '../pages/model.js';
 
-function viewBoxSize(page: Page): { vw: number; vh: number } {
-  const [, , vw, vh] = page.viewBox.split(/\s+/).map(Number) as [
+/** All four viewBox components — origins can be non-zero or negative after
+ * fit-to-content/layout growth, so the backdrop must track (vx, vy). */
+function viewBoxParts(viewBox: string): {
+  vx: number;
+  vy: number;
+  vw: number;
+  vh: number;
+} {
+  const [vx, vy, vw, vh] = viewBox.trim().split(/\s+/).map(Number) as [
     number,
     number,
     number,
     number,
   ];
-  return { vw: vw || 1050, vh: vh || 700 };
+  return { vx: vx || 0, vy: vy || 0, vw: vw || 1050, vh: vh || 700 };
 }
 
 /** A complete, standalone SVG string for a page (wrapper + backdrop + art).
@@ -26,10 +33,10 @@ export function pageToSVG(
   opts: RenderOptions = {},
   extra = '',
 ): string {
-  const { vw, vh } = viewBoxSize(page);
+  const { vx, vy, vw, vh } = viewBoxParts(page.viewBox);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
-    `<rect x="0" y="0" width="${vw}" height="${vh}" fill="#0e1613"/>` +
+    `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#0e1613"/>` +
     renderPageSVG(page, opts) +
     extra +
     `</svg>`
@@ -38,9 +45,8 @@ export function pageToSVG(
 
 /** Rasterize an SVG string to a PNG blob at `scale`× the viewBox size. */
 export function svgToPngBlob(svg: string, scale = 2): Promise<Blob> {
-  const m = /viewBox="[^"]*?\s([\d.]+)\s([\d.]+)"/.exec(svg);
-  const vw = m ? Number(m[1]) : 1050;
-  const vh = m ? Number(m[2]) : 700;
+  const m = /viewBox="([^"]*)"/.exec(svg);
+  const { vw, vh } = viewBoxParts(m?.[1] ?? '');
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
