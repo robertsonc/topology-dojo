@@ -23,7 +23,9 @@ import {
 import {
   blankPage,
   duplicatePage,
+  pageHasContent,
   sampleDocument,
+  type Page,
   type TopologyDocument,
   type Stencil,
   type BrandPalette,
@@ -336,6 +338,7 @@ function loadDoc(next: TopologyDocument, sync = true): void {
   }
   registerCustomNodes(doc.customNodes);
   invalidatePreview(); // custom types replaced — clear cached previews
+  finalizeFrameDelete(); // a pending frame restore can't outlive its document
   current = 0;
   buildPalette();
   // Adopt the incoming document's brand palette (canvas + chrome + inputs).
@@ -2286,6 +2289,12 @@ buildPalette();
 
 let dragFrom = -1;
 
+/* A just-deleted frame, held so the strip can offer "↩ undo delete" until the
+ * chip times out or another frame is deleted. Its stashed editor history is
+ * kept alive with it, so restoring the frame restores its undo stack too. */
+let pendingFrameDelete: { page: Page; index: number; timer: number } | null =
+  null;
+
 /* Flipbook playback: step through pages on their durations (loop). The same
  * timing model drives the MCP export_flipbook artifact (pages/playback). */
 let playTimer: number | null = null;
@@ -2357,6 +2366,11 @@ function renderFilmstrip(): void {
       .join('')}
     <button class="frame add" id="dupPage" title="Duplicate current frame">⧉ duplicate</button>
     <button class="frame add" id="addPage" title="Add blank frame">＋ frame</button>
+    ${
+      pendingFrameDelete
+        ? `<button class="frame add" id="undoDel" title="Restore the deleted frame &quot;${esc(pendingFrameDelete.page.name)}&quot;">↩ undo delete</button>`
+        : ''
+    }
   `;
 
   strip.querySelectorAll<HTMLElement>('[data-page]').forEach((el) => {
@@ -2409,6 +2423,7 @@ function renderFilmstrip(): void {
     gotoPage(current + 1);
     markDirty();
   });
+  strip.querySelector('#undoDel')?.addEventListener('click', undoFrameDelete);
 
   updateFramesIndicator();
   scrollActiveFrameIntoView();
@@ -2444,14 +2459,47 @@ function startRename(i: number, span: HTMLElement): void {
   });
 }
 
+/** The pending delete becomes final: forget the page and its history stash. */
+function finalizeFrameDelete(): void {
+  if (!pendingFrameDelete) return;
+  clearTimeout(pendingFrameDelete.timer);
+  editor.dropPageHistory(pendingFrameDelete.page.id);
+  pendingFrameDelete = null;
+}
+
+/** Restore the just-deleted frame at its old position (the strip's undo chip). */
+function undoFrameDelete(): void {
+  if (!pendingFrameDelete) return;
+  const { page, index, timer } = pendingFrameDelete;
+  clearTimeout(timer);
+  pendingFrameDelete = null;
+  doc.pages.splice(Math.min(index, doc.pages.length), 0, page);
+  gotoPage(doc.pages.indexOf(page));
+  markDirty();
+}
+
 function deletePage(i: number): void {
   if (doc.pages.length <= 1) return;
   stopPlayback();
   const page = doc.pages[i]!;
-  const hasContent = page.nodes.length > 0 || page.links.length > 0;
-  if (hasContent && !confirm(`Delete "${page.name}"? This frame has content.`))
+  // Every content-bearing field counts (nodes, links, zones, anchors, flow
+  // paths, markers, caption, emphasis) — an annotation-only frame must not
+  // delete silently (pageHasContent, pages/model).
+  if (
+    pageHasContent(page) &&
+    !confirm(`Delete "${page.name}"? This frame has content.`)
+  )
     return;
+  finalizeFrameDelete(); // only the most recent delete stays recoverable
   doc.pages.splice(i, 1);
+  pendingFrameDelete = {
+    page,
+    index: i,
+    timer: window.setTimeout(() => {
+      finalizeFrameDelete();
+      renderFilmstrip();
+    }, 8000),
+  };
   if (current >= doc.pages.length) current = doc.pages.length - 1;
   else if (i < current) current -= 1;
   editor.setPage(doc.pages[current]!);

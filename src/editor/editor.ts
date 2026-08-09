@@ -22,6 +22,7 @@ import { balancePage, tidyPage } from '../api/tidy.js';
 import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
 import type { Page } from '../pages/model.js';
+import { cascadeEndpointRemoval } from '../pages/cascade.js';
 import type {
   ElementKind,
   FieldPatch,
@@ -115,6 +116,14 @@ export class Editor {
   private sel = new Set<string>();
   private undoStack: string[] = [];
   private redoStack: string[] = [];
+  /**
+   * Undo/redo stacks stashed per page id while other pages are edited (#204):
+   * switching frames must not destroy the ability to undo edits made there.
+   * Bounded: each stack is capped (see `snapshot`), and only the most recently
+   * left MAX_STASHED_HISTORIES pages keep a stash (insertion-ordered eviction).
+   */
+  private histories = new Map<string, { undo: string[]; redo: string[] }>();
+  private static readonly MAX_STASHED_HISTORIES = 32;
   /**
    * Gesture-native operation buffer (Packet S2). Each mutating gesture records
    * the semantic `WorkspaceOperation`(s) it just performed here, right where it
@@ -254,12 +263,22 @@ export class Editor {
     this.renderOverlay();
   }
 
-  /** Switch to editing a different page (resets selection + history + view). */
+  /**
+   * Switch to editing a different page (resets selection + view). History is
+   * per-page: the outgoing page's undo/redo stacks are stashed under its id
+   * and the incoming page's stacks restored (empty if none), so a frame switch
+   * never destroys history (#204).
+   */
   setPage(page: Page): void {
+    if (page !== this.page) {
+      this.stashHistory();
+      const stashed = this.histories.get(page.id);
+      this.histories.delete(page.id);
+      this.undoStack = stashed?.undo ?? [];
+      this.redoStack = stashed?.redo ?? [];
+    }
     this.page = page;
     this.sel.clear();
-    this.undoStack = [];
-    this.redoStack = [];
     // A page switch (or a whole-document open) changes the commit baseline; any
     // ops buffered for the old page are dropped so the sync cleanly falls back
     // to the snapshot diff rather than committing stale intent.
@@ -542,6 +561,29 @@ export class Editor {
   renamePage(name: string): void {
     if (this.page.name !== name) this.emitPagePatch({ set: { name } });
     this.page.name = name;
+    this.onChange();
+  }
+
+  /**
+   * Patch the page's storytelling/playback fields (caption / duration /
+   * transition). Undoable — unlike name/viewBox these are frame content, and
+   * history must restore them (#205). `undefined` clears a field.
+   */
+  updatePageProps(
+    patch: Partial<Pick<Page, 'caption' | 'duration' | 'transition'>>,
+  ): void {
+    const keys = Object.keys(patch) as (keyof typeof patch)[];
+    const before: Record<string, unknown> = {};
+    for (const key of keys) before[key] = this.page[key];
+    const fp = this.patchFromChange(before, patch, keys);
+    if (!fp) return;
+    this.snapshot();
+    for (const key of keys) {
+      if (patch[key] === undefined) delete this.page[key];
+      else (this.page as unknown as Record<string, unknown>)[key] = patch[key];
+    }
+    this.emitPagePatch(fp);
+    this.renderOverlay(); // caption renders via the overlayExtra hook
     this.onChange();
   }
 
@@ -1131,6 +1173,26 @@ export class Editor {
     this.redoStack = [];
   }
 
+  /** Park the live stacks under the current page's id (see `setPage`). */
+  private stashHistory(): void {
+    this.histories.delete(this.page.id);
+    if (this.undoStack.length === 0 && this.redoStack.length === 0) return;
+    this.histories.set(this.page.id, {
+      undo: this.undoStack,
+      redo: this.redoStack,
+    });
+    while (this.histories.size > Editor.MAX_STASHED_HISTORIES) {
+      const oldest = this.histories.keys().next().value;
+      if (oldest === undefined) break;
+      this.histories.delete(oldest);
+    }
+  }
+
+  /** Forget a page's stashed history — call when the page is deleted for good. */
+  dropPageHistory(pageId: string): void {
+    this.histories.delete(pageId);
+  }
+
   /* ── gesture → operation funnel (Packet S2) ───────────────────────
    *
    * The single seam through which gestures publish the semantic operation(s)
@@ -1285,15 +1347,15 @@ export class Editor {
   }
 
   private restore(json: string): void {
-    const p = JSON.parse(json) as ReturnType<typeof serialize>;
-    this.page.viewBox = p.viewBox;
-    this.page.name = p.name;
-    this.page.nodes = p.nodes;
-    this.page.links = p.links;
-    this.page.anchors = p.anchors;
-    this.page.zones = p.zones;
-    this.page.flowPaths = p.flowPaths;
-    this.page.policyMarkers = p.policyMarkers;
+    const p = JSON.parse(json) as Record<string, unknown>;
+    const page = this.page as unknown as Record<string, unknown>;
+    // serialize() emits every mutable page field (undefined included), so its
+    // key set is the complete field list; a key absent from the stored JSON is
+    // an optional field that was unset and must be deleted, not skipped.
+    for (const key of Object.keys(serialize(this.page))) {
+      if (p[key] === undefined) delete page[key];
+      else page[key] = p[key];
+    }
   }
 
   undo(): void {
@@ -1370,6 +1432,17 @@ export class Editor {
       id: z.id,
       nodes: [...(z.nodes ?? [])],
     }));
+    const beforeFlows = this.page.flowPaths.map((f) => ({
+      id: f.id,
+      snap: structuredClone({ waypoints: f.waypoints, hops: f.hops }) as Record<
+        string,
+        unknown
+      >,
+    }));
+    const beforeMarkers = this.page.policyMarkers.map((m) => ({
+      id: m.id,
+      snap: { flowPathId: m.flowPathId } as Record<string, unknown>,
+    }));
     if (this.zoneSel !== null) {
       // Deleting a zone removes the region annotation only — its member nodes
       // (and their links) stay on the canvas.
@@ -1394,21 +1467,19 @@ export class Editor {
       this.page.nodes = this.page.nodes.filter((n) => !this.sel.has(n.id));
       this.sel.clear();
     }
-    // Cascade: drop links whose endpoints (node or anchor) no longer exist.
-    const ids = new Set([
-      ...this.page.nodes.map((n) => n.id),
-      ...this.page.anchors.map((a) => a.id),
-    ]);
-    this.page.links = this.page.links.filter(
-      (l) => ids.has(l.from) && ids.has(l.to),
+    // Cascade — the shared endpoint-removal semantics (pages/cascade.ts, also
+    // behind the headless remove_element API): links, policy markers, zone
+    // memberships, and flow-path waypoints/hops of vanished endpoints; a
+    // touched path left with fewer than two waypoints goes too (#215).
+    const nowNodeIds = new Set(this.page.nodes.map((n) => n.id));
+    const nowAnchorIds = new Set(this.page.anchors.map((a) => a.id));
+    cascadeEndpointRemoval(
+      this.page,
+      new Set([
+        ...beforeNodes.filter((id) => !nowNodeIds.has(id)),
+        ...beforeAnchors.filter((id) => !nowAnchorIds.has(id)),
+      ]),
     );
-    // Prune zone membership of nodes that no longer exist — stale member ids
-    // otherwise surface as "member references missing node" warnings and travel
-    // with the zone through save/duplicate.
-    const nodeIds = new Set(this.page.nodes.map((n) => n.id));
-    for (const z of this.page.zones)
-      if (z.nodes.some((id) => !nodeIds.has(id)))
-        z.nodes = z.nodes.filter((id) => nodeIds.has(id));
     // Emit the semantic delete: one remove per element that vanished (direct or
     // via cascade), then a patch for any zone whose membership was pruned.
     const nowNodes = new Set(this.page.nodes.map((n) => n.id));
@@ -1431,12 +1502,44 @@ export class Editor {
       'zones',
       beforeZones.filter((z) => !nowZones.has(z.id)).map((z) => z.id),
     );
+    const nowFlows = new Set(this.page.flowPaths.map((f) => f.id));
+    const nowMarkers = new Set(this.page.policyMarkers.map((m) => m.id));
+    this.emitRemoves(
+      'flowPaths',
+      beforeFlows.filter((f) => !nowFlows.has(f.id)).map((f) => f.id),
+    );
+    this.emitRemoves(
+      'policyMarkers',
+      beforeMarkers.filter((m) => !nowMarkers.has(m.id)).map((m) => m.id),
+    );
     for (const z of this.page.zones) {
       const was = beforeZones.find((b) => b.id === z.id);
       if (was && JSON.stringify(was.nodes) !== JSON.stringify(z.nodes ?? []))
         this.emitPatch('zones', z.id, {
           set: { nodes: structuredClone(z.nodes ?? []) },
         });
+    }
+    for (const f of this.page.flowPaths) {
+      const was = beforeFlows.find((b) => b.id === f.id);
+      const fp =
+        was &&
+        this.patchFromChange(
+          was.snap,
+          f as unknown as Record<string, unknown>,
+          ['waypoints', 'hops'],
+        );
+      if (fp) this.emitPatch('flowPaths', f.id, fp);
+    }
+    for (const m of this.page.policyMarkers) {
+      const was = beforeMarkers.find((b) => b.id === m.id);
+      const fp =
+        was &&
+        this.patchFromChange(
+          was.snap,
+          m as unknown as Record<string, unknown>,
+          ['flowPathId'],
+        );
+      if (fp) this.emitPatch('policyMarkers', m.id, fp);
     }
     this.renderArt();
     this.renderOverlay();
@@ -3396,25 +3499,31 @@ function labelOffsetKey(
       : 'labelOffset';
 }
 
-/** Plain serializable view of a page (drops nothing — pages are already plain). */
-function serialize(page: Page): {
-  viewBox: string;
-  name: string;
-  nodes: NodeConfig[];
-  links: Page['links'];
-  anchors: Page['anchors'];
-  zones: Page['zones'];
-  flowPaths: Page['flowPaths'];
-  policyMarkers: Page['policyMarkers'];
-} {
-  return structuredClone({
-    viewBox: page.viewBox,
+/** Everything mutable on a Page — the page-level history unit (id is identity). */
+type PageSnapshot = Omit<Page, 'id'>;
+
+/**
+ * Plain serializable view of a page for history. The mapped type makes every
+ * `PageSnapshot` key REQUIRED in the literal, so adding a field to `Page`
+ * without serializing it here is a compile error — an omitted field would make
+ * undo silently drop it (#205). Optional fields are kept even when undefined
+ * so `Object.keys` of a serialization is always the full field list (restore
+ * relies on this; JSON.stringify drops the undefined ones afterwards).
+ */
+function serialize(page: Page): PageSnapshot {
+  const snap: { [K in keyof Required<PageSnapshot>]: PageSnapshot[K] } = {
     name: page.name,
+    viewBox: page.viewBox,
+    duration: page.duration,
+    transition: page.transition,
+    caption: page.caption,
+    emphasis: page.emphasis,
     nodes: page.nodes,
     links: page.links,
     anchors: page.anchors,
     zones: page.zones,
     flowPaths: page.flowPaths,
     policyMarkers: page.policyMarkers,
-  });
+  };
+  return structuredClone(snap);
 }

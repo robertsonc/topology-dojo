@@ -13,6 +13,7 @@
  * document in place instead of rebuilding it.
  */
 import type { Page } from '../pages/model.js';
+import { cascadeEndpointRemoval } from '../pages/cascade.js';
 import { sameSource, type SourceRef } from './source.js';
 import {
   addFlowPath,
@@ -62,17 +63,6 @@ function locate(page: Page, id: string): Located | null {
       return { kind, element: collection[index]!, collection, index };
   }
   return null;
-}
-
-/** Drop entries failing `keep` without reassigning the array; returns count. */
-function pruneInPlace<T>(arr: T[], keep: (item: T) => boolean): number {
-  let dropped = 0;
-  for (let i = arr.length - 1; i >= 0; i--)
-    if (!keep(arr[i]!)) {
-      arr.splice(i, 1);
-      dropped++;
-    }
-  return dropped;
 }
 
 export interface UpdateResult {
@@ -148,9 +138,9 @@ export interface RemoveResult {
  * Remove an element by id. With `cascade` (the default), dependents are
  * removed or cleaned too: links on a removed endpoint, markers on a removed
  * node, zone memberships, flow-path waypoints (a path left with <2 waypoints
- * is removed), `parentZone` of child zones, and `flowPathId` on markers whose
- * flow path went away. Without cascade the dangling references are left for
- * `validate` to flag.
+ * is removed), hop annotations on removed waypoints/links, `parentZone` of
+ * child zones, and `flowPathId` on markers whose flow path went away. Without
+ * cascade the dangling references are left for `validate` to flag.
  */
 export function removeElement(
   page: Page,
@@ -175,24 +165,15 @@ export function removeElement(
   const droppedFlowPaths: string[] = found.kind === 'flowPath' ? [id] : [];
 
   if (found.kind === 'node' || found.kind === 'anchor') {
-    cascaded.links = pruneInPlace(
-      page.links,
-      (l) => l.from !== id && l.to !== id,
-    );
-    cascaded.policyMarkers = pruneInPlace(
-      page.policyMarkers,
-      (m) => m.nodeId !== id,
-    );
-    for (const z of page.zones)
-      cascaded.zoneMemberships += pruneInPlace(z.nodes, (n) => n !== id);
-    cascaded.flowPaths = pruneInPlace(page.flowPaths, (f) => {
-      const removedCount = pruneInPlace(f.waypoints, (w) => w !== id);
-      cascaded.waypoints += removedCount;
-      // Only a path the removal actually touched can be dropped for shortness.
-      if (removedCount === 0 || f.waypoints.length >= 2) return true;
-      droppedFlowPaths.push(f.id);
-      return false;
-    });
+    // Shared with the editor's deleteSelected — one cascade implementation
+    // (pages/cascade.ts) keeps gesture and headless semantics identical.
+    const c = cascadeEndpointRemoval(page, new Set([id]));
+    cascaded.links = c.links;
+    cascaded.policyMarkers = c.policyMarkers;
+    cascaded.zoneMemberships = c.zoneMemberships;
+    cascaded.flowPaths = c.flowPaths;
+    cascaded.waypoints = c.waypoints;
+    // The helper already cleared flowPathId pointers for the paths it dropped.
   }
 
   if (found.kind === 'zone') {
