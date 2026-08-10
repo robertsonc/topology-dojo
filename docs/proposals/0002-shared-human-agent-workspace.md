@@ -1,6 +1,9 @@
 # Proposal 0002: Shared human-agent workspace
 
-**Status:** Accepted for Phase 0 implementation (vertical slice)
+**Status:** Implemented (vertical slice plus proposal preview, selective
+acceptance, gesture operations, offline recovery, checkpoints/timeline,
+WebSocket presence, and adaptive profiles). Remaining extensions are listed
+below.
 
 **Decision date:** 2026-07-12
 **Product policy:** Suggest-only by default; UI-controlled scoped leases; lazy migration
@@ -172,6 +175,10 @@ not call the full snapshot endpoint as a routine synchronization mechanism.
 
 ## First vertical slice
 
+_Historical scope description. Presence, proposal previews, checkpoints,
+offline recovery, and a revision timeline shipped later; see the follow-on
+status below and the current user guide._
+
 This phase delivers one GitHub owner collaborating with their agents. It does
 not yet deliver organization workspaces, multi-human presence/cursors, comments,
 offline multi-master editing, CRDTs, or a complete historical timeline UI.
@@ -209,16 +216,21 @@ detail). A rendered before/after visual diff is the next UI increment.
 10. A document larger than 2 MB in aggregate succeeds when each page is under
     the per-page limit; an oversize individual page fails visibly.
 
-## Follow-on work
+## Follow-on status (revalidated 2026-08-09)
+
+Shipped after the first slice:
 
 - visual before/after proposal preview and selective acceptance;
-- gesture-native operations (remove the browser snapshot-diff adapter);
+- gesture-native operations with a correctness-preserving referee fallback;
 - IndexedDB offline cache and crash recovery;
-- named checkpoints, restore, fork, and a revision timeline;
-- WebSocket push/presence (polling compact manifests is acceptable here);
-- explicit collaborator ACLs and organization workspaces;
-- finer element-set leases and approved automations;
-- comments, mentions, and review threads.
-- adaptive authoring profiles built from actor-attributed corrections, with
-  confirmation, scoping, revisioned guidance, and hard context budgets
+- named checkpoints, forward restore, fork, and a revision timeline;
+- WebSocket push and presence; and
+- adaptive authoring profiles with human confirmation, scoping, revisioned
+  guidance, and hard context budgets
   ([Proposal 0003](0003-adaptive-agent-authoring-profiles.md)).
+
+Still deferred:
+
+- explicit collaborator ACLs and organization workspaces;
+- finer element-set leases and approved automations; and
+- comments, mentions, and review threads.

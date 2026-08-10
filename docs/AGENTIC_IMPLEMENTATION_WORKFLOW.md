@@ -189,10 +189,12 @@ required authority or evidence.
 Run the baseline repository gates:
 
 ```bash
+npm run check:wrangler
 npm run typecheck
 npm test
 npm run lint
 npm run build
+npm run test:e2e
 ```
 
 Add targeted checks based on risk:

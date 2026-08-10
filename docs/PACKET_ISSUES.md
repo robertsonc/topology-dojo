@@ -1,18 +1,15 @@
 # Packet-ready issue descriptions
 
 Issue-ready Markdown for every not-yet-started packet in
-[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) (N1–N3 are done or
-in-progress as of this PR — see that document). Each block below is
+[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) (N1–N3 are complete; see
+that document). Each block below is
 formatted to paste directly into a new GitHub issue if/when this repo starts
 using Issues as a tracking tool.
 
-**Why these aren't already live GitHub issues:** this repository has zero
-open issues and zero open PRs as of this reset (174 PRs merged, #1–#195,
-entirely via direct branch→PR→merge with no issue-tracking step at any
-point in its history). Opening ~30 issues unilaterally would be introducing
-a workflow this project has never used, not continuing an existing one. If
-you want these as live issues, say so and they can be created directly from
-this file — each block is already in the right shape.
+**Why these are templates rather than live GitHub issues:** planning in this
+repository has historically lived in `docs/`. Opening the full packet set would
+introduce a different tracking workflow. Revalidate a packet against current
+code and the roadmap before copying it into any tracker.
 
 Full context (architecture, dependency graph, hotspots, risk register) for
 every packet below lives in `IMPLEMENTATION_PLAN.md`; this file trades that
@@ -22,10 +19,10 @@ context for a template a tracker expects.
 
 ## O1 — Configure Cloudflare alerting
 
-**Problem:** Production runs with all three feature flags live and zero
-automated error-rate alerting. The exact thresholds to alert on are already
-documented (`DEPLOYMENT_RUNBOOK.md` §"Rate-based stops"/"Hard stops") but
-nothing in Cloudflare fires on them.
+**Problem:** The repository cannot verify current Cloudflare notification
+policy state or delivery. The exact thresholds are documented
+(`DEPLOYMENT_RUNBOOK.md` §"Rate-based stops"/"Hard stops"), but an operator
+must inspect/configure the policies and attach a delivered-test record.
 
 **Outcome:** Cloudflare Notification policies exist matching those
 thresholds, routed to the owner's email; `DEPLOYMENT_RUNBOOK.md` is updated
@@ -577,9 +574,10 @@ already-shipped primitives.
 
 ## E5 — Credential provisioning runbook
 
-**Problem:** No deployment (staging or production) has `ORCH_BASE_URL`/
-`ORCH_API_KEY` configured, so the 7 live-fabric MCP tools never appear
-anywhere; no documented procedure exists for changing that safely.
+**Problem:** The repository cannot reveal whether any deployment has
+`ORCH_BASE_URL`/`ORCH_API_KEY` provisioned, so the seven live-fabric MCP tools'
+current availability is unverified; no documented procedure exists for
+changing that safely.
 
 **Outcome:** A documented procedure for provisioning the secrets on
 **staging**; confirmation that `describe_data_source` can smoke-test

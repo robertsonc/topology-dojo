@@ -322,8 +322,9 @@ tracked as `../IMPLEMENTATION_PLAN.md` packets O2/O3._
 - [x] No deployment script or workflow uses `wrangler versions upload` for a
       Worker containing an unapplied migration. (`deploy-production.yml` uses
       `wrangler deploy`.)
-- [x] PR checks run typecheck, 262+ tests, lint, production build, and Worker
-      bundle validation. (Now 723 tests; `ci.yml`.)
+- [x] PR checks run typecheck, the complete Vitest suite, lint, production
+      build, Worker bundle validation, and the Chromium browser gate. Use the
+      current CI run/QA report rather than a static test count (`ci.yml`).
 - [x] Staging is deployed only after the required check succeeds.
       (`deploy-staging.yml`.)
 - [x] Production is deployed only from protected `main` with approval.

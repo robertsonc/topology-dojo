@@ -12,8 +12,10 @@
 
 ### Health
 
-`npm test` (102 tests / 14 files), `npm run typecheck` (app + worker), and
-`eslint` + `prettier` are all green on `main`.
+At this proposal's 2026-06-09 baseline, `npm test` (102 tests / 14 files),
+`npm run typecheck` (app + worker), and `eslint` + `prettier` were green on
+`main`. These counts are historical evidence, not the current release gate;
+use the living [QA test plan](../launch-readiness/QA_TEST_PLAN.md).
 
 ### What the architecture already gets right for this use case
 

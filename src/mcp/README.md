@@ -4,8 +4,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes
 Topology Dojo's headless authoring + rendering API as tools, so an agent can
 build, validate, and render the same topologies the GUI produces. It is a thin
 adapter over `src/api` (authoring/validation) and `src/server/render` (headless
-SVG) — there are no UI-only capabilities, so everything the editor can express
-is reachable here too.
+SVG). Every persisted diagram field the editor can express is reachable here;
+transient browser view preferences and browser-owner governance actions are
+intentionally outside the MCP authoring contract.
 
 ## Run (local, stdio)
 
@@ -86,9 +87,13 @@ returns a link that opens it in the browser editor — the way to hand a user a
 viewable/shareable result after building. Because the snapshot lives in KV (not
 the per-session in-memory store), the link keeps working after the MCP session
 ends. The link is `<PUBLIC_BASE_URL>/v/<id>`; opening it loads the snapshot into
-the editor (the SPA fetches `/api/topology/<id>`). Snapshots expire after 30 days
-unless re-published. This tool is **remote-only** — the local stdio server has no
-KV/origin, so it isn't registered there.
+the editor (the SPA fetches `/api/topology/<id>`). Every snapshot URL expires 30
+days after it is created. Publishing again mints a new snapshot id and URL; it
+does not renew the previous URL. Snapshots are public to anyone with the URL,
+may be cached for up to 24 hours, and currently have no revoke/unpublish
+operation; publish only content suitable for that exposure. This tool is
+**remote-only** — the local stdio server has no KV/origin, so it isn't
+registered there.
 
 One-time setup for the isolated staging environment (use the environment's
 actual binding names and record the generated ids in `env.staging`):
@@ -140,7 +145,8 @@ that document's custom node types).
 For a document shared with the browser, use the bounded workspace loop instead:
 
 1. `create_workspace` for a new shared document, or `list_workspaces` to choose
-   an existing id (legacy ids are migrated on first access).
+   a canonical workspace. A listed legacy draft must first be opened/handed off
+   by its browser owner; agent reads reject it without migration.
 2. `get_workspace_manifest` → remember its revision and page ids/counts.
 3. If `operationSchemaRevision` changed, call
    `describe_workspace_operations` once and cache the vocabulary.

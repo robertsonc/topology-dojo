@@ -2,13 +2,43 @@
 
 _Adversarial agentic review, 2026-07-04. 51 findings confirmed by independent verification agents (2 candidate findings refuted and dropped)._
 
-**Confirmed:** 4 critical · 9 high · 29 medium · 9 low
-**Closed (as of 2026-07-19):** 4 critical (C1–C4) · 1 high (H7) · 3 medium
-(M14, M18, M19) · 1 low (L1) — 9 of 51 total. Substantially addressed, not
-fully closed: M15 (alerting + game day remain open). See each finding's own
-Status note for evidence; see
-[`../DISCREPANCY_REGISTER.md`](../DISCREPANCY_REGISTER.md) rows 1–3 for how
-this pass reconciled the register against code.
+**Original confirmed set:** 4 critical · 9 high · 29 medium · 9 low.
+
+This is an immutable record of the 2026-07-04 review, not a live defect
+dashboard. Closure notes do not rewrite the original problem statements. The
+2026-07-19 reconciliation closed C1–C4, H7, M14, M18, M19, and L1. A second
+code audit on 2026-08-09 verified the additional status changes below; use the
+living QA/UAT plans and capability matrix for release decisions.
+
+| Finding(s) | Status at 2026-08-09        | Evidence                                                                                                                                                                          |
+| ---------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H1, M5     | Closed                      | Attachment-safe layout and overlap-safe balance: `aa4e88c`, `7e3f8ed`; API regression suites                                                                                      |
+| H2         | Closed                      | Shared links use an isolated autosave slot with keep/back behavior: `21eb53f`, `659cc6e`; Playwright share test                                                                   |
+| H4, H9     | Closed                      | Autosave reports success/failure and offers JSON recovery: `21eb53f`, `659cc6e`; persistence tests                                                                                |
+| M6, M9     | Closed                      | Dependent flow paths, hops, link ids, and markers are cleaned during removal/import self-heal: `5dcee18`; cascade tests                                                           |
+| M7, M28    | Closed                      | Complete per-page snapshots/history and recoverable frame deletion: `5dcee18`; unit + Playwright frame tests                                                                      |
+| M10        | Closed                      | Export backdrop honors non-zero viewBox origins: `090ae86`; unit + Playwright export test                                                                                         |
+| M24        | Closed as originally stated | Editor interaction/gesture regression suites now cover the formerly untested core paths                                                                                           |
+| M25        | Substantially addressed     | Playwright covers editor, autosave, share-copy, file-driven fixtures, history, overlay, export, and responsive glue; real Worker/OAuth paths remain separate integration/UAT work |
+| M26        | Closed                      | Three CI-rendered Chromium visual baselines plus failure artifacts: `bd1f0aa`, `0d98fe3`                                                                                          |
+| M29        | Closed                      | Shared overlay focus trap/restore and shortcut suppression: `7c596b7`; unit + Playwright coverage                                                                                 |
+| L2         | Partially addressed         | CI declares `permissions: contents: read`; tag pinning and dependency-update/audit automation remain open                                                                         |
+| L4         | Closed                      | Strict browser-response CSP and security headers are enforced by the Worker and covered by tests                                                                                  |
+| L8         | Closed                      | Format painter is surfaced outside the context menu and is keyboard reachable: `7c596b7`                                                                                          |
+| L9         | Substantially addressed     | Accessible names, visible focus behavior, overlay focus management, and reduced-motion handling are implemented; full assistive-technology UAT remains required                   |
+
+See [`../DISCREPANCY_REGISTER.md`](../DISCREPANCY_REGISTER.md) for the
+documentation reconciliation history.
+
+## Current audit observations (not part of the original 51)
+
+| ID                    | Status | Observation                                                                                                                                                                      | Required disposition                                                                                                                       |
+| --------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| QA-2026-08-09-ZONE-01 | Open   | The generic zone-member picker can surface anchors, but the document contract and renderer treat zone membership as node-only. Selecting an anchor creates a validation problem. | Restrict the picker to nodes and add a mounted-browser regression, or record an explicit release waiver. QA case EDT-02 owns verification. |
+
+The User Guide tells users not to select anchors as zone members until this is
+resolved. This observation is a current QA finding and does not alter the
+historical July finding count above.
 
 ## CRITICAL (4)
 
