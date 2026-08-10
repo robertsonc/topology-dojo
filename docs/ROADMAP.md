@@ -3,7 +3,8 @@
 Built methodically, one reviewable PR at a time, each reviewed against
 [`DESIGN.md`](DESIGN.md).
 
-_Reset 2026-07-19 after a full-repository documentation audit (see
+_Reset 2026-07-19 and revalidated 2026-08-09 after a full-repository
+documentation and quality audit (see
 [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md) for the evidence and
 [`DISCREPANCY_REGISTER.md`](DISCREPANCY_REGISTER.md) for what this reset
 corrected). The active implementation plan is
@@ -23,10 +24,11 @@ migration through `v5` is applied and active. Concretely, today a user can:
   hand, with full editing (selection, alignment guides, waypoint-edited
   links, custom node types), validation (semantic + layout), and export (SVG,
   self-playing HTML flipbook; PNG is browser-only).
-- Connect an AI agent (Claude or any MCP client) to the same account, either
-  locally over stdio or remotely at `/mcp` (OAuth 2.1, GitHub upstream,
-  Durable-Object-per-session isolation), and have it author through the same
-  53-tool-strong catalog-driven API the GUI uses underneath.
+- Connect an AI agent through the same catalog-driven API the GUI uses. Local
+  stdio is process-local and has no hosted account, OAuth, or Durable Object;
+  remote `/mcp` uses OAuth 2.1 with GitHub and owner-isolated Durable Object
+  storage. There are 55 possible tool registrations; actual discovery varies
+  by runtime, flags, and provider.
 - **Collaborate with that agent in a shared workspace**: the agent proposes
   changes as one attributed revision (review/accept/reject, including a
   selective/partial accept), or — with a browser-granted, revocable
@@ -41,13 +43,12 @@ migration through `v5` is applied and active. Concretely, today a user can:
   panel — serves it back to the agent as bounded, token-budgeted guidance
   (≤5 rules, ≤400/800 tokens). Contradictions recalibrate confidence and
   flag rules for re-review; nothing is ever auto-promoted or agent-confirmed.
-- **Pull from a real SD-WAN fabric**: a vendor-neutral provider abstraction
-  and a flow compiler exist and are tested, with a real (if
-  integration-unverified) EdgeConnect Orchestrator HTTP client — but no
-  production or staging deployment currently has the `ORCH_BASE_URL`/
-  `ORCH_API_KEY` secrets configured, so the 7 live-fabric MCP tools do not
-  appear in any live deployment today. This is real, shipped code sitting
-  idle for lack of a connected fabric, not aspirational code.
+- **Conditionally pull from a real SD-WAN fabric**: a vendor-neutral provider
+  abstraction and flow compiler exist and are tested, with a real but
+  integration-unverified EdgeConnect Orchestrator HTTP client. The repository
+  cannot reveal whether Cloudflare secrets are currently provisioned, so it
+  does not prove live activation; an operator must verify the environment and
+  run the conditional QA/UAT track before making a support claim.
 - **See who's using it**: the deployment owner has a private admin dashboard
   (login roster, per-user workspace metadata — never diagram content) behind
   their own GitHub identity, and a pre-login showcase filmstrip demonstrates
@@ -55,23 +56,22 @@ migration through `v5` is applied and active. Concretely, today a user can:
 
 Every production deploy goes through a CI-gated, protected-environment-approval
 GitHub Actions pipeline (`deploy-production.yml`); Durable Object migrations
-are append-only and ship inert-behind-a-flag before a separate activation
-deploy flips them on; recovery from any activation is forward-only (a new
-deploy with the flag removed, never a rollback across a migration boundary).
-The one significant operational gap: **Cloudflare error-rate alerting is not
-yet wired up**, so the current production activation runs without automated
-alerts by explicit, documented operator choice (nightly staging smoke and
-GitHub-native failure notifications are the only automated safety net today).
+are append-only. Feature migrations `v3`–`v5` established the safer
+inert-bootstrap-then-activate pattern for future feature classes. Recovery from
+an activation is forward-only (a new deploy with the flag removed, never a
+rollback across a migration boundary). Cloudflare error-rate policy state is
+external and cannot be inferred from this repository; the operator checklist
+and current alert-delivery evidence determine whether that operational gate is
+closed. Repository-managed synthetic verification remains visible in Actions.
 
-51 findings remain in `docs/launch-readiness/FINDINGS_REGISTER.md` from the
-2026-07-04 adversarial review; 8 are now closed (see the discrepancy register
-for the closures this reset made), 43 remain open across High/Medium/Low —
-none Critical. Two specific still-open findings worth knowing about because
-they're small, well-scoped, and evidence shows they matter: **H1**
-(`layout_topology` doesn't carry anchors/waypoints through its own algorithmic
-node movement — `tidy_topology`/`balance_topology` are unaffected) and **M20**
-(published share links have no revoke/unpublish path — public, unauthenticated,
-30-day KV retention, 24h immutable cache).
+The original 2026-07-04 adversarial findings remain in
+`docs/launch-readiness/FINDINGS_REGISTER.md` as an audit record; current
+status must be read from appended closure notes and `CAPABILITY_MATRIX.md`,
+not the historical top-line count. Former finding H1 is closed: algorithmic
+layout now carries anchors and manual waypoints with their nodes (commits
+`aa4e88c`, `7e3f8ed`). **M20 remains open**: published share links have no
+revoke/unpublish path and are public, unauthenticated, retained for 30 days,
+and cacheable for 24 hours.
 
 ## Now
 
@@ -79,20 +79,19 @@ The active initiatives, roughly in the order a blocking-prerequisite analysis
 suggests (see the dependency graph in `IMPLEMENTATION_PLAN.md` for the full
 packet-level ordering and what can run in parallel):
 
-1. **Documentation and roadmap reset** _(this work)_ — replace the stale
-   `IMPLEMENTATION_PLAN.md` (archived, see above), reconcile every planning
-   doc against verified code state, close/annotate the findings register
-   entries that were actually fixed but never marked closed. Packets: N1–N3.
-2. **Cloudflare alerting + production game day** — the one remaining
-   operational gap blocking a fully-monitored production posture. _Repo-side
+1. **Living product and quality documentation** — maintain the task-based user
+   guide, QA/UAT plans, and feature-to-evidence traceability in the same PR as
+   every user-visible capability, constraint, test gate, or operational change.
+2. **Cloudflare alerting + production game day** — external evidence required
+   for a fully monitored production posture. _Repo-side
    half landed 2026-07-19 (PR #197)_: alert matrix + severity model
    (`docs/ALERTS.md`), Cloudflare operator checklist
    (`docs/CLOUDFLARE_OPERATOR_RUNBOOK.md`), game-day framework + evidence
    template (`docs/GAME_DAY.md`), daily/on-demand production verification
    (`production-verify.yml`), a 14-check smoke suite, and a staging-only
    synthetic-fault mechanism; packet O3 (rollback generalization) is done.
-   **Remaining, human-only**: configuring the Cloudflare notification
-   policies (O1) and executing/recording the drill (O2).
+   **Human-only verification**: inspect/configure the Cloudflare notification
+   policies as needed (O1), prove delivery, and execute/record the drill (O2).
 3. **Agent activity + explainability** — today an agent's authoring session
    leaves almost no visible trace beyond the revision history's actor/summary
    fields; there's no way for the owner (or the agent itself) to see "what did
@@ -142,10 +141,6 @@ packets:
 - **Richer explainability analytics** — once agent-activity foundation (Now
   item 3) ships, aggregate views (which guidance rules actually change agent
   behavior, correction-rate trends) become possible.
-- **`layout_topology` attachment-carrying fix (finding H1)** — small,
-  well-scoped: capture `orig` positions in `layoutPage` and call
-  `carryAttachments(page, orig)` after the algorithm runs, mirroring what
-  `tidyPage`/`balancePage` already do (`src/api/autolayout.ts:344-362`).
 - **Share-link revocation (finding M20)** — an authenticated unpublish
   endpoint for `doc:<id>` KV entries, plus dropping the `immutable` cache
   directive so revocation can actually take effect.

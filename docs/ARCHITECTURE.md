@@ -114,10 +114,10 @@ threaded through both paths for parity.
 
 ## The capability catalog
 
-`api/catalog.ts` is the single machine-readable description of everything a
-topology can express — each node type, link type, and annotation kind with its
-fields (kind, enum options, animation flags, id-reference kinds). It is the
-source of truth that three consumers align to:
+`api/catalog.ts` is the single machine-readable description of the persisted
+diagram semantics a topology can express — each node type, link type, and
+annotation kind with its fields (kind, enum options, animation flags,
+id-reference kinds). It is the source of truth that three consumers align to:
 
 - the **GUI** builds its palette and inspector from it,
 - **validation** checks enum values and field shapes against it,
@@ -125,8 +125,10 @@ source of truth that three consumers align to:
   vocabulary before authoring.
 
 A parity test asserts the catalog covers the whole built-in vocabulary, which is
-how we enforce "no UI-only surfaces": a capability that isn't in the catalog
-can't be reached by the API, so it isn't allowed to exist.
+how we enforce "no UI-only authoring fields": a persisted diagram capability
+that is not in the catalog cannot be reached by the API, so it is not allowed to
+exist. Transient view preferences and browser-owner authority are intentionally
+outside this invariant.
 
 ## Layout ground-truth
 
@@ -178,15 +180,18 @@ external smoke evidence. Cloudflare version uploads are not used for Durable
 Object migration releases; staging receives a full environment-scoped deploy.
 Production deploys through the same CI-gated Actions path
 (`deploy-production.yml`, restricted to `main` behind a protected environment
-approval); its cutover from the legacy Workers Builds path and the first gated
-production deploy remain protected operator steps.
+approval). The cutover from the legacy Workers Builds path and the first gated
+production deploy are complete; laptop-driven production deployment remains
+deliberately unavailable.
 
-Migration-bearing releases separate namespace creation from feature
-activation. For `v3`, production first exports and binds `TopologyDocument`
-with workspace entry points disabled. A later compatible deployment enables
-the shared-workspace feature after smoke and UAT. Recovery across the migration
-boundary is forward-only: keep the class, binding, and migration history while
-disabling the feature and deploying a compatible repair.
+Migration-bearing feature releases separate namespace creation from feature
+activation. Migrations `v3`–`v5` are the historical examples of that pattern:
+production first exported and bound each new feature Durable Object with its
+entry points disabled, then a later compatible deployment activated the feature
+after smoke and acceptance evidence. Migrations `v1` and `v2` predate this
+feature-activation pattern. Recovery across any migration boundary is always
+forward-only: keep the class, binding, and migration history while disabling
+the feature where possible and deploying a compatible repair.
 
 See
 [`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md),
@@ -204,8 +209,9 @@ page elements when needed.
 
 Agent writes are proposals unless the browser has granted a live current-page
 lease. A lease grants limited authority but does not block the human editor.
-Proposal acceptance creates one atomic revision. Existing registry documents
-initialize their coordinator on first workspace access; the directory marker is
+Proposal acceptance creates one atomic revision. Only an authenticated browser
+owner may initialize a legacy draft as a canonical workspace; agent workspace
+reads reject the legacy id without migrating it. The directory marker is
 written only after successful initialization, and legacy mutation is then
 refused. See
 [`proposals/0002-shared-human-agent-workspace.md`](proposals/0002-shared-human-agent-workspace.md).
@@ -217,8 +223,9 @@ refused. See
    triggers: [`decisions/0001-flipbook-vs-beats.md`](decisions/0001-flipbook-vs-beats.md).)
 2. **Vendor the renderer, rebuild the editor.** Reuse the proven engine's visual
    quality; own the interaction layer in TypeScript.
-3. **The document is the complete contract; no UI-only surfaces.** Enforced by
-   the catalog + its parity test.
+3. **The document is the complete authoring contract; no UI-only persisted
+   diagram fields.** Enforced by the catalog + its parity test. View state and
+   owner-only governance actions are explicit exceptions, not document fields.
 4. **One render core** shared across Node and Workers; **one capability catalog**
    shared across GUI, validation, and MCP.
 5. **TypeScript strict** (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`,

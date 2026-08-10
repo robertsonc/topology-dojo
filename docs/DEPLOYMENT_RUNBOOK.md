@@ -89,10 +89,13 @@ Run from a clean checkout of the exact candidate SHA:
 
 ```bash
 npm ci
+npm run check:wrangler
 npm run typecheck
 npm test
 npm run lint
 npm run build
+npx playwright install --with-deps chromium
+npm run test:e2e
 npx wrangler deploy --env staging --dry-run
 ```
 
@@ -170,6 +173,13 @@ If smoke or monitoring fails, follow [`ROLLBACK.md`](ROLLBACK.md).
 
 ## Production deployment with a new migration
 
+> **Current migration state (revalidated 2026-08-09):** `v1`–`v5` are applied
+> and their three product flags are enabled in the repository's production
+> configuration. The `v3`–`v5` sections below are completed rollout examples,
+> retained because they show the required three-gate pattern. For a new tag,
+> copy the pattern with the new class/binding/flag; do not repeat a completed
+> bootstrap or treat these examples as pending work.
+
 ### Gate A — staging proof
 
 - The migration has been applied by a full staging deploy.
@@ -180,7 +190,7 @@ If smoke or monitoring fails, follow [`ROLLBACK.md`](ROLLBACK.md).
 
 ### Gate B — namespace bootstrap
 
-For migration `v3`, deploy with workspace entry points disabled:
+The completed `v3` rollout deployed workspace entry points disabled:
 
 ```text
 WORKSPACE_ENABLED=false
@@ -200,14 +210,15 @@ include `v3`. After deployment:
 
 ### Gate C — feature activation
 
-After bootstrap smoke and approval, enable the workspace and deploy forward.
+After bootstrap smoke and approval, the rollout enabled the workspace and
+deployed forward.
 Run the full shared-workspace smoke suite immediately, then hold the activation
 in the observation window below. A failed activation — a red smoke or any
 tripped stop threshold — is recovered by disabling the feature
 (`WORKSPACE_ENABLED=false`) and deploying a compatible forward version; do not
 roll back across `v3`. See "Activation observation window and thresholds".
 
-### Migration `v4` — `AuthoringProfile` (Packet P2, proposal 0003-A)
+### Completed example: migration `v4` — `AuthoringProfile`
 
 The same three gates, with one simplification: `PROFILES_ENABLED` is **opt-in**
 (unset ⇒ off — the opposite default from `WORKSPACE_ENABLED`), so the
@@ -232,15 +243,12 @@ the normal protected production deploy _is_ the flag-off bootstrap.
    the observation window. Recover by forward-deploying with the flag removed —
    never roll back across `v4`.
 
-**Sequencing with `v3`:** production has not yet run its `v3` bootstrap
-(operator O10). The first gated production deploy applies **all** pending
-migrations on the script — if P2 is merged before O10, that deploy carries
-`v1`–`v4` together. That is safe (workspace gates via `WORKSPACE_ENABLED:
-"false"` per Gate B above; profiles are inert by default), but record both tags
-in the deployment log and treat the combined deploy as the bootstrap for both
-features, each activated separately afterwards.
+**Historical sequencing note:** the first gated production deploy carried the
+then-pending migration tags together. The independent flags kept each surface
+inert until its own activation. For any future multi-tag bootstrap, record every
+tag and activate each feature separately.
 
-### Migration `v5` — `AnalyticsLog` (admin/analytics dashboard MVP)
+### Completed example: migration `v5` — `AnalyticsLog`
 
 Identical shape to `v4`: `ANALYTICS_ENABLED` is **opt-in** (unset ⇒ off), so the
 production bootstrap needs **no config change** — merging the admin dashboard PR

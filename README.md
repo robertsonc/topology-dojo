@@ -1,13 +1,19 @@
 # Topology Dojo
 
-A studio for designing **network topology diagrams** — built so they are equally
-authorable by **people** (a direct-manipulation canvas editor) and by **agents**
-(a headless API exposed over MCP). Same document, same renderer, same
-capabilities either way.
+A studio for designing **network topology diagrams** — built so the persisted
+diagram vocabulary is equally authorable by **people** (a direct-manipulation
+canvas editor) and by **agents** (a headless API exposed over MCP). Both use the
+same document contract and renderer; browser-only view preferences and
+owner-only governance actions remain intentionally human-facing.
 
 The long-term aim: one consistent topology framework for everything SASE, where
 every diagram has the same look and feel whether a human drew it or an LLM
 generated it.
+
+New here? Start with the **[User Guide](docs/USER_GUIDE.md)**. Release testers
+should use the living [QA plan](docs/launch-readiness/QA_TEST_PLAN.md),
+[UAT plan](docs/launch-readiness/UAT_PLAN.md), and
+[traceability matrix](docs/launch-readiness/TRACEABILITY_MATRIX.md).
 
 ## The model in one minute
 
@@ -19,9 +25,10 @@ generated it.
   dormant.)
 - A page holds **nodes**, **links**, **anchors**, and an annotation layer of
   **zones**, **flow paths**, and **policy markers**.
-- The document JSON is the **contract**: everything the GUI can express lives in
-  it, and everything in it is reachable from the headless API — there are no
-  UI-only surfaces.
+- The document JSON is the **authoring contract**: every persisted diagram field
+  exposed by the GUI is reachable from the headless API. Transient view state
+  (pan/zoom, theme, panel layout) and browser-owner actions are outside that
+  parity invariant.
 - A handed-off document is a **revisioned shared workspace**. Browser gestures
   become compact semantic operations; agents read bounded deltas and propose
   change sets by default, so collaboration does not require repeatedly placing
@@ -30,11 +37,13 @@ generated it.
 ## Quick start
 
 ```bash
-npm install
+npm ci
 npm run dev         # app at http://localhost:5173
 npm test            # unit tests (Vitest)
 npm run lint        # eslint + prettier
-npm run build       # typecheck (app + worker) + production build
+npm run typecheck   # typecheck app + Cloudflare Worker
+npm run build       # app typecheck + production bundle
+npm run test:e2e    # Chromium browser release gate (Linux visual baselines)
 npm run mcp         # run the MCP server over stdio
 ```
 
@@ -48,9 +57,13 @@ npm run mcp         # run the MCP server over stdio
    align / distribute, light / dark + calm-canvas toggles, a catalog-driven
    palette (with live node-art previews) + inspector (incl. document/page
    properties), a filmstrip of pages, a
-   live status bar, a Node Designer for custom node types, and one-click **Tidy**
-   (auto-layout), plus an **Agent Workspace** panel for handoff, proposal review,
-   conflict visibility, and a revocable ten-minute current-page lease.
+   live status bar, a Node Designer for custom node types, reusable stencils,
+   per-page undo, recoverable frame deletion, and one-click **Tidy** / **Balance**
+   layout. The hosted editor also includes an **Agent Workspace** for handoff,
+   geometry-aware proposal review, selective acceptance, checkpoints, presence,
+   offline recovery, conflicts, and a revocable ten-minute current-page lease;
+   confirmed authoring preferences and a metadata-only owner dashboard are
+   feature-gated companion surfaces.
 2. **The headless API** (`src/api`) — build / mutate / validate / lay out /
    render a document in code, DOM-free. The GUI is just one client of it.
 3. **MCP** (`src/mcp`, `worker/`) — the same API exposed as tools over the Model
@@ -85,6 +98,12 @@ public/vendor/ the vendored engine + theme (classic script in the browser, Commo
 
 ## Docs
 
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) — task-based guidance for human
+  authors, public-link recipients, workspace owners, MCP operators, and admins.
+- [`docs/launch-readiness/QA_TEST_PLAN.md`](docs/launch-readiness/QA_TEST_PLAN.md),
+  [`UAT_PLAN.md`](docs/launch-readiness/UAT_PLAN.md), and
+  [`TRACEABILITY_MATRIX.md`](docs/launch-readiness/TRACEABILITY_MATRIX.md) —
+  living release-quality plans and feature-to-evidence coverage.
 - [`docs/DESIGN.md`](docs/DESIGN.md) — the north star and the principles every PR
   is reviewed against.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the model, the render seam, the
@@ -116,10 +135,10 @@ the MCP server. Transport sessions and canonical per-document coordinators are
 separate Durable Objects behind OAuth 2.1 / GitHub sign-in. Config is in
 [`wrangler.jsonc`](wrangler.jsonc).
 
-The current Git-connected production path is being replaced by an isolated
-staging Worker and a CI-gated, human-approved deployment workflow. A Worker
-containing a new Durable Object migration must use a full `wrangler deploy`;
-`wrangler versions upload` fails with Cloudflare error 10211 and is not an
-approved preview path. See the
+Production and isolated staging deploy through CI-gated GitHub Actions; the
+production workflow is restricted to `main` and requires protected-environment
+approval. A Worker containing a new Durable Object migration must use a full
+environment-scoped `wrangler deploy`; `wrangler versions upload` fails with
+Cloudflare error 10211 and is not an approved preview path. See the
 [deployment plan](docs/proposals/0004-isolated-staging-and-deployment-pipeline.md)
 and [runbook](docs/DEPLOYMENT_RUNBOOK.md).

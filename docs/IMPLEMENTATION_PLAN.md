@@ -2,6 +2,9 @@
 
 **Status:** Accepted plan of record
 **Captured:** 2026-07-19
+**Revalidated:** 2026-08-09 — documentation packets N1–N3 are complete; use
+[`ROADMAP.md`](ROADMAP.md) and [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md)
+for current capability status before starting any remaining packet.
 **Supersedes:** [`archive/IMPLEMENTATION_PLAN_2026-07-12.md`](archive/IMPLEMENTATION_PLAN_2026-07-12.md)
 (fully executed — see that file's banner)
 **Executed as:** bounded implementation packets per
@@ -10,8 +13,8 @@ one packet ≈ one reviewable PR, one active writer per branch, human
 merge/release gates throughout. That discipline held for ~20 packets across
 the previous plan; nothing here changes it.
 
-This plan covers the six active initiatives from [`ROADMAP.md`](ROADMAP.md)
-§"Now": documentation reset (N), Cloudflare alerting + production game day
+This plan captured six initiatives from [`ROADMAP.md`](ROADMAP.md) §"Now":
+the completed documentation reset (N), Cloudflare alerting + production game day
 (O), agent activity + explainability (A), guided topology briefs + semantic
 templates (B), EdgeConnect live-import hardening (E), and time-aware flow/
 failure storytelling (T).
@@ -28,7 +31,7 @@ failure storytelling (T).
    non-goals, tests, acceptance criteria). The packet register at the bottom
    is a flat index for cross-referencing, not a duplicate spec.
 4. Packet = branch = PR. Run the full gate before opening a PR:
-   `npm run typecheck && npm run lint && npm test && npm run build`, plus
+   `npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e`, plus
    `node scripts/check-wrangler-env.mjs` for anything touching
    `wrangler.jsonc`.
 5. **None of the six initiatives in this plan require a new Durable Object
@@ -237,7 +240,8 @@ truthful without changing behavior.
   no incomplete feature described as production-ready, historical plans
   can't be mistaken for current, a new agent can determine the next action
   from `HANDOFF.md` alone.
-- **Status: in progress, this PR.**
+- **Status: done (documentation reset landed; living QA/UAT/user-guide refresh
+  revalidated the baseline on 2026-08-09).**
 
 **Testing strategy:** No new automated tests (documentation initiative); the
 existing full gate must stay green throughout.
@@ -251,9 +255,9 @@ rewrites (banner only).
 
 ## Initiative O — Cloudflare alerting and production game day
 
-**Goal:** Close the one confirmed operational gap: production currently runs
-with all three feature flags live and zero automated error-rate alerting.
-Wire Cloudflare's dashboard to the thresholds already defined in
+**Goal:** Close the externally verified monitoring gap. The repository cannot
+read current Cloudflare notification policy state, so inspect or configure the
+dashboard against the thresholds already defined in
 `docs/DEPLOYMENT_RUNBOOK.md`, and complete a recorded staging
 forward-recovery game day exercising the current (`v3`–`v5`) rollback
 procedures end-to-end.
@@ -270,9 +274,9 @@ verification with issue dedup and deployed-SHA-mismatch detection
 (`production-verify.yml`), smoke growth to 14 checks with per-flag
 disabled-contract assertions, staging-only flag-override inputs on
 `deploy-staging.yml`, and a triple-gated staging-only synthetic-fault route
-(`worker/staging-fault.ts`). What remains is exactly the human-only half:
-the Cloudflare dashboard configuration (O1) and executing/recording the
-drill (O2).
+(`worker/staging-fault.ts`). What remains is the human-only evidence: inspect or
+configure the Cloudflare dashboard and prove delivery (O1), then
+execute/record the drill (O2).
 
 **Dependencies:** None — can start immediately, in parallel with everything
 else.
@@ -292,8 +296,8 @@ options.
 
 ### O1 — Configure Cloudflare alerting
 
-- **Status (2026-07-19): specification complete, awaiting the human
-  dashboard action.** Everything an agent can produce exists —
+- **Status (2026-08-09): specification complete, awaiting current human
+  dashboard verification.** Everything an agent can produce exists —
   `docs/ALERTS.md` (what + thresholds) and
   `docs/CLOUDFLARE_OPERATOR_RUNBOOK.md` (exact steps CF-1..CF-6 with
   evidence requirements). Completion = the operator checklist at the bottom
@@ -789,14 +793,16 @@ a natural follow-on once the brief contract exists, not in scope here.
 the "integration-unverified" gap the audit found), add explicit safeguards
 against the "transient failure looks like deletion" failure mode, and give a
 human a GUI path to trigger and review a live import (today it's
-MCP-tool-only, and requires secrets no current deployment has configured).
+MCP-tool-only, and requires provider configuration whose deployed state is not
+visible in this repository).
 
 **Current baseline:** `src/connect/edgeconnect.ts` is a real HTTP client
 against the HPE Aruba EdgeConnect Orchestrator REST API, tested only via an
 injectable mock `fetchImpl` — never against a real or recorded live payload.
-No deployment (staging or production) has `ORCH_BASE_URL`/`ORCH_API_KEY`
-configured, so the 7 live-fabric MCP tools do not appear anywhere today. The
-flow compiler (`src/connect/compile.ts`) is solid, tested, and uses
+The repository cannot reveal whether a deployment currently has
+`ORCH_BASE_URL`/`ORCH_API_KEY` provisioned, so activation must be verified from
+the deployed tool list and operator evidence. The flow compiler
+(`src/connect/compile.ts`) is tested and uses
 `upsertBySource` throughout for convergent re-import.
 
 **Dependencies:** None on other initiatives; T-series has a soft dependency
@@ -1179,41 +1185,41 @@ here and would need its own evidence-triggered justification.
 _Full specs are in each initiative's section above; this is a cross-reference
 index only._
 
-| Packet | Initiative        | Depends on | Migration? | New flag/tool/secret? | Human action?              |
-| ------ | ----------------- | ---------- | ---------- | --------------------- | -------------------------- |
-| N1     | Docs reset        | —          | No         | No                    | No — **done**              |
-| N2     | Docs reset        | N1         | No         | No                    | No — **done**              |
-| N3     | Docs reset        | N2         | No         | No                    | Merge PR — **in progress** |
-| O1     | Alerting/game day | —          | No         | No                    | **Yes, 100%**              |
-| O2     | Alerting/game day | O3         | No         | No                    | **Yes, significant**       |
-| O3     | Alerting/game day | —          | No         | No                    | No                         |
-| A1     | Explainability    | —          | No         | No                    | No                         |
-| A2     | Explainability    | A1         | No         | Flag (open decision)  | No                         |
-| A3     | Explainability    | A2         | No         | No                    | No                         |
-| A4     | Explainability    | A3         | No         | No                    | No                         |
-| A5     | Explainability    | A3         | No         | No                    | No                         |
-| A6     | Explainability    | A4, A5     | No         | No                    | Deploy approval            |
-| B1     | Briefs/templates  | —          | No         | No                    | No                         |
-| B2     | Briefs/templates  | B1         | No         | No                    | No                         |
-| B3     | Briefs/templates  | B2         | No         | New tool              | No                         |
-| B4     | Briefs/templates  | B2         | No         | No                    | No                         |
-| B5     | Briefs/templates  | B2         | No         | No                    | No                         |
-| B6     | Briefs/templates  | B3, B4     | No         | No                    | No                         |
-| B7     | Briefs/templates  | B5, B6     | No         | No                    | Deploy approval            |
-| E1     | EdgeConnect       | —          | No         | No                    | Real API access, ideally   |
-| E2     | EdgeConnect       | —          | No         | No                    | No                         |
-| E3     | EdgeConnect       | —          | No         | No                    | No                         |
-| E4     | EdgeConnect       | E1, E2, E3 | No         | No                    | No                         |
-| E5     | EdgeConnect       | —          | No         | New secret (staging)  | **Yes, 100%**              |
-| E6     | EdgeConnect       | —          | No         | No                    | No                         |
-| E7     | EdgeConnect       | E4, E5, E6 | No         | No                    | Deploy approval            |
-| T1     | Storytelling      | —          | No         | No                    | No                         |
-| T2     | Storytelling      | T1, **E2** | No         | No                    | No                         |
-| T3     | Storytelling      | T2         | No         | No                    | No                         |
-| T4     | Storytelling      | T2         | No         | New tool              | No                         |
-| T5     | Storytelling      | T3, T4     | No         | No                    | No                         |
-| T6     | Storytelling      | T5         | No         | No                    | No                         |
-| T7     | Storytelling      | T6         | No         | No                    | Deploy approval            |
+| Packet | Initiative        | Depends on | Migration? | New flag/tool/secret? | Human action?            |
+| ------ | ----------------- | ---------- | ---------- | --------------------- | ------------------------ |
+| N1     | Docs reset        | —          | No         | No                    | No — **done**            |
+| N2     | Docs reset        | N1         | No         | No                    | No — **done**            |
+| N3     | Docs reset        | N2         | No         | No                    | **Done**                 |
+| O1     | Alerting/game day | —          | No         | No                    | **Yes, 100%**            |
+| O2     | Alerting/game day | O3         | No         | No                    | **Yes, significant**     |
+| O3     | Alerting/game day | —          | No         | No                    | No                       |
+| A1     | Explainability    | —          | No         | No                    | No                       |
+| A2     | Explainability    | A1         | No         | Flag (open decision)  | No                       |
+| A3     | Explainability    | A2         | No         | No                    | No                       |
+| A4     | Explainability    | A3         | No         | No                    | No                       |
+| A5     | Explainability    | A3         | No         | No                    | No                       |
+| A6     | Explainability    | A4, A5     | No         | No                    | Deploy approval          |
+| B1     | Briefs/templates  | —          | No         | No                    | No                       |
+| B2     | Briefs/templates  | B1         | No         | No                    | No                       |
+| B3     | Briefs/templates  | B2         | No         | New tool              | No                       |
+| B4     | Briefs/templates  | B2         | No         | No                    | No                       |
+| B5     | Briefs/templates  | B2         | No         | No                    | No                       |
+| B6     | Briefs/templates  | B3, B4     | No         | No                    | No                       |
+| B7     | Briefs/templates  | B5, B6     | No         | No                    | Deploy approval          |
+| E1     | EdgeConnect       | —          | No         | No                    | Real API access, ideally |
+| E2     | EdgeConnect       | —          | No         | No                    | No                       |
+| E3     | EdgeConnect       | —          | No         | No                    | No                       |
+| E4     | EdgeConnect       | E1, E2, E3 | No         | No                    | No                       |
+| E5     | EdgeConnect       | —          | No         | New secret (staging)  | **Yes, 100%**            |
+| E6     | EdgeConnect       | —          | No         | No                    | No                       |
+| E7     | EdgeConnect       | E4, E5, E6 | No         | No                    | Deploy approval          |
+| T1     | Storytelling      | —          | No         | No                    | No                       |
+| T2     | Storytelling      | T1, **E2** | No         | No                    | No                       |
+| T3     | Storytelling      | T2         | No         | No                    | No                       |
+| T4     | Storytelling      | T2         | No         | New tool              | No                       |
+| T5     | Storytelling      | T3, T4     | No         | No                    | No                       |
+| T6     | Storytelling      | T5         | No         | No                    | No                       |
+| T7     | Storytelling      | T6         | No         | No                    | Deploy approval          |
 
 ## Risk register (cross-cutting)
 

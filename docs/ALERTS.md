@@ -8,7 +8,12 @@ exercised), [`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md) (deploy gates and
 the approved activation thresholds this matrix inherits), and
 [`ROLLBACK.md`](ROLLBACK.md) (recovery)._
 
-## Current operations baseline (assessed 2026-07-19)
+> **Evidence scope (revalidated 2026-08-09):** live SHA, staging freshness, and
+> Cloudflare policy state below are dated 2026-07-19 observations, not claims
+> about today's external systems. Re-run the production verification and the
+> human Cloudflare checklist before making an operational readiness decision.
+
+## Operations baseline recorded 2026-07-19
 
 Verified directly against the repository and both live origins:
 
@@ -35,18 +40,18 @@ Verified directly against the repository and both live origins:
   12/14 pass, 2 skip, serving SHA `da8f704…` — **staging is stale**: it
   predates the admin dashboard and showcase code. Recorded as a game-day
   Phase 1 precondition (deploy current `main` to staging first).
-- **The confirmed gap this document closes the spec half of**: no
-  Cloudflare-side alert policies exist. Automated detection today is
-  entirely GitHub-synthetic. Cloudflare-side configuration is human-only
-  work, specified in `CLOUDFLARE_OPERATOR_RUNBOOK.md`.
+- **Gap at the time of assessment**: no Cloudflare-side alert-policy evidence
+  had been captured. Automated detection was GitHub-synthetic.
+  Cloudflare-side configuration is human-only work, specified in
+  `CLOUDFLARE_OPERATOR_RUNBOOK.md`; its present state must be revalidated.
 
 ## Detection layers
 
-| Layer                                                   | What it is                                                                                                                                     | Managed by                                                  | State                                                         |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------- |
-| L1 — GitHub synthetic checks                            | Deploy-gate smoke, nightly staging smoke, daily + on-demand production verify; failures file deduplicated GitHub issues that close on recovery | **Code** (this repo's workflows)                            | Active (production-verify lands with this PR)                 |
-| L2 — Cloudflare dashboards (metrics, logs)              | Workers per-script metrics; Workers Logs + Query Builder (7-day retention; `observability.enabled` is already `true` in `wrangler.jsonc`)      | Cloudflare platform; consulted by a human                   | Available now, investigation-only (no alerting by itself)     |
-| L3 — Cloudflare notification policies / external alerts | Account **Notifications** policies routed to an email/webhook destination; optionally external monitoring via OTLP export or a Tail Worker     | **Human** (dashboard; see `CLOUDFLARE_OPERATOR_RUNBOOK.md`) | **Not configured** — the remaining human-only gap (packet O1) |
+| Layer                                                   | What it is                                                                                                                                     | Managed by                                                  | State                                                     |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------- |
+| L1 — GitHub synthetic checks                            | Deploy-gate smoke, nightly staging smoke, daily + on-demand production verify; failures file deduplicated GitHub issues that close on recovery | **Code** (this repo's workflows)                            | Active (production-verify lands with this PR)             |
+| L2 — Cloudflare dashboards (metrics, logs)              | Workers per-script metrics; Workers Logs + Query Builder (7-day retention; `observability.enabled` is already `true` in `wrangler.jsonc`)      | Cloudflare platform; consulted by a human                   | Available now, investigation-only (no alerting by itself) |
+| L3 — Cloudflare notification policies / external alerts | Account **Notifications** policies routed to an email/webhook destination; optionally external monitoring via OTLP export or a Tail Worker     | **Human** (dashboard; see `CLOUDFLARE_OPERATOR_RUNBOOK.md`) | No repository evidence; operator revalidation required    |
 
 **Honesty note on L3:** Cloudflare's per-product notification catalog varies
 by account and plan. What this repo's docs previously assumed ("Workers alert

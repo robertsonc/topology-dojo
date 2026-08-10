@@ -93,12 +93,12 @@
     { "tag": "v2", "new_sqlite_classes": ["TopologyRegistry"] },
     { "tag": "v3", "new_sqlite_classes": ["TopologyDocument"] },
     // Packet P2: the new AuthoringProfile DO class. Append-only — never
-    // reorder/rename earlier tags. Bootstrapped inert in production (top-level
-    // has no PROFILES_ENABLED, so the learner is off) and activated later.
+    // reorder/rename earlier tags. It was bootstrapped inert, then activated
+    // by the current top-level PROFILES_ENABLED value.
     { "tag": "v4", "new_sqlite_classes": ["AuthoringProfile"] },
-    // Admin dashboard: the new AnalyticsLog DO class. Append-only. Bootstrapped
-    // inert in production (top-level has no ANALYTICS_ENABLED) and activated
-    // later. Must stay identical to the env.staging migrations array below.
+    // Admin dashboard: the AnalyticsLog DO class. Append-only. It was
+    // bootstrapped inert, then activated by the current top-level
+    // ANALYTICS_ENABLED value. Must stay identical to staging migrations.
     { "tag": "v5", "new_sqlite_classes": ["AnalyticsLog"] },
   ],
   "observability": { "enabled": true },

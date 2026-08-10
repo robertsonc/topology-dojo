@@ -1,7 +1,7 @@
 # Handoff
 
 _The primary entry point for picking up work on this repo. Rewritten
-2026-07-19 as part of a full documentation reset (see
+2026-07-19 and revalidated 2026-08-09 against `main` at `4add174` (see
 [`ROADMAP.md`](ROADMAP.md), [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md),
 [`DISCREPANCY_REGISTER.md`](DISCREPANCY_REGISTER.md)). Earlier handoff notes
 and the pre-reset implementation plan are preserved under
@@ -20,9 +20,9 @@ learner adapts agent behavior to a human's confirmed authoring preferences
 over time. See `ROADMAP.md` §"Current production baseline" for the full
 picture with evidence citations.
 
-## Current production state
+## Current repository baseline
 
-As of this reset (`main` @ `d169274`, PR #195 merged 2026-07-18):
+As of this review (`main` @ `4add174`, PR #219 merged 2026-08-09):
 
 - **All three major feature flags are live**: `WORKSPACE_ENABLED`,
   `PROFILES_ENABLED`, `ANALYTICS_ENABLED` are all `"true"` in the top-level
@@ -33,9 +33,13 @@ As of this reset (`main` @ `d169274`, PR #195 merged 2026-07-18):
   the `workers.dev` subdomain 2026-07-18; the GitHub OAuth App callback was
   repointed to match). Staging stays on its own `workers.dev` subdomain,
   fully isolated (`check-wrangler-env.mjs` enforces this in CI).
-- **723 tests passing**, 63 test files (`npm test`).
-- **The one confirmed operational gap**: Cloudflare error-rate alerting is
-  not configured. The repo-side half of `IMPLEMENTATION_PLAN.md` initiative
+- **The current automated gate is 849 Vitest cases in 71 files plus 11
+  Chromium browser cases.** Counts are evidence for this revision, not a
+  durable product claim; use the living QA plan and the current CI run for a
+  release decision.
+- **The external monitoring gate needs current operator evidence**: this
+  repository cannot read Cloudflare notification policy state. The repo-side
+  half of `IMPLEMENTATION_PLAN.md` initiative
   O landed 2026-07-19: alert matrix + severity model (`docs/ALERTS.md`),
   Cloudflare human checklist (`docs/CLOUDFLARE_OPERATOR_RUNBOOK.md`),
   game-day framework + evidence template (`docs/GAME_DAY.md`), daily +
@@ -45,26 +49,21 @@ As of this reset (`main` @ `d169274`, PR #195 merged 2026-07-18):
   inputs, and a staging-only synthetic-fault route
   (`worker/staging-fault.ts`). Still human-only: the Cloudflare dashboard
   configuration (O1) and actually executing/recording the game day (O2).
-  Until then the GitHub synthetic layer is the active safety net.
-- **Zero open PRs, zero open issues.** This repo does not use GitHub Issues
-  as a planning tool — all planning lives in `docs/`. 174 PRs merged to date
-  (#1–#195). 7 stale-but-fully-merged branches exist on origin (safe to
-  delete, no unique commits) — deleting them is a human/operator task (this
-  environment's git push has been observed to reject `--delete` pushes; if
-  that's still true, it needs to be done from a different environment).
+  Until delivery evidence is attached, treat the Cloudflare layer as
+  unverified; the GitHub synthetic layer remains repository-evidenced.
+- Planning lives in `docs/`; do not copy static PR, issue, or branch counts
+  into handoff notes because those become stale independently of the code.
 
-## Recently completed (this session)
+## Recently completed
 
-In order: the adaptive-authoring-profiles packets P4/P5 (confirmation/
-scoping/guidance MCP tools, then outcome refinement); a labelScale contract
-field for link labels; the nightly staging smoke workflow; the owner-only
-admin/analytics dashboard (migration `v5`, two-gate bootstrap-then-activate
-rollout); the production domain cutover to `harnessed.cloud`; two security
-fixes (finding M18, an open-redirect bypass in the post-login redirect
-guard; finding M19, a login-page copy correction to match the actual
-open-signup posture); a pre-login showcase filmstrip on the login page
-(four topologies authored via MCP, animated WebP frames); and this
-documentation reset.
+The August quality pass added text-box/shape sizing, compact and bounded MCP
+discovery/reads, atomic `edit_topology`, non-zero-origin export correction,
+honest autosave with a separate public-shared-copy slot, attachment-safe
+layout, `inspect_render`, complete per-page undo, recoverable frame deletion,
+shared cascade cleanup, all-element proposal previews, a Chromium browser
+release gate with CI-rendered baselines, and overlay/format-painter/accessibility
+polish. The user guide, QA plan, UAT plan, and traceability matrix document this
+current surface.
 
 ## Active implementation program
 
@@ -72,17 +71,16 @@ Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 
 | #   | Initiative                                  | Status                                                    | Blocking dependency                                                      |
 | --- | ------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ |
-| N   | Documentation reset                         | **In progress — packet N3 is this PR**                    | None                                                                     |
+| N   | Living product/quality documentation        | Baseline refreshed 2026-08-09; maintain with each change  | None                                                                     |
 | O   | Cloudflare alerting + production game day   | Repo-side done 2026-07-19; O1/O2 human halves outstanding | None — human can start immediately                                       |
 | A   | Agent activity + explainability             | Not started                                               | None — soft dependency on N landing                                      |
 | B   | Guided topology briefs + semantic templates | Not started                                               | None — soft dependency on N landing                                      |
 | E   | EdgeConnect live-import hardening + UI      | Not started                                               | None — soft dependency on N landing                                      |
 | T   | Time-aware flow/failure storytelling        | Not started                                               | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
 
-**Immediate next packet after this PR merges: O1** (configure Cloudflare
-alerting) or **A1/B1/T1** (pure-types packets, no dependencies, safe to start
-in parallel) — see `IMPLEMENTATION_PLAN.md`'s dependency graph for the full
-picture of what can run concurrently.
+Before starting a July implementation packet, revalidate its premise against
+`ROADMAP.md`, `CAPABILITY_MATRIX.md`, and current code. O1/O2 remain explicitly
+human/operator work unless dated evidence says otherwise.
 
 ## Important architectural rules
 
@@ -117,8 +115,10 @@ production incident or a launch-blocking finding in this repo's history:
   never on raw LLM prompts, completions, or transcripts.
 - **One catalog is the source of truth.** Anything a human can set through
   the inspector, an agent can set identically through the same
-  catalog-driven contract (`src/api/catalog.ts`) — no UI-only fields, no
-  agent-only fields. See `DESIGN.md` #2/#3.
+  catalog-driven contract (`src/api/catalog.ts`) — no UI-only persisted
+  authoring fields and no agent-only persisted authoring fields. Local view
+  state and owner-authority actions are intentionally surface-specific. See
+  `DESIGN.md` #2/#3.
 
 ## Deployment rules
 
@@ -143,10 +143,11 @@ production incident or a launch-blocking finding in this repo's history:
 **None of the six active initiatives in `IMPLEMENTATION_PLAN.md` are
 designed to require a new migration.** If you're implementing a packet from
 that plan and find yourself needing one anyway, **stop and get explicit
-human sign-off before proceeding** — this repo has never added a migration
-without a full bootstrap-then-activate cycle (ship the new DO class inert
-behind a flag in one deploy, activate it in a separate deploy after
-verification), and skipping that discipline is the single highest-risk
+human sign-off before proceeding** — feature migrations `v3`–`v5` established
+the full bootstrap-then-activate cycle (ship the new DO class inert behind a
+flag in one deploy, activate it in a separate deploy after verification).
+Migrations `v1` and `v2` predate that pattern. Skipping the established cycle is
+the single highest-risk
 mistake a new agent could make here. See `docs/DEPLOYMENT_RUNBOOK.md`'s
 per-migration gate sections (`v3`, `v4`, `v5`) for the pattern to follow if
 one genuinely becomes necessary.
@@ -156,19 +157,18 @@ one genuinely becomes necessary.
 ```bash
 npm run typecheck   # tsc --noEmit (app) + tsc -p worker/tsconfig.json --noEmit (worker)
 npm run lint         # eslint . && prettier --check .
-npm test             # vitest run — 723 tests, 63 files
+npm test             # Vitest unit + Miniflare integration suites
 npm run build        # tsc --noEmit && vite build
+npm run test:e2e     # Chromium functional + Linux-baseline visual release gate
 npm run check:wrangler   # node scripts/check-wrangler-env.mjs — staging isolation + migration parity
 ```
 
-Run all five before opening any PR. Durable Object / Miniflare and
-`session.ts` WebCrypto suites fail to **start** locally (no `workerd`/
-`File`/`crypto` in this environment) — they run in CI. Keep new
-DO-adjacent logic locally verifiable by splitting it into pure
-helpers/fakes the way `src/admin/roster.ts`, `src/profile/learner.ts`, and
-`src/workspace/operations.ts` already do — that pattern is why this repo's
-test suite stays fast and mostly local-runnable despite the DO-heavy
-architecture.
+Run the complete gate before opening a PR. Miniflare tests require permission
+to bind a localhost listener; a restricted sandbox may report `listen EPERM`,
+which is an environment failure rather than a product test result. Visual
+baselines are CI-rendered for Linux; a macOS run can execute the functional
+cases but cannot compare the three visual cases unless reviewed Darwin
+baselines are deliberately added. See `launch-readiness/QA_TEST_PLAN.md`.
 
 ## Key files
 
@@ -188,16 +188,11 @@ architecture.
 
 ## Known risks (from the launch-readiness findings register)
 
-51 findings from the 2026-07-04 adversarial review; 8 now closed (this
-reset closed C1–C4 and H7, previously M14/M18/M19/L1 were closed). No
-Critical findings remain open. Two open findings worth knowing about because
-they're small and well-scoped if picked up:
+The 2026-07-04 findings register is preserved as an audit record; its original
+top-line counts are not a current open-defect summary. Read appended closure
+notes and `CAPABILITY_MATRIX.md`. Former finding H1 is fixed. One user-impacting
+open constraint remains especially important:
 
-- **H1** — `layout_topology` doesn't carry anchors/manual link waypoints
-  through its own algorithmic node movement (`tidy_topology`/
-  `balance_topology` are unaffected). Fix is small: capture `orig` positions
-  in `layoutPage` and call `carryAttachments(page, orig)` after the
-  algorithm runs (`src/api/autolayout.ts:344-362`).
 - **M20** — published share links (`/v/:id`) have no revoke/unpublish path:
   public, unauthenticated, 30-day KV retention, 24h immutable cache. Fix
   needs an authenticated delete endpoint plus dropping the `immutable`
@@ -216,31 +211,31 @@ Things no agent in this repo can complete alone:
    are `docs/CLOUDFLARE_OPERATOR_RUNBOOK.md` (CF-1..CF-6 checklist).
 3. **Run the game day** (packet O2) — `docs/GAME_DAY.md`, a human operator
    observing/confirming each step of a live drill; production steps each
-   require the environment-approval click. Note Phase 1 finding
-   (2026-07-19): staging serves `da8f704`, behind `main` — scenario S-0
-   (routine staging deploy) is the first action.
+   require the environment-approval click. Verify the staging SHA at the start
+   of every drill; the 2026-07-19 observation recorded in the historical
+   findings is not evidence of the current deployment.
 4. **Provision the staging-only `DIAGNOSTICS_TOKEN` secret** (for game-day
    scenarios S-2..S-4): `npx wrangler secret put DIAGNOSTICS_TOKEN --env
 staging` with a generated ≥16-char value kept only in the operator's
    password manager. Never set any `DIAGNOSTICS_*` value for production —
    CI (`check:wrangler`) rejects the var half outright.
-5. **Provision EdgeConnect credentials** (packet E5) — `wrangler secret put`
-   for `ORCH_BASE_URL`/`ORCH_API_KEY`, staging only, a deliberate separate
-   decision never bundled into a feature deploy.
-6. **Delete the 7 stale merged branches** — this environment's git push has
-   been observed to reject `--delete` pushes to origin; do it from GitHub's
-   UI or a different environment if that's still the case.
+5. **Optionally qualify EdgeConnect** (packet E5) — provision staging-only
+   `ORCH_BASE_URL`/`ORCH_API_KEY` and execute the conditional QA/UAT track only
+   when live-fabric support is being activated. This is a deliberate separate
+   decision, never bundled into a normal feature deploy.
 
-## Where historical plans are stored
+## Documentation map and history
 
 - `docs/archive/IMPLEMENTATION_PLAN_2026-07-12.md` — the previous
   implementation plan (proposals 0002 follow-ons, 0003, 0004), fully
   executed. Carries a banner; do not treat as current.
-- `docs/launch-readiness/{FINDINGS_REGISTER,QA_TEST_PLAN,UAT_PLAN}.md` — the
-  2026-07-04 pre-launch review and launch-readiness plans. The findings
-  register is still live/maintained (see "Known risks" above); the QA/UAT
-  plans are frozen historical snapshots of a launch window that has since
-  passed.
+- `docs/launch-readiness/FINDINGS_REGISTER.md` — preserved historical finding
+  bodies plus the current status overlay described under "Known risks."
+- `docs/launch-readiness/{QA_TEST_PLAN,UAT_PLAN,TRACEABILITY_MATRIX}.md` — the
+  active living quality plans and capability-to-evidence index. Earlier
+  pre-launch versions remain available in Git history, not as current files.
+- `docs/USER_GUIDE.md` — the current task-based guide for people, agents,
+  workspace owners, administrators, and operators.
 - `docs/proposals/000{1,2,3,4}-*.md` — the original design proposals for
   live-flow-visualization, the shared workspace, adaptive authoring
   profiles, and the deployment pipeline. All four are implemented; 0001's

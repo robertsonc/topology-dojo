@@ -25,7 +25,7 @@ The lineage was ASP → beats (to kill cognitive load) → flipbook (to drop the
 delta/resolve/tween machinery once the product's center of gravity became
 **static topology diagrams**, and the top priority became **API/agent
 authoring** via MCP, under the principle that _the document is the complete
-contract — no UI-only surfaces_).
+persisted authoring contract — no UI-only persisted diagram fields_).
 
 This ADR records why we stay on flipbook long-term, and the conditions under
 which we'd extend or revisit it.

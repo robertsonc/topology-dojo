@@ -166,6 +166,11 @@ GitHub issue as the system of record:
 
 ## Operator checklist (update via PR as steps complete)
 
+An unchecked row means only that the repository contains no dated completion
+evidence. It is not proof that the external Cloudflare setting is currently
+absent. Revalidate in the dashboard, capture evidence privately, and then
+update this table.
+
 | #    | Step                                                                               | Status | Evidence ref |
 | ---- | ---------------------------------------------------------------------------------- | ------ | ------------ |
 | CF-1 | Metrics/logs located; saved queries created (staging + prod)                       | ☐      |              |

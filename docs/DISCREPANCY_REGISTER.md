@@ -1,6 +1,6 @@
 # Documentation Discrepancy Register
 
-_Compiled 2026-07-19 from a full repository audit (code + docs + git history + live GitHub state) ahead of the roadmap/handoff reset. Each row was independently verified against code, not just cross-referenced between docs. See `docs/CAPABILITY_MATRIX.md` for the underlying capability-by-capability evidence this register draws on._
+_Compiled 2026-07-19 from a full repository audit (code + docs + git history + live GitHub state) ahead of the roadmap/handoff reset. Each row was independently verified against code, not just cross-referenced between docs. See `docs/CAPABILITY_MATRIX.md` for the underlying capability-by-capability evidence this register draws on. Revalidated 2026-08-09: this table remains the dated record of what the July reset found; the follow-up below records later resolutions._
 
 Severity guide: **Critical** = a reader would materially misjudge production risk or duplicate finished work; **High** = a reader would make a wrong near-term decision; **Medium** = confusing but self-correcting once the reader checks code; **Low** = cosmetic/citation gaps.
 
@@ -23,8 +23,23 @@ Severity guide: **Critical** = a reader would materially misjudge production ris
 | 15  | `docs/proposals/0001-live-flow-visualization.md`                             | Header, line 3                                                              | "Status: Implemented — E1 (#65), E2 (#66), E3 (#67), E4 (#68), E5" — no PR number for E5                                                                                                                                                      | Minor citation gap, not a factual error                                                                                                                                                                                                                                                                                                             | Low-value fix; note only, not corrected in this pass (would require archaeology to find the right PR number with no functional benefit)                                                                                                             | **Low**                                   | `docs/proposals/0001-live-flow-visualization.md:3`                                                                |
 | 16  | `docs/proposals/0002-shared-human-agent-workspace.md`                        | "Follow-on work" list                                                       | 9 items presented uniformly as pending                                                                                                                                                                                                        | 6 of 9 have shipped (proposal preview + selective acceptance, gesture-native ops, IndexedDB cache, checkpoints/restore/fork/timeline, WebSocket presence, adaptive profiles); only org ACLs, finer leases, and comments/mentions remain open                                                                                                        | Not corrected in this pass (proposal 0002 predates the current archival convention; its status line "Accepted for Phase 0" is technically still true — only the follow-on list is stale). Flagged here for a future doc pass                        | **Low**                                   | `docs/CAPABILITY_MATRIX.md` "Shared workspace" section                                                            |
 
-## Not corrected in this pass (explicitly deferred, with reasoning)
+## Follow-up — 2026-08-09
+
+- Row 13 is superseded: `QA_TEST_PLAN.md` and `UAT_PLAN.md` are now living
+  release-cycle plans, backed by `USER_GUIDE.md` and
+  `TRACEABILITY_MATRIX.md`. The original pre-launch bodies remain recoverable
+  from Git history.
+- Rows 4, 10, and 14 were revalidated and their living documents now carry the
+  August baseline. Static test/PR/issue counts were removed or made explicitly
+  revision-scoped.
+- Former finding H1, referenced by the July capability/roadmap baseline, is
+  fixed by commits `aa4e88c` and `7e3f8ed`; algorithmic layout now carries
+  anchors and manual waypoints by node id.
+- This register is a documentation-audit record, not a live defect dashboard.
+  Use appended status notes in `launch-readiness/FINDINGS_REGISTER.md`, the
+  capability matrix, and the current QA/UAT evidence for release decisions.
+
+## Not corrected in the July pass (explicitly deferred, with reasoning)
 
 - **Rows 15–16**: citation/list staleness with no risk of misjudging current system state once a reader consults `docs/ROADMAP.md` or `docs/CAPABILITY_MATRIX.md`. Low value relative to the size of the change.
 - **Full `docs/ROLLBACK.md` generalization to a migration-agnostic template**: row 11's pointer note is a safe, cheap mitigation; a full rewrite is a larger editorial project better scoped as its own small packet (see `docs/IMPLEMENTATION_PLAN.md` → N-series).
-- **`docs/launch-readiness/QA_TEST_PLAN.md` / `UAT_PLAN.md` full rewrites**: these are historical launch-readiness artifacts with standalone value as a record of what a specific launch gate looked like; a banner (row 13) is sufficient to prevent misreading them as current.

@@ -15,12 +15,14 @@ Duplicating a page deep-copies it; editing a frame can never have a spooky effec
 on another. When tempted to add an organizing axis, first ask whether a page can
 already express it. (The earlier beat/delta model is retired to `src/core`.)
 
-## 2. The document is the complete contract — no UI-only surfaces
+## 2. The document is the complete authoring contract — no UI-only persisted fields
 
-Everything the GUI can express must live in the document JSON, and everything in
-the document must be reachable from the headless API. We do not build features
-that only a human can drive. If something genuinely is human-only, it must carry
-no authoring value for an agent (e.g. pan/zoom) — and we say so explicitly.
+Every persisted diagram field the GUI can express must live in the document
+JSON, and everything in the document must be reachable from the headless API.
+We do not build authoring vocabulary that only a human can drive. If something
+is genuinely human-only, it must carry no document-authoring value for an agent
+(for example pan/zoom, view theme, or owner approval authority) — and we say so
+explicitly.
 
 This is what makes the product equally usable by people and by agents, and it's
 the precondition for "topology as a framework for all of SASE."

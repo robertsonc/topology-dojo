@@ -1,297 +1,627 @@
-# Topology Dojo — Production Launch QA Test Plan
+# Topology Dojo — Living QA Test Plan
 
-> **Historical pre-launch snapshot (2026-07-04), superseded by the live
-> production system.** Several items this plan names as "out of scope for
-> launch" (in-GUI layout badges, the legacy importer) have since shipped; the
-> deploy mechanism it describes (`npx wrangler deploy`) has since been
-> replaced by a gated pipeline. For current status, see
-> [`../ROADMAP.md`](../ROADMAP.md) and
-> [`../CAPABILITY_MATRIX.md`](../CAPABILITY_MATRIX.md). Preserved as a record
-> of the original launch-readiness bar, not as current guidance.
+- **Version:** 2.0
+- **Effective date:** 2026-08-09
+- **Status:** Active living plan
+- **System under test:** Topology Dojo web editor, headless authoring API, local and remote MCP services, shared-workspace services, and the Cloudflare Worker deployment
 
-**Version:** 1.0 · **Date:** 2026-07-04 · **Target launch:** T+30 days
-**System under test:** Topology Dojo — canvas topology editor + headless API + MCP server, deployed as a Cloudflare Worker (Durable Object MCP sessions, GitHub OAuth 2.1, KV-backed share links)
+This plan replaces the 2026-07-04 pre-launch snapshot. It describes the
+current product and release pipeline. A result is not considered verified just
+because a case appears in this plan: §4 records the automated evidence verified
+on 2026-08-09, while cases marked **Required** still need execution against the
+named environment and source SHA.
 
----
+Authoritative companion documents:
 
-## 1. Scope & Risk-Based Priorities
-
-### 1.1 In scope
-
-| Area             | Surface                                                                                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Canvas editor    | `src/editor` — selection, drag, marquee, guides, links/waypoints, anchors, undo/redo, Tidy, arrange, legend, stencil, clone, captions, find (Ctrl+F), minimap, context menu, select-by           |
-| Flipbook / pages | `src/pages` — page model, filmstrip, duplicate (deep copy), playback timing, autosave to localStorage                                                                                            |
-| Node Designer    | `src/nodes` — CustomNodeSpec authoring, pure interpreter render, catalog integration                                                                                                             |
-| Headless API     | `src/api` — builder, edit/upsert, validate + layout analyzer, catalog parity, tidy, layouts, templates, layers, markers                                                                          |
-| MCP server       | `src/mcp` + `worker/mcp.ts` — all ~40 tools, stdio and remote Streamable HTTP at `/mcp`                                                                                                          |
-| Worker & routing | `worker/` — static app serving, `/api/topology/<id>`, `/v/<id>` shared views, OAuth endpoints                                                                                                    |
-| Auth             | GitHub OAuth 2.1 for MCP (`/authorize`, `/token`, `/register`, `/callback`, `/.well-known/oauth-authorization-server`) and browser session flow (`/login`, `/auth/github`, `/logout`, `/api/me`) |
-| Share links      | `share_topology` → KV snapshot → `/v/<id>` (30-day expiry)                                                                                                                                       |
-
-### 1.2 Out of scope (explicitly)
-
-- `src/core` (retired beat model — dormant, no runtime path).
-- Editing/auditing the vendored engine internals (`public/vendor/`) beyond its rendered output.
-- Live-data connector tools (`list_appliances`, `list_flows`, `build_flow_topology`, …) against a **real** EdgeConnect Orchestrator — tested against `TOPOLOGY_PROVIDER=mock` only, unless a fabric sandbox is provisioned before T+20. Real-fabric integration is a launch-blocker _only if_ live-data ships enabled in prod.
-- Tween/morph animation of custom nodes (excluded by design — locked decision #1).
-
-### 1.3 Risk ranking (drives test-effort allocation)
-
-| P   | Risk                                                                                                                                                                                        | Why                                                        | Mitigating suites |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------- |
-| P0  | **Data loss** — autosave failure, quota exceeded silently swallowed (`persist.ts` catches quota errors as "non-fatal"), destructive undo/redo bugs, `duplicatePage` shallow-copy regression | Users lose work; trust-killer at launch                    | F2, N2            |
-| P0  | **Auth bypass / gating holes** — SPA is gated by GitHub session; `/v/<id>` is deliberately ungated; `/mcp` gated by OAuth 2.1                                                               | Security incident on day 1                                 | F6, F7            |
-| P0  | **MCP correctness on the Worker** — per-owner isolation, canonical document-coordinator concurrency, tool parity with stdio, renderer parity (bundled vs `createRequire`)                   | The agent story is the product's differentiator            | F8, N3            |
-| P1  | **Share-link integrity** — KV snapshot fidelity, expiry, `/api/topology/<id>` fetch, custom nodes surviving the round trip                                                                  | Primary "hand a result to a human" path                    | F5                |
-| P1  | **Render parity** — same document must render identically in browser, Node (`server/render.ts`), and Worker (`worker/render.ts`); `calm`/reducedMotion threaded through both                | "Same look whether human or LLM drew it" is the north star | F4, F8, R2        |
-| P1  | **Catalog parity** — palette/inspector/validation/MCP all derive from `api/catalog.ts`; drift = UI-only surfaces (violates locked decision #3)                                              | Enforced by parity test; verify it actually gates CI       | R1                |
-| P2  | Editor interaction polish — guides, snap, waypoints, minimap, select-by                                                                                                                     | Degrades UX, rarely corrupts data                          | F1                |
-| P2  | Large-document performance                                                                                                                                                                  | Agents generate big docs; 200-node canvas must stay usable | N1                |
-| P3  | Theming (light/dark/calm), status bar, cosmetic                                                                                                                                             | Low blast radius                                           | F1 smoke          |
+- [Capability Matrix](../CAPABILITY_MATRIX.md) — shipped, flagged, partial, and deferred capabilities
+- [User Guide](../USER_GUIDE.md) — user-visible behavior and operating instructions
+- [UAT Plan](UAT_PLAN.md) — persona-based business acceptance
+- [Traceability Matrix](TRACEABILITY_MATRIX.md) — capability/requirement → risk → test → evidence mapping
+- [Deployment Runbook](../DEPLOYMENT_RUNBOOK.md), [Rollback](../ROLLBACK.md), and [Game Day](../GAME_DAY.md) — release and recovery controls
+- [Findings Register](FINDINGS_REGISTER.md) — historical defects and remaining known risks; verify status against current code before treating an entry as open or closed
 
 ---
 
-## 2. Test Environments & Matrix
+## 1. Quality objectives and scope
 
-### 2.1 Environments
+Topology Dojo's core contract is that people and agents author the same
+document model through the same capability vocabulary and render path. QA must
+therefore prove all of the following:
 
-| Env                | Purpose                                                                                                              | Notes                                                                                                                                |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Local dev**      | `npm run dev` (Vite, `http://localhost:5173`) + `npm run mcp` (stdio)                                                | No auth, no KV — share_topology **not registered** here (verify it's absent, not broken)                                             |
-| **Local worker**   | `wrangler dev` with local KV/DO simulation                                                                           | OAuth against a dev GitHub OAuth App; verify DO migration applied via `wrangler deploy` (never `versions upload` — error 10211)      |
-| **Staging worker** | Stable, fully deployed Worker + own `OAUTH_KV` / `TOPOLOGY_KV`, DO namespaces, and staging GitHub OAuth App/callback | Canonical preview surface; full `wrangler deploy --env staging`, never production `versions upload`; all F5–F8 and N suites run here |
-| **Production**     | Post-deploy smoke only (read-only + throwaway topology IDs)                                                          | Verify `PUBLIC_BASE_URL` yields absolute `/v/<id>` links                                                                             |
+1. A user can create, edit, persist, import, export, share, and recover a
+   topology without silent loss or corruption.
+2. Browser, headless API, local MCP, and remote MCP behavior remain materially
+   equivalent wherever the product claims parity.
+3. Authentication, owner isolation, admin authorization, public-share
+   carve-outs, and feature gates fail closed.
+4. Shared-workspace revisions, proposals, leases, checkpoints, presence, and
+   offline recovery preserve one canonical document under retries and
+   concurrency.
+5. Cloudflare staging and production use isolated resources, append-only
+   migrations, an identifiable source SHA, and forward-only recovery.
+6. User-visible behavior is documented and can be completed from the User
+   Guide by a representative user during UAT.
 
-### 2.2 Browser / viewport matrix
+### 1.1 In-scope surfaces
 
-| Browser | Versions         | Priority                                                                                                |
-| ------- | ---------------- | ------------------------------------------------------------------------------------------------------- |
-| Chrome  | latest, latest-1 | P0 (full suite)                                                                                         |
-| Firefox | latest           | P0 (full editor suite)                                                                                  |
-| Safari  | latest (macOS)   | P1 (editor + share view; watch SVG rendering, `structuredClone`, localStorage behavior in private mode) |
-| Edge    | latest           | P2 (smoke)                                                                                              |
+| Surface                         | Current scope                                                                                                                                                                                                                                        |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Editor                          | Selection, drag, marquee, pan/zoom, grid/snap, guides, links and waypoints, anchors, undo/redo, arrange/tidy, layers, legend, palette, minimap, find, select-by, context menus, format copy/paste, captions, problem badges, and responsive controls |
+| Pages and persistence           | Independent flipbook frames, duplicate/reorder/delete/recover, playback timing, local and shared autosave slots, JSON open/save, legacy import, and corrupt-storage recovery                                                                         |
+| Node and render system          | Built-in and custom node types, Node Designer, catalog parity, SVG/PNG/flipbook output, browser/Node/Worker render parity, themes, calm/reduced-motion, labels, routing, and visual regression                                                       |
+| Headless API and MCP            | Authoring, validation, layout, tidy/balance, inspection, templates, layers, metadata, imports, render/export, optional provider tools, and structured errors over stdio and remote Streamable HTTP                                                   |
+| Public and authenticated Worker | Login/logout/callback, session identity, OAuth metadata/token/register routes, `/mcp`, static app, showcase assets, `/api/topology/:id`, public `/v/:id`, `/healthz`, and `/readyz`                                                                  |
+| Shared workspace                | Per-owner registry, lazy legacy handoff, revisions, semantic operations, proposals and selective acceptance, page-scoped leases, conflict detection, checkpoints/restore/fork, WebSocket push/presence, and IndexedDB recovery                       |
+| Adaptive authoring              | Observe-only learning, candidate dedupe/refinement, owner confirmation/rejection/pause/resume/forget, bounded guidance, and read-only MCP guidance tools                                                                                             |
+| Owner administration            | Login roster, admin identity gate, per-user workspace metadata, disabled/unauthenticated/non-admin behavior, and privacy boundary (no diagram content)                                                                                               |
+| Delivery and operations         | CI, Playwright, Wrangler isolation checks, separate staging/production deployment workflows, feature-flag overrides in staging, migrations v1–v5, external smoke, production verification, alert response, and staging game-day recovery             |
 
-Viewports: 1920×1080 (primary), 1440×900, 1280×720 (minimum supported — filmstrip + inspector + minimap must not collide). Tablet/mobile: `/v/<id>` shared **view** must be readable at 768×1024 (pan/zoom); full editing on touch is **not** a launch requirement — document as known limitation.
+### 1.2 Conditional and excluded scope
 
-### 2.3 MCP client matrix
-
-| Client                            | Transport                                                             | Priority                                |
-| --------------------------------- | --------------------------------------------------------------------- | --------------------------------------- |
-| Claude Code / Claude Desktop      | stdio (`npm run mcp`)                                                 | P0                                      |
-| Claude connector → staging `/mcp` | Streamable HTTP + OAuth (dynamic client registration via `/register`) | P0                                      |
-| MCP Inspector                     | both                                                                  | P1 (protocol conformance, error shapes) |
-
----
-
-## 3. Functional Test Suites
-
-Conventions: each case = **ID / Steps / Expected**. "Fresh doc" = new document, 1 empty page.
-
-### F1 — Editor Canvas Operations
-
-| ID    | Steps                                                                                | Expected                                                                                                                                            |
-| ----- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F1-01 | Drag node type from palette onto canvas                                              | Node appears at drop point, snapped to grid; document JSON gains the node; status bar updates                                                       |
-| F1-02 | Click node → drag                                                                    | Node follows pointer; smart alignment + spacing guides appear against neighbors; release commits position to model                                  |
-| F1-03 | Marquee-select 3 of 5 nodes; drag group                                              | Only the 3 move, relative offsets preserved                                                                                                         |
-| F1-04 | Hold Space + drag on empty canvas                                                    | Canvas pans; no selection change; no document mutation (pan is a sanctioned human-only surface)                                                     |
-| F1-05 | Create link between two nodes; drag mid-link to add waypoint; drag waypoint          | Link bends through waypoint; waypoint persists in document JSON and survives export/import                                                          |
-| F1-06 | Anchor tool: place free-floating anchor; link node→anchor                            | Link terminates at anchor; anchor appears in page `anchors[]`                                                                                       |
-| F1-07 | Undo (Ctrl+Z) ×5 after F1-01…F1-06; Redo ×5                                          | Each op reversed/replayed exactly; final state byte-identical document JSON to pre-undo                                                             |
-| F1-08 | Select-by: type, then color, then "connected", then invert                           | Each mode selects the correct element set on a 10-node mixed page                                                                                   |
-| F1-09 | Ctrl+F, type a node name, Enter                                                      | Viewport jumps to and highlights the matching element                                                                                               |
-| F1-10 | Right-click node                                                                     | Context menu with element-appropriate actions; actions match toolbar equivalents                                                                    |
-| F1-11 | Select 4 misaligned nodes → Align left, then Distribute horizontally                 | Positions align/distribute; single undo step reverts each operation                                                                                 |
-| F1-12 | Deliberately overlap 6 nodes → press **T** (Tidy)                                    | Nodes grid-snapped, de-overlapped, in-bounds; zones auto-resize around members; result identical to `tidy_topology` on the same JSON (parity check) |
-| F1-13 | Arrange… dropdown: hierarchical, grid, circular, force on same 12-node doc           | Each produces a valid layout with zero overlap warnings from `validate`; deterministic for hierarchical/grid/circular                               |
-| F1-14 | Toggle dark theme, then calm-canvas                                                  | Theme applies to canvas + chrome; calm sets reducedMotion (no link-flow animation); toggles persist across reload                                   |
-| F1-15 | Minimap: click a far region; drag viewport indicator                                 | Main viewport pans accordingly; minimap reflects all elements on large page                                                                         |
-| F1-16 | Inspector: select link, change type via enum dropdown; set `flowSpeed`/`reverseFlow` | Fields offered match catalog exactly; render updates live; values round-trip through export                                                         |
-| F1-17 | Set node `opacity` to 0.5 via inspector                                              | Node renders translucent with depth-of-field blur (<0.9 behavior); value in document JSON                                                           |
-| F1-18 | Add zone from current multi-node selection; drag a member node out then back         | Zone created around selection; membership/geometry behaves per zone rules; validate flags zones swallowing non-members                              |
-| F1-19 | Legend: enable via legend control, reposition                                        | Auto-generated symbol key reflects only types present on page; position persisted; matches `set_legend` MCP behavior                                |
-| F1-20 | Clone selection (editor clone op)                                                    | Deep copy with fresh IDs; no shared references (mutate clone → original untouched)                                                                  |
-
-### F2 — Pages / Flipbook & Persistence
-
-| ID    | Steps                                                                                        | Expected                                                                                                             |
-| ----- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| F2-01 | Add 3 pages via filmstrip; reorder; rename page 2                                            | Order and names persist in document; filmstrip thumbnails correct                                                    |
-| F2-02 | Duplicate a page with nodes+links+zones+custom nodes; edit the copy (move node, delete link) | **Original page unchanged** (deep `structuredClone`, fresh IDs). This is the flipbook's core invariant — automate it |
-| F2-03 | Set per-page durations; press Play                                                           | Pages flip on schedule per `playback.ts`; loop/stop behavior correct; calm mode respected                            |
-| F2-04 | Edit doc, wait for autosave, hard-reload browser                                             | Document restored from localStorage exactly, including current page, custom nodes, layers                            |
-| F2-05 | Corrupt the localStorage value by hand; reload                                               | Defensive parse: app starts with a clean document, no crash, no white screen                                         |
-| F2-06 | Export document JSON; re-import into fresh session                                           | Byte-equivalent semantics: pages, elements, customNodes, layers, palette, legend all restored; `validate` clean      |
-| F2-07 | Delete the last remaining page                                                               | App either prevents it or recreates an empty page — never a zero-page document (render would crash)                  |
-
-### F3 — Node Designer & Custom Node Types
-
-| ID    | Steps                                                                                | Expected                                                                                                      |
-| ----- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| F3-01 | Open Node Designer; build custom type from shapes/icons; save                        | Type appears in palette **with live art preview**; spec stored as data in `customNodes[]` (no generated code) |
-| F3-02 | Place custom node; export doc; import into new session                               | Custom node renders identically (pure interpreter `renderCustomNode`); no missing-type error                  |
-| F3-03 | `describe_capabilities` with `topologyId` of a doc containing custom types (via MCP) | Custom types listed alongside builtins with their fields — catalog covers them                                |
-| F3-04 | Define custom type with same name as a builtin                                       | Merged-over-defaults behavior per `define_node_type`; no silent clobber of builtin across other documents     |
-| F3-05 | Render a page with a custom node headlessly (`render_svg` on worker AND stdio)       | SVG identical (modulo IDs) to browser render — three-runtime parity for the interpreter                       |
-| F3-06 | Edit an existing custom type used on 3 pages                                         | All instances re-render with new art; undo restores prior spec                                                |
-
-### F4 — Import / Export & Rendering
-
-| ID    | Steps                                                                  | Expected                                                                                                                           |
-| ----- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| F4-01 | Editor export SVG of current page                                      | Standalone SVG opens in browser/Inkscape; fonts/theme embedded; matches canvas                                                     |
-| F4-02 | `export_flipbook` (MCP) on 5-page doc with durations                   | Self-contained HTML plays all pages on their durations, no external asset fetches, works offline                                   |
-| F4-03 | Import malformed JSON (truncated, wrong shape, unknown element type)   | Loud, specific error at import time; document unchanged — "fail loud at author time"                                               |
-| F4-04 | Import a doc with dangling link endpoint + duplicate IDs; run validate | `validate` lists dangling reference and duplicate-id problems; render still succeeds (warnings never block)                        |
-| F4-05 | Render with `visibleLayers` filtering (underlay hidden)                | Hidden-layer elements absent from SVG; untagged base layer always shown; a layer with default-hidden stays hidden unless requested |
-| F4-06 | Re-render same page 3× (engine trailing-empty-Step trick)              | No entrance-animation replay; identical SVG each time                                                                              |
-
-### F5 — Share Links
-
-| ID    | Steps                                                                   | Expected                                                                                                                          |
-| ----- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| F5-01 | Via remote MCP: build doc → `share_topology`                            | Returns `<PUBLIC_BASE_URL>/v/<id>` (absolute in staging/prod); snapshot in `TOPOLOGY_KV`                                          |
-| F5-02 | Open `/v/<id>` in a browser **with no session cookie**                  | Loads the snapshot into the editor via `/api/topology/<id>` — **no redirect to `/login`** (shared views are deliberately ungated) |
-| F5-03 | Open `/v/<id>` after the MCP session/DO that created it is gone         | Still loads (KV outlives session) — the whole point of share vs `get_topology`                                                    |
-| F5-04 | Share a doc with custom nodes, layers, palette, legend, 10 pages        | `/v/<id>` view is pixel-faithful to the author's canvas across the browser matrix                                                 |
-| F5-05 | `GET /api/topology/<nonexistent-id>` and `/v/<nonexistent-id>`          | Clean 404 / friendly "not found or expired" page — no stack trace, no login redirect loop                                         |
-| F5-06 | Expiry: create snapshot with TTL shortened in staging; wait past expiry | Link returns the expired/not-found experience; re-publishing the same doc issues a working new link                               |
-| F5-07 | Mutate the source doc after sharing; reload `/v/<id>`                   | Snapshot is immutable — shows the state at share time                                                                             |
-| F5-08 | ID probing: request 20 random `/v/<id>` values                          | All 404; IDs non-sequential/unguessable (check generation entropy)                                                                |
-| F5-09 | `share_topology` on **stdio** server                                    | Tool is **not registered** (remote-only); tool list omits it; no crash                                                            |
-
-### F6 — Auth: Browser Session Flow
-
-| ID    | Steps                                                                                 | Expected                                                                                                                                |
-| ----- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| F6-01 | Visit `/` with no session                                                             | Redirect to `/login?go=%2F`; branded GitHub sign-in page renders (self-contained — loads even though app assets are gated)              |
-| F6-02 | Complete `/auth/github` → GitHub → `/callback?state=web…`                             | State nonce validated; session cookie set (HttpOnly/Secure/SameSite — inspect); redirected to original `go` path including query string |
-| F6-03 | `/api/me` with and without session                                                    | 200 `{login, name}` vs 401                                                                                                              |
-| F6-04 | `/logout`                                                                             | Cookie cleared; back at `/login`; back-button does not restore an authenticated app view that can fetch                                 |
-| F6-05 | Tamper with `state` param on `/callback`                                              | Rejected; no session set; clear error                                                                                                   |
-| F6-06 | Deep-link `/some/path?x=1` while logged out; then log in                              | Land on `/some/path?x=1` (the `go` round trip)                                                                                          |
-| F6-07 | GitHub token exchange fails (revoke staging client secret temporarily)                | User-visible failure page, error logged ("web login: token exchange failed") — not a blank 500                                          |
-| F6-08 | Confirm `/callback` disambiguation: run browser login and MCP OAuth flow back-to-back | Each `/callback` request routed to the correct flow (web-state prefix vs provider); neither breaks the other                            |
-
-### F7 — Auth: MCP OAuth 2.1
-
-| ID    | Steps                                                         | Expected                                                                                                 |
-| ----- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| F7-01 | `GET /.well-known/oauth-authorization-server`                 | Valid discovery doc pointing at `/authorize`, `/token`, `/register`                                      |
-| F7-02 | Connect Claude to staging `/mcp` from scratch                 | Dynamic client registration → single GitHub authorize click → tools listed; no manual token paste        |
-| F7-03 | Call `/mcp` with no token / expired token / garbage Bearer    | 401 with proper `WWW-Authenticate`; never a tool response                                                |
-| F7-04 | Verify authenticated identity                                 | Tool context (`this.props`) reflects the GitHub user who authorized; grants/tokens present in `OAUTH_KV` |
-| F7-05 | Revoke/expire grant in `OAUTH_KV`; call a tool                | Client is driven back through re-auth, not a hang                                                        |
-| F7-06 | Unauthenticated user hits `/authorize` (MCP consent) directly | Sane behavior — sent through GitHub, no open redirect (fuzz `redirect_uri` against registered client)    |
-
-### F8 — MCP Tools (stdio + remote — run the full table on both; parity is the assertion)
-
-| ID    | Steps                                                                                                                                               | Expected                                                                                                                                                                 |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| F8-01 | `describe_capabilities` (no args)                                                                                                                   | Every builtin node/link/annotation type with fields, enums, animation flags, id-reference kinds — diff against `api/catalog.ts`                                          |
-| F8-02 | Golden agent loop: `create_topology` → `layout_guidelines` → `add_node`×5 → `add_link`×4 → `validate_topology` → `tidy_topology` → `render_svg`     | Each step succeeds; final validate has no overlap warnings; SVG contains all 5 nodes. **This is the launch-blocking E2E**                                                |
-| F8-03 | `list_templates` → `create_from_template` for **every** template                                                                                    | Each instantiates, validates clean, renders                                                                                                                              |
-| F8-04 | Page targeting: `add_page` ×2, then `add_node` with no `pageIndex`, then with `pageIndex: 0`                                                        | Default targets most-recently-added page; explicit index respected; `render_svg` defaults to page 0                                                                      |
-| F8-05 | `update_element` on node/link/zone (position, label, enum field); `remove_element` on a node with links + zone membership                           | Patch applies in place; remove cascades (dependent links/memberships cleaned, verified via `get_topology`)                                                               |
-| F8-06 | `upsert_by_source` twice with same `system/kind/id`, changed fields                                                                                 | First call creates, second converges the same element (idempotent — no duplicate)                                                                                        |
-| F8-07 | `get_topology` → `delete_topology` → `import_topology` (the exported JSON)                                                                          | Full round trip; re-imported doc validates clean and renders identically                                                                                                 |
-| F8-08 | Invalid input fuzz: unknown node type, out-of-range enum, bad `topologyId`, missing required arg, `pageIndex: 99`                                   | Every case → structured MCP `isError` with actionable message; DO/session still alive for the next call                                                                  |
-| F8-09 | `define_layer` (policy, opacity 0.4, default-hidden) + tagged elements; `render_svg` with/without `visibleLayers`                                   | Z-order = declaration order; opacity dims plane; hidden-by-default honored; geometry untouched                                                                           |
-| F8-10 | `set_palette` (brand hex), `set_legend`, `set_node_metadata`, `set_document_title`, `set_page_properties`                                           | Each reflected in `get_topology` JSON and in rendered SVG; `set_palette` `clear` resets                                                                                  |
-| F8-11 | `layout_topology` all four algorithms on an unplaced 20-node doc; `balance_topology` after                                                          | Valid overlap-free layouts; balance aligns rows/cols + centers; deterministic where specified                                                                            |
-| F8-12 | `add_zone`, `add_flow_path`, `add_policy_marker` (incl. per-marker `icon` override)                                                                 | Annotation layer authored headlessly renders identically to editor-authored equivalents                                                                                  |
-| F8-13 | Owner sharing/isolation (remote): two MCP sessions for the same GitHub owner create drafts; a different owner lists                                 | Same owner sees both durable drafts across sessions; different owner sees neither                                                                                        |
-| F8-14 | Session lifecycle (remote): create draft, idle past MCP DO eviction, reconnect                                                                      | Per-owner registry rehydrates it; document survives transport/session turnover                                                                                           |
-| F8-15 | Live-data (mock provider, `TOPOLOGY_PROVIDER=mock`): `describe_data_source`, `list_appliances`, `list_tunnels`, `list_flows`, `build_flow_topology` | Tools registered only when provider wired; `build_flow_topology` yields layered, tidy, valid doc from fixtures; with no provider configured, tools absent from tool list |
-| F8-16 | Attempt to pass credentials through live-data tool arguments                                                                                        | No tool accepts credential args (env/secrets only — verify schemas)                                                                                                      |
-| F8-17 | Build a private draft, call `get_workspace_manifest` with its id, then access it from the browser Agent Workspace list                              | Lazy migration initializes once; legacy snapshot remains; subsequent legacy mutation returns guidance to use workspace tools                                             |
-| F8-18 | At revision N, edit 20 unrelated elements in the UI; call `get_workspace_changes` from N, then `get_workspace_elements` for two affected ids        | Summary is bounded and contains no full document; targeted read returns only requested/paginated elements                                                                |
-| F8-19 | Agent calls `propose_workspace_changes` without a lease; browser inspects and accepts                                                               | Canonical revision is unchanged before acceptance; UI shows semantic detail; acceptance creates exactly one revision                                                     |
-| F8-20 | Agent calls `apply_workspace_changes` without lease, then with a UI-granted ten-minute current-page lease; try a second page and retry after expiry | No-lease, out-of-scope, and expired calls fail explicitly; in-scope call commits; agent cannot grant/extend the lease                                                    |
-| F8-21 | UI and agent start at the same revision: patch different fields, then repeat on the same field; test delete versus edit                             | Disjoint fields rebase into consecutive revisions; same-field and delete/edit produce conflicts with no silent winner                                                    |
-| F8-22 | Hand off a generated document >2 MiB aggregate with 20 sub-1.8 MiB pages; then try one page >1.8 MiB                                                | Aggregate document succeeds through per-page keys; oversize page fails visibly without advancing revision                                                                |
+- The real EdgeConnect provider is shipped, but deployed secret state is not
+  visible in the repository. Mock/injected-provider behavior remains in normal
+  CI; a real-fabric acceptance track and deployed-tool inventory are mandatory
+  before any environment claims supported `ORCH_BASE_URL`/`ORCH_API_KEY`
+  activation.
+- `src/core` is the retired beat model. Its existing tests remain regression
+  evidence for retained code, but it is not a supported runtime surface.
+- Full touch editing is not presently a support claim. Public shared views must
+  remain readable on tablet/mobile viewports.
+- Cloudflare dashboard policy creation and notification delivery are external
+  operator actions. Repository tests can verify the routes and synthetic fault,
+  but operational readiness requires recorded dashboard and game-day evidence.
+- Share links are public snapshots with a 30-day KV lifetime and currently have
+  no revoke/unpublish workflow. Tests must verify and documentation must state
+  this behavior until a revocation feature ships.
 
 ---
 
-## 4. Regression Strategy
+## 2. Risk priorities
 
-1. **CI gate (every PR, already exists — verify and extend):** `npm test` (Vitest — the suites in `src/api/*.test.ts`, `src/mcp/tools.test.ts`, `src/mcp/persist-store.test.ts`, `src/pages/*.test.ts`, `src/editor/*.test.ts`, `src/nodes/*.test.ts`), `npm run lint`, `npm run build` (typechecks app **and** worker). The **catalog parity test** is the keystone regression — confirm it actually fails the build when a vocabulary entry is added without catalog coverage (mutation-test it once, manually).
-2. **Golden-SVG snapshots:** add a small corpus (5–10 documents covering builtins, custom nodes, layers, annotations, palette) rendered via `server/render.ts` in CI, snapshot-diffed. Any vendored-engine or render-core change lights up visually. Extend the same corpus to the Worker renderer in staging to catch bundled-vs-`createRequire` divergence.
-3. **Automated E2E (Playwright), nightly against staging:** F8-02 golden agent loop over HTTP `/mcp` (with a pre-provisioned OAuth token), F8-17→F8-21 shared-workspace loop, F5-01→F5-02 share-link loop, F6-01/02 login loop, F2-02 duplicate-page invariant, F2-04 autosave reload. Keep the smoke subset small and run the full concurrency matrix separately.
-4. **Manual regression pack:** the P0/P1 rows of F1–F8, executed on release candidates and after any change to `worker/`, `src/vendor`, `public/vendor`, or `src/mcp/register.ts`. Time-boxed to 1 day for two testers.
-5. **Change-risk map:** any diff touching `public/vendor/` or the three sanctioned engine patches (marker `icon`, link flow controls, node `opacity`) triggers the golden-SVG suite + F1-16/F1-17 manually; any diff to `wrangler.jsonc` or DO migrations triggers a full isolated staging deploy with F7 + F8-13/14, recorded SHA, smoke evidence, and a forward-recovery exercise before merge. Follow [`../DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md); use `wrangler deploy --env staging`, never a production `versions upload`.
+| Priority | Risk                                              | Required assurance                                                                                                                                                                                                     |
+| -------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | Silent data loss or false-success persistence     | Browser storage failure is visible; last edits flush; imports do not replace a good document on failure; workspace commits are atomic/idempotent; remote MCP persistence failure cannot be reported as durable success |
+| P0       | Authentication or tenant-isolation failure        | Browser and MCP OAuth flows, session cookies, admin identity, owner-scoped registry/document/profile data, and unauthenticated public exceptions are tested positively and negatively                                  |
+| P0       | Canonical-workspace corruption                    | Revisions are monotonic; retries are idempotent; proposals do not mutate before acceptance; leases constrain writes; conflicts never choose a silent winner; checkpoint restore is forward-only                        |
+| P0       | Unsafe deployment or migration                    | Staging resources never point to production; all five DO bindings and both KV namespaces are present; migrations are append-only and identical across environments; deployed SHA and effective flags are recorded      |
+| P1       | Human/agent or renderer drift                     | Catalog, document round trip, operations, and browser/Node/Worker output stay equivalent; remote tool inventory matches its enabled flags/provider                                                                     |
+| P1       | Share/export/import integrity                     | Public-view gating, KV snapshot fidelity and expiry, legacy import, malformed input handling, offline flipbook, SVG/PNG framing, and custom-node round trips                                                           |
+| P1       | Profiles/admin feature-gate or privacy regression | Enabled/disabled behavior, owner-only mutation, read-only agent guidance, admin-only metadata, and cross-owner isolation                                                                                               |
+| P1       | Browser or accessibility regression               | Keyboard operation, focus/dialog behavior, readable names, reduced motion, responsive layouts, and supported-browser rendering                                                                                         |
+| P2       | Performance, availability, and degraded-state UX  | Large documents, load/concurrency, WebSocket reconnect, storage unavailable, Worker redeploy, fault handling, and actionable errors                                                                                    |
+| P3       | Cosmetic polish                                   | Copy, spacing, animation smoothness, and non-blocking visual differences outside approved tolerance                                                                                                                    |
 
----
-
-## 5. Non-Functional Tests
-
-### N1 — Performance with large documents
-
-Target document: **200 nodes / 300 links / 20 pages / 10 zones / 5 custom node types** (generate via a headless-API script — reuse for all N1 cases).
-
-| ID    | Test                                                                          | Threshold (proposal — ratify with PM at T+5)                                                    |
-| ----- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| N1-01 | Load 200-node/20-page doc into editor (import)                                | Interactive < 3 s on mid-tier laptop; no frozen tab                                             |
-| N1-02 | Drag one node on the 200-node page                                            | ≥ 30 fps sustained; guides don't degrade it below 20 fps                                        |
-| N1-03 | Marquee-select all 200; group-drag                                            | Completes without frame lockups > 250 ms                                                        |
-| N1-04 | Undo/redo across 100 sequential edits                                         | Each step < 100 ms; memory does not grow unbounded (heap snapshot before/after)                 |
-| N1-05 | `tidy_topology` / `layout_topology(force)` on 200 nodes via MCP on the Worker | Completes within Worker CPU limits — **no DO wall-clock/CPU kill**; measure and record headroom |
-| N1-06 | `render_svg` of the 200-node page (Node + Worker)                             | < 2 s; SVG size sane (< 5 MB)                                                                   |
-| N1-07 | `export_flipbook` of all 20 pages                                             | Output HTML < 20 MB; opens and plays smoothly                                                   |
-| N1-08 | Filmstrip + minimap with 20 pages / 200 nodes                                 | Thumbnails render without blocking main thread                                                  |
-
-### N2 — Persistence & quota
-
-| ID    | Test                                                                                    | Expected                                                                                                                                                                                                                                       |
-| ----- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| N2-01 | Grow the autosaved doc toward the ~5 MB localStorage quota (script large label strings) | **Known gap to fix before launch:** `persist.ts` currently swallows quota errors silently. Requirement: on quota failure the user is warned (status bar/toast) and prompted to export JSON. Test the warning; file a P0 defect if still silent |
-| N2-02 | Autosave under rapid edit bursts (drag storm)                                           | Debounced; no dropped final state; last edit always persisted on reload                                                                                                                                                                        |
-| N2-03 | Safari private mode / storage disabled                                                  | App runs; degraded-persistence messaging; no crash loop                                                                                                                                                                                        |
-| N2-04 | Inject a Durable Object page/meta/change write failure during a workspace commit        | Request fails visibly; revision and canonical snapshot remain unchanged; retry with the same operation id is safe                                                                                                                              |
-| N2-04 | KV snapshot of the N1 mega-doc via `share_topology`                                     | Within Cloudflare KV value limit (25 MB) — measure; if a doc can exceed it, error must be user-actionable                                                                                                                                      |
-
-### N3 — Concurrency & availability
-
-| ID    | Test                                                                                                | Expected                                                                                             |
-| ----- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| N3-01 | 25 concurrent MCP sessions each running the F8-02 loop against staging `/mcp` (scripted MCP client) | All succeed; per-owner sharing and cross-owner isolation hold; p95 tool latency < 2 s (render < 5 s) |
-| N3-02 | One session issuing 50 rapid sequential tool calls                                                  | In-order, no dropped/duplicated mutations (final `get_topology` matches expected state)              |
-| N3-03 | 100 concurrent anonymous readers of one `/v/<id>`                                                   | All 200 OK; KV read path scales (it should — verify no per-request DO involvement)                   |
-| N3-04 | OAuth burst: 10 simultaneous new-client registrations at `/register`                                | All issued; `OAUTH_KV` consistent                                                                    |
-| N3-05 | Kill/redeploy the Worker mid-session                                                                | Reconnecting client gets clean re-init (per F8-14 semantics), not corrupted state                    |
-
-### N4 — Security (minimum bar; schedule a focused pass at T+15)
-
-- XSS via document content: node labels / page names / metadata containing `<script>`, `"><img onerror=…` must render inert in the editor, in `/v/<id>`, in exported SVG, and in `export_flipbook` HTML (the flipbook is self-contained HTML — highest injection risk).
-- `import_topology` and `/api/topology/<id>` payload fuzzing (prototype-pollution keys like `__proto__`, deeply nested objects, 50 MB bodies).
-- Cookie flags, open-redirect on `go=` param (`/login?go=https://evil.example` must not redirect off-origin), CSRF posture on `/logout`.
+Known risks or evidence gaps that must appear in release triage until resolved
+or explicitly waived include public share-link revocation, end-to-end durable
+persistence failure injection, the unverified real EdgeConnect integration,
+Cloudflare alerting, and completion of the full production game day. Former
+finding H1 (layout attachment carrying) is fixed and remains in regression
+coverage rather than the open-risk list.
 
 ---
 
-## 6. Entry / Exit Criteria
+## 3. Environments and support assumptions
 
-### Entry (per test cycle)
+| Environment                   | Purpose                                               | What it proves                                                                                                                                            | What it does not prove                                                                                                 |
+| ----------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Local Node/Vite               | Fast unit development; `npm run dev`; local stdio MCP | Pure API/model logic, editor state helpers, Node rendering, local browser flows, optional mock provider                                                   | Cloudflare routing, real OAuth, KV/DO wiring, remote MCP, or environment isolation                                     |
+| Vitest + Miniflare            | Worker-level integration inside the unit suite        | Real `default-handler`, KV/DO behavior, workspace/profile/admin APIs, feature gates, health/readiness contracts, smoke functions                          | The production `OAuthProvider` wrapper and full `TopologyMcp` transport are intentionally bypassed by current fixtures |
+| CI (`ubuntu-latest`, Node 22) | Required PR/deploy gate                               | Clean install, Wrangler config check, app+Worker typecheck, 849 Vitest cases, lint/format, production app build, and Chromium Playwright suite            | Firefox/Safari/Edge, live GitHub OAuth, deployed Cloudflare bindings, or manual UAT                                    |
+| Local Playwright              | Functional debugging                                  | Eight non-screenshot Chromium journeys on the current macOS audit machine                                                                                 | The three committed visual baselines are Linux-only; absence of Darwin baselines is not a pixel mismatch               |
+| Isolated staging Worker       | Release-candidate integration and UAT                 | Real Worker bundle, staging OAuth App, separate KV/DO resources, remote MCP, all enabled product flags, migrations, authenticated workflows, fault drills | Production routing/account settings unless separately verified                                                         |
+| Production                    | Read-only/expendable post-deploy verification         | Public liveness, deployed SHA, auth/public boundaries, and a minimal disposable golden journey                                                            | Destructive, load, synthetic-fault, or bulk-data testing                                                               |
 
-- Build green: `npm run build` (app + worker typecheck), `npm test`, `npm run lint`.
-- Staging deployed via `wrangler deploy --env staging` with DO migration applied; isolated `OAUTH_KV`, `TOPOLOGY_KV`, `GITHUB_CLIENT_SECRET`, `PUBLIC_BASE_URL`, OAuth App, and DO namespaces configured and smoke-verified (F6-01, F7-01 pass). Deployment evidence identifies the exact source SHA.
-- Test data pack available: golden-SVG corpus + N1 mega-doc generator script.
+### 3.1 Browser and viewport policy
 
-### Exit (launch go/no-go at T+27)
+- **Automated release gate:** Playwright Chromium / Desktop Chrome on Linux.
+- **Target compatibility certification:** current Chrome, Edge, Firefox, and
+  Safari on macOS. Each cycle records its declared support matrix. Any omitted
+  target requires product-owner approval and the same narrowed support claim in
+  the User Guide and release notes. Non-Chromium results are manual until
+  corresponding Playwright projects or equivalent device testing are in CI.
+- **Editor viewports:** 1920×1080, 1440×900, and 1280×720.
+- **Responsive smoke:** 480×800 for core-control reachability.
+- **Public-view readability:** 768×1024 tablet plus a current phone viewport.
+- A release must not claim a browser or mobile editing experience that was not
+  executed and recorded for that release.
 
-- 100% of P0 cases executed and passing on Chrome + Firefox + remote MCP; ≥ 95% of P1 executed, all failures triaged.
-- Zero open Sev-1/Sev-2 defects; Sev-3s have documented workarounds and PM sign-off.
-- N1 thresholds met or formally waived; N2-01 (quota warning) resolved — this specific item is a named launch blocker.
-- Golden agent loop (F8-02) green in nightly E2E for 5 consecutive nights.
-- Known-constraint behaviors (DO session volatility F8-14, no touch editing, 30-day link expiry) documented in user-facing docs.
+---
 
-## 7. Defect Triage & SLAs
+## 4. Verified automated baseline (2026-08-09)
 
-| Sev   | Definition (examples from this app)                                                                                                                                   | Response                 | Fix target         | Launch gate   |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------ | ------------- |
-| Sev-1 | Data loss (autosave/undo corruption, shallow page duplicate), auth bypass (`/mcp` or SPA reachable unauthenticated), XSS in `/v/<id>` or flipbook export, Worker down | Triage same business day | 48 h               | Blocks        |
-| Sev-2 | A P0/P1 feature broken with no workaround: share link 404s for valid snapshots, an MCP tool errors on valid input, render divergence between runtimes, login loop     | 1 business day           | 5 days             | Blocks        |
-| Sev-3 | Broken with workaround / degraded: guides misalign, minimap stale, a layout algorithm produces overlaps that Tidy fixes, perf misses threshold < 2×                   | 2 business days          | Next patch release | PM discretion |
-| Sev-4 | Cosmetic/polish: theme glitches, copy, status-bar staleness                                                                                                           | Weekly triage            | Backlog            | Never blocks  |
+The following results were verified against the current checkout during this
+audit. They are a point-in-time baseline, not permanent release evidence.
 
-Process: all defects filed as GitHub issues with `sev-*` + area labels (`editor`, `mcp`, `worker`, `auth`, `share`, `render`); daily 15-min triage from T+20; any Sev-1/2 found after code freeze (T+25) triggers explicit go/no-go review; every Sev-1/2 fix must land with a regression test (unit in the matching `*.test.ts`, or an E2E scenario) before the issue closes.
+| Gate                                 | Verified result                                                                      | Evidence boundary                                                                                                                                                                                                                                                            |
+| ------------------------------------ | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm ci`                             | Install completed with warnings                                                      | Local audit used Node 23.7.0/npm 10.9.2 while CI targets Node 22. npm's install summary reported 17 advisories (2 low, 3 moderate, 12 high); no dependency was changed and no advisory-level triage was performed. SEC-07 remains Required.                                  |
+| `npm run typecheck`                  | Pass                                                                                 | Root TypeScript program plus `worker/tsconfig.json`                                                                                                                                                                                                                          |
+| `npm test`                           | **71 files / 849 tests passed**                                                      | Vitest 3, `src/**/*.test.ts`, Node environment; Worker tests use esbuild + Miniflare                                                                                                                                                                                         |
+| `npm run lint`                       | Pass                                                                                 | ESLint and Prettier check                                                                                                                                                                                                                                                    |
+| `npm run build`                      | Pass                                                                                 | Root `tsc --noEmit` plus Vite production app build; Worker typecheck is provided by `npm run typecheck`, not by this command alone                                                                                                                                           |
+| `npm run test:e2e`                   | 11 Chromium cases discovered                                                         | On macOS, **8 functional cases passed** and **3 visual cases were baseline-unavailable** because the repository contains Linux (`chromium-linux`) snapshots but no Darwin snapshots. This is not evidence of a pixel mismatch. CI is the canonical Linux visual environment. |
+| Wrangler isolation                   | Real config passes within the 849-test suite; CI also invokes the standalone checker | Current checker needs the strengthening listed in §11.2 before it fully protects all five DO bindings and append-only history                                                                                                                                                |
+| Deployed staging/production smoke    | **Not executed as part of this local audit**                                         | A current remote run with URL, SHA, flags, migration tags, and JSON output is still required for release evidence                                                                                                                                                            |
+| UAT and non-functional certification | **Not executed as part of this audit**                                               | Execute the current UAT plan and §8 suites on the release candidate                                                                                                                                                                                                          |
+
+### 4.1 Vitest distribution
+
+| Area                               |  Files |   Tests |
+| ---------------------------------- | -----: | ------: |
+| Admin                              |      1 |       7 |
+| Headless API                       |     10 |      97 |
+| Connect/provider                   |      2 |      16 |
+| Retired core                       |      1 |       7 |
+| Editor                             |      9 |     106 |
+| Import                             |      2 |      48 |
+| MCP                                |      2 |      45 |
+| Nodes                              |      3 |      13 |
+| Pages/persistence                  |      3 |      31 |
+| Authoring profile                  |      4 |      85 |
+| Render                             |      6 |      46 |
+| Server                             |      2 |      25 |
+| Worker integration (`src/testing`) |     14 |     117 |
+| UI render/state helpers            |      3 |     117 |
+| Vendored palette seam              |      1 |       7 |
+| Workspace                          |      8 |      82 |
+| **Total**                          | **71** | **849** |
+
+Test count is not code coverage. No statement/branch coverage provider or
+threshold is currently configured, and the UI suites primarily characterize
+HTML/state helpers in a Node environment rather than driving the mounted panels
+through a real DOM.
+
+### 4.2 Playwright inventory
+
+| Area              |  Cases | Current coverage                                                                |
+| ----------------- | -----: | ------------------------------------------------------------------------------- |
+| Editor basics     |      2 | Add/delete/undo/redo; autosave/reload                                           |
+| Export            |      1 | Non-zero-origin SVG viewBox framing                                             |
+| Frame history     |      2 | Per-frame undo survives switching; deleted-frame recovery                       |
+| Overlay/share     |      2 | Shortcuts inert under help dialog; shared copy does not overwrite local work    |
+| Visual/responsive |      4 | Three Linux screenshot baselines; one 480×800 control-reachability check        |
+| **Total**         | **11** | Chromium only; Vite dev server with Worker network behavior mocked where needed |
+
+---
+
+## 5. Exact automated release gates and commands
+
+From a clean checkout with Node 22:
+
+```bash
+npm ci
+npm run check:wrangler
+npm run typecheck
+npm test
+npm run lint
+npm run build
+npx playwright install --with-deps chromium
+npm run test:e2e
+```
+
+CI enforces those checks in two jobs: the fast `check` job and the separate
+browser job. Staging and production deployment workflows resolve one immutable
+SHA and call the same reusable CI workflow before building and deploying that
+SHA.
+
+External smoke syntax:
+
+```bash
+npm run smoke -- https://topology-dojo-staging.robertson-corey.workers.dev --sha <commit-sha> --wait-live 180 --json
+npm run smoke -- https://topology-dojo.harnessed.cloud --sha <commit-sha> --wait-live 180 --json
+```
+
+Staging game-day deployments add the matching `--expect-workspace-disabled`,
+`--expect-profiles-disabled`, and/or `--expect-analytics-disabled` flags. A
+normal current deployment expects all three surfaces enabled.
+
+No direct laptop command is release evidence. The GitHub Actions staging and
+production workflows are the authoritative deployment paths; a local
+`deploy:staging` run can overwrite the shared UAT target and must not be used
+during a controlled test cycle.
+
+---
+
+## 6. Test levels
+
+| Level                | Required coverage                                                                                                                | Frequency                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Static/config        | App+Worker strict TypeScript, lint, format, Wrangler environment invariants, Worker dry-run bundle                               | Every PR and deployment SHA                                           |
+| Unit/property        | Model, parser, validation, layout, operations, profile learning/refinement, catalog, safe paths, and error boundaries            | Every PR                                                              |
+| Component            | Editor state machine; mounted workspace/profile/admin panels; persistence and offline adapters; render fixtures                  | Every PR; browser-backed for interaction-heavy components             |
+| Worker integration   | Real handler + KV/DO APIs, feature gates, tenant isolation, readiness, migrations, and failure injection under workerd/Miniflare | Every PR affecting `worker/`, `src/workspace`, `src/profile`, or auth |
+| Browser E2E          | Critical editor/page/import/export/share/panel flows and visual baselines                                                        | Every PR for Chromium; scheduled compatibility matrix                 |
+| Deployed integration | Full OAuth wrapper, remote MCP, real KV/DO bindings, authenticated readiness, public share, effective flags, and source SHA      | Every staging release candidate; minimal safe production smoke        |
+| Non-functional       | Security, accessibility, compatibility, performance/load, resilience, and game day                                               | Scheduled and before material production releases                     |
+| UAT                  | Persona workflows and User Guide validation                                                                                      | Each material feature release or support-contract change              |
+
+---
+
+## 7. Functional suites
+
+Status legend:
+
+- **Automated** — represented in the current Vitest or Playwright baseline.
+- **Partial** — a lower-level or mocked test exists, but the production-shaped
+  journey still needs coverage.
+- **Required** — must be executed/implemented; no current automated evidence is
+  sufficient.
+
+### 7.1 Authentication, public routing, and sessions
+
+| ID      | Scenario and expected result                                                                                                                      | Status/environment                                                               |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| AUTH-01 | Unauthenticated document navigation redirects to `/login`; `/login` and showcase images remain reachable                                          | Automated in Worker integration; Required on staging                             |
+| AUTH-02 | `/auth/github` creates a nonce-bound state cookie with Secure, HttpOnly, SameSite, bounded lifetime, and safe same-origin `go`                    | Automated negative/start-flow coverage                                           |
+| AUTH-03 | A real GitHub callback establishes the correct session and returns to the original same-origin deep link                                          | Required on staging                                                              |
+| AUTH-04 | Missing, mismatched, replayed, malformed, and expired callback state grants no session                                                            | Partial; expand and run staging negative set                                     |
+| AUTH-05 | `/api/me` returns the authenticated identity and correct `admin` flag; no session returns 401                                                     | Automated                                                                        |
+| AUTH-06 | Logout clears the session; cached/back navigation cannot use authenticated APIs                                                                   | Partial; browser staging verification required                                   |
+| AUTH-07 | OAuth metadata, dynamic client registration, authorization, token issuance/refresh/revocation, and invalid bearer behavior conform for remote MCP | Required against the real Worker wrapper                                         |
+| AUTH-08 | `/mcp` is never reachable without a valid token; public `/v/:id` remains intentionally unauthenticated                                            | Automated negative smoke; Required positive staging flow                         |
+| AUTH-09 | Owner A cannot read owner B's registry, workspace, profile, admin detail, or MCP drafts                                                           | Automated in several lower layers; Required end-to-end with two staging accounts |
+| AUTH-10 | CSP/security headers cover app, login, share, API, and error responses without breaking required assets                                           | Partial; deployed header sweep required                                          |
+
+### 7.2 Editor, pages, and recent browser regressions
+
+| ID     | Scenario and expected result                                                                                                                                                                          | Status/environment                                                                                                                                                                        |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EDT-01 | Add, select, marquee, drag, delete, clone, align, distribute, and select-by preserve intended IDs/geometry and undo as one semantic action                                                            | Automated core/gesture coverage; browser smoke partial                                                                                                                                    |
+| EDT-02 | Create and edit straight/orthogonal/curved links, waypoints, anchors, zones, flow paths, and policy markers; zones accept node members only while flows/links accept anchors; references remain valid | Automated lower-level; Required rich browser journey. The current generic zone picker can surface an invalid anchor and must be fixed or explicitly dispositioned before this case passes |
+| EDT-03 | Undo/redo restores byte-equivalent state, clears redo after a new edit, and does not record no-op interactions                                                                                        | Automated                                                                                                                                                                                 |
+| EDT-04 | **#204:** switching frames preserves each frame's undo history                                                                                                                                        | Automated Playwright, passed locally                                                                                                                                                      |
+| EDT-05 | **#204:** deleting a frame offers recovery and restores the complete frame                                                                                                                            | Automated Playwright, passed locally                                                                                                                                                      |
+| EDT-06 | **#209:** Delete and single-key canvas shortcuts remain inert while help, Node Designer, or another modal owns focus; Escape/focus restoration work                                                   | Help overlay automated; Node Designer/other dialogs Required                                                                                                                              |
+| EDT-07 | Tidy and every arrange algorithm stay deterministic where promised, in bounds, and free of newly dangling anchors/waypoints                                                                           | Attachment carrying and balance overlap are automated regressions; full algorithm/browser sweep Required                                                                                  |
+| EDT-08 | Inspector fields match the catalog, validate values, and round-trip layers, palette, legend, captions, metadata, opacity, flow controls, and label scale                                              | Automated lower-level; Required browser catalog-parity sweep                                                                                                                              |
+| EDT-09 | Find, minimap, grid/snap, guides, theme, calm/reduced-motion, context menu, format copy/paste, and problem badges are keyboard- and pointer-operable                                                  | Partial; manual/a11y sweep required                                                                                                                                                       |
+| EDT-10 | Node Designer creates/edits a declarative custom type that survives pages, JSON, MCP discovery, and all render paths                                                                                  | Partial; cross-surface E2E required                                                                                                                                                       |
+| EDT-11 | Legacy importer preserves supported topology semantics and reports unsupported data without corrupting the current document                                                                           | Automated with 43 legacy cases; browser open flow Required                                                                                                                                |
+| EDT-12 | Narrow viewport keeps core controls reachable and public viewer remains readable on tablet/phone                                                                                                      | 480×800 control smoke automated; viewer matrix Required                                                                                                                                   |
+
+### 7.3 Persistence, import, export, and visual output
+
+| ID      | Scenario and expected result                                                                                                                  | Status/environment                                                               |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| DATA-01 | **#203:** successful localStorage write displays “saved”; quota/policy failure displays “not saved” and offers JSON download                  | Automated unit plus successful browser path; failure UI browser test Required    |
+| DATA-02 | The final debounced edit is persisted on unload/reload; storage-disabled/private-mode behavior is usable and honest                           | Partial; Safari/private-mode Required                                            |
+| DATA-03 | **#202:** opening `/v/:id` uses a separate shared autosave slot and never overwrites local work; keep/back are explicit                       | Automated Playwright with mocked API, passed locally; real Worker share Required |
+| DATA-04 | Truncated, malformed, oversized, prototype-shaped, and semantically invalid JSON fails safely while the current document remains intact       | Strong parser coverage; browser and payload-limit tests Required                 |
+| DATA-05 | JSON export/import retains every page, custom type, layer, legend, palette, stencil, annotation, timing, source reference, and metadata field | Automated lower-level; superset golden document Required                         |
+| DATA-06 | **#206:** SVG/PNG backdrop and crop use the actual non-zero viewBox origin                                                                    | Automated Playwright functional case, passed locally                             |
+| DATA-07 | Flipbook HTML is self-contained, offline, correctly timed, escaped against document-content injection, and respects reduced motion            | Partial; offline browser/security execution Required                             |
+| DATA-08 | Browser, Node, and Worker render the golden corpus materially identically                                                                     | Node/browser partial; Worker parity Required                                     |
+| DATA-09 | **#216:** representative sample, spine-leaf, and EdgeHA images stay within 2% pixel-diff tolerance in canonical Linux Chromium                | Automated in CI configuration; current macOS baselines unavailable               |
+
+### 7.4 Headless API, MCP, and provider behavior
+
+| ID     | Scenario and expected result                                                                                                                                         | Status/environment                                                   |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| MCP-01 | Capability and tool inventory matches catalog, flags, provider presence, and documentation; no hidden mutation tools exist                                           | Automated lower-level                                                |
+| MCP-02 | Golden loop: discover → create → author → validate → tidy/balance → inspect → render succeeds and produces a clean topology                                          | Automated tool behavior; Required over remote staging transport      |
+| MCP-03 | Invalid type, enum, ID, page, operation, size, and schema inputs return structured actionable errors and leave the session usable                                    | Automated lower-level; remote protocol errors Required               |
+| MCP-04 | Templates instantiate, validate, and render cleanly; page targeting and metadata/layer/legend/palette operations round-trip                                          | Automated                                                            |
+| MCP-05 | Local stdio omits remote-only share; remote exposes share and only exposes workspace/profile/provider tools when their services are enabled                          | Automated gate helpers; real tool-list staging verification Required |
+| MCP-06 | Same owner sees durable drafts across transport/DO restarts; a different owner sees none                                                                             | Persist-store unit coverage; real `TopologyMcp` hibernation Required |
+| MCP-07 | Every mutating legacy tool persists; every genuinely read-only/workspace tool avoids stale legacy write-back; persistence failure is not reported as durable success | Partial and high risk; full Worker integration Required              |
+| MCP-08 | Real `share_topology` writes `doc:<random-id>` with 30-day TTL, correct payload/size handling, and normalized absolute URL                                           | Tool dependency is stubbed today; real Worker/KV test Required       |
+| MCP-09 | Browser, Node, and Worker `render_svg` agree for built-ins, custom types, layers, palette, emphasis, and reduced motion                                              | Partial; worker-render golden suite Required                         |
+| MCP-10 | Mock provider query/compile/upsert paths are deterministic and credential-free                                                                                       | Automated                                                            |
+| MCP-11 | Before live provider activation, recorded and then sandbox Orchestrator payloads pass normalization, pagination/error, idempotency, secret-redaction, and load tests | Required conditional gate                                            |
+
+### 7.5 Shared workspace and offline collaboration
+
+| ID    | Scenario and expected result                                                                                                       | Status/environment                                           |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| WS-01 | Owner handoff lazily migrates a legacy draft exactly once; agent reads never trigger migration; stale legacy mutations are refused | Automated                                                    |
+| WS-02 | Manifest, bounded changes, paginated element hydration, and revision timeline return no unintended full-document data              | Automated lower-level; HTTP route matrix Partial             |
+| WS-03 | Proposal creation does not change canonical state; full/selective accept creates one coherent revision; reject preserves state     | Automated DO/UI helpers; browser staging journey Required    |
+| WS-04 | Disjoint edits rebase; same-field and delete/edit conflicts reject explicitly with no silent winner                                | Automated operations/DO; concurrent staging journey Required |
+| WS-05 | Agent direct writes require a current browser-granted page lease; wrong-page, expired, revoked, or self-granted attempts fail      | Automated lower-level; staging two-client journey Required   |
+| WS-06 | Repeated `operationId` is idempotent across timeout/retry; revisions never duplicate or regress                                    | Automated DO                                                 |
+| WS-07 | Checkpoint create/list/cap, forward-only restore, fork isolation, and selective proposal dependencies behave as documented         | Automated DO/UI helpers; browser interaction Required        |
+| WS-08 | Presence/push tracks two sockets, reconnects, and never persists stale presence                                                    | Automated DO socket; deployed WebSocket journey Required     |
+| WS-09 | IndexedDB offline cache recovers pending/canonical state after refresh/crash; unavailable/corrupt storage degrades safely          | Automated adapter; real browser offline/reconnect Required   |
+| WS-10 | Aggregate documents above 2 MiB work through page keys; oversize page/metadata/batch fails before revision advance                 | Automated DO; staging limit check Required                   |
+
+### 7.6 Adaptive profiles and administration
+
+| ID       | Scenario and expected result                                                                                                                | Status/environment                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| PROF-01  | Observe-only outcomes dedupe, strengthen, cap, isolate owners, and never change coordinator responses                                       | Automated                                                            |
+| PROF-02  | Candidate confirmation is human-only and scope-aware; reject tombstones; pause/resume/forget and re-review follow the documented lifecycle  | Automated lower-level/UI HTML; mounted browser flow Required         |
+| PROF-03  | Bounded guidance serves only confirmed applicable rules, respects revisions/token limits/exceptions, and profile MCP tools remain read-only | Automated                                                            |
+| PROF-04  | `PROFILES_ENABLED` off produces the stable 503/no-tool/no-write posture; on activates API, panel, learner, and guidance                     | Automated gates; forward-disable staging drill Required              |
+| ADMIN-01 | `ANALYTICS_ENABLED` off returns stable 503 and records nothing; on records bounded login metadata                                           | Automated lower-level; staging drill Required                        |
+| ADMIN-02 | Unauthenticated is 401, signed-in non-admin is 403, configured numeric-ID admin sees the chip/roster/workspace metadata                     | Automated API/HTML helpers; mounted browser roles Required           |
+| ADMIN-03 | Admin responses and UI never include topology contents or another unintended identity field; hostile names/titles are escaped               | Automated rendering/API partial; privacy payload inspection Required |
+
+### 7.7 Cloudflare delivery and operations
+
+| ID     | Scenario and expected result                                                                                                                         | Status/environment                                                                                                                                                                                           |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OPS-01 | Clean CI installs and all gates operate on the exact resolved deploy SHA                                                                             | Automated workflow configuration; record run URL                                                                                                                                                             |
+| OPS-02 | Staging Worker name, base URL, GitHub client, both KV IDs, all DO namespaces, and secrets are isolated from production                               | Partial automated checker plus deployment evidence                                                                                                                                                           |
+| OPS-03 | v1–v5 migration history is present, ordered, append-only, and identical in staging/production; every bound class is exported                         | Equality partially automated; append-only/export guard Required                                                                                                                                              |
+| OPS-04 | `/healthz` reports live status, exact SHA, and effective feature posture; `/readyz` probes every enabled dependency under an owner session           | Current health coverage verifies status/SHA and the workspace flag only; readiness probes KV/registry/document only. Both posture and dependency coverage are Partial; deployed authenticated check Required |
+| OPS-05 | All 14 unauthenticated smoke checks pass with zero skips for a current release                                                                       | Suite automated; current CLI permits skips, so release review must reject them manually until strict mode exists                                                                                             |
+| OPS-06 | Browser OAuth, remote MCP, shared workspace, profiles, and admin positive journeys pass after staging deploy                                         | Required manual/automated staging pack                                                                                                                                                                       |
+| OPS-07 | Workspace/profile/admin forward-disable and re-enable preserve data and unaffected routes; staging synthetic fault never activates without its token | Gate/fault unit coverage; recorded game day Required                                                                                                                                                         |
+| OPS-08 | Production deploy waits for approval, cannot bypass `main` except explicit recovery SHA, and is followed by SHA-bound smoke                          | Workflow configuration; record deployment evidence                                                                                                                                                           |
+| OPS-09 | Cloudflare error-rate policies notify the expected channel and recovery closes/updates the incident record                                           | Required external operator evidence                                                                                                                                                                          |
+
+---
+
+## 8. Non-functional suites
+
+All values below are release requirements unless a product owner records a
+time-bounded waiver. No threshold should be reported as passed without a result
+artifact.
+
+### 8.1 Security and privacy
+
+| ID     | Test                                                                                                                 | Required result                                                                                                          |
+| ------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| SEC-01 | XSS payload corpus in labels, names, metadata, types, colors, custom specs, imports, shared views, SVG, and flipbook | No executable markup; output remains valid; CSP blocks a missed inline vector                                            |
+| SEC-02 | Open-redirect/state/cookie fuzz for browser and MCP OAuth                                                            | Same-origin return only; no state replay; no header/cookie injection                                                     |
+| SEC-03 | Owner/admin authorization matrix on every API verb/path                                                              | 401/403/404 behavior is consistent and leaks no existence/content                                                        |
+| SEC-04 | CSRF posture for logout and every state-changing browser API                                                         | Documented and accepted controls; no cross-origin mutation                                                               |
+| SEC-05 | Payload, operation, page, proposal, checkpoint, share, and client-registration abuse                                 | Enforced size/count/rate limits with actionable 4xx/429; no uncontrolled KV/DO growth                                    |
+| SEC-06 | Secrets/logging inspection                                                                                           | No OAuth, Orchestrator, diagnostics, session, document, or raw prompt secret in code, artifacts, summaries, or logs      |
+| SEC-07 | Dependency and workflow supply chain                                                                                 | High/critical production dependency findings triaged; Actions pinned/approved; least-privilege token permissions         |
+| SEC-08 | Public caching and share lifecycle                                                                                   | Public nature, 24-hour cache behavior, 30-day expiry, and lack/presence of revocation match documentation and acceptance |
+
+### 8.2 Accessibility
+
+Target: WCAG 2.2 AA for login, editor controls, shared viewer, workspace,
+preferences, and admin panels.
+
+| ID      | Test                                                                                                 | Required result                                                                                                         |
+| ------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| A11Y-01 | Automated axe scan of login, editor, shared view, open dialogs, workspace, profile, and admin states | Zero serious/critical violations; accepted exceptions linked to issues                                                  |
+| A11Y-02 | Keyboard-only journey                                                                                | Visible focus, logical order, named controls, operable menus/dialogs/panels, Escape close, and focus restoration        |
+| A11Y-03 | Screen-reader semantics                                                                              | Correct headings/landmarks/status announcements/dialog names; canvas alternatives and error messages are understandable |
+| A11Y-04 | 200% zoom, high contrast, reduced motion, light/dark                                                 | No blocked operation, clipped critical content, or unwanted motion                                                      |
+
+No accessibility automation is currently configured; these cases are
+**Required**, not part of the 2026-08-09 pass count.
+
+### 8.3 Performance and scale
+
+Canonical large document: 20 pages, one 200-node/300-link page, 10 zones, 20
+flow paths, five custom types, representative labels/layers. Commit the
+generator and seed to make results reproducible.
+
+| ID      | Test                                                 | Threshold                                                                      |
+| ------- | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
+| PERF-01 | Import/open large document on agreed mid-tier laptop | Interactive within 3 s; no long task above 1 s                                 |
+| PERF-02 | Single drag and 200-element marquee/group drag       | 30 fps target; no interaction stall above 250 ms                               |
+| PERF-03 | 100 edit undo/redo sequence                          | Each step under 100 ms; bounded memory after GC                                |
+| PERF-04 | Tidy/layout/balance and render                       | Local render under 2 s; deployed render under 5 s; no Worker CPU termination   |
+| PERF-05 | 25 concurrent MCP sessions running the golden loop   | 100% success; p95 non-render tool under 2 s, render under 5 s; isolation holds |
+| PERF-06 | 100 concurrent readers of one public share           | 100% expected response; no DO dependency; error rate within release threshold  |
+| PERF-07 | Two-hour editor/workspace endurance with reconnects  | No state loss, unbounded heap growth, stale presence, or revision drift        |
+
+No committed large-document generator or load runner currently implements this
+suite; all PERF cases remain **Required**.
+
+### 8.4 Compatibility and resilience
+
+| ID      | Test                                                               | Required result                                                                                                     |
+| ------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| COMP-01 | Chrome/Edge/Firefox/Safari matrix and declared viewports           | Critical workflows pass or limitation is removed from support claim                                                 |
+| COMP-02 | Linux vs. macOS visual execution                                   | Canonical Linux baselines pass; local functional suite remains separable from platform-specific snapshots           |
+| RES-01  | localStorage/IndexedDB unavailable, full, corrupt, and interrupted | Visible degraded state; export/recovery path; no false “saved” state                                                |
+| RES-02  | KV/DO write failure at each commit/publish stage                   | No partial revision or false durable success; idempotent retry                                                      |
+| RES-03  | Worker restart/redeploy and MCP/WebSocket reconnect                | Owner data and canonical revision survive; presence reconstructs cleanly                                            |
+| RES-04  | Feature disable/re-enable and migration-bearing deploy             | Forward recovery works without cross-version rollback or data deletion                                              |
+| RES-05  | Staging slow/error/exception synthetic faults                      | Alerts, triage, stop conditions, and evidence capture work; route stays inert in production/uncredentialed requests |
+
+---
+
+## 9. Test data and accounts
+
+### 9.1 Repository fixtures
+
+- Use `e2e/fixtures/` for browser import/share/visual cases.
+- Use `fixtures/legacy/` and `fixtures/EdgeHA_*.json` for importer and regression
+  coverage.
+- Add versioned fixtures for the rich parity document, malformed/security
+  corpus, maximum-size boundaries, and deterministic large-document generator.
+- Every fixture must state provenance, expected schema/version, intended test
+  IDs, and whether it is safe to publish in CI artifacts.
+
+### 9.2 Staging identities
+
+Maintain disposable identities for:
+
+- owner A;
+- owner B for isolation/concurrency;
+- the configured admin owner;
+- a non-admin signed-in user;
+- a fresh remote MCP client registration.
+
+Record identity IDs, not secrets, in evidence. Never use personal/customer
+topologies as test data. Delete disposable workspaces, grants, snapshots, and
+profile/admin records where the product supports deletion; otherwise use a
+clearly prefixed run ID and document retention.
+
+Orchestrator credentials belong only in environment secrets. Use recorded,
+redacted payloads before a real sandbox and verify that no credential appears
+in tool arguments, logs, screenshots, or artifacts.
+
+---
+
+## 10. Entry, exit, and release decision gates
+
+### 10.1 Test-cycle entry
+
+- The candidate is one immutable commit SHA with a recorded change/risk scope.
+- `npm ci`, Wrangler isolation, app+Worker typecheck, all Vitest tests, lint,
+  build, and both Linux CI jobs are green on that SHA. The Chromium job must
+  pass all 11 current cases, including the three canonical visual comparisons;
+  the local macOS 8/11 partial run is diagnostic evidence only unless an
+  explicit exception is approved.
+- The staging deployment was performed by the authorized workflow, reports the
+  same SHA, and lists effective flags and migration tags.
+- Staging OAuth, KV, DO, diagnostics secret, accounts, and fixtures are ready
+  and isolated; no production IDs appear in staging configuration.
+- Required feature documentation and User Guide changes are reviewable before
+  UAT begins.
+- Known defects and findings affected by the change are triaged, with owners
+  and retest IDs.
+
+### 10.2 Pull-request exit
+
+- Both reusable CI jobs pass with no focused, skipped, or unexpectedly pending
+  test.
+- New/changed behavior has an automated regression at the lowest useful level
+  plus browser/Worker coverage when the integration boundary changed.
+- Traceability rows and user-facing documentation are updated.
+- No new Sev-1/Sev-2 defect is open; security/privacy changes have an explicit
+  reviewer.
+
+### 10.3 Release-candidate exit
+
+- 100% of P0 cases and 100% of changed P1 cases pass on the exact staging SHA.
+- All 14 external smoke checks pass with **zero failures and zero skips**.
+- Real browser OAuth, remote MCP golden loop, owner isolation, public share,
+  workspace proposal/lease/reconnect, profiles, admin, and authenticated
+  readiness pass on staging.
+- Required browser/accessibility/security/performance/resilience suites pass or
+  have an approved, dated waiver that narrows the support claim.
+- Zero open Sev-1 or Sev-2 defects. Sev-3 exceptions have a workaround, owner,
+  target date, and product-owner approval.
+- Every in-scope capability has a current traceability row and evidence link;
+  the User Guide was validated during UAT.
+- UAT meets its acceptance thresholds and the named business owner signs off.
+- Migration, forward-recovery, alerting, and post-deploy procedures have current
+  evidence when the release touches those areas.
+
+The 2026-08-09 repository audit verifies the local automated baseline only. It
+does **not** by itself satisfy the release-candidate exit gate.
+
+### 10.4 Production exit
+
+- Protected environment approval names the approved SHA.
+- SHA-bound production smoke passes without a skip.
+- A non-mutating login/public-view check and disposable remote MCP read/create/
+  validate/render check pass, then test data is retired per policy.
+- Monitoring remains normal through the observation window; any stop condition
+  triggers the documented forward-recovery path.
+
+---
+
+## 11. Defects, reporting, and quality improvements
+
+### 11.1 Severity and handling
+
+| Severity | Definition                                                                                                                  | Response and gate                                                              |
+| -------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Sev-1    | Data loss/corruption, auth or owner-isolation bypass, executable injection, production outage, migration/resource crossover | Immediate triage; blocks merge/promotion; regression test required             |
+| Sev-2    | Critical workflow unusable without a reasonable workaround; remote MCP/share/workspace/render parity broken                 | Triage within one business day; blocks release unless fixed and reverified     |
+| Sev-3    | Material degradation with a documented workaround; performance/accessibility/support target missed                          | Fix or product-owner waiver with date; targeted regression required when fixed |
+| Sev-4    | Cosmetic, copy, or minor documentation issue with no workflow impact                                                        | Backlog; does not independently block release                                  |
+
+Every defect records environment, SHA, feature flags, migration tags, test ID,
+steps/data, expected/actual, logs/network evidence, screenshot/trace, severity,
+owner, and regression-test location. A failed result is never converted to
+“pass” by changing the expected result without product and QA review.
+
+### 11.2 Required automation improvements
+
+Prioritized gaps from the current audit:
+
+1. Add Vitest V8 coverage reporting and archive it. Establish a measured
+   baseline first, then enforce global and critical-module line/branch
+   thresholds; do not use the 849 test count as a proxy.
+2. Strengthen `check-wrangler-env.mjs`: compare the complete DO binding set
+   (currently five, including `AUTHORING_PROFILE` and `ANALYTICS`), both KV
+   bindings, names/classes/IDs, and an immutable v1–v5 migration prefix. Add
+   mutations for each new binding and for identical-but-destructively-edited
+   migration arrays.
+3. Add CI Wrangler dry-run bundles for top-level production and staging so the
+   actual Worker entry/config compiles before deployment.
+4. Add production-shaped Worker integration for `worker/index.ts` and
+   `TopologyMcp`: full OAuth wrapper, remote MCP initialize/tool list/call,
+   owner rehydration, persistence classification/failure, real KV publish/TTL,
+   and Worker renderer parity.
+5. Make current-environment smoke strict: a skipped implemented route must fail
+   deployment and scheduled verification. Retain an explicit legacy mode only
+   when intentionally checking an old deployment.
+6. Expand authenticated readiness to every enabled dependency, including
+   profile/admin stores and OAuth/MCP health, and run it automatically in
+   staging with a safe test identity.
+7. Add mounted browser E2E for workspace, profile, admin, Node Designer,
+   malformed import, storage failure, and positive deployed share/OAuth flows.
+8. Split functional and visual Playwright commands; keep canonical visual runs
+   in a pinned Linux environment, and add Firefox/WebKit projects where they
+   represent the declared support matrix.
+9. Add axe-based accessibility checks, the deterministic performance/load
+   harness, dependency/security scanning, and retained successful-run evidence.
+
+### 11.3 Evidence package
+
+For every release candidate, retain:
+
+- CI and deploy workflow URLs and immutable SHA;
+- Vitest count/coverage, lint/type/build results, Playwright report and traces;
+- Wrangler isolation/dry-run output, effective Worker name/resources, flags,
+  migration tags, and deployed-SHA response;
+- smoke JSON with all 14 named results and no skips;
+- authenticated staging checklist, MCP transcript stripped of secrets,
+  workspace revision IDs, and disposable share URL/expiry evidence;
+- browser/accessibility/security/performance/resilience results;
+- defect/waiver list, traceability matrix snapshot, UAT report, User Guide
+  validation, approver, and date.
+
+---
+
+## 12. Traceability and maintenance
+
+The [Traceability Matrix](TRACEABILITY_MATRIX.md) is the release index. Each row
+must include:
+
+`Capability/requirement → risk priority → code owner/surface → automated test → manual/UAT scenario → environment → last SHA/result/evidence → User Guide section → open defect/waiver`.
+
+At minimum, maintain rows for editor/pages, persistence/import/export,
+catalog/render parity, browser OAuth, remote MCP, public sharing, registry and
+canonical workspace, offline/presence, profiles, admin, provider activation,
+staging/production isolation, migrations, readiness/smoke, accessibility,
+security, performance, and compatibility.
+
+Update this plan and its traceability rows whenever any of the following
+changes:
+
+- document schema, parser, catalog, tool inventory, template, provider, or
+  render engine;
+- editor interaction, page lifecycle, persistence slot, export/import, or
+  supported browser/viewport;
+- auth/session/OAuth route, public/private boundary, role, owner key, API, or
+  security header;
+- workspace operation/revision/proposal/lease/checkpoint/offline/presence
+  contract;
+- profile learning/guidance/admin analytics behavior or feature-flag default;
+- KV/DO binding, migration, compatibility date, secret, environment URL,
+  deployment workflow, smoke/readiness check, alert, or recovery procedure;
+- a Sev-1/Sev-2 incident, escaped defect, support-claim change, or UAT failure.
+
+Change-specific minimum regressions:
+
+- `public/vendor/`, `src/vendor/`, or render seam → golden visual corpus plus
+  browser/Node/Worker parity.
+- `worker/index.ts`, `worker/auth.ts`, or `worker/mcp.ts` → full staging OAuth +
+  remote MCP + share/persistence pack.
+- `wrangler.jsonc` or a DO export/migration → isolation, immutable migration
+  prefix, both dry-run bundles, staging deploy, readiness, smoke, and forward
+  recovery as applicable.
+- document model/parser/import → valid, legacy, malformed, security, maximum
+  size, and round-trip corpus.
+- workspace/profile/admin UI → mounted interaction, keyboard/axe, API role
+  matrix, reconnect, and feature-disabled states.
+- provider activation → recorded payload contract, real sandbox, idempotency,
+  credential redaction, performance, and documented disable/recovery path.
+
+The QA owner reviews this plan at least once per material release and quarterly
+while production is active. Stale historical facts belong in an archive or
+dated evidence report, not in this living plan.
