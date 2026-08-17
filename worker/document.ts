@@ -13,6 +13,7 @@ import type {
   TopologyDocument as TopologyDocumentModel,
 } from '../src/pages/model.js';
 import { parseDoc } from '../src/pages/persist.js';
+import { TEXT_LIMITS, normalizeText } from '../src/api/text.js';
 import {
   applyOperations,
   conflictingTargets,
@@ -546,7 +547,12 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     if (actor.kind !== 'agent')
       throw new Error('proposals require an agent actor');
     assertRequest(request);
-    if (!title.trim()) throw new Error('proposal title is required');
+    const titleNorm = normalizeText(title);
+    if (!titleNorm) throw new Error('proposal title is required');
+    const rationaleNorm =
+      rationale === undefined
+        ? ''
+        : normalizeText(rationale, { multiline: true });
     const result = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const duplicate = await tx.get<ProposalResult>(
@@ -579,9 +585,9 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       const timestamp = nowIso();
       const proposal: WorkspaceProposal = {
         id: `pr_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
-        title: title.trim().slice(0, 160),
-        ...(rationale?.trim()
-          ? { rationale: rationale.trim().slice(0, 2000) }
+        title: titleNorm.slice(0, TEXT_LIMITS.title),
+        ...(rationaleNorm
+          ? { rationale: rationaleNorm.slice(0, TEXT_LIMITS.rationale) }
           : {}),
         baseRevision: request.baseRevision,
         createdAt: timestamp,
@@ -817,10 +823,12 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
   ): Promise<CheckpointSummary> {
     if (actor.kind === 'system')
       throw new Error('system actors cannot create checkpoints');
-    const trimmed = String(name ?? '').trim();
+    const trimmed = normalizeText(String(name ?? ''));
     if (!trimmed) throw new Error('checkpoint name is required');
-    if (trimmed.length > 120)
-      throw new Error('checkpoint name exceeds 120 characters');
+    if (trimmed.length > TEXT_LIMITS.checkpointName)
+      throw new Error(
+        `checkpoint name exceeds ${TEXT_LIMITS.checkpointName} characters`,
+      );
     const summary = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const ids = meta.checkpointIds ?? [];
