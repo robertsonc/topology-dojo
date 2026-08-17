@@ -30,6 +30,11 @@ import {
   type GuidanceResult,
 } from '../src/profile/guidance.js';
 import type { AuthoringPreference } from '../src/profile/model.js';
+import {
+  formatRateLimitError,
+  rateLimitBucketForTool,
+} from '../src/mcp/rate-limit.js';
+import type { TopologyRegistry } from './registry.js';
 
 /** Short, URL-safe id for a published snapshot (collision-negligible for this use). */
 function shareId(): string {
@@ -136,7 +141,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
    * authenticated user we refuse to persist rather than fall back to a shared
    * "anonymous" key that would leak documents between users.
    */
-  private registry(): DocStorage {
+  private registryStub(): TopologyRegistry {
     const login = (this.props as { login?: string } | undefined)?.login;
     if (!login)
       throw new Error(
@@ -144,6 +149,10 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       );
     const ns = this.env.TOPOLOGY_REGISTRY;
     return ns.get(ns.idFromName(`user:${login}`));
+  }
+
+  private registry(): DocStorage {
+    return this.registryStub();
   }
 
   /** Load the user's documents from the registry into the in-memory store. */
@@ -189,6 +198,11 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<void> {
+    const bucket = rateLimitBucketForTool(toolName);
+    if (bucket) {
+      const result = await this.registryStub().consumeQuota(bucket);
+      if (!result.allowed) throw new Error(formatRateLimitError(result));
+    }
     const workspace = this.workspaceService();
     if (!workspace) return;
     if (toolName === 'list_topologies') {
