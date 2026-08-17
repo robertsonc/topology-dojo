@@ -13,6 +13,26 @@ function _esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/**
+ * Wrap an element's rendered art with its optional hover tooltip (`tooltip` →
+ * an SVG `<title>` inside the group) and hyperlink (`href` → an `<a>` around
+ * it, so exported SVG / the public viewer are clickable documentation).
+ * Only http(s) URLs are ever emitted — any other scheme is ignored, so a
+ * document field can never inject a scriptable URL into the rendered SVG.
+ */
+function _hrefTipWrap(cfg, gOpen, inner, gClose) {
+  const tip =
+    cfg && typeof cfg.tooltip === 'string' && cfg.tooltip
+      ? `<title>${_esc(cfg.tooltip)}</title>`
+      : '';
+  let out = gOpen + tip + inner + gClose;
+  const href = cfg && typeof cfg.href === 'string' ? cfg.href.trim() : '';
+  if (/^https?:\/\//i.test(href)) {
+    out = `<a href="${_esc(href)}" target="_blank" rel="noopener">${out}</a>`;
+  }
+  return out;
+}
+
 class TopologyDesigner {
 
   /* ── Constructor ── */
@@ -852,13 +872,13 @@ class TopologyDesigner {
 
       nodeSvg = this._focusWrap(elemId, halo, nodeSvg);
       const iso3dAttr = nodeCfg.type && typeof nodeCfg.type === 'string' && nodeCfg.type.startsWith('iso:') ? ' data-tds-iso3d="true"' : '';
-      return this._pw(stepId, phaseNum, op, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">${nodeSvg}</g>`);
+      return this._pw(stepId, phaseNum, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">`, nodeSvg, '</g>'));
     }
 
     const linkCfg = this._links.get(elemId);
     if (linkCfg) {
       const linkSvg = this._renderLinkSVG(linkCfg, stepId, phaseNum);
-      return linkSvg ? `<g data-tds-link="${elemId}" style="cursor:pointer">${linkSvg}</g>` : '';
+      return linkSvg ? _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer">`, linkSvg, '</g>') : '';
     }
 
     return '';
@@ -3482,15 +3502,14 @@ ${grid}`;
     const align = zone.labelAlign || 'left';
     const labelX = align === 'center' ? minX + w / 2 : align === 'right' ? maxX - 8 : minX + 8;
     const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
-    let s = `<g class="tds-zone" data-zone-id="${zone.id}">`;
+    let s = '';
     s += `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" rx="8" fill="${c}" fill-opacity=".04" stroke="${c}" stroke-width="1" stroke-opacity=".35"${dash !== 'none' ? ` stroke-dasharray="${dash}"` : ''}/>`;
     s += `<text x="${labelX}" y="${minY + 14}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity=".7">${_esc(zone.label || zone.id)}</text>`;
     const sublabelText = zone.sublabel || zone.description;
     if (sublabelText) {
       s += `<text x="${labelX}" y="${minY + 26}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity=".5">${_esc(sublabelText)}</text>`;
     }
-    s += `</g>`;
-    return s;
+    return _hrefTipWrap(zone, `<g class="tds-zone" data-zone-id="${zone.id}">`, s, '</g>');
   }
 
   /** WAN/LAN zone indicator beside EC */
@@ -4226,9 +4245,9 @@ ${grid}`;
             const iso3dAttr = nodeCfg.type && typeof nodeCfg.type === 'string' && nodeCfg.type.startsWith('iso:') ? ' data-tds-iso3d="true"' : '';
             if (ghostOp !== null) {
               op = ghostOp;
-              svg += this._pw(step.id, p, op, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer" filter="url(#tds-ghost)">${nodeSvg}</g>`);
+              svg += this._pw(step.id, p, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer" filter="url(#tds-ghost)">`, nodeSvg, '</g>'));
             } else {
-              svg += this._pw(step.id, p, op, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">${nodeSvg}</g>`);
+              svg += this._pw(step.id, p, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">`, nodeSvg, '</g>'));
             }
             continue;
           }
@@ -4248,9 +4267,9 @@ ${grid}`;
                 wrappedLink = `<g filter="${temporal.filter}">${linkSvg}</g>`;
               }
               if (ghostOp !== null) {
-                svg += `<g data-tds-link="${elemId}" style="cursor:pointer" filter="url(#tds-ghost)" opacity="${ghostOp}">${wrappedLink}</g>`;
+                svg += _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer" filter="url(#tds-ghost)" opacity="${ghostOp}">`, wrappedLink, '</g>');
               } else {
-                svg += `<g data-tds-link="${elemId}" style="cursor:pointer">${wrappedLink}</g>`;
+                svg += _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer">`, wrappedLink, '</g>');
               }
               // Security violation overlay
               svg += this._renderViolationOverlay(elemId);

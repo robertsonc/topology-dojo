@@ -36,6 +36,10 @@ export interface NodeConfig {
    * ignored by the renderer, carried in the document, editable via API/MCP/GUI.
    */
   meta?: Record<string, string | number | boolean>;
+  /** Hyperlink: rendered as a clickable <a> (http(s) only) in SVG/viewer. */
+  href?: string;
+  /** Hover tooltip, rendered as an SVG <title>. */
+  tooltip?: string;
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
   /** External identity in a source system (see api/source); enables upsert. */
@@ -94,6 +98,10 @@ export interface LinkConfig {
   flowSpeed?: number;
   flowParticles?: number;
   reverseFlow?: boolean;
+  /** Hyperlink: rendered as a clickable <a> (http(s) only) in SVG/viewer. */
+  href?: string;
+  /** Hover tooltip, rendered as an SVG <title>. */
+  tooltip?: string;
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
   /** External identity in a source system (see api/source); enables upsert. */
@@ -126,6 +134,10 @@ export interface ZoneConfig {
   labelAlign?: 'left' | 'center' | 'right';
   /** Id of an enclosing zone (zones may nest). */
   parentZone?: string;
+  /** Hyperlink: rendered as a clickable <a> (http(s) only) in SVG/viewer. */
+  href?: string;
+  /** Hover tooltip, rendered as an SVG <title>. */
+  tooltip?: string;
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
   /** External identity in a source system (see api/source); enables upsert. */

@@ -280,6 +280,8 @@ export class Editor {
   private onInlineEdit: ((req: InlineEditRequest) => void) | null = null;
   /** Link-to-empty-canvas releases go to the shell through this (quick-connect). */
   private onConnectEmpty: ((req: ConnectEmptyRequest) => void) | null = null;
+  /** Ctrl/Cmd+click on an element with an `href` opens it through this. */
+  private onOpenHref: ((href: string) => void) | null = null;
 
   constructor(
     private art: SVGSVGElement,
@@ -1100,6 +1102,11 @@ export class Editor {
     fn: ((req: ConnectEmptyRequest) => void) | null,
   ): void {
     this.onConnectEmpty = fn;
+  }
+
+  /** Register the shell's hyperlink opener (Ctrl/Cmd+click on href). */
+  setOpenHrefHandler(fn: ((href: string) => void) | null): void {
+    this.onOpenHref = fn;
   }
 
   /**
@@ -3289,6 +3296,31 @@ export class Editor {
       const badge = this.hitTestBadge(p);
       if (badge) {
         this.onBadgeClick?.(badge.kind, badge.id);
+        return;
+      }
+    }
+
+    // Ctrl/Cmd+click follows an element's hyperlink (`href`) — the editor's
+    // equivalent of the clickable <a> the renderer emits in exports/viewer.
+    if (
+      this.tool === 'select' &&
+      (e.ctrlKey || e.metaKey) &&
+      !e.shiftKey &&
+      e.button === 0 &&
+      this.onOpenHref
+    ) {
+      const hitId = hitTestNode(this.page, p.x, p.y);
+      const el = hitId
+        ? this.page.nodes.find((n) => n.id === hitId)
+        : this.page.links.find(
+            (l) => l.id === hitTestLink(this.page, p.x, p.y),
+          );
+      const href =
+        el && typeof (el as { href?: unknown }).href === 'string'
+          ? ((el as { href: string }).href ?? '').trim()
+          : '';
+      if (/^https?:\/\//i.test(href)) {
+        this.onOpenHref(href);
         return;
       }
     }

@@ -426,6 +426,9 @@ function openInlineLabelEditor(req: InlineEditRequest): void {
   input.select();
 }
 editor.setInlineEditHandler(openInlineLabelEditor);
+// Ctrl/Cmd+click on an element carrying an `href` opens it in a new tab —
+// mirroring the clickable <a> the renderer emits in SVG exports and /v/:id.
+editor.setOpenHrefHandler((href) => window.open(href, '_blank', 'noopener'));
 
 /* ── quick-add (double-click empty canvas → type-to-place a node) ─────
  * A draw.io/Lucid-style creation accelerator: a small popover with the same
@@ -1606,7 +1609,7 @@ const LINK_GROUPS: FieldGroup[] = [
     title: 'Animation',
     keys: ['dots', 'flowSpeed', 'flowParticles', 'reverseFlow'],
   },
-  { title: 'Advanced', keys: ['locked', 'layer', 'source'] },
+  { title: 'Advanced', keys: ['href', 'tooltip', 'locked', 'layer', 'source'] },
 ];
 
 /** Node fields, grouped the same way. */
@@ -1618,7 +1621,7 @@ const NODE_GROUPS: FieldGroup[] = [
   },
   { title: 'Appearance', keys: ['color', 'opacity'], open: true },
   { title: 'Position', keys: ['x', 'y'] },
-  { title: 'Advanced', keys: ['locked', 'layer', 'source'] },
+  { title: 'Advanced', keys: ['href', 'tooltip', 'locked', 'layer', 'source'] },
 ];
 
 /**

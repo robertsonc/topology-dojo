@@ -91,6 +91,21 @@ const SOURCE_FIELD: FieldSpec = {
   label: 'Source ref',
   kind: 'record',
 };
+/**
+ * Nodes, links, and zones can carry a hyperlink (rendered as a clickable
+ * `<a>` in SVG exports and the public viewer; Ctrl/Cmd+click in the editor)
+ * and a hover tooltip (an SVG `<title>`). Only http(s) URLs are rendered.
+ */
+const HREF_FIELD: FieldSpec = {
+  key: 'href',
+  label: 'Link URL',
+  kind: 'string',
+};
+const TOOLTIP_FIELD: FieldSpec = {
+  key: 'tooltip',
+  label: 'Tooltip',
+  kind: 'string',
+};
 const NODE_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string' },
   { key: 'sublabel', label: 'Sublabel', kind: 'string' },
@@ -100,6 +115,8 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'labelOffset', label: 'Label offset', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   { key: 'meta', label: 'Metadata', kind: 'record' },
+  HREF_FIELD,
+  TOOLTIP_FIELD,
   LAYER_FIELD,
   SOURCE_FIELD,
 ];
@@ -239,6 +256,8 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
           ...(SHAPE_EXTRAS[type] ?? []),
           { key: 'locked', label: 'Locked', kind: 'boolean' as const },
+          HREF_FIELD,
+          TOOLTIP_FIELD,
           LAYER_FIELD,
           SOURCE_FIELD,
         ]
@@ -342,6 +361,8 @@ const LINK_COMMON: FieldSpec[] = [
     animation: true,
   },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
+  HREF_FIELD,
+  TOOLTIP_FIELD,
   LAYER_FIELD,
   SOURCE_FIELD,
 ];
@@ -407,6 +428,8 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
         options: ['left', 'center', 'right'],
       },
       { key: 'parentZone', label: 'Parent zone', kind: 'ref' },
+      HREF_FIELD,
+      TOOLTIP_FIELD,
       LAYER_FIELD,
       SOURCE_FIELD,
     ],

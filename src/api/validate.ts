@@ -83,6 +83,31 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     if (r.fetchedAt !== undefined && typeof r.fetchedAt !== 'string')
       warn(where, 'source.fetchedAt should be an ISO 8601 string');
   };
+  // Hyperlink + tooltip (nodes/links/zones). The renderer only ever emits
+  // http(s) hrefs, so anything else is dead weight worth flagging — and a
+  // `javascript:` URL is likely an injection attempt, worth an error.
+  const checkHrefTip = (
+    cfg: { href?: unknown; tooltip?: unknown },
+    where: string,
+  ): void => {
+    const h = cfg.href;
+    if (h !== undefined) {
+      if (typeof h !== 'string') warn(where, 'href must be a string URL');
+      else if (/^\s*javascript:/i.test(h))
+        err(where, 'href must not use the javascript: scheme');
+      else if (!/^https?:\/\//i.test(h.trim()))
+        warn(
+          where,
+          `href "${h.slice(0, 60)}" is not an http(s) URL — it will not render as a link`,
+        );
+    }
+    const t = cfg.tooltip;
+    if (t !== undefined) {
+      if (typeof t !== 'string') warn(where, 'tooltip must be a string');
+      else if (t.length > 500)
+        warn(where, `tooltip is ${t.length} chars — keep it under 500`);
+    }
+  };
 
   const pageIds = new Set<string>();
   doc.pages.forEach((page, pi) => {
@@ -155,6 +180,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         );
       checkLayer(n, `${at} node "${n.id}"`);
       checkSource(n, `${at} node "${n.id}"`);
+      checkHrefTip(n as Record<string, unknown>, `${at} node "${n.id}"`);
     }
     const anchorAt = new Map<string, string>();
     for (const a of page.anchors) {
@@ -225,6 +251,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         );
       checkLayer(l, `${at} link "${l.id}"`);
       checkSource(l, `${at} link "${l.id}"`);
+      checkHrefTip(l as Record<string, unknown>, `${at} link "${l.id}"`);
     }
 
     // ── Annotation layer: zones, flow paths, policy markers ──
@@ -244,6 +271,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         warn(where, `parentZone references missing zone "${z.parentZone}"`);
       checkLayer(z, where);
       checkSource(z, where);
+      checkHrefTip(z as unknown as Record<string, unknown>, where);
       checkEnums(
         z as unknown as Record<string, unknown>,
         getAnnotationType('zone')?.fields,
