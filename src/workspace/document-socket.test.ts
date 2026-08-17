@@ -10,7 +10,8 @@
  * The harness worker mirrors the real `GET /api/workspaces/:id/socket` route:
  * it injects the actor identity (`actorKind`/`actorLabel`) before handing the
  * upgrade to the DO stub's `fetch`, and forwards a non-upgrade GET straight
- * through so the DO's own 426 path is what the test observes.
+ * through so the DO's own 426 path is what the test observes. `/raw-socket`
+ * bypasses that injection so the DO's own clamp/allow-list can be asserted.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -36,8 +37,18 @@ export default {
     // trusted from the client) and hand off to the DO. A non-upgrade GET flows
     // through too, so the DO's own 426 is what the test sees.
     if (url.pathname === '/socket') {
+      // Mirror the real browser route: drop client-supplied identity, then
+      // inject the authenticated session as user.
+      const as = url.searchParams.get('as') ?? 'alice';
+      url.searchParams.delete('actorKind');
+      url.searchParams.delete('actorLabel');
       url.searchParams.set('actorKind', 'user');
-      url.searchParams.set('actorLabel', url.searchParams.get('as') ?? 'alice');
+      url.searchParams.set('actorLabel', as);
+      return stub.fetch(new Request(url.toString(), request));
+    }
+    // Direct DO upgrade — used to assert the coordinator itself clamps and
+    // allow-lists query params even when the forwarding route is bypassed.
+    if (url.pathname === '/raw-socket') {
       return stub.fetch(new Request(url.toString(), request));
     }
     try {
@@ -96,11 +107,12 @@ interface NoticeStream {
 async function openSocket(
   workspace: string,
   extra: Record<string, string> = {},
+  path = '/socket',
 ): Promise<{
   ws: { close(): void; send(data: string): void };
   stream: NoticeStream;
 }> {
-  const response = await handle.fetch('/socket' + query(workspace, extra), {
+  const response = await handle.fetch(path + query(workspace, extra), {
     headers: { Upgrade: 'websocket' },
   });
   const ws = response.webSocket;
@@ -318,5 +330,45 @@ describe('TopologyDocument push + presence socket', () => {
       method: 'GET',
     });
     expect(response.status).toBe(426);
+  }, 30_000);
+
+  it('ignores a client-supplied actorKind on the browser socket route', async () => {
+    const W = 's1-force-user';
+    await call(W, {
+      action: 'initialize',
+      document: { title: 'T', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const { stream } = await openSocket(W, {
+      pageId: 'p1',
+      as: 'alice',
+      actorKind: 'agent',
+      actorLabel: '<script>x</script>',
+    });
+    const joined = await stream.next();
+    expect(joined.presence).toEqual([
+      { kind: 'user', label: 'alice', pageId: 'p1' },
+    ]);
+  }, 30_000);
+
+  it('clamps and strips actorLabel on a direct DO upgrade', async () => {
+    const W = 's1-clamp-label';
+    await call(W, {
+      action: 'initialize',
+      document: { title: 'T', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const long = 'z'.repeat(80);
+    const { stream } = await openSocket(
+      W,
+      {
+        pageId: 'p1',
+        actorKind: 'admin',
+        actorLabel: `\u0000${long}`,
+      },
+      '/raw-socket',
+    );
+    const joined = await stream.next();
+    expect(joined.presence).toEqual([
+      { kind: 'user', label: 'z'.repeat(64), pageId: 'p1' },
+    ]);
   }, 30_000);
 });
