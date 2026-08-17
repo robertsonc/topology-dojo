@@ -181,6 +181,34 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       checkLayer(n, `${at} node "${n.id}"`);
       checkSource(n, `${at} node "${n.id}"`);
       checkHrefTip(n as Record<string, unknown>, `${at} node "${n.id}"`);
+      // Image nodes: the source must be https or an inline data:image/*, and
+      // an inline image must stay well under the workspace per-page cap.
+      if (n.type === 'image') {
+        const where = `${at} node "${n.id}"`;
+        const src = (n as Record<string, unknown>).imageHref;
+        if (src === undefined)
+          warn(where, 'image node has no imageHref — it renders a placeholder');
+        else if (typeof src !== 'string')
+          warn(where, 'imageHref must be a string (https URL or data URI)');
+        else if (
+          !/^https:\/\//i.test(src.trim()) &&
+          !/^data:image\/(png|jpe?g|gif|webp|svg\+xml)[;,]/i.test(src.trim())
+        )
+          warn(
+            where,
+            'imageHref must be an https:// URL or a data:image/* URI — anything else renders a placeholder',
+          );
+        else if (src.length > 256 * 1024)
+          err(
+            where,
+            `inline image is ${Math.round(src.length / 1024)}KB — keep data URIs under 256KB (page size cap)`,
+          );
+        for (const k of ['imageW', 'imageH'] as const) {
+          const v = (n as Record<string, unknown>)[k];
+          if (v !== undefined && (typeof v !== 'number' || !(v > 0)))
+            warn(where, `${k} must be a positive number`);
+        }
+      }
     }
     const anchorAt = new Map<string, string>();
     for (const a of page.anchors) {

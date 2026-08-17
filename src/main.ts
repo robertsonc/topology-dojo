@@ -2559,6 +2559,12 @@ function buildPalette(): void {
 
   paletteList.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) =>
     b.addEventListener('click', () => {
+      // The Image entry opens a file picker instead of dropping a bare
+      // placeholder — the common intent is "put THIS picture on the canvas".
+      if (b.dataset.type === 'image') {
+        imageFileInput.click();
+        return;
+      }
       const variant = b.dataset.variant;
       editor.addNode(
         b.dataset.type!,
@@ -2604,6 +2610,76 @@ paletteSearch.addEventListener('keydown', (e) => {
   }
 });
 buildPalette();
+
+/* ── image upload (the palette's Image entry) ─────────────────────────
+ * Reads a picture, downscales it on a canvas until the data URI fits the
+ * 256KB validation cap (protecting the ~1.8MiB workspace page cap), and
+ * places an `image` node sized to the picture's aspect ratio. The data URI
+ * lives in the document JSON, so it travels with save/share/workspace. */
+const imageFileInput = document.createElement('input');
+imageFileInput.type = 'file';
+imageFileInput.accept = 'image/*';
+imageFileInput.hidden = true;
+imageFileInput.setAttribute('aria-hidden', 'true');
+document.body.appendChild(imageFileInput);
+imageFileInput.addEventListener('change', () => {
+  const f = imageFileInput.files?.[0];
+  imageFileInput.value = '';
+  if (f) void placeImageFile(f);
+});
+const IMAGE_DATA_CAP = 256 * 1024;
+async function placeImageFile(f: File): Promise<void> {
+  try {
+    const { uri, w, h } = await downscaleImage(f, 512, IMAGE_DATA_CAP);
+    // Display size: cap the on-canvas box while keeping the aspect ratio.
+    const scale = Math.min(1, 240 / w, 200 / h);
+    editor.addNode('image', f.name.replace(/\.[^.]+$/, '') || 'Image', {
+      imageHref: uri,
+      imageW: Math.max(16, Math.round(w * scale)),
+      imageH: Math.max(16, Math.round(h * scale)),
+    });
+  } catch (err) {
+    window.alert(`Could not load that image: ${String(err)}`);
+  }
+}
+async function downscaleImage(
+  f: File,
+  maxDim: number,
+  maxBytes: number,
+): Promise<{ uri: string; w: number; h: number }> {
+  const url = URL.createObjectURL(f);
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error('not a readable image file'));
+      img.src = url;
+    });
+    const alphaCapable = ['image/png', 'image/svg+xml', 'image/webp'].includes(
+      f.type,
+    );
+    let scale = Math.min(1, maxDim / Math.max(img.width, img.height, 1));
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas
+        .getContext('2d')!
+        .drawImage(img, 0, 0, canvas.width, canvas.height);
+      // First try keeps transparency (PNG); later passes trade it for size.
+      const uri =
+        alphaCapable && attempt === 0
+          ? canvas.toDataURL('image/png')
+          : canvas.toDataURL('image/jpeg', Math.max(0.4, 0.85 - attempt * 0.1));
+      if (uri.length <= maxBytes)
+        return { uri, w: canvas.width, h: canvas.height };
+      scale *= 0.7;
+    }
+    throw new Error('image is too large even after downscaling');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 let dragFrom = -1;
 

@@ -22,6 +22,7 @@ export const BUILTIN_NODE_TYPES = [
   'ap',
   'overlayCloud',
   'text',
+  'image',
   'shape:arrow',
   'shape:square',
   'shape:rectangle',

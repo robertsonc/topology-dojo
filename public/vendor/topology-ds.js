@@ -852,7 +852,7 @@ class TopologyDesigner {
           nodeSvg += this._renderShapeLabel(nodeCfg);
         } else {
           const labelX = nodeCfg.x + (nodeCfg.labelOffsetX || 0);
-          const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || 24));
+          const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || (nodeCfg.type === 'image' ? Math.max(16, Number(nodeCfg.imageH) || 72) / 2 + 14 : 24)));
           nodeSvg += this._renderNodeLabel(labelX, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
         }
       }
@@ -2902,6 +2902,33 @@ ${grid}`;
    * `borderColor` outlines it, `align` sets left/center/right within the box.
    * Without those options it renders exactly like the classic centered label.
    */
+  /**
+   * Image node — an embedded raster/vector image (https URL or data URI).
+   * `imageW`/`imageH` size the box (default 96×72), `imageFit` maps to
+   * preserveAspectRatio (`contain` → meet, `cover` → slice), `cornerRadius`
+   * rounds the clip. Only `https://` and `data:image/*` sources are ever
+   * emitted (same defensive posture as `_hrefTipWrap`); anything else — or
+   * no source at all — renders a dashed placeholder frame that stays
+   * visible and selectable.
+   */
+  static renderImage(x, y, cfg = {}) {
+    const w = Math.max(16, Number(cfg.imageW) || 96);
+    const h = Math.max(16, Number(cfg.imageH) || 72);
+    const r = Math.max(0, Number(cfg.cornerRadius != null ? cfg.cornerRadius : 6));
+    const x0 = x - w / 2, y0 = y - h / 2;
+    const src = typeof cfg.imageHref === 'string' ? cfg.imageHref.trim() : '';
+    const safe = /^https:\/\//i.test(src) || /^data:image\/(png|jpe?g|gif|webp|svg\+xml)[;,]/i.test(src);
+    if (!safe) {
+      return `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="${r}" fill="#7d8a92" fill-opacity=".06" stroke="#7d8a92" stroke-opacity=".5" stroke-dasharray="5 4"/>` +
+        `<path d="M${x - 11},${y + 7} l7,-9 5,6 3,-4 7,7 z M${x + 4},${y - 7} a2.6,2.6 0 1,0 0.1,0" fill="none" stroke="#7d8a92" stroke-width="1.4" opacity=".7"/>`;
+    }
+    const par = cfg.imageFit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet';
+    const clipId = `tds-imgclip-${String(cfg.id || 'img').replace(/[^\w-]/g, '')}`;
+    return `<clipPath id="${clipId}"><rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="${r}"/></clipPath>` +
+      `<image href="${_esc(src)}" x="${x0}" y="${y0}" width="${w}" height="${h}" preserveAspectRatio="${par}" clip-path="url(#${clipId})"/>` +
+      `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="${r}" fill="none" stroke="#7d8a92" stroke-opacity=".35"/>`;
+  }
+
   static renderText(x, y, cfg = {}) {
     const { label = '', color = '#e6e8e9', fontSize = 14, fontWeight = '600', sublabel = '',
             width = 0, fill = '', borderColor = '', align = 'center', padding = 8 } = cfg;
@@ -3075,6 +3102,7 @@ ${grid}`;
     ap:        TopologyDesigner.renderAP,
     overlayCloud: TopologyDesigner.renderOverlayCloud,
     text:      TopologyDesigner.renderText,
+    image:     TopologyDesigner.renderImage,
     // Basic shapes
     'shape:arrow':     TopologyDesigner.renderShapeArrow,
     'shape:square':    TopologyDesigner.renderShapeSquare,
@@ -4204,7 +4232,7 @@ ${grid}`;
               if (this._ownLabelNode(nodeCfg)) {
                 nodeSvg += this._renderShapeLabel(nodeCfg);
               } else {
-                const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || 24));
+                const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || (nodeCfg.type === 'image' ? Math.max(16, Number(nodeCfg.imageH) || 72) / 2 + 14 : 24)));
                 nodeSvg += this._renderNodeLabel(nodeCfg.x, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
               }
             }

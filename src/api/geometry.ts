@@ -97,6 +97,12 @@ export function nodeHalf(node: NodeConfig): { w: number; h: number } {
       width ?? Math.max(50, label.length * fontSize * 0.6 + padding * 2);
     return { w: estW / 2, h: (blockH + padding * 2) / 2 };
   }
+  if (node.type === 'image') {
+    // Mirror the engine's renderImage box (default 96×72, min 16).
+    const w = Math.max(16, posNum(node.imageW) ?? 96);
+    const h = Math.max(16, posNum(node.imageH) ?? 72);
+    return { w: w / 2, h: h / 2 };
+  }
   if (node.type.startsWith('shape:')) {
     // Honor explicit sizing (shapeSize, or shapeWidth/shapeHeight where the
     // renderer supports them) so bounds track the drawn shape.

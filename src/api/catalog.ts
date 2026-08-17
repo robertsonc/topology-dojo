@@ -182,6 +182,23 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
     },
     { key: 'padding', label: 'Padding', kind: 'number' },
   ],
+  image: [
+    {
+      key: 'imageHref',
+      label: 'Image source (https or data URI)',
+      kind: 'string',
+      required: true,
+    },
+    { key: 'imageW', label: 'Width', kind: 'number' },
+    { key: 'imageH', label: 'Height', kind: 'number' },
+    {
+      key: 'imageFit',
+      label: 'Fit',
+      kind: 'enum',
+      options: ['contain', 'cover'],
+    },
+    { key: 'cornerRadius', label: 'Corner radius', kind: 'number' },
+  ],
 };
 
 /** Per-shape extra fields beyond the shared shape set (see NODE_CATALOG). */
@@ -213,6 +230,7 @@ const NODE_CATEGORY: Record<string, string> = {
   database: 'Compute',
   host: 'Endpoint',
   text: 'Annotation',
+  image: 'Annotation',
 };
 
 /** Search aliases per built-in type (Phase 4) — abbreviations / synonyms. */
@@ -233,6 +251,7 @@ const NODE_KEYWORDS: Record<string, string[]> = {
   database: ['db', 'data', 'sql', 'storage'],
   host: ['user', 'endpoint', 'pc', 'laptop', 'client'],
   text: ['label', 'note', 'annotation', 'caption'],
+  image: ['picture', 'photo', 'logo', 'screenshot', 'png', 'jpg', 'diagram'],
 };
 
 function titleCase(s: string): string {
