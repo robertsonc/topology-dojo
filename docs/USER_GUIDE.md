@@ -742,6 +742,12 @@ The active panel shows:
 - checkpoints;
 - timeline.
 
+**Sync now** is bidirectional: it pushes unsynced browser edits and, when the
+server is ahead and this browser has no local changes, applies the canonical
+snapshot to the canvas. That includes direct leased agent edits from
+**apply_workspace_changes**. **Reload server** is the explicit discard-local
+path: after confirmation it replaces the canvas with the canonical workspace.
+
 The toolbar chip changes to call attention to a conflict, proposal count, or
 offline pending work. Opening it prioritizes the state that needs attention.
 

@@ -433,6 +433,30 @@ export function renderOfflineStatusHtml(
   );
 }
 
+/**
+ * Whether a workspace refresh should replace the canvas with the server
+ * snapshot, attempt a rebase push, or leave the local document alone.
+ *
+ * Sync now, the 8s poll, and socket notices pass `pullCanvas: true` so a
+ * server-ahead revision lands on the canvas when the browser has nothing
+ * unsynced (issue #223). Metadata-only refreshes after a local mutation
+ * that already updated the document pass `false`.
+ */
+export function decideCanvasRefresh(input: {
+  pullCanvas: boolean;
+  serverRevision: number;
+  localRevision: number;
+  hasLocalChanges: boolean;
+  hasPending: boolean;
+  paused: boolean;
+}): 'adopt' | 'rebase' | 'none' {
+  if (!input.pullCanvas || input.serverRevision <= input.localRevision)
+    return 'none';
+  if (!input.hasLocalChanges && !input.hasPending) return 'adopt';
+  if (!input.paused) return 'rebase';
+  return 'none';
+}
+
 /** Pure: the panel body for an active workspace (revision/sync/lease/proposals). */
 export function renderActiveWorkspaceHtml(
   workspace: ActiveWorkspace,
@@ -483,11 +507,11 @@ export function renderActiveWorkspaceHtml(
       ? `<div class="ws-error">${esc(workspace.error)}</div>`
       : '') +
     renderOfflineStatusHtml(workspace, online) +
-    `<div class="ws-actions"><button class="tbtn" id="wsSync">Sync now</button>` +
+    `<div class="ws-actions"><button class="tbtn" id="wsSync" title="Push local edits and apply newer server revisions to the canvas">Sync now</button>` +
     (workspace.paused
-      ? `<button class="tbtn" id="wsResume">Sync local copy</button>`
+      ? `<button class="tbtn" id="wsResume" title="Treat this browser document as intended and sync it">Sync local copy</button>`
       : '') +
-    `<button class="tbtn" id="wsReload">Reload server</button><button class="tbtn" id="wsDetach">Close workspace</button></div></div>` +
+    `<button class="tbtn" id="wsReload" title="Discard unsynced browser edits and load the canonical workspace">Reload server</button><button class="tbtn" id="wsDetach">Close workspace</button></div></div>` +
     renderPresenceHtml(workspace.presence) +
     `<div class="ws-section">Agent control</div>` +
     `<div class="ws-card"><div class="ws-note">${
@@ -1310,15 +1334,21 @@ export function mountWorkspacePanel(
       } catch {
         // A timeline fetch failure is non-fatal — leave the last-known log.
       }
-      if (autoPull && manifest.revision > workspace.revision) {
-        if (!workspaceHasLocalChanges(workspace) && !workspace.pending) {
-          adoptWorkspaceSnapshot(
-            await getWorkspace(workspace.id),
-            'synced · agent update received',
-          );
-        } else if (!workspace.paused) {
-          await syncWorkspace(); // coordinator rebases disjoint work or reports conflict
-        }
+      const action = decideCanvasRefresh({
+        pullCanvas: autoPull,
+        serverRevision: manifest.revision,
+        localRevision: workspace.revision,
+        hasLocalChanges: workspaceHasLocalChanges(workspace),
+        hasPending: Boolean(workspace.pending),
+        paused: workspace.paused,
+      });
+      if (action === 'adopt') {
+        adoptWorkspaceSnapshot(
+          await getWorkspace(workspace.id),
+          'synced · agent update received',
+        );
+      } else if (action === 'rebase') {
+        await syncWorkspace(); // coordinator rebases disjoint work or reports conflict
       }
     } catch (error) {
       workspace.error = error instanceof Error ? error.message : String(error);
@@ -1552,14 +1582,17 @@ export function mountWorkspacePanel(
     });
     body.querySelector('#wsSync')?.addEventListener('click', () => {
       workspace.paused = false;
-      void syncWorkspace(true).then(() => refreshWorkspaceState(false));
+      // Bidirectional: push local edits, then pull server-ahead revisions
+      // onto the canvas (issue #223). A metadata-only refresh left the
+      // timeline current while leased agent edits stayed off-canvas.
+      void syncWorkspace(true).then(() => refreshWorkspaceState(true));
     });
     body.querySelector('#wsResume')?.addEventListener('click', () => {
       workspace.paused = false;
       workspace.error = null;
       workspace.pending = null;
       workspace.pendingTarget = null;
-      void syncWorkspace(true).then(() => refreshWorkspaceState(false));
+      void syncWorkspace(true).then(() => refreshWorkspaceState(true));
     });
     body.querySelector('#wsReload')?.addEventListener('click', () => {
       if (
