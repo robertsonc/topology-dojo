@@ -1,13 +1,20 @@
 /**
- * Share publish / list / revoke (finding M20) — `worker/share.ts` and the
- * `/api/share` routes in `worker/default-handler.ts`.
+ * Share publish / list / revoke (finding M20, unified with PR #240) —
+ * `worker/share.ts` layered over the canonical snapshot contract
+ * (`src/share/snapshot.ts`) plus the `/api/share` + `DELETE
+ * /api/topology/:id` routes in `worker/default-handler.ts`.
  *
  * Two halves:
- * 1. Pure unit tests of the share store against an in-memory KV — the index
- *    shape, ownership enforcement, expiry pruning, and the cap.
+ * 1. Pure unit tests of the share layer against an in-memory KV — publish
+ *    writes owner METADATA (authoritative) and a listing-index record;
+ *    revoke goes through the metadata check (foreign = forbidden, never a
+ *    delete) and prunes the index; listings prune expired records; the
+ *    index is capped.
  * 2. A Miniflare suite through the real default handler: session-gated
- *    publish → list → public snapshot serve (revocation-compatible caching)
- *    → revoke → the public link stops resolving.
+ *    publish → list → public serve (revocation-compatible 60s caching) →
+ *    foreign-owner revoke 403 → owner revoke via the canonical
+ *    `DELETE /api/topology/:id` → the public link 404s and the listing
+ *    empties.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -16,7 +23,7 @@ import {
   revokeShare,
   SHARE_TTL_SECONDS,
   type ShareEnv,
-  type ShareKv,
+  type ShareIndexStore,
 } from '../../worker/share.js';
 import type { TopologyDocument } from '../pages/model.js';
 import {
@@ -27,17 +34,32 @@ import {
 import { DEFAULT_HANDLER_FIXTURE } from './worker-fixtures.js';
 import { signSession } from '../server/session.js';
 
-/* ── half 1: the pure share store ─────────────────────────────────────── */
+/* ── half 1: the pure share layer ─────────────────────────────────────── */
 
-type MemoryKv = ShareKv & { dump(): Map<string, string> };
+type MemoryKv = ShareIndexStore & {
+  dump(): Map<string, { value: string; metadata?: unknown }>;
+};
 function memoryKv(): MemoryKv {
-  const map = new Map<string, string>();
+  const map = new Map<string, { value: string; metadata?: unknown }>();
   return {
     async get(key: string) {
-      return map.get(key) ?? null;
+      return map.get(key)?.value ?? null;
     },
-    async put(key: string, value: string) {
-      map.set(key, value);
+    async getWithMetadata(key: string) {
+      const entry = map.get(key);
+      return { value: entry?.value ?? null, metadata: entry?.metadata };
+    },
+    async put(
+      key: string,
+      value: string,
+      options?: { expirationTtl?: number; metadata?: unknown },
+    ) {
+      map.set(key, {
+        value,
+        ...(options?.metadata !== undefined
+          ? { metadata: options.metadata }
+          : {}),
+      });
     },
     async delete(key: string) {
       map.delete(key);
@@ -45,10 +67,10 @@ function memoryKv(): MemoryKv {
     dump() {
       return map;
     },
-  };
+  } as MemoryKv;
 }
 
-function env(kv: ShareKv): ShareEnv {
+function env(kv: ShareIndexStore): ShareEnv {
   return {
     TOPOLOGY_KV: kv,
     PUBLIC_BASE_URL: 'https://dojo.example',
@@ -75,13 +97,16 @@ function doc(title = 'Test topology'): TopologyDocument {
   };
 }
 
-describe('share store (worker/share.ts)', () => {
-  it('publish stores the snapshot and indexes it for the owner', async () => {
+describe('share layer (worker/share.ts over src/share/snapshot.ts)', () => {
+  it('publish stores the snapshot WITH owner metadata and indexes it', async () => {
     const kv = memoryKv();
     const e = env(kv);
     const out = await publishSnapshot(e, '42', doc('Branch WAN'));
     expect(out.url).toBe(`https://dojo.example/v/${out.id}`);
-    expect(kv.dump().has(`doc:${out.id}`)).toBe(true);
+    const stored = kv.dump().get(`doc:${out.id}`);
+    expect(stored).toBeDefined();
+    // The canonical ownership record — what every revoke path checks.
+    expect(stored!.metadata).toEqual({ ownerId: '42' });
     const shares = await listShares(e, '42');
     expect(shares).toHaveLength(1);
     expect(shares[0]).toMatchObject({ id: out.id, title: 'Branch WAN' });
@@ -99,17 +124,7 @@ describe('share store (worker/share.ts)', () => {
     expect(shares.map((s) => s.id)).toEqual([b.id, a.id]);
   });
 
-  it('publishing without an owner stores the snapshot unindexed', async () => {
-    const kv = memoryKv();
-    const e = env(kv);
-    const out = await publishSnapshot(e, null, doc());
-    expect(kv.dump().has(`doc:${out.id}`)).toBe(true);
-    expect([...kv.dump().keys()].some((k) => k.startsWith('shares:'))).toBe(
-      false,
-    );
-  });
-
-  it('revoke deletes the snapshot and the index record', async () => {
+  it('revoke deletes the snapshot and prunes the index record', async () => {
     const kv = memoryKv();
     const e = env(kv);
     const out = await publishSnapshot(e, 'owner', doc());
@@ -118,28 +133,36 @@ describe('share store (worker/share.ts)', () => {
     expect(await listShares(e, 'owner')).toEqual([]);
   });
 
-  it("cannot revoke another owner's snapshot (or an unknown id)", async () => {
+  it("a foreign owner's revoke is FORBIDDEN and touches nothing", async () => {
     const kv = memoryKv();
     const e = env(kv);
     const out = await publishSnapshot(e, 'alice', doc());
-    expect(await revokeShare(e, 'mallory', out.id)).toBe('not-found');
+    expect(await revokeShare(e, 'mallory', out.id)).toBe('forbidden');
     expect(kv.dump().has(`doc:${out.id}`)).toBe(true); // still live
-    expect(await revokeShare(e, 'alice', 'nope')).toBe('not-found');
+    expect(await listShares(e, 'alice')).toHaveLength(1); // still listed
+    expect(await revokeShare(e, 'alice', 'nope')).toBe('not_found');
+  });
+
+  it('a legacy snapshot without metadata cannot be revoked (fail closed)', async () => {
+    const kv = memoryKv();
+    const e = env(kv);
+    await kv.put('doc:legacy1', '{"pages":[]}'); // no metadata
+    expect(await revokeShare(e, 'anyone', 'legacy1')).toBe('forbidden');
+    expect(kv.dump().has('doc:legacy1')).toBe(true);
   });
 
   it('expired records are pruned from listings', async () => {
     const kv = memoryKv();
     const e = env(kv);
     const out = await publishSnapshot(e, 'u', doc());
-    // Rewind the record's expiry to the past.
     const key = 'shares:u';
-    const idx = JSON.parse(kv.dump().get(key)!) as { expiresAt: number }[];
+    const idx = JSON.parse(kv.dump().get(key)!.value) as {
+      expiresAt: number;
+    }[];
     idx[0]!.expiresAt = Date.now() - 1000;
-    kv.dump().set(key, JSON.stringify(idx));
+    await kv.put(key, JSON.stringify(idx));
     expect(await listShares(e, 'u')).toEqual([]);
-    // And the prune persisted.
-    expect(JSON.parse(kv.dump().get(key)!)).toEqual([]);
-    // (The doc:<id> value itself is retired by the KV TTL in production.)
+    expect(JSON.parse(kv.dump().get(key)!.value)).toEqual([]);
     expect(out.id).toBeTruthy();
   });
 
@@ -152,7 +175,7 @@ describe('share store (worker/share.ts)', () => {
   });
 });
 
-/* ── half 2: the /api/share routes through the real handler ───────────── */
+/* ── half 2: the routes through the real handler ──────────────────────── */
 
 const GITHUB_CLIENT_SECRET = 'share-api-secret';
 
@@ -161,7 +184,7 @@ async function sessionCookie(uid: string, login: string): Promise<string> {
   return `tdg_session=${token}`;
 }
 
-describe('/api/share routes (Miniflare)', () => {
+describe('/api/share + DELETE /api/topology/:id (Miniflare)', () => {
   let handle: MiniflareHandle;
 
   beforeAll(async () => {
@@ -191,14 +214,14 @@ describe('/api/share routes (Miniflare)', () => {
     for (const [path, method] of [
       ['/api/share', 'POST'],
       ['/api/share', 'GET'],
-      ['/api/share/abc', 'DELETE'],
+      ['/api/topology/abc', 'DELETE'],
     ] as const) {
       const res = await handle.fetch(path, { method });
       expect(res.status).toBe(401);
     }
   });
 
-  it('publish → list → public serve → revoke → gone', async () => {
+  it('publish → list → public serve → foreign 403 → owner revoke → gone', async () => {
     const cookie = await sessionCookie('900', 'share-owner');
 
     // Publish.
@@ -221,30 +244,31 @@ describe('/api/share routes (Miniflare)', () => {
       true,
     );
 
-    // The public snapshot serves — WITHOUT the immutable cache directive
-    // that made revocation ineffective (finding M20).
+    // The public snapshot serves with revocation-compatible caching
+    // (finding M20): 60s, never immutable.
     const snap = await handle.fetch(`/api/topology/${id}`);
     expect(snap.status).toBe(200);
-    const cache = snap.headers.get('cache-control') ?? '';
-    expect(cache).not.toContain('immutable');
-    expect(cache).toContain('max-age=300');
+    expect(snap.headers.get('cache-control')).toBe('public, max-age=60');
 
-    // A different user cannot revoke it.
+    // A different user cannot revoke it (metadata ownership → 403).
     const other = await sessionCookie('901', 'not-the-owner');
-    const foreign = await handle.fetch(`/api/share/${id}`, {
+    const foreign = await handle.fetch(`/api/topology/${id}`, {
       method: 'DELETE',
       headers: { cookie: other },
     });
-    expect(foreign.status).toBe(404);
+    expect(foreign.status).toBe(403);
 
-    // The owner revokes it; the public link stops resolving.
-    const rev = await handle.fetch(`/api/share/${id}`, {
+    // The owner revokes via the canonical route; the link stops resolving
+    // and the listing empties.
+    const rev = await handle.fetch(`/api/topology/${id}`, {
       method: 'DELETE',
       headers: { cookie },
     });
     expect(rev.status).toBe(200);
     const gone = await handle.fetch(`/api/topology/${id}`);
     expect(gone.status).toBe(404);
+    const after = await handle.fetch('/api/share', { headers: { cookie } });
+    expect(((await after.json()) as { shares: unknown[] }).shares).toEqual([]);
   });
 
   it('rejects a body that is not a topology document', async () => {
@@ -255,5 +279,14 @@ describe('/api/share routes (Miniflare)', () => {
       body: JSON.stringify({ document: { nope: true } }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it('DELETE on /api/share is no longer a route (405) — revoke is canonical', async () => {
+    const cookie = await sessionCookie('903', 'route-check');
+    const res = await handle.fetch('/api/share/whatever', {
+      method: 'DELETE',
+      headers: { cookie },
+    });
+    expect(res.status).toBe(405);
   });
 });

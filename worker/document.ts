@@ -13,6 +13,7 @@ import type {
   TopologyDocument as TopologyDocumentModel,
 } from '../src/pages/model.js';
 import { parseDoc } from '../src/pages/persist.js';
+import { TEXT_LIMITS, normalizeText } from '../src/api/text.js';
 import {
   applyOperations,
   conflictingTargets,
@@ -45,6 +46,10 @@ import {
   type WorkspaceProposal,
   type WorkspaceSnapshot,
 } from '../src/workspace/model.js';
+import {
+  sanitizeActorKind,
+  sanitizeActorLabel,
+} from '../src/workspace/presence.js';
 
 const META_KEY = 'meta';
 const PAGE_PREFIX = 'page:';
@@ -210,18 +215,18 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
    * WebSocket upgrade entry (Packet S1). The browser route authenticates the
    * owner before forwarding here and injects the actor identity as query
    * params; this method only accepts the socket (via the hibernation API) and
-   * stashes the actor + requested page in the socket's attachment. No other
-   * state is kept — presence is reconstructed from `getWebSockets()`.
+   * stashes the actor + requested page in the socket's attachment. Query
+   * `actorLabel` is clamped and stripped of control characters; `actorKind`
+   * is allow-listed. No other state is kept — presence is reconstructed from
+   * `getWebSockets()`.
    */
   override async fetch(request: Request): Promise<Response> {
     if ((request.headers.get('Upgrade') ?? '').toLowerCase() !== 'websocket') {
       return new Response('expected a websocket upgrade', { status: 426 });
     }
     const url = new URL(request.url);
-    const kindParam = url.searchParams.get('actorKind');
-    const kind: WorkspaceActor['kind'] =
-      kindParam === 'agent' || kindParam === 'system' ? kindParam : 'user';
-    const label = url.searchParams.get('actorLabel') ?? undefined;
+    const kind = sanitizeActorKind(url.searchParams.get('actorKind'));
+    const label = sanitizeActorLabel(url.searchParams.get('actorLabel'));
     const pageId = url.searchParams.get('pageId') ?? undefined;
     const pair = new WebSocketPair();
     const client = pair[0];
@@ -337,9 +342,11 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       if (ws === exclude) continue;
       const attachment = ws.deserializeAttachment() as SocketAttachment | null;
       if (!attachment) continue;
+      const kind = sanitizeActorKind(attachment.actor.kind);
+      const label = sanitizeActorLabel(attachment.actor.label);
       presence.push({
-        kind: attachment.actor.kind,
-        ...(attachment.actor.label ? { label: attachment.actor.label } : {}),
+        kind,
+        ...(label ? { label } : {}),
         ...(attachment.pageId ? { pageId: attachment.pageId } : {}),
       });
     }
@@ -546,7 +553,12 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     if (actor.kind !== 'agent')
       throw new Error('proposals require an agent actor');
     assertRequest(request);
-    if (!title.trim()) throw new Error('proposal title is required');
+    const titleNorm = normalizeText(title);
+    if (!titleNorm) throw new Error('proposal title is required');
+    const rationaleNorm =
+      rationale === undefined
+        ? ''
+        : normalizeText(rationale, { multiline: true });
     const result = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const duplicate = await tx.get<ProposalResult>(
@@ -579,9 +591,9 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       const timestamp = nowIso();
       const proposal: WorkspaceProposal = {
         id: `pr_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
-        title: title.trim().slice(0, 160),
-        ...(rationale?.trim()
-          ? { rationale: rationale.trim().slice(0, 2000) }
+        title: titleNorm.slice(0, TEXT_LIMITS.title),
+        ...(rationaleNorm
+          ? { rationale: rationaleNorm.slice(0, TEXT_LIMITS.rationale) }
           : {}),
         baseRevision: request.baseRevision,
         createdAt: timestamp,
@@ -817,10 +829,12 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
   ): Promise<CheckpointSummary> {
     if (actor.kind === 'system')
       throw new Error('system actors cannot create checkpoints');
-    const trimmed = String(name ?? '').trim();
+    const trimmed = normalizeText(String(name ?? ''));
     if (!trimmed) throw new Error('checkpoint name is required');
-    if (trimmed.length > 120)
-      throw new Error('checkpoint name exceeds 120 characters');
+    if (trimmed.length > TEXT_LIMITS.checkpointName)
+      throw new Error(
+        `checkpoint name exceeds ${TEXT_LIMITS.checkpointName} characters`,
+      );
     const summary = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const ids = meta.checkpointIds ?? [];

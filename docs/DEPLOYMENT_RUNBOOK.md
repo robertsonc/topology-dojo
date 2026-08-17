@@ -30,6 +30,7 @@ Populate this table in the private operator record. Do not commit secret values.
 | OAuth callback         | `<staging-origin>/callback` | `<production-origin>/callback`          |
 | `OAUTH_KV` id          | `<staging-id>`              | Managed in `wrangler.jsonc`             |
 | `TOPOLOGY_KV` id       | `<staging-id>`              | Managed in `wrangler.jsonc`             |
+| `SESSION_HMAC_SECRET`  | optional (`<set / unset>`)  | optional (`<set / unset>`)              |
 | GitHub Environment     | `staging`                   | `production`                            |
 | Cloudflare token owner | `<owner>`                   | `<owner>`                               |
 | Last deployment SHA    | `<sha>`                     | `<sha>`                                 |
@@ -37,6 +38,58 @@ Populate this table in the private operator record. Do not commit secret values.
 
 The staging KV ids must differ from production. The staging GitHub OAuth App
 must not accept the production callback URL, and vice versa.
+
+## Live-data fabric tools (blast radius)
+
+The seven live-data MCP tools (`describe_data_source`, `list_appliances`,
+`list_tunnels`, `get_overlay_policies`, `list_flows`, `get_flow_details`,
+`build_flow_topology`) talk to whatever EdgeConnect Orchestrator
+`ORCH_BASE_URL` / `ORCH_API_KEY` point at. The API key is a Worker secret
+and **never** appears in tool arguments or tool results. The grant is
+otherwise all-or-nothing per deployment.
+
+**Blast radius when enabled.** Any GitHub user who completes OAuth on that
+Worker can query the connected fabric from an MCP session — appliances,
+tunnels, overlay / business-intent policies, and flow tables. There is no
+per-session credential and no per-tool scope: one key covers the whole
+fabric. This is independent of workspace ownership.
+
+**Secret presence is not enough.** `LIVE_DATA_ENABLED` is opt-in (only the
+literal `"true"` enables; unset / `"false"` / a typo fail closed — same
+style as `PROFILES_ENABLED` / `ANALYTICS_ENABLED`). Production and staging
+both ship `"LIVE_DATA_ENABLED": "false"` in `wrangler.jsonc`. Do not flip
+production to `"true"` without an explicit human decision. Staging is also
+off: packet E5 (Orchestrator secret provisioning) is a separate operator
+step, and the live-data path is not expected on until then.
+
+**Optional owner allowlist.** `LIVE_DATA_GITHUB_IDS` is a comma-separated
+list of GitHub numeric ids (the same stable identity as `ADMIN_GITHUB_ID`,
+never the mutable login). Unset or empty ⇒ every authenticated MCP session
+on the deployment gets the tools once the flag and secrets are in place.
+When set, only listed owners receive them. Use this when more than the
+deployment owner can sign in.
+
+**Environment isolation.** Staging and production must never share
+`ORCH_*` credentials. Prefer a least-privilege, non-production
+Orchestrator on staging. Never commit secret values.
+
+**Activation (staging first, then production only by explicit decision):**
+
+1. Provision `ORCH_BASE_URL` and the `ORCH_API_KEY` dashboard secret for
+   that environment only (`wrangler secret put ORCH_API_KEY` / `--env
+staging` as appropriate).
+2. Optionally set `LIVE_DATA_GITHUB_IDS` to the owner's numeric GitHub
+   id(s) in that environment's `vars`.
+3. Set `"LIVE_DATA_ENABLED": "true"` in that environment's
+   `wrangler.jsonc` vars and deploy through the gated workflow. Do not
+   enable production as a side effect of a staging activation.
+4. Confirm a signed-in MCP `tools/list` includes the seven live-data
+   tools for an allowed owner and omits them when the flag is `"false"`
+   or the caller is not on the allowlist.
+
+**Disable / forward-recovery.** Set `LIVE_DATA_ENABLED` back to `"false"`
+(or remove the entry) and redeploy. Secrets can remain; the tools stay
+unregistered. See `GAME_DAY.md` §"Forward-recovery reference".
 
 ## Error 10211: preview upload contains a migration
 
@@ -79,6 +132,11 @@ production merely to obtain a preview is not an approved workaround.
   binding, and migration.
 - The staging Worker name resolves to a separate script.
 - `GITHUB_CLIENT_SECRET` is stored for the staging environment.
+- `SESSION_HMAC_SECRET` is optional. When unset, browser sessions are signed
+  with `GITHUB_CLIENT_SECRET`. Set it independently
+  (`npx wrangler secret put SESSION_HMAC_SECRET --env staging`, and the same
+  without `--env` for production) so OAuth client-secret rotation does not
+  invalidate sessions. Not required yet — existing deployments keep working.
 - A scoped Cloudflare deployment token and account id are stored in the GitHub
   `staging` Environment.
 - Cloudflare production non-production branch builds are disabled.

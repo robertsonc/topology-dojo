@@ -91,6 +91,14 @@ describe('check-wrangler-env: the real wrangler.jsonc', () => {
     expect(violations).toEqual([]);
   });
 
+  it('keeps LIVE_DATA_ENABLED off in production (issue #228)', () => {
+    const config = parseWranglerJsonc(
+      readFileSync(WRANGLER_JSONC_PATH, 'utf8'),
+    );
+    expect(config.vars?.LIVE_DATA_ENABLED).not.toBe('true');
+    expect(config.env?.staging?.vars?.LIVE_DATA_ENABLED).not.toBe('true');
+  });
+
   it('parses via the JSONC stripper into an object with env.staging', () => {
     // Read through the same path the CLI uses, to also exercise stripJsonc
     // against the real file's comment/trailing-comma style.
@@ -208,6 +216,14 @@ describe('check-wrangler-env: synthetic fixtures', () => {
       'production';
     const violations = checkWranglerConfig(config);
     expect(codesOf(violations)).toContain('diagnostics-env-invalid');
+  });
+
+  it('does not treat a shared LIVE_DATA_ENABLED flag as isolation drift', () => {
+    const config = structuredClone(validConfig());
+    (config.vars as Record<string, string>).LIVE_DATA_ENABLED = 'false';
+    (config.env.staging.vars as Record<string, string>).LIVE_DATA_ENABLED =
+      'false';
+    expect(checkWranglerConfig(config)).toEqual([]);
   });
 
   it('accepts DIAGNOSTICS_ENV="staging" in env.staging vars', () => {

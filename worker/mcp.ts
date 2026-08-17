@@ -15,6 +15,10 @@ import {
   rehydrateStore,
   type DocStorage,
 } from '../src/mcp/persist-store.js';
+import {
+  openOwnerRegistry,
+  type RegistryIdentity,
+} from '../src/mcp/registry-address.js';
 import type { TopologyDocument } from '../src/pages/model.js';
 import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
@@ -22,6 +26,7 @@ import type { WorkerEnv } from './env.js';
 import { WorkspaceService } from './workspaces.js';
 import { workspaceToolNames } from './workspace-tools.js';
 import { profileToolNames } from './profile-tools.js';
+import { liveDataToolNames } from './live-data-tools.js';
 import {
   explainPreference,
   preferenceSummary,
@@ -29,7 +34,11 @@ import {
   type GuidanceResult,
 } from '../src/profile/guidance.js';
 import type { AuthoringPreference } from '../src/profile/model.js';
-
+import {
+  formatRateLimitError,
+  rateLimitBucketForTool,
+  type RateLimitResult,
+} from '../src/mcp/rate-limit.js';
 import { listShares, publishSnapshot, revokeShare } from './share.js';
 
 /**
@@ -48,6 +57,7 @@ const NO_LEGACY_PERSIST_TOOLS = new Set<string>([
   'render_svg',
   'export_flipbook',
   'share_topology',
+  'unpublish_topology',
   'describe_data_source',
   'list_appliances',
   'list_tunnels',
@@ -72,6 +82,8 @@ const NO_LEGACY_PERSIST_TOOLS = new Set<string>([
 export class TopologyMcp extends McpAgent<WorkerEnv> {
   server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
   private store = new TopologyStore();
+  /** Session-local uid-keyed registry stub (dropped on hibernation). */
+  private cachedRegistry?: DocStorage;
 
   async init(): Promise<void> {
     // Rehydrate from the per-USER registry DO (not this session DO's storage):
@@ -80,9 +92,18 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     // (the "unknown topology" bug) because each session lands on a fresh DO.
     await this.rehydrate();
 
-    // Live-data provider, when the Orchestrator secrets are configured.
+    // Live-data provider: LIVE_DATA_ENABLED (opt-in) × optional owner
+    // allowlist × Orchestrator secrets. Secret presence alone must not
+    // register the fabric tools (issue #228). liveDataToolNames holds the
+    // pure decision so the gate stays unit-testable outside this DO.
+    const ownerId = (this.props as { id?: number } | undefined)?.id;
     const provider =
-      this.env.ORCH_BASE_URL && this.env.ORCH_API_KEY
+      liveDataToolNames(
+        this.env,
+        ownerId !== undefined ? String(ownerId) : undefined,
+      ).length &&
+      this.env.ORCH_BASE_URL &&
+      this.env.ORCH_API_KEY
         ? new EdgeConnectProvider({
             baseUrl: this.env.ORCH_BASE_URL,
             apiKey: this.env.ORCH_API_KEY,
@@ -112,8 +133,8 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       {
         renderDocument,
         publishTopology: (doc: TopologyDocument) => this.publish(doc),
-        listShares: () => listShares(this.env, this.ownerUid()),
-        revokeShare: (id: string) => revokeShare(this.env, this.ownerUid(), id),
+        unpublishTopology: (shareId: string) => this.unpublish(shareId),
+        listShares: () => listShares(this.env, this.ownerId()),
         ...(provider ? { provider } : {}),
         ...(workspace ? { workspace } : {}),
         ...(profile ? { profile } : {}),
@@ -125,38 +146,45 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   }
 
   /**
-   * The authenticated owner's stable numeric GitHub id (as a string) — the
-   * same value the browser session uses (`SessionUser.uid`), so the share
-   * index is one list across both surfaces. Fails CLOSED like `registry()`.
+   * The per-user registry DO for the signed-in GitHub user, exposed as the
+   * `DocStorage` slice persist-store needs. Keyed on the stable OAuth `id`
+   * (`user-id:<uid>`) from `this.props` (set by the provider before `init()`).
+   * Login is display-only and only used to lazily copy drafts off the
+   * pre-uid `user:<login>` name. Fails CLOSED: with no authenticated uid we
+   * refuse to persist rather than fall back to a shared "anonymous" key
+   * that would leak documents between users.
    */
-  private ownerUid(): string {
-    const id = (this.props as { id?: number | string } | undefined)?.id;
-    if (id === undefined || id === null)
-      throw new Error('no authenticated user (props.id) — refusing');
-    return String(id);
+  private async registry(): Promise<DocStorage> {
+    if (this.cachedRegistry) return this.cachedRegistry;
+    this.cachedRegistry = await openOwnerRegistry(
+      this.env.TOPOLOGY_REGISTRY,
+      this.registryIdentity(),
+    );
+    return this.cachedRegistry;
   }
 
   /**
-   * The per-user registry DO for the signed-in GitHub user, exposed as the
-   * `DocStorage` slice persist-store needs. Keyed on the OAuth `login` from
-   * `this.props` (set by the provider before `init()`). Fails CLOSED: with no
-   * authenticated user we refuse to persist rather than fall back to a shared
-   * "anonymous" key that would leak documents between users.
+   * Map MCP OAuth `props` (`{ id, login, name }`) onto the registry identity.
+   * `id` is the stable GitHub uid — the same mapping `workspaceService()`
+   * already does. Login stays display-only for the legacy `user:<login>` copy.
    */
-  private registry(): DocStorage {
-    const login = (this.props as { login?: string } | undefined)?.login;
-    if (!login)
-      throw new Error(
-        'no authenticated user (props.login) — refusing to persist',
-      );
-    const ns = this.env.TOPOLOGY_REGISTRY;
-    return ns.get(ns.idFromName(`user:${login}`));
+  private registryIdentity(): RegistryIdentity {
+    const props = this.props as { id?: number; login?: string } | undefined;
+    return {
+      ...(props?.id !== undefined
+        ? { uid: String(props.id), id: props.id }
+        : {}),
+      ...(props?.login ? { login: props.login } : {}),
+    };
   }
 
   /** Load the user's documents from the registry into the in-memory store. */
   private async rehydrate(): Promise<void> {
     try {
-      const { failed } = await rehydrateStore(this.store, this.registry());
+      const { failed } = await rehydrateStore(
+        this.store,
+        await this.registry(),
+      );
       if (failed.length)
         console.error(
           `topology rehydrate: ${failed.length} unparseable doc(s) left intact`,
@@ -184,7 +212,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       const workspace = this.workspaceService();
       if (workspace)
         for (const id of await workspace.migratedIds()) this.store.unload(id);
-      await persistStore(this.store, this.registry());
+      await persistStore(this.store, await this.registry());
     } catch (err) {
       console.error(`topology persist after ${toolName} failed`, err);
     }
@@ -196,6 +224,14 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<void> {
+    const bucket = rateLimitBucketForTool(toolName);
+    if (bucket) {
+      const registryWithQuota = (await this.registry()) as unknown as {
+        consumeQuota(bucket: string): Promise<RateLimitResult>;
+      };
+      const result = await registryWithQuota.consumeQuota(bucket);
+      if (!result.allowed) throw new Error(formatRateLimitError(result));
+    }
     const workspace = this.workspaceService();
     if (!workspace) return;
     if (toolName === 'list_topologies') {
@@ -269,13 +305,40 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   }
 
   /**
+   * GitHub numeric id as a string — the same key the browser session cookie
+   * uses (`SessionUser.uid`), so MCP publish and DELETE /api/topology/:id
+   * agree on ownership.
+   */
+  private ownerId(): string {
+    const id = (this.props as { id?: number } | undefined)?.id;
+    if (id === undefined)
+      throw new Error(
+        'no authenticated user (props.id) — refusing to publish or revoke a share',
+      );
+    return String(id);
+  }
+
+  /**
    * Store a document snapshot in KV and return the link that opens it —
-   * through the shared publish path (`worker/share.ts`), so the snapshot is
-   * recorded in the owner's revocable index like a browser-published one.
+   * through the shared publish path (`worker/share.ts`), so the snapshot
+   * carries owner metadata (the canonical revocation check) AND lands in the
+   * owner's listing index like a browser-published one.
    */
   private async publish(
     doc: TopologyDocument,
   ): Promise<{ id: string; url: string }> {
-    return publishSnapshot(this.env, this.ownerUid(), doc);
+    return publishSnapshot(this.env, this.ownerId(), doc);
+  }
+
+  /** Owner-only delete of a published snapshot (prunes the listing index). */
+  private async unpublish(shareId: string): Promise<{ revoked: true }> {
+    const result = await revokeShare(this.env, this.ownerId(), shareId);
+    if (result === 'not_found')
+      throw new Error(`share "${shareId}" was not found (it may have expired)`);
+    if (result === 'forbidden')
+      throw new Error(
+        `share "${shareId}" can only be unpublished by the publisher`,
+      );
+    return { revoked: true };
   }
 }

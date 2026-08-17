@@ -9,8 +9,9 @@
  *   /api/topology/:id, /v/:id, /* → the default handler (share API + static SPA)
  *
  * An authenticated MCP session receives the GitHub user as `this.props` in the
- * agent. Setup (GitHub OAuth app, OAUTH_KV, GITHUB_CLIENT_SECRET): see
- * src/mcp/README.md → "Remote (Cloudflare)". The DO class must be exported here.
+ * agent. Setup (GitHub OAuth app, OAUTH_KV, GITHUB_CLIENT_SECRET,
+ * optional SESSION_HMAC_SECRET): see src/mcp/README.md → "Remote
+ * (Cloudflare)". The DO class must be exported here.
  */
 import OAuthProvider from '@cloudflare/workers-oauth-provider';
 import { TopologyMcp } from './mcp.js';

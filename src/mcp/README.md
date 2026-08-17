@@ -66,6 +66,12 @@ Apps, secrets, or KV namespace ids across environments.
      `https://<your-domain>/callback`.
    - Put the **Client ID** in `wrangler.jsonc` (`vars.GITHUB_CLIENT_ID`); add the
      **client secret** as a dashboard secret **`GITHUB_CLIENT_SECRET`**.
+   - Optionally add a dedicated **`SESSION_HMAC_SECRET`** dashboard secret for
+     signing browser session cookies. When unset, sessions fall back to
+     `GITHUB_CLIENT_SECRET` (rotating the OAuth client secret then invalidates
+     all browser sessions). Recommended for new environments; not required yet.
+     Generate a high-entropy value and store it only in the operator password
+     manager — never commit it.
 2. **KV namespace** `OAUTH_KV` (dashboard → Storage & Databases → KV) — paste its
    id into `wrangler.jsonc` (`kv_namespaces`). This stores grants/tokens.
 3. Deploy through the environment-specific runbook. Then connect a client to
@@ -80,23 +86,16 @@ Apps, secrets, or KV namespace ids across environments.
 > workspace tools. The old snapshot is retained as migration rollback material
 > but stale legacy mutation is refused.
 
-### Share links (`share_topology`, `list_shares`, `revoke_share`)
+### Share links (`share_topology` / `list_shares` / `unpublish_topology`)
 
 `share_topology` snapshots the current document into a **KV namespace** and
 returns a link that opens it in the browser editor — the way to hand a user a
-viewable/shareable result after building. Every publish is recorded in the
-owner's share index, so the same owner (over MCP with `list_shares` /
-`revoke_share`, or in the browser share dialog) can enumerate their live links
-and take one down before its 30-day expiry. Because the snapshot lives in KV
-(not the per-session in-memory store), the link keeps working after the MCP
-session ends. The link is `<PUBLIC_BASE_URL>/v/<id>`; opening it loads the snapshot into
-the editor (the SPA fetches `/api/topology/<id>`). Every snapshot URL expires 30
-days after it is created. Publishing again mints a new snapshot id and URL; it
-does not renew the previous URL. Snapshots are public to anyone with the URL,
-may be cached for up to 24 hours, and currently have no revoke/unpublish
-operation; publish only content suitable for that exposure. This tool is
-**remote-only** — the local stdio server has no KV/origin, so it isn't
-registered there.
+viewable/shareable result after building. Because the snapshot lives in KV (not
+the per-session in-memory store), the link keeps working after the MCP session
+ends. The link is `<PUBLIC_BASE_URL>/v/<id>`; opening it loads the snapshot into
+the editor (the SPA fetches `/api/topology/<id>`).
+
+This link is public: anyone with the URL can view the snapshot for up to 30 days. Do not publish internal addresses, credentials, or other sensitive content. Publishing again mints a new snapshot id and URL; it does not renew the previous URL. Every snapshot URL expires 30 days after it is created. Public GETs may be cached for about a minute so an owner revoke can take effect quickly. Every publish also lands in the owner's listing index, so `list_shares` (and the browser Share dialog) can enumerate the live links. The publisher can revoke a link with `unpublish_topology` (pass the 12-character share id) or `DELETE /api/topology/<id>` while signed in as the same GitHub user; revoke deletes the KV key and `/v/<id>` then 404s. Snapshots are public to anyone with the URL; remote publishes are rate-limited per authenticated user (see [Rate limits and export size](#rate-limits-and-export-size)). These tools are **remote-only** — the local stdio server has no KV/origin, so they are not registered there.
 
 One-time setup for the isolated staging environment (use the environment's
 actual binding names and record the generated ids in `env.staging`):
@@ -104,7 +103,8 @@ actual binding names and record the generated ids in `env.staging`):
 ```bash
 npx wrangler kv namespace create TOPOLOGY_KV --env staging
 # Set staging PUBLIC_BASE_URL and the generated namespace id in wrangler.jsonc.
-# Provision OAUTH_KV and GITHUB_CLIENT_SECRET independently for staging.
+# Provision OAUTH_KV, GITHUB_CLIENT_SECRET, and optional
+# SESSION_HMAC_SECRET independently for staging.
 npx wrangler deploy --env staging
 ```
 
@@ -198,9 +198,9 @@ to the task's affected region and change summaries, not total document size.
 | `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                                     |
 | `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                                       |
 | `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                                      |
-| `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)                                                 |
+| `share_topology`                                       | Publish a **public** durable snapshot; returns a browser link (remote-only)                                      |
 | `list_shares`                                          | The owner's live published share links, newest first (remote-only)                                               |
-| `revoke_share`                                         | Revoke one of the owner's published share links early (remote-only)                                              |
+| `unpublish_topology`                                   | Owner-only revoke of a public share (deletes the KV snapshot; remote-only)                                       |
 | `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                                     |
 | `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                            |
 | `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it                      |
@@ -251,11 +251,38 @@ tunnels, overlay policies, and flow tables incl. recently-ended flows) so an
 agent can build topologies from reality instead of from prose. Credentials
 come from the environment only; they never pass through tool arguments.
 
-- **stdio:** set `ORCH_BASE_URL` + `ORCH_API_KEY` (EdgeConnect Orchestrator
-  origin + API key) in the server's environment, or `TOPOLOGY_PROVIDER=mock`
-  for a built-in fixture fabric (demo / development with zero fabric access).
-- **Cloudflare:** set the `ORCH_BASE_URL` var and the **`ORCH_API_KEY`
-  dashboard secret** (same pattern as `GITHUB_CLIENT_SECRET`).
+### Blast radius
+
+The Orchestrator API key is deployment-wide. When live-data is enabled,
+**every authenticated MCP session** on that Worker (any GitHub user who
+completes OAuth) can call the full fabric tool set against the connected
+Orchestrator — inventory, overlay policies, and flow tables — unless the
+optional `LIVE_DATA_GITHUB_IDS` allowlist further restricts the grant.
+There is no per-session or per-tool credential: one key covers the whole
+fabric. Staging and production must never share `ORCH_*` credentials.
+Prefer a least-privilege, non-production Orchestrator key. Do not
+provision production fabric credentials without an explicit human
+decision. See [`../../docs/DEPLOYMENT_RUNBOOK.md`](../../docs/DEPLOYMENT_RUNBOOK.md)
+§"Live-data fabric tools".
+
+Secret presence alone does **not** enable the tools. `LIVE_DATA_ENABLED`
+must be the literal `"true"` (opt-in, same fail-closed style as
+`PROFILES_ENABLED` / `ANALYTICS_ENABLED`). Unset, `"false"`, or a typo
+leaves the tools unregistered even if `ORCH_BASE_URL` and `ORCH_API_KEY`
+are configured.
+
+- **stdio:** set `LIVE_DATA_ENABLED=true` plus `ORCH_BASE_URL` +
+  `ORCH_API_KEY` (EdgeConnect Orchestrator origin + API key) in the
+  server's environment, or `TOPOLOGY_PROVIDER=mock` for a built-in
+  fixture fabric (demo / development with zero fabric access; the mock
+  path does not require the flag).
+- **Cloudflare:** set `LIVE_DATA_ENABLED` to `"true"` in that
+  environment's `wrangler.jsonc` vars, the `ORCH_BASE_URL` var, and the
+  **`ORCH_API_KEY` dashboard secret** (same pattern as
+  `GITHUB_CLIENT_SECRET`). Optionally set `LIVE_DATA_GITHUB_IDS` to a
+  comma-separated list of GitHub numeric ids (the same identity
+  `ADMIN_GITHUB_ID` uses). Both production and staging leave
+  `LIVE_DATA_ENABLED` `"false"` until an operator activates them.
 
 The EdgeConnect provider (`src/connect/edgeconnect.ts`) talks only to the
 **Orchestrator** — appliance flow tables are read through its appliance-API
@@ -304,3 +331,32 @@ validate/tidy/balance and **before** `render_svg` / `share_topology` /
 
 The tool handlers live in `tools.ts` (pure, unit-tested in `tools.test.ts`);
 `server.ts` registers them with the SDK and maps results to MCP text content.
+
+## Rate limits and export size
+
+Remote (Cloudflare) deployments enforce application-level quotas so a retry
+loop cannot amplify Durable Object / KV cost or stuff an agent context with
+unbounded SVG/HTML. The local stdio server has no per-user identity and does
+not apply the request quotas; it still enforces the export size caps. These
+are the request-rate complement to the coordinator's batch (250 ops / 512 KiB)
+and page-size limits.
+
+On a rate-limited tool call the handler returns `isError` with a message of
+the form `rate limited (<bucket>: <n> per <window>s). Retry after <seconds>s.`
+Wait at least that many seconds before retrying the same class of call.
+Prefer `edit_topology` batches over per-element `add_*` tools — a batch is
+one quota unit.
+
+| Surface                                                                                                                                                          | Limit       | Scope                                               | Exceeded                                                                           |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Mutating MCP tools (authoring writes, `propose_workspace_changes`, `apply_workspace_changes`, `create_checkpoint`, `create_workspace`, `build_flow_topology`, …) | 120 / 60s   | Authenticated GitHub user (registry Durable Object) | Tool error; retry after the stated delay                                           |
+| `share_topology`                                                                                                                                                 | 8 / 300s    | Authenticated GitHub user                           | Tool error; retry after the stated delay                                           |
+| `render_svg`                                                                                                                                                     | 2 MiB UTF-8 | Per response                                        | Tool error — do not retry the same page; reduce density or `inspect_render` first  |
+| `export_flipbook`                                                                                                                                                | 6 MiB UTF-8 | Per response                                        | Tool error — do not retry the same document; `render_svg` individual pages instead |
+| Public `GET /api/topology/:id`                                                                                                                                   | 60 / 60s    | Client IP (`CF-Connecting-IP`)                      | HTTP 429 + `Retry-After`; response is not cached                                   |
+
+Read-only MCP tools (`get_topology`, `inspect_render`, `validate_topology`,
+workspace/profile reads, live-data inventory, …) are not request-quota'd.
+Export tools are bounded by payload size rather than call rate so a single
+oversized render fails closed instead of streaming a multi-megabyte string
+into the model context.

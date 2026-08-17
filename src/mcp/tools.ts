@@ -66,6 +66,18 @@ import {
 } from '../profile/guidance.js';
 import { TopologyStore } from './store.js';
 import {
+  MAX_HTML_EXPORT_BYTES,
+  MAX_SVG_EXPORT_BYTES,
+  assertExportWithinLimit,
+} from './rate-limit.js';
+import {
+  TEXT_LIMITS,
+  normalizeText,
+  overlongDisplayMax,
+  overlongMetaMax,
+  sanitizeDisplayFields,
+} from '../api/text.js';
+import {
   ELEMENT_KINDS,
   type ChangesResult,
   type CheckpointSummary,
@@ -78,6 +90,7 @@ import {
   type WorkspaceManifest,
   type WorkspaceOperation,
 } from '../workspace/model.js';
+import { SHARE_PUBLIC_WARNING } from '../share/copy.js';
 
 export interface ToolDef {
   name: string;
@@ -108,16 +121,18 @@ export interface ToolDeps {
     doc: TopologyDocument,
   ) => Promise<{ id: string; url: string }>;
   /**
-   * The owner's published share links (newest first, expired pruned) and a
-   * revoke action for one of them. Wired only where publishTopology is (the
-   * Worker) — together they close finding M20 for the agent surface too: what
-   * an authenticated owner publishes, the same owner can enumerate and take
-   * down.
+   * Owner-only delete of a published `doc:<id>` snapshot. Wired with
+   * `publishTopology` on the Worker; absent for the local stdio server.
+   */
+  unpublishTopology?: (shareId: string) => Promise<{ revoked: true }>;
+  /**
+   * The owner's published share links (newest first, expired pruned) — the
+   * listing side of revocation, so an agent can enumerate what is live
+   * before unpublish_topology. Wired with publishTopology on the Worker.
    */
   listShares?: () => Promise<
     { id: string; title: string; createdAt: number; expiresAt: number }[]
   >;
-  revokeShare?: (id: string) => Promise<'revoked' | 'not-found'>;
   /**
    * Live fabric data source (an SD-WAN orchestrator client or the fixture
    * mock). Wired from environment credentials by the servers — never from
@@ -190,17 +205,71 @@ const pageIndex = z
   .int()
   .optional()
   .describe('0-based page index; defaults to the most recently added page.');
+
+/** Zod string: reject overlong raw input, then strip controls / collapse space. */
+function displayString(max: number, opts?: { multiline?: boolean }) {
+  return z
+    .string()
+    .max(max)
+    .transform((s) => normalizeText(s, opts));
+}
+
+function refineDisplayRecord(
+  val: Record<string, unknown>,
+  ctx: z.RefinementCtx,
+): void {
+  for (const [k, v] of Object.entries(val)) {
+    const max = overlongDisplayMax(k, v);
+    if (max !== null)
+      ctx.addIssue({
+        code: 'custom',
+        path: [k],
+        message: `exceeds ${max} characters`,
+      });
+    if (k === 'meta' && v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const [mk, mv] of Object.entries(v as Record<string, unknown>)) {
+        const over = overlongMetaMax(mk, mv);
+        if (over)
+          ctx.addIssue({
+            code: 'custom',
+            path: ['meta', over.path],
+            message: `exceeds ${over.max} characters`,
+          });
+      }
+    }
+  }
+}
+
+function normalizeDisplayRecord(
+  val: Record<string, unknown>,
+): Record<string, unknown> {
+  const copy = structuredClone(val);
+  sanitizeDisplayFields(copy);
+  return copy;
+}
+
 const extra = z
   .record(z.string(), z.unknown())
+  .superRefine(refineDisplayRecord)
+  .transform(normalizeDisplayRecord)
   .optional()
   .describe(
     'Any additional catalog fields for this type (see describe_capabilities).',
   );
 type MetaMap = Record<string, string | number | boolean>;
+const metaValue = z.union([
+  displayString(TEXT_LIMITS.metaValue),
+  z.number(),
+  z.boolean(),
+]);
 const metaShape = z
-  .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+  .record(z.string().max(TEXT_LIMITS.label), metaValue)
   .optional()
   .describe('Key/value node metadata (serial, version, hostname, site…).');
+const patchSet = z
+  .record(z.string(), z.unknown())
+  .superRefine(refineDisplayRecord)
+  .transform(normalizeDisplayRecord);
 const layerArg = z
   .string()
   .optional()
@@ -299,7 +368,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       name: 'create_topology',
       description:
         'Create a new topology document (seeded with one empty page "Frame 1"). Returns its id; pass that id to subsequent tools.',
-      inputShape: { title: z.string().optional() },
+      inputShape: { title: displayString(TEXT_LIMITS.title).optional() },
       handler: (a) => {
         const { id, document } = store.create(
           a.title ? String(a.title) : undefined,
@@ -326,7 +395,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         'Create a new topology from a starter template (see list_templates). Returns its id, like create_topology.',
       inputShape: {
         template: z.string().describe('Template id from list_templates.'),
-        title: z.string().optional(),
+        title: displayString(TEXT_LIMITS.title).optional(),
       },
       handler: (a) => {
         const doc = buildTemplate(String(a.template));
@@ -403,7 +472,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe(
             'Document JSON as a string or object; or Mermaid/CSV text (string).',
           ),
-        title: z.string().optional(),
+        title: displayString(TEXT_LIMITS.title).optional(),
         format: z
           .enum(['auto', 'topology-dojo', 'legacy-studio', 'mermaid', 'csv'])
           .optional()
@@ -512,7 +581,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         'Append a new (empty) page/frame to a topology. Returns its 0-based index. duration/transition control flipbook playback (see export_flipbook).',
       inputShape: {
         topologyId,
-        name: z.string().optional(),
+        name: displayString(TEXT_LIMITS.name).optional(),
         viewBox: z.string().optional(),
         duration: z
           .number()
@@ -540,7 +609,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_document_title',
       description: 'Rename a topology document.',
-      inputShape: { topologyId, title: z.string() },
+      inputShape: { topologyId, title: displayString(TEXT_LIMITS.title) },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
         doc.title = String(a.title);
@@ -554,7 +623,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       inputShape: {
         topologyId,
         pageIndex,
-        name: z.string().optional(),
+        name: displayString(TEXT_LIMITS.name).optional(),
         viewBox: z.string().optional(),
         duration: z
           .number()
@@ -645,7 +714,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .regex(HEX)
           .optional()
           .describe('App-chrome accent override (defaults to accent).'),
-        name: z.string().optional().describe('Label for the palette.'),
+        name: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Label for the palette.'),
         clear: z
           .boolean()
           .optional()
@@ -681,8 +752,8 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         type: z.string(),
         x: z.number(),
         y: z.number(),
-        label: z.string().optional(),
-        sublabel: z.string().optional(),
+        label: displayString(TEXT_LIMITS.label).optional(),
+        sublabel: displayString(TEXT_LIMITS.sublabel).optional(),
         color: z.string().optional(),
         nodeId: z.string().optional().describe('Explicit id (else generated).'),
         meta: metaShape,
@@ -717,7 +788,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         pageIndex,
         nodeId: z.string(),
         meta: z
-          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+          .record(z.string().max(TEXT_LIMITS.label), metaValue)
           .describe('Key/value metadata.'),
         merge: z
           .boolean()
@@ -746,7 +817,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         type: z.string(),
         from: z.string(),
         to: z.string(),
-        label: z.string().optional(),
+        label: displayString(TEXT_LIMITS.label).optional(),
         color: z.string().optional(),
         labelScale: z
           .number()
@@ -828,9 +899,11 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         topologyId,
         pageIndex,
         nodes: z.array(z.string()).describe('Member node ids.'),
-        label: z.string().optional(),
-        sublabel: z.string().optional(),
-        description: z.string().optional(),
+        label: displayString(TEXT_LIMITS.label).optional(),
+        sublabel: displayString(TEXT_LIMITS.sublabel).optional(),
+        description: displayString(TEXT_LIMITS.description, {
+          multiline: true,
+        }).optional(),
         color: z.string().optional(),
         borderStyle: z.enum(BORDER).optional(),
         padding: z.number().optional(),
@@ -875,7 +948,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         topologyId,
         pageIndex,
         waypoints: z.array(z.string()).describe('Ordered node/anchor ids.'),
-        label: z.string().optional(),
+        label: displayString(TEXT_LIMITS.label).optional(),
         color: z.string().optional(),
         animation: z.enum(ANIMATION).optional(),
         speed: z.union([z.number(), z.enum(SPEED)]).optional(),
@@ -917,10 +990,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         pageIndex,
         nodeId: z.string(),
         type: z.enum(MARKER),
-        label: z.string().optional(),
+        label: displayString(TEXT_LIMITS.label).optional(),
         color: z.string().optional(),
-        icon: z
-          .string()
+        icon: displayString(TEXT_LIMITS.label)
           .optional()
           .describe('Glyph override (default per type).'),
         align: z.enum(ALIGN9).optional(),
@@ -956,9 +1028,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         topologyId,
         pageIndex,
         elementId: z.string().describe('Id of the element to patch.'),
-        set: z
-          .record(z.string(), z.unknown())
-          .describe('Fields to merge; null clears a field.'),
+        set: patchSet.describe('Fields to merge; null clears a field.'),
       },
       handler: (a) =>
         updateElement(
@@ -1010,8 +1080,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               .describe('Freshness timestamp (ISO 8601).'),
           })
           .describe('The external identity to match on.'),
-        set: z
-          .record(z.string(), z.unknown())
+        set: patchSet
           .optional()
           .describe('Fields to apply (see describe_capabilities).'),
       },
@@ -1033,8 +1102,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .string()
           .optional()
           .describe('Explicit id (else generated). Re-use an id to update.'),
-        name: z
-          .string()
+        name: displayString(TEXT_LIMITS.name)
           .optional()
           .describe('Display name (falls back to id).'),
         kind: z
@@ -1238,7 +1306,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. NOTE: the returned SVG is large (often 20–300KB) — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. NOTE: the returned SVG is large (often 20–300KB) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -1252,22 +1320,30 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe('Layer ids to draw (omit for the layers’ defaults).'),
       },
       handler: (a) =>
-        deps.renderDocument(
-          store.get(String(a.topologyId)),
-          (a.pageIndex as number | undefined) ?? 0,
-          a.visibleLayers !== undefined
-            ? { visibleLayers: a.visibleLayers as string[] }
-            : {},
+        assertExportWithinLimit(
+          deps.renderDocument(
+            store.get(String(a.topologyId)),
+            (a.pageIndex as number | undefined) ?? 0,
+            a.visibleLayers !== undefined
+              ? { visibleLayers: a.visibleLayers as string[] }
+              : {},
+          ),
+          MAX_SVG_EXPORT_BYTES,
+          'SVG',
         ),
     },
     {
       name: 'export_flipbook',
       description:
-        'Export the whole document as one standalone, self-playing HTML flipbook: every page rendered to SVG, played in order on each page’s duration (default 2000ms) with cut/fade transitions, loop, play/pause, and frame dots. No external assets — save it as an .html file and open in any browser. This is how an animated multi-frame story (e.g. a flow’s setup → steady state → teardown) is delivered end to end.',
+        'Export the whole document as one standalone, self-playing HTML flipbook: every page rendered to SVG, played in order on each page’s duration (default 2000ms) with cut/fade transitions, loop, play/pause, and frame dots. No external assets — save it as an .html file and open in any browser. Rejected above 6 MiB — for a long story, render_svg pages individually. This is how an animated multi-frame story (e.g. a flow’s setup → steady state → teardown) is delivered end to end.',
       inputShape: { topologyId },
       handler: (a) =>
-        exportFlipbookHTML(store.get(String(a.topologyId)), (doc, i) =>
-          deps.renderDocument(doc, i),
+        assertExportWithinLimit(
+          exportFlipbookHTML(store.get(String(a.topologyId)), (doc, i) =>
+            deps.renderDocument(doc, i),
+          ),
+          MAX_HTML_EXPORT_BYTES,
+          'HTML',
         ),
     },
   ];
@@ -1451,7 +1527,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         description:
           'One shot: query the live fabric and compile a complete layered topology document — appliances as nodes, sites as zones, underlay + overlay tunnels as links on their layers, and each matched flow as an animated flow path (hop-by-hop data attached) with a policy marker for the overlay that steered it. The result is laid out, tidied, validated, and stored; render it with render_svg (use visibleLayers to isolate a plane) or share it with share_topology. Flow filters work like list_flows; limit defaults to 10. Re-running creates a fresh topology — to refresh an existing one, re-run and use the new id.',
         inputShape: {
-          title: z.string().optional(),
+          title: displayString(TEXT_LIMITS.title).optional(),
           applianceId: z.string().optional(),
           ip: z.string().optional().describe('Match either endpoint IP.'),
           port: z.number().int().optional(),
@@ -1519,7 +1595,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         name: 'create_workspace',
         description:
           'Create a canonical shared workspace with one empty page. Use this instead of a private draft when the result should immediately appear in the browser; subsequent agent edits are proposals by default.',
-        inputShape: { title: z.string().max(160).optional() },
+        inputShape: { title: displayString(TEXT_LIMITS.title).optional() },
         handler: async (a) => {
           const snapshot = await workspace.createEmpty(
             a.title === undefined ? undefined : String(a.title),
@@ -1631,8 +1707,14 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           workspaceId,
           baseRevision: z.number().int().min(0),
           operationId,
-          title: z.string().min(1).max(160),
-          rationale: z.string().max(2000).optional(),
+          title: z
+            .string()
+            .min(1)
+            .max(TEXT_LIMITS.title)
+            .transform((s) => normalizeText(s)),
+          rationale: displayString(TEXT_LIMITS.rationale, {
+            multiline: true,
+          }).optional(),
           operations: compactWorkspaceOperations,
         },
         handler: (a) =>
@@ -1670,7 +1752,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           'Snapshot the current workspace document as a named checkpoint (e.g. before a risky batch of changes). The owner can later restore or fork it from the browser. Bounded: creating beyond the per-workspace limit fails until one is deleted.',
         inputShape: {
           workspaceId,
-          name: z.string().min(1).max(120).describe('A short label for later.'),
+          name: z
+            .string()
+            .min(1)
+            .max(TEXT_LIMITS.checkpointName)
+            .transform((s) => normalizeText(s))
+            .describe('A short label for later.'),
         },
         handler: (a) =>
           workspace.createCheckpoint(
@@ -1788,8 +1875,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     const publish = deps.publishTopology;
     tools.push({
       name: 'share_topology',
-      description:
-        'Publish the current topology and return a link that opens it in the Topology Dojo editor in a browser. Use this to give the user a viewable/shareable result after building. The snapshot is stored durably (it does NOT depend on the live server session, so the link keeps working after this session ends). The link is PUBLIC (no sign-in) and expires after 30 days; the owner can revoke it early with revoke_share or from the browser share dialog. Re-run after further edits to publish an updated snapshot (a new link).',
+      description: `Publish the current topology and return a public link that opens it in the Topology Dojo editor. ${SHARE_PUBLIC_WARNING} Do not publish internal addresses, credentials, or other sensitive content. The snapshot is stored durably (it does NOT depend on the live server session). Re-run after further edits to publish an updated snapshot (a new link). Remote deployments rate-limit this tool per authenticated user (8 per 5 minutes); back off on a rate-limited error rather than retrying immediately. The publisher can list live links with list_shares and revoke one with unpublish_topology (or DELETE /api/topology/<id>).`,
       inputShape: { topologyId },
       handler: (a) => publish(store.get(String(a.topologyId))),
     });
@@ -1799,30 +1885,25 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     tools.push({
       name: 'list_shares',
       description:
-        'List the authenticated owner’s live published share links (id, title, createdAt, expiresAt), newest first. Expired snapshots are pruned automatically. Use before revoke_share to find the id to take down.',
+        'List the authenticated owner’s live published share links (id, title, createdAt, expiresAt), newest first. Expired snapshots are pruned automatically. Use before unpublish_topology to find the id to take down. Links published before owner metadata/listing existed do not appear and cannot be revoked.',
       inputShape: {},
       handler: async () => ({ shares: await list() }),
     });
   }
-  if (deps.revokeShare) {
-    const revoke = deps.revokeShare;
+  if (deps.unpublishTopology) {
+    const unpublish = deps.unpublishTopology;
     tools.push({
-      name: 'revoke_share',
-      description:
-        'Revoke one of the authenticated owner’s published share links: the public /v/<id> snapshot is deleted and stops resolving (edge caches can serve it for up to ~5 more minutes). Only the publishing owner’s own links can be revoked. This is how a mistakenly published topology is taken down before its 30-day expiry.',
+      name: 'unpublish_topology',
+      description: `Revoke a public share link you published with share_topology. Deletes the KV snapshot so /v/<id> and /api/topology/<id> stop serving it. Only the publisher can revoke. Pass the 12-character share id from the URL (or the id returned by share_topology or list_shares). ${SHARE_PUBLIC_WARNING}`,
       inputShape: {
         shareId: z
           .string()
-          .describe('The snapshot id (from share_topology or list_shares).'),
+          .min(1)
+          .describe(
+            'Share id from share_topology (the <id> in /v/<id>), not a topologyId.',
+          ),
       },
-      handler: async (a) => {
-        const outcome = await revoke(String(a.shareId));
-        if (outcome === 'not-found')
-          throw new Error(
-            `no share '${String(a.shareId)}' in your published links (already revoked, expired, or not yours)`,
-          );
-        return { revoked: String(a.shareId) };
-      },
+      handler: (a) => unpublish(String(a.shareId)),
     });
   }
 

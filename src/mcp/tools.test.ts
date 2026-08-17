@@ -7,6 +7,7 @@ import { parseToolArgs } from './register.js';
 import { renderDocumentToSVG } from '../server/render.js';
 import { MockProvider } from '../connect/mock.js';
 import type { TopologyDocument } from '../pages/model.js';
+import { TEXT_LIMITS } from '../api/text.js';
 
 describe('MCP tools', () => {
   let store: TopologyStore;
@@ -983,6 +984,7 @@ describe('MCP tools', () => {
 
   it('omits share_topology unless a publish dep is provided', () => {
     expect(tools.some((t) => t.name === 'share_topology')).toBe(false);
+    expect(tools.some((t) => t.name === 'unpublish_topology')).toBe(false);
   });
 
   it('validates tool arguments at runtime (parseToolArgs)', () => {
@@ -1013,6 +1015,51 @@ describe('MCP tools', () => {
         source: { system: 's', kind: 'k', id: '1' },
       }),
     ).toThrow(/kind/);
+  });
+
+  it('rejects overlong free-text at the Zod boundary and normalizes controls', () => {
+    const addNode = tools.find((t) => t.name === 'add_node')!;
+    expect(() =>
+      parseToolArgs(addNode, {
+        topologyId: 't',
+        type: 'ec',
+        x: 0,
+        y: 0,
+        label: 'L'.repeat(TEXT_LIMITS.label + 1),
+      }),
+    ).toThrow(/label.*<=200|label.*at most|label.*exceeds/i);
+    const addZone = tools.find((t) => t.name === 'add_zone')!;
+    expect(() =>
+      parseToolArgs(addZone, {
+        topologyId: 't',
+        nodes: ['n'],
+        description: 'D'.repeat(TEXT_LIMITS.description + 1),
+      }),
+    ).toThrow(/description/);
+    const setMeta = tools.find((t) => t.name === 'set_node_metadata')!;
+    expect(() =>
+      parseToolArgs(setMeta, {
+        topologyId: 't',
+        nodeId: 'n',
+        meta: { serial: 'M'.repeat(TEXT_LIMITS.metaValue + 1) },
+      }),
+    ).toThrow(/serial|Too big|at most/i);
+    const update = tools.find((t) => t.name === 'update_element')!;
+    expect(() =>
+      parseToolArgs(update, {
+        topologyId: 't',
+        elementId: 'n',
+        set: { label: 'x'.repeat(TEXT_LIMITS.label + 1) },
+      }),
+    ).toThrow(/exceeds/);
+    const parsed = parseToolArgs(addNode, {
+      topologyId: 't',
+      type: 'ec',
+      x: 0,
+      y: 0,
+      label: '  Branch\u0000  A  ',
+    });
+    expect(parsed.label).toBe('Branch A');
   });
 
   it('omits the live-data tools unless a provider is wired in', () => {
@@ -1088,6 +1135,24 @@ describe('MCP tools', () => {
       operations: [{ type: 'element.remove', pageId: 'p1', elementId: 'n1' }],
     });
     expect(parsed.operations).toHaveLength(1);
+    expect(() =>
+      parseToolArgs(propose, {
+        workspaceId: 'w1',
+        baseRevision: 1,
+        operationId: 'op1',
+        title: 'T'.repeat(TEXT_LIMITS.title + 1),
+        operations: [{ type: 'element.remove', pageId: 'p1', elementId: 'n1' }],
+      }),
+    ).toThrow(/title/);
+    const checkpoint = withWorkspace.find(
+      (tool) => tool.name === 'create_checkpoint',
+    )!;
+    expect(() =>
+      parseToolArgs(checkpoint, {
+        workspaceId: 'w1',
+        name: 'N'.repeat(TEXT_LIMITS.checkpointName + 1),
+      }),
+    ).toThrow(/name/);
 
     const describe = withWorkspace.find(
       (tool) => tool.name === 'describe_workspace_operations',
@@ -1226,6 +1291,8 @@ describe('MCP tools', () => {
       },
     });
     const share = withShare.find((t) => t.name === 'share_topology')!;
+    expect(share.description).toMatch(/this link is public/i);
+    expect(share.description).toMatch(/anyone with the URL/i);
     const { id } = call('create_topology', { title: 'Shared' }) as {
       id: string;
     };
@@ -1239,6 +1306,35 @@ describe('MCP tools', () => {
     // It snapshots the live stored document (with the node just added).
     expect(published?.title).toBe('Shared');
     expect(published?.pages[0]!.nodes[0]!.id).toBe('a');
+  });
+
+  it('unpublish_topology revokes a share id through the unpublish dep', async () => {
+    const revoked: string[] = [];
+    const withShare = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      publishTopology: async () => ({
+        id: 'abc123',
+        url: 'https://example.com/v/abc123',
+      }),
+      unpublishTopology: async (shareId) => {
+        revoked.push(shareId);
+        return { revoked: true };
+      },
+    });
+    const unpublish = withShare.find((t) => t.name === 'unpublish_topology')!;
+    expect(unpublish.description).toMatch(/this link is public/i);
+    expect(unpublish.description).toMatch(/only the publisher/i);
+    const readme = readFileSync(
+      fileURLToPath(new URL('./README.md', import.meta.url)),
+      'utf8',
+    );
+    expect(readme).toContain('`unpublish_topology`');
+    expect(readme).toMatch(/this link is public/i);
+    const res = (await unpublish.handler({ shareId: 'abc123' })) as {
+      revoked: true;
+    };
+    expect(res).toEqual({ revoked: true });
+    expect(revoked).toEqual(['abc123']);
   });
 
   it('sets playback timing and exports a self-playing flipbook', () => {
@@ -1273,6 +1369,34 @@ describe('MCP tools', () => {
     expect(html).toContain('data-name="Setup"');
     expect(html).toContain('"duration":1500');
     expect(html).toContain('"transition":"fade"');
+  });
+
+  it('rejects an SVG export over the 2 MiB cap', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    const oversized = createTools(store, {
+      renderDocument: () => 'x'.repeat(2 * 1024 * 1024 + 1),
+    });
+    expect(() =>
+      oversized
+        .find((t) => t.name === 'render_svg')!
+        .handler({
+          topologyId: id,
+        }),
+    ).toThrow(/SVG export exceeds the 2 MiB limit/);
+  });
+
+  it('rejects a flipbook export over the 6 MiB cap', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    const oversized = createTools(store, {
+      renderDocument: () => 'y'.repeat(6 * 1024 * 1024 + 1),
+    });
+    expect(() =>
+      oversized
+        .find((t) => t.name === 'export_flipbook')!
+        .handler({
+          topologyId: id,
+        }),
+    ).toThrow(/HTML export exceeds the 6 MiB limit/);
   });
 
   it('add_page targets the new page by default; pageIndex overrides', () => {

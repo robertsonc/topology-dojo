@@ -70,10 +70,10 @@ status must be read from appended closure notes and `CAPABILITY_MATRIX.md`,
 not the historical top-line count. Former finding H1 is closed: algorithmic
 layout now carries anchors and manual waypoints with their nodes (commits
 `aa4e88c`, `7e3f8ed`). **M20 is closed (2026-08-17)**: publishing now records
-an owner-indexed share record, the browser Share dialog and the MCP
-`list_shares`/`revoke_share` tools can take a link down early, and snapshot
-caching dropped `immutable` for a bounded 5-minute window (see the register's
-closure note and `worker/share.ts`).
+owner metadata + a listing index, the browser Share dialog and the MCP
+`list_shares`/`unpublish_topology` tools can take a link down early, and
+snapshot caching dropped `immutable` for a bounded ~1-minute window (see the
+register's closure note, `src/share/snapshot.ts`, and `worker/share.ts`).
 
 ## Now
 
@@ -144,8 +144,9 @@ packets:
   item 3) ships, aggregate views (which guidance rules actually change agent
   behavior, correction-rate trends) become possible.
 - ~~**Share-link revocation (finding M20)**~~ — **shipped 2026-08-17**
-  (`worker/share.ts`, the browser Share dialog, MCP `list_shares` /
-  `revoke_share`, and revocation-compatible snapshot caching).
+  (snapshot owner metadata + `worker/share.ts` listing index, the browser
+  Share dialog, MCP `list_shares` / `unpublish_topology`, and
+  revocation-compatible snapshot caching).
 - **More node/link art** — port additional renderers from the legacy
   monolith as needed; richer per-type inspector controls (ports, D2 waypoint
   UI).

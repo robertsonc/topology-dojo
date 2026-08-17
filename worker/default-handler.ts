@@ -5,6 +5,7 @@
  *   GET /authorize          → start GitHub sign-in for an MCP client
  *   GET /callback           → GitHub redirect back; issue the MCP grant
  *   GET /api/topology/:id    → a published share snapshot (public, from KV)
+ *   DELETE /api/topology/:id → owner-only revoke of that snapshot
  *   /v/:id and everything else → the static SPA (env.ASSETS)
  *
  * GitHub is the upstream identity provider. We deliberately skip our own consent
@@ -33,6 +34,16 @@ import { handleAdminApi } from './admin-api.js';
 import { handleStagingFault, STAGING_FAULT_PATH } from './staging-fault.js';
 import { listShares, publishSnapshot, revokeShare } from './share.js';
 import { parseDoc } from '../src/pages/persist.js';
+import {
+  SNAPSHOT_GET_LIMIT,
+  consumeFixedWindow,
+  snapshotClientIp,
+  snapshotRateLimitKey,
+} from '../src/mcp/rate-limit.js';
+import {
+  getShareSnapshot,
+  SHARE_CACHE_CONTROL,
+} from '../src/share/snapshot.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -286,9 +297,62 @@ interface GitHubUser {
   name: string | null;
 }
 
+/**
+ * Per-IP quota on public snapshot GETs. Uses TOPOLOGY_KV (already on this
+ * path) with a short-TTL counter — no new Durable Object. Fail-open if the
+ * client IP is missing or KV throws, so a probe/blip cannot take the share
+ * API down. 429s are never cached (the successful snapshot is immutable).
+ */
+async function limitSnapshotGet(
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response | null> {
+  const ip = snapshotClientIp(request);
+  if (!ip) return null;
+  try {
+    const now = Date.now();
+    const key = snapshotRateLimitKey(ip, now);
+    const raw = await env.TOPOLOGY_KV.get(key);
+    const parsed = raw === null ? 0 : Number(raw);
+    const current =
+      Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+    const outcome = consumeFixedWindow(current, now, SNAPSHOT_GET_LIMIT);
+    if (!outcome.result.allowed) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil(outcome.result.retryAfterMs / 1000),
+      );
+      return new Response(
+        JSON.stringify({ error: 'rate_limited', retryAfterSeconds }),
+        {
+          status: 429,
+          headers: {
+            'content-type': 'application/json',
+            'cache-control': 'no-store',
+            'retry-after': String(retryAfterSeconds),
+          },
+        },
+      );
+    }
+    await env.TOPOLOGY_KV.put(key, String(outcome.next), {
+      expirationTtl: Math.ceil(SNAPSHOT_GET_LIMIT.windowMs / 1000) + 1,
+    });
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Serve a published snapshot's JSON from KV (the SPA fetches this for /v/:id). */
-async function serveSnapshot(id: string, env: WorkerEnv): Promise<Response> {
-  const json = await env.TOPOLOGY_KV.get(`doc:${id}`);
+async function serveSnapshot(
+  id: string,
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  const limited = await limitSnapshotGet(request, env);
+  if (limited) return limited;
+  const json = await getShareSnapshot(env.TOPOLOGY_KV, id);
+
   if (!json) {
     return new Response(JSON.stringify({ error: 'not found' }), {
       status: 404,
@@ -298,19 +362,64 @@ async function serveSnapshot(id: string, env: WorkerEnv): Promise<Response> {
   return new Response(json, {
     headers: {
       'content-type': 'application/json',
-      // A snapshot id is write-once, but the owner can REVOKE it (finding
-      // M20) — so it must not be cached as immutable-for-a-day. Five minutes
-      // keeps repeat views cheap while bounding how long a revoked link can
-      // keep serving from an edge/browser cache.
-      'cache-control': 'public, max-age=300',
+      // Short public cache so an owner revoke can take effect without a 24h
+      // immutable window. GET stays unauthenticated on purpose.
+      'cache-control': SHARE_CACHE_CONTROL,
+    },
+  });
+}
+
+/** Owner-only unpublish: delete `doc:<id>` when the session matches the
+ * publisher. Goes through `worker/share.ts` so the owner's listing index
+ * (the Share dialog's "published links") is pruned alongside the snapshot;
+ * ownership itself is decided by the snapshot's KV metadata. */
+async function revokeSnapshot(
+  id: string,
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  const user = await currentUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'authentication required' }), {
+      status: 401,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': NO_STORE,
+      },
+    });
+  }
+  const result = await revokeShare(env, user.uid, id);
+  if (result === 'not_found') {
+    return new Response(JSON.stringify({ error: 'not found' }), {
+      status: 404,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': NO_STORE,
+      },
+    });
+  }
+  if (result === 'forbidden') {
+    return new Response(JSON.stringify({ error: 'forbidden' }), {
+      status: 403,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': NO_STORE,
+      },
+    });
+  }
+  return new Response(JSON.stringify({ revoked: true }), {
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': NO_STORE,
     },
   });
 }
 
 /**
- * Owner share management (`/api/share`): the browser's publish/list/revoke
+ * Owner share management (`/api/share`): the browser's publish + list
  * surface — the same helpers the MCP tools use (`worker/share.ts`), behind
- * the browser session cookie. Closes finding M20 (no revocation path).
+ * the browser session cookie. Revocation lives on the canonical
+ * `DELETE /api/topology/:id` route above (metadata-checked ownership).
  */
 async function handleShareApi(
   request: Request,
@@ -353,16 +462,6 @@ async function handleShareApi(
     }
     const published = await publishSnapshot(env, user.uid, doc);
     return new Response(JSON.stringify(published), { status: 201, headers });
-  }
-  if (request.method === 'DELETE' && rest && !rest.includes('/')) {
-    const outcome = await revokeShare(env, user.uid, rest);
-    if (outcome === 'not-found') {
-      return new Response(JSON.stringify({ error: 'not found' }), {
-        status: 404,
-        headers,
-      });
-    }
-    return new Response(JSON.stringify({ revoked: rest }), { headers });
   }
   return new Response(JSON.stringify({ error: 'method not allowed' }), {
     status: 405,
@@ -519,14 +618,14 @@ async function route(
       : handleCallback(request, env);
   }
 
-  // Public share snapshot API (backs the read-only /v/:id view).
+  // Public share snapshot API (backs the read-only /v/:id view). GET is
+  // unauthenticated on purpose; DELETE is owner-only revoke.
   if (pathname.startsWith(API_TOPOLOGY_PREFIX)) {
-    if (request.method !== 'GET') {
-      return new Response('Method Not Allowed\n', { status: 405 });
-    }
     const id = pathname.slice(API_TOPOLOGY_PREFIX.length);
     if (!id) return new Response('Not Found\n', { status: 404 });
-    return serveSnapshot(id, env);
+    if (request.method === 'GET') return serveSnapshot(id, request, env);
+    if (request.method === 'DELETE') return revokeSnapshot(id, request, env);
+    return new Response('Method Not Allowed\n', { status: 405 });
   }
 
   // Gate the editor: a top-level navigation to the app needs a signed-in

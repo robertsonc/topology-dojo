@@ -23,6 +23,7 @@ import {
   computeChipAnnouncement,
   computeWorkspaceChipState,
   computeWorkspacePanelState,
+  decideCanvasRefresh,
   renderActiveWorkspaceHtml,
   renderChangedElementOverlay,
   renderCheckpointsHtml,
@@ -358,6 +359,18 @@ describe('renderActiveWorkspaceHtml', () => {
     expect(html).toContain('ws-v">synced</span>');
     expect(html).not.toContain('id="wsResume"');
     expect(html).not.toContain('ws-error');
+  });
+
+  it('labels Sync now as bidirectional and Reload server as discard-local (issue #223)', () => {
+    const html = renderActiveWorkspaceHtml(activeWorkspace());
+    expect(html).toContain(
+      'title="Push local edits and apply newer server revisions to the canvas"',
+    );
+    expect(html).toContain(
+      'title="Discard unsynced browser edits and load the canonical workspace"',
+    );
+    expect(html).toContain('id="wsSync"');
+    expect(html).toContain('id="wsReload"');
   });
 
   it('shows the sync-local-copy action and no error block when paused without error', () => {
@@ -1106,6 +1119,19 @@ describe('renderPresenceHtml (Packet S1)', () => {
     expect(html).toContain('&lt;b&gt;p&lt;/b&gt;');
   });
 
+  it('escapes a free-form actor label so markup cannot inject into the chip', () => {
+    const html = renderPresenceHtml([
+      {
+        kind: 'user',
+        label: '<img src=x onerror=alert(1)>',
+        pageId: 'p1',
+      },
+    ]);
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).toContain('p1');
+  });
+
   it('surfaces in the active workspace panel body', () => {
     const html = renderActiveWorkspaceHtml(
       activeWorkspace({
@@ -1165,6 +1191,63 @@ describe('renderOfflineStatusHtml (Packet S3)', () => {
   it('stays quiet in the panel body when online and synced', () => {
     const html = renderActiveWorkspaceHtml(activeWorkspace(), true);
     expect(html).not.toContain('ws-offline');
+  });
+});
+
+describe('decideCanvasRefresh (issue #223)', () => {
+  const ahead = {
+    serverRevision: 4,
+    localRevision: 3,
+    hasLocalChanges: false,
+    hasPending: false,
+    paused: false,
+  };
+
+  it('adopts the server snapshot when Sync now / poll pulls and the server is ahead with no local edits', () => {
+    expect(decideCanvasRefresh({ ...ahead, pullCanvas: true })).toBe('adopt');
+  });
+
+  it('leaves the canvas alone on a metadata-only refresh even when the server is ahead', () => {
+    expect(decideCanvasRefresh({ ...ahead, pullCanvas: false })).toBe('none');
+  });
+
+  it('does nothing when revisions already match', () => {
+    expect(
+      decideCanvasRefresh({
+        ...ahead,
+        pullCanvas: true,
+        serverRevision: 3,
+        localRevision: 3,
+      }),
+    ).toBe('none');
+  });
+
+  it('rebases disjoint local work when the server is ahead and the workspace is not paused', () => {
+    expect(
+      decideCanvasRefresh({
+        ...ahead,
+        pullCanvas: true,
+        hasLocalChanges: true,
+      }),
+    ).toBe('rebase');
+    expect(
+      decideCanvasRefresh({
+        ...ahead,
+        pullCanvas: true,
+        hasPending: true,
+      }),
+    ).toBe('rebase');
+  });
+
+  it('does not overwrite paused local recovery with a server-ahead snapshot', () => {
+    expect(
+      decideCanvasRefresh({
+        ...ahead,
+        pullCanvas: true,
+        hasLocalChanges: true,
+        paused: true,
+      }),
+    ).toBe('none');
   });
 });
 

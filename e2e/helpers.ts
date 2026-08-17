@@ -15,8 +15,14 @@ export async function bootEditor(page: Page): Promise<void> {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(page.locator('#page-canvas')).toBeVisible();
-  // The engine script loads deferred; the palette renders once it's ready.
-  await expect(page.locator('.pitem').first()).toBeVisible();
+  // Phone-width layouts default the node library closed (#221); the toggle is
+  // the reliable "editor chrome is up" signal. Desktop still waits for tiles
+  // so callers can click a catalog item immediately.
+  await expect(page.locator('#palette-toggle')).toBeVisible();
+  const paletteOpen = await page
+    .locator('#palette')
+    .evaluate((el) => !el.classList.contains('collapsed'));
+  if (paletteOpen) await expect(page.locator('.pitem').first()).toBeVisible();
 }
 
 /** Element count for one status-bar key (`nodes`, `links`, …). */

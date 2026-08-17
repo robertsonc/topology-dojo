@@ -16,6 +16,7 @@ import {
   STOCK_NODE_META,
   STOCK_NODE_SPECS,
 } from '../nodes/stock.js';
+import { TEXT_LIMITS } from './text.js';
 
 export type FieldKind =
   | 'string'
@@ -49,6 +50,11 @@ export interface FieldSpec {
   animation?: boolean;
   /** Hint that the field is required for the type to render meaningfully. */
   required?: boolean;
+  /**
+   * Max length for `kind: 'string'` (and for each string value when
+   * `kind: 'record'`). Advertised to agents; enforced at Zod / `parseDoc`.
+   */
+  max?: number;
 }
 
 export interface NodeTypeInfo {
@@ -104,21 +110,33 @@ const HREF_FIELD: FieldSpec = {
   key: 'href',
   label: 'Link URL',
   kind: 'string',
+  max: TEXT_LIMITS.url,
 };
 const TOOLTIP_FIELD: FieldSpec = {
   key: 'tooltip',
   label: 'Tooltip',
   kind: 'string',
+  max: TEXT_LIMITS.caption,
 };
 const NODE_COMMON: FieldSpec[] = [
-  { key: 'label', label: 'Label', kind: 'string' },
-  { key: 'sublabel', label: 'Sublabel', kind: 'string' },
+  { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
+  {
+    key: 'sublabel',
+    label: 'Sublabel',
+    kind: 'string',
+    max: TEXT_LIMITS.sublabel,
+  },
   { key: 'color', label: 'Color', kind: 'color' },
   { key: 'opacity', label: 'Opacity', kind: 'number' },
   { key: 'labelColor', label: 'Label color', kind: 'color' },
   { key: 'labelOffset', label: 'Label offset', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
-  { key: 'meta', label: 'Metadata', kind: 'record' },
+  {
+    key: 'meta',
+    label: 'Metadata',
+    kind: 'record',
+    max: TEXT_LIMITS.metaValue,
+  },
   {
     key: 'status',
     label: 'Status',
@@ -159,8 +177,18 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
     },
   ],
   cloud: [
-    { key: 'sub1', label: 'Subtitle 1', kind: 'string' },
-    { key: 'sub2', label: 'Subtitle 2', kind: 'string' },
+    {
+      key: 'sub1',
+      label: 'Subtitle 1',
+      kind: 'string',
+      max: TEXT_LIMITS.label,
+    },
+    {
+      key: 'sub2',
+      label: 'Subtitle 2',
+      kind: 'string',
+      max: TEXT_LIMITS.label,
+    },
     {
       key: 'innerClouds',
       label: 'Inner clouds',
@@ -174,12 +202,14 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
     { key: 'agentColor', label: 'Agent color', kind: 'color' },
   ],
   connector: [{ key: 'pe', label: 'Private Edge', kind: 'boolean' }],
-  saas: [{ key: 'logoUrl', label: 'Logo URL', kind: 'string' }],
+  saas: [
+    { key: 'logoUrl', label: 'Logo URL', kind: 'string', max: TEXT_LIMITS.url },
+  ],
   idcard: [
     { key: 'mode', label: 'Mode', kind: 'enum', options: ['id', 'auth'] },
-    { key: 'user', label: 'User', kind: 'string' },
-    { key: 'host', label: 'Host', kind: 'string' },
-    { key: 'role', label: 'Role', kind: 'string' },
+    { key: 'user', label: 'User', kind: 'string', max: TEXT_LIMITS.label },
+    { key: 'host', label: 'Host', kind: 'string', max: TEXT_LIMITS.label },
+    { key: 'role', label: 'Role', kind: 'string', max: TEXT_LIMITS.label },
   ],
   switchEnterprise: [
     { key: 'copperPorts', label: 'Copper ports', kind: 'number' },
@@ -188,7 +218,12 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
   overlayCloud: [{ key: 'padding', label: 'Padding', kind: 'number' }],
   text: [
     { key: 'fontSize', label: 'Font size', kind: 'number' },
-    { key: 'fontWeight', label: 'Font weight', kind: 'string' },
+    {
+      key: 'fontWeight',
+      label: 'Font weight',
+      kind: 'string',
+      max: TEXT_LIMITS.label,
+    },
     { key: 'width', label: 'Box width (wraps text)', kind: 'number' },
     { key: 'fill', label: 'Background fill', kind: 'color' },
     { key: 'borderColor', label: 'Border color', kind: 'color' },
@@ -206,6 +241,9 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
       label: 'Image source (https or data URI)',
       kind: 'string',
       required: true,
+      // Inline data URIs are legitimately huge; validation errors above
+      // 256KB (the workspace page-size guard), so advertise that cap.
+      max: 256 * 1024,
     },
     { key: 'imageW', label: 'Width', kind: 'number' },
     { key: 'imageH', label: 'Height', kind: 'number' },
@@ -295,7 +333,12 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
     const fields = shape
       ? [
           ...POSITION,
-          { key: 'label', label: 'Label', kind: 'string' as const },
+          {
+            key: 'label',
+            label: 'Label',
+            kind: 'string' as const,
+            max: TEXT_LIMITS.label,
+          },
           { key: 'labelColor', label: 'Label color', kind: 'color' as const },
           { key: 'color', label: 'Color', kind: 'color' as const },
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
@@ -341,18 +384,38 @@ const PORT_LABELS: Readonly<Record<string, string>> = {
 
 const LINK_COMMON: FieldSpec[] = [
   { key: 'color', label: 'Color', kind: 'color' },
-  { key: 'label', label: 'Label', kind: 'string' },
-  { key: 'fromLabel', label: 'From interface (A)', kind: 'string' },
-  { key: 'toLabel', label: 'To interface (Z)', kind: 'string' },
+  { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
+  {
+    key: 'fromLabel',
+    label: 'From interface (A)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  {
+    key: 'toLabel',
+    label: 'To interface (Z)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
   // Per-link label size multiplier (1 = default). Scales all of this link's
   // labels about their anchor; the renderer clamps to [0.25, 4].
   { key: 'labelScale', label: 'Label size', kind: 'number' },
   // B.2 first-class link metadata — renderable on the wire (see showMeta).
   // Stable per-field properties a future data feed can populate.
-  { key: 'vlan', label: 'VLAN', kind: 'string' },
-  { key: 'subnet', label: 'Subnet', kind: 'string' },
-  { key: 'bandwidth', label: 'Bandwidth', kind: 'string' },
-  { key: 'transport', label: 'Transport', kind: 'string' },
+  { key: 'vlan', label: 'VLAN', kind: 'string', max: TEXT_LIMITS.label },
+  { key: 'subnet', label: 'Subnet', kind: 'string', max: TEXT_LIMITS.label },
+  {
+    key: 'bandwidth',
+    label: 'Bandwidth',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  {
+    key: 'transport',
+    label: 'Transport',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
   { key: 'showMeta', label: 'Show metadata on wire', kind: 'boolean' },
   { key: 'strokeWidth', label: 'Stroke width', kind: 'number' },
   { key: 'opacity', label: 'Opacity', kind: 'number' },
@@ -415,12 +478,26 @@ const LINK_COMMON: FieldSpec[] = [
 /** Per-type extra link fields. */
 const LINK_EXTRAS: Record<string, FieldSpec[]> = {
   line: [{ key: 'dashed', label: 'Dashed', kind: 'boolean' }],
-  blocked: [{ key: 'reason', label: 'Reason', kind: 'string' }],
-  flow: [
-    { key: 'path', label: 'Custom path', kind: 'string' },
-    { key: 'sublabel', label: 'Sublabel', kind: 'string' },
+  blocked: [
+    { key: 'reason', label: 'Reason', kind: 'string', max: TEXT_LIMITS.label },
   ],
-  packet: [{ key: 'sublabel', label: 'Sublabel', kind: 'string' }],
+  flow: [
+    { key: 'path', label: 'Custom path', kind: 'string', max: TEXT_LIMITS.url },
+    {
+      key: 'sublabel',
+      label: 'Sublabel',
+      kind: 'string',
+      max: TEXT_LIMITS.sublabel,
+    },
+  ],
+  packet: [
+    {
+      key: 'sublabel',
+      label: 'Sublabel',
+      kind: 'string',
+      max: TEXT_LIMITS.sublabel,
+    },
+  ],
 };
 
 /** Link types whose default visual includes motion. */
@@ -454,9 +531,19 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
     label: 'Zone',
     collection: 'zones',
     fields: [
-      { key: 'label', label: 'Label', kind: 'string' },
-      { key: 'sublabel', label: 'Sublabel', kind: 'string' },
-      { key: 'description', label: 'Description', kind: 'string' },
+      { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
+      {
+        key: 'sublabel',
+        label: 'Sublabel',
+        kind: 'string',
+        max: TEXT_LIMITS.sublabel,
+      },
+      {
+        key: 'description',
+        label: 'Description',
+        kind: 'string',
+        max: TEXT_LIMITS.description,
+      },
       { key: 'nodes', label: 'Member nodes', kind: 'refs', required: true },
       { key: 'color', label: 'Color', kind: 'color' },
       {
@@ -484,7 +571,7 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
     label: 'Flow path',
     collection: 'flowPaths',
     fields: [
-      { key: 'label', label: 'Label', kind: 'string' },
+      { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
       { key: 'waypoints', label: 'Waypoints', kind: 'refs', required: true },
       { key: 'color', label: 'Color', kind: 'color' },
       {
@@ -527,9 +614,14 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
         options: POLICY_MARKER_TYPES,
       },
       { key: 'nodeId', label: 'On node', kind: 'ref', required: true },
-      { key: 'label', label: 'Label', kind: 'string' },
+      { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
       { key: 'color', label: 'Color', kind: 'color' },
-      { key: 'icon', label: 'Icon (override)', kind: 'string' },
+      {
+        key: 'icon',
+        label: 'Icon (override)',
+        kind: 'string',
+        max: TEXT_LIMITS.label,
+      },
       {
         key: 'align',
         label: 'Placement',
@@ -643,7 +735,7 @@ export function layerCatalog(): LayerCatalogInfo {
   return {
     kinds: LAYER_KINDS,
     fields: [
-      { key: 'name', label: 'Name', kind: 'string' },
+      { key: 'name', label: 'Name', kind: 'string', max: TEXT_LIMITS.name },
       { key: 'kind', label: 'Kind', kind: 'enum', options: LAYER_KINDS },
       { key: 'color', label: 'Color', kind: 'color' },
       { key: 'defaultVisible', label: 'Visible by default', kind: 'boolean' },

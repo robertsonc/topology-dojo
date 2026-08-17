@@ -223,6 +223,13 @@ export function checkWranglerConfig(config) {
     );
   }
 
+  // Feature flags (WORKSPACE_ENABLED, PROFILES_ENABLED, ANALYTICS_ENABLED,
+  // LIVE_DATA_ENABLED) and identity allowlists (ADMIN_GITHUB_ID,
+  // LIVE_DATA_GITHUB_IDS) may match across environments — they are not
+  // identity-provider or data-plane resources. LIVE_DATA_ENABLED is opt-in
+  // and currently "false" in both envs (issue #228); do not treat a shared
+  // "false" as isolation drift.
+
   // (e) staging GITHUB_CLIENT_ID differs from production's.
   if (!stagingVars.GITHUB_CLIENT_ID) {
     violations.push(

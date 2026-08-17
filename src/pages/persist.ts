@@ -7,6 +7,7 @@
  */
 import type { TopologyDocument, Page, Stencil, BrandPalette } from './model.js';
 import { newPageId } from './model.js';
+import { sanitizeDisplayFields } from '../api/text.js';
 
 /** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
 function hexColor(v: unknown): string | undefined {
@@ -253,7 +254,7 @@ export function parseDoc(input: unknown): TopologyDocument | null {
         })
     : [];
   const palette = parsePalette(d.palette);
-  return {
+  const doc: TopologyDocument = {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
     customNodes,
@@ -262,6 +263,14 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     ...(stencils.length ? { stencils } : {}),
     ...(palette ? { palette } : {}),
   };
+  // Bound and normalize free-text so overlong / control-character strings
+  // cannot enter the document (import, share, workspace apply, autosave).
+  sanitizeDisplayFields(doc);
+  if (!doc.title) doc.title = 'Untitled';
+  pages.forEach((pg, i) => {
+    if (!pg.name) pg.name = `Frame ${i + 1}`;
+  });
+  return doc;
 }
 
 /**

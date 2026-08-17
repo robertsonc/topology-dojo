@@ -55,12 +55,46 @@ export interface WorkerEnv {
   /** GitHub OAuth App client secret (set as a Wrangler/dashboard secret). */
   GITHUB_CLIENT_SECRET: string;
   /**
+   * Optional dedicated HMAC key for browser session cookies (Wrangler /
+   * dashboard secret). When set, `worker/auth.ts` signs and verifies
+   * `tdg_session` with this value instead of `GITHUB_CLIENT_SECRET`, so
+   * rotating the OAuth client secret does not invalidate every browser
+   * session. Unset ⇒ fall back to `GITHUB_CLIENT_SECRET` (see
+   * `sessionHmacSecret` in `src/server/session.ts`). Not required yet —
+   * this is a migration path, not a breaking cutover.
+   */
+  SESSION_HMAC_SECRET?: string;
+  /**
    * EdgeConnect Orchestrator origin + API key (both optional; set the key as
-   * a Wrangler/dashboard secret). When both are present, the MCP agent wires
-   * the live-data provider and registers the read-only fabric tools.
+   * a Wrangler/dashboard secret). Secret presence alone does **not** register
+   * the live-data tools — `LIVE_DATA_ENABLED` must also be the literal
+   * `"true"` (see `liveDataEnabled`). Credentials never pass through tool
+   * arguments. When the flag is on and both values are present, every
+   * authenticated MCP session on this deployment gets the full fabric tool
+   * set unless `LIVE_DATA_GITHUB_IDS` further restricts the grant.
    */
   ORCH_BASE_URL?: string;
   ORCH_API_KEY?: string;
+  /**
+   * Feature flag gating the live-data / EdgeConnect fabric MCP tools
+   * (`list_appliances`, `list_flows`, `build_flow_topology`, …). Opt-in like
+   * `PROFILES_ENABLED` / `ANALYTICS_ENABLED`: only the literal string
+   * `"true"` enables them (unset ⇒ disabled). Independent of secret
+   * presence so provisioning `ORCH_*` cannot silently open fabric read
+   * access. Production and staging both leave this unset/`"false"` until an
+   * operator explicitly activates a (preferably non-production) Orchestrator.
+   * See issue #228 and `docs/DEPLOYMENT_RUNBOOK.md`.
+   */
+  LIVE_DATA_ENABLED?: string;
+  /**
+   * Optional per-owner allowlist for the live-data fabric tools. Comma-
+   * separated GitHub numeric ids (the same stable identity `ADMIN_GITHUB_ID`
+   * / `isAdmin` use — never the mutable login). Unset or empty ⇒ every
+   * authenticated MCP session on the deployment receives the tools once
+   * `LIVE_DATA_ENABLED` and the `ORCH_*` secrets are in place (the remaining
+   * all-or-nothing grant). When set, only listed owners get the tools.
+   */
+  LIVE_DATA_GITHUB_IDS?: string;
   /**
    * Feature flag gating the shared workspace surfaces — the `/api/workspaces`
    * REST routes (`default-handler.ts`) and the eight workspace MCP tools
@@ -183,4 +217,32 @@ export function isAdmin(
   uid: string,
 ): boolean {
   return !!env.ADMIN_GITHUB_ID && uid === env.ADMIN_GITHUB_ID;
+}
+
+/**
+ * Whether the live-data / EdgeConnect fabric MCP tools may register. Opt-in
+ * like `profilesEnabled` / `analyticsEnabled`: only the exact string
+ * `"true"` enables; any other value — unset, `"false"`, a typo — fails
+ * closed to "disabled", so secret presence alone never opens the fabric.
+ */
+export function liveDataEnabled(
+  env: Pick<WorkerEnv, 'LIVE_DATA_ENABLED'>,
+): boolean {
+  return env.LIVE_DATA_ENABLED === 'true';
+}
+
+/**
+ * Whether `uid` is allowed to receive live-data fabric tools. Optional
+ * allowlist: with `LIVE_DATA_GITHUB_IDS` unset or empty every authenticated
+ * owner is allowed (the deployment-wide grant). When set, compared against
+ * the stable GitHub numeric id the same way `isAdmin` compares
+ * `ADMIN_GITHUB_ID`.
+ */
+export function liveDataAllowedForOwner(
+  env: Pick<WorkerEnv, 'LIVE_DATA_GITHUB_IDS'>,
+  uid: string,
+): boolean {
+  const raw = env.LIVE_DATA_GITHUB_IDS?.trim();
+  if (!raw) return true;
+  return raw.split(',').some((id) => id.trim() === uid);
 }
