@@ -11,7 +11,11 @@ import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import { POLICY_MARKER_TYPES } from './markers.js';
 import { LAYER_KINDS } from './layers.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
-import { STOCK_NODE_LABELS, STOCK_NODE_SPECS } from '../nodes/stock.js';
+import {
+  STOCK_NODE_LABELS,
+  STOCK_NODE_META,
+  STOCK_NODE_SPECS,
+} from '../nodes/stock.js';
 
 export type FieldKind =
   | 'string'
@@ -554,9 +558,12 @@ const STOCK_NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
     {
       type: spec.typeName,
       label: STOCK_NODE_LABELS[spec.typeName] ?? spec.typeName,
-      category: 'Cloud',
+      category: STOCK_NODE_META[spec.typeName]?.category ?? 'Cloud',
       custom: false,
       fields: [...POSITION, ...NODE_COMMON],
+      ...(STOCK_NODE_META[spec.typeName]?.keywords
+        ? { keywords: STOCK_NODE_META[spec.typeName]!.keywords }
+        : {}),
     } satisfies NodeTypeInfo,
   ]),
 );

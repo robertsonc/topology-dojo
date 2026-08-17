@@ -360,6 +360,10 @@ The built-in library covers:
   firewalls, access points, clouds, hosts, and connectors;
 - application and infrastructure symbols such as apps, SaaS, servers,
   databases, identity cards, and text boxes;
+- a generic IT/network pack — load balancer, proxy, wireless controller,
+  modem, DNS/web/mail servers, NAS, UPS, printer, IP camera, VoIP phone, IoT
+  device, VM, container, Kubernetes, IDS/IPS, VPN concentrator, and user
+  group — searchable by common aliases (e.g. "haproxy", "cctv", "docker");
 - generic geometric shapes;
 - an **Image** entry that opens a file picker: the picture is downscaled to a
   compact data URI (≤256KB), embedded in the document, and placed sized to its

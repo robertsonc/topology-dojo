@@ -34,4 +34,51 @@ describe('stock cloud-native node types', () => {
     expect(tgw.fields.some((f) => f.key === 'x')).toBe(true);
     expect(tgw.fields.some((f) => f.key === 'layer')).toBe(true);
   });
+
+  it('ships the generic IT/network pack with categories + search aliases', () => {
+    // Every generic-pack type is a shipped built-in with a friendly label.
+    for (const t of [
+      'loadbalancer',
+      'proxy',
+      'wlc',
+      'modem',
+      'dns',
+      'webserver',
+      'mailserver',
+      'nas',
+      'ups',
+      'printer',
+      'camera',
+      'voip',
+      'iot',
+      'vm',
+      'containerNode',
+      'k8s',
+      'ids',
+      'vpnconc',
+      'usergroup',
+    ]) {
+      expect(isStockNodeType(t)).toBe(true);
+      const info = getNodeType(t)!;
+      expect(info.custom).toBe(false);
+      expect(info.label).not.toBe(t); // has a human label
+      expect(info.category).not.toBe('Cloud'); // categorized, not lumped
+    }
+    // Search aliases work through the same palette filter humans use.
+    const lb = nodeCatalog().find((n) => n.type === 'loadbalancer')!;
+    expect(lb.keywords).toContain('haproxy');
+    expect(getNodeType('ids')?.category).toBe('Security');
+    expect(getNodeType('vm')?.category).toBe('Compute');
+  });
+
+  it('generic-pack nodes validate and render without per-document definitions', () => {
+    const doc = createDocument('Campus')
+      .page()
+      .node({ id: 'lb', type: 'loadbalancer', x: 200, y: 200, label: 'LB' })
+      .node({ id: 'cam', type: 'camera', x: 400, y: 200, label: 'Cam-1' })
+      .node({ id: 'k', type: 'k8s', x: 600, y: 200, label: 'Cluster' })
+      .build();
+    const errors = validateDocument(doc).filter((p) => p.level === 'error');
+    expect(errors).toEqual([]);
+  });
 });

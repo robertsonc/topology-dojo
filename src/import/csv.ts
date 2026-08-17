@@ -29,6 +29,7 @@ import type {
   ZoneConfig,
 } from '../vendor/topology-ds.js';
 import { isBuiltinNodeType, isLinkType } from '../api/builtins.js';
+import { isStockNodeType } from '../nodes/stock.js';
 import { layoutPage } from '../api/autolayout.js';
 
 export interface CsvConvertResult {
@@ -151,7 +152,7 @@ export function convertCsv(text: string, title?: string): CsvConvertResult {
       continue;
     }
     let type = row.cells.type || 'host';
-    if (!isBuiltinNodeType(type)) {
+    if (!isBuiltinNodeType(type) && !isStockNodeType(type)) {
       warnings.push(
         `line ${row.lineNo}: unknown node type "${type}" — using host`,
       );
