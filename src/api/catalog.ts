@@ -217,6 +217,12 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
     },
     { key: 'cornerRadius', label: 'Corner radius', kind: 'number' },
   ],
+  callout: [
+    { key: 'target', label: 'Points at (element id)', kind: 'ref' },
+    { key: 'width', label: 'Note width (wraps text)', kind: 'number' },
+    { key: 'fontSize', label: 'Font size', kind: 'number' },
+    { key: 'padding', label: 'Padding', kind: 'number' },
+  ],
 };
 
 /** Per-shape extra fields beyond the shared shape set (see NODE_CATALOG). */
@@ -249,6 +255,7 @@ const NODE_CATEGORY: Record<string, string> = {
   host: 'Endpoint',
   text: 'Annotation',
   image: 'Annotation',
+  callout: 'Annotation',
 };
 
 /** Search aliases per built-in type (Phase 4) — abbreviations / synonyms. */
@@ -270,6 +277,7 @@ const NODE_KEYWORDS: Record<string, string[]> = {
   host: ['user', 'endpoint', 'pc', 'laptop', 'client'],
   text: ['label', 'note', 'annotation', 'caption'],
   image: ['picture', 'photo', 'logo', 'screenshot', 'png', 'jpg', 'diagram'],
+  callout: ['note', 'sticky', 'comment', 'remark', 'annotation', 'postit'],
 };
 
 function titleCase(s: string): string {

@@ -959,9 +959,19 @@ class TopologyDesigner {
         nodeCfg._resolvedSpans = nodeCfg.spans.map(id => this._pos(id));
       }
 
+      // Resolve a callout's leader-line target the same way (known ids only —
+      // _pos falls back to a default point for unknown ids, which would draw
+      // a leader to nowhere).
+      if (nodeCfg.type === 'callout') {
+        nodeCfg._targetPos =
+          nodeCfg.target && (this._nodes.has(nodeCfg.target) || this._anchors.has(nodeCfg.target))
+            ? this._pos(nodeCfg.target)
+            : null;
+      }
+
       let nodeSvg = this._renderNodeSVG(nodeCfg);
 
-      if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text') {
+      if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text' && nodeCfg.type !== 'callout') {
         if (this._ownLabelNode(nodeCfg)) {
           nodeSvg += this._renderShapeLabel(nodeCfg);
         } else {
@@ -3019,6 +3029,66 @@ ${grid}`;
    * Without those options it renders exactly like the classic centered label.
    */
   /**
+   * Callout / sticky-note annotation — a tinted note with word-wrapped text
+   * and an optional dashed leader line to a target element (`cfg.target`,
+   * pre-resolved into `cfg._targetPos` by the render pass, the same trick
+   * overlayCloud uses for spans). The whiteboard-annotation staple: label is
+   * the note text, sublabel a smaller second block, `width` wraps, `color`
+   * tints. Draws its own text (excluded from the generic below-node label).
+   */
+  static renderCallout(x, y, cfg = {}) {
+    const width = Math.max(60, Number(cfg.width) || 160);
+    const pad = Math.max(4, Number(cfg.padding) || 10);
+    const fs = Math.max(8, Number(cfg.fontSize) || 12);
+    const tint = cfg.color || '#deb146';
+    const textColor = cfg.labelColor || '#e6e8e9';
+    const innerW = width - pad * 2;
+    const label = String(cfg.label || 'Note');
+    const lines = TopologyDesigner._wrapText(label, innerW, fs);
+    const subFs = Math.max(7, fs * 0.8);
+    const subLines = cfg.sublabel
+      ? TopologyDesigner._wrapText(String(cfg.sublabel), innerW, subFs)
+      : [];
+    const lineH = fs * 1.35;
+    const subLineH = subFs * 1.35;
+    const blockH =
+      lines.length * lineH + (subLines.length ? subLines.length * subLineH + subFs * 0.4 : 0);
+    const h = blockH + pad * 2;
+    const x0 = x - width / 2, y0 = y - h / 2;
+    const fold = Math.min(14, width * 0.15);
+
+    let s = '';
+    // Leader line first (under the note): note boundary → target, dashed,
+    // with a small dot at the target end.
+    const t = cfg._targetPos;
+    if (t && (t.x !== x || t.y !== y)) {
+      const dx = t.x - x, dy = t.y - y;
+      const scale = 1 / Math.max(Math.abs(dx) / (width / 2), Math.abs(dy) / (h / 2), 1e-6);
+      const sx = x + dx * Math.min(1, scale);
+      const sy = y + dy * Math.min(1, scale);
+      s += `<line x1="${round2(sx)}" y1="${round2(sy)}" x2="${t.x}" y2="${t.y}" stroke="${tint}" stroke-width="1.2" stroke-dasharray="4 3" opacity=".65"/>` +
+        `<circle cx="${t.x}" cy="${t.y}" r="2.5" fill="${tint}" opacity=".8"/>`;
+    }
+    // The note card with a folded corner (sticky-note read).
+    s += `<path d="M${x0},${y0} H${x0 + width - fold} L${x0 + width},${y0 + fold} V${y0 + h} H${x0} Z" fill="${tint}" fill-opacity=".12" stroke="${tint}" stroke-opacity=".55" stroke-width="1"/>` +
+      `<path d="M${x0 + width - fold},${y0} V${y0 + fold} H${x0 + width}" fill="${tint}" fill-opacity=".22" stroke="${tint}" stroke-opacity=".55" stroke-width="1"/>`;
+    // Text block.
+    let ty = y0 + pad + fs;
+    for (const line of lines) {
+      s += `<text x="${x0 + pad}" y="${round2(ty)}" fill="${textColor}" font-size="${fs}" font-weight="600">${_esc(line)}</text>`;
+      ty += lineH;
+    }
+    if (subLines.length) {
+      ty += subFs * 0.4;
+      for (const line of subLines) {
+        s += `<text x="${x0 + pad}" y="${round2(ty - subLineH + subFs)}" fill="${textColor}" font-size="${subFs}" opacity=".75">${_esc(line)}</text>`;
+        ty += subLineH;
+      }
+    }
+    return s;
+  }
+
+  /**
    * Image node — an embedded raster/vector image (https URL or data URI).
    * `imageW`/`imageH` size the box (default 96×72), `imageFit` maps to
    * preserveAspectRatio (`contain` → meet, `cover` → slice), `cornerRadius`
@@ -3219,6 +3289,7 @@ ${grid}`;
     overlayCloud: TopologyDesigner.renderOverlayCloud,
     text:      TopologyDesigner.renderText,
     image:     TopologyDesigner.renderImage,
+    callout:   TopologyDesigner.renderCallout,
     // Basic shapes
     'shape:arrow':     TopologyDesigner.renderShapeArrow,
     'shape:square':    TopologyDesigner.renderShapeSquare,
@@ -4406,10 +4477,18 @@ ${grid}`;
               nodeCfg._resolvedSpans = nodeCfg.spans.map(id => this._pos(id));
             }
 
+            // Resolve a callout's leader-line target the same way (known ids only)
+            if (nodeCfg.type === 'callout') {
+              nodeCfg._targetPos =
+                nodeCfg.target && (this._nodes.has(nodeCfg.target) || this._anchors.has(nodeCfg.target))
+                  ? this._pos(nodeCfg.target)
+                  : null;
+            }
+
             let nodeSvg = this._renderNodeSVG(nodeCfg);
 
             // Add label if configured (text/shape nodes draw their own — see _ownLabelNode)
-            if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text') {
+            if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text' && nodeCfg.type !== 'callout') {
               if (this._ownLabelNode(nodeCfg)) {
                 nodeSvg += this._renderShapeLabel(nodeCfg);
               } else {

@@ -244,6 +244,16 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `${at} anchor "${a.id}"`,
           'orphan anchor — no link or flow path references it',
         );
+    // A callout's leader-line target must reference a present node/anchor.
+    for (const n of page.nodes) {
+      const cfg = n as { type?: string; target?: unknown };
+      if (cfg.type !== 'callout' || cfg.target === undefined) continue;
+      if (typeof cfg.target !== 'string' || !endpoints.has(cfg.target))
+        warn(
+          `${at} node "${n.id}"`,
+          `callout target "${String(cfg.target)}" references no node/anchor on this page`,
+        );
+    }
     // Network-aware lint (C.1): a node that nothing touches. Only flag on a page
     // that *has* links (a pure inventory/legend frame is fine), and count zone
     // membership and policy markers as "used" to avoid noise.
@@ -252,8 +262,11 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       for (const z of page.zones ?? [])
         for (const nId of z.nodes ?? []) usedNodes.add(nId);
       for (const m of page.policyMarkers ?? []) usedNodes.add(m.nodeId);
+      // Annotation-ish nodes (notes, pictures, free text) are legitimately
+      // unwired — never flag them as unconnected.
+      const annotationTypes = new Set(['text', 'image', 'callout']);
       for (const n of page.nodes)
-        if (!usedNodes.has(n.id))
+        if (!usedNodes.has(n.id) && !annotationTypes.has(n.type))
           warn(
             `${at} node "${n.id}"`,
             'unconnected node — no link, flow, zone, or marker references it',
