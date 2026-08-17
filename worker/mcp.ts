@@ -13,6 +13,7 @@ import { TopologyStore } from '../src/mcp/store.js';
 import {
   persistStore,
   rehydrateStore,
+  type DocStorage,
 } from '../src/mcp/persist-store.js';
 import {
   openOwnerRegistry,
@@ -42,6 +43,7 @@ import type { AuthoringPreference } from '../src/profile/model.js';
 import {
   formatRateLimitError,
   rateLimitBucketForTool,
+  type RateLimitResult,
 } from '../src/mcp/rate-limit.js';
 
 /**
@@ -86,7 +88,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
   private store = new TopologyStore();
   /** Session-local uid-keyed registry stub (dropped on hibernation). */
-  private cachedRegistry?: any;
+  private cachedRegistry?: DocStorage;
 
   async init(): Promise<void> {
     // Rehydrate from the per-USER registry DO (not this session DO's storage):
@@ -156,7 +158,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
    * refuse to persist rather than fall back to a shared "anonymous" key
    * that would leak documents between users.
    */
-  private async registry(): Promise<any> {
+  private async registry(): Promise<DocStorage> {
     if (this.cachedRegistry) return this.cachedRegistry;
     this.cachedRegistry = await openOwnerRegistry(
       this.env.TOPOLOGY_REGISTRY,
@@ -228,7 +230,10 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   ): Promise<void> {
     const bucket = rateLimitBucketForTool(toolName);
     if (bucket) {
-      const result = await (await this.registry()).consumeQuota(bucket);
+      const registryWithQuota = (await this.registry()) as unknown as {
+        consumeQuota(bucket: string): Promise<RateLimitResult>;
+      };
+      const result = await registryWithQuota.consumeQuota(bucket);
       if (!result.allowed) throw new Error(formatRateLimitError(result));
     }
     const workspace = this.workspaceService();
