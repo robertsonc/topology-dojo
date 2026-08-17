@@ -282,6 +282,14 @@ export class Editor {
   private onConnectEmpty: ((req: ConnectEmptyRequest) => void) | null = null;
   /** Ctrl/Cmd+click on an element with an `href` opens it through this. */
   private onOpenHref: ((href: string) => void) | null = null;
+  /** Live touch points (pointerId → client position) for pinch detection. */
+  private touches = new Map<number, { x: number; y: number }>();
+  /** Active two-finger pinch: the gesture's start geometry + start view. */
+  private pinch: {
+    startDist: number;
+    startMid: { x: number; y: number };
+    startView: { x: number; y: number; w: number; h: number };
+  } | null = null;
 
   constructor(
     private art: SVGSVGElement,
@@ -2902,6 +2910,12 @@ export class Editor {
     this.overlay.addEventListener('pointerdown', (e) => this.onDown(e));
     this.overlay.addEventListener('pointermove', (e) => this.onMove(e));
     this.overlay.addEventListener('pointerup', (e) => this.onUp(e));
+    this.overlay.addEventListener('pointercancel', (e) => {
+      if (e.pointerType === 'touch') {
+        this.touches.delete(e.pointerId);
+        if (this.touches.size < 2) this.pinch = null;
+      }
+    });
     this.overlay.addEventListener('pointerleave', () => {
       if (this.hoverNode !== null) {
         this.hoverNode = null;
@@ -3108,6 +3122,52 @@ export class Editor {
   }
 
   /** Wheel = zoom toward the cursor (keeps the point under the cursor fixed). */
+  /** Start a two-finger pinch: capture start geometry + view, drop gestures. */
+  private beginPinch(): void {
+    this.drag = null;
+    this.marquee = null;
+    this.dragLink = null;
+    this.wpDrag = null;
+    this.labelDrag = null;
+    this.guides = [];
+    this.labelGuides = [];
+    const [a, b] = [...this.touches.values()] as [
+      { x: number; y: number },
+      { x: number; y: number },
+    ];
+    this.pinch = {
+      startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      startMid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      startView: { ...this.view },
+    };
+    this.renderOverlay();
+  }
+
+  /** Apply the current two-finger geometry: zoom about + pan with the pinch. */
+  private applyPinch(): void {
+    if (!this.pinch || this.touches.size < 2) return;
+    const [a, b] = [...this.touches.values()] as [
+      { x: number; y: number },
+      { x: number; y: number },
+    ];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const sv = this.pinch.startView;
+    const factor = clamp(this.pinch.startDist / dist, 0.05, 20); // spread = in
+    const w = clamp(sv.w * factor, 80, 8000);
+    const h = clamp(sv.h * factor, 53, 5333);
+    // The page point that was under the pinch midpoint at gesture start stays
+    // under the (possibly moved) midpoint — pinch-zoom and two-finger pan in
+    // one formula, matching the wheel handler's fraction approach.
+    const rect = this.overlay.getBoundingClientRect();
+    const px = sv.x + ((this.pinch.startMid.x - rect.left) / rect.width) * sv.w;
+    const py = sv.y + ((this.pinch.startMid.y - rect.top) / rect.height) * sv.h;
+    const fx = (mid.x - rect.left) / rect.width;
+    const fy = (mid.y - rect.top) / rect.height;
+    this.view = { x: px - fx * w, y: py - fy * h, w, h };
+    this.applyView();
+  }
+
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
     const before = clientToUser(this.overlay, e.clientX, e.clientY);
@@ -3268,6 +3328,17 @@ export class Editor {
   }
 
   private onDown(e: PointerEvent): void {
+    // Touch: track fingers; a second finger starts a pinch (zoom + pan) and
+    // cancels whatever single-finger gesture was in flight, uncommitted.
+    if (e.pointerType === 'touch') {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size === 2) {
+        this.beginPinch();
+        this.overlay.setPointerCapture(e.pointerId);
+        return;
+      }
+      if (this.pinch) return; // ignore extra fingers mid-pinch
+    }
     // Pan: middle button, or left button while Space is held / Hand tool is on.
     if (
       e.button === 1 ||
@@ -3530,6 +3601,13 @@ export class Editor {
   }
 
   private onMove(e: PointerEvent): void {
+    if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pinch) {
+        this.applyPinch();
+        return;
+      }
+    }
     if (this.pan) {
       const rect = this.overlay.getBoundingClientRect();
       const dx =
@@ -3683,6 +3761,15 @@ export class Editor {
   }
 
   private onUp(e: PointerEvent): void {
+    // Touch: a finger lifted. While pinching, never fall through to click /
+    // gesture handling — the pinch either continues (a finger remains) or ends.
+    if (e.pointerType === 'touch') {
+      this.touches.delete(e.pointerId);
+      if (this.pinch) {
+        if (this.touches.size < 2) this.pinch = null;
+        return;
+      }
+    }
     // Detect a double-click from two stationary pointerups. Chrome suppresses
     // the native click/dblclick pair whenever the pointerdown target left the
     // DOM mid-gesture — which happens constantly here because renderOverlay()

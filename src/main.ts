@@ -156,6 +156,7 @@ app.innerHTML = `
         <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient, glass" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">⚙</button>
         <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">☀</button>
         <button class="tbtn ticon" id="tFit" title="Fit view (0)" aria-label="Fit view">⤢</button>
+        <button class="tbtn ticon" id="tPresent" title="Present — full-screen playback of all frames" aria-label="Present full-screen">▶</button>
         <button class="tbtn ticon" id="tHelp" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
       </div>
       <span class="bar-div"></span>
@@ -3448,6 +3449,115 @@ function openHelp(): void {
   releaseHelpOverlay = registerOverlay(helpEl, { close: closeHelp });
 }
 app.querySelector('#tHelp')?.addEventListener('click', () => openHelp());
+
+/* ── Present mode: full-screen playback of every frame ─────────────────
+ * A human-only view feature (DESIGN #2 carve-out — nothing persisted): the
+ * flipbook experience without leaving the editor. Reuses the SAME timing
+ * model as the filmstrip player and the exported flipbook (pages/playback),
+ * and the same per-frame SVG the exports produce. ←/→ step, Space toggles
+ * autoplay, Esc leaves. */
+let presentEl: HTMLElement | null = null;
+let releasePresentOverlay: (() => void) | null = null;
+let presentTimer: number | null = null;
+function closePresent(): void {
+  if (presentTimer !== null) clearTimeout(presentTimer);
+  presentTimer = null;
+  if (document.fullscreenElement) void document.exitFullscreen();
+  presentEl?.remove();
+  presentEl = null;
+  releasePresentOverlay?.();
+  releasePresentOverlay = null;
+}
+function openPresent(): void {
+  if (presentEl) {
+    closePresent();
+    return;
+  }
+  stopPlayback();
+  let frame = current;
+  let playing = doc.pages.length > 1;
+  const root = document.createElement('div');
+  root.className = 'present-root';
+  root.setAttribute('role', 'dialog');
+  root.setAttribute('aria-label', 'Presentation');
+  root.innerHTML =
+    `<div class="present-stage" id="presentStage"></div>` +
+    `<div class="present-bar">` +
+    `<button class="tbtn" id="presentPrev" title="Previous frame (←)" aria-label="Previous frame">‹</button>` +
+    `<button class="tbtn" id="presentPlay" title="Play / pause (Space)" aria-label="Play or pause">${playing ? '⏸' : '▶'}</button>` +
+    `<button class="tbtn" id="presentNext" title="Next frame (→)" aria-label="Next frame">›</button>` +
+    `<span class="present-count" id="presentCount"></span>` +
+    `<span class="present-name" id="presentName"></span>` +
+    `<button class="tbtn present-exit" id="presentExit" title="Exit (Esc)" aria-label="Exit presentation">✕ exit</button>` +
+    `</div>`;
+  document.body.appendChild(root);
+  presentEl = root;
+  const stage = root.querySelector<HTMLElement>('#presentStage')!;
+  const count = root.querySelector<HTMLElement>('#presentCount')!;
+  const name = root.querySelector<HTMLElement>('#presentName')!;
+  const playBtn = root.querySelector<HTMLButtonElement>('#presentPlay')!;
+  const show = (i: number, fade = false): void => {
+    frame = ((i % doc.pages.length) + doc.pages.length) % doc.pages.length;
+    const page = doc.pages[frame]!;
+    stage.innerHTML = pageToSVG(
+      page,
+      { ...pageOpts(page), calm: editor.calm },
+      pageExtra(page),
+    );
+    if (fade && page.transition === 'fade') {
+      stage.classList.remove('present-fade');
+      void stage.offsetWidth; // restart the animation
+      stage.classList.add('present-fade');
+    }
+    count.textContent = `${frame + 1} / ${doc.pages.length}`;
+    name.textContent = page.name;
+  };
+  const schedule = (): void => {
+    if (presentTimer !== null) clearTimeout(presentTimer);
+    presentTimer = null;
+    if (!playing || doc.pages.length < 2) return;
+    presentTimer = window.setTimeout(() => {
+      show(frame + 1, true);
+      schedule();
+    }, pageDuration(doc.pages[frame]!));
+  };
+  const setPlaying = (on: boolean): void => {
+    playing = on && doc.pages.length > 1;
+    playBtn.textContent = playing ? '⏸' : '▶';
+    schedule();
+  };
+  const step = (d: number): void => {
+    setPlaying(false);
+    show(frame + d, true);
+  };
+  root.querySelector('#presentPrev')?.addEventListener('click', () => step(-1));
+  root.querySelector('#presentNext')?.addEventListener('click', () => step(1));
+  playBtn.addEventListener('click', () => setPlaying(!playing));
+  root.querySelector('#presentExit')?.addEventListener('click', closePresent);
+  root.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+      e.preventDefault();
+      step(1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault();
+      step(-1);
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      setPlaying(!playing);
+    }
+  });
+  // Leaving browser-fullscreen (Esc) tears the presentation down too.
+  root.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && presentEl) closePresent();
+  });
+  releasePresentOverlay = registerOverlay(root, { close: closePresent });
+  show(frame);
+  setPlaying(playing);
+  void root.requestFullscreen?.().catch(() => {
+    /* fixed-position fallback still covers the viewport */
+  });
+}
+app.querySelector('#tPresent')?.addEventListener('click', () => openPresent());
 
 /* ── Share dialog (hosted only): publish a public /v/:id snapshot of the
  * current document and manage (revoke) previously published links. The
