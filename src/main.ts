@@ -50,6 +50,7 @@ import {
   selectionPage,
 } from './editor/export.js';
 import { exportFlipbookHTML } from './render/flipbook.js';
+import { documentToDrawioXML } from './editor/drawio.js';
 import { legendSVG } from './editor/legend.js';
 import { captionSVG } from './editor/caption.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
@@ -132,6 +133,7 @@ app.innerHTML = `
           <option value="pdf-page">PDF — current frame</option>
           <option value="pdf-all">PDF — all frames</option>
           <option value="flipbook">Flipbook HTML — all frames</option>
+          <option value="drawio">draw.io XML — all frames (lossy)</option>
           <option value="copy-png">Copy PNG to clipboard</option>
           <option value="svg-selection">SVG — selection only</option>
           <option value="png-selection">PNG — selection only</option>
@@ -832,6 +834,13 @@ async function runExport(kind: string): Promise<void> {
       downloadBlob(
         `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_flipbook.html`,
         new Blob([html], { type: 'text/html' }),
+      );
+      return;
+    }
+    case 'drawio': {
+      downloadBlob(
+        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.drawio`,
+        new Blob([documentToDrawioXML(doc)], { type: 'application/xml' }),
       );
       return;
     }
