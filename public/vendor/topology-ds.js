@@ -96,6 +96,44 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
+/* ── Node status LEDs ────────────────────────────────────────────────
+   `status: 'ok' | 'warn' | 'down' | 'maintenance' | 'unknown'` renders a
+   coloured LED at the node's top-right corner — the network-map health
+   notation. Purely visual; absent = no indicator. */
+const _STATUS_COLORS = {
+  ok: '#01a982',
+  warn: '#e0a44a',
+  down: '#fc6161',
+  maintenance: '#65aef9',
+  unknown: '#7d8a92',
+};
+
+/** Approximate half-extents per node type (mirrors api/geometry HALF). */
+const _STATUS_HALF = {
+  ec: [28, 18], switch: [22, 8], switchEnterprise: [44, 16], cloud: [55, 32],
+  host: [14, 18], connector: [16, 16], apps: [26, 22], saas: [18, 18],
+  server: [14, 22], router: [18, 18], firewall: [20, 18], database: [16, 20],
+  idcard: [97, 37], ap: [18, 16], text: [40, 10],
+};
+
+function _renderStatusDot(cfg) {
+  const c = _STATUS_COLORS[cfg.status];
+  if (!c) return '';
+  let hw = 20, hh = 20;
+  if (cfg.type === 'image') {
+    hw = Math.max(16, Number(cfg.imageW) || 96) / 2;
+    hh = Math.max(16, Number(cfg.imageH) || 72) / 2;
+  } else if (_STATUS_HALF[cfg.type]) {
+    [hw, hh] = _STATUS_HALF[cfg.type];
+  }
+  const x = cfg.x + hw - 1, y = cfg.y - hh + 1;
+  // Down gets an attention ring; everything else is a plain LED.
+  const ring = cfg.status === 'down'
+    ? `<circle cx="${x}" cy="${y}" r="7" fill="none" stroke="${c}" stroke-width="1" opacity=".55"/>`
+    : '';
+  return `<g data-tds-status="${cfg.status}">${ring}<circle cx="${x}" cy="${y}" r="4" fill="${c}" stroke="#0b0e14" stroke-width="1.2"/></g>`;
+}
+
 function _hrefTipWrap(cfg, gOpen, inner, gClose) {
   const tip =
     cfg && typeof cfg.tooltip === 'string' && cfg.tooltip
@@ -945,6 +983,8 @@ class TopologyDesigner {
       if (nodeCfg.zoneIndicator) {
         nodeSvg += this._renderZoneIndicator(nodeCfg.x, nodeCfg.y, nodeCfg.zoneIndicator);
       }
+
+      nodeSvg += _renderStatusDot(nodeCfg);
 
       nodeSvg = this._focusWrap(elemId, halo, nodeSvg);
       const iso3dAttr = nodeCfg.type && typeof nodeCfg.type === 'string' && nodeCfg.type.startsWith('iso:') ? ' data-tds-iso3d="true"' : '';
@@ -4393,6 +4433,9 @@ ${grid}`;
             if (nodeCfg.zoneIndicator) {
               nodeSvg += this._renderZoneIndicator(nodeCfg.x, nodeCfg.y, nodeCfg.zoneIndicator);
             }
+
+            // Node status LED (health notation)
+            nodeSvg += _renderStatusDot(nodeCfg);
 
             // Add zone label if configured
             if (nodeCfg.zoneLabel) {

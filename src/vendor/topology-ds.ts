@@ -40,6 +40,12 @@ export interface NodeConfig {
   href?: string;
   /** Hover tooltip, rendered as an SVG <title>. */
   tooltip?: string;
+  /**
+   * Operational status — rendered as a coloured LED at the node's corner
+   * (and in the legend when any node on the page uses one). Hand-authored
+   * today; the seam live-import / failure-storytelling data can drive.
+   */
+  status?: 'ok' | 'warn' | 'down' | 'maintenance' | 'unknown';
   /** Id of a declared document layer (see api/layers); absent = base layer. */
   layer?: string;
   /** External identity in a source system (see api/source); enables upsert. */

@@ -1420,16 +1420,37 @@ function renderFindResults(): void {
 }
 function runFindQuery(q: string): void {
   const s = q.trim().toLowerCase();
+  // Match label / id / type / sublabel — and metadata keys AND values, so a
+  // node is findable by the IP, hostname, serial, etc. stored on it. The
+  // shown "type" slot carries the match reason when it came from metadata.
+  const reasonFor = (n: (typeof editor.page.nodes)[number]): string | null => {
+    if (!s) return n.type;
+    if (
+      (n.label ?? '').toLowerCase().includes(s) ||
+      n.id.toLowerCase().includes(s) ||
+      n.type.toLowerCase().includes(s)
+    )
+      return n.type;
+    if (((n.sublabel as string) ?? '').toLowerCase().includes(s))
+      return `${n.type} · ${String(n.sublabel)}`;
+    for (const [k, v] of Object.entries(n.meta ?? {})) {
+      if (k.toLowerCase().includes(s) || String(v).toLowerCase().includes(s))
+        return `${n.type} · ${k}: ${String(v)}`;
+    }
+    return null;
+  };
   findMatches = editor.page.nodes
+    .map((n) => ({ n, reason: reasonFor(n) }))
     .filter(
-      (n) =>
-        !s ||
-        (n.label ?? '').toLowerCase().includes(s) ||
-        n.id.toLowerCase().includes(s) ||
-        n.type.toLowerCase().includes(s),
+      (x): x is { n: (typeof editor.page.nodes)[number]; reason: string } =>
+        x.reason !== null,
     )
     .slice(0, 50)
-    .map((n) => ({ id: n.id, label: n.label || '(no label)', type: n.type }));
+    .map(({ n, reason }) => ({
+      id: n.id,
+      label: n.label || '(no label)',
+      type: reason,
+    }));
   findSel = 0;
   renderFindResults();
 }
@@ -1441,7 +1462,7 @@ function openFind(): void {
   findEl = document.createElement('div');
   findEl.className = 'find';
   findEl.innerHTML =
-    `<input type="text" placeholder="Find node by label / id / type…" aria-label="Find node by label, id, or type" />` +
+    `<input type="text" placeholder="Find node by label / id / type / metadata…" aria-label="Find node by label, id, type, or metadata" />` +
     `<div class="find-results scroll-slim"></div>`;
   app.appendChild(findEl);
   const input = findEl.querySelector('input')!;
@@ -1754,7 +1775,7 @@ const NODE_GROUPS: FieldGroup[] = [
     keys: ['label', 'sublabel', 'labelColor', 'labelOffset'],
     open: true,
   },
-  { title: 'Appearance', keys: ['color', 'opacity'], open: true },
+  { title: 'Appearance', keys: ['color', 'opacity', 'status'], open: true },
   { title: 'Position', keys: ['x', 'y'] },
   { title: 'Advanced', keys: ['href', 'tooltip', 'locked', 'layer', 'source'] },
 ];
