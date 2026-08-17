@@ -83,7 +83,7 @@ export interface StartMiniflareOptions {
   durableObjects?: MiniflareOptions['durableObjects'];
   /** KV namespace binding names (each provisioned empty). */
   kvNamespaces?: string[];
-  /** Plain string vars, e.g. GITHUB_CLIENT_SECRET for a test HMAC key. */
+  /** Plain string vars, e.g. GITHUB_CLIENT_SECRET / SESSION_HMAC_SECRET. */
   vars?: Record<string, string>;
   compatibilityDate?: string;
 }

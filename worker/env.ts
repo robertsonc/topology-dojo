@@ -55,6 +55,16 @@ export interface WorkerEnv {
   /** GitHub OAuth App client secret (set as a Wrangler/dashboard secret). */
   GITHUB_CLIENT_SECRET: string;
   /**
+   * Optional dedicated HMAC key for browser session cookies (Wrangler /
+   * dashboard secret). When set, `worker/auth.ts` signs and verifies
+   * `tdg_session` with this value instead of `GITHUB_CLIENT_SECRET`, so
+   * rotating the OAuth client secret does not invalidate every browser
+   * session. Unset ⇒ fall back to `GITHUB_CLIENT_SECRET` (see
+   * `sessionHmacSecret` in `src/server/session.ts`). Not required yet —
+   * this is a migration path, not a breaking cutover.
+   */
+  SESSION_HMAC_SECRET?: string;
+  /**
    * EdgeConnect Orchestrator origin + API key (both optional; set the key as
    * a Wrangler/dashboard secret). Secret presence alone does **not** register
    * the live-data tools — `LIVE_DATA_ENABLED` must also be the literal

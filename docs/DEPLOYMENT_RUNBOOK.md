@@ -30,6 +30,7 @@ Populate this table in the private operator record. Do not commit secret values.
 | OAuth callback         | `<staging-origin>/callback` | `<production-origin>/callback`          |
 | `OAUTH_KV` id          | `<staging-id>`              | Managed in `wrangler.jsonc`             |
 | `TOPOLOGY_KV` id       | `<staging-id>`              | Managed in `wrangler.jsonc`             |
+| `SESSION_HMAC_SECRET`  | optional (`<set / unset>`)  | optional (`<set / unset>`)              |
 | GitHub Environment     | `staging`                   | `production`                            |
 | Cloudflare token owner | `<owner>`                   | `<owner>`                               |
 | Last deployment SHA    | `<sha>`                     | `<sha>`                                 |
@@ -131,6 +132,11 @@ production merely to obtain a preview is not an approved workaround.
   binding, and migration.
 - The staging Worker name resolves to a separate script.
 - `GITHUB_CLIENT_SECRET` is stored for the staging environment.
+- `SESSION_HMAC_SECRET` is optional. When unset, browser sessions are signed
+  with `GITHUB_CLIENT_SECRET`. Set it independently
+  (`npx wrangler secret put SESSION_HMAC_SECRET --env staging`, and the same
+  without `--env` for production) so OAuth client-secret rotation does not
+  invalidate sessions. Not required yet — existing deployments keep working.
 - A scoped Cloudflare deployment token and account id are stored in the GitHub
   `staging` Environment.
 - Cloudflare production non-production branch builds are disabled.

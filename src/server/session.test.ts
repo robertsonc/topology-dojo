@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseCookies,
+  sessionHmacSecret,
   signSession,
   verifySession,
   SESSION_TTL_SEC,
@@ -46,6 +47,46 @@ describe('session cookies', () => {
 
   it('defaults to a 7-day lifetime', () => {
     expect(SESSION_TTL_SEC).toBe(604800);
+  });
+
+  it('prefers SESSION_HMAC_SECRET over GITHUB_CLIENT_SECRET', () => {
+    expect(
+      sessionHmacSecret({
+        SESSION_HMAC_SECRET: 'dedicated-session-key',
+        GITHUB_CLIENT_SECRET: 'oauth-client-secret',
+      }),
+    ).toBe('dedicated-session-key');
+  });
+
+  it('falls back to GITHUB_CLIENT_SECRET when SESSION_HMAC_SECRET is unset', () => {
+    expect(
+      sessionHmacSecret({ GITHUB_CLIENT_SECRET: 'oauth-client-secret' }),
+    ).toBe('oauth-client-secret');
+  });
+
+  it('falls back when SESSION_HMAC_SECRET is empty or whitespace', () => {
+    expect(
+      sessionHmacSecret({
+        SESSION_HMAC_SECRET: '',
+        GITHUB_CLIENT_SECRET: 'oauth-client-secret',
+      }),
+    ).toBe('oauth-client-secret');
+    expect(
+      sessionHmacSecret({
+        SESSION_HMAC_SECRET: '   ',
+        GITHUB_CLIENT_SECRET: 'oauth-client-secret',
+      }),
+    ).toBe('oauth-client-secret');
+  });
+
+  it('signs and verifies with the resolved dedicated secret', async () => {
+    const secret = sessionHmacSecret({
+      SESSION_HMAC_SECRET: 'dedicated-session-key',
+      GITHUB_CLIENT_SECRET: 'oauth-client-secret',
+    });
+    const token = await signSession(USER, secret);
+    expect(await verifySession(token, secret)).toEqual(USER);
+    expect(await verifySession(token, 'oauth-client-secret')).toBeNull();
   });
 
   it('parses a Cookie header into name→value', () => {

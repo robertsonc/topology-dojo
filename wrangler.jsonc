@@ -11,7 +11,10 @@
   //
   // Setup (one-time): create a GitHub OAuth App (callback
   //   https://<domain>/callback), create the OAUTH_KV namespace, and set the
-  //   GITHUB_CLIENT_SECRET secret in the dashboard. See src/mcp/README.md.
+  //   GITHUB_CLIENT_SECRET secret in the dashboard. Optionally set
+  //   SESSION_HMAC_SECRET so browser sessions are not keyed by the OAuth
+  //   client secret (falls back to GITHUB_CLIENT_SECRET when unset).
+  //   See src/mcp/README.md.
   "name": "topology-dojo",
   "main": "worker/index.ts",
   "compatibility_date": "2026-06-07",
@@ -133,7 +136,10 @@
         "PUBLIC_BASE_URL": "https://topology-dojo-staging.robertson-corey.workers.dev",
         // Staging-only GitHub OAuth App client id (operator checklist O3);
         // its secret is set independently via `wrangler secret put
-        // GITHUB_CLIENT_SECRET --env staging` (O4). Never the production id.
+        // GITHUB_CLIENT_SECRET --env staging` (O4). Optionally also
+        // `SESSION_HMAC_SECRET --env staging` so rotating the OAuth
+        // client secret does not invalidate browser sessions. Never the
+        // production id.
         "GITHUB_CLIENT_ID": "Ov23liEpiupkYUA9L4vu",
         // Explicit (rather than relying on the unset-means-enabled default)
         // for clarity, per worker/env.ts `workspaceEnabled()`.
