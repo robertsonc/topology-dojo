@@ -10,13 +10,15 @@
  *   GET /logout         → clear the session, back to /login
  *   GET /api/me         → { login, name } for the signed-in user (or 401)
  *
- * The HMAC key for the session cookie is GITHUB_CLIENT_SECRET (already a
- * configured server secret) — no new secret to provision.
+ * The HMAC key for the session cookie is SESSION_HMAC_SECRET when set,
+ * otherwise GITHUB_CLIENT_SECRET (see sessionHmacSecret). The dedicated
+ * secret is optional so existing deployments keep working.
  */
 import type { WorkerEnv } from './env.js';
 import { analyticsEnabled, isAdmin } from './env.js';
 import {
   parseCookies,
+  sessionHmacSecret,
   signSession,
   verifySession,
   SESSION_TTL_SEC,
@@ -86,7 +88,7 @@ export async function currentUser(
   env: WorkerEnv,
 ): Promise<SessionUser | null> {
   const token = parseCookies(request.headers.get('cookie'))[COOKIE_SESSION];
-  return verifySession(token, env.GITHUB_CLIENT_SECRET);
+  return verifySession(token, sessionHmacSecret(env));
 }
 
 /** Start the browser login: stash a state nonce + return path, go to GitHub. */
@@ -180,7 +182,7 @@ export async function completeWebLogin(
     login: user.login,
     ...(user.name ? { name: user.name } : {}),
   };
-  const session = await signSession(sessionUser, env.GITHUB_CLIENT_SECRET);
+  const session = await signSession(sessionUser, sessionHmacSecret(env));
   // Owner-analytics: record the login off the response path, gated + best-effort
   // (never blocks or fails the sign-in). Inert unless ANALYTICS_ENABLED.
   if (analyticsEnabled(env)) ctx.waitUntil(recordLogin(env, sessionUser));

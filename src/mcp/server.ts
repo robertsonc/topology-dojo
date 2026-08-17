@@ -5,10 +5,12 @@
  * validate, and render topologies the same way the GUI does. Run with:
  *   npm run mcp        (tsx src/mcp/server.ts)
  *
- * Live fabric data (optional): set ORCH_BASE_URL + ORCH_API_KEY to connect the
- * EdgeConnect Orchestrator provider, or TOPOLOGY_PROVIDER=mock for the fixture
- * fabric — either registers the read-only live-data tools (list_appliances,
- * list_flows, …). Credentials come from the environment only, never from tools.
+ * Live fabric data (optional): set LIVE_DATA_ENABLED=true plus ORCH_BASE_URL +
+ * ORCH_API_KEY to connect the EdgeConnect Orchestrator provider, or
+ * TOPOLOGY_PROVIDER=mock for the fixture fabric — either registers the
+ * read-only live-data tools (list_appliances, list_flows, …). Credentials come
+ * from the environment only, never from tools. Secret presence alone does not
+ * enable the real provider.
  *
  * Tool registration is shared with the Cloudflare Worker (`registerTopologyTools`);
  * this entry just wires the Node renderer, the provider, and a stdio transport.
@@ -23,6 +25,10 @@ import { registerTopologyTools } from './register.js';
 
 function providerFromEnv(): TopologyProvider | undefined {
   if (process.env.TOPOLOGY_PROVIDER === 'mock') return new MockProvider();
+  // Same opt-in semantics as worker/env.ts `liveDataEnabled()` — only the
+  // literal "true" enables the real Orchestrator client. The mock fixture
+  // has no fabric credentials, so it stays available without the flag.
+  if (process.env.LIVE_DATA_ENABLED !== 'true') return undefined;
   const baseUrl = process.env.ORCH_BASE_URL;
   const apiKey = process.env.ORCH_API_KEY;
   if (baseUrl && apiKey) return new EdgeConnectProvider({ baseUrl, apiKey });

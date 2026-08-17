@@ -199,6 +199,109 @@ export default {
 `;
 
 /**
+ * Exercises uid-keyed private-draft addressing and the lazy `user:` →
+ * `user-id:` copy (`src/mcp/registry-address.ts`, the same helpers
+ * `worker/mcp.ts` and `worker/workspaces.ts` call). `/seed-legacy` plants a
+ * v2 login-keyed `tdoc:`; `/open` is the MCP persist/rehydrate path;
+ * `/list` is the workspace-directory merge after that copy.
+ */
+export const REGISTRY_ADDRESS_FIXTURE = String.raw`
+import { WorkspaceService } from './worker/workspaces.ts';
+import {
+  currentRegistryName,
+  legacyRegistryName,
+  openOwnerRegistry,
+  registryOwnerId,
+} from './src/mcp/registry-address.ts';
+export { TopologyRegistry } from './worker/registry.ts';
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const uid = url.searchParams.get('uid') ?? '';
+    const login = url.searchParams.get('login') ?? '';
+    const id = url.searchParams.get('id') ?? '';
+    const json = (value, status = 200) =>
+      new Response(JSON.stringify(value), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+    const inspect = async (name) => {
+      const ns = env.TOPOLOGY_REGISTRY;
+      const docs = await ns.get(ns.idFromName(name)).list({ prefix: 'tdoc:' });
+      return [...docs.keys()].map((key) => key.slice('tdoc:'.length));
+    };
+
+    try {
+      if (url.pathname === '/names')
+        return json({
+          current: currentRegistryName(uid),
+          legacy: login ? legacyRegistryName(login) : null,
+          ownerId: registryOwnerId({ uid, login }),
+        });
+      if (url.pathname === '/names-no-uid')
+        return json({ ownerId: registryOwnerId({ login }) });
+      if (url.pathname === '/seed-legacy' && request.method === 'POST') {
+        const ns = env.TOPOLOGY_REGISTRY;
+        await ns
+          .get(ns.idFromName(legacyRegistryName(login)))
+          .put('tdoc:' + id, await request.text());
+        return json({ seeded: id, name: legacyRegistryName(login) });
+      }
+      if (url.pathname === '/seed-current' && request.method === 'POST') {
+        const ns = env.TOPOLOGY_REGISTRY;
+        await ns
+          .get(ns.idFromName(currentRegistryName(uid)))
+          .put('tdoc:' + id, await request.text());
+        return json({ seeded: id, name: currentRegistryName(uid) });
+      }
+      if (url.pathname === '/open') {
+        const registry = await openOwnerRegistry(env.TOPOLOGY_REGISTRY, {
+          uid,
+          login,
+        });
+        const docs = await registry.list({ prefix: 'tdoc:' });
+        return json({
+          ids: [...docs.keys()].map((key) => key.slice('tdoc:'.length)),
+          current: await inspect(currentRegistryName(String(uid))),
+          legacy: login ? await inspect(legacyRegistryName(login)) : [],
+        });
+      }
+      if (url.pathname === '/open-mcp' && request.method === 'POST') {
+        const props = await request.json();
+        const registry = await openOwnerRegistry(env.TOPOLOGY_REGISTRY, props);
+        const ownerId = registryOwnerId(props);
+        const docs = await registry.list({ prefix: 'tdoc:' });
+        return json({
+          ownerId,
+          name: currentRegistryName(ownerId),
+          ids: [...docs.keys()].map((key) => key.slice('tdoc:'.length)),
+          current: await inspect(currentRegistryName(ownerId)),
+          legacy: props.login
+            ? await inspect(legacyRegistryName(props.login))
+            : [],
+        });
+      }
+      if (url.pathname === '/list') {
+        const service = new WorkspaceService(env, { uid, login });
+        return json({
+          workspaces: await service.list(),
+          current: await inspect(currentRegistryName(uid)),
+          legacy: login ? await inspect(legacyRegistryName(login)) : [],
+        });
+      }
+      return json({ error: 'not found' }, 404);
+    } catch (error) {
+      return json(
+        { error: error instanceof Error ? error.message : String(error) },
+        400,
+      );
+    }
+  },
+};
+`;
+
+/**
  * `WORKSPACE_TOOL_NAMES_FIXTURE`'s Packet P4 sibling: exercises
  * `worker/profile-tools.ts`'s pure `profileToolNames` — the PROFILES_ENABLED
  * gate (opt-in, unlike workspaces) on the three read-only guidance tools
@@ -215,6 +318,42 @@ export default {
     const env = flag === null ? {} : { PROFILES_ENABLED: flag };
     return new Response(
       JSON.stringify(profileToolNames(env, hasProfileService)),
+      { headers: { 'content-type': 'application/json' } },
+    );
+  },
+};
+`;
+
+/**
+ * `PROFILE_TOOL_NAMES_FIXTURE`'s live-data sibling: exercises
+ * `worker/live-data-tools.ts`'s pure `liveDataToolNames` — the
+ * LIVE_DATA_ENABLED gate (opt-in, independent of secret presence) plus the
+ * optional LIVE_DATA_GITHUB_IDS allowlist on the seven fabric tools
+ * registered by `TopologyMcp.init()`.
+ */
+export const LIVE_DATA_TOOL_NAMES_FIXTURE = String.raw`
+import { liveDataToolNames } from './worker/live-data-tools.ts';
+
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    const flag = url.searchParams.get('flag');
+    const ownerId = url.searchParams.get('ownerId');
+    const allowlist = url.searchParams.get('allowlist');
+    const hasSecrets = url.searchParams.get('hasSecrets') === 'true';
+    const env = Object.assign(
+      {},
+      flag === null ? {} : { LIVE_DATA_ENABLED: flag },
+      allowlist === null ? {} : { LIVE_DATA_GITHUB_IDS: allowlist },
+      hasSecrets
+        ? {
+            ORCH_BASE_URL: 'https://orch.example.test',
+            ORCH_API_KEY: 'test-key',
+          }
+        : {},
+    );
+    return new Response(
+      JSON.stringify(liveDataToolNames(env, ownerId === null ? undefined : ownerId)),
       { headers: { 'content-type': 'application/json' } },
     );
   },

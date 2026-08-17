@@ -66,6 +66,12 @@ Apps, secrets, or KV namespace ids across environments.
      `https://<your-domain>/callback`.
    - Put the **Client ID** in `wrangler.jsonc` (`vars.GITHUB_CLIENT_ID`); add the
      **client secret** as a dashboard secret **`GITHUB_CLIENT_SECRET`**.
+   - Optionally add a dedicated **`SESSION_HMAC_SECRET`** dashboard secret for
+     signing browser session cookies. When unset, sessions fall back to
+     `GITHUB_CLIENT_SECRET` (rotating the OAuth client secret then invalidates
+     all browser sessions). Recommended for new environments; not required yet.
+     Generate a high-entropy value and store it only in the operator password
+     manager — never commit it.
 2. **KV namespace** `OAUTH_KV` (dashboard → Storage & Databases → KV) — paste its
    id into `wrangler.jsonc` (`kv_namespaces`). This stores grants/tokens.
 3. Deploy through the environment-specific runbook. Then connect a client to
@@ -97,7 +103,8 @@ actual binding names and record the generated ids in `env.staging`):
 ```bash
 npx wrangler kv namespace create TOPOLOGY_KV --env staging
 # Set staging PUBLIC_BASE_URL and the generated namespace id in wrangler.jsonc.
-# Provision OAUTH_KV and GITHUB_CLIENT_SECRET independently for staging.
+# Provision OAUTH_KV, GITHUB_CLIENT_SECRET, and optional
+# SESSION_HMAC_SECRET independently for staging.
 npx wrangler deploy --env staging
 ```
 
@@ -243,11 +250,38 @@ tunnels, overlay policies, and flow tables incl. recently-ended flows) so an
 agent can build topologies from reality instead of from prose. Credentials
 come from the environment only; they never pass through tool arguments.
 
-- **stdio:** set `ORCH_BASE_URL` + `ORCH_API_KEY` (EdgeConnect Orchestrator
-  origin + API key) in the server's environment, or `TOPOLOGY_PROVIDER=mock`
-  for a built-in fixture fabric (demo / development with zero fabric access).
-- **Cloudflare:** set the `ORCH_BASE_URL` var and the **`ORCH_API_KEY`
-  dashboard secret** (same pattern as `GITHUB_CLIENT_SECRET`).
+### Blast radius
+
+The Orchestrator API key is deployment-wide. When live-data is enabled,
+**every authenticated MCP session** on that Worker (any GitHub user who
+completes OAuth) can call the full fabric tool set against the connected
+Orchestrator — inventory, overlay policies, and flow tables — unless the
+optional `LIVE_DATA_GITHUB_IDS` allowlist further restricts the grant.
+There is no per-session or per-tool credential: one key covers the whole
+fabric. Staging and production must never share `ORCH_*` credentials.
+Prefer a least-privilege, non-production Orchestrator key. Do not
+provision production fabric credentials without an explicit human
+decision. See [`../../docs/DEPLOYMENT_RUNBOOK.md`](../../docs/DEPLOYMENT_RUNBOOK.md)
+§"Live-data fabric tools".
+
+Secret presence alone does **not** enable the tools. `LIVE_DATA_ENABLED`
+must be the literal `"true"` (opt-in, same fail-closed style as
+`PROFILES_ENABLED` / `ANALYTICS_ENABLED`). Unset, `"false"`, or a typo
+leaves the tools unregistered even if `ORCH_BASE_URL` and `ORCH_API_KEY`
+are configured.
+
+- **stdio:** set `LIVE_DATA_ENABLED=true` plus `ORCH_BASE_URL` +
+  `ORCH_API_KEY` (EdgeConnect Orchestrator origin + API key) in the
+  server's environment, or `TOPOLOGY_PROVIDER=mock` for a built-in
+  fixture fabric (demo / development with zero fabric access; the mock
+  path does not require the flag).
+- **Cloudflare:** set `LIVE_DATA_ENABLED` to `"true"` in that
+  environment's `wrangler.jsonc` vars, the `ORCH_BASE_URL` var, and the
+  **`ORCH_API_KEY` dashboard secret** (same pattern as
+  `GITHUB_CLIENT_SECRET`). Optionally set `LIVE_DATA_GITHUB_IDS` to a
+  comma-separated list of GitHub numeric ids (the same identity
+  `ADMIN_GITHUB_ID` uses). Both production and staging leave
+  `LIVE_DATA_ENABLED` `"false"` until an operator activates them.
 
 The EdgeConnect provider (`src/connect/edgeconnect.ts`) talks only to the
 **Orchestrator** — appliance flow tables are read through its appliance-API
