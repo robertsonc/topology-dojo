@@ -88,7 +88,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
   private store = new TopologyStore();
   /** Session-local uid-keyed registry stub (dropped on hibernation). */
-  private cachedRegistry?: DocStorage;
+  private cachedRegistry?: TopologyRegistry;
 
   async init(): Promise<void> {
     // Rehydrate from the per-USER registry DO (not this session DO's storage):
@@ -158,7 +158,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
    * refuse to persist rather than fall back to a shared "anonymous" key
    * that would leak documents between users.
    */
-  private async registry(): Promise<DocStorage> {
+  private async registry(): Promise<TopologyRegistry> {
     if (this.cachedRegistry) return this.cachedRegistry;
     this.cachedRegistry = await openOwnerRegistry(
       this.env.TOPOLOGY_REGISTRY,
@@ -230,7 +230,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   ): Promise<void> {
     const bucket = rateLimitBucketForTool(toolName);
     if (bucket) {
-      const result = await this.registryStub().consumeQuota(bucket);
+      const result = await (await this.registry()).consumeQuota(bucket);
       if (!result.allowed) throw new Error(formatRateLimitError(result));
     }
     const workspace = this.workspaceService();
