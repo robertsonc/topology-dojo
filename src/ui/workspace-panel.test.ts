@@ -1106,6 +1106,20 @@ describe('renderPresenceHtml (Packet S1)', () => {
     expect(html).toContain('&lt;b&gt;p&lt;/b&gt;');
   });
 
+  it('escapes a free-form actor label so markup cannot inject into the chip', () => {
+    const html = renderPresenceHtml([
+      {
+        kind: 'user',
+        label: '<img src=x onerror=alert(1)>',
+        pageId: 'p1',
+      },
+    ]);
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('onerror=');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).toContain('p1');
+  });
+
   it('surfaces in the active workspace panel body', () => {
     const html = renderActiveWorkspaceHtml(
       activeWorkspace({

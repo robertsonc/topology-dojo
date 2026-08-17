@@ -45,6 +45,10 @@ import {
   type WorkspaceProposal,
   type WorkspaceSnapshot,
 } from '../src/workspace/model.js';
+import {
+  sanitizeActorKind,
+  sanitizeActorLabel,
+} from '../src/workspace/presence.js';
 
 const META_KEY = 'meta';
 const PAGE_PREFIX = 'page:';
@@ -210,18 +214,18 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
    * WebSocket upgrade entry (Packet S1). The browser route authenticates the
    * owner before forwarding here and injects the actor identity as query
    * params; this method only accepts the socket (via the hibernation API) and
-   * stashes the actor + requested page in the socket's attachment. No other
-   * state is kept — presence is reconstructed from `getWebSockets()`.
+   * stashes the actor + requested page in the socket's attachment. Query
+   * `actorLabel` is clamped and stripped of control characters; `actorKind`
+   * is allow-listed. No other state is kept — presence is reconstructed from
+   * `getWebSockets()`.
    */
   override async fetch(request: Request): Promise<Response> {
     if ((request.headers.get('Upgrade') ?? '').toLowerCase() !== 'websocket') {
       return new Response('expected a websocket upgrade', { status: 426 });
     }
     const url = new URL(request.url);
-    const kindParam = url.searchParams.get('actorKind');
-    const kind: WorkspaceActor['kind'] =
-      kindParam === 'agent' || kindParam === 'system' ? kindParam : 'user';
-    const label = url.searchParams.get('actorLabel') ?? undefined;
+    const kind = sanitizeActorKind(url.searchParams.get('actorKind'));
+    const label = sanitizeActorLabel(url.searchParams.get('actorLabel'));
     const pageId = url.searchParams.get('pageId') ?? undefined;
     const pair = new WebSocketPair();
     const client = pair[0];
@@ -337,9 +341,11 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       if (ws === exclude) continue;
       const attachment = ws.deserializeAttachment() as SocketAttachment | null;
       if (!attachment) continue;
+      const kind = sanitizeActorKind(attachment.actor.kind);
+      const label = sanitizeActorLabel(attachment.actor.label);
       presence.push({
-        kind: attachment.actor.kind,
-        ...(attachment.actor.label ? { label: attachment.actor.label } : {}),
+        kind,
+        ...(label ? { label } : {}),
         ...(attachment.pageId ? { pageId: attachment.pageId } : {}),
       });
     }

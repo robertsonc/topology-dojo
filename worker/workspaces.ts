@@ -21,6 +21,7 @@ import type {
   WorkspaceProposal,
   WorkspaceSnapshot,
 } from '../src/workspace/model.js';
+import { browserPresenceActor } from '../src/workspace/presence.js';
 import type { WorkerEnv } from './env.js';
 import type { TopologyRegistry } from './registry.js';
 
@@ -383,13 +384,18 @@ export class WorkspaceService {
    * presence, then hand the request to the stub's `fetch`, returning its 101
    * (with the `webSocket`) verbatim. Presence identity is set here — never
    * trusted from the client — while the client's own `pageId` query param is
-   * preserved.
+   * preserved. Browser connections always report as `user` from the
+   * authenticated session; any client-supplied `actorKind` / `actorLabel` is
+   * discarded first.
    */
   async socket(id: string, request: Request): Promise<Response> {
     const document = await this.ensure(id);
     const url = new URL(request.url);
-    url.searchParams.set('actorKind', 'user');
-    url.searchParams.set('actorLabel', this.user.login);
+    url.searchParams.delete('actorKind');
+    url.searchParams.delete('actorLabel');
+    const actor = browserPresenceActor(this.user.login);
+    url.searchParams.set('actorKind', actor.kind);
+    if (actor.label) url.searchParams.set('actorLabel', actor.label);
     return document.fetch(new Request(url.toString(), request));
   }
 
