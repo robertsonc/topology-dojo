@@ -23,6 +23,11 @@ import type {
 } from '../src/workspace/model.js';
 import type { WorkerEnv } from './env.js';
 import type { TopologyRegistry } from './registry.js';
+import {
+  currentRegistryName,
+  legacyRegistryName,
+  migrateLegacyDrafts,
+} from '../src/mcp/registry-address.js';
 
 export interface WorkspaceUser {
   uid: string;
@@ -139,6 +144,7 @@ function asWorkspaceUser(user: SessionUser): WorkspaceUser {
 export class WorkspaceService {
   private readonly user: WorkspaceUser;
   private readonly migrateLegacyOnAccess: boolean;
+  private legacyDraftsPulled = false;
 
   constructor(
     private readonly env: WorkerEnv,
@@ -150,6 +156,7 @@ export class WorkspaceService {
   }
 
   async list(): Promise<WorkspaceListItem[]> {
+    await this.pullLegacyDrafts();
     const [current, legacy] = await Promise.all([
       this.directory().listWorkspaceSources(),
       this.legacyRegistry().listWorkspaceSources(),
@@ -408,6 +415,7 @@ export class WorkspaceService {
    * coordinator's atomic initialization succeeds.
    */
   private async ensure(id: string): Promise<DocumentRpc> {
+    await this.pullLegacyDrafts();
     const registry = this.directory();
     const document = this.document(id);
     const record = await registry.workspaceRecord(id);
@@ -417,7 +425,11 @@ export class WorkspaceService {
       return document;
     }
 
-    const legacy = await this.legacyRegistry().legacyDocument(id);
+    // New MCP drafts live on the uid-keyed registry; unmigrated v2 drafts
+    // remain on the login-keyed name until pullLegacyDrafts copies them.
+    const legacy =
+      (await registry.legacyDocument(id)) ??
+      (await this.legacyRegistry().legacyDocument(id));
     if (!legacy) throw new Error(`unknown workspace "${id}"`);
     if (!this.migrateLegacyOnAccess)
       throw new Error(
@@ -445,13 +457,23 @@ export class WorkspaceService {
   private directory(): DurableObjectStub<TopologyRegistry> {
     const ns = this.env.TOPOLOGY_REGISTRY;
     // Numeric GitHub identity is stable across login renames for all new state.
-    return ns.get(ns.idFromName(`user-id:${this.user.uid}`));
+    return ns.get(ns.idFromName(currentRegistryName(this.user.uid)));
   }
 
   /** Existing v2 registry, addressed by the mutable login, used read-only here. */
   private legacyRegistry(): DurableObjectStub<TopologyRegistry> {
     const ns = this.env.TOPOLOGY_REGISTRY;
-    return ns.get(ns.idFromName(`user:${this.user.login}`));
+    return ns.get(ns.idFromName(legacyRegistryName(this.user.login)));
+  }
+
+  /**
+   * One-time lazy copy of `tdoc:` drafts from `user:<login>` onto
+   * `user-id:<uid>`. Idempotent; the login-keyed snapshot is retained.
+   */
+  private async pullLegacyDrafts(): Promise<void> {
+    if (this.legacyDraftsPulled) return;
+    await migrateLegacyDrafts(this.directory(), this.legacyRegistry());
+    this.legacyDraftsPulled = true;
   }
 
   private actor(kind: 'user' | 'agent'): WorkspaceActor {

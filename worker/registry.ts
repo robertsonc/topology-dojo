@@ -1,8 +1,9 @@
 /**
- * Per-owner directory and legacy draft registry. Existing draft registries use
- * `idFromName("user:<login>")`; new workspace directories use the stable
- * `idFromName("user-id:<numeric-id>")`. Both decouple owner state from the
- * ephemeral per-session `McpAgent` DO.
+ * Per-owner directory and private-draft registry. New drafts and workspace
+ * directories use the stable `idFromName("user-id:<numeric-id>")`. The
+ * pre-uid `idFromName("user:<login>")` name is a read-only migration source
+ * so a GitHub login rename cannot orphan drafts. Both decouple owner state
+ * from the ephemeral per-session `McpAgent` DO.
  *
  * It exposes exactly the `DocStorage` slice `persist-store` needs, so the same
  * rehydrate/persist logic runs unchanged against a registry stub over RPC.
