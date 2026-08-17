@@ -32,6 +32,7 @@ import type { WorkerEnv } from './env.js';
 import { WorkspaceService } from './workspaces.js';
 import { workspaceToolNames } from './workspace-tools.js';
 import { profileToolNames } from './profile-tools.js';
+import { liveDataToolNames } from './live-data-tools.js';
 import {
   explainPreference,
   preferenceSummary,
@@ -91,9 +92,18 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     // (the "unknown topology" bug) because each session lands on a fresh DO.
     await this.rehydrate();
 
-    // Live-data provider, when the Orchestrator secrets are configured.
+    // Live-data provider: LIVE_DATA_ENABLED (opt-in) × optional owner
+    // allowlist × Orchestrator secrets. Secret presence alone must not
+    // register the fabric tools (issue #228). liveDataToolNames holds the
+    // pure decision so the gate stays unit-testable outside this DO.
+    const ownerId = (this.props as { id?: number } | undefined)?.id;
     const provider =
-      this.env.ORCH_BASE_URL && this.env.ORCH_API_KEY
+      liveDataToolNames(
+        this.env,
+        ownerId !== undefined ? String(ownerId) : undefined,
+      ).length &&
+      this.env.ORCH_BASE_URL &&
+      this.env.ORCH_API_KEY
         ? new EdgeConnectProvider({
             baseUrl: this.env.ORCH_BASE_URL,
             apiKey: this.env.ORCH_API_KEY,

@@ -254,11 +254,38 @@ tunnels, overlay policies, and flow tables incl. recently-ended flows) so an
 agent can build topologies from reality instead of from prose. Credentials
 come from the environment only; they never pass through tool arguments.
 
-- **stdio:** set `ORCH_BASE_URL` + `ORCH_API_KEY` (EdgeConnect Orchestrator
-  origin + API key) in the server's environment, or `TOPOLOGY_PROVIDER=mock`
-  for a built-in fixture fabric (demo / development with zero fabric access).
-- **Cloudflare:** set the `ORCH_BASE_URL` var and the **`ORCH_API_KEY`
-  dashboard secret** (same pattern as `GITHUB_CLIENT_SECRET`).
+### Blast radius
+
+The Orchestrator API key is deployment-wide. When live-data is enabled,
+**every authenticated MCP session** on that Worker (any GitHub user who
+completes OAuth) can call the full fabric tool set against the connected
+Orchestrator — inventory, overlay policies, and flow tables — unless the
+optional `LIVE_DATA_GITHUB_IDS` allowlist further restricts the grant.
+There is no per-session or per-tool credential: one key covers the whole
+fabric. Staging and production must never share `ORCH_*` credentials.
+Prefer a least-privilege, non-production Orchestrator key. Do not
+provision production fabric credentials without an explicit human
+decision. See [`../../docs/DEPLOYMENT_RUNBOOK.md`](../../docs/DEPLOYMENT_RUNBOOK.md)
+§"Live-data fabric tools".
+
+Secret presence alone does **not** enable the tools. `LIVE_DATA_ENABLED`
+must be the literal `"true"` (opt-in, same fail-closed style as
+`PROFILES_ENABLED` / `ANALYTICS_ENABLED`). Unset, `"false"`, or a typo
+leaves the tools unregistered even if `ORCH_BASE_URL` and `ORCH_API_KEY`
+are configured.
+
+- **stdio:** set `LIVE_DATA_ENABLED=true` plus `ORCH_BASE_URL` +
+  `ORCH_API_KEY` (EdgeConnect Orchestrator origin + API key) in the
+  server's environment, or `TOPOLOGY_PROVIDER=mock` for a built-in
+  fixture fabric (demo / development with zero fabric access; the mock
+  path does not require the flag).
+- **Cloudflare:** set `LIVE_DATA_ENABLED` to `"true"` in that
+  environment's `wrangler.jsonc` vars, the `ORCH_BASE_URL` var, and the
+  **`ORCH_API_KEY` dashboard secret** (same pattern as
+  `GITHUB_CLIENT_SECRET`). Optionally set `LIVE_DATA_GITHUB_IDS` to a
+  comma-separated list of GitHub numeric ids (the same identity
+  `ADMIN_GITHUB_ID` uses). Both production and staging leave
+  `LIVE_DATA_ENABLED` `"false"` until an operator activates them.
 
 The EdgeConnect provider (`src/connect/edgeconnect.ts`) talks only to the
 **Orchestrator** — appliance flow tables are read through its appliance-API
