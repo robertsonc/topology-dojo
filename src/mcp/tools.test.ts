@@ -1231,6 +1231,34 @@ describe('MCP tools', () => {
     expect(html).toContain('"transition":"fade"');
   });
 
+  it('rejects an SVG export over the 2 MiB cap', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    const oversized = createTools(store, {
+      renderDocument: () => 'x'.repeat(2 * 1024 * 1024 + 1),
+    });
+    expect(() =>
+      oversized
+        .find((t) => t.name === 'render_svg')!
+        .handler({
+          topologyId: id,
+        }),
+    ).toThrow(/SVG export exceeds the 2 MiB limit/);
+  });
+
+  it('rejects a flipbook export over the 6 MiB cap', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    const oversized = createTools(store, {
+      renderDocument: () => 'y'.repeat(6 * 1024 * 1024 + 1),
+    });
+    expect(() =>
+      oversized
+        .find((t) => t.name === 'export_flipbook')!
+        .handler({
+          topologyId: id,
+        }),
+    ).toThrow(/HTML export exceeds the 6 MiB limit/);
+  });
+
   it('add_page targets the new page by default; pageIndex overrides', () => {
     const { id } = call('create_topology', {}) as { id: string };
     call('add_page', { topologyId: id, name: 'Frame 2' });
