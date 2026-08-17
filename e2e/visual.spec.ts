@@ -52,3 +52,40 @@ test('narrow viewport keeps core controls reachable', async ({ page }) => {
   await expect(page.locator('#fSave')).toBeVisible();
   await expect(page.locator('#tSelect')).toBeVisible();
 });
+
+test('phone viewport keeps the canvas visible and usable (#221)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+
+  const host = page.locator('.canvas-host').first();
+  await expect(host).toBeVisible();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+  await expect(page.locator('#palette')).toHaveClass(/collapsed/);
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+
+  const box = await host.boundingBox();
+  expect(box, 'canvas host should have a layout box').toBeTruthy();
+  expect(box!.width).toBeGreaterThanOrEqual(160);
+  expect(box!.height).toBeGreaterThanOrEqual(200);
+
+  // Zoom/fit chrome sits on the canvas and must stay clickable.
+  await expect(page.locator('#ccFit')).toBeVisible();
+  await page.locator('#ccFit').click();
+
+  // Opening properties as a drawer must not consume the canvas box.
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expect(page.locator('#inspector')).toBeVisible();
+  const openBox = await host.boundingBox();
+  expect(openBox!.width).toBeGreaterThanOrEqual(160);
+  expect(openBox!.height).toBeGreaterThanOrEqual(200);
+
+  // Node library is an overlay; opening it still leaves a sized canvas.
+  await page.locator('#palette-toggle').click();
+  await expect(page.locator('.pitem').first()).toBeVisible();
+  const palBox = await host.boundingBox();
+  expect(palBox!.width).toBeGreaterThanOrEqual(160);
+  expect(palBox!.height).toBeGreaterThanOrEqual(200);
+});

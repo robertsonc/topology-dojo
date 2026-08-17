@@ -1200,6 +1200,52 @@
         color: var(--text);
         border-color: var(--accent);
       }
+      /* Phone / narrow tablet (#221): the docked properties column plus the
+         floating node library can consume a 390px stage, and overflow:hidden
+         on the canvas area leaves no way to recover a drawing surface. Keep
+         the toolbar on one scrollable row, guarantee a minimum canvas box,
+         and lift the inspector into a right drawer so an open panel still
+         leaves canvas peeking. JS defaults both panels closed at this
+         breakpoint when the user has no stored preference. */
+      @media (max-width: 640px) {
+        .bar {
+          overflow-x: auto;
+          overflow-y: hidden;
+          flex-wrap: nowrap;
+        }
+        .bar-left,
+        .bar-right {
+          flex-wrap: nowrap;
+        }
+        .canvas-area {
+          min-width: 160px;
+          min-height: 200px;
+        }
+        .inspector-wrap {
+          position: absolute;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          max-width: min(280px, calc(100% - 72px));
+          box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+        }
+        .inspector-wrap.collapsed {
+          top: 12px;
+          right: 12px;
+          bottom: auto;
+          max-width: none;
+          box-shadow: none;
+        }
+        .inspector {
+          width: min(240px, calc(100vw - 88px));
+          min-width: 0;
+          max-width: 100%;
+        }
+        .palette {
+          width: min(162px, calc(100% - 24px));
+          max-height: calc(100% - 24px);
+        }
+      }
       .insp-h {
         color: var(--muted);
         font-size: 10px;
