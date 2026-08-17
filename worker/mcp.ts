@@ -43,7 +43,6 @@ import {
   formatRateLimitError,
   rateLimitBucketForTool,
 } from '../src/mcp/rate-limit.js';
-import type { TopologyRegistry } from './registry.js';
 
 /**
  * Tools that do not mutate the legacy in-memory TopologyStore. Workspace write
