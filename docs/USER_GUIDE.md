@@ -161,7 +161,9 @@ history availability, and current error/warning counts.
 Use **B**, **M**, **P**, and **F** to toggle the Node library, minimap,
 Properties, and pages strip. The palette, filmstrip, minimap, Problems panel,
 and Properties panel remember their local display state when browser storage is
-available.
+available. On a phone-width viewport (640px and below) the Node library and
+Properties panel start collapsed, and Properties opens as a drawer over the
+canvas so the drawing surface stays visible and reachable.
 
 Use **Ctrl/Cmd+F** to search node labels, identifiers, and types, then jump to a
 result. The minimap provides an overview of content outside the current

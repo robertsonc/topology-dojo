@@ -52,6 +52,11 @@ import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
 import { mountAdminDashboard } from './ui/admin-dashboard.js';
 import { overlayActive, registerOverlay } from './ui/overlay.js';
+import {
+  MOBILE_LAYOUT_MQ,
+  defaultPanelCollapsed,
+  isMobileLayoutWidth,
+} from './ui/mobile-layout.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -919,12 +924,13 @@ setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') === '1');
 // Collapse / restore the node palette so it stops crowding the left edge.
 const paletteEl = app.querySelector<HTMLElement>('#palette')!;
 const paletteToggle = app.querySelector<HTMLButtonElement>('#palette-toggle')!;
-function setPaletteCollapsed(collapsed: boolean): void {
+function setPaletteCollapsed(collapsed: boolean, persist = true): void {
   paletteEl.classList.toggle('collapsed', collapsed);
   paletteToggle.textContent = collapsed ? 'nodes ▸' : 'nodes ◂';
   paletteToggle.title = collapsed
     ? 'Show node library (B)'
     : 'Hide node library (B)';
+  if (!persist) return;
   try {
     localStorage.setItem('tds-palette-collapsed', collapsed ? '1' : '0');
   } catch {
@@ -934,7 +940,6 @@ function setPaletteCollapsed(collapsed: boolean): void {
 paletteToggle.addEventListener('click', () =>
   setPaletteCollapsed(!paletteEl.classList.contains('collapsed')),
 );
-setPaletteCollapsed(localStorage.getItem('tds-palette-collapsed') === '1');
 
 /* Collapse / restore the frames strip — a floating overlay at the canvas's
  * bottom-left, so toggling never resizes the canvas or moves the viewport.
@@ -1235,12 +1240,13 @@ const inspector = app.querySelector<HTMLElement>('#inspector')!;
 const inspectorWrap = app.querySelector<HTMLDivElement>('#inspector-wrap')!;
 const inspectorToggle =
   app.querySelector<HTMLButtonElement>('#inspector-toggle')!;
-function setInspectorCollapsed(collapsed: boolean): void {
+function setInspectorCollapsed(collapsed: boolean, persist = true): void {
   inspectorWrap.classList.toggle('collapsed', collapsed);
   inspectorToggle.textContent = collapsed ? 'props ◂' : 'hide ▸';
   inspectorToggle.title = collapsed
     ? 'Show properties (P)'
     : 'Hide properties (P)';
+  if (!persist) return;
   try {
     localStorage.setItem('tds-inspector-collapsed', collapsed ? '1' : '0');
   } catch {
@@ -1250,7 +1256,39 @@ function setInspectorCollapsed(collapsed: boolean): void {
 inspectorToggle.addEventListener('click', () =>
   setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed')),
 );
-setInspectorCollapsed(localStorage.getItem('tds-inspector-collapsed') === '1');
+
+function readCollapsedPref(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open/close the node library and properties rail from stored prefs, or from
+ * the phone-width default when the user has never chosen (#221). Inferred
+ * defaults are not written to storage, so crossing the breakpoint can still
+ * flip them; an explicit B/P toggle persists and wins on every viewport.
+ */
+function syncPanelLayoutFromPrefs(): void {
+  const mobile = isMobileLayoutWidth(window.innerWidth);
+  const palettePref = readCollapsedPref('tds-palette-collapsed');
+  setPaletteCollapsed(
+    defaultPanelCollapsed(palettePref, mobile),
+    palettePref !== null,
+  );
+  const inspectorPref = readCollapsedPref('tds-inspector-collapsed');
+  setInspectorCollapsed(
+    defaultPanelCollapsed(inspectorPref, mobile),
+    inspectorPref !== null,
+  );
+}
+
+syncPanelLayoutFromPrefs();
+window
+  .matchMedia?.(MOBILE_LAYOUT_MQ)
+  ?.addEventListener?.('change', syncPanelLayoutFromPrefs);
 
 /* The properties panel is a docked right column (full stage height), so its
  * annotations / zones list is never clipped or overlapped.
