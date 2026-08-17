@@ -141,7 +141,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
    * authenticated user we refuse to persist rather than fall back to a shared
    * "anonymous" key that would leak documents between users.
    */
-  private registryStub(): TopologyRegistry {
+  private registryStub(): DurableObjectStub<TopologyRegistry> {
     const login = (this.props as { login?: string } | undefined)?.login;
     if (!login)
       throw new Error(
