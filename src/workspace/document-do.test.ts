@@ -250,7 +250,9 @@ describe('TopologyDocument Durable Object', () => {
   it('stores an aggregate document above 2 MiB while rejecting an oversize page', async () => {
     const pages = Array.from({ length: 20 }, (_, index) => ({
       ...page(`large-${index}`, `n-${index}`),
-      caption: 'x'.repeat(120_000),
+      // Size ballast via emphasis ids (not a display string — captions are
+      // field-capped at 500). Coordinator still enforces the page/meta byte cap.
+      emphasis: ['x'.repeat(120_000)],
     }));
     const aggregate = await call<{ revision: number }>({
       action: 'initialize',
@@ -265,7 +267,7 @@ describe('TopologyDocument Durable Object', () => {
       document: {
         title: 'Oversize',
         customNodes: [],
-        pages: [{ ...page('huge', 'n'), caption: 'x'.repeat(1_900_000) }],
+        pages: [{ ...page('huge', 'n'), emphasis: ['x'.repeat(1_900_000)] }],
       },
     });
     expect(oversize.status).toBe(400);

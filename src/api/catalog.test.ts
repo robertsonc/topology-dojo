@@ -13,6 +13,7 @@ import {
 } from './catalog.js';
 import { LAYER_KINDS } from './layers.js';
 import { defaultSpec } from '../nodes/spec.js';
+import { TEXT_LIMITS } from './text.js';
 
 describe('capability catalog', () => {
   it('covers every built-in node type (no UI-only types)', () => {
@@ -187,6 +188,32 @@ describe('capability catalog', () => {
     const keys = layers.fields.map((f) => f.key);
     for (const k of ['name', 'kind', 'color', 'defaultVisible'])
       expect(keys).toContain(k);
+  });
+
+  it('advertises length caps on free-text catalog fields', () => {
+    const ec = getNodeType('ec')!;
+    expect(ec.fields.find((f) => f.key === 'label')?.max).toBe(
+      TEXT_LIMITS.label,
+    );
+    expect(ec.fields.find((f) => f.key === 'sublabel')?.max).toBe(
+      TEXT_LIMITS.sublabel,
+    );
+    expect(ec.fields.find((f) => f.key === 'meta')?.max).toBe(
+      TEXT_LIMITS.metaValue,
+    );
+    expect(
+      getAnnotationType('zone')!.fields.find((f) => f.key === 'description')
+        ?.max,
+    ).toBe(TEXT_LIMITS.description);
+    const strings = [
+      ...nodeCatalog().flatMap((n) => n.fields),
+      ...linkCatalog().flatMap((l) => l.fields),
+      ...annotationCatalog().flatMap((a) => a.fields),
+      ...layerCatalog().fields,
+    ].filter((f) => f.kind === 'string' || f.key === 'meta');
+    for (const f of strings) {
+      expect(f.max, `${f.key} should declare a max`).toBeGreaterThan(0);
+    }
   });
 
   it('includes custom node types when provided', () => {

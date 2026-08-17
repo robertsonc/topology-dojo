@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   serializeDoc,
   parseDoc,
@@ -7,6 +9,7 @@ import {
   clearLocal,
 } from './persist.js';
 import { sampleDocument, blankPage } from './model.js';
+import { TEXT_LIMITS } from '../api/text.js';
 
 describe('persist', () => {
   it('round-trips a document through serialize → parse', () => {
@@ -300,6 +303,93 @@ describe('persist', () => {
       clearLocal('shared');
       expect(loadLocal('shared')).toBeNull();
       expect(loadLocal()?.title).toBe('Mine');
+    });
+  });
+
+  describe('free-text bounds (#225)', () => {
+    it('truncates overlong labels / captions / descriptions / meta values', () => {
+      const doc = parseDoc({
+        title: 'T'.repeat(TEXT_LIMITS.title + 20),
+        pages: [
+          {
+            name: 'N'.repeat(TEXT_LIMITS.name + 5),
+            caption: 'C'.repeat(TEXT_LIMITS.caption + 10),
+            nodes: [
+              {
+                id: 'n',
+                type: 'ec',
+                x: 0,
+                y: 0,
+                label: 'L'.repeat(TEXT_LIMITS.label + 8),
+                sublabel: 'S'.repeat(TEXT_LIMITS.sublabel + 8),
+                meta: { serial: 'M'.repeat(TEXT_LIMITS.metaValue + 12) },
+              },
+            ],
+            zones: [
+              {
+                id: 'z',
+                nodes: ['n'],
+                description: 'D'.repeat(TEXT_LIMITS.description + 15),
+              },
+            ],
+          },
+        ],
+      })!;
+      const page = doc.pages[0]!;
+      const node = page.nodes[0]!;
+      expect(doc.title).toBe('T'.repeat(TEXT_LIMITS.title));
+      expect(page.name).toBe('N'.repeat(TEXT_LIMITS.name));
+      expect(page.caption).toBe('C'.repeat(TEXT_LIMITS.caption));
+      expect(node.label).toBe('L'.repeat(TEXT_LIMITS.label));
+      expect(node.sublabel).toBe('S'.repeat(TEXT_LIMITS.sublabel));
+      expect(node.meta!.serial).toBe('M'.repeat(TEXT_LIMITS.metaValue));
+      expect(page.zones[0]!.description).toBe(
+        'D'.repeat(TEXT_LIMITS.description),
+      );
+    });
+
+    it('strips control characters and normalizes whitespace on import', () => {
+      const doc = parseDoc({
+        title: '  Hello\u0000\tWorld  ',
+        pages: [
+          {
+            name: 'Frame\u0007 1',
+            caption: 'line1\u0000\n\n\nline2',
+            nodes: [
+              {
+                id: 'n',
+                type: 'ec',
+                x: 0,
+                y: 0,
+                label: '  Branch\u0000  A  ',
+              },
+            ],
+          },
+        ],
+      })!;
+      expect(doc.title).toBe('Hello World');
+      expect(doc.pages[0]!.name).toBe('Frame 1');
+      expect(doc.pages[0]!.caption).toBe('line1\n\nline2');
+      expect(doc.pages[0]!.nodes[0]!.label).toBe('Branch A');
+      expect(serializeDoc(doc)).not.toContain('\u0000');
+      expect(serializeDoc(doc)).not.toContain('\u0007');
+    });
+
+    it('still parses existing fixtures and the sample document', () => {
+      expect(parseDoc(serializeDoc(sampleDocument()))).not.toBeNull();
+      const fixtures = [
+        '../../fixtures/EdgeHA_before.json',
+        '../../fixtures/EdgeHA_after.json',
+      ];
+      for (const rel of fixtures) {
+        const text = readFileSync(
+          fileURLToPath(new URL(rel, import.meta.url)),
+          'utf8',
+        );
+        const doc = parseDoc(text);
+        expect(doc, rel).not.toBeNull();
+        expect(doc!.pages.length).toBeGreaterThan(0);
+      }
     });
   });
 
