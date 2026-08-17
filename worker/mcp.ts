@@ -13,7 +13,6 @@ import { TopologyStore } from '../src/mcp/store.js';
 import {
   persistStore,
   rehydrateStore,
-  type DocStorage,
 } from '../src/mcp/persist-store.js';
 import {
   openOwnerRegistry,
@@ -88,7 +87,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
   private store = new TopologyStore();
   /** Session-local uid-keyed registry stub (dropped on hibernation). */
-  private cachedRegistry?: TopologyRegistry;
+  private cachedRegistry?: any;
 
   async init(): Promise<void> {
     // Rehydrate from the per-USER registry DO (not this session DO's storage):
@@ -158,7 +157,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
    * refuse to persist rather than fall back to a shared "anonymous" key
    * that would leak documents between users.
    */
-  private async registry(): Promise<TopologyRegistry> {
+  private async registry(): Promise<any> {
     if (this.cachedRegistry) return this.cachedRegistry;
     this.cachedRegistry = await openOwnerRegistry(
       this.env.TOPOLOGY_REGISTRY,
