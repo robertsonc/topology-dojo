@@ -5,6 +5,7 @@
  *   GET /authorize          → start GitHub sign-in for an MCP client
  *   GET /callback           → GitHub redirect back; issue the MCP grant
  *   GET /api/topology/:id    → a published share snapshot (public, from KV)
+ *   DELETE /api/topology/:id → owner-only revoke of that snapshot
  *   /v/:id and everything else → the static SPA (env.ASSETS)
  *
  * GitHub is the upstream identity provider. We deliberately skip our own consent
@@ -37,6 +38,11 @@ import {
   snapshotClientIp,
   snapshotRateLimitKey,
 } from '../src/mcp/rate-limit.js';
+import {
+  getShareSnapshot,
+  revokeShareSnapshot,
+  SHARE_CACHE_CONTROL,
+} from '../src/share/snapshot.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -337,6 +343,7 @@ async function limitSnapshotGet(
 }
 
 /** Serve a published snapshot's JSON from KV (the SPA fetches this for /v/:id). */
+<<<<<<< HEAD
 async function serveSnapshot(
   id: string,
   request: Request,
@@ -345,6 +352,10 @@ async function serveSnapshot(
   const limited = await limitSnapshotGet(request, env);
   if (limited) return limited;
   const json = await env.TOPOLOGY_KV.get(`doc:${id}`);
+=======
+async function serveSnapshot(id: string, env: WorkerEnv): Promise<Response> {
+  const json = await getShareSnapshot(env.TOPOLOGY_KV, id);
+>>>>>>> origin/main
   if (!json) {
     return new Response(JSON.stringify({ error: 'not found' }), {
       status: 404,
@@ -354,10 +365,52 @@ async function serveSnapshot(
   return new Response(json, {
     headers: {
       'content-type': 'application/json',
-      // A snapshot id is write-once (a fresh random id per publish), so its
-      // payload never changes — cache it hard so repeat/shared views skip the
-      // round trip. Bounded well under the KV 30-day TTL.
-      'cache-control': 'public, max-age=86400, immutable',
+      // Short public cache so an owner revoke can take effect without a 24h
+      // immutable window. GET stays unauthenticated on purpose.
+      'cache-control': SHARE_CACHE_CONTROL,
+    },
+  });
+}
+
+/** Owner-only unpublish: delete `doc:<id>` when the session matches the publisher. */
+async function revokeSnapshot(
+  id: string,
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  const user = await currentUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'authentication required' }), {
+      status: 401,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': NO_STORE,
+      },
+    });
+  }
+  const result = await revokeShareSnapshot(env.TOPOLOGY_KV, id, user.uid);
+  if (result === 'not_found') {
+    return new Response(JSON.stringify({ error: 'not found' }), {
+      status: 404,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': NO_STORE,
+      },
+    });
+  }
+  if (result === 'forbidden') {
+    return new Response(JSON.stringify({ error: 'forbidden' }), {
+      status: 403,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': NO_STORE,
+      },
+    });
+  }
+  return new Response(JSON.stringify({ revoked: true }), {
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': NO_STORE,
     },
   });
 }
@@ -508,14 +561,18 @@ async function route(
       : handleCallback(request, env);
   }
 
-  // Public share snapshot API (backs the read-only /v/:id view).
+  // Public share snapshot API (backs the read-only /v/:id view). GET is
+  // unauthenticated on purpose; DELETE is owner-only revoke.
   if (pathname.startsWith(API_TOPOLOGY_PREFIX)) {
-    if (request.method !== 'GET') {
-      return new Response('Method Not Allowed\n', { status: 405 });
-    }
     const id = pathname.slice(API_TOPOLOGY_PREFIX.length);
     if (!id) return new Response('Not Found\n', { status: 404 });
+<<<<<<< HEAD
     return serveSnapshot(id, request, env);
+=======
+    if (request.method === 'GET') return serveSnapshot(id, env);
+    if (request.method === 'DELETE') return revokeSnapshot(id, request, env);
+    return new Response('Method Not Allowed\n', { status: 405 });
+>>>>>>> origin/main
   }
 
   // Gate the editor: a top-level navigation to the app needs a signed-in

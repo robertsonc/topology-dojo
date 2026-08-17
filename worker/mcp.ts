@@ -17,6 +17,11 @@ import {
 } from '../src/mcp/persist-store.js';
 import { serializeDoc } from '../src/pages/persist.js';
 import type { TopologyDocument } from '../src/pages/model.js';
+import {
+  mintShareId,
+  putShareSnapshot,
+  revokeShareSnapshot,
+} from '../src/share/snapshot.js';
 import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
 import type { WorkerEnv } from './env.js';
@@ -36,14 +41,6 @@ import {
 } from '../src/mcp/rate-limit.js';
 import type { TopologyRegistry } from './registry.js';
 
-/** Short, URL-safe id for a published snapshot (collision-negligible for this use). */
-function shareId(): string {
-  return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-}
-
-/** Snapshots live in KV for 30 days unless re-published (keeps the namespace bounded). */
-const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
-
 /**
  * Tools that do not mutate the legacy in-memory TopologyStore. Workspace write
  * tools are included because they persist atomically through their document
@@ -60,6 +57,7 @@ const NO_LEGACY_PERSIST_TOOLS = new Set<string>([
   'render_svg',
   'export_flipbook',
   'share_topology',
+  'unpublish_topology',
   'describe_data_source',
   'list_appliances',
   'list_tunnels',
@@ -124,6 +122,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       {
         renderDocument,
         publishTopology: (doc: TopologyDocument) => this.publish(doc),
+        unpublishTopology: (shareId: string) => this.unpublish(shareId),
         ...(provider ? { provider } : {}),
         ...(workspace ? { workspace } : {}),
         ...(profile ? { profile } : {}),
@@ -275,15 +274,48 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     };
   }
 
+  /**
+   * GitHub numeric id as a string — the same key the browser session cookie
+   * uses (`SessionUser.uid`), so MCP publish and DELETE /api/topology/:id
+   * agree on ownership.
+   */
+  private ownerId(): string {
+    const id = (this.props as { id?: number } | undefined)?.id;
+    if (id === undefined)
+      throw new Error(
+        'no authenticated user (props.id) — refusing to publish or revoke a share',
+      );
+    return String(id);
+  }
+
   /** Store a document snapshot in KV and return the link that opens it. */
   private async publish(
     doc: TopologyDocument,
   ): Promise<{ id: string; url: string }> {
-    const id = shareId();
-    await this.env.TOPOLOGY_KV.put(`doc:${id}`, serializeDoc(doc), {
-      expirationTtl: SHARE_TTL_SECONDS,
-    });
+    const id = mintShareId();
+    await putShareSnapshot(
+      this.env.TOPOLOGY_KV,
+      id,
+      serializeDoc(doc),
+      this.ownerId(),
+    );
     const base = (this.env.PUBLIC_BASE_URL ?? '').replace(/\/$/, '');
     return { id, url: `${base}/v/${id}` };
+  }
+
+  /** Owner-only delete of a published snapshot. */
+  private async unpublish(shareId: string): Promise<{ revoked: true }> {
+    const result = await revokeShareSnapshot(
+      this.env.TOPOLOGY_KV,
+      shareId,
+      this.ownerId(),
+    );
+    if (result === 'not_found')
+      throw new Error(`share "${shareId}" was not found (it may have expired)`);
+    if (result === 'forbidden')
+      throw new Error(
+        `share "${shareId}" can only be unpublished by the publisher`,
+      );
+    return { revoked: true };
   }
 }

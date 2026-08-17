@@ -69,6 +69,7 @@ import {
   type LinkTypeInfo,
   type NodeTypeInfo,
 } from './api/catalog.js';
+import { SHARE_PUBLIC_WARNING } from './share/copy.js';
 
 // Restore the last session from localStorage, else start from the sample.
 const doc: TopologyDocument = loadLocal() ?? sampleDocument();
@@ -183,9 +184,10 @@ app.innerHTML = `
        autosave to a separate slot so the user's own document stays intact
        until they explicitly adopt the copy (#202). -->
   <div class="shared-banner" id="sharedBanner" role="status" hidden>
-    <span class="shared-banner-text">Viewing a shared copy — your own document is untouched.</span>
+    <span class="shared-banner-text">${SHARE_PUBLIC_WARNING} Viewing a shared copy — your own document is untouched.</span>
     <button class="tbtn" id="sharedKeep" title="Replace your locally saved document with this shared copy">keep this copy</button>
     <button class="tbtn" id="sharedBack" title="Return to your own locally saved document">back to my document</button>
+    <button class="tbtn" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>unpublish link</button>
   </div>
 
   <div class="stage">
@@ -267,6 +269,8 @@ const savedEl = app.querySelector<HTMLElement>('#saved')!;
  * colleague's document can never replace the user's own local autosave or
  * workspace without an explicit adoption. */
 let activeSlot: DocSlot = 'local';
+/** Share id from the current /v/:id load; used for owner-only unpublish. */
+let activeShareId: string | undefined;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 function downloadDocJSON(): void {
@@ -403,7 +407,10 @@ function loadDoc(
   slot: DocSlot = 'local',
 ): void {
   activeSlot = slot;
-  if (slot === 'local') clearLocal('shared');
+  if (slot === 'local') {
+    activeShareId = undefined;
+    clearLocal('shared');
+  }
   updateSharedBanner();
   doc.title = next.title;
   doc.pages = structuredClone(next.pages);
@@ -484,8 +491,11 @@ window.addEventListener('beforeunload', () => {
  * path is dropped after load; a refresh resumes the shared copy from its slot.
  */
 const sharedBanner = app.querySelector<HTMLElement>('#sharedBanner')!;
+const sharedUnpublish =
+  sharedBanner.querySelector<HTMLButtonElement>('#sharedUnpublish')!;
 function updateSharedBanner(): void {
   sharedBanner.hidden = activeSlot !== 'shared';
+  sharedUnpublish.hidden = activeSlot !== 'shared' || !activeShareId;
 }
 sharedBanner.querySelector('#sharedKeep')?.addEventListener('click', () => {
   if (
@@ -497,12 +507,49 @@ sharedBanner.querySelector('#sharedKeep')?.addEventListener('click', () => {
   )
     return;
   activeSlot = 'local';
+  activeShareId = undefined;
   clearLocal('shared');
   updateSharedBanner();
   markDirty();
 });
 sharedBanner.querySelector('#sharedBack')?.addEventListener('click', () => {
+  activeShareId = undefined;
   loadDoc(loadLocal() ?? sampleDocument());
+});
+sharedUnpublish.addEventListener('click', () => {
+  if (!activeShareId) return;
+  if (
+    !confirm(
+      'Unpublish this public link? Anyone with the URL will no longer be able to load the snapshot. Your local copy of the document is unchanged.',
+    )
+  )
+    return;
+  const id = activeShareId;
+  void (async () => {
+    try {
+      const res = await fetch(`/api/topology/${id}`, { method: 'DELETE' });
+      if (res.status === 401) {
+        alert('Sign in to unpublish a link you published.');
+        return;
+      }
+      if (res.status === 403) {
+        alert('Only the publisher can unpublish this link.');
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(
+          res.status === 404
+            ? 'This link is already unpublished or expired.'
+            : `Could not unpublish (HTTP ${res.status}).`,
+        );
+      }
+      activeShareId = undefined;
+      updateSharedBanner();
+      alert('Link unpublished. The public URL no longer serves this snapshot.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not unpublish.');
+    }
+  })();
 });
 
 const shareMatch = location.pathname.match(/^\/v\/([\w-]+)\/?$/);
@@ -518,6 +565,7 @@ if (shareMatch) {
         );
       const parsed = parseDoc(await res.json());
       if (!parsed) throw new Error('The shared topology was invalid.');
+      activeShareId = shareMatch[1];
       loadDoc(parsed, false, 'shared');
       history.replaceState({}, '', '/');
     } catch (err) {

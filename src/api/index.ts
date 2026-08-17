@@ -15,3 +15,4 @@ export * from './tidy.js';
 export * from './autolayout.js';
 export * from './templates.js';
 export * from './geometry.js';
+export * from './text.js';

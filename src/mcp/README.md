@@ -80,21 +80,16 @@ Apps, secrets, or KV namespace ids across environments.
 > workspace tools. The old snapshot is retained as migration rollback material
 > but stale legacy mutation is refused.
 
-### Share links (`share_topology`)
+### Share links (`share_topology` / `unpublish_topology`)
 
 `share_topology` snapshots the current document into a **KV namespace** and
 returns a link that opens it in the browser editor — the way to hand a user a
 viewable/shareable result after building. Because the snapshot lives in KV (not
 the per-session in-memory store), the link keeps working after the MCP session
 ends. The link is `<PUBLIC_BASE_URL>/v/<id>`; opening it loads the snapshot into
-the editor (the SPA fetches `/api/topology/<id>`). Every snapshot URL expires 30
-days after it is created. Publishing again mints a new snapshot id and URL; it
-does not renew the previous URL. Snapshots are public to anyone with the URL,
-may be cached for up to 24 hours, and currently have no revoke/unpublish
-operation; publish only content suitable for that exposure. This tool is
-**remote-only** — the local stdio server has no KV/origin, so it isn't
-registered there. Remote publishes are also rate-limited per authenticated
-user (see [Rate limits and export size](#rate-limits-and-export-size)).
+the editor (the SPA fetches `/api/topology/<id>`).
+
+This link is public: anyone with the URL can view the snapshot for up to 30 days. Do not publish internal addresses, credentials, or other sensitive content. Publishing again mints a new snapshot id and URL; it does not renew the previous URL. Every snapshot URL expires 30 days after it is created. Public GETs may be cached for about a minute so an owner revoke can take effect quickly. The publisher can revoke a link with `unpublish_topology` (pass the 12-character share id) or `DELETE /api/topology/<id>` while signed in as the same GitHub user; revoke deletes the KV key and `/v/<id>` then 404s. Snapshots are public to anyone with the URL; remote publishes are rate-limited per authenticated user (see [Rate limits and export size](#rate-limits-and-export-size)). These tools are **remote-only** — the local stdio server has no KV/origin, so they are not registered there.
 
 One-time setup for the isolated staging environment (use the environment's
 actual binding names and record the generated ids in `env.staging`):
@@ -196,7 +191,8 @@ to the task's affected region and change summaries, not total document size.
 | `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                              |
 | `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                                |
 | `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                               |
-| `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)                                          |
+| `share_topology`                                       | Publish a **public** durable snapshot; returns a browser link (remote-only)                               |
+| `unpublish_topology`                                   | Owner-only revoke of a public share (deletes the KV snapshot; remote-only)                                |
 | `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                              |
 | `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                     |
 | `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it               |
