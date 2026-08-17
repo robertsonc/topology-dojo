@@ -54,6 +54,8 @@ import type { RenderOptions } from '../render/core.js';
 import { inspectPage } from '../render/inspect.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { convertLegacyStudio, detectLegacyStudio } from '../import/legacy.js';
+import { convertMermaid, detectMermaid } from '../import/mermaid.js';
+import { convertCsv, detectCsv } from '../import/csv.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
 import {
   ABSOLUTE_GUIDANCE_TOKENS,
@@ -391,21 +393,26 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       name: 'import_topology',
       description:
         'Load a topology from document JSON (a string or object). Returns the new id. ' +
-        "Also accepts a legacy Topology Studio save (the older sibling app's format) " +
-        'and converts it, reporting any lossy-conversion warnings.',
+        "Also accepts a legacy Topology Studio save (the older sibling app's format), " +
+        'a Mermaid flowchart (flowchart/graph text — nodes, edges, labels, subgraphs→zones, ' +
+        'auto-laid-out), or CSV data ([nodes]/[links] sections or a bare from,to edge ' +
+        'list), reporting any lossy-conversion warnings.',
       inputShape: {
         json: z
           .union([z.string(), z.record(z.string(), z.unknown())])
-          .describe('Document JSON as a string or object.'),
+          .describe(
+            'Document JSON as a string or object; or Mermaid/CSV text (string).',
+          ),
         title: z.string().optional(),
         format: z
-          .enum(['auto', 'topology-dojo', 'legacy-studio'])
+          .enum(['auto', 'topology-dojo', 'legacy-studio', 'mermaid', 'csv'])
           .optional()
           .describe(
-            '"auto" (default) detects a legacy Topology Studio save and converts it, ' +
-              'otherwise imports natively; "topology-dojo" requires the native document ' +
-              'shape (no legacy detection); "legacy-studio" always runs the legacy ' +
-              'converter, failing with a typed error if the input is not legacy-shaped.',
+            '"auto" (default) sniffs the input: legacy Topology Studio saves, Mermaid ' +
+              'flowcharts, and CSV are detected and converted, otherwise imports natively; ' +
+              '"topology-dojo" requires the native document shape; "legacy-studio", ' +
+              '"mermaid", and "csv" force that converter, failing with a typed error ' +
+              'when the input does not match.',
           ),
       },
       handler: (a) => {
@@ -415,6 +422,40 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         if (format === 'topology-dojo') {
           const { id, document } = store.import(a.json, title);
           return { id, title: document.title, pages: document.pages.length };
+        }
+
+        // Text-based formats (Mermaid / CSV): forced, or sniffed on 'auto'
+        // when the string isn't JSON.
+        const asText = typeof a.json === 'string' ? a.json : null;
+        const textFormat =
+          format === 'mermaid' || format === 'csv'
+            ? format
+            : format === 'auto' && asText !== null
+              ? detectMermaid(asText)
+                ? 'mermaid'
+                : detectCsv(asText)
+                  ? 'csv'
+                  : null
+              : null;
+        if (textFormat) {
+          if (asText === null)
+            throw new Error(`format "${textFormat}" needs a string input`);
+          const result =
+            textFormat === 'mermaid'
+              ? convertMermaid(asText, title)
+              : convertCsv(asText, title);
+          if (!result.ok || !result.document)
+            throw new Error(`${textFormat} import failed: ${result.error}`);
+          const { id, document } = store.import(
+            result.document as unknown as Record<string, unknown>,
+            title,
+          );
+          return {
+            id,
+            title: document.title,
+            pages: document.pages.length,
+            converted: { from: textFormat, warnings: result.warnings },
+          };
         }
 
         // 'auto' and 'legacy-studio' both need the parsed JSON to sniff or convert.

@@ -172,7 +172,7 @@ to the task's affected region and change summaries, not total document size.
 | `create_topology`                                      | New document (one empty page)                                                                             |
 | `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                 |
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                     |
-| `import_topology`                                      | Load from document JSON (string or object); `format` auto-detects/converts a legacy Topology Studio save  |
+| `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a Mermaid flowchart, or CSV data (`format` auto-detects) |
 | `set_document_title`                                   | Rename a document                                                                                         |
 | `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox                                                    |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                             |

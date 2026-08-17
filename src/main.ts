@@ -138,7 +138,7 @@ app.innerHTML = `
         </select>
         <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
       </div>
-      <input type="file" id="fInput" accept="application/json,.json" hidden />
+      <input type="file" id="fInput" accept="application/json,.json,.mmd,.mermaid,.csv,.txt" hidden />
       <span class="saved" id="saved"></span>
     </div>
     <div class="bar-right">
@@ -892,6 +892,31 @@ fileInput.addEventListener('change', async () => {
   const text = await file.text();
 
   const classified = classifyOpenedFile(text);
+  if (classified.kind === 'mermaid' || classified.kind === 'csv') {
+    const what =
+      classified.kind === 'mermaid' ? 'Mermaid flowchart' : 'CSV data';
+    if (!classified.result.ok) {
+      alert(`Could not import this ${what}: ${classified.result.error}`);
+      return;
+    }
+    const { document, warnings } = classified.result;
+    const shown = warnings.slice(0, 8);
+    const summary =
+      `Imported from ${what}: ${document!.pages[0]!.nodes.length} node(s), ` +
+      `${document!.pages[0]!.links.length} link(s), ${warnings.length} warning(s)` +
+      (shown.length
+        ? ':\n' +
+          shown.map((w) => `- ${w}`).join('\n') +
+          (warnings.length > shown.length
+            ? `\n+ ${warnings.length - shown.length} more`
+            : '')
+        : '') +
+      '\nLoad it?';
+    if (!confirm(summary)) return;
+    if (!closeWorkspaceForDocumentReplacement()) return;
+    loadDoc(document!);
+    return;
+  }
   if (classified.kind === 'legacy') {
     if (!classified.result.ok) {
       alert(
