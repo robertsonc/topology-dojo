@@ -164,6 +164,23 @@ GitHub issue as the system of record:
   the nightly acts as the drill's independent "state restored" check
   rather than a false alarm.
 
+## Session HMAC secret (optional)
+
+Browser session cookies (`tdg_session`) are HMAC-SHA256 signed. Prefer a
+dedicated **`SESSION_HMAC_SECRET`** so rotating `GITHUB_CLIENT_SECRET` does
+not invalidate every signed-in browser:
+
+```bash
+npx wrangler secret put SESSION_HMAC_SECRET --env staging
+npx wrangler secret put SESSION_HMAC_SECRET
+```
+
+Use a high-entropy value from a password generator; store it only in the
+operator password manager. When unset, the Worker falls back to
+`GITHUB_CLIENT_SECRET`. The dedicated secret is **not required yet** — this
+is a migration path, not a breaking cutover. Setting it invalidates existing
+sessions signed with the fallback key (users re-authenticate once).
+
 ## Operator checklist (update via PR as steps complete)
 
 An unchecked row means only that the repository contains no dated completion
@@ -180,3 +197,4 @@ update this table.
 | CF-5 | Ack/record/recovery flow exercised once                                            | ☐      |              |
 | CF-6 | Binding triage pointers walked once (familiarization)                              | ☐      |              |
 | —    | `DIAGNOSTICS_TOKEN` set for staging only (see CF-4 precondition)                   | ☐      |              |
+| —    | Optional `SESSION_HMAC_SECRET` set per environment (see above; not required yet)   | ☐      |              |

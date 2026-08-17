@@ -51,6 +51,22 @@ function hmacKey(secret: string): Promise<CryptoKey> {
 /** Default session lifetime: 7 days. */
 export const SESSION_TTL_SEC = 7 * 24 * 3600;
 
+/**
+ * HMAC key for browser session cookies.
+ *
+ * Prefer `SESSION_HMAC_SECRET` when set so rotating the GitHub OAuth client
+ * secret does not invalidate every signed-in browser. Fall back to
+ * `GITHUB_CLIENT_SECRET` only when the dedicated secret is unset (or
+ * whitespace) — a migration path, not a required cutover.
+ */
+export function sessionHmacSecret(env: {
+  SESSION_HMAC_SECRET?: string;
+  GITHUB_CLIENT_SECRET: string;
+}): string {
+  const dedicated = env.SESSION_HMAC_SECRET?.trim();
+  return dedicated ? dedicated : env.GITHUB_CLIENT_SECRET;
+}
+
 /** Sign a session token for a user (body.signature, both base64url). */
 export async function signSession(
   user: SessionUser,

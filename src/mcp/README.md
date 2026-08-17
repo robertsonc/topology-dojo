@@ -66,6 +66,12 @@ Apps, secrets, or KV namespace ids across environments.
      `https://<your-domain>/callback`.
    - Put the **Client ID** in `wrangler.jsonc` (`vars.GITHUB_CLIENT_ID`); add the
      **client secret** as a dashboard secret **`GITHUB_CLIENT_SECRET`**.
+   - Optionally add a dedicated **`SESSION_HMAC_SECRET`** dashboard secret for
+     signing browser session cookies. When unset, sessions fall back to
+     `GITHUB_CLIENT_SECRET` (rotating the OAuth client secret then invalidates
+     all browser sessions). Recommended for new environments; not required yet.
+     Generate a high-entropy value and store it only in the operator password
+     manager — never commit it.
 2. **KV namespace** `OAUTH_KV` (dashboard → Storage & Databases → KV) — paste its
    id into `wrangler.jsonc` (`kv_namespaces`). This stores grants/tokens.
 3. Deploy through the environment-specific runbook. Then connect a client to
@@ -101,7 +107,8 @@ actual binding names and record the generated ids in `env.staging`):
 ```bash
 npx wrangler kv namespace create TOPOLOGY_KV --env staging
 # Set staging PUBLIC_BASE_URL and the generated namespace id in wrangler.jsonc.
-# Provision OAUTH_KV and GITHUB_CLIENT_SECRET independently for staging.
+# Provision OAUTH_KV, GITHUB_CLIENT_SECRET, and optional
+# SESSION_HMAC_SECRET independently for staging.
 npx wrangler deploy --env staging
 ```
 
