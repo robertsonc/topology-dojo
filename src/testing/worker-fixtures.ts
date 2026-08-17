@@ -267,6 +267,21 @@ export default {
           legacy: login ? await inspect(legacyRegistryName(login)) : [],
         });
       }
+      if (url.pathname === '/open-mcp' && request.method === 'POST') {
+        const props = await request.json();
+        const registry = await openOwnerRegistry(env.TOPOLOGY_REGISTRY, props);
+        const ownerId = registryOwnerId(props);
+        const docs = await registry.list({ prefix: 'tdoc:' });
+        return json({
+          ownerId,
+          name: currentRegistryName(ownerId),
+          ids: [...docs.keys()].map((key) => key.slice('tdoc:'.length)),
+          current: await inspect(currentRegistryName(ownerId)),
+          legacy: props.login
+            ? await inspect(legacyRegistryName(props.login))
+            : [],
+        });
+      }
       if (url.pathname === '/list') {
         const service = new WorkspaceService(env, { uid, login });
         return json({

@@ -19,8 +19,16 @@ export function legacyRegistryName(login: string): string {
 }
 
 export interface RegistryIdentity {
-  /** GitHub numeric id (OAuth `props.id` or session `uid`). */
+  /**
+   * Stable GitHub numeric id as used by session/workspace (`uid`).
+   * Preferred when both `uid` and `id` are present.
+   */
   uid?: string | number;
+  /**
+   * Stable GitHub numeric id as used by MCP OAuth `props` (`props.id`).
+   * Alias of `uid` — real MCP sessions do not set `uid`.
+   */
+  id?: string | number;
   /** GitHub login — display-only; used solely to find the legacy registry. */
   login?: string;
 }
@@ -37,15 +45,23 @@ export interface NamedStorageNamespace<
   get(id: Id): T;
 }
 
+function presentOwnerId(
+  value: string | number | undefined,
+): string | undefined {
+  if (value === undefined || value === '') return undefined;
+  return String(value);
+}
+
 /**
- * Resolve the authenticated owner for registry addressing. Fails closed
- * without a stable uid — login is never a substitute key.
+ * Resolve the authenticated owner for registry addressing. Accepts session
+ * `uid` or MCP OAuth `props.id` (same numeric GitHub identity). Fails closed
+ * without either — login is never a substitute key.
  */
 export function registryOwnerId(identity: RegistryIdentity): string {
-  const uid = identity.uid;
-  if (uid === undefined || uid === null || uid === '')
+  const uid = presentOwnerId(identity.uid) ?? presentOwnerId(identity.id);
+  if (uid === undefined)
     throw new Error('no authenticated user (props.id) — refusing to persist');
-  return String(uid);
+  return uid;
 }
 
 /**

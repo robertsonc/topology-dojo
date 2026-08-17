@@ -148,9 +148,24 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     if (this.cachedRegistry) return this.cachedRegistry;
     this.cachedRegistry = await openOwnerRegistry(
       this.env.TOPOLOGY_REGISTRY,
-      (this.props ?? {}) as RegistryIdentity,
+      this.registryIdentity(),
     );
     return this.cachedRegistry;
+  }
+
+  /**
+   * Map MCP OAuth `props` (`{ id, login, name }`) onto the registry identity.
+   * `id` is the stable GitHub uid — the same mapping `workspaceService()`
+   * already does. Login stays display-only for the legacy `user:<login>` copy.
+   */
+  private registryIdentity(): RegistryIdentity {
+    const props = this.props as { id?: number; login?: string } | undefined;
+    return {
+      ...(props?.id !== undefined
+        ? { uid: String(props.id), id: props.id }
+        : {}),
+      ...(props?.login ? { login: props.login } : {}),
+    };
   }
 
   /** Load the user's documents from the registry into the in-memory store. */

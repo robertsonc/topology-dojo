@@ -76,6 +76,28 @@ describe('MCP registry addressing (Durable Object names)', () => {
     });
   });
 
+  it('opens with MCP OAuth props { id, login } and migrates user:alice drafts', async () => {
+    await call(
+      'seed-legacy',
+      { uid: '17257145', login: 'alice', id: 't-mcp' },
+      { method: 'POST', body: JSON.stringify(DRAFT) },
+    );
+    const opened = await call(
+      'open-mcp',
+      {},
+      {
+        method: 'POST',
+        body: JSON.stringify({ id: 17257145, login: 'alice' }),
+      },
+    );
+    expect(opened.status).toBe(200);
+    expect(opened.body.ownerId).toBe('17257145');
+    expect(opened.body.name).toBe('user-id:17257145');
+    expect(opened.body.ids).toEqual(['t-mcp']);
+    expect(opened.body.current).toEqual(['t-mcp']);
+    expect(opened.body.legacy).toEqual(['t-mcp']);
+  });
+
   it('fails closed when opening a registry without a uid', async () => {
     const res = await call('names-no-uid', { login: 'alice' });
     expect(res.status).toBe(400);

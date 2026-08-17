@@ -68,12 +68,18 @@ describe('registry addressing', () => {
     expect(registryOwnerId({ uid: 7 })).toBe('7');
   });
 
+  it('accepts MCP OAuth props.id as the stable uid alias', () => {
+    expect(registryOwnerId({ id: 17257145, login: 'alice' })).toBe('17257145');
+    expect(registryOwnerId({ uid: '9', id: 17257145 })).toBe('9');
+  });
+
   it('fails closed without a stable uid', () => {
     expect(() => registryOwnerId({ login: 'alice' })).toThrow(
       /no authenticated user \(props\.id\)/,
     );
     expect(() => registryOwnerId({})).toThrow(/props\.id/);
     expect(() => registryOwnerId({ uid: '' })).toThrow(/props\.id/);
+    expect(() => registryOwnerId({ id: '' })).toThrow(/props\.id/);
   });
 });
 
@@ -124,6 +130,19 @@ describe('legacy draft migration', () => {
 });
 
 describe('openOwnerRegistry', () => {
+  it('opens from the real MCP props shape { id, login } and migrates user:alice', async () => {
+    const ns = fakeNamespace();
+    ns.get('user:alice').map.set(DOC_PREFIX + 'old', '{"title":"legacy"}');
+
+    const registry = await openOwnerRegistry(ns, {
+      id: 17257145,
+      login: 'alice',
+    });
+    expect(ns.stores.has('user-id:17257145')).toBe(true);
+    expect(ns.stores.has('user-id:undefined')).toBe(false);
+    expect(registry.map.get(DOC_PREFIX + 'old')).toBe('{"title":"legacy"}');
+  });
+
   it('addresses user-id:<uid> and lazily imports user:<login> drafts', async () => {
     const ns = fakeNamespace();
     ns.get('user:alice').map.set(DOC_PREFIX + 'old', '{"title":"legacy"}');
