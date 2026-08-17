@@ -43,40 +43,90 @@ export function pageToSVG(
   );
 }
 
+/** How long the object URL stays alive after a programmatic download click.
+ * Chrome starts the download asynchronously; revoking in the same turn as
+ * `a.click()` (and clicking a detached `<a>`) can drop the download with no
+ * error — the #222 Chrome QA symptom. */
+export const DOWNLOAD_URL_TTL_MS = 2_000;
+
+/** Give up if the browser never finishes decoding the SVG into a bitmap. */
+const PNG_RASTERIZE_TIMEOUT_MS = 20_000;
+
 /** Rasterize an SVG string to a PNG blob at `scale`× the viewBox size. */
 export function svgToPngBlob(svg: string, scale = 2): Promise<Blob> {
+  if (!svg.includes('<svg')) {
+    return Promise.reject(new Error('SVG export produced invalid markup'));
+  }
   const m = /viewBox="([^"]*)"/.exec(svg);
   const { vw, vh } = viewBoxParts(m?.[1] ?? '');
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(vw * scale));
-      canvas.height = Math.max(1, Math.round(vh * scale));
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('no 2d context'));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))),
-        'image/png',
-      );
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
     };
-    img.onerror = () => reject(new Error('failed to rasterize SVG'));
+    const timer = globalThis.setTimeout(() => {
+      finish(() => reject(new Error('PNG rasterization timed out')));
+    }, PNG_RASTERIZE_TIMEOUT_MS);
+    img.onload = () => {
+      finish(() => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(vw * scale));
+          canvas.height = Math.max(1, Math.round(vh * scale));
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('no 2d context'));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((b) => {
+            if (b) resolve(b);
+            else reject(new Error('toBlob returned null'));
+          }, 'image/png');
+        } catch (err) {
+          reject(
+            err instanceof Error ? err : new Error('PNG rasterization failed'),
+          );
+        }
+      });
+    };
+    img.onerror = () =>
+      finish(() => reject(new Error('failed to rasterize SVG')));
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   });
 }
 
-/** Trigger a browser download of a blob. */
+/** Trigger a browser download of a blob.
+ * The anchor is inserted into the document and the object URL is kept alive
+ * briefly so the UA can start the download (#222). Throws if the file cannot
+ * be offered — callers must surface that to the user. */
 export function downloadBlob(filename: string, blob: Blob): void {
+  const name = filename.trim();
+  if (!name) throw new Error('Export filename is missing.');
+  if (!(blob instanceof Blob) || blob.size === 0) {
+    throw new Error('Export produced an empty file.');
+  }
+  const doc = document;
+  if (!doc?.body) {
+    throw new Error('Download requires a browser document.');
+  }
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = doc.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = name;
+  a.rel = 'noopener';
+  a.setAttribute('data-export-download', name);
+  a.style.display = 'none';
+  doc.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  globalThis.setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, DOWNLOAD_URL_TTL_MS);
 }
 
 export function exportPageSVG(
@@ -85,10 +135,11 @@ export function exportPageSVG(
   opts?: RenderOptions,
   extra = '',
 ): void {
-  downloadBlob(
-    filename,
-    new Blob([pageToSVG(page, opts, extra)], { type: 'image/svg+xml' }),
-  );
+  const svg = pageToSVG(page, opts, extra);
+  if (!svg.includes('<svg')) {
+    throw new Error('SVG export produced invalid markup');
+  }
+  downloadBlob(filename, new Blob([svg], { type: 'image/svg+xml' }));
 }
 
 export async function exportPagePNG(

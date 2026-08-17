@@ -40,7 +40,7 @@ import {
   type DocSlot,
 } from './pages/persist.js';
 import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
-import { exportPagePNG, exportPageSVG } from './editor/export.js';
+import { downloadBlob, exportPagePNG, exportPageSVG } from './editor/export.js';
 import { legendSVG } from './editor/legend.js';
 import { captionSVG } from './editor/caption.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
@@ -117,6 +117,7 @@ app.innerHTML = `
       <div class="tgroup">
         <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
         <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
+        <span class="export-status" id="exportStatus" role="status" aria-live="polite"></span>
         <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
       </div>
       <input type="file" id="fInput" accept="application/json,.json" hidden />
@@ -270,13 +271,10 @@ let activeSlot: DocSlot = 'local';
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 function downloadDocJSON(): void {
-  const blob = new Blob([serializeDoc(doc)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(
+    `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.json`,
+    new Blob([serializeDoc(doc)], { type: 'application/json' }),
+  );
 }
 
 /** Reflect a persistence attempt in the status chip. */
@@ -544,29 +542,65 @@ app.querySelector('#fNew')?.addEventListener('click', () => {
 });
 app.querySelector('#fSave')?.addEventListener('click', downloadDocJSON);
 
-/* Image export: SVG (vector, honors calm) and PNG (always a static raster). */
+/* Image export: SVG (vector, honors calm) and PNG (always a static raster).
+ * #222: the click used to fire a detached <a download> and revoke the blob
+ * URL in the same turn, which Chrome can drop silently. downloadBlob now
+ * inserts the anchor and keeps the URL alive; this chip reports success or
+ * failure so a swallowed download is never the only outcome. */
+const exportStatus = app.querySelector<HTMLElement>('#exportStatus')!;
+const pngBtn = app.querySelector<HTMLButtonElement>('#fPng');
+function reportExport(
+  state: 'ok' | 'pending' | 'error',
+  message: string,
+  detail?: string,
+): void {
+  exportStatus.textContent = message;
+  exportStatus.title = detail ?? message;
+  exportStatus.classList.toggle('export-ok', state === 'ok');
+  exportStatus.classList.toggle('export-pending', state === 'pending');
+  exportStatus.classList.toggle('export-failed', state === 'error');
+}
 function exportBase(): string {
   const page = doc.pages[current]!;
   return `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
 }
+function exportExtra(page: Page): string {
+  return legendSVG(doc, page) + captionSVG(page);
+}
 app.querySelector('#fSvg')?.addEventListener('click', () => {
   const page = doc.pages[current]!;
-  exportPageSVG(
-    `${exportBase()}.svg`,
-    page,
-    { calm: editor.calm, layers: doc.layers, emphasis: page.emphasis },
-    legendSVG(doc, page) + captionSVG(page),
-  );
+  const filename = `${exportBase()}.svg`;
+  try {
+    exportPageSVG(
+      filename,
+      page,
+      { calm: editor.calm, layers: doc.layers, emphasis: page.emphasis },
+      exportExtra(page),
+    );
+    reportExport('ok', '✓ exported svg', filename);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'SVG export failed.';
+    reportExport('error', '⚠ svg export failed', detail);
+  }
 });
 app.querySelector('#fPng')?.addEventListener('click', () => {
+  if (pngBtn?.disabled) return;
   const page = doc.pages[current]!;
-  void exportPagePNG(
-    `${exportBase()}.png`,
-    page,
-    2,
-    legendSVG(doc, page) + captionSVG(page),
-    { layers: doc.layers, emphasis: page.emphasis },
-  ).catch(() => alert('PNG export failed.'));
+  const filename = `${exportBase()}.png`;
+  if (pngBtn) pngBtn.disabled = true;
+  reportExport('pending', '… exporting png', filename);
+  void exportPagePNG(filename, page, 2, exportExtra(page), {
+    layers: doc.layers,
+    emphasis: page.emphasis,
+  })
+    .then(() => reportExport('ok', '✓ exported png', filename))
+    .catch((err: unknown) => {
+      const detail = err instanceof Error ? err.message : 'PNG export failed.';
+      reportExport('error', '⚠ png export failed', detail);
+    })
+    .finally(() => {
+      if (pngBtn) pngBtn.disabled = false;
+    });
 });
 /* New from a starter template. */
 const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;

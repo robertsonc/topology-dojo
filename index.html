@@ -313,6 +313,24 @@
         min-width: 46px;
         padding-left: 4px;
       }
+      /* #222: visible export result next to the svg/png controls. */
+      .export-status {
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 400;
+        max-width: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding-left: 4px;
+      }
+      .export-status.export-ok {
+        color: var(--accent);
+      }
+      .export-status.export-failed {
+        color: #ff6b6b;
+        font-weight: 600;
+      }
       /* Persistence failure is a recovery affordance, not a status: it stays
          loud and clickable (download JSON) until a save succeeds (#203). */
       .saved.save-failed {
