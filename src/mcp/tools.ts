@@ -64,6 +64,11 @@ import {
 } from '../profile/guidance.js';
 import { TopologyStore } from './store.js';
 import {
+  MAX_HTML_EXPORT_BYTES,
+  MAX_SVG_EXPORT_BYTES,
+  assertExportWithinLimit,
+} from './rate-limit.js';
+import {
   TEXT_LIMITS,
   normalizeText,
   overlongDisplayMax,
@@ -1239,7 +1244,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. NOTE: the returned SVG is large (often 20–300KB) — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. NOTE: the returned SVG is large (often 20–300KB) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -1253,22 +1258,30 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe('Layer ids to draw (omit for the layers’ defaults).'),
       },
       handler: (a) =>
-        deps.renderDocument(
-          store.get(String(a.topologyId)),
-          (a.pageIndex as number | undefined) ?? 0,
-          a.visibleLayers !== undefined
-            ? { visibleLayers: a.visibleLayers as string[] }
-            : {},
+        assertExportWithinLimit(
+          deps.renderDocument(
+            store.get(String(a.topologyId)),
+            (a.pageIndex as number | undefined) ?? 0,
+            a.visibleLayers !== undefined
+              ? { visibleLayers: a.visibleLayers as string[] }
+              : {},
+          ),
+          MAX_SVG_EXPORT_BYTES,
+          'SVG',
         ),
     },
     {
       name: 'export_flipbook',
       description:
-        'Export the whole document as one standalone, self-playing HTML flipbook: every page rendered to SVG, played in order on each page’s duration (default 2000ms) with cut/fade transitions, loop, play/pause, and frame dots. No external assets — save it as an .html file and open in any browser. This is how an animated multi-frame story (e.g. a flow’s setup → steady state → teardown) is delivered end to end.',
+        'Export the whole document as one standalone, self-playing HTML flipbook: every page rendered to SVG, played in order on each page’s duration (default 2000ms) with cut/fade transitions, loop, play/pause, and frame dots. No external assets — save it as an .html file and open in any browser. Rejected above 6 MiB — for a long story, render_svg pages individually. This is how an animated multi-frame story (e.g. a flow’s setup → steady state → teardown) is delivered end to end.',
       inputShape: { topologyId },
       handler: (a) =>
-        exportFlipbookHTML(store.get(String(a.topologyId)), (doc, i) =>
-          deps.renderDocument(doc, i),
+        assertExportWithinLimit(
+          exportFlipbookHTML(store.get(String(a.topologyId)), (doc, i) =>
+            deps.renderDocument(doc, i),
+          ),
+          MAX_HTML_EXPORT_BYTES,
+          'HTML',
         ),
     },
   ];
@@ -1800,7 +1813,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     const publish = deps.publishTopology;
     tools.push({
       name: 'share_topology',
-      description: `Publish the current topology and return a public link that opens it in the Topology Dojo editor. ${SHARE_PUBLIC_WARNING} Do not publish internal addresses, credentials, or other sensitive content. The snapshot is stored durably (it does NOT depend on the live server session). Re-run after further edits to publish an updated snapshot (a new link). The publisher can revoke the link with unpublish_topology or DELETE /api/topology/<id>.`,
+      description: `Publish the current topology and return a public link that opens it in the Topology Dojo editor. ${SHARE_PUBLIC_WARNING} Do not publish internal addresses, credentials, or other sensitive content. The snapshot is stored durably (it does NOT depend on the live server session). Re-run after further edits to publish an updated snapshot (a new link). Remote deployments rate-limit this tool per authenticated user (8 per 5 minutes); back off on a rate-limited error rather than retrying immediately. The publisher can revoke the link with unpublish_topology or DELETE /api/topology/<id>.`,
       inputShape: { topologyId },
       handler: (a) => publish(store.get(String(a.topologyId))),
     });

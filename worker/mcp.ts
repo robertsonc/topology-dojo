@@ -40,6 +40,11 @@ import {
   type GuidanceResult,
 } from '../src/profile/guidance.js';
 import type { AuthoringPreference } from '../src/profile/model.js';
+import {
+  formatRateLimitError,
+  rateLimitBucketForTool,
+  type RateLimitResult,
+} from '../src/mcp/rate-limit.js';
 
 /**
  * Tools that do not mutate the legacy in-memory TopologyStore. Workspace write
@@ -223,6 +228,14 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<void> {
+    const bucket = rateLimitBucketForTool(toolName);
+    if (bucket) {
+      const registryWithQuota = (await this.registry()) as unknown as {
+        consumeQuota(bucket: string): Promise<RateLimitResult>;
+      };
+      const result = await registryWithQuota.consumeQuota(bucket);
+      if (!result.allowed) throw new Error(formatRateLimitError(result));
+    }
     const workspace = this.workspaceService();
     if (!workspace) return;
     if (toolName === 'list_topologies') {

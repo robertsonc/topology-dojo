@@ -11,6 +11,13 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { WorkerEnv } from './env.js';
 import type { DocStorage } from '../src/mcp/persist-store.js';
+import {
+  RATE_LIMITS,
+  consumeSlidingWindow,
+  registryRateLimitKey,
+  type RateLimitBucket,
+  type RateLimitResult,
+} from '../src/mcp/rate-limit.js';
 import type {
   WorkspaceDirectoryRecord,
   WorkspaceListItem,
@@ -60,6 +67,24 @@ export class TopologyRegistry
       prefix: WORKSPACE_PREFIX,
     });
     return [...records.values()].map((record) => record.id);
+  }
+
+  /**
+   * Per-user request quota (issue #227). The registry DO is already one
+   * instance per GitHub login — the same place draft persist lives — so a
+   * sliding window here applies across every MCP session the user opens
+   * without a new Durable Object class or migration.
+   */
+  async consumeQuota(
+    bucket: RateLimitBucket,
+    now = Date.now(),
+  ): Promise<RateLimitResult> {
+    const spec = RATE_LIMITS[bucket];
+    const key = registryRateLimitKey(bucket);
+    const hits = (await this.ctx.storage.get<number[]>(key)) ?? [];
+    const outcome = consumeSlidingWindow(hits, now, spec);
+    await this.ctx.storage.put(key, outcome.hits);
+    return outcome.result;
   }
 
   /**
