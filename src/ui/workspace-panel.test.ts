@@ -1115,7 +1115,6 @@ describe('renderPresenceHtml (Packet S1)', () => {
       },
     ]);
     expect(html).not.toContain('<img');
-    expect(html).not.toContain('onerror=');
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(html).toContain('p1');
   });

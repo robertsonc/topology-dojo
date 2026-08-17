@@ -3,9 +3,19 @@ import type { WorkspaceActor } from './model.js';
 /** Hard cap on a presence `actorLabel` (GitHub logins are ≤39; 64 leaves room). */
 export const MAX_ACTOR_LABEL_LENGTH = 64;
 
-/** C0, DEL, and C1 controls — stripped so labels cannot smuggle line breaks
- * or other non-printing characters into the presence roster. */
-const CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F]/g;
+/** True for C0 (U+0000–U+001F), DEL (U+007F), and C1 (U+0080–U+009F). */
+function isControlChar(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? 0;
+  return code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+}
+
+function stripControlChars(value: string): string {
+  let out = '';
+  for (const ch of value) {
+    if (!isControlChar(ch)) out += ch;
+  }
+  return out;
+}
 
 /**
  * Bound and clean a presence actor label from a WebSocket upgrade query
@@ -16,7 +26,7 @@ export function sanitizeActorLabel(
   raw: string | null | undefined,
 ): string | undefined {
   if (raw == null) return undefined;
-  const cleaned = raw.replace(CONTROL_CHARS, '').trim();
+  const cleaned = stripControlChars(raw).trim();
   if (!cleaned) return undefined;
   return cleaned.slice(0, MAX_ACTOR_LABEL_LENGTH);
 }

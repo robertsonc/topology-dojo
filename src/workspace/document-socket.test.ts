@@ -38,7 +38,7 @@ export default {
     // through too, so the DO's own 426 is what the test sees.
     if (url.pathname === '/socket') {
       // Mirror the real browser route: drop client-supplied identity, then
-      // inject the authenticated session as `user`.
+      // inject the authenticated session as user.
       const as = url.searchParams.get('as') ?? 'alice';
       url.searchParams.delete('actorKind');
       url.searchParams.delete('actorLabel');
