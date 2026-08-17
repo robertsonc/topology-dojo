@@ -45,6 +45,10 @@ test('a share link opens as a shared copy without touching local work (#202)', a
   );
   await page.goto('/v/e2etest');
   await expect(page.locator('#sharedBanner')).toBeVisible();
+  await expect(page.locator('#sharedBanner')).toContainText(
+    'This link is public',
+  );
+  await expect(page.locator('#sharedUnpublish')).toBeVisible();
 
   // The local autosave still holds the user's own document; the shared copy
   // lives in its own slot.

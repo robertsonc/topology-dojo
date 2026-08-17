@@ -83,6 +83,7 @@ import {
   type WorkspaceManifest,
   type WorkspaceOperation,
 } from '../workspace/model.js';
+import { SHARE_PUBLIC_WARNING } from '../share/copy.js';
 
 export interface ToolDef {
   name: string;
@@ -112,6 +113,11 @@ export interface ToolDeps {
   publishTopology?: (
     doc: TopologyDocument,
   ) => Promise<{ id: string; url: string }>;
+  /**
+   * Owner-only delete of a published `doc:<id>` snapshot. Wired with
+   * `publishTopology` on the Worker; absent for the local stdio server.
+   */
+  unpublishTopology?: (shareId: string) => Promise<{ revoked: true }>;
   /**
    * Live fabric data source (an SD-WAN orchestrator client or the fixture
    * mock). Wired from environment credentials by the servers — never from
@@ -1794,10 +1800,25 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     const publish = deps.publishTopology;
     tools.push({
       name: 'share_topology',
-      description:
-        'Publish the current topology and return a link that opens it in the Topology Dojo editor in a browser. Use this to give the user a viewable/shareable result after building. The snapshot is stored durably (it does NOT depend on the live server session, so the link keeps working after this session ends). Re-run after further edits to publish an updated snapshot (a new link).',
+      description: `Publish the current topology and return a public link that opens it in the Topology Dojo editor. ${SHARE_PUBLIC_WARNING} Do not publish internal addresses, credentials, or other sensitive content. The snapshot is stored durably (it does NOT depend on the live server session). Re-run after further edits to publish an updated snapshot (a new link). The publisher can revoke the link with unpublish_topology or DELETE /api/topology/<id>.`,
       inputShape: { topologyId },
       handler: (a) => publish(store.get(String(a.topologyId))),
+    });
+  }
+  if (deps.unpublishTopology) {
+    const unpublish = deps.unpublishTopology;
+    tools.push({
+      name: 'unpublish_topology',
+      description: `Revoke a public share link you published with share_topology. Deletes the KV snapshot so /v/<id> and /api/topology/<id> stop serving it. Only the publisher can revoke. Pass the 12-character share id from the URL (or the id returned by share_topology). ${SHARE_PUBLIC_WARNING}`,
+      inputShape: {
+        shareId: z
+          .string()
+          .min(1)
+          .describe(
+            'Share id from share_topology (the <id> in /v/<id>), not a topologyId.',
+          ),
+      },
+      handler: (a) => unpublish(String(a.shareId)),
     });
   }
 

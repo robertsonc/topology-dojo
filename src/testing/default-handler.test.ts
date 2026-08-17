@@ -130,7 +130,8 @@ describe('GET /api/topology/:id', () => {
     const res = await handle.fetch('/api/topology/share123');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/json');
-    expect(res.headers.get('cache-control')).toContain('immutable');
+    expect(res.headers.get('cache-control')).toBe('public, max-age=60');
+    expect(res.headers.get('cache-control')).not.toContain('immutable');
     await expect(res.json()).resolves.toEqual(doc);
   });
 
@@ -138,6 +139,100 @@ describe('GET /api/topology/:id', () => {
     const res = await handle.fetch('/api/topology/does-not-exist');
     expect(res.status).toBe(404);
     await expect(res.json()).resolves.toEqual({ error: 'not found' });
+  });
+});
+
+describe('DELETE /api/topology/:id', () => {
+  const doc = { title: 'Shared', customNodes: [], pages: [] };
+
+  async function sessionCookie(
+    uid: string,
+    login = 'octocat',
+  ): Promise<string> {
+    const token = await signSession(
+      { uid, login, name: 'The Octocat' },
+      GITHUB_CLIENT_SECRET,
+    );
+    return `tdg_session=${token}`;
+  }
+
+  it('401s without a session cookie', async () => {
+    const res = await handle.fetch('/api/topology/owned123', {
+      method: 'DELETE',
+    });
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toEqual({
+      error: 'authentication required',
+    });
+  });
+
+  it('lets the publisher revoke and then 404s the public GET', async () => {
+    const kv = await handle.miniflare.getKVNamespace('TOPOLOGY_KV');
+    await kv.put('doc:owned123', JSON.stringify(doc), {
+      metadata: { ownerId: '99' },
+    });
+
+    const res = await handle.fetch('/api/topology/owned123', {
+      method: 'DELETE',
+      headers: { cookie: await sessionCookie('99') },
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ revoked: true });
+
+    const get = await handle.fetch('/api/topology/owned123');
+    expect(get.status).toBe(404);
+    await expect(get.json()).resolves.toEqual({ error: 'not found' });
+  });
+
+  it('403s when a different signed-in user tries to revoke', async () => {
+    const kv = await handle.miniflare.getKVNamespace('TOPOLOGY_KV');
+    await kv.put('doc:owned456', JSON.stringify(doc), {
+      metadata: { ownerId: '99' },
+    });
+
+    const res = await handle.fetch('/api/topology/owned456', {
+      method: 'DELETE',
+      headers: { cookie: await sessionCookie('7', 'other') },
+    });
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({ error: 'forbidden' });
+
+    const get = await handle.fetch('/api/topology/owned456');
+    expect(get.status).toBe(200);
+    await expect(get.json()).resolves.toEqual(doc);
+  });
+
+  it('403s a legacy snapshot that has no owner metadata', async () => {
+    const kv = await handle.miniflare.getKVNamespace('TOPOLOGY_KV');
+    await kv.put('doc:legacy123', JSON.stringify(doc));
+
+    const res = await handle.fetch('/api/topology/legacy123', {
+      method: 'DELETE',
+      headers: { cookie: await sessionCookie('99') },
+    });
+    expect(res.status).toBe(403);
+
+    const get = await handle.fetch('/api/topology/legacy123');
+    expect(get.status).toBe(200);
+  });
+
+  it('404s when the snapshot is already gone', async () => {
+    const res = await handle.fetch('/api/topology/does-not-exist', {
+      method: 'DELETE',
+      headers: { cookie: await sessionCookie('99') },
+    });
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({ error: 'not found' });
+  });
+
+  it('leaves GET unauthenticated after an owner session exists', async () => {
+    const kv = await handle.miniflare.getKVNamespace('TOPOLOGY_KV');
+    await kv.put('doc:public123', JSON.stringify(doc), {
+      metadata: { ownerId: '99' },
+    });
+    const res = await handle.fetch('/api/topology/public123');
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual(doc);
   });
 });
 

@@ -1,6 +1,6 @@
 # Topology Dojo User Guide
 
-**Last reviewed:** 2026-08-09
+**Last reviewed:** 2026-08-17
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
 edit a diagram directly on the canvas, or an MCP-capable agent can author the
@@ -121,19 +121,19 @@ GitHub sign-in alone does not move the open canvas into a canonical server
 workspace. Use this table when deciding whether a diagram is recoverable,
 shared, or public.
 
-| Data                                      | Storage location                                                            | Who can reach it                                                      | Retention and recovery                                                                                                                                                                              |
-| ----------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Normal browser draft                      | Browser localStorage on the current browser/profile                         | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **download** for a portable backup.                   |
-| Shared-link working copy                  | A separate browser localStorage slot                                        | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **keep this copy** to adopt it or **back to my document** to discard it from the canvas.                      |
-| Downloaded JSON                           | A file chosen by the browser                                                | Anyone who receives the file                                          | Full portable document backup under the user's control.                                                                                                                                             |
-| Local MCP private draft                   | Memory in the local MCP process                                             | The connected local MCP client                                        | Treat as temporary. Export or retrieve the JSON before stopping the process.                                                                                                                        |
-| Hosted MCP private draft                  | Per-user hosted registry                                                    | The authenticated GitHub owner and that owner's MCP session           | No user-facing automatic expiry is documented. The browser owner can open or hand the draft into a canonical workspace.                                                                             |
-| Canonical Agent Workspace                 | Hosted per-document coordinator                                             | The authenticated owner and authorized tools operating for that owner | Revisioned and server-backed. Recent history can be compacted. Named checkpoints are capped at 12.                                                                                                  |
-| Workspace offline cache and pending queue | IndexedDB in the current browser plus a lightweight local workspace pointer | The person using that browser profile                                 | Supports reload and reconnection recovery. Do not clear site data while operations are pending.                                                                                                     |
-| Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                        | Anyone with the URL; no login                                         | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. A URL is publicly cacheable for up to 24 hours and has no user-facing revoke action. |
-| SVG, PNG, or flipbook export              | Downloaded file or MCP result                                               | Anyone who receives the artifact                                      | Outside Topology Dojo after export. Handle it according to the content's sensitivity.                                                                                                               |
-| Authoring preferences                     | Hosted profile store, when enabled                                          | The owner; agents can read confirmed guidance only                    | The owner can confirm, pause, reject, or forget rules.                                                                                                                                              |
-| Login analytics                           | Hosted analytics store, when enabled                                        | The configured deployment administrator                               | Login and workspace metadata only; no diagram contents. Collection is going-forward and best-effort.                                                                                                |
+| Data                                      | Storage location                                                            | Who can reach it                                                      | Retention and recovery                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Normal browser draft                      | Browser localStorage on the current browser/profile                         | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **download** for a portable backup.                                                                                                |
+| Shared-link working copy                  | A separate browser localStorage slot                                        | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **keep this copy** to adopt it or **back to my document** to discard it from the canvas.                                                                                                   |
+| Downloaded JSON                           | A file chosen by the browser                                                | Anyone who receives the file                                          | Full portable document backup under the user's control.                                                                                                                                                                                                                          |
+| Local MCP private draft                   | Memory in the local MCP process                                             | The connected local MCP client                                        | Treat as temporary. Export or retrieve the JSON before stopping the process.                                                                                                                                                                                                     |
+| Hosted MCP private draft                  | Per-user hosted registry                                                    | The authenticated GitHub owner and that owner's MCP session           | No user-facing automatic expiry is documented. The browser owner can open or hand the draft into a canonical workspace.                                                                                                                                                          |
+| Canonical Agent Workspace                 | Hosted per-document coordinator                                             | The authenticated owner and authorized tools operating for that owner | Revisioned and server-backed. Recent history can be compacted. Named checkpoints are capped at 12.                                                                                                                                                                               |
+| Workspace offline cache and pending queue | IndexedDB in the current browser plus a lightweight local workspace pointer | The person using that browser profile                                 | Supports reload and reconnection recovery. Do not clear site data while operations are pending.                                                                                                                                                                                  |
+| Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                        | Anyone with the URL; no login to view                                 | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. The publisher can revoke with **unpublish_topology** or **unpublish link** (signed-in `DELETE /api/topology/<id>`). Public GETs may be cached for about a minute. |
+| SVG, PNG, or flipbook export              | Downloaded file or MCP result                                               | Anyone who receives the artifact                                      | Outside Topology Dojo after export. Handle it according to the content's sensitivity.                                                                                                                                                                                            |
+| Authoring preferences                     | Hosted profile store, when enabled                                          | The owner; agents can read confirmed guidance only                    | The owner can confirm, pause, reject, or forget rules.                                                                                                                                                                                                                           |
+| Login analytics                           | Hosted analytics store, when enabled                                        | The configured deployment administrator                               | Login and workspace metadata only; no diagram contents. Collection is going-forward and best-effort.                                                                                                                                                                             |
 
 The active page number is view state, not part of the document contract. A
 reloaded document normally opens on its first page.
@@ -598,14 +598,19 @@ returns:
 
     https://<deployment-domain>/v/<id>
 
+**This link is public:** anyone with the URL can view the snapshot for up to 30
+days, without signing in.
+
 The link:
 
-- is public and requires no sign-in;
+- is public and requires no sign-in to view;
 - represents the document at publication time, not a live workspace;
 - expires after 30 days; publishing again creates a different snapshot and URL
   and does not extend the old URL;
-- can remain in browser or edge caches for up to 24 hours;
-- currently has no user-facing revoke/unpublish action.
+- may remain in browser or edge caches for about a minute;
+- can be revoked by the publisher with **unpublish_topology** (MCP) or
+  **unpublish link** on the shared-viewer banner (`DELETE /api/topology/<id>`,
+  signed in as the same GitHub user).
 
 Do not publish internal addresses, credentials, sensitive metadata, or policy
 details unless they are approved for public access for that retention period.
@@ -1108,11 +1113,12 @@ KV bindings, and authenticated readiness checks using the
 
 ## 18. Current limitations and privacy notes
 
-- **Public means public.** A share snapshot needs no authentication and can
-  contain the full topology, metadata, addresses, zones, and policy details.
-- **No share revocation.** Public snapshots currently expire after 30 days but
-  have no owner-facing unpublish action and can remain cached for up to 24
-  hours.
+- **Public means public.** A share snapshot needs no authentication to view and
+  can contain the full topology, metadata, addresses, zones, and policy details.
+- **Share revocation is owner-only.** The publisher can unpublish a link
+  (`unpublish_topology` or signed-in `DELETE /api/topology/<id>`). Snapshots
+  still expire after 30 days. Public GETs may be cached for about a minute.
+  Snapshots published before owner metadata existed cannot be revoked this way.
 - **Share is a snapshot.** It is not live collaboration. Publish a new snapshot
   after changes.
 - **PNG is browser-only.** MCP renders SVG and flipbook HTML, not PNG.
