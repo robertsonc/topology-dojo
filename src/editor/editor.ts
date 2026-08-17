@@ -623,7 +623,9 @@ export class Editor {
    * keystrokes snapshots once, mirroring `updateNode`.
    */
   updatePageProps(
-    patch: Partial<Pick<Page, 'caption' | 'duration' | 'transition'>>,
+    patch: Partial<
+      Pick<Page, 'caption' | 'duration' | 'transition' | 'lineJumps'>
+    >,
     commit = true,
   ): void {
     const keys = Object.keys(patch) as (keyof typeof patch)[];
@@ -637,6 +639,8 @@ export class Editor {
       else (this.page as unknown as Record<string, unknown>)[key] = patch[key];
     }
     this.emitPagePatch(fp);
+    // lineJumps changes the drawn art itself, not just the overlay extras.
+    if (keys.includes('lineJumps')) this.renderArt();
     this.renderOverlay(); // caption renders via the overlayExtra hook
     this.onChange();
   }
@@ -4074,6 +4078,7 @@ function serialize(page: Page): PageSnapshot {
     transition: page.transition,
     caption: page.caption,
     emphasis: page.emphasis,
+    lineJumps: page.lineJumps,
     nodes: page.nodes,
     links: page.links,
     anchors: page.anchors,

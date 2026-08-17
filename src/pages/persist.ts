@@ -156,6 +156,9 @@ export function parseDoc(input: unknown): TopologyDocument | null {
       ...(typeof p.caption === 'string' && p.caption
         ? { caption: p.caption }
         : {}),
+      ...(p.lineJumps === 'arc' || p.lineJumps === 'gap'
+        ? { lineJumps: p.lineJumps }
+        : {}),
       ...(Array.isArray(p.emphasis)
         ? {
             emphasis: (p.emphasis as unknown[]).filter(

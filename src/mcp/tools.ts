@@ -550,7 +550,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_page_properties',
       description:
-        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), and/or playback timing (duration ms / transition) for flipbook playback.',
+        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, and/or lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear).',
       inputShape: {
         topologyId,
         pageIndex,
@@ -561,6 +561,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .optional()
           .describe('Playback hold time in ms (players default to 2000).'),
         transition: z.enum(['cut', 'fade']).optional(),
+        lineJumps: z
+          .enum(['none', 'arc', 'gap'])
+          .optional()
+          .describe(
+            'Crossing hops for standard line links ("none" clears the setting).',
+          ),
       },
       handler: (a) => {
         if (a.viewBox !== undefined && !isValidViewBox(String(a.viewBox)))
@@ -576,12 +582,19 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         if (a.duration !== undefined) page.duration = Number(a.duration);
         if (a.transition !== undefined)
           page.transition = a.transition as 'cut' | 'fade';
+        if (a.lineJumps !== undefined) {
+          if (a.lineJumps === 'none') delete page.lineJumps;
+          else page.lineJumps = a.lineJumps as 'arc' | 'gap';
+        }
         return {
           name: page.name,
           viewBox: page.viewBox,
           ...(page.duration !== undefined ? { duration: page.duration } : {}),
           ...(page.transition !== undefined
             ? { transition: page.transition }
+            : {}),
+          ...(page.lineJumps !== undefined
+            ? { lineJumps: page.lineJumps }
             : {}),
         };
       },

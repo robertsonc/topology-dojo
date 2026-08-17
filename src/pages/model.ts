@@ -41,6 +41,12 @@ export interface Page extends RenderablePage {
    */
   caption?: string;
   emphasis?: string[];
+  /**
+   * Line-jump rendering for crossing links (draw.io-style "these wires
+   * aren't joined" hops): standard `line` links hop over links drawn earlier
+   * wherever their straight segments cross. Optional — absent means no jumps.
+   */
+  lineJumps?: 'arc' | 'gap';
   nodes: NodeConfig[];
   links: LinkConfig[];
   anchors: AnchorConfig[];

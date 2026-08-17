@@ -140,6 +140,12 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       page.transition !== 'fade'
     )
       warn(at, `transition "${String(page.transition)}" not in [cut, fade]`);
+    if (
+      page.lineJumps !== undefined &&
+      page.lineJumps !== 'arc' &&
+      page.lineJumps !== 'gap'
+    )
+      warn(at, `lineJumps "${String(page.lineJumps)}" not in [arc, gap]`);
 
     // Element ids unique within the page; collect endpoints (nodes + anchors).
     const ids = new Set<string>();

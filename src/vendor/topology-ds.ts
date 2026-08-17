@@ -473,6 +473,8 @@ export interface RenderablePage {
   flowPaths?: FlowPathConfig[];
   /** Enforcement badges pinned to nodes. */
   policyMarkers?: PolicyMarkerConfig[];
+  /** Line-jump rendering at link crossings ('arc' | 'gap'; absent = none). */
+  lineJumps?: 'arc' | 'gap';
 }
 
 /**
@@ -494,6 +496,9 @@ export function renderPageSVG(
   topo.reducedMotion = !!opts.calm;
   if (opts.ambient) topo.ambient = opts.ambient;
   topo.light = !!opts.light;
+  // Line jumps at link crossings — a page-level setting (persisted; part of
+  // the document contract via set_page_properties), applied at render time.
+  (topo as unknown as { lineJumps?: string }).lineJumps = page.lineJumps;
 
   // The layer view: hidden layers dropped, the rest stacked bottom → top
   // (insertion order is the engine's paint order within each collection).

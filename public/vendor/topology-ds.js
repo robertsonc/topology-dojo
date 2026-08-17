@@ -20,6 +20,82 @@ function _esc(s) {
  * Only http(s) URLs are ever emitted — any other scheme is ignored, so a
  * document field can never inject a scriptable URL into the rendered SVG.
  */
+/* ── Line jumps (crossing hops) ──────────────────────────────────────
+   When a page opts in (`lineJumps: 'arc' | 'gap'`), a standard `line` link
+   hops over links that appear EARLIER in the page's draw order wherever
+   their straight segments cross — the classic "these wires aren't joined"
+   notation. Applies to straight-segment geometry (M/L paths); curved
+   geometry passes through untouched. */
+
+/** Parse a path `d` made of only M/L commands into points, else null. */
+function _parsePolyPath(d) {
+  if (!d || /[^ML\d\s.,eE+-]/.test(d)) return null;
+  const pts = [];
+  const re = /([ML])\s*(-?[\d.eE+]+)\s*,?\s*(-?[\d.eE+]+)/g;
+  let m;
+  let consumed = 0;
+  while ((m = re.exec(d)) !== null) {
+    pts.push({ x: Number(m[2]), y: Number(m[3]) });
+    consumed = re.lastIndex;
+  }
+  if (pts.length < 2 || d.slice(consumed).trim() !== '') return null;
+  return pts;
+}
+
+/** Proper interior crossing of segments AB × CD → {t} along AB, else null. */
+function _segCross(a, b, c, d) {
+  const rx = b.x - a.x, ry = b.y - a.y;
+  const sx = d.x - c.x, sy = d.y - c.y;
+  const denom = rx * sy - ry * sx;
+  if (Math.abs(denom) < 1e-9) return null; // parallel
+  const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / denom;
+  const u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / denom;
+  // Strictly interior on both segments (endpoints touching ≠ crossing).
+  if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) return null;
+  return { t };
+}
+
+/** Rebuild an M/L polyline path with jump arcs/gaps at crossings of `segs`. */
+function _polyPathWithJumps(pts, segs, mode, r = 6) {
+  let d = `M${pts[0].x},${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < r * 3) {
+      d += ` L${b.x},${b.y}`;
+      continue;
+    }
+    const hits = [];
+    for (const s of segs) {
+      const hit = _segCross(a, b, s.a, s.b);
+      if (hit) hits.push(hit.t);
+    }
+    hits.sort((p, q) => p - q);
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    let lastT = 0;
+    for (const t of hits) {
+      const cx = a.x + (b.x - a.x) * t, cy = a.y + (b.y - a.y) * t;
+      // Skip a hop that would overlap the previous one or a segment end.
+      if (t * len - lastT * len < r * 2 || t * len < r || (1 - t) * len < r)
+        continue;
+      const inX = cx - ux * r, inY = cy - uy * r;
+      const outX = cx + ux * r, outY = cy + uy * r;
+      d += ` L${round2(inX)},${round2(inY)}`;
+      d +=
+        mode === 'gap'
+          ? ` M${round2(outX)},${round2(outY)}`
+          : ` A${r},${r} 0 0 1 ${round2(outX)},${round2(outY)}`;
+      lastT = t;
+    }
+    d += ` L${b.x},${b.y}`;
+  }
+  return d;
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
 function _hrefTipWrap(cfg, gOpen, inner, gClose) {
   const tip =
     cfg && typeof cfg.tooltip === 'string' && cfg.tooltip
@@ -3151,6 +3227,18 @@ ${grid}`;
     return `<g${blur}><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${0.7*op}"/></g>`;
   }
 
+  /** A `line` link with crossing hops — same styling as _renderLine, path art. */
+  _renderLinePath(stepId, phaseNum, d, color, op, dashed = false, strokeWidth = 2) {
+    const { show, anim, delay } = this._ph(stepId, phaseNum);
+    if (!show) return '';
+    const blur = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
+    const sw = strokeWidth;
+    if (anim) {
+      return `<g${blur}><path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : 'stroke-dasharray="2000" stroke-dashoffset="0"'} class="${dashed ? 'tds-phase-in' : 'tds-draw-phase'}" style="opacity:${0.7 * op};animation-delay:${delay}s"/></g>`;
+    }
+    return `<g${blur}><path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${0.7 * op}"/></g>`;
+  }
+
   /** Animated flow particles along a path, controllable by per-link flow cfg. */
   _flowParticles(path, color, opts) {
     const speed = opts && opts.speed ? opts.speed : 2.5;
@@ -3808,6 +3896,51 @@ ${grid}`;
     return { dx: Math.sin(ang) * dist, dy: -Math.cos(ang) * dist };
   }
 
+  /**
+   * Build the per-render crossing registry for line jumps: every link's
+   * naive straight-segment polyline (centre→waypoints→centre), keyed by id,
+   * plus each link's draw-order index. Later links hop over earlier ones.
+   * No-op (empty) when the page didn't opt in via `lineJumps`.
+   */
+  _buildJumpIndex() {
+    this._jumpSegs = new Map();
+    this._jumpOrder = new Map();
+    if (this.lineJumps !== 'arc' && this.lineJumps !== 'gap') return;
+    let order = 0;
+    for (const [id, cfg] of this._links) {
+      this._jumpOrder.set(id, order++);
+      if (cfg.lineStyle === 'curved') continue; // curves don't register
+      const from = this._pos(cfg.from);
+      const to = this._pos(cfg.to);
+      if (!from || !to) continue;
+      const pts = [from, ...(cfg.waypoints || []), to];
+      const segs = [];
+      for (let i = 0; i < pts.length - 1; i++)
+        segs.push({ a: pts[i], b: pts[i + 1] });
+      this._jumpSegs.set(id, segs);
+    }
+  }
+
+  /**
+   * Apply line jumps to a link's path `d` when the page opted in: hops over
+   * the straight segments of every link drawn EARLIER (so exactly one of a
+   * crossing pair hops). Non-polyline (curved) paths pass through unchanged.
+   */
+  _applyJumps(linkCfg, d) {
+    if (this.lineJumps !== 'arc' && this.lineJumps !== 'gap') return d;
+    if (!this._jumpSegs || this._jumpSegs.size === 0) return d;
+    const pts = _parsePolyPath(d);
+    if (!pts) return d;
+    const myOrder = this._jumpOrder.get(linkCfg.id) ?? 0;
+    const obstacles = [];
+    for (const [id, segs] of this._jumpSegs) {
+      if (id === linkCfg.id) continue;
+      if ((this._jumpOrder.get(id) ?? 0) < myOrder) obstacles.push(...segs);
+    }
+    if (obstacles.length === 0) return d;
+    return _polyPathWithJumps(pts, obstacles, this.lineJumps);
+  }
+
   _renderLinkSVG(linkCfg, stepId, phaseNum) {
     let from = this._pos(linkCfg.from);
     let to = this._pos(linkCfg.to);
@@ -3887,12 +4020,19 @@ ${grid}`;
     switch (linkCfg.type) {
       case 'line':
         if (waypointPath) {
-          svg = this._renderFlow(stepId, phaseNum, waypointPath, color, null, null, null, op, false);
+          svg = this._renderFlow(stepId, phaseNum, this._applyJumps(linkCfg, waypointPath), color, null, null, null, op, false);
         } else if (routedPath) {
           // Use flow renderer for routed paths (supports curves)
-          svg = this._renderFlow(stepId, phaseNum, routedPath, color, null, null, null, op, false);
+          svg = this._renderFlow(stepId, phaseNum, this._applyJumps(linkCfg, routedPath), color, null, null, null, op, false);
         } else {
-          svg = this._renderLine(stepId, phaseNum, from.x, from.y, to.x, to.y, color, op, linkCfg.dashed, linkCfg.strokeWidth);
+          const straight = `M${from.x},${from.y} L${to.x},${to.y}`;
+          const jumped = this._applyJumps(linkCfg, straight);
+          if (jumped !== straight) {
+            // The crossing hops need a <path>; plain lines keep <line> art.
+            svg = this._renderLinePath(stepId, phaseNum, jumped, color, op, linkCfg.dashed, linkCfg.strokeWidth);
+          } else {
+            svg = this._renderLine(stepId, phaseNum, from.x, from.y, to.x, to.y, color, op, linkCfg.dashed, linkCfg.strokeWidth);
+          }
         }
         // Line links carry a centre label too — every other link type renders
         // its own, but the line/flow renderers don't, so do it here. Honors the
@@ -4136,6 +4276,7 @@ ${grid}`;
    */
   _renderSVG() {
     this._clearPosCache(); // Reset position cache for this render cycle
+    this._buildJumpIndex(); // Line-jump crossing registry for this render cycle
     const vb = this.viewBox.split(' ').map(Number);
     const w = vb[2] || 1050, h = vb[3] || 700;
     let svg = this._svgDefs() + this._svgAmbient(w, h);

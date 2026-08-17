@@ -1839,6 +1839,11 @@ function propertiesHtml(): string {
     `<option value="cut"${page.transition !== 'fade' ? ' selected' : ''}>cut</option>` +
     `<option value="fade"${page.transition === 'fade' ? ' selected' : ''}>fade</option>` +
     `</select></label>` +
+    `<label class="insp-row" title="Draw a hop where standard line links cross others — the classic 'these wires aren't joined' notation">Link crossings<select id="p-jumps">` +
+    `<option value=""${!page.lineJumps ? ' selected' : ''}>overlap (none)</option>` +
+    `<option value="arc"${page.lineJumps === 'arc' ? ' selected' : ''}>jump — arc</option>` +
+    `<option value="gap"${page.lineJumps === 'gap' ? ' selected' : ''}>jump — gap</option>` +
+    `</select></label>` +
     frameStoryHtml() +
     `<div class="insp-h">Legend</div>` +
     `<label class="insp-row">Show key<input type="checkbox" id="p-legend"${doc.legend?.show ? ' checked' : ''}/></label>` +
@@ -1949,6 +1954,15 @@ function wireProperties(): void {
   tr?.addEventListener('change', () => {
     editor.updatePageProps({
       transition: tr.value === 'fade' ? 'fade' : undefined,
+    });
+  });
+  const jumps = inspector.querySelector<HTMLSelectElement>('#p-jumps');
+  jumps?.addEventListener('change', () => {
+    editor.updatePageProps({
+      lineJumps:
+        jumps.value === 'arc' || jumps.value === 'gap'
+          ? jumps.value
+          : undefined,
     });
   });
   // Legend (B.1) — a per-document setting; redraw the overlay so it shows live.
