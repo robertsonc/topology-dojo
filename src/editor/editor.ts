@@ -106,6 +106,19 @@ export interface InlineEditRequest {
   pageY: number;
 }
 
+/**
+ * A link dragged out from a node and released over empty canvas — the shell
+ * offers a "create + connect" picker at the drop point (draw.io-style).
+ */
+export interface ConnectEmptyRequest {
+  /** The source node the pending link starts from. */
+  from: string;
+  clientX: number;
+  clientY: number;
+  pageX: number;
+  pageY: number;
+}
+
 type Guide =
   | { kind: 'align'; x1: number; y1: number; x2: number; y2: number }
   | {
@@ -206,6 +219,8 @@ export class Editor {
     start: { x: number; y: number };
     cursor: { x: number; y: number };
     moved: boolean;
+    /** Set when the drag started on a quick-connect chevron (its direction). */
+    dir?: 'n' | 'e' | 's' | 'w';
   } | null = null;
   /**
    * A link label being repositioned by drag — the centre label or an endpoint
@@ -263,6 +278,8 @@ export class Editor {
   private artRaf = 0;
   /** Inline label-edit requests (double-click) go to the shell through this. */
   private onInlineEdit: ((req: InlineEditRequest) => void) | null = null;
+  /** Link-to-empty-canvas releases go to the shell through this (quick-connect). */
+  private onConnectEmpty: ((req: ConnectEmptyRequest) => void) | null = null;
 
   constructor(
     private art: SVGSVGElement,
@@ -992,8 +1009,8 @@ export class Editor {
 
   /**
    * The node to treat as "hovered": the one under the cursor, or one whose
-   * connection dot the cursor is poised over (so dots stay reachable even though
-   * they sit just on the node's edge).
+   * connection dot / quick-connect chevron the cursor is poised over (so the
+   * affordances stay reachable even though they sit outside the node's body).
    */
   private hoverNodeAt(p: { x: number; y: number }): string | null {
     const direct = hitTestNode(this.page, p.x, p.y);
@@ -1004,8 +1021,167 @@ export class Editor {
       for (const d of this.connectionDots(id)) {
         if (Math.abs(p.x - d.x) <= r && Math.abs(p.y - d.y) <= r) return id;
       }
+      for (const c of this.chevrons(id)) {
+        if (Math.abs(p.x - c.x) <= r * 1.4 && Math.abs(p.y - c.y) <= r * 1.4)
+          return id;
+      }
     }
     return null;
+  }
+
+  /* ── quick-connect chevrons (create + connect the next node) ─────── */
+
+  /**
+   * The four directional quick-connect chevrons of a node, floating just
+   * beyond its connection dots. Clicking one creates a same-type node in that
+   * direction, linked back; dragging from one draws a link like the dots do.
+   */
+  private chevrons(
+    id: string,
+  ): { x: number; y: number; dir: 'n' | 'e' | 's' | 'w' }[] {
+    const n = this.page.nodes.find((m) => m.id === id);
+    if (!n) return [];
+    const b = nodeBounds(n);
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const off = this.dotRadius() * 4.2;
+    return [
+      { x: cx, y: b.y - off, dir: 'n' },
+      { x: b.x + b.w + off, y: cy, dir: 'e' },
+      { x: cx, y: b.y + b.h + off, dir: 's' },
+      { x: b.x - off, y: cy, dir: 'w' },
+    ];
+  }
+
+  /** The chevron (node + direction) under `p`, on hovered/selected nodes. */
+  private chevronHit(p: {
+    x: number;
+    y: number;
+  }): { id: string; dir: 'n' | 'e' | 's' | 'w' } | null {
+    const r = this.dotRadius() * 2.4;
+    for (const id of this.chevronNodeIds()) {
+      for (const c of this.chevrons(id)) {
+        if (Math.abs(p.x - c.x) <= r && Math.abs(p.y - c.y) <= r)
+          return { id, dir: c.dir };
+      }
+    }
+    return null;
+  }
+
+  /** Nodes that show chevrons: the hovered node + a sole selected node. */
+  private chevronNodeIds(): string[] {
+    const ids = new Set<string>();
+    if (this.hoverNode) ids.add(this.hoverNode);
+    if (this.sel.size === 1) ids.add([...this.sel][0]!);
+    return [...ids].filter((id) => this.page.nodes.some((n) => n.id === id));
+  }
+
+  /** Chevron glyphs (outward-pointing triangles) for the overlay. */
+  private chevronsSvg(): string {
+    if (this.tool !== 'select' || this.dragLink || this.drag || this.marquee)
+      return '';
+    const s = this.dotRadius() * 1.5;
+    let out = '';
+    for (const id of this.chevronNodeIds()) {
+      for (const c of this.chevrons(id)) {
+        const rot = { n: 0, e: 90, s: 180, w: 270 }[c.dir];
+        out +=
+          `<g transform="translate(${c.x},${c.y}) rotate(${rot})" opacity="0.85">` +
+          `<circle r="${s * 1.5}" fill="${ACCENT}" fill-opacity="0.10"/>` +
+          `<path d="M0,${-s} L${s * 0.85},${s * 0.6} L${-s * 0.85},${s * 0.6} Z" fill="${ACCENT}"/>` +
+          `</g>`;
+      }
+    }
+    return out;
+  }
+
+  /** Register the shell's "link released over empty canvas" handler. */
+  setConnectEmptyHandler(
+    fn: ((req: ConnectEmptyRequest) => void) | null,
+  ): void {
+    this.onConnectEmpty = fn;
+  }
+
+  /**
+   * Create a node of `type` at (x, y) linked from `fromId`, as ONE undo step
+   * and one gesture batch — the quick-connect commit shared by chevron clicks
+   * and the drag-to-empty picker. Selects the new node and opens its inline
+   * label editor so a "next hop" is one gesture + typing.
+   */
+  quickConnectTo(
+    fromId: string,
+    type: string,
+    x: number,
+    y: number,
+    style?: { color?: string },
+  ): string | null {
+    const from = this.page.nodes.find((n) => n.id === fromId);
+    if (!from) return null;
+    this.snapshot();
+    const nid = `n${Date.now().toString(36)}${(this.nodeSeq++).toString(36)}`;
+    const node: NodeConfig = {
+      id: nid,
+      type,
+      x: this.snapVal(x),
+      y: this.snapVal(y),
+      label: defaultLabel(type),
+      ...(style?.color ? { color: style.color } : {}),
+    };
+    this.page.nodes.push(node);
+    const lid = `l${Date.now().toString(36)}${(this.linkSeq++).toString(36)}`;
+    this.page.links.push({ id: lid, type: 'line', from: fromId, to: nid });
+    this.emitAdds('nodes', [{ id: nid }]);
+    this.emitAdds('links', [{ id: lid }]);
+    this.clearLinkSel();
+    this.clearAnchorSel();
+    this.clearZoneSel();
+    this.sel = new Set([nid]);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireSelect();
+    // Hand the fresh node straight to the inline label editor.
+    if (this.onInlineEdit) {
+      const h = nodeHalf(node);
+      const c = userToClient(this.overlay, node.x, node.y + h.h + 12);
+      this.onInlineEdit({
+        kind: 'node',
+        id: nid,
+        current: String(node.label ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: node.x,
+        pageY: node.y,
+      });
+    }
+    return nid;
+  }
+
+  /**
+   * Chevron click: create a same-type node one pitch away in `dir`, linked
+   * back to the source. Steps further along `dir` while the spot is occupied.
+   */
+  quickConnect(fromId: string, dir: 'n' | 'e' | 's' | 'w'): string | null {
+    const src = this.page.nodes.find((n) => n.id === fromId);
+    if (!src) return null;
+    const h = nodeHalf(src);
+    const pitchX = Math.max(180, h.w * 2 + 110);
+    const pitchY = Math.max(140, h.h * 2 + 90);
+    const step = {
+      n: { dx: 0, dy: -pitchY },
+      e: { dx: pitchX, dy: 0 },
+      s: { dx: 0, dy: pitchY },
+      w: { dx: -pitchX, dy: 0 },
+    }[dir];
+    let x = src.x + step.dx;
+    let y = src.y + step.dy;
+    for (let i = 0; i < 6 && hitTestNode(this.page, x, y, 40); i++) {
+      x += step.dx * 0.75;
+      y += step.dy * 0.75;
+    }
+    return this.quickConnectTo(fromId, src.type, x, y, {
+      color: src.color as string | undefined,
+    });
   }
 
   /** Connection dots drawn on the hovered / selected node(s) in Select mode. */
@@ -1164,6 +1340,7 @@ export class Editor {
       this.linkSelSvg() +
       this.selectionSvg() +
       this.connectionDotsSvg() +
+      this.chevronsSvg() +
       this.marqueeSvg() +
       this.linkPreviewSvg();
     // Cache the grid fill so applyView can track it without rebuilding the overlay.
@@ -3176,8 +3353,28 @@ export class Editor {
 
     // Select tool: pressing a connection dot (the handles shown when hovering a
     // node) drags out a link — no tool switch needed. Dot beats node-body so you
-    // can link from the edge without moving the node.
+    // can link from the edge without moving the node. A quick-connect chevron
+    // starts the same drag; released without moving it creates + connects a
+    // node in that direction instead (see finishUp).
     if (this.tool === 'select' && !this.spaceHeld && !e.shiftKey) {
+      const chev = this.chevronHit(p);
+      if (chev) {
+        if (!this.sel.has(chev.id)) {
+          this.sel.clear();
+          this.sel.add(chev.id);
+          this.fireSelect();
+        }
+        this.dragLink = {
+          from: chev.id,
+          start: p,
+          cursor: p,
+          moved: false,
+          dir: chev.dir,
+        };
+        this.overlay.setPointerCapture(e.pointerId);
+        this.renderOverlay();
+        return;
+      }
       const dotNode = this.connectionDotHit(p);
       if (dotNode) {
         if (!this.sel.has(dotNode)) {
@@ -3420,9 +3617,11 @@ export class Editor {
           this.hoverNode = over;
           this.renderOverlay();
         }
-        this.overlay.style.cursor = this.connectionDotHit(hp)
-          ? 'crosshair'
-          : '';
+        this.overlay.style.cursor = this.chevronHit(hp)
+          ? 'copy'
+          : this.connectionDotHit(hp)
+            ? 'crosshair'
+            : '';
       }
       return;
     }
@@ -3487,14 +3686,15 @@ export class Editor {
   /** True when this pointerup is the second stationary click of a double. */
   private detectSynthDblClick(e: PointerEvent): boolean {
     const m = this.marquee;
+    // A dot/chevron press is a link gesture, never a click — it must not seed
+    // or complete a double-click (a chevron click already creates a node).
     const gestureMoved =
       this.pan !== null ||
+      this.dragLink !== null ||
       !!this.labelDrag?.moved ||
       !!this.wpDrag?.moved ||
-      !!this.dragLink?.moved ||
       !!this.drag?.moved ||
-      (m !== null &&
-        (Math.abs(m.x1 - m.x0) > 2 || Math.abs(m.y1 - m.y0) > 2));
+      (m !== null && (Math.abs(m.x1 - m.x0) > 2 || Math.abs(m.y1 - m.y0) > 2));
     if (gestureMoved || this.tool !== 'select' || e.button !== 0) {
       this.lastClick.t = 0;
       return false;
@@ -3565,14 +3765,28 @@ export class Editor {
       const dl = this.dragLink;
       this.dragLink = null;
       if (dl.moved) {
-        // Released over a node or anchor → connect; over empty space → cancel.
+        // Released over a node or anchor → connect. Over empty space → offer
+        // the create-and-connect picker (draw.io-style) when the shell
+        // registered one; otherwise cancel as before.
         const pp = clientToUser(this.overlay, e.clientX, e.clientY);
         const target =
           hitTestNode(this.page, pp.x, pp.y) ??
           hitTestAnchor(this.page, pp.x, pp.y, this.anchorHitPad());
         if (target && target !== dl.from) this.createLink(dl.from, target);
+        else if (!target && this.onConnectEmpty) {
+          this.onConnectEmpty({
+            from: dl.from,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            pageX: pp.x,
+            pageY: pp.y,
+          });
+        }
+      } else if (dl.dir) {
+        // A chevron click (no drag): create + connect the next node that way.
+        this.quickConnect(dl.from, dl.dir);
       }
-      // A press that never moved leaves the node selected (plain click-select).
+      // A plain dot press that never moved leaves the node selected.
       this.renderOverlay();
       return;
     }

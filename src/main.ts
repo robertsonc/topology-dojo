@@ -435,7 +435,7 @@ function closeQuickAdd(): void {
   quickAddEl?.remove();
   quickAddEl = null;
 }
-function openQuickAdd(req: InlineEditRequest): void {
+function openQuickAdd(req: InlineEditRequest, connectFrom?: string): void {
   closeQuickAdd();
   closeInlineEdit();
   const host = document.querySelector<HTMLElement>('.canvas-host');
@@ -444,7 +444,10 @@ function openQuickAdd(req: InlineEditRequest): void {
   const pop = document.createElement('div');
   pop.className = 'quick-add';
   pop.setAttribute('role', 'dialog');
-  pop.setAttribute('aria-label', 'Add a node here');
+  pop.setAttribute(
+    'aria-label',
+    connectFrom ? 'Add a connected node here' : 'Add a node here',
+  );
   const W = 260;
   const left = Math.max(
     4,
@@ -474,7 +477,8 @@ function openQuickAdd(req: InlineEditRequest): void {
     const sy = editor.snap
       ? Math.round(req.pageY / g) * g
       : Math.round(req.pageY);
-    editor.addNode(type, undefined, { x: sx, y: sy });
+    if (connectFrom) editor.quickConnectTo(connectFrom, type, sx, sy);
+    else editor.addNode(type, undefined, { x: sx, y: sy });
   };
   const renderList = (): void => {
     items = filterNodeCatalog(input.value, doc.customNodes)
@@ -529,6 +533,22 @@ function openQuickAdd(req: InlineEditRequest): void {
   renderList();
   input.focus();
 }
+// A link dragged out from a node and released over empty canvas offers the
+// same picker in connect mode: pick a type → node + link in one undo step.
+editor.setConnectEmptyHandler((req) =>
+  openQuickAdd(
+    {
+      kind: 'empty',
+      id: null,
+      current: '',
+      clientX: req.clientX,
+      clientY: req.clientY,
+      pageX: req.pageX,
+      pageY: req.pageY,
+    },
+    req.from,
+  ),
+);
 
 editor.setViewInsets(() => {
   const canvas = overlaySvg.getBoundingClientRect();
