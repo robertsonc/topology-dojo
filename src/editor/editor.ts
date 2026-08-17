@@ -2389,6 +2389,26 @@ export class Editor {
     this.onChange();
   }
 
+  /**
+   * Patch EVERY selected node (the mini style bar's bulk action): one
+   * snapshot, one gesture batch with a patch per node. No-op keys (already
+   * equal) still emit — assignAndEmit's diffing keeps history clean.
+   */
+  updateSelectedNodes(patch: Partial<NodeConfig>): void {
+    const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
+    if (nodes.length === 0) return;
+    this.snapshot();
+    for (const node of nodes)
+      this.assignAndEmit(
+        'nodes',
+        node as unknown as Record<string, unknown>,
+        patch,
+      );
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
   /** Patch the selected link (re-renders art, keeps the inspector DOM). */
   updateLink(patch: Partial<LinkConfig>, commit = true): void {
     const link = this.getSelectedLink();

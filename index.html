@@ -2301,6 +2301,63 @@
         color: var(--muted);
       }
 
+      /* Mini style bar — floats above the selection with quick actions. */
+      .mini-bar[hidden] {
+        display: none !important;
+      }
+      .mini-bar {
+        position: absolute;
+        z-index: 18;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 7px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        font-family: var(--font);
+      }
+      .mb-sw {
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        cursor: pointer;
+        padding: 0;
+      }
+      .mb-sw:hover {
+        transform: scale(1.15);
+      }
+      .mb-div {
+        width: 1px;
+        align-self: stretch;
+        background: var(--border);
+        margin: 0 2px;
+      }
+      .mb-btn {
+        background: none;
+        border: 0;
+        color: var(--muted);
+        font-size: 13px;
+        cursor: pointer;
+        padding: 0 3px;
+      }
+      .mb-btn:hover,
+      .mb-btn.on {
+        color: var(--accent);
+      }
+      .mb-sel {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 11px;
+        padding: 2px 4px;
+        max-width: 92px;
+      }
+
       /* Present mode — full-screen frame playback. */
       .present-root {
         position: fixed;

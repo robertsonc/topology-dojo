@@ -51,6 +51,8 @@ import {
 } from './editor/export.js';
 import { exportFlipbookHTML } from './render/flipbook.js';
 import { documentToDrawioXML } from './editor/drawio.js';
+import { userToClient } from './editor/coords.js';
+import { nodeBounds } from './api/geometry.js';
 import { legendSVG } from './editor/legend.js';
 import { captionSVG } from './editor/caption.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
@@ -345,6 +347,7 @@ function markDirty(): void {
   }, 400);
 }
 function onDocChange(): void {
+  if (statusReady) updateMiniBar();
   renderFilmstrip();
   renderStatus();
   renderMinimap();
@@ -367,6 +370,7 @@ const editor = new Editor(
   () => {
     renderStatus();
     renderMinimap();
+    if (statusReady) updateMiniBar();
   },
   onZoneSelectChange,
 );
@@ -558,6 +562,159 @@ function openQuickAdd(req: InlineEditRequest, connectFrom?: string): void {
   renderList();
   input.focus();
 }
+/* ── mini style bar (Phase 1.4) ───────────────────────────────────────
+ * A compact contextual bar floating above the selection with the top
+ * inspector actions — color swatches + frame emphasis for nodes, plus
+ * link type / routing for a selected link. Pure convenience over the
+ * inspector (same update paths); view state only, nothing persisted. */
+const miniBar = document.createElement('div');
+miniBar.className = 'mini-bar';
+miniBar.hidden = true;
+document.querySelector('.canvas-host')?.appendChild(miniBar);
+
+function miniBarHtml(kind: 'node' | 'link'): string {
+  const swatches = SWATCHES.map(
+    (c) =>
+      `<button class="mb-sw" data-mbcolor="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}"></button>`,
+  ).join('');
+  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this frame" aria-label="Emphasize on this frame">★</button>`;
+  if (kind === 'link') {
+    const info = editor.selectedLinkInfo();
+    const typeOpts = linkCatalog()
+      .map(
+        (l) =>
+          `<option value="${l.type}"${l.type === info?.type ? ' selected' : ''}>${esc(l.label)}</option>`,
+      )
+      .join('');
+    const styleOpts = ['straight', 'orthogonal', 'curved']
+      .map(
+        (s) =>
+          `<option value="${s}"${s === (info?.style ?? 'straight') ? ' selected' : ''}>${s}</option>`,
+      )
+      .join('');
+    return (
+      `<select class="mb-sel" id="mbType" title="Link type" aria-label="Link type">${typeOpts}</select>` +
+      `<select class="mb-sel" id="mbStyle" title="Routing" aria-label="Link routing">${styleOpts}</select>` +
+      `<span class="mb-div"></span>${swatches}<span class="mb-div"></span>${emph}`
+    );
+  }
+  return `${swatches}<span class="mb-div"></span>${emph}`;
+}
+
+/** Selection anchor (top-centre of the selection bbox) in client coords. */
+function miniBarAnchor(): { x: number; y: number } | null {
+  const link = editor.getSelectedLink();
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity;
+  if (link) {
+    const pts: { x: number; y: number }[] = [];
+    for (const id of [link.from, link.to]) {
+      const n = editor.page.nodes.find((m) => m.id === id);
+      const a = n ?? editor.page.anchors.find((m) => m.id === id);
+      if (a) pts.push({ x: a.x, y: a.y });
+    }
+    pts.push(...(link.waypoints ?? []));
+    if (pts.length === 0) return null;
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+    }
+  } else {
+    const sel = editor.selectionElements();
+    if (!sel || sel.nodes.length === 0) return null;
+    for (const n of sel.nodes) {
+      const b = nodeBounds(n);
+      minX = Math.min(minX, b.x);
+      minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w);
+    }
+  }
+  return userToClient(overlaySvg, (minX + maxX) / 2, minY);
+}
+
+let miniBarSuppressed = false;
+function updateMiniBar(): void {
+  const link = editor.getSelectedLink();
+  const nodeCount = link ? 0 : (editor.selectionElements()?.nodes.length ?? 0);
+  if (miniBarSuppressed || (!link && nodeCount === 0)) {
+    miniBar.hidden = true;
+    return;
+  }
+  const anchor = miniBarAnchor();
+  const host = document.querySelector<HTMLElement>('.canvas-host');
+  if (!anchor || !host) {
+    miniBar.hidden = true;
+    return;
+  }
+  const kind = link ? 'link' : 'node';
+  if (miniBar.dataset.kind !== kind || miniBar.hidden) {
+    miniBar.dataset.kind = kind;
+    miniBar.innerHTML = miniBarHtml(kind);
+  } else if (kind === 'link') {
+    // Keep the selects in sync when a different link is picked.
+    const info = editor.selectedLinkInfo();
+    const t = miniBar.querySelector<HTMLSelectElement>('#mbType');
+    const s = miniBar.querySelector<HTMLSelectElement>('#mbStyle');
+    if (t && info) t.value = info.type;
+    if (s && info) s.value = info.style;
+  }
+  miniBar.hidden = false;
+  const hostRect = host.getBoundingClientRect();
+  const w = miniBar.offsetWidth || 200;
+  const left = Math.max(
+    4,
+    Math.min(anchor.x - hostRect.left - w / 2, hostRect.width - w - 4),
+  );
+  const top = Math.max(4, anchor.y - hostRect.top - 46);
+  miniBar.style.left = `${Math.round(left)}px`;
+  miniBar.style.top = `${Math.round(top)}px`;
+  const emph = miniBar.querySelector<HTMLButtonElement>('#mbEmph');
+  if (emph) {
+    const ids = link ? [link.id] : (editor.selectedNodeIds() ?? []);
+    const on = ids.length > 0 && ids.every((id) => editor.isEmphasized(id));
+    emph.classList.toggle('on', on);
+  }
+}
+miniBar.addEventListener('click', (e) => {
+  const t = e.target as HTMLElement;
+  const sw = t.closest<HTMLButtonElement>('[data-mbcolor]');
+  if (sw) {
+    const color = sw.dataset.mbcolor!;
+    if (editor.getSelectedLink()) editor.updateLink({ color });
+    else editor.updateSelectedNodes({ color });
+    renderInspector();
+    return;
+  }
+  if (t.closest('#mbEmph')) {
+    const link = editor.getSelectedLink();
+    if (link) editor.toggleEmphasis(link.id);
+    else editor.emphasizeSelection();
+    renderInspector();
+    updateMiniBar();
+  }
+});
+miniBar.addEventListener('change', (e) => {
+  const t = e.target as HTMLSelectElement;
+  if (t.id === 'mbType') editor.updateLink({ type: t.value });
+  else if (t.id === 'mbStyle')
+    editor.updateLink({
+      lineStyle: t.value as 'orthogonal' | 'curved',
+    });
+  renderInspector();
+});
+// Hide while a canvas gesture is in flight; re-anchor when it settles.
+overlaySvg.addEventListener('pointerdown', () => {
+  miniBarSuppressed = true;
+  miniBar.hidden = true;
+});
+overlaySvg.addEventListener('pointerup', () => {
+  miniBarSuppressed = false;
+  // Selection callbacks fire before this listener; re-anchor now.
+  setTimeout(updateMiniBar, 0);
+});
+
 // A link dragged out from a node and released over empty canvas offers the
 // same picker in connect mode: pick a type → node + link in one undo step.
 editor.setConnectEmptyHandler((req) =>
@@ -1567,6 +1724,7 @@ inspectorResizer.addEventListener('pointerdown', (e) => {
 });
 
 function onLinkSelectChange(_linkId: string | null): void {
+  if (statusReady) updateMiniBar();
   renderInspector();
 }
 function onAnchorSelectChange(_anchorId: string | null): void {
@@ -1580,6 +1738,7 @@ function onZoneSelectChange(_zoneId: string | null): void {
 /* Align/distribute toolbar — shown when 2+ nodes are selected. */
 const alignGroup = app.querySelector<HTMLElement>('#alignGroup')!;
 function onSelectionChange(count: number): void {
+  if (statusReady) updateMiniBar();
   alignGroup.hidden = count < 2;
   alignGroup
     .querySelectorAll<HTMLButtonElement>('[data-dist]')
