@@ -343,7 +343,6 @@ async function limitSnapshotGet(
 }
 
 /** Serve a published snapshot's JSON from KV (the SPA fetches this for /v/:id). */
-<<<<<<< HEAD
 async function serveSnapshot(
   id: string,
   request: Request,
@@ -351,11 +350,8 @@ async function serveSnapshot(
 ): Promise<Response> {
   const limited = await limitSnapshotGet(request, env);
   if (limited) return limited;
-  const json = await env.TOPOLOGY_KV.get(`doc:${id}`);
-=======
-async function serveSnapshot(id: string, env: WorkerEnv): Promise<Response> {
   const json = await getShareSnapshot(env.TOPOLOGY_KV, id);
->>>>>>> origin/main
+
   if (!json) {
     return new Response(JSON.stringify({ error: 'not found' }), {
       status: 404,
@@ -566,13 +562,9 @@ async function route(
   if (pathname.startsWith(API_TOPOLOGY_PREFIX)) {
     const id = pathname.slice(API_TOPOLOGY_PREFIX.length);
     if (!id) return new Response('Not Found\n', { status: 404 });
-<<<<<<< HEAD
-    return serveSnapshot(id, request, env);
-=======
-    if (request.method === 'GET') return serveSnapshot(id, env);
+    if (request.method === 'GET') return serveSnapshot(id, request, env);
     if (request.method === 'DELETE') return revokeSnapshot(id, request, env);
     return new Response('Method Not Allowed\n', { status: 405 });
->>>>>>> origin/main
   }
 
   // Gate the editor: a top-level navigation to the app needs a signed-in

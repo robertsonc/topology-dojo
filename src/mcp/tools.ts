@@ -1813,12 +1813,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     const publish = deps.publishTopology;
     tools.push({
       name: 'share_topology',
-<<<<<<< HEAD
-      description:
-        'Publish the current topology and return a link that opens it in the Topology Dojo editor in a browser. Use this to give the user a viewable/shareable result after building. The snapshot is stored durably (it does NOT depend on the live server session, so the link keeps working after this session ends). Re-run after further edits to publish an updated snapshot (a new link). Remote deployments rate-limit this tool per authenticated user (8 per 5 minutes); back off on a rate-limited error rather than retrying immediately.',
-=======
-      description: `Publish the current topology and return a public link that opens it in the Topology Dojo editor. ${SHARE_PUBLIC_WARNING} Do not publish internal addresses, credentials, or other sensitive content. The snapshot is stored durably (it does NOT depend on the live server session). Re-run after further edits to publish an updated snapshot (a new link). The publisher can revoke the link with unpublish_topology or DELETE /api/topology/<id>.`,
->>>>>>> origin/main
+      description: `Publish the current topology and return a public link that opens it in the Topology Dojo editor. ${SHARE_PUBLIC_WARNING} Do not publish internal addresses, credentials, or other sensitive content. The snapshot is stored durably (it does NOT depend on the live server session). Re-run after further edits to publish an updated snapshot (a new link). Remote deployments rate-limit this tool per authenticated user (8 per 5 minutes); back off on a rate-limited error rather than retrying immediately. The publisher can revoke the link with unpublish_topology or DELETE /api/topology/<id>.`,
       inputShape: { topologyId },
       handler: (a) => publish(store.get(String(a.topologyId))),
     });
