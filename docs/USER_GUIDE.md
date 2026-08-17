@@ -150,7 +150,10 @@ The editor is organized into six areas.
 2. **Node library.** A searchable, categorized catalog on the left. It also
    holds document custom nodes and stencils.
 3. **Canvas.** The current page, selection overlay, smart guides, link handles,
-   problem badges, and zoom/pan controls.
+   problem badges, zoom/pan controls, and a **mini style bar** floating above
+   the selection — color swatches and frame emphasis for nodes (applied to
+   every selected node), plus link type and routing for a selected link. It
+   hides during gestures; the Properties panel remains the complete surface.
 4. **Minimap.** A small overview inside the Node library.
 5. **Pages strip.** The filmstrip along the bottom, including playback and page
    management.
@@ -360,6 +363,10 @@ The built-in library covers:
   firewalls, access points, clouds, hosts, and connectors;
 - application and infrastructure symbols such as apps, SaaS, servers,
   databases, identity cards, and text boxes;
+- a **Callout** sticky note — a tinted folded-corner note whose text wraps
+  at its width, with an optional dashed leader line pointing at a target
+  element (set **Points at** in Properties; deleting the target keeps the
+  note and clears the pointer);
 - a generic IT/network pack — load balancer, proxy, wireless controller,
   modem, DNS/web/mail servers, NAS, UPS, printer, IP camera, VoIP phone, IoT
   device, VM, container, Kubernetes, IDS/IPS, VPN concentrator, and user
@@ -634,6 +641,14 @@ The **⤓ export…** toolbar menu adds:
   image** for a selection and **Copy frame as image** on empty canvas).
 - **SVG — selection only** and **PNG — selection only**: a cropped export of
   just the selected nodes and the links between them.
+
+### draw.io XML
+
+**⤓ export… → draw.io XML** downloads a `.drawio` file (one draw.io page per
+frame) for handing to draw.io / diagrams.net / Confluence users. This is a
+one-way, deliberately lossy interchange: geometry, labels, waypoints, zones,
+colors, and images survive; flow paths, policy markers, layers, and playback
+do not.
 
 ### Flipbook HTML
 

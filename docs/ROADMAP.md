@@ -510,8 +510,13 @@ with catalog/validation/MCP parity where the document contract was touched
   `import_topology`), PDF export (single / all frames), flipbook HTML export
   from the toolbar, clipboard PNG copy, and selection-only exports.
 - **Canvas polish**: page-level line jumps at link crossings (arc / gap),
-  full-screen Present mode, pinch-zoom + two-finger pan, and metadata-aware
-  find (Ctrl+F matches the IP/hostname/etc. stored on a node).
+  full-screen Present mode, pinch-zoom + two-finger pan, a mini style bar
+  floating above the selection, and metadata-aware find (Ctrl+F matches the
+  IP/hostname/etc. stored on a node).
+- **Stretch follow-ups (same batch)**: a callout / sticky-note node with a
+  leader line, and one-way draw.io XML export (`.drawio`, documented lossy).
+  Straight-link obstacle avoidance was confirmed already shipped (engine
+  `_routeLink`, on by default); conditional formatting stays evidence-gated.
 
 ## Retired (kept dormant)
 
