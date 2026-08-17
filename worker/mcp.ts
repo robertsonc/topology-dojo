@@ -15,7 +15,6 @@ import {
   rehydrateStore,
   type DocStorage,
 } from '../src/mcp/persist-store.js';
-import { serializeDoc } from '../src/pages/persist.js';
 import type { TopologyDocument } from '../src/pages/model.js';
 import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
@@ -31,13 +30,7 @@ import {
 } from '../src/profile/guidance.js';
 import type { AuthoringPreference } from '../src/profile/model.js';
 
-/** Short, URL-safe id for a published snapshot (collision-negligible for this use). */
-function shareId(): string {
-  return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-}
-
-/** Snapshots live in KV for 30 days unless re-published (keeps the namespace bounded). */
-const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
+import { listShares, publishSnapshot, revokeShare } from './share.js';
 
 /**
  * Tools that do not mutate the legacy in-memory TopologyStore. Workspace write
@@ -119,6 +112,8 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       {
         renderDocument,
         publishTopology: (doc: TopologyDocument) => this.publish(doc),
+        listShares: () => listShares(this.env, this.ownerUid()),
+        revokeShare: (id: string) => revokeShare(this.env, this.ownerUid(), id),
         ...(provider ? { provider } : {}),
         ...(workspace ? { workspace } : {}),
         ...(profile ? { profile } : {}),
@@ -127,6 +122,18 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       (toolName) => this.persistAfter(toolName),
       (toolName, args) => this.beforeTool(toolName, args),
     );
+  }
+
+  /**
+   * The authenticated owner's stable numeric GitHub id (as a string) — the
+   * same value the browser session uses (`SessionUser.uid`), so the share
+   * index is one list across both surfaces. Fails CLOSED like `registry()`.
+   */
+  private ownerUid(): string {
+    const id = (this.props as { id?: number | string } | undefined)?.id;
+    if (id === undefined || id === null)
+      throw new Error('no authenticated user (props.id) — refusing');
+    return String(id);
   }
 
   /**
@@ -261,15 +268,14 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     };
   }
 
-  /** Store a document snapshot in KV and return the link that opens it. */
+  /**
+   * Store a document snapshot in KV and return the link that opens it —
+   * through the shared publish path (`worker/share.ts`), so the snapshot is
+   * recorded in the owner's revocable index like a browser-published one.
+   */
   private async publish(
     doc: TopologyDocument,
   ): Promise<{ id: string; url: string }> {
-    const id = shareId();
-    await this.env.TOPOLOGY_KV.put(`doc:${id}`, serializeDoc(doc), {
-      expirationTtl: SHARE_TTL_SECONDS,
-    });
-    const base = (this.env.PUBLIC_BASE_URL ?? '').replace(/\/$/, '');
-    return { id, url: `${base}/v/${id}` };
+    return publishSnapshot(this.env, this.ownerUid(), doc);
   }
 }

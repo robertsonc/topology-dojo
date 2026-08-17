@@ -107,6 +107,7 @@ app.innerHTML = `
         <button class="tbtn" id="fNew" title="New document">new</button>
         <button class="tbtn" id="fSave" title="Download the document as a JSON file">download</button>
         <button class="tbtn" id="fOpen" title="Open a JSON file">open</button>
+        <button class="tbtn" id="fShare" title="Publish a public share link / manage published links" hidden>share</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
@@ -3235,6 +3236,154 @@ function openHelp(): void {
 }
 app.querySelector('#tHelp')?.addEventListener('click', () => openHelp());
 
+/* ── Share dialog (hosted only): publish a public /v/:id snapshot of the
+ * current document and manage (revoke) previously published links. The
+ * button is revealed by showUserChip() alongside the other hosted chips;
+ * the Worker enforces the session on every /api/share call. Closes finding
+ * M20 for the browser surface. */
+interface ShareRow {
+  id: string;
+  title: string;
+  createdAt: number;
+  expiresAt: number;
+}
+let shareEl: HTMLElement | null = null;
+let releaseShareOverlay: (() => void) | null = null;
+function closeShare(): void {
+  shareEl?.remove();
+  shareEl = null;
+  releaseShareOverlay?.();
+  releaseShareOverlay = null;
+}
+async function fetchShares(): Promise<ShareRow[]> {
+  const res = await fetch('/api/share', {
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`list failed (${res.status})`);
+  return ((await res.json()) as { shares?: ShareRow[] }).shares ?? [];
+}
+function shareRowHtml(s: ShareRow): string {
+  const url = `${location.origin}/v/${s.id}`;
+  const days = Math.max(
+    0,
+    Math.ceil((s.expiresAt - Date.now()) / (24 * 3600 * 1000)),
+  );
+  return (
+    `<div class="share-row" data-id="${esc(s.id)}">` +
+    `<div class="share-meta"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` +
+    `<span class="share-sub">${esc(new Date(s.createdAt).toLocaleDateString())} · expires in ${days}d</span></div>` +
+    `<button class="tbtn share-copy" data-url="${esc(url)}" title="Copy link">copy</button>` +
+    `<button class="tbtn share-revoke" data-id="${esc(s.id)}" title="Revoke — the public link stops resolving">revoke</button>` +
+    `</div>`
+  );
+}
+function openShare(): void {
+  if (shareEl) {
+    closeShare();
+    return;
+  }
+  shareEl = document.createElement('div');
+  shareEl.className = 'help-backdrop';
+  shareEl.innerHTML =
+    `<div class="help-card share-card scroll-slim" role="dialog" aria-modal="true" aria-label="Share">` +
+    `<div class="help-head"><h3>Share</h3>` +
+    `<button class="tbtn ticon" id="shareClose" title="Close (Esc)" aria-label="Close">✕</button></div>` +
+    `<p class="share-note">Publishing creates a <b>public</b> read-only snapshot at a /v/&lt;id&gt; link — no sign-in needed to view it. Links expire after 30 days; revoking one takes it down early (edge caches may serve it for up to ~5 more minutes). Don’t publish internal addresses or policy details unless they’re approved for public access.</p>` +
+    `<div class="share-actions"><button class="tbtn" id="sharePublish">⤴ publish current document</button><span class="share-status" id="shareStatus" role="status"></span></div>` +
+    `<div class="share-fresh" id="shareFresh" hidden></div>` +
+    `<h4 class="share-h">Published links</h4>` +
+    `<div class="share-list" id="shareList">loading…</div>` +
+    `</div>`;
+  app.appendChild(shareEl);
+  const status = shareEl.querySelector<HTMLElement>('#shareStatus')!;
+  const list = shareEl.querySelector<HTMLElement>('#shareList')!;
+  const fresh = shareEl.querySelector<HTMLElement>('#shareFresh')!;
+  const refresh = async (): Promise<void> => {
+    try {
+      const shares = await fetchShares();
+      list.innerHTML = shares.length
+        ? shares.map(shareRowHtml).join('')
+        : `<div class="share-sub">No live links.</div>`;
+    } catch (err) {
+      list.innerHTML = `<div class="share-sub">Could not load published links (${esc(String(err))}).</div>`;
+    }
+  };
+  shareEl.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    if (t === shareEl) {
+      closeShare();
+      return;
+    }
+    const copy = t.closest<HTMLButtonElement>('.share-copy');
+    if (copy) {
+      void navigator.clipboard?.writeText(copy.dataset.url!).then(
+        () => (copy.textContent = 'copied ✓'),
+        () => (copy.textContent = 'copy failed'),
+      );
+      return;
+    }
+    const revoke = t.closest<HTMLButtonElement>('.share-revoke');
+    if (revoke) {
+      revoke.disabled = true;
+      revoke.textContent = '…';
+      void fetch(`/api/share/${encodeURIComponent(revoke.dataset.id!)}`, {
+        method: 'DELETE',
+      }).then(
+        (res) => {
+          if (res.ok) void refresh();
+          else {
+            revoke.disabled = false;
+            revoke.textContent = 'revoke';
+            status.textContent = `revoke failed (${res.status})`;
+          }
+        },
+        () => {
+          revoke.disabled = false;
+          revoke.textContent = 'revoke';
+          status.textContent = 'revoke failed (offline?)';
+        },
+      );
+    }
+  });
+  shareEl
+    .querySelector<HTMLButtonElement>('#sharePublish')!
+    .addEventListener('click', () => {
+      status.textContent = 'publishing…';
+      fresh.hidden = true;
+      void fetch('/api/share', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ document: JSON.parse(serializeDoc(doc)) }),
+      }).then(
+        async (res) => {
+          if (!res.ok) {
+            status.textContent = `publish failed (${res.status})`;
+            return;
+          }
+          const out = (await res.json()) as { id: string; url: string };
+          const url = out.url.startsWith('http')
+            ? out.url
+            : `${location.origin}${out.url}`;
+          status.textContent = '';
+          fresh.hidden = false;
+          fresh.innerHTML =
+            `<span class="share-sub">Published:</span> <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a> ` +
+            `<button class="tbtn share-copy" data-url="${esc(url)}">copy</button>`;
+          void refresh();
+        },
+        () => {
+          status.textContent = 'publish failed (offline?)';
+        },
+      );
+    });
+  shareEl
+    .querySelector('#shareClose')
+    ?.addEventListener('click', () => closeShare());
+  releaseShareOverlay = registerOverlay(shareEl, { close: closeShare });
+  void refresh();
+}
+app.querySelector('#fShare')?.addEventListener('click', () => openShare());
+
 /* Account menu. The Worker gates the app behind GitHub sign-in and reports the
  * current user at /api/me; when that succeeds we reveal a toolbar chip that opens
  * a small "Signed in as … / Sign out" menu. In Vite dev there's no Worker (auth is
@@ -3313,6 +3462,9 @@ async function showUserChip(): Promise<void> {
       wireAccountMenu(me.login);
       enableWorkspaceUi();
       profilePanelHandle.enable();
+      // Sharing needs the hosted Worker (KV + session); reveal only here.
+      const shareBtn = app.querySelector<HTMLButtonElement>('#fShare');
+      if (shareBtn) shareBtn.hidden = false;
       // The Admin chip is revealed only for the deployment owner; the real gate
       // is the /api/admin routes, so this is a cosmetic reveal.
       if (me.admin) adminDashboardHandle.enable();

@@ -31,6 +31,8 @@ import { handleWorkspaceApi } from './workspace-api.js';
 import { handleProfileApi } from './profile-api.js';
 import { handleAdminApi } from './admin-api.js';
 import { handleStagingFault, STAGING_FAULT_PATH } from './staging-fault.js';
+import { listShares, publishSnapshot, revokeShare } from './share.js';
+import { parseDoc } from '../src/pages/persist.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -296,11 +298,75 @@ async function serveSnapshot(id: string, env: WorkerEnv): Promise<Response> {
   return new Response(json, {
     headers: {
       'content-type': 'application/json',
-      // A snapshot id is write-once (a fresh random id per publish), so its
-      // payload never changes — cache it hard so repeat/shared views skip the
-      // round trip. Bounded well under the KV 30-day TTL.
-      'cache-control': 'public, max-age=86400, immutable',
+      // A snapshot id is write-once, but the owner can REVOKE it (finding
+      // M20) — so it must not be cached as immutable-for-a-day. Five minutes
+      // keeps repeat views cheap while bounding how long a revoked link can
+      // keep serving from an edge/browser cache.
+      'cache-control': 'public, max-age=300',
     },
+  });
+}
+
+/**
+ * Owner share management (`/api/share`): the browser's publish/list/revoke
+ * surface — the same helpers the MCP tools use (`worker/share.ts`), behind
+ * the browser session cookie. Closes finding M20 (no revocation path).
+ */
+async function handleShareApi(
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  const user = await currentUser(request, env);
+  const headers = { 'content-type': 'application/json' };
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'authentication required' }), {
+      status: 401,
+      headers,
+    });
+  }
+  const url = new URL(request.url);
+  const rest = url.pathname.slice('/api/share'.length).replace(/^\//, '');
+  if (request.method === 'GET' && !rest) {
+    return new Response(
+      JSON.stringify({ shares: await listShares(env, user.uid) }),
+      { headers },
+    );
+  }
+  if (request.method === 'POST' && !rest) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'invalid JSON body' }), {
+        status: 400,
+        headers,
+      });
+    }
+    const doc = parseDoc(
+      (body as { document?: unknown } | null)?.document ?? body,
+    );
+    if (!doc) {
+      return new Response(
+        JSON.stringify({ error: 'not a recognizable topology document' }),
+        { status: 400, headers },
+      );
+    }
+    const published = await publishSnapshot(env, user.uid, doc);
+    return new Response(JSON.stringify(published), { status: 201, headers });
+  }
+  if (request.method === 'DELETE' && rest && !rest.includes('/')) {
+    const outcome = await revokeShare(env, user.uid, rest);
+    if (outcome === 'not-found') {
+      return new Response(JSON.stringify({ error: 'not found' }), {
+        status: 404,
+        headers,
+      });
+    }
+    return new Response(JSON.stringify({ revoked: rest }), { headers });
+  }
+  return new Response(JSON.stringify({ error: 'method not allowed' }), {
+    status: 405,
+    headers,
   });
 }
 
@@ -435,6 +501,9 @@ async function route(
   if (pathname === '/api/profile' || pathname.startsWith('/api/profile/')) {
     if (!profilesEnabled(env)) return profilesDisabledResponse();
     return handleProfileApi(request, env);
+  }
+  if (pathname === '/api/share' || pathname.startsWith('/api/share/')) {
+    return handleShareApi(request, env);
   }
   if (pathname === '/api/admin' || pathname.startsWith('/api/admin/')) {
     if (!analyticsEnabled(env)) return adminDisabledResponse();

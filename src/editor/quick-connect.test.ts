@@ -155,7 +155,9 @@ describe('quickConnect (chevron click)', () => {
     expect(ops).toHaveLength(2);
     expect(ops[0]).toMatchObject({ type: 'element.add', kind: 'nodes' });
     expect(ops[1]).toMatchObject({ type: 'element.add', kind: 'links' });
-    expect((ops[0] as { element: { id: string } }).element.id).toBe(nid);
+    expect((ops[0] as unknown as { element: { id: string } }).element.id).toBe(
+      nid,
+    );
   });
 
   it('opens the inline label editor on the fresh node', () => {

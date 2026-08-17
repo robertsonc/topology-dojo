@@ -80,13 +80,16 @@ Apps, secrets, or KV namespace ids across environments.
 > workspace tools. The old snapshot is retained as migration rollback material
 > but stale legacy mutation is refused.
 
-### Share links (`share_topology`)
+### Share links (`share_topology`, `list_shares`, `revoke_share`)
 
 `share_topology` snapshots the current document into a **KV namespace** and
 returns a link that opens it in the browser editor — the way to hand a user a
-viewable/shareable result after building. Because the snapshot lives in KV (not
-the per-session in-memory store), the link keeps working after the MCP session
-ends. The link is `<PUBLIC_BASE_URL>/v/<id>`; opening it loads the snapshot into
+viewable/shareable result after building. Every publish is recorded in the
+owner's share index, so the same owner (over MCP with `list_shares` /
+`revoke_share`, or in the browser share dialog) can enumerate their live links
+and take one down before its 30-day expiry. Because the snapshot lives in KV
+(not the per-session in-memory store), the link keeps working after the MCP
+session ends. The link is `<PUBLIC_BASE_URL>/v/<id>`; opening it loads the snapshot into
 the editor (the SPA fetches `/api/topology/<id>`). Every snapshot URL expires 30
 days after it is created. Publishing again mints a new snapshot id and URL; it
 does not renew the previous URL. Snapshots are public to anyone with the URL,
@@ -196,6 +199,8 @@ to the task's affected region and change summaries, not total document size.
 | `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                                |
 | `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                               |
 | `share_topology`                                       | Publish a durable snapshot; returns a browser link (remote-only)                                          |
+| `list_shares`                                          | The owner's live published share links, newest first (remote-only)                                        |
+| `revoke_share`                                         | Revoke one of the owner's published share links early (remote-only)                                       |
 | `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                              |
 | `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                     |
 | `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it               |

@@ -106,6 +106,17 @@ export interface ToolDeps {
     doc: TopologyDocument,
   ) => Promise<{ id: string; url: string }>;
   /**
+   * The owner's published share links (newest first, expired pruned) and a
+   * revoke action for one of them. Wired only where publishTopology is (the
+   * Worker) — together they close finding M20 for the agent surface too: what
+   * an authenticated owner publishes, the same owner can enumerate and take
+   * down.
+   */
+  listShares?: () => Promise<
+    { id: string; title: string; createdAt: number; expiresAt: number }[]
+  >;
+  revokeShare?: (id: string) => Promise<'revoked' | 'not-found'>;
+  /**
    * Live fabric data source (an SD-WAN orchestrator client or the fixture
    * mock). Wired from environment credentials by the servers — never from
    * tool arguments. When absent, the live-data tools are not registered.
@@ -1724,9 +1735,40 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     tools.push({
       name: 'share_topology',
       description:
-        'Publish the current topology and return a link that opens it in the Topology Dojo editor in a browser. Use this to give the user a viewable/shareable result after building. The snapshot is stored durably (it does NOT depend on the live server session, so the link keeps working after this session ends). Re-run after further edits to publish an updated snapshot (a new link).',
+        'Publish the current topology and return a link that opens it in the Topology Dojo editor in a browser. Use this to give the user a viewable/shareable result after building. The snapshot is stored durably (it does NOT depend on the live server session, so the link keeps working after this session ends). The link is PUBLIC (no sign-in) and expires after 30 days; the owner can revoke it early with revoke_share or from the browser share dialog. Re-run after further edits to publish an updated snapshot (a new link).',
       inputShape: { topologyId },
       handler: (a) => publish(store.get(String(a.topologyId))),
+    });
+  }
+  if (deps.listShares) {
+    const list = deps.listShares;
+    tools.push({
+      name: 'list_shares',
+      description:
+        'List the authenticated owner’s live published share links (id, title, createdAt, expiresAt), newest first. Expired snapshots are pruned automatically. Use before revoke_share to find the id to take down.',
+      inputShape: {},
+      handler: async () => ({ shares: await list() }),
+    });
+  }
+  if (deps.revokeShare) {
+    const revoke = deps.revokeShare;
+    tools.push({
+      name: 'revoke_share',
+      description:
+        'Revoke one of the authenticated owner’s published share links: the public /v/<id> snapshot is deleted and stops resolving (edge caches can serve it for up to ~5 more minutes). Only the publishing owner’s own links can be revoked. This is how a mistakenly published topology is taken down before its 30-day expiry.',
+      inputShape: {
+        shareId: z
+          .string()
+          .describe('The snapshot id (from share_topology or list_shares).'),
+      },
+      handler: async (a) => {
+        const outcome = await revoke(String(a.shareId));
+        if (outcome === 'not-found')
+          throw new Error(
+            `no share '${String(a.shareId)}' in your published links (already revoked, expired, or not yours)`,
+          );
+        return { revoked: String(a.shareId) };
+      },
     });
   }
 
