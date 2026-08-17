@@ -47,6 +47,14 @@
     // on. Compared against the stable numeric id, never the mutable login. See
     // worker/env.ts isAdmin().
     "ADMIN_GITHUB_ID": "17257145",
+    // Live-data / EdgeConnect fabric MCP tools (issue #228). Opt-in flag
+    // (worker/env.ts liveDataEnabled — only the literal "true" enables),
+    // independent of ORCH_BASE_URL / ORCH_API_KEY presence. Production stays
+    // "false": do not flip this without an explicit human decision to
+    // expose the connected fabric to every authenticated MCP session on
+    // this deployment (optional LIVE_DATA_GITHUB_IDS can narrow that
+    // grant). Secrets are dashboard-only; never commit them.
+    "LIVE_DATA_ENABLED": "false",
   },
   "assets": {
     "directory": "./dist",
@@ -142,6 +150,12 @@
         // an isolated value.
         "ANALYTICS_ENABLED": "true",
         "ADMIN_GITHUB_ID": "17257145",
+        // Live-data stays off in staging too: packet E5 (Orchestrator secret
+        // provisioning) is a separate human decision, and the existing
+        // live-data path is not expected on here. Flip to "true" only when
+        // a non-production Orchestrator is provisioned for that env.
+        // worker/env.ts liveDataEnabled() — only the literal "true" enables.
+        "LIVE_DATA_ENABLED": "false",
         // Staging-only synthetic-fault gate (worker/staging-fault.ts, game-day
         // drills — docs/GAME_DAY.md). Must be exactly "staging", must exist
         // ONLY here: check-wrangler-env.mjs fails the build if any

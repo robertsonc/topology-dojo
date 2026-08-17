@@ -220,3 +220,39 @@ export default {
   },
 };
 `;
+
+/**
+ * `PROFILE_TOOL_NAMES_FIXTURE`'s live-data sibling: exercises
+ * `worker/live-data-tools.ts`'s pure `liveDataToolNames` — the
+ * LIVE_DATA_ENABLED gate (opt-in, independent of secret presence) plus the
+ * optional LIVE_DATA_GITHUB_IDS allowlist on the seven fabric tools
+ * registered by `TopologyMcp.init()`.
+ */
+export const LIVE_DATA_TOOL_NAMES_FIXTURE = String.raw`
+import { liveDataToolNames } from './worker/live-data-tools.ts';
+
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    const flag = url.searchParams.get('flag');
+    const ownerId = url.searchParams.get('ownerId');
+    const allowlist = url.searchParams.get('allowlist');
+    const hasSecrets = url.searchParams.get('hasSecrets') === 'true';
+    const env = Object.assign(
+      {},
+      flag === null ? {} : { LIVE_DATA_ENABLED: flag },
+      allowlist === null ? {} : { LIVE_DATA_GITHUB_IDS: allowlist },
+      hasSecrets
+        ? {
+            ORCH_BASE_URL: 'https://orch.example.test',
+            ORCH_API_KEY: 'test-key',
+          }
+        : {},
+    );
+    return new Response(
+      JSON.stringify(liveDataToolNames(env, ownerId === null ? undefined : ownerId)),
+      { headers: { 'content-type': 'application/json' } },
+    );
+  },
+};
+`;

@@ -992,10 +992,16 @@ For local demo/development with no fabric access:
 
 For EdgeConnect, the process or hosted deployment must supply:
 
+    LIVE_DATA_ENABLED=true
     ORCH_BASE_URL
     ORCH_API_KEY
 
-The API key is an environment secret, never a tool argument. The provider talks
+`LIVE_DATA_ENABLED` is opt-in (only the literal `true` enables). Secret
+presence alone does not register the tools. The API key is an environment
+secret, never a tool argument. When enabled, every authenticated MCP
+session on that deployment can query the connected fabric unless
+`LIVE_DATA_GITHUB_IDS` restricts the grant — see the MCP README and
+`DEPLOYMENT_RUNBOOK.md`. The provider talks
 to EdgeConnect Orchestrator rather than directly to appliances. A fabric-wide
 query can skip an individually unreachable appliance; a request explicitly
 targeting that appliance reports the error.
