@@ -43,8 +43,8 @@ export function pageToSVG(
   );
 }
 
-/** Rasterize an SVG string to a PNG blob at `scale`× the viewBox size. */
-export function svgToPngBlob(svg: string, scale = 2): Promise<Blob> {
+/** Rasterize an SVG string onto a canvas at `scale`× the viewBox size. */
+function svgToCanvas(svg: string, scale = 2): Promise<HTMLCanvasElement> {
   const m = /viewBox="([^"]*)"/.exec(svg);
   const { vw, vh } = viewBoxParts(m?.[1] ?? '');
   return new Promise((resolve, reject) => {
@@ -59,13 +59,21 @@ export function svgToPngBlob(svg: string, scale = 2): Promise<Blob> {
         return;
       }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))),
-        'image/png',
-      );
+      resolve(canvas);
     };
     img.onerror = () => reject(new Error('failed to rasterize SVG'));
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+
+/** Rasterize an SVG string to a PNG blob at `scale`× the viewBox size. */
+export async function svgToPngBlob(svg: string, scale = 2): Promise<Blob> {
+  const canvas = await svgToCanvas(svg, scale);
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))),
+      'image/png',
+    );
   });
 }
 
@@ -104,4 +112,102 @@ export async function exportPagePNG(
     scale,
   );
   downloadBlob(filename, blob);
+}
+
+/** One page of a PDF export: the page plus its render options/extras. */
+export interface PdfPageSpec {
+  page: Page;
+  opts?: RenderOptions;
+  extra?: string;
+}
+
+/**
+ * Render pages into one multi-page PDF (each PDF page sized to its frame's
+ * viewBox, landscape/portrait as needed). Raster-based on purpose: the
+ * engine's SVG leans on filters/animation that vector PDF converters do not
+ * support, so each frame is rasterized at 2× through the SAME pipeline as
+ * PNG export — the PDF always matches the canvas. jspdf loads lazily so the
+ * editor bundle doesn't carry it.
+ */
+export async function pagesToPDFBlob(specs: PdfPageSpec[]): Promise<Blob> {
+  if (specs.length === 0) throw new Error('nothing to export');
+  const { jsPDF } = await import('jspdf');
+  let pdf: InstanceType<typeof jsPDF> | null = null;
+  for (const spec of specs) {
+    const { vw, vh } = viewBoxParts(spec.page.viewBox);
+    const svg = pageToSVG(
+      spec.page,
+      { ...(spec.opts ?? {}), calm: true },
+      spec.extra ?? '',
+    );
+    // JPEG keeps a multi-page PDF ~10× smaller than PNG; the export always
+    // paints an opaque backdrop, so no transparency is lost.
+    const canvas = await svgToCanvas(svg, 2);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const orientation = vw >= vh ? 'landscape' : 'portrait';
+    if (!pdf) pdf = new jsPDF({ orientation, unit: 'pt', format: [vw, vh] });
+    else pdf.addPage([vw, vh], orientation);
+    pdf.addImage(dataUrl, 'JPEG', 0, 0, vw, vh);
+  }
+  return (pdf as InstanceType<typeof jsPDF>).output('blob');
+}
+
+/**
+ * Copy a page render to the system clipboard as a PNG. Feature-detected:
+ * throws a descriptive error where the async Clipboard API is unavailable
+ * (the caller falls back to a download).
+ */
+export async function copyPagePNG(
+  page: Page,
+  extra = '',
+  opts: RenderOptions = {},
+): Promise<void> {
+  const clip = navigator.clipboard as Clipboard | undefined;
+  const Item = (
+    globalThis as unknown as { ClipboardItem?: typeof ClipboardItem }
+  ).ClipboardItem;
+  if (!clip?.write || !Item)
+    throw new Error('clipboard image copy is not supported in this browser');
+  const blob = await svgToPngBlob(
+    pageToSVG(page, { ...opts, calm: true }, extra),
+    2,
+  );
+  await clip.write([new Item({ 'image/png': blob })]);
+}
+
+/**
+ * A cropped, selection-only Page: just the given nodes + the links whose both
+ * endpoints are in the selection, with the viewBox shrunk to their bounds
+ * (+padding) — the draw.io-style "export selection".
+ */
+export function selectionPage(
+  page: Page,
+  nodes: { id: string; x: number; y: number }[],
+  links: { from: string; to: string; waypoints?: { x: number; y: number }[] }[],
+  pad = 48,
+): Page {
+  if (nodes.length === 0) throw new Error('nothing selected');
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  const grow = (x: number, y: number, m = 0): void => {
+    minX = Math.min(minX, x - m);
+    minY = Math.min(minY, y - m);
+    maxX = Math.max(maxX, x + m);
+    maxY = Math.max(maxY, y + m);
+  };
+  for (const n of nodes) grow(n.x, n.y, 56); // node art + label allowance
+  for (const l of links) for (const w of l.waypoints ?? []) grow(w.x, w.y, 8);
+  const vb = `${Math.round(minX - pad)} ${Math.round(minY - pad)} ${Math.round(maxX - minX + pad * 2)} ${Math.round(maxY - minY + pad * 2)}`;
+  return {
+    ...page,
+    viewBox: vb,
+    nodes: nodes as Page['nodes'],
+    links: links as Page['links'],
+    anchors: [],
+    zones: [],
+    flowPaths: [],
+    policyMarkers: [],
+  };
 }

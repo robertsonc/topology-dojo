@@ -40,7 +40,16 @@ import {
   type DocSlot,
 } from './pages/persist.js';
 import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
-import { exportPagePNG, exportPageSVG } from './editor/export.js';
+import {
+  copyPagePNG,
+  downloadBlob,
+  exportPagePNG,
+  exportPageSVG,
+  pagesToPDFBlob,
+  pageToSVG,
+  selectionPage,
+} from './editor/export.js';
+import { exportFlipbookHTML } from './render/flipbook.js';
 import { legendSVG } from './editor/legend.js';
 import { captionSVG } from './editor/caption.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
@@ -118,6 +127,15 @@ app.innerHTML = `
       <div class="tgroup">
         <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
         <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
+        <select class="tbtn" id="fExport" title="More export formats" aria-label="More export formats">
+          <option value="">⤓ export…</option>
+          <option value="pdf-page">PDF — current frame</option>
+          <option value="pdf-all">PDF — all frames</option>
+          <option value="flipbook">Flipbook HTML — all frames</option>
+          <option value="copy-png">Copy PNG to clipboard</option>
+          <option value="svg-selection">SVG — selection only</option>
+          <option value="png-selection">PNG — selection only</option>
+        </select>
         <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
       </div>
       <input type="file" id="fInput" accept="application/json,.json" hidden />
@@ -754,6 +772,97 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
     legendSVG(doc, page) + captionSVG(page),
     { layers: doc.layers, emphasis: page.emphasis },
   ).catch(() => alert('PNG export failed.'));
+});
+/* More export formats: PDF (raster @2× through the same pipeline as PNG, so
+ * it always matches the canvas), the standalone flipbook HTML (same generator
+ * as the MCP tool — no fork), clipboard PNG, and selection-only crops. */
+const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
+function pageExtra(page: Page): string {
+  return legendSVG(doc, page) + captionSVG(page);
+}
+function pageOpts(page: Page): {
+  layers: typeof doc.layers;
+  emphasis?: string[];
+} {
+  return {
+    layers: doc.layers,
+    ...(page.emphasis ? { emphasis: page.emphasis } : {}),
+  };
+}
+/** The selection as a cropped standalone page, or null when nothing usable. */
+function selectionAsPage(): Page | null {
+  const sel = editor.selectionElements();
+  if (!sel || sel.nodes.length === 0) return null;
+  return selectionPage(doc.pages[current]!, sel.nodes, sel.links);
+}
+async function runExport(kind: string): Promise<void> {
+  const page = doc.pages[current]!;
+  switch (kind) {
+    case 'pdf-page': {
+      const blob = await pagesToPDFBlob([
+        { page, opts: pageOpts(page), extra: pageExtra(page) },
+      ]);
+      downloadBlob(`${exportBase()}.pdf`, blob);
+      return;
+    }
+    case 'pdf-all': {
+      const blob = await pagesToPDFBlob(
+        doc.pages.map((p) => ({
+          page: p,
+          opts: pageOpts(p),
+          extra: pageExtra(p),
+        })),
+      );
+      downloadBlob(
+        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.pdf`,
+        blob,
+      );
+      return;
+    }
+    case 'flipbook': {
+      const html = exportFlipbookHTML(doc, (d, i) => {
+        const p = d.pages[i]!;
+        return pageToSVG(
+          p,
+          { ...pageOpts(p), calm: editor.calm },
+          pageExtra(p),
+        );
+      });
+      downloadBlob(
+        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_flipbook.html`,
+        new Blob([html], { type: 'text/html' }),
+      );
+      return;
+    }
+    case 'copy-png':
+      await copyPagePNG(page, pageExtra(page), pageOpts(page));
+      return;
+    case 'svg-selection': {
+      const sp = selectionAsPage();
+      if (!sp) throw new Error('select one or more nodes first');
+      exportPageSVG(`${exportBase()}_selection.svg`, sp, {
+        calm: true,
+        layers: doc.layers,
+      });
+      return;
+    }
+    case 'png-selection': {
+      const sp = selectionAsPage();
+      if (!sp) throw new Error('select one or more nodes first');
+      await exportPagePNG(`${exportBase()}_selection.png`, sp, 2, '', {
+        layers: doc.layers,
+      });
+      return;
+    }
+  }
+}
+exportSel.addEventListener('change', () => {
+  const kind = exportSel.value;
+  exportSel.value = '';
+  if (!kind) return;
+  void runExport(kind).catch((err) =>
+    alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`),
+  );
 });
 /* New from a starter template. */
 const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
@@ -3720,6 +3829,18 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
       { label: 'Duplicate', run: () => editor.duplicateSelection() },
       { label: 'Copy', run: () => editor.copySelection() },
       {
+        label: 'Copy as image',
+        run: () => {
+          const sp = selectionAsPage();
+          if (!sp) return;
+          void copyPagePNG(sp, '', { layers: doc.layers }).catch((err) =>
+            alert(
+              `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+        },
+      },
+      {
         label: 'Copy format',
         run: () => editor.copyFormat(),
         disabled: !editor.canCopyFormat(),
@@ -3793,6 +3914,17 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
   return [
     { label: 'Paste', run: () => editor.paste(), disabled: !editor.canPaste() },
     { label: 'Select all', run: () => editor.selectAll() },
+    {
+      label: 'Copy frame as image',
+      run: () => {
+        const page = doc.pages[current]!;
+        void copyPagePNG(page, pageExtra(page), pageOpts(page)).catch((err) =>
+          alert(
+            `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      },
+    },
     { sep: true },
     { label: 'Tidy layout', run: () => editor.tidy() },
     { label: 'Balance layout', run: () => editor.balance() },
