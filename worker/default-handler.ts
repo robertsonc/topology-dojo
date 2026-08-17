@@ -31,6 +31,12 @@ import { handleWorkspaceApi } from './workspace-api.js';
 import { handleProfileApi } from './profile-api.js';
 import { handleAdminApi } from './admin-api.js';
 import { handleStagingFault, STAGING_FAULT_PATH } from './staging-fault.js';
+import {
+  SNAPSHOT_GET_LIMIT,
+  consumeFixedWindow,
+  snapshotClientIp,
+  snapshotRateLimitKey,
+} from '../src/mcp/rate-limit.js';
 
 const API_TOPOLOGY_PREFIX = '/api/topology/';
 
@@ -284,8 +290,60 @@ interface GitHubUser {
   name: string | null;
 }
 
+/**
+ * Per-IP quota on public snapshot GETs. Uses TOPOLOGY_KV (already on this
+ * path) with a short-TTL counter — no new Durable Object. Fail-open if the
+ * client IP is missing or KV throws, so a probe/blip cannot take the share
+ * API down. 429s are never cached (the successful snapshot is immutable).
+ */
+async function limitSnapshotGet(
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response | null> {
+  const ip = snapshotClientIp(request);
+  if (!ip) return null;
+  try {
+    const now = Date.now();
+    const key = snapshotRateLimitKey(ip, now);
+    const raw = await env.TOPOLOGY_KV.get(key);
+    const parsed = raw === null ? 0 : Number(raw);
+    const current =
+      Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+    const outcome = consumeFixedWindow(current, now, SNAPSHOT_GET_LIMIT);
+    if (!outcome.result.allowed) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil(outcome.result.retryAfterMs / 1000),
+      );
+      return new Response(
+        JSON.stringify({ error: 'rate_limited', retryAfterSeconds }),
+        {
+          status: 429,
+          headers: {
+            'content-type': 'application/json',
+            'cache-control': 'no-store',
+            'retry-after': String(retryAfterSeconds),
+          },
+        },
+      );
+    }
+    await env.TOPOLOGY_KV.put(key, String(outcome.next), {
+      expirationTtl: Math.ceil(SNAPSHOT_GET_LIMIT.windowMs / 1000) + 1,
+    });
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Serve a published snapshot's JSON from KV (the SPA fetches this for /v/:id). */
-async function serveSnapshot(id: string, env: WorkerEnv): Promise<Response> {
+async function serveSnapshot(
+  id: string,
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  const limited = await limitSnapshotGet(request, env);
+  if (limited) return limited;
   const json = await env.TOPOLOGY_KV.get(`doc:${id}`);
   if (!json) {
     return new Response(JSON.stringify({ error: 'not found' }), {
@@ -457,7 +515,7 @@ async function route(
     }
     const id = pathname.slice(API_TOPOLOGY_PREFIX.length);
     if (!id) return new Response('Not Found\n', { status: 404 });
-    return serveSnapshot(id, env);
+    return serveSnapshot(id, request, env);
   }
 
   // Gate the editor: a top-level navigation to the app needs a signed-in

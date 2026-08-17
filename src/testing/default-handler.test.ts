@@ -139,6 +139,38 @@ describe('GET /api/topology/:id', () => {
     expect(res.status).toBe(404);
     await expect(res.json()).resolves.toEqual({ error: 'not found' });
   });
+
+  it('429s a public snapshot GET after the per-IP window is exhausted', async () => {
+    const kv = await handle.miniflare.getKVNamespace('TOPOLOGY_KV');
+    await kv.put('doc:ratelimit', JSON.stringify({ title: 'RL' }));
+    const headers = { 'CF-Connecting-IP': '198.51.100.77' };
+    let limited: Awaited<ReturnType<typeof handle.fetch>> | undefined;
+    for (let i = 0; i < 61; i++) {
+      const res = await handle.fetch('/api/topology/ratelimit', { headers });
+      if (res.status === 429) {
+        limited = res;
+        break;
+      }
+      expect(res.status).toBe(200);
+      await res.arrayBuffer();
+    }
+    expect(limited?.status).toBe(429);
+    expect(limited?.headers.get('retry-after')).toMatch(/^\d+$/);
+    expect(limited?.headers.get('cache-control')).toContain('no-store');
+    await expect(limited!.json()).resolves.toMatchObject({
+      error: 'rate_limited',
+    });
+  });
+
+  it("does not let one IP's quota block a different client", async () => {
+    const kv = await handle.miniflare.getKVNamespace('TOPOLOGY_KV');
+    await kv.put('doc:other-ip', JSON.stringify({ title: 'Other' }));
+    const res = await handle.fetch('/api/topology/other-ip', {
+      headers: { 'CF-Connecting-IP': '203.0.113.10' },
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ title: 'Other' });
+  });
 });
 
 describe('GET /api/me', () => {

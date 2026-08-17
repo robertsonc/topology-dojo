@@ -93,7 +93,8 @@ does not renew the previous URL. Snapshots are public to anyone with the URL,
 may be cached for up to 24 hours, and currently have no revoke/unpublish
 operation; publish only content suitable for that exposure. This tool is
 **remote-only** — the local stdio server has no KV/origin, so it isn't
-registered there.
+registered there. Remote publishes are also rate-limited per authenticated
+user (see [Rate limits and export size](#rate-limits-and-export-size)).
 
 One-time setup for the isolated staging environment (use the environment's
 actual binding names and record the generated ids in `env.staging`):
@@ -299,3 +300,32 @@ validate/tidy/balance and **before** `render_svg` / `share_topology` /
 
 The tool handlers live in `tools.ts` (pure, unit-tested in `tools.test.ts`);
 `server.ts` registers them with the SDK and maps results to MCP text content.
+
+## Rate limits and export size
+
+Remote (Cloudflare) deployments enforce application-level quotas so a retry
+loop cannot amplify Durable Object / KV cost or stuff an agent context with
+unbounded SVG/HTML. The local stdio server has no per-user identity and does
+not apply the request quotas; it still enforces the export size caps. These
+are the request-rate complement to the coordinator's batch (250 ops / 512 KiB)
+and page-size limits.
+
+On a rate-limited tool call the handler returns `isError` with a message of
+the form `rate limited (<bucket>: <n> per <window>s). Retry after <seconds>s.`
+Wait at least that many seconds before retrying the same class of call.
+Prefer `edit_topology` batches over per-element `add_*` tools — a batch is
+one quota unit.
+
+| Surface                                                                                                                                                          | Limit       | Scope                                               | Exceeded                                                                           |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Mutating MCP tools (authoring writes, `propose_workspace_changes`, `apply_workspace_changes`, `create_checkpoint`, `create_workspace`, `build_flow_topology`, …) | 120 / 60s   | Authenticated GitHub user (registry Durable Object) | Tool error; retry after the stated delay                                           |
+| `share_topology`                                                                                                                                                 | 8 / 300s    | Authenticated GitHub user                           | Tool error; retry after the stated delay                                           |
+| `render_svg`                                                                                                                                                     | 2 MiB UTF-8 | Per response                                        | Tool error — do not retry the same page; reduce density or `inspect_render` first  |
+| `export_flipbook`                                                                                                                                                | 6 MiB UTF-8 | Per response                                        | Tool error — do not retry the same document; `render_svg` individual pages instead |
+| Public `GET /api/topology/:id`                                                                                                                                   | 60 / 60s    | Client IP (`CF-Connecting-IP`)                      | HTTP 429 + `Retry-After`; response is not cached                                   |
+
+Read-only MCP tools (`get_topology`, `inspect_render`, `validate_topology`,
+workspace/profile reads, live-data inventory, …) are not request-quota'd.
+Export tools are bounded by payload size rather than call rate so a single
+oversized render fails closed instead of streaming a multi-megabyte string
+into the model context.
