@@ -156,7 +156,10 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   /** Load the user's documents from the registry into the in-memory store. */
   private async rehydrate(): Promise<void> {
     try {
-      const { failed } = await rehydrateStore(this.store, await this.registry());
+      const { failed } = await rehydrateStore(
+        this.store,
+        await this.registry(),
+      );
       if (failed.length)
         console.error(
           `topology rehydrate: ${failed.length} unparseable doc(s) left intact`,

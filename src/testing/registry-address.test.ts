@@ -104,7 +104,10 @@ describe('lazy user: → user-id: draft migration', () => {
     await call(
       'seed-current',
       { uid: '2', login: 'bob', id: 't-both' },
-      { method: 'POST', body: JSON.stringify({ ...DRAFT, title: 'canonical' }) },
+      {
+        method: 'POST',
+        body: JSON.stringify({ ...DRAFT, title: 'canonical' }),
+      },
     );
     await call(
       'seed-legacy',
