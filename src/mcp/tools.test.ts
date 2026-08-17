@@ -939,6 +939,7 @@ describe('MCP tools', () => {
 
   it('omits share_topology unless a publish dep is provided', () => {
     expect(tools.some((t) => t.name === 'share_topology')).toBe(false);
+    expect(tools.some((t) => t.name === 'unpublish_topology')).toBe(false);
   });
 
   it('validates tool arguments at runtime (parseToolArgs)', () => {
@@ -1182,6 +1183,8 @@ describe('MCP tools', () => {
       },
     });
     const share = withShare.find((t) => t.name === 'share_topology')!;
+    expect(share.description).toMatch(/this link is public/i);
+    expect(share.description).toMatch(/anyone with the URL/i);
     const { id } = call('create_topology', { title: 'Shared' }) as {
       id: string;
     };
@@ -1195,6 +1198,35 @@ describe('MCP tools', () => {
     // It snapshots the live stored document (with the node just added).
     expect(published?.title).toBe('Shared');
     expect(published?.pages[0]!.nodes[0]!.id).toBe('a');
+  });
+
+  it('unpublish_topology revokes a share id through the unpublish dep', async () => {
+    const revoked: string[] = [];
+    const withShare = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      publishTopology: async () => ({
+        id: 'abc123',
+        url: 'https://example.com/v/abc123',
+      }),
+      unpublishTopology: async (shareId) => {
+        revoked.push(shareId);
+        return { revoked: true };
+      },
+    });
+    const unpublish = withShare.find((t) => t.name === 'unpublish_topology')!;
+    expect(unpublish.description).toMatch(/this link is public/i);
+    expect(unpublish.description).toMatch(/only the publisher/i);
+    const readme = readFileSync(
+      fileURLToPath(new URL('./README.md', import.meta.url)),
+      'utf8',
+    );
+    expect(readme).toContain('`unpublish_topology`');
+    expect(readme).toMatch(/this link is public/i);
+    const res = (await unpublish.handler({ shareId: 'abc123' })) as {
+      revoked: true;
+    };
+    expect(res).toEqual({ revoked: true });
+    expect(revoked).toEqual(['abc123']);
   });
 
   it('sets playback timing and exports a self-playing flipbook', () => {
