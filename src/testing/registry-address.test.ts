@@ -109,13 +109,13 @@ describe('lazy user: → user-id: draft migration', () => {
   it('copies login-keyed drafts onto the uid-keyed registry and keeps the source', async () => {
     const seed = await call(
       'seed-legacy',
-      { uid: '1', login: 'alice', id: 't-old' },
+      { uid: '1', login: 'alex', id: 't-old' },
       { method: 'POST', body: JSON.stringify(DRAFT) },
     );
     expect(seed.status).toBe(200);
-    expect(seed.body.name).toBe('user:alice');
+    expect(seed.body.name).toBe('user:alex');
 
-    const opened = await call('open', { uid: '1', login: 'alice' });
+    const opened = await call('open', { uid: '1', login: 'alex' });
     expect(opened.status).toBe(200);
     expect(opened.body.ids).toEqual(['t-old']);
     expect(opened.body.current).toEqual(['t-old']);
