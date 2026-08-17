@@ -67,6 +67,11 @@ export const DISPLAY_FIELD_LIMITS: Readonly<
   title: { max: TEXT_LIMITS.title },
   name: { max: TEXT_LIMITS.name },
   logoUrl: { max: TEXT_LIMITS.url },
+  // Element hyperlinks + hover tooltips (the gap-closing batch). NOTE:
+  // `imageHref` is deliberately absent — truncating a data URI would corrupt
+  // the image silently; validation errors above 256KB instead.
+  href: { max: TEXT_LIMITS.url },
+  tooltip: { max: TEXT_LIMITS.caption },
 };
 
 /** C0/C1 controls except TAB / LF / CR (those are handled as whitespace). */

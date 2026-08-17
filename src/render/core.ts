@@ -87,6 +87,9 @@ export function renderPageWithEngine(
 
   const topo = new E({ viewBox: page.viewBox });
   if (opts.calm) topo.reducedMotion = true;
+  // Line jumps at link crossings — the page-level setting, applied at render
+  // time (same as the browser facade, so exports match the canvas).
+  (topo as unknown as { lineJumps?: string }).lineJumps = page.lineJumps;
 
   // The layer view: hidden layers dropped, the rest stacked bottom → top
   // (insertion order is the engine's paint order within each collection).

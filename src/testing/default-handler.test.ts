@@ -130,6 +130,8 @@ describe('GET /api/topology/:id', () => {
     const res = await handle.fetch('/api/topology/share123');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/json');
+    // Revocation-compatible caching (finding M20): NEVER immutable — a
+    // revoked link must stop resolving within a bounded cache window.
     expect(res.headers.get('cache-control')).toBe('public, max-age=60');
     expect(res.headers.get('cache-control')).not.toContain('immutable');
     await expect(res.json()).resolves.toEqual(doc);

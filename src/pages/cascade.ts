@@ -27,6 +27,8 @@ export interface EndpointCascade {
   zoneMemberships: number;
   waypoints: number;
   hops: number;
+  /** Callout notes whose leader-line `target` pointed at a removed element. */
+  calloutTargets: number;
   /** Flow paths dropped for falling under two waypoints. */
   droppedFlowPathIds: string[];
 }
@@ -54,9 +56,20 @@ export function cascadeEndpointRemoval(
     zoneMemberships: 0,
     waypoints: 0,
     hops: 0,
+    calloutTargets: 0,
     droppedFlowPathIds: [],
   };
   if (removed.size === 0) return out;
+
+  // A callout whose leader-line target disappears keeps the note but loses
+  // the pointer (same spirit as a marker losing its flowPathId).
+  for (const n of page.nodes) {
+    const cfg = n as { type?: string; target?: string };
+    if (cfg.type === 'callout' && cfg.target && removed.has(cfg.target)) {
+      delete cfg.target;
+      out.calloutTargets++;
+    }
+  }
 
   const droppedLinkIds = new Set<string>();
   out.links = pruneInPlace(page.links, (l) => {

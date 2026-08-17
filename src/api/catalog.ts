@@ -11,7 +11,11 @@ import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import { POLICY_MARKER_TYPES } from './markers.js';
 import { LAYER_KINDS } from './layers.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
-import { STOCK_NODE_LABELS, STOCK_NODE_SPECS } from '../nodes/stock.js';
+import {
+  STOCK_NODE_LABELS,
+  STOCK_NODE_META,
+  STOCK_NODE_SPECS,
+} from '../nodes/stock.js';
 import { TEXT_LIMITS } from './text.js';
 
 export type FieldKind =
@@ -97,6 +101,23 @@ const SOURCE_FIELD: FieldSpec = {
   label: 'Source ref',
   kind: 'record',
 };
+/**
+ * Nodes, links, and zones can carry a hyperlink (rendered as a clickable
+ * `<a>` in SVG exports and the public viewer; Ctrl/Cmd+click in the editor)
+ * and a hover tooltip (an SVG `<title>`). Only http(s) URLs are rendered.
+ */
+const HREF_FIELD: FieldSpec = {
+  key: 'href',
+  label: 'Link URL',
+  kind: 'string',
+  max: TEXT_LIMITS.url,
+};
+const TOOLTIP_FIELD: FieldSpec = {
+  key: 'tooltip',
+  label: 'Tooltip',
+  kind: 'string',
+  max: TEXT_LIMITS.caption,
+};
 const NODE_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
   {
@@ -116,6 +137,22 @@ const NODE_COMMON: FieldSpec[] = [
     kind: 'record',
     max: TEXT_LIMITS.metaValue,
   },
+  {
+    key: 'status',
+    label: 'Status',
+    kind: 'enum',
+    options: ['', 'ok', 'warn', 'down', 'maintenance', 'unknown'],
+    optionLabels: {
+      '': 'None (no indicator)',
+      ok: 'OK / up',
+      warn: 'Warning / degraded',
+      down: 'Down',
+      maintenance: 'Maintenance',
+      unknown: 'Unknown',
+    },
+  },
+  HREF_FIELD,
+  TOOLTIP_FIELD,
   LAYER_FIELD,
   SOURCE_FIELD,
 ];
@@ -198,6 +235,32 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
     },
     { key: 'padding', label: 'Padding', kind: 'number' },
   ],
+  image: [
+    {
+      key: 'imageHref',
+      label: 'Image source (https or data URI)',
+      kind: 'string',
+      required: true,
+      // Inline data URIs are legitimately huge; validation errors above
+      // 256KB (the workspace page-size guard), so advertise that cap.
+      max: 256 * 1024,
+    },
+    { key: 'imageW', label: 'Width', kind: 'number' },
+    { key: 'imageH', label: 'Height', kind: 'number' },
+    {
+      key: 'imageFit',
+      label: 'Fit',
+      kind: 'enum',
+      options: ['contain', 'cover'],
+    },
+    { key: 'cornerRadius', label: 'Corner radius', kind: 'number' },
+  ],
+  callout: [
+    { key: 'target', label: 'Points at (element id)', kind: 'ref' },
+    { key: 'width', label: 'Note width (wraps text)', kind: 'number' },
+    { key: 'fontSize', label: 'Font size', kind: 'number' },
+    { key: 'padding', label: 'Padding', kind: 'number' },
+  ],
 };
 
 /** Per-shape extra fields beyond the shared shape set (see NODE_CATALOG). */
@@ -229,6 +292,8 @@ const NODE_CATEGORY: Record<string, string> = {
   database: 'Compute',
   host: 'Endpoint',
   text: 'Annotation',
+  image: 'Annotation',
+  callout: 'Annotation',
 };
 
 /** Search aliases per built-in type (Phase 4) — abbreviations / synonyms. */
@@ -249,6 +314,8 @@ const NODE_KEYWORDS: Record<string, string[]> = {
   database: ['db', 'data', 'sql', 'storage'],
   host: ['user', 'endpoint', 'pc', 'laptop', 'client'],
   text: ['label', 'note', 'annotation', 'caption'],
+  image: ['picture', 'photo', 'logo', 'screenshot', 'png', 'jpg', 'diagram'],
+  callout: ['note', 'sticky', 'comment', 'remark', 'annotation', 'postit'],
 };
 
 function titleCase(s: string): string {
@@ -277,6 +344,8 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
           ...(SHAPE_EXTRAS[type] ?? []),
           { key: 'locked', label: 'Locked', kind: 'boolean' as const },
+          HREF_FIELD,
+          TOOLTIP_FIELD,
           LAYER_FIELD,
           SOURCE_FIELD,
         ]
@@ -400,6 +469,8 @@ const LINK_COMMON: FieldSpec[] = [
     animation: true,
   },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
+  HREF_FIELD,
+  TOOLTIP_FIELD,
   LAYER_FIELD,
   SOURCE_FIELD,
 ];
@@ -489,6 +560,8 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
         options: ['left', 'center', 'right'],
       },
       { key: 'parentZone', label: 'Parent zone', kind: 'ref' },
+      HREF_FIELD,
+      TOOLTIP_FIELD,
       LAYER_FIELD,
       SOURCE_FIELD,
     ],
@@ -585,9 +658,12 @@ const STOCK_NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
     {
       type: spec.typeName,
       label: STOCK_NODE_LABELS[spec.typeName] ?? spec.typeName,
-      category: 'Cloud',
+      category: STOCK_NODE_META[spec.typeName]?.category ?? 'Cloud',
       custom: false,
       fields: [...POSITION, ...NODE_COMMON],
+      ...(STOCK_NODE_META[spec.typeName]?.keywords
+        ? { keywords: STOCK_NODE_META[spec.typeName]!.keywords }
+        : {}),
     } satisfies NodeTypeInfo,
   ]),
 );

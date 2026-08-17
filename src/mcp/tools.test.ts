@@ -514,6 +514,50 @@ describe('MCP tools', () => {
     });
   });
 
+  describe('import_topology Mermaid + CSV support', () => {
+    it('format "auto" sniffs a Mermaid flowchart string and converts it', () => {
+      const result = call('import_topology', {
+        json: 'flowchart LR\n  a[User] -->|https| b[(DB)]',
+      }) as {
+        id: string;
+        pages: number;
+        converted?: { from: string; warnings: string[] };
+      };
+      expect(result.converted?.from).toBe('mermaid');
+      const doc = call('get_topology', {
+        topologyId: result.id,
+      }) as TopologyDocument;
+      expect(doc.pages[0]!.nodes).toHaveLength(2);
+      expect(doc.pages[0]!.links[0]).toMatchObject({ label: 'https' });
+      expect(doc.pages[0]!.nodes.find((n) => n.id === 'b')!.type).toBe(
+        'database',
+      );
+    });
+
+    it('format "auto" sniffs CSV and converts it', () => {
+      const result = call('import_topology', {
+        json: '[nodes]\nid,type\ncore,router\n[links]\nfrom,to\ncore,edge',
+      }) as { id: string; converted?: { from: string } };
+      expect(result.converted?.from).toBe('csv');
+      const doc = call('get_topology', {
+        topologyId: result.id,
+      }) as TopologyDocument;
+      expect(doc.pages[0]!.nodes).toHaveLength(2);
+    });
+
+    it('forced "mermaid" on non-mermaid input fails with a typed error', () => {
+      expect(() =>
+        call('import_topology', { json: 'from,to\na,b', format: 'mermaid' }),
+      ).toThrow(/mermaid import failed/);
+    });
+
+    it('forced "csv" on an object input fails clearly', () => {
+      expect(() =>
+        call('import_topology', { json: { pages: [] }, format: 'csv' }),
+      ).toThrow(/needs a string input/);
+    });
+  });
+
   it('renders the full annotation layer via tools', () => {
     const { id } = call('create_topology', {}) as { id: string };
     call('add_node', {

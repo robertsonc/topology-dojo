@@ -19,13 +19,7 @@ import {
   openOwnerRegistry,
   type RegistryIdentity,
 } from '../src/mcp/registry-address.js';
-import { serializeDoc } from '../src/pages/persist.js';
 import type { TopologyDocument } from '../src/pages/model.js';
-import {
-  mintShareId,
-  putShareSnapshot,
-  revokeShareSnapshot,
-} from '../src/share/snapshot.js';
 import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
 import type { WorkerEnv } from './env.js';
@@ -45,6 +39,7 @@ import {
   rateLimitBucketForTool,
   type RateLimitResult,
 } from '../src/mcp/rate-limit.js';
+import { listShares, publishSnapshot, revokeShare } from './share.js';
 
 /**
  * Tools that do not mutate the legacy in-memory TopologyStore. Workspace write
@@ -139,6 +134,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
         renderDocument,
         publishTopology: (doc: TopologyDocument) => this.publish(doc),
         unpublishTopology: (shareId: string) => this.unpublish(shareId),
+        listShares: () => listShares(this.env, this.ownerId()),
         ...(provider ? { provider } : {}),
         ...(workspace ? { workspace } : {}),
         ...(profile ? { profile } : {}),
@@ -322,28 +318,21 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     return String(id);
   }
 
-  /** Store a document snapshot in KV and return the link that opens it. */
+  /**
+   * Store a document snapshot in KV and return the link that opens it —
+   * through the shared publish path (`worker/share.ts`), so the snapshot
+   * carries owner metadata (the canonical revocation check) AND lands in the
+   * owner's listing index like a browser-published one.
+   */
   private async publish(
     doc: TopologyDocument,
   ): Promise<{ id: string; url: string }> {
-    const id = mintShareId();
-    await putShareSnapshot(
-      this.env.TOPOLOGY_KV,
-      id,
-      serializeDoc(doc),
-      this.ownerId(),
-    );
-    const base = (this.env.PUBLIC_BASE_URL ?? '').replace(/\/$/, '');
-    return { id, url: `${base}/v/${id}` };
+    return publishSnapshot(this.env, this.ownerId(), doc);
   }
 
-  /** Owner-only delete of a published snapshot. */
+  /** Owner-only delete of a published snapshot (prunes the listing index). */
   private async unpublish(shareId: string): Promise<{ revoked: true }> {
-    const result = await revokeShareSnapshot(
-      this.env.TOPOLOGY_KV,
-      shareId,
-      this.ownerId(),
-    );
+    const result = await revokeShare(this.env, this.ownerId(), shareId);
     if (result === 'not_found')
       throw new Error(`share "${shareId}" was not found (it may have expired)`);
     if (result === 'forbidden')

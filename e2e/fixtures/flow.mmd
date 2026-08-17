@@ -1,0 +1,8 @@
+flowchart LR
+  user[User] -->|TLS| gw(Gateway)
+  gw --> app[App]
+  app --> db[(DB)]
+  subgraph dc [Data centre]
+    app
+    db
+  end

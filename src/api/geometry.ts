@@ -97,6 +97,30 @@ export function nodeHalf(node: NodeConfig): { w: number; h: number } {
       width ?? Math.max(50, label.length * fontSize * 0.6 + padding * 2);
     return { w: estW / 2, h: (blockH + padding * 2) / 2 };
   }
+  if (node.type === 'callout') {
+    // Mirror the engine's renderCallout box: wrapped label (+sublabel) block
+    // plus padding, at the declared width.
+    const fontSize = posNum(node.fontSize) ?? 12;
+    const padding = posNum(node.padding) ?? 10;
+    const width = Math.max(60, posNum(node.width) ?? 160);
+    const innerW = Math.max(8, width - padding * 2);
+    const label =
+      typeof node.label === 'string' && node.label ? node.label : 'Note';
+    const lines = wrappedLines(label, innerW, fontSize);
+    const subSize = Math.max(7, fontSize * 0.8);
+    const sublabel = typeof node.sublabel === 'string' ? node.sublabel : '';
+    const subLines = sublabel ? wrappedLines(sublabel, innerW, subSize) : 0;
+    const blockH =
+      lines * fontSize * 1.35 +
+      (subLines ? subLines * subSize * 1.35 + subSize * 0.4 : 0);
+    return { w: width / 2, h: (blockH + padding * 2) / 2 };
+  }
+  if (node.type === 'image') {
+    // Mirror the engine's renderImage box (default 96×72, min 16).
+    const w = Math.max(16, posNum(node.imageW) ?? 96);
+    const h = Math.max(16, posNum(node.imageH) ?? 72);
+    return { w: w / 2, h: h / 2 };
+  }
   if (node.type.startsWith('shape:')) {
     // Honor explicit sizing (shapeSize, or shapeWidth/shapeHeight where the
     // renderer supports them) so bounds track the drawn shape.

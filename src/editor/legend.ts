@@ -45,6 +45,20 @@ export function buildLegendItems(
     const label = getNodeType(n.type, doc.customNodes)?.label ?? n.type;
     push(`node:${n.type}:${color}`, { color, label, shape: 'dot' });
   }
+  // Node statuses in use → one LED entry per distinct status.
+  const STATUS_COLORS: Record<string, string> = {
+    ok: '#01a982',
+    warn: '#e0a44a',
+    down: '#fc6161',
+    maintenance: '#65aef9',
+    unknown: '#7d8a92',
+  };
+  for (const n of page.nodes) {
+    const st = (n as { status?: string }).status;
+    const color = st ? STATUS_COLORS[st] : undefined;
+    if (st && color)
+      push(`status:${st}`, { color, label: `status: ${st}`, shape: 'dot' });
+  }
   // Policy markers in use → one entry per (type, colour).
   for (const m of page.policyMarkers ?? []) {
     const mm = m as { type?: string; color?: string };

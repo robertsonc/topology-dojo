@@ -83,6 +83,31 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     if (r.fetchedAt !== undefined && typeof r.fetchedAt !== 'string')
       warn(where, 'source.fetchedAt should be an ISO 8601 string');
   };
+  // Hyperlink + tooltip (nodes/links/zones). The renderer only ever emits
+  // http(s) hrefs, so anything else is dead weight worth flagging — and a
+  // `javascript:` URL is likely an injection attempt, worth an error.
+  const checkHrefTip = (
+    cfg: { href?: unknown; tooltip?: unknown },
+    where: string,
+  ): void => {
+    const h = cfg.href;
+    if (h !== undefined) {
+      if (typeof h !== 'string') warn(where, 'href must be a string URL');
+      else if (/^\s*javascript:/i.test(h))
+        err(where, 'href must not use the javascript: scheme');
+      else if (!/^https?:\/\//i.test(h.trim()))
+        warn(
+          where,
+          `href "${h.slice(0, 60)}" is not an http(s) URL — it will not render as a link`,
+        );
+    }
+    const t = cfg.tooltip;
+    if (t !== undefined) {
+      if (typeof t !== 'string') warn(where, 'tooltip must be a string');
+      else if (t.length > 500)
+        warn(where, `tooltip is ${t.length} chars — keep it under 500`);
+    }
+  };
 
   const pageIds = new Set<string>();
   doc.pages.forEach((page, pi) => {
@@ -115,6 +140,12 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       page.transition !== 'fade'
     )
       warn(at, `transition "${String(page.transition)}" not in [cut, fade]`);
+    if (
+      page.lineJumps !== undefined &&
+      page.lineJumps !== 'arc' &&
+      page.lineJumps !== 'gap'
+    )
+      warn(at, `lineJumps "${String(page.lineJumps)}" not in [arc, gap]`);
 
     // Element ids unique within the page; collect endpoints (nodes + anchors).
     const ids = new Set<string>();
@@ -155,6 +186,35 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         );
       checkLayer(n, `${at} node "${n.id}"`);
       checkSource(n, `${at} node "${n.id}"`);
+      checkHrefTip(n as Record<string, unknown>, `${at} node "${n.id}"`);
+      // Image nodes: the source must be https or an inline data:image/*, and
+      // an inline image must stay well under the workspace per-page cap.
+      if (n.type === 'image') {
+        const where = `${at} node "${n.id}"`;
+        const src = (n as Record<string, unknown>).imageHref;
+        if (src === undefined)
+          warn(where, 'image node has no imageHref — it renders a placeholder');
+        else if (typeof src !== 'string')
+          warn(where, 'imageHref must be a string (https URL or data URI)');
+        else if (
+          !/^https:\/\//i.test(src.trim()) &&
+          !/^data:image\/(png|jpe?g|gif|webp|svg\+xml)[;,]/i.test(src.trim())
+        )
+          warn(
+            where,
+            'imageHref must be an https:// URL or a data:image/* URI — anything else renders a placeholder',
+          );
+        else if (src.length > 256 * 1024)
+          err(
+            where,
+            `inline image is ${Math.round(src.length / 1024)}KB — keep data URIs under 256KB (page size cap)`,
+          );
+        for (const k of ['imageW', 'imageH'] as const) {
+          const v = (n as Record<string, unknown>)[k];
+          if (v !== undefined && (typeof v !== 'number' || !(v > 0)))
+            warn(where, `${k} must be a positive number`);
+        }
+      }
     }
     const anchorAt = new Map<string, string>();
     for (const a of page.anchors) {
@@ -184,6 +244,16 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `${at} anchor "${a.id}"`,
           'orphan anchor — no link or flow path references it',
         );
+    // A callout's leader-line target must reference a present node/anchor.
+    for (const n of page.nodes) {
+      const cfg = n as { type?: string; target?: unknown };
+      if (cfg.type !== 'callout' || cfg.target === undefined) continue;
+      if (typeof cfg.target !== 'string' || !endpoints.has(cfg.target))
+        warn(
+          `${at} node "${n.id}"`,
+          `callout target "${String(cfg.target)}" references no node/anchor on this page`,
+        );
+    }
     // Network-aware lint (C.1): a node that nothing touches. Only flag on a page
     // that *has* links (a pure inventory/legend frame is fine), and count zone
     // membership and policy markers as "used" to avoid noise.
@@ -192,8 +262,11 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       for (const z of page.zones ?? [])
         for (const nId of z.nodes ?? []) usedNodes.add(nId);
       for (const m of page.policyMarkers ?? []) usedNodes.add(m.nodeId);
+      // Annotation-ish nodes (notes, pictures, free text) are legitimately
+      // unwired — never flag them as unconnected.
+      const annotationTypes = new Set(['text', 'image', 'callout']);
       for (const n of page.nodes)
-        if (!usedNodes.has(n.id))
+        if (!usedNodes.has(n.id) && !annotationTypes.has(n.type))
           warn(
             `${at} node "${n.id}"`,
             'unconnected node — no link, flow, zone, or marker references it',
@@ -225,6 +298,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         );
       checkLayer(l, `${at} link "${l.id}"`);
       checkSource(l, `${at} link "${l.id}"`);
+      checkHrefTip(l as Record<string, unknown>, `${at} link "${l.id}"`);
     }
 
     // ── Annotation layer: zones, flow paths, policy markers ──
@@ -244,6 +318,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
         warn(where, `parentZone references missing zone "${z.parentZone}"`);
       checkLayer(z, where);
       checkSource(z, where);
+      checkHrefTip(z as unknown as Record<string, unknown>, where);
       checkEnums(
         z as unknown as Record<string, unknown>,
         getAnnotationType('zone')?.fields,

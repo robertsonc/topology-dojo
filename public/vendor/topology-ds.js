@@ -13,6 +13,140 @@ function _esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/**
+ * Wrap an element's rendered art with its optional hover tooltip (`tooltip` →
+ * an SVG `<title>` inside the group) and hyperlink (`href` → an `<a>` around
+ * it, so exported SVG / the public viewer are clickable documentation).
+ * Only http(s) URLs are ever emitted — any other scheme is ignored, so a
+ * document field can never inject a scriptable URL into the rendered SVG.
+ */
+/* ── Line jumps (crossing hops) ──────────────────────────────────────
+   When a page opts in (`lineJumps: 'arc' | 'gap'`), a standard `line` link
+   hops over links that appear EARLIER in the page's draw order wherever
+   their straight segments cross — the classic "these wires aren't joined"
+   notation. Applies to straight-segment geometry (M/L paths); curved
+   geometry passes through untouched. */
+
+/** Parse a path `d` made of only M/L commands into points, else null. */
+function _parsePolyPath(d) {
+  if (!d || /[^ML\d\s.,eE+-]/.test(d)) return null;
+  const pts = [];
+  const re = /([ML])\s*(-?[\d.eE+]+)\s*,?\s*(-?[\d.eE+]+)/g;
+  let m;
+  let consumed = 0;
+  while ((m = re.exec(d)) !== null) {
+    pts.push({ x: Number(m[2]), y: Number(m[3]) });
+    consumed = re.lastIndex;
+  }
+  if (pts.length < 2 || d.slice(consumed).trim() !== '') return null;
+  return pts;
+}
+
+/** Proper interior crossing of segments AB × CD → {t} along AB, else null. */
+function _segCross(a, b, c, d) {
+  const rx = b.x - a.x, ry = b.y - a.y;
+  const sx = d.x - c.x, sy = d.y - c.y;
+  const denom = rx * sy - ry * sx;
+  if (Math.abs(denom) < 1e-9) return null; // parallel
+  const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / denom;
+  const u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / denom;
+  // Strictly interior on both segments (endpoints touching ≠ crossing).
+  if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) return null;
+  return { t };
+}
+
+/** Rebuild an M/L polyline path with jump arcs/gaps at crossings of `segs`. */
+function _polyPathWithJumps(pts, segs, mode, r = 6) {
+  let d = `M${pts[0].x},${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < r * 3) {
+      d += ` L${b.x},${b.y}`;
+      continue;
+    }
+    const hits = [];
+    for (const s of segs) {
+      const hit = _segCross(a, b, s.a, s.b);
+      if (hit) hits.push(hit.t);
+    }
+    hits.sort((p, q) => p - q);
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    let lastT = 0;
+    for (const t of hits) {
+      const cx = a.x + (b.x - a.x) * t, cy = a.y + (b.y - a.y) * t;
+      // Skip a hop that would overlap the previous one or a segment end.
+      if (t * len - lastT * len < r * 2 || t * len < r || (1 - t) * len < r)
+        continue;
+      const inX = cx - ux * r, inY = cy - uy * r;
+      const outX = cx + ux * r, outY = cy + uy * r;
+      d += ` L${round2(inX)},${round2(inY)}`;
+      d +=
+        mode === 'gap'
+          ? ` M${round2(outX)},${round2(outY)}`
+          : ` A${r},${r} 0 0 1 ${round2(outX)},${round2(outY)}`;
+      lastT = t;
+    }
+    d += ` L${b.x},${b.y}`;
+  }
+  return d;
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+/* ── Node status LEDs ────────────────────────────────────────────────
+   `status: 'ok' | 'warn' | 'down' | 'maintenance' | 'unknown'` renders a
+   coloured LED at the node's top-right corner — the network-map health
+   notation. Purely visual; absent = no indicator. */
+const _STATUS_COLORS = {
+  ok: '#01a982',
+  warn: '#e0a44a',
+  down: '#fc6161',
+  maintenance: '#65aef9',
+  unknown: '#7d8a92',
+};
+
+/** Approximate half-extents per node type (mirrors api/geometry HALF). */
+const _STATUS_HALF = {
+  ec: [28, 18], switch: [22, 8], switchEnterprise: [44, 16], cloud: [55, 32],
+  host: [14, 18], connector: [16, 16], apps: [26, 22], saas: [18, 18],
+  server: [14, 22], router: [18, 18], firewall: [20, 18], database: [16, 20],
+  idcard: [97, 37], ap: [18, 16], text: [40, 10],
+};
+
+function _renderStatusDot(cfg) {
+  const c = _STATUS_COLORS[cfg.status];
+  if (!c) return '';
+  let hw = 20, hh = 20;
+  if (cfg.type === 'image') {
+    hw = Math.max(16, Number(cfg.imageW) || 96) / 2;
+    hh = Math.max(16, Number(cfg.imageH) || 72) / 2;
+  } else if (_STATUS_HALF[cfg.type]) {
+    [hw, hh] = _STATUS_HALF[cfg.type];
+  }
+  const x = cfg.x + hw - 1, y = cfg.y - hh + 1;
+  // Down gets an attention ring; everything else is a plain LED.
+  const ring = cfg.status === 'down'
+    ? `<circle cx="${x}" cy="${y}" r="7" fill="none" stroke="${c}" stroke-width="1" opacity=".55"/>`
+    : '';
+  return `<g data-tds-status="${cfg.status}">${ring}<circle cx="${x}" cy="${y}" r="4" fill="${c}" stroke="#0b0e14" stroke-width="1.2"/></g>`;
+}
+
+function _hrefTipWrap(cfg, gOpen, inner, gClose) {
+  const tip =
+    cfg && typeof cfg.tooltip === 'string' && cfg.tooltip
+      ? `<title>${_esc(cfg.tooltip)}</title>`
+      : '';
+  let out = gOpen + tip + inner + gClose;
+  const href = cfg && typeof cfg.href === 'string' ? cfg.href.trim() : '';
+  if (/^https?:\/\//i.test(href)) {
+    out = `<a href="${_esc(href)}" target="_blank" rel="noopener">${out}</a>`;
+  }
+  return out;
+}
+
 class TopologyDesigner {
 
   /* ── Constructor ── */
@@ -825,14 +959,24 @@ class TopologyDesigner {
         nodeCfg._resolvedSpans = nodeCfg.spans.map(id => this._pos(id));
       }
 
+      // Resolve a callout's leader-line target the same way (known ids only —
+      // _pos falls back to a default point for unknown ids, which would draw
+      // a leader to nowhere).
+      if (nodeCfg.type === 'callout') {
+        nodeCfg._targetPos =
+          nodeCfg.target && (this._nodes.has(nodeCfg.target) || this._anchors.has(nodeCfg.target))
+            ? this._pos(nodeCfg.target)
+            : null;
+      }
+
       let nodeSvg = this._renderNodeSVG(nodeCfg);
 
-      if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text') {
+      if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text' && nodeCfg.type !== 'callout') {
         if (this._ownLabelNode(nodeCfg)) {
           nodeSvg += this._renderShapeLabel(nodeCfg);
         } else {
           const labelX = nodeCfg.x + (nodeCfg.labelOffsetX || 0);
-          const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || 24));
+          const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || (nodeCfg.type === 'image' ? Math.max(16, Number(nodeCfg.imageH) || 72) / 2 + 14 : 24)));
           nodeSvg += this._renderNodeLabel(labelX, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
         }
       }
@@ -850,15 +994,17 @@ class TopologyDesigner {
         nodeSvg += this._renderZoneIndicator(nodeCfg.x, nodeCfg.y, nodeCfg.zoneIndicator);
       }
 
+      nodeSvg += _renderStatusDot(nodeCfg);
+
       nodeSvg = this._focusWrap(elemId, halo, nodeSvg);
       const iso3dAttr = nodeCfg.type && typeof nodeCfg.type === 'string' && nodeCfg.type.startsWith('iso:') ? ' data-tds-iso3d="true"' : '';
-      return this._pw(stepId, phaseNum, op, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">${nodeSvg}</g>`);
+      return this._pw(stepId, phaseNum, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">`, nodeSvg, '</g>'));
     }
 
     const linkCfg = this._links.get(elemId);
     if (linkCfg) {
       const linkSvg = this._renderLinkSVG(linkCfg, stepId, phaseNum);
-      return linkSvg ? `<g data-tds-link="${elemId}" style="cursor:pointer">${linkSvg}</g>` : '';
+      return linkSvg ? _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer">`, linkSvg, '</g>') : '';
     }
 
     return '';
@@ -2882,6 +3028,93 @@ ${grid}`;
    * `borderColor` outlines it, `align` sets left/center/right within the box.
    * Without those options it renders exactly like the classic centered label.
    */
+  /**
+   * Callout / sticky-note annotation — a tinted note with word-wrapped text
+   * and an optional dashed leader line to a target element (`cfg.target`,
+   * pre-resolved into `cfg._targetPos` by the render pass, the same trick
+   * overlayCloud uses for spans). The whiteboard-annotation staple: label is
+   * the note text, sublabel a smaller second block, `width` wraps, `color`
+   * tints. Draws its own text (excluded from the generic below-node label).
+   */
+  static renderCallout(x, y, cfg = {}) {
+    const width = Math.max(60, Number(cfg.width) || 160);
+    const pad = Math.max(4, Number(cfg.padding) || 10);
+    const fs = Math.max(8, Number(cfg.fontSize) || 12);
+    const tint = cfg.color || '#deb146';
+    const textColor = cfg.labelColor || '#e6e8e9';
+    const innerW = width - pad * 2;
+    const label = String(cfg.label || 'Note');
+    const lines = TopologyDesigner._wrapText(label, innerW, fs);
+    const subFs = Math.max(7, fs * 0.8);
+    const subLines = cfg.sublabel
+      ? TopologyDesigner._wrapText(String(cfg.sublabel), innerW, subFs)
+      : [];
+    const lineH = fs * 1.35;
+    const subLineH = subFs * 1.35;
+    const blockH =
+      lines.length * lineH + (subLines.length ? subLines.length * subLineH + subFs * 0.4 : 0);
+    const h = blockH + pad * 2;
+    const x0 = x - width / 2, y0 = y - h / 2;
+    const fold = Math.min(14, width * 0.15);
+
+    let s = '';
+    // Leader line first (under the note): note boundary → target, dashed,
+    // with a small dot at the target end.
+    const t = cfg._targetPos;
+    if (t && (t.x !== x || t.y !== y)) {
+      const dx = t.x - x, dy = t.y - y;
+      const scale = 1 / Math.max(Math.abs(dx) / (width / 2), Math.abs(dy) / (h / 2), 1e-6);
+      const sx = x + dx * Math.min(1, scale);
+      const sy = y + dy * Math.min(1, scale);
+      s += `<line x1="${round2(sx)}" y1="${round2(sy)}" x2="${t.x}" y2="${t.y}" stroke="${tint}" stroke-width="1.2" stroke-dasharray="4 3" opacity=".65"/>` +
+        `<circle cx="${t.x}" cy="${t.y}" r="2.5" fill="${tint}" opacity=".8"/>`;
+    }
+    // The note card with a folded corner (sticky-note read).
+    s += `<path d="M${x0},${y0} H${x0 + width - fold} L${x0 + width},${y0 + fold} V${y0 + h} H${x0} Z" fill="${tint}" fill-opacity=".12" stroke="${tint}" stroke-opacity=".55" stroke-width="1"/>` +
+      `<path d="M${x0 + width - fold},${y0} V${y0 + fold} H${x0 + width}" fill="${tint}" fill-opacity=".22" stroke="${tint}" stroke-opacity=".55" stroke-width="1"/>`;
+    // Text block.
+    let ty = y0 + pad + fs;
+    for (const line of lines) {
+      s += `<text x="${x0 + pad}" y="${round2(ty)}" fill="${textColor}" font-size="${fs}" font-weight="600">${_esc(line)}</text>`;
+      ty += lineH;
+    }
+    if (subLines.length) {
+      ty += subFs * 0.4;
+      for (const line of subLines) {
+        s += `<text x="${x0 + pad}" y="${round2(ty - subLineH + subFs)}" fill="${textColor}" font-size="${subFs}" opacity=".75">${_esc(line)}</text>`;
+        ty += subLineH;
+      }
+    }
+    return s;
+  }
+
+  /**
+   * Image node — an embedded raster/vector image (https URL or data URI).
+   * `imageW`/`imageH` size the box (default 96×72), `imageFit` maps to
+   * preserveAspectRatio (`contain` → meet, `cover` → slice), `cornerRadius`
+   * rounds the clip. Only `https://` and `data:image/*` sources are ever
+   * emitted (same defensive posture as `_hrefTipWrap`); anything else — or
+   * no source at all — renders a dashed placeholder frame that stays
+   * visible and selectable.
+   */
+  static renderImage(x, y, cfg = {}) {
+    const w = Math.max(16, Number(cfg.imageW) || 96);
+    const h = Math.max(16, Number(cfg.imageH) || 72);
+    const r = Math.max(0, Number(cfg.cornerRadius != null ? cfg.cornerRadius : 6));
+    const x0 = x - w / 2, y0 = y - h / 2;
+    const src = typeof cfg.imageHref === 'string' ? cfg.imageHref.trim() : '';
+    const safe = /^https:\/\//i.test(src) || /^data:image\/(png|jpe?g|gif|webp|svg\+xml)[;,]/i.test(src);
+    if (!safe) {
+      return `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="${r}" fill="#7d8a92" fill-opacity=".06" stroke="#7d8a92" stroke-opacity=".5" stroke-dasharray="5 4"/>` +
+        `<path d="M${x - 11},${y + 7} l7,-9 5,6 3,-4 7,7 z M${x + 4},${y - 7} a2.6,2.6 0 1,0 0.1,0" fill="none" stroke="#7d8a92" stroke-width="1.4" opacity=".7"/>`;
+    }
+    const par = cfg.imageFit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet';
+    const clipId = `tds-imgclip-${String(cfg.id || 'img').replace(/[^\w-]/g, '')}`;
+    return `<clipPath id="${clipId}"><rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="${r}"/></clipPath>` +
+      `<image href="${_esc(src)}" x="${x0}" y="${y0}" width="${w}" height="${h}" preserveAspectRatio="${par}" clip-path="url(#${clipId})"/>` +
+      `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="${r}" fill="none" stroke="#7d8a92" stroke-opacity=".35"/>`;
+  }
+
   static renderText(x, y, cfg = {}) {
     const { label = '', color = '#e6e8e9', fontSize = 14, fontWeight = '600', sublabel = '',
             width = 0, fill = '', borderColor = '', align = 'center', padding = 8 } = cfg;
@@ -3055,6 +3288,8 @@ ${grid}`;
     ap:        TopologyDesigner.renderAP,
     overlayCloud: TopologyDesigner.renderOverlayCloud,
     text:      TopologyDesigner.renderText,
+    image:     TopologyDesigner.renderImage,
+    callout:   TopologyDesigner.renderCallout,
     // Basic shapes
     'shape:arrow':     TopologyDesigner.renderShapeArrow,
     'shape:square':    TopologyDesigner.renderShapeSquare,
@@ -3101,6 +3336,18 @@ ${grid}`;
       return `<g${blur}><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : 'stroke-dasharray="2000" stroke-dashoffset="0"'} class="${dashed ? 'tds-phase-in' : 'tds-draw-phase'}" style="opacity:${0.7*op};animation-delay:${delay}s"/></g>`;
     }
     return `<g${blur}><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${0.7*op}"/></g>`;
+  }
+
+  /** A `line` link with crossing hops — same styling as _renderLine, path art. */
+  _renderLinePath(stepId, phaseNum, d, color, op, dashed = false, strokeWidth = 2) {
+    const { show, anim, delay } = this._ph(stepId, phaseNum);
+    if (!show) return '';
+    const blur = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
+    const sw = strokeWidth;
+    if (anim) {
+      return `<g${blur}><path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : 'stroke-dasharray="2000" stroke-dashoffset="0"'} class="${dashed ? 'tds-phase-in' : 'tds-draw-phase'}" style="opacity:${0.7 * op};animation-delay:${delay}s"/></g>`;
+    }
+    return `<g${blur}><path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${0.7 * op}"/></g>`;
   }
 
   /** Animated flow particles along a path, controllable by per-link flow cfg. */
@@ -3482,15 +3729,14 @@ ${grid}`;
     const align = zone.labelAlign || 'left';
     const labelX = align === 'center' ? minX + w / 2 : align === 'right' ? maxX - 8 : minX + 8;
     const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
-    let s = `<g class="tds-zone" data-zone-id="${zone.id}">`;
+    let s = '';
     s += `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" rx="8" fill="${c}" fill-opacity=".04" stroke="${c}" stroke-width="1" stroke-opacity=".35"${dash !== 'none' ? ` stroke-dasharray="${dash}"` : ''}/>`;
     s += `<text x="${labelX}" y="${minY + 14}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity=".7">${_esc(zone.label || zone.id)}</text>`;
     const sublabelText = zone.sublabel || zone.description;
     if (sublabelText) {
       s += `<text x="${labelX}" y="${minY + 26}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity=".5">${_esc(sublabelText)}</text>`;
     }
-    s += `</g>`;
-    return s;
+    return _hrefTipWrap(zone, `<g class="tds-zone" data-zone-id="${zone.id}">`, s, '</g>');
   }
 
   /** WAN/LAN zone indicator beside EC */
@@ -3761,6 +4007,51 @@ ${grid}`;
     return { dx: Math.sin(ang) * dist, dy: -Math.cos(ang) * dist };
   }
 
+  /**
+   * Build the per-render crossing registry for line jumps: every link's
+   * naive straight-segment polyline (centre→waypoints→centre), keyed by id,
+   * plus each link's draw-order index. Later links hop over earlier ones.
+   * No-op (empty) when the page didn't opt in via `lineJumps`.
+   */
+  _buildJumpIndex() {
+    this._jumpSegs = new Map();
+    this._jumpOrder = new Map();
+    if (this.lineJumps !== 'arc' && this.lineJumps !== 'gap') return;
+    let order = 0;
+    for (const [id, cfg] of this._links) {
+      this._jumpOrder.set(id, order++);
+      if (cfg.lineStyle === 'curved') continue; // curves don't register
+      const from = this._pos(cfg.from);
+      const to = this._pos(cfg.to);
+      if (!from || !to) continue;
+      const pts = [from, ...(cfg.waypoints || []), to];
+      const segs = [];
+      for (let i = 0; i < pts.length - 1; i++)
+        segs.push({ a: pts[i], b: pts[i + 1] });
+      this._jumpSegs.set(id, segs);
+    }
+  }
+
+  /**
+   * Apply line jumps to a link's path `d` when the page opted in: hops over
+   * the straight segments of every link drawn EARLIER (so exactly one of a
+   * crossing pair hops). Non-polyline (curved) paths pass through unchanged.
+   */
+  _applyJumps(linkCfg, d) {
+    if (this.lineJumps !== 'arc' && this.lineJumps !== 'gap') return d;
+    if (!this._jumpSegs || this._jumpSegs.size === 0) return d;
+    const pts = _parsePolyPath(d);
+    if (!pts) return d;
+    const myOrder = this._jumpOrder.get(linkCfg.id) ?? 0;
+    const obstacles = [];
+    for (const [id, segs] of this._jumpSegs) {
+      if (id === linkCfg.id) continue;
+      if ((this._jumpOrder.get(id) ?? 0) < myOrder) obstacles.push(...segs);
+    }
+    if (obstacles.length === 0) return d;
+    return _polyPathWithJumps(pts, obstacles, this.lineJumps);
+  }
+
   _renderLinkSVG(linkCfg, stepId, phaseNum) {
     let from = this._pos(linkCfg.from);
     let to = this._pos(linkCfg.to);
@@ -3840,12 +4131,19 @@ ${grid}`;
     switch (linkCfg.type) {
       case 'line':
         if (waypointPath) {
-          svg = this._renderFlow(stepId, phaseNum, waypointPath, color, null, null, null, op, false);
+          svg = this._renderFlow(stepId, phaseNum, this._applyJumps(linkCfg, waypointPath), color, null, null, null, op, false);
         } else if (routedPath) {
           // Use flow renderer for routed paths (supports curves)
-          svg = this._renderFlow(stepId, phaseNum, routedPath, color, null, null, null, op, false);
+          svg = this._renderFlow(stepId, phaseNum, this._applyJumps(linkCfg, routedPath), color, null, null, null, op, false);
         } else {
-          svg = this._renderLine(stepId, phaseNum, from.x, from.y, to.x, to.y, color, op, linkCfg.dashed, linkCfg.strokeWidth);
+          const straight = `M${from.x},${from.y} L${to.x},${to.y}`;
+          const jumped = this._applyJumps(linkCfg, straight);
+          if (jumped !== straight) {
+            // The crossing hops need a <path>; plain lines keep <line> art.
+            svg = this._renderLinePath(stepId, phaseNum, jumped, color, op, linkCfg.dashed, linkCfg.strokeWidth);
+          } else {
+            svg = this._renderLine(stepId, phaseNum, from.x, from.y, to.x, to.y, color, op, linkCfg.dashed, linkCfg.strokeWidth);
+          }
         }
         // Line links carry a centre label too — every other link type renders
         // its own, but the line/flow renderers don't, so do it here. Honors the
@@ -4089,6 +4387,7 @@ ${grid}`;
    */
   _renderSVG() {
     this._clearPosCache(); // Reset position cache for this render cycle
+    this._buildJumpIndex(); // Line-jump crossing registry for this render cycle
     const vb = this.viewBox.split(' ').map(Number);
     const w = vb[2] || 1050, h = vb[3] || 700;
     let svg = this._svgDefs() + this._svgAmbient(w, h);
@@ -4178,14 +4477,22 @@ ${grid}`;
               nodeCfg._resolvedSpans = nodeCfg.spans.map(id => this._pos(id));
             }
 
+            // Resolve a callout's leader-line target the same way (known ids only)
+            if (nodeCfg.type === 'callout') {
+              nodeCfg._targetPos =
+                nodeCfg.target && (this._nodes.has(nodeCfg.target) || this._anchors.has(nodeCfg.target))
+                  ? this._pos(nodeCfg.target)
+                  : null;
+            }
+
             let nodeSvg = this._renderNodeSVG(nodeCfg);
 
             // Add label if configured (text/shape nodes draw their own — see _ownLabelNode)
-            if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text') {
+            if (nodeCfg.label && nodeCfg.type !== 'cloud' && nodeCfg.type !== 'idcard' && nodeCfg.type !== 'overlayCloud' && nodeCfg.type !== 'text' && nodeCfg.type !== 'callout') {
               if (this._ownLabelNode(nodeCfg)) {
                 nodeSvg += this._renderShapeLabel(nodeCfg);
               } else {
-                const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || 24));
+                const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || (nodeCfg.type === 'image' ? Math.max(16, Number(nodeCfg.imageH) || 72) / 2 + 14 : 24)));
                 nodeSvg += this._renderNodeLabel(nodeCfg.x, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
               }
             }
@@ -4205,6 +4512,9 @@ ${grid}`;
             if (nodeCfg.zoneIndicator) {
               nodeSvg += this._renderZoneIndicator(nodeCfg.x, nodeCfg.y, nodeCfg.zoneIndicator);
             }
+
+            // Node status LED (health notation)
+            nodeSvg += _renderStatusDot(nodeCfg);
 
             // Add zone label if configured
             if (nodeCfg.zoneLabel) {
@@ -4226,9 +4536,9 @@ ${grid}`;
             const iso3dAttr = nodeCfg.type && typeof nodeCfg.type === 'string' && nodeCfg.type.startsWith('iso:') ? ' data-tds-iso3d="true"' : '';
             if (ghostOp !== null) {
               op = ghostOp;
-              svg += this._pw(step.id, p, op, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer" filter="url(#tds-ghost)">${nodeSvg}</g>`);
+              svg += this._pw(step.id, p, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer" filter="url(#tds-ghost)">`, nodeSvg, '</g>'));
             } else {
-              svg += this._pw(step.id, p, op, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">${nodeSvg}</g>`);
+              svg += this._pw(step.id, p, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">`, nodeSvg, '</g>'));
             }
             continue;
           }
@@ -4248,9 +4558,9 @@ ${grid}`;
                 wrappedLink = `<g filter="${temporal.filter}">${linkSvg}</g>`;
               }
               if (ghostOp !== null) {
-                svg += `<g data-tds-link="${elemId}" style="cursor:pointer" filter="url(#tds-ghost)" opacity="${ghostOp}">${wrappedLink}</g>`;
+                svg += _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer" filter="url(#tds-ghost)" opacity="${ghostOp}">`, wrappedLink, '</g>');
               } else {
-                svg += `<g data-tds-link="${elemId}" style="cursor:pointer">${wrappedLink}</g>`;
+                svg += _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer">`, wrappedLink, '</g>');
               }
               // Security violation overlay
               svg += this._renderViolationOverlay(elemId);

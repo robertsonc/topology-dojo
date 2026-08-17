@@ -17,7 +17,7 @@ import {
   type PolicyMarkerConfig,
   type ZoneConfig,
 } from '../vendor/topology-ds.js';
-import { clientToUser } from './coords.js';
+import { clientToUser, userToClient } from './coords.js';
 import { balancePage, tidyPage } from '../api/tidy.js';
 import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
@@ -35,6 +35,7 @@ import {
   hitTestZone,
   linkPolyline,
   nodeBounds,
+  nodeHalf,
   nodesInRect,
   resolvePos,
   zoneBounds,
@@ -82,6 +83,40 @@ interface DragState {
   /** Effective (snapped) delta applied to the whole selection. */
   dx: number;
   dy: number;
+}
+
+/**
+ * A request to edit an element's label in place (double-click gesture). The
+ * editor computes what was hit and where its label anchor sits in *client*
+ * coordinates; the shell (main.ts) owns the floating DOM input and commits
+ * through the normal update paths. `kind: 'empty'` reports a double-click on
+ * blank canvas (the quick-add gesture).
+ */
+export interface InlineEditRequest {
+  kind: 'node' | 'link' | 'zone' | 'empty';
+  /** Hit element id; null for 'empty'. */
+  id: string | null;
+  /** Current label text ('' when unset). */
+  current: string;
+  /** Anchor for the floating editor, in viewport (client) coordinates. */
+  clientX: number;
+  clientY: number;
+  /** Model-space point of the double-click (used by quick-add placement). */
+  pageX: number;
+  pageY: number;
+}
+
+/**
+ * A link dragged out from a node and released over empty canvas — the shell
+ * offers a "create + connect" picker at the drop point (draw.io-style).
+ */
+export interface ConnectEmptyRequest {
+  /** The source node the pending link starts from. */
+  from: string;
+  clientX: number;
+  clientY: number;
+  pageX: number;
+  pageY: number;
 }
 
 type Guide =
@@ -184,6 +219,8 @@ export class Editor {
     start: { x: number; y: number };
     cursor: { x: number; y: number };
     moved: boolean;
+    /** Set when the drag started on a quick-connect chevron (its direction). */
+    dir?: 'n' | 'e' | 's' | 'w';
   } | null = null;
   /**
    * A link label being repositioned by drag — the centre label or an endpoint
@@ -239,6 +276,20 @@ export class Editor {
   private nudgeTimer: ReturnType<typeof setTimeout> | undefined;
   /** Pending coalesced art render (rAF handle), or 0 when none is queued. */
   private artRaf = 0;
+  /** Inline label-edit requests (double-click) go to the shell through this. */
+  private onInlineEdit: ((req: InlineEditRequest) => void) | null = null;
+  /** Link-to-empty-canvas releases go to the shell through this (quick-connect). */
+  private onConnectEmpty: ((req: ConnectEmptyRequest) => void) | null = null;
+  /** Ctrl/Cmd+click on an element with an `href` opens it through this. */
+  private onOpenHref: ((href: string) => void) | null = null;
+  /** Live touch points (pointerId → client position) for pinch detection. */
+  private touches = new Map<number, { x: number; y: number }>();
+  /** Active two-finger pinch: the gesture's start geometry + start view. */
+  private pinch: {
+    startDist: number;
+    startMid: { x: number; y: number };
+    startView: { x: number; y: number; w: number; h: number };
+  } | null = null;
 
   constructor(
     private art: SVGSVGElement,
@@ -572,7 +623,9 @@ export class Editor {
    * keystrokes snapshots once, mirroring `updateNode`.
    */
   updatePageProps(
-    patch: Partial<Pick<Page, 'caption' | 'duration' | 'transition'>>,
+    patch: Partial<
+      Pick<Page, 'caption' | 'duration' | 'transition' | 'lineJumps'>
+    >,
     commit = true,
   ): void {
     const keys = Object.keys(patch) as (keyof typeof patch)[];
@@ -586,6 +639,8 @@ export class Editor {
       else (this.page as unknown as Record<string, unknown>)[key] = patch[key];
     }
     this.emitPagePatch(fp);
+    // lineJumps changes the drawn art itself, not just the overlay extras.
+    if (keys.includes('lineJumps')) this.renderArt();
     this.renderOverlay(); // caption renders via the overlayExtra hook
     this.onChange();
   }
@@ -968,8 +1023,8 @@ export class Editor {
 
   /**
    * The node to treat as "hovered": the one under the cursor, or one whose
-   * connection dot the cursor is poised over (so dots stay reachable even though
-   * they sit just on the node's edge).
+   * connection dot / quick-connect chevron the cursor is poised over (so the
+   * affordances stay reachable even though they sit outside the node's body).
    */
   private hoverNodeAt(p: { x: number; y: number }): string | null {
     const direct = hitTestNode(this.page, p.x, p.y);
@@ -980,8 +1035,172 @@ export class Editor {
       for (const d of this.connectionDots(id)) {
         if (Math.abs(p.x - d.x) <= r && Math.abs(p.y - d.y) <= r) return id;
       }
+      for (const c of this.chevrons(id)) {
+        if (Math.abs(p.x - c.x) <= r * 1.4 && Math.abs(p.y - c.y) <= r * 1.4)
+          return id;
+      }
     }
     return null;
+  }
+
+  /* ── quick-connect chevrons (create + connect the next node) ─────── */
+
+  /**
+   * The four directional quick-connect chevrons of a node, floating just
+   * beyond its connection dots. Clicking one creates a same-type node in that
+   * direction, linked back; dragging from one draws a link like the dots do.
+   */
+  private chevrons(
+    id: string,
+  ): { x: number; y: number; dir: 'n' | 'e' | 's' | 'w' }[] {
+    const n = this.page.nodes.find((m) => m.id === id);
+    if (!n) return [];
+    const b = nodeBounds(n);
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const off = this.dotRadius() * 4.2;
+    return [
+      { x: cx, y: b.y - off, dir: 'n' },
+      { x: b.x + b.w + off, y: cy, dir: 'e' },
+      { x: cx, y: b.y + b.h + off, dir: 's' },
+      { x: b.x - off, y: cy, dir: 'w' },
+    ];
+  }
+
+  /** The chevron (node + direction) under `p`, on hovered/selected nodes. */
+  private chevronHit(p: {
+    x: number;
+    y: number;
+  }): { id: string; dir: 'n' | 'e' | 's' | 'w' } | null {
+    const r = this.dotRadius() * 2.4;
+    for (const id of this.chevronNodeIds()) {
+      for (const c of this.chevrons(id)) {
+        if (Math.abs(p.x - c.x) <= r && Math.abs(p.y - c.y) <= r)
+          return { id, dir: c.dir };
+      }
+    }
+    return null;
+  }
+
+  /** Nodes that show chevrons: the hovered node + a sole selected node. */
+  private chevronNodeIds(): string[] {
+    const ids = new Set<string>();
+    if (this.hoverNode) ids.add(this.hoverNode);
+    if (this.sel.size === 1) ids.add([...this.sel][0]!);
+    return [...ids].filter((id) => this.page.nodes.some((n) => n.id === id));
+  }
+
+  /** Chevron glyphs (outward-pointing triangles) for the overlay. */
+  private chevronsSvg(): string {
+    if (this.tool !== 'select' || this.dragLink || this.drag || this.marquee)
+      return '';
+    const s = this.dotRadius() * 1.5;
+    let out = '';
+    for (const id of this.chevronNodeIds()) {
+      for (const c of this.chevrons(id)) {
+        const rot = { n: 0, e: 90, s: 180, w: 270 }[c.dir];
+        out +=
+          `<g transform="translate(${c.x},${c.y}) rotate(${rot})" opacity="0.85">` +
+          `<circle r="${s * 1.5}" fill="${ACCENT}" fill-opacity="0.10"/>` +
+          `<path d="M0,${-s} L${s * 0.85},${s * 0.6} L${-s * 0.85},${s * 0.6} Z" fill="${ACCENT}"/>` +
+          `</g>`;
+      }
+    }
+    return out;
+  }
+
+  /** Register the shell's "link released over empty canvas" handler. */
+  setConnectEmptyHandler(
+    fn: ((req: ConnectEmptyRequest) => void) | null,
+  ): void {
+    this.onConnectEmpty = fn;
+  }
+
+  /** Register the shell's hyperlink opener (Ctrl/Cmd+click on href). */
+  setOpenHrefHandler(fn: ((href: string) => void) | null): void {
+    this.onOpenHref = fn;
+  }
+
+  /**
+   * Create a node of `type` at (x, y) linked from `fromId`, as ONE undo step
+   * and one gesture batch — the quick-connect commit shared by chevron clicks
+   * and the drag-to-empty picker. Selects the new node and opens its inline
+   * label editor so a "next hop" is one gesture + typing.
+   */
+  quickConnectTo(
+    fromId: string,
+    type: string,
+    x: number,
+    y: number,
+    style?: { color?: string },
+  ): string | null {
+    const from = this.page.nodes.find((n) => n.id === fromId);
+    if (!from) return null;
+    this.snapshot();
+    const nid = `n${Date.now().toString(36)}${(this.nodeSeq++).toString(36)}`;
+    const node: NodeConfig = {
+      id: nid,
+      type,
+      x: this.snapVal(x),
+      y: this.snapVal(y),
+      label: defaultLabel(type),
+      ...(style?.color ? { color: style.color } : {}),
+    };
+    this.page.nodes.push(node);
+    const lid = `l${Date.now().toString(36)}${(this.linkSeq++).toString(36)}`;
+    this.page.links.push({ id: lid, type: 'line', from: fromId, to: nid });
+    this.emitAdds('nodes', [{ id: nid }]);
+    this.emitAdds('links', [{ id: lid }]);
+    this.clearLinkSel();
+    this.clearAnchorSel();
+    this.clearZoneSel();
+    this.sel = new Set([nid]);
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireSelect();
+    // Hand the fresh node straight to the inline label editor.
+    if (this.onInlineEdit) {
+      const h = nodeHalf(node);
+      const c = userToClient(this.overlay, node.x, node.y + h.h + 12);
+      this.onInlineEdit({
+        kind: 'node',
+        id: nid,
+        current: String(node.label ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: node.x,
+        pageY: node.y,
+      });
+    }
+    return nid;
+  }
+
+  /**
+   * Chevron click: create a same-type node one pitch away in `dir`, linked
+   * back to the source. Steps further along `dir` while the spot is occupied.
+   */
+  quickConnect(fromId: string, dir: 'n' | 'e' | 's' | 'w'): string | null {
+    const src = this.page.nodes.find((n) => n.id === fromId);
+    if (!src) return null;
+    const h = nodeHalf(src);
+    const pitchX = Math.max(180, h.w * 2 + 110);
+    const pitchY = Math.max(140, h.h * 2 + 90);
+    const step = {
+      n: { dx: 0, dy: -pitchY },
+      e: { dx: pitchX, dy: 0 },
+      s: { dx: 0, dy: pitchY },
+      w: { dx: -pitchX, dy: 0 },
+    }[dir];
+    let x = src.x + step.dx;
+    let y = src.y + step.dy;
+    for (let i = 0; i < 6 && hitTestNode(this.page, x, y, 40); i++) {
+      x += step.dx * 0.75;
+      y += step.dy * 0.75;
+    }
+    return this.quickConnectTo(fromId, src.type, x, y, {
+      color: src.color as string | undefined,
+    });
   }
 
   /** Connection dots drawn on the hovered / selected node(s) in Select mode. */
@@ -1140,6 +1359,7 @@ export class Editor {
       this.linkSelSvg() +
       this.selectionSvg() +
       this.connectionDotsSvg() +
+      this.chevronsSvg() +
       this.marqueeSvg() +
       this.linkPreviewSvg();
     // Cache the grid fill so applyView can track it without rebuilding the overlay.
@@ -2169,6 +2389,26 @@ export class Editor {
     this.onChange();
   }
 
+  /**
+   * Patch EVERY selected node (the mini style bar's bulk action): one
+   * snapshot, one gesture batch with a patch per node. No-op keys (already
+   * equal) still emit — assignAndEmit's diffing keeps history clean.
+   */
+  updateSelectedNodes(patch: Partial<NodeConfig>): void {
+    const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
+    if (nodes.length === 0) return;
+    this.snapshot();
+    for (const node of nodes)
+      this.assignAndEmit(
+        'nodes',
+        node as unknown as Record<string, unknown>,
+        patch,
+      );
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+  }
+
   /** Patch the selected link (re-renders art, keeps the inspector DOM). */
   updateLink(patch: Partial<LinkConfig>, commit = true): void {
     const link = this.getSelectedLink();
@@ -2694,6 +2934,12 @@ export class Editor {
     this.overlay.addEventListener('pointerdown', (e) => this.onDown(e));
     this.overlay.addEventListener('pointermove', (e) => this.onMove(e));
     this.overlay.addEventListener('pointerup', (e) => this.onUp(e));
+    this.overlay.addEventListener('pointercancel', (e) => {
+      if (e.pointerType === 'touch') {
+        this.touches.delete(e.pointerId);
+        if (this.touches.size < 2) this.pinch = null;
+      }
+    });
     this.overlay.addEventListener('pointerleave', () => {
       if (this.hoverNode !== null) {
         this.hoverNode = null;
@@ -2711,7 +2957,10 @@ export class Editor {
    * it lands on a segment's midpoint "+" handle, insert a new waypoint there and
    * drag that. Returns true when a grab started.
    */
-  private tryWaypointGrab(p: { x: number; y: number }): boolean {
+  private tryWaypointGrab(
+    p: { x: number; y: number },
+    suppressInsert = false,
+  ): boolean {
     const link = this.page.links.find((l) => l.id === this.linkSel);
     if (!link) return false;
     const pts = linkPolyline(this.page, link);
@@ -2724,6 +2973,9 @@ export class Editor {
         return true;
       }
     }
+    // The second press of a rapid double-click must not insert a waypoint —
+    // the double-click is heading for the inline label editor instead.
+    if (suppressInsert) return false;
     // Segment midpoint "add" handles → insert a waypoint at segment index k.
     for (let k = 0; k < pts.length - 1; k++) {
       const m = midpoint(pts[k]!, pts[k + 1]!);
@@ -2743,32 +2995,203 @@ export class Editor {
 
   /** Double-click a waypoint handle to remove that bend point. */
   private onDblClick(e: MouseEvent): void {
-    if (this.tool !== 'select' || !this.linkSel) return;
-    const link = this.page.links.find((l) => l.id === this.linkSel);
-    if (!link?.waypoints?.length) return;
-    const p = clientToUser(this.overlay, e.clientX, e.clientY);
-    const tol = this.handleSize() * 1.4;
-    for (let i = 0; i < link.waypoints.length; i++) {
-      if (dist(p, link.waypoints[i]!) <= tol) {
-        this.snapshot();
-        link.waypoints.splice(i, 1);
-        if (link.waypoints.length === 0) {
-          delete link.waypoints;
-          this.emitPatch('links', link.id, { unset: ['waypoints'] });
-        } else {
-          this.emitPatch('links', link.id, {
-            set: { waypoints: structuredClone(link.waypoints) },
-          });
+    // Already handled by the synthesized pointerup path? (see onUp)
+    if (Date.now() - this.synthDblAt < 400) return;
+    this.handleDoubleClick(e.clientX, e.clientY);
+  }
+
+  /** Shared double-click action: waypoint removal, else inline edit/quick-add. */
+  private handleDoubleClick(clientX: number, clientY: number): void {
+    if (this.tool !== 'select') return;
+    // 1) Waypoint removal on the selected link keeps priority (existing gesture).
+    if (this.linkSel) {
+      const link = this.page.links.find((l) => l.id === this.linkSel);
+      if (link?.waypoints?.length) {
+        const p = clientToUser(this.overlay, clientX, clientY);
+        const tol = this.handleSize() * 1.4;
+        for (let i = 0; i < link.waypoints.length; i++) {
+          if (dist(p, link.waypoints[i]!) <= tol) {
+            this.snapshot();
+            link.waypoints.splice(i, 1);
+            if (link.waypoints.length === 0) {
+              delete link.waypoints;
+              this.emitPatch('links', link.id, { unset: ['waypoints'] });
+            } else {
+              this.emitPatch('links', link.id, {
+                set: { waypoints: structuredClone(link.waypoints) },
+              });
+            }
+            this.renderArt();
+            this.renderOverlay();
+            this.onChange();
+            return;
+          }
         }
-        this.renderArt();
-        this.renderOverlay();
-        this.onChange();
-        return;
       }
     }
+    // 2) Inline label editing / quick-add (double-click anywhere else).
+    this.requestInlineEditAt(clientX, clientY);
+  }
+
+  /** Register the shell's inline label-edit / quick-add handler. */
+  setInlineEditHandler(fn: ((req: InlineEditRequest) => void) | null): void {
+    this.onInlineEdit = fn;
+  }
+
+  /**
+   * Resolve a double-click into an inline-edit request: hit-test the point,
+   * select what was hit (so the normal update paths apply to it), and hand the
+   * shell an anchored request. Returns the request kind, or null when no
+   * handler is registered. Public for tests and synthetic gestures.
+   */
+  requestInlineEditAt(clientX: number, clientY: number): string | null {
+    if (!this.onInlineEdit) return null;
+    const p = clientToUser(this.overlay, clientX, clientY);
+    const nodeId = hitTestNode(this.page, p.x, p.y);
+    if (nodeId) {
+      const node = this.page.nodes.find((n) => n.id === nodeId)!;
+      this.clearLinkSel();
+      this.clearAnchorSel();
+      this.clearZoneSel();
+      if (!(this.sel.size === 1 && this.sel.has(nodeId))) {
+        this.sel = new Set([nodeId]);
+        this.fireSelect();
+      }
+      this.renderOverlay();
+      // Anchor on the node's label position (just under the node art).
+      const h = nodeHalf(node);
+      const c = userToClient(this.overlay, node.x, node.y + h.h + 12);
+      this.onInlineEdit({
+        kind: 'node',
+        id: nodeId,
+        current: String(node.label ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return 'node';
+    }
+    const linkId = hitTestLink(this.page, p.x, p.y);
+    if (linkId) {
+      const link = this.page.links.find((l) => l.id === linkId)!;
+      this.sel.clear();
+      this.clearAnchorSel();
+      this.clearZoneSel();
+      this.fireSelect();
+      if (this.linkSel !== linkId) {
+        this.linkSel = linkId;
+        this.fireLinkSelect();
+      }
+      this.renderOverlay();
+      // Anchor on the centre-label position: polyline midpoint + offset.
+      const pts = linkPolyline(this.page, link);
+      let ax = p.x,
+        ay = p.y;
+      if (pts.length >= 2) {
+        const mid = Math.floor((pts.length - 1) / 2);
+        const a = pts[mid]!,
+          b = pts[mid + 1]!;
+        ax = (a.x + b.x) / 2;
+        ay = (a.y + b.y) / 2;
+      }
+      const off = (link as { labelOffset?: { x?: number; y?: number } })
+        .labelOffset;
+      if (off) {
+        ax += off.x ?? 0;
+        ay += off.y ?? 0;
+      }
+      const c = userToClient(this.overlay, ax, ay);
+      this.onInlineEdit({
+        kind: 'link',
+        id: linkId,
+        current: String(link.label ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return 'link';
+    }
+    const zoneId = hitTestZone(this.page, p.x, p.y);
+    if (zoneId) {
+      const zone = this.page.zones.find((z) => z.id === zoneId)!;
+      this.selectZone(zoneId);
+      const b = zoneBounds(this.page, zone);
+      const c = b
+        ? userToClient(this.overlay, b.x + b.w / 2, b.y + 6)
+        : userToClient(this.overlay, p.x, p.y);
+      this.onInlineEdit({
+        kind: 'zone',
+        id: zoneId,
+        current: String(zone.label ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return 'zone';
+    }
+    // Blank canvas — quick-add (the shell decides what to do with it).
+    this.onInlineEdit({
+      kind: 'empty',
+      id: null,
+      current: '',
+      clientX,
+      clientY,
+      pageX: p.x,
+      pageY: p.y,
+    });
+    return 'empty';
   }
 
   /** Wheel = zoom toward the cursor (keeps the point under the cursor fixed). */
+  /** Start a two-finger pinch: capture start geometry + view, drop gestures. */
+  private beginPinch(): void {
+    this.drag = null;
+    this.marquee = null;
+    this.dragLink = null;
+    this.wpDrag = null;
+    this.labelDrag = null;
+    this.guides = [];
+    this.labelGuides = [];
+    const [a, b] = [...this.touches.values()] as [
+      { x: number; y: number },
+      { x: number; y: number },
+    ];
+    this.pinch = {
+      startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      startMid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      startView: { ...this.view },
+    };
+    this.renderOverlay();
+  }
+
+  /** Apply the current two-finger geometry: zoom about + pan with the pinch. */
+  private applyPinch(): void {
+    if (!this.pinch || this.touches.size < 2) return;
+    const [a, b] = [...this.touches.values()] as [
+      { x: number; y: number },
+      { x: number; y: number },
+    ];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const sv = this.pinch.startView;
+    const factor = clamp(this.pinch.startDist / dist, 0.05, 20); // spread = in
+    const w = clamp(sv.w * factor, 80, 8000);
+    const h = clamp(sv.h * factor, 53, 5333);
+    // The page point that was under the pinch midpoint at gesture start stays
+    // under the (possibly moved) midpoint — pinch-zoom and two-finger pan in
+    // one formula, matching the wheel handler's fraction approach.
+    const rect = this.overlay.getBoundingClientRect();
+    const px = sv.x + ((this.pinch.startMid.x - rect.left) / rect.width) * sv.w;
+    const py = sv.y + ((this.pinch.startMid.y - rect.top) / rect.height) * sv.h;
+    const fx = (mid.x - rect.left) / rect.width;
+    const fy = (mid.y - rect.top) / rect.height;
+    this.view = { x: px - fx * w, y: py - fy * h, w, h };
+    this.applyView();
+  }
+
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
     const before = clientToUser(this.overlay, e.clientX, e.clientY);
@@ -2929,6 +3352,17 @@ export class Editor {
   }
 
   private onDown(e: PointerEvent): void {
+    // Touch: track fingers; a second finger starts a pinch (zoom + pan) and
+    // cancels whatever single-finger gesture was in flight, uncommitted.
+    if (e.pointerType === 'touch') {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size === 2) {
+        this.beginPinch();
+        this.overlay.setPointerCapture(e.pointerId);
+        return;
+      }
+      if (this.pinch) return; // ignore extra fingers mid-pinch
+    }
     // Pan: middle button, or left button while Space is held / Hand tool is on.
     if (
       e.button === 1 ||
@@ -2961,8 +3395,37 @@ export class Editor {
       }
     }
 
+    // Ctrl/Cmd+click follows an element's hyperlink (`href`) — the editor's
+    // equivalent of the clickable <a> the renderer emits in exports/viewer.
+    if (
+      this.tool === 'select' &&
+      (e.ctrlKey || e.metaKey) &&
+      !e.shiftKey &&
+      e.button === 0 &&
+      this.onOpenHref
+    ) {
+      const hitId = hitTestNode(this.page, p.x, p.y);
+      const el = hitId
+        ? this.page.nodes.find((n) => n.id === hitId)
+        : this.page.links.find(
+            (l) => l.id === hitTestLink(this.page, p.x, p.y),
+          );
+      const href =
+        el && typeof (el as { href?: unknown }).href === 'string'
+          ? ((el as { href: string }).href ?? '').trim()
+          : '';
+      if (/^https?:\/\//i.test(href)) {
+        this.onOpenHref(href);
+        return;
+      }
+    }
+
     // Editing waypoints on the selected link takes priority over other hits.
-    if (this.tool === 'select' && this.linkSel && this.tryWaypointGrab(p)) {
+    if (
+      this.tool === 'select' &&
+      this.linkSel &&
+      this.tryWaypointGrab(p, this.isSecondClickDown(e))
+    ) {
       this.overlay.setPointerCapture(e.pointerId);
       this.renderOverlay();
       return;
@@ -3017,8 +3480,28 @@ export class Editor {
 
     // Select tool: pressing a connection dot (the handles shown when hovering a
     // node) drags out a link — no tool switch needed. Dot beats node-body so you
-    // can link from the edge without moving the node.
+    // can link from the edge without moving the node. A quick-connect chevron
+    // starts the same drag; released without moving it creates + connects a
+    // node in that direction instead (see finishUp).
     if (this.tool === 'select' && !this.spaceHeld && !e.shiftKey) {
+      const chev = this.chevronHit(p);
+      if (chev) {
+        if (!this.sel.has(chev.id)) {
+          this.sel.clear();
+          this.sel.add(chev.id);
+          this.fireSelect();
+        }
+        this.dragLink = {
+          from: chev.id,
+          start: p,
+          cursor: p,
+          moved: false,
+          dir: chev.dir,
+        };
+        this.overlay.setPointerCapture(e.pointerId);
+        this.renderOverlay();
+        return;
+      }
       const dotNode = this.connectionDotHit(p);
       if (dotNode) {
         if (!this.sel.has(dotNode)) {
@@ -3142,6 +3625,13 @@ export class Editor {
   }
 
   private onMove(e: PointerEvent): void {
+    if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pinch) {
+        this.applyPinch();
+        return;
+      }
+    }
     if (this.pan) {
       const rect = this.overlay.getBoundingClientRect();
       const dx =
@@ -3261,9 +3751,11 @@ export class Editor {
           this.hoverNode = over;
           this.renderOverlay();
         }
-        this.overlay.style.cursor = this.connectionDotHit(hp)
-          ? 'crosshair'
-          : '';
+        this.overlay.style.cursor = this.chevronHit(hp)
+          ? 'copy'
+          : this.connectionDotHit(hp)
+            ? 'crosshair'
+            : '';
       }
       return;
     }
@@ -3293,6 +3785,77 @@ export class Editor {
   }
 
   private onUp(e: PointerEvent): void {
+    // Touch: a finger lifted. While pinching, never fall through to click /
+    // gesture handling — the pinch either continues (a finger remains) or ends.
+    if (e.pointerType === 'touch') {
+      this.touches.delete(e.pointerId);
+      if (this.pinch) {
+        if (this.touches.size < 2) this.pinch = null;
+        return;
+      }
+    }
+    // Detect a double-click from two stationary pointerups. Chrome suppresses
+    // the native click/dblclick pair whenever the pointerdown target left the
+    // DOM mid-gesture — which happens constantly here because renderOverlay()
+    // rebuilds the overlay's children on selection changes. So the editor
+    // synthesizes its own double-click; the native dblclick handler stays as
+    // a fallback and is de-duplicated via `synthDblAt`.
+    const synthDbl = this.detectSynthDblClick(e);
+    this.finishUp(e);
+    if (synthDbl) {
+      this.synthDblAt = Date.now();
+      this.handleDoubleClick(e.clientX, e.clientY);
+    }
+  }
+
+  /** Last stationary pointerup (for synthesized double-click detection). */
+  private lastClick = { t: 0, x: 0, y: 0 };
+  /** When a synthesized double-click last ran (guards the native handler). */
+  private synthDblAt = 0;
+
+  /**
+   * True when this pointerdown looks like the second press of a double-click
+   * (rapid + stationary relative to the last click's release) — used to keep
+   * single-press gestures (waypoint insert) out of the double-click's way.
+   */
+  private isSecondClickDown(e: PointerEvent): boolean {
+    return (
+      Date.now() - this.lastClick.t < 450 &&
+      Math.hypot(e.clientX - this.lastClick.x, e.clientY - this.lastClick.y) <=
+        6
+    );
+  }
+
+  /** True when this pointerup is the second stationary click of a double. */
+  private detectSynthDblClick(e: PointerEvent): boolean {
+    const m = this.marquee;
+    // A dot/chevron press is a link gesture, never a click — it must not seed
+    // or complete a double-click (a chevron click already creates a node).
+    const gestureMoved =
+      this.pan !== null ||
+      this.dragLink !== null ||
+      !!this.labelDrag?.moved ||
+      !!this.wpDrag?.moved ||
+      !!this.drag?.moved ||
+      (m !== null && (Math.abs(m.x1 - m.x0) > 2 || Math.abs(m.y1 - m.y0) > 2));
+    if (gestureMoved || this.tool !== 'select' || e.button !== 0) {
+      this.lastClick.t = 0;
+      return false;
+    }
+    const now = Date.now();
+    const isDouble =
+      now - this.lastClick.t < 450 &&
+      Math.hypot(e.clientX - this.lastClick.x, e.clientY - this.lastClick.y) <=
+        6;
+    if (isDouble) {
+      this.lastClick.t = 0; // a triple-click doesn't chain another double
+      return true;
+    }
+    this.lastClick = { t: now, x: e.clientX, y: e.clientY };
+    return false;
+  }
+
+  private finishUp(e: PointerEvent): void {
     this.overlay.releasePointerCapture(e.pointerId);
     if (this.pan) {
       this.pan = null;
@@ -3345,14 +3908,28 @@ export class Editor {
       const dl = this.dragLink;
       this.dragLink = null;
       if (dl.moved) {
-        // Released over a node or anchor → connect; over empty space → cancel.
+        // Released over a node or anchor → connect. Over empty space → offer
+        // the create-and-connect picker (draw.io-style) when the shell
+        // registered one; otherwise cancel as before.
         const pp = clientToUser(this.overlay, e.clientX, e.clientY);
         const target =
           hitTestNode(this.page, pp.x, pp.y) ??
           hitTestAnchor(this.page, pp.x, pp.y, this.anchorHitPad());
         if (target && target !== dl.from) this.createLink(dl.from, target);
+        else if (!target && this.onConnectEmpty) {
+          this.onConnectEmpty({
+            from: dl.from,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            pageX: pp.x,
+            pageY: pp.y,
+          });
+        }
+      } else if (dl.dir) {
+        // A chevron click (no drag): create + connect the next node that way.
+        this.quickConnect(dl.from, dl.dir);
       }
-      // A press that never moved leaves the node selected (plain click-select).
+      // A plain dot press that never moved leaves the node selected.
       this.renderOverlay();
       return;
     }
@@ -3521,6 +4098,7 @@ function serialize(page: Page): PageSnapshot {
     transition: page.transition,
     caption: page.caption,
     emphasis: page.emphasis,
+    lineJumps: page.lineJumps,
     nodes: page.nodes,
     links: page.links,
     anchors: page.anchors,

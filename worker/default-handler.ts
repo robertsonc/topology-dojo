@@ -32,6 +32,8 @@ import { handleWorkspaceApi } from './workspace-api.js';
 import { handleProfileApi } from './profile-api.js';
 import { handleAdminApi } from './admin-api.js';
 import { handleStagingFault, STAGING_FAULT_PATH } from './staging-fault.js';
+import { listShares, publishSnapshot, revokeShare } from './share.js';
+import { parseDoc } from '../src/pages/persist.js';
 import {
   SNAPSHOT_GET_LIMIT,
   consumeFixedWindow,
@@ -40,7 +42,6 @@ import {
 } from '../src/mcp/rate-limit.js';
 import {
   getShareSnapshot,
-  revokeShareSnapshot,
   SHARE_CACHE_CONTROL,
 } from '../src/share/snapshot.js';
 
@@ -368,7 +369,10 @@ async function serveSnapshot(
   });
 }
 
-/** Owner-only unpublish: delete `doc:<id>` when the session matches the publisher. */
+/** Owner-only unpublish: delete `doc:<id>` when the session matches the
+ * publisher. Goes through `worker/share.ts` so the owner's listing index
+ * (the Share dialog's "published links") is pruned alongside the snapshot;
+ * ownership itself is decided by the snapshot's KV metadata. */
 async function revokeSnapshot(
   id: string,
   request: Request,
@@ -384,7 +388,7 @@ async function revokeSnapshot(
       },
     });
   }
-  const result = await revokeShareSnapshot(env.TOPOLOGY_KV, id, user.uid);
+  const result = await revokeShare(env, user.uid, id);
   if (result === 'not_found') {
     return new Response(JSON.stringify({ error: 'not found' }), {
       status: 404,
@@ -408,6 +412,60 @@ async function revokeSnapshot(
       'content-type': 'application/json',
       'cache-control': NO_STORE,
     },
+  });
+}
+
+/**
+ * Owner share management (`/api/share`): the browser's publish + list
+ * surface — the same helpers the MCP tools use (`worker/share.ts`), behind
+ * the browser session cookie. Revocation lives on the canonical
+ * `DELETE /api/topology/:id` route above (metadata-checked ownership).
+ */
+async function handleShareApi(
+  request: Request,
+  env: WorkerEnv,
+): Promise<Response> {
+  const user = await currentUser(request, env);
+  const headers = { 'content-type': 'application/json' };
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'authentication required' }), {
+      status: 401,
+      headers,
+    });
+  }
+  const url = new URL(request.url);
+  const rest = url.pathname.slice('/api/share'.length).replace(/^\//, '');
+  if (request.method === 'GET' && !rest) {
+    return new Response(
+      JSON.stringify({ shares: await listShares(env, user.uid) }),
+      { headers },
+    );
+  }
+  if (request.method === 'POST' && !rest) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'invalid JSON body' }), {
+        status: 400,
+        headers,
+      });
+    }
+    const doc = parseDoc(
+      (body as { document?: unknown } | null)?.document ?? body,
+    );
+    if (!doc) {
+      return new Response(
+        JSON.stringify({ error: 'not a recognizable topology document' }),
+        { status: 400, headers },
+      );
+    }
+    const published = await publishSnapshot(env, user.uid, doc);
+    return new Response(JSON.stringify(published), { status: 201, headers });
+  }
+  return new Response(JSON.stringify({ error: 'method not allowed' }), {
+    status: 405,
+    headers,
   });
 }
 
@@ -542,6 +600,9 @@ async function route(
   if (pathname === '/api/profile' || pathname.startsWith('/api/profile/')) {
     if (!profilesEnabled(env)) return profilesDisabledResponse();
     return handleProfileApi(request, env);
+  }
+  if (pathname === '/api/share' || pathname.startsWith('/api/share/')) {
+    return handleShareApi(request, env);
   }
   if (pathname === '/api/admin' || pathname.startsWith('/api/admin/')) {
     if (!analyticsEnabled(env)) return adminDisabledResponse();

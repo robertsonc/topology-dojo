@@ -13,3 +13,19 @@ export function clientToUser(
   const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
   return { x: p.x, y: p.y };
 }
+
+/**
+ * Inverse of `clientToUser`: map a model-space point to viewport (client)
+ * coordinates — used to place DOM overlays (e.g. the inline label editor)
+ * over a canvas element.
+ */
+export function userToClient(
+  svg: SVGSVGElement,
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return { x, y };
+  const p = new DOMPoint(x, y).matrixTransform(ctm);
+  return { x: p.x, y: p.y };
+}

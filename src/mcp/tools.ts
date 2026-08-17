@@ -54,6 +54,8 @@ import type { RenderOptions } from '../render/core.js';
 import { inspectPage } from '../render/inspect.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { convertLegacyStudio, detectLegacyStudio } from '../import/legacy.js';
+import { convertMermaid, detectMermaid } from '../import/mermaid.js';
+import { convertCsv, detectCsv } from '../import/csv.js';
 import { defaultSpec, type CustomNodeSpec } from '../nodes/spec.js';
 import {
   ABSOLUTE_GUIDANCE_TOKENS,
@@ -123,6 +125,14 @@ export interface ToolDeps {
    * `publishTopology` on the Worker; absent for the local stdio server.
    */
   unpublishTopology?: (shareId: string) => Promise<{ revoked: true }>;
+  /**
+   * The owner's published share links (newest first, expired pruned) — the
+   * listing side of revocation, so an agent can enumerate what is live
+   * before unpublish_topology. Wired with publishTopology on the Worker.
+   */
+  listShares?: () => Promise<
+    { id: string; title: string; createdAt: number; expiresAt: number }[]
+  >;
   /**
    * Live fabric data source (an SD-WAN orchestrator client or the fixture
    * mock). Wired from environment credentials by the servers — never from
@@ -452,21 +462,26 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       name: 'import_topology',
       description:
         'Load a topology from document JSON (a string or object). Returns the new id. ' +
-        "Also accepts a legacy Topology Studio save (the older sibling app's format) " +
-        'and converts it, reporting any lossy-conversion warnings.',
+        "Also accepts a legacy Topology Studio save (the older sibling app's format), " +
+        'a Mermaid flowchart (flowchart/graph text — nodes, edges, labels, subgraphs→zones, ' +
+        'auto-laid-out), or CSV data ([nodes]/[links] sections or a bare from,to edge ' +
+        'list), reporting any lossy-conversion warnings.',
       inputShape: {
         json: z
           .union([z.string(), z.record(z.string(), z.unknown())])
-          .describe('Document JSON as a string or object.'),
+          .describe(
+            'Document JSON as a string or object; or Mermaid/CSV text (string).',
+          ),
         title: displayString(TEXT_LIMITS.title).optional(),
         format: z
-          .enum(['auto', 'topology-dojo', 'legacy-studio'])
+          .enum(['auto', 'topology-dojo', 'legacy-studio', 'mermaid', 'csv'])
           .optional()
           .describe(
-            '"auto" (default) detects a legacy Topology Studio save and converts it, ' +
-              'otherwise imports natively; "topology-dojo" requires the native document ' +
-              'shape (no legacy detection); "legacy-studio" always runs the legacy ' +
-              'converter, failing with a typed error if the input is not legacy-shaped.',
+            '"auto" (default) sniffs the input: legacy Topology Studio saves, Mermaid ' +
+              'flowcharts, and CSV are detected and converted, otherwise imports natively; ' +
+              '"topology-dojo" requires the native document shape; "legacy-studio", ' +
+              '"mermaid", and "csv" force that converter, failing with a typed error ' +
+              'when the input does not match.',
           ),
       },
       handler: (a) => {
@@ -476,6 +491,40 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         if (format === 'topology-dojo') {
           const { id, document } = store.import(a.json, title);
           return { id, title: document.title, pages: document.pages.length };
+        }
+
+        // Text-based formats (Mermaid / CSV): forced, or sniffed on 'auto'
+        // when the string isn't JSON.
+        const asText = typeof a.json === 'string' ? a.json : null;
+        const textFormat =
+          format === 'mermaid' || format === 'csv'
+            ? format
+            : format === 'auto' && asText !== null
+              ? detectMermaid(asText)
+                ? 'mermaid'
+                : detectCsv(asText)
+                  ? 'csv'
+                  : null
+              : null;
+        if (textFormat) {
+          if (asText === null)
+            throw new Error(`format "${textFormat}" needs a string input`);
+          const result =
+            textFormat === 'mermaid'
+              ? convertMermaid(asText, title)
+              : convertCsv(asText, title);
+          if (!result.ok || !result.document)
+            throw new Error(`${textFormat} import failed: ${result.error}`);
+          const { id, document } = store.import(
+            result.document as unknown as Record<string, unknown>,
+            title,
+          );
+          return {
+            id,
+            title: document.title,
+            pages: document.pages.length,
+            converted: { from: textFormat, warnings: result.warnings },
+          };
         }
 
         // 'auto' and 'legacy-studio' both need the parsed JSON to sniff or convert.
@@ -570,7 +619,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_page_properties',
       description:
-        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), and/or playback timing (duration ms / transition) for flipbook playback.',
+        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, and/or lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear).',
       inputShape: {
         topologyId,
         pageIndex,
@@ -581,6 +630,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .optional()
           .describe('Playback hold time in ms (players default to 2000).'),
         transition: z.enum(['cut', 'fade']).optional(),
+        lineJumps: z
+          .enum(['none', 'arc', 'gap'])
+          .optional()
+          .describe(
+            'Crossing hops for standard line links ("none" clears the setting).',
+          ),
       },
       handler: (a) => {
         if (a.viewBox !== undefined && !isValidViewBox(String(a.viewBox)))
@@ -596,12 +651,19 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         if (a.duration !== undefined) page.duration = Number(a.duration);
         if (a.transition !== undefined)
           page.transition = a.transition as 'cut' | 'fade';
+        if (a.lineJumps !== undefined) {
+          if (a.lineJumps === 'none') delete page.lineJumps;
+          else page.lineJumps = a.lineJumps as 'arc' | 'gap';
+        }
         return {
           name: page.name,
           viewBox: page.viewBox,
           ...(page.duration !== undefined ? { duration: page.duration } : {}),
           ...(page.transition !== undefined
             ? { transition: page.transition }
+            : {}),
+          ...(page.lineJumps !== undefined
+            ? { lineJumps: page.lineJumps }
             : {}),
         };
       },
@@ -1813,16 +1875,26 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     const publish = deps.publishTopology;
     tools.push({
       name: 'share_topology',
-      description: `Publish the current topology and return a public link that opens it in the Topology Dojo editor. ${SHARE_PUBLIC_WARNING} Do not publish internal addresses, credentials, or other sensitive content. The snapshot is stored durably (it does NOT depend on the live server session). Re-run after further edits to publish an updated snapshot (a new link). Remote deployments rate-limit this tool per authenticated user (8 per 5 minutes); back off on a rate-limited error rather than retrying immediately. The publisher can revoke the link with unpublish_topology or DELETE /api/topology/<id>.`,
+      description: `Publish the current topology and return a public link that opens it in the Topology Dojo editor. ${SHARE_PUBLIC_WARNING} Do not publish internal addresses, credentials, or other sensitive content. The snapshot is stored durably (it does NOT depend on the live server session). Re-run after further edits to publish an updated snapshot (a new link). Remote deployments rate-limit this tool per authenticated user (8 per 5 minutes); back off on a rate-limited error rather than retrying immediately. The publisher can list live links with list_shares and revoke one with unpublish_topology (or DELETE /api/topology/<id>).`,
       inputShape: { topologyId },
       handler: (a) => publish(store.get(String(a.topologyId))),
+    });
+  }
+  if (deps.listShares) {
+    const list = deps.listShares;
+    tools.push({
+      name: 'list_shares',
+      description:
+        'List the authenticated owner’s live published share links (id, title, createdAt, expiresAt), newest first. Expired snapshots are pruned automatically. Use before unpublish_topology to find the id to take down. Links published before owner metadata/listing existed do not appear and cannot be revoked.',
+      inputShape: {},
+      handler: async () => ({ shares: await list() }),
     });
   }
   if (deps.unpublishTopology) {
     const unpublish = deps.unpublishTopology;
     tools.push({
       name: 'unpublish_topology',
-      description: `Revoke a public share link you published with share_topology. Deletes the KV snapshot so /v/<id> and /api/topology/<id> stop serving it. Only the publisher can revoke. Pass the 12-character share id from the URL (or the id returned by share_topology). ${SHARE_PUBLIC_WARNING}`,
+      description: `Revoke a public share link you published with share_topology. Deletes the KV snapshot so /v/<id> and /api/topology/<id> stop serving it. Only the publisher can revoke. Pass the 12-character share id from the URL (or the id returned by share_topology or list_shares). ${SHARE_PUBLIC_WARNING}`,
       inputShape: {
         shareId: z
           .string()

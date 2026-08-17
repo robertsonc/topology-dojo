@@ -86,7 +86,7 @@ Apps, secrets, or KV namespace ids across environments.
 > workspace tools. The old snapshot is retained as migration rollback material
 > but stale legacy mutation is refused.
 
-### Share links (`share_topology` / `unpublish_topology`)
+### Share links (`share_topology` / `list_shares` / `unpublish_topology`)
 
 `share_topology` snapshots the current document into a **KV namespace** and
 returns a link that opens it in the browser editor — the way to hand a user a
@@ -95,7 +95,7 @@ the per-session in-memory store), the link keeps working after the MCP session
 ends. The link is `<PUBLIC_BASE_URL>/v/<id>`; opening it loads the snapshot into
 the editor (the SPA fetches `/api/topology/<id>`).
 
-This link is public: anyone with the URL can view the snapshot for up to 30 days. Do not publish internal addresses, credentials, or other sensitive content. Publishing again mints a new snapshot id and URL; it does not renew the previous URL. Every snapshot URL expires 30 days after it is created. Public GETs may be cached for about a minute so an owner revoke can take effect quickly. The publisher can revoke a link with `unpublish_topology` (pass the 12-character share id) or `DELETE /api/topology/<id>` while signed in as the same GitHub user; revoke deletes the KV key and `/v/<id>` then 404s. Snapshots are public to anyone with the URL; remote publishes are rate-limited per authenticated user (see [Rate limits and export size](#rate-limits-and-export-size)). These tools are **remote-only** — the local stdio server has no KV/origin, so they are not registered there.
+This link is public: anyone with the URL can view the snapshot for up to 30 days. Do not publish internal addresses, credentials, or other sensitive content. Publishing again mints a new snapshot id and URL; it does not renew the previous URL. Every snapshot URL expires 30 days after it is created. Public GETs may be cached for about a minute so an owner revoke can take effect quickly. Every publish also lands in the owner's listing index, so `list_shares` (and the browser Share dialog) can enumerate the live links. The publisher can revoke a link with `unpublish_topology` (pass the 12-character share id) or `DELETE /api/topology/<id>` while signed in as the same GitHub user; revoke deletes the KV key and `/v/<id>` then 404s. Snapshots are public to anyone with the URL; remote publishes are rate-limited per authenticated user (see [Rate limits and export size](#rate-limits-and-export-size)). These tools are **remote-only** — the local stdio server has no KV/origin, so they are not registered there.
 
 One-time setup for the isolated staging environment (use the environment's
 actual binding names and record the generated ids in `env.staging`):
@@ -166,53 +166,54 @@ to the task's affected region and change summaries, not total document size.
 
 ## Tools
 
-| Tool                                                   | Purpose                                                                                                   |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                      |
-| `create_topology`                                      | New document (one empty page)                                                                             |
-| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                 |
-| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                     |
-| `import_topology`                                      | Load from document JSON (string or object); `format` auto-detects/converts a legacy Topology Studio save  |
-| `set_document_title`                                   | Rename a document                                                                                         |
-| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox                                                    |
-| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                             |
-| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                          |
-| `edit_topology`                                        | **Batch**: many authoring operations in one call (atomic, ordered) — preferred for building diagrams      |
-| `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                               |
-| `upsert_by_source`                                     | Converge an element onto external data by source identity                                                 |
-| `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                |
-| `define_node_type`                                     | Add a custom node type (merged over defaults)                                                             |
-| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                          |
-| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key                                                  |
-| `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                    |
-| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                             |
-| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)                                             |
-| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                     |
-| `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                          |
-| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)                                             |
-| `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA          |
-| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters)                                        |
-| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations                                              |
-| `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                 |
-| `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                                                         |
-| `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                              |
-| `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                                |
-| `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                               |
-| `share_topology`                                       | Publish a **public** durable snapshot; returns a browser link (remote-only)                               |
-| `unpublish_topology`                                   | Owner-only revoke of a public share (deletes the KV snapshot; remote-only)                                |
-| `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                              |
-| `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                     |
-| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it               |
-| `describe_workspace_operations`                        | On-demand versioned operation vocabulary; call only when its revision changes                             |
-| `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                                    |
-| `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                        |
-| `propose_workspace_changes`                            | Submit a semantic change set for browser-owner review (default write path)                                |
-| `apply_workspace_changes`                              | Direct semantic commit only inside a live UI-granted page lease                                           |
-| `create_checkpoint`                                    | Snapshot the workspace as a named checkpoint (restore/fork stay browser-owner)                            |
-| `list_checkpoints`                                     | List named checkpoints (id, name, revision, page count, author)                                           |
-| `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`) |
-| `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                            |
-| `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                         |
+| Tool                                                   | Purpose                                                                                                          |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                             |
+| `create_topology`                                      | New document (one empty page)                                                                                    |
+| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                        |
+| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                            |
+| `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a Mermaid flowchart, or CSV data (`format` auto-detects) |
+| `set_document_title`                                   | Rename a document                                                                                                |
+| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox                                                           |
+| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                    |
+| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                                 |
+| `edit_topology`                                        | **Batch**: many authoring operations in one call (atomic, ordered) — preferred for building diagrams             |
+| `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                                      |
+| `upsert_by_source`                                     | Converge an element onto external data by source identity                                                        |
+| `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                       |
+| `define_node_type`                                     | Add a custom node type (merged over defaults)                                                                    |
+| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                                 |
+| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key                                                         |
+| `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                           |
+| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                                    |
+| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)                                                    |
+| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                            |
+| `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                 |
+| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)                                                    |
+| `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                 |
+| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters)                                               |
+| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations                                                     |
+| `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                        |
+| `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                                                                |
+| `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                                     |
+| `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                                       |
+| `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                                      |
+| `share_topology`                                       | Publish a **public** durable snapshot; returns a browser link (remote-only)                                      |
+| `list_shares`                                          | The owner's live published share links, newest first (remote-only)                                               |
+| `unpublish_topology`                                   | Owner-only revoke of a public share (deletes the KV snapshot; remote-only)                                       |
+| `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                                     |
+| `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                            |
+| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it                      |
+| `describe_workspace_operations`                        | On-demand versioned operation vocabulary; call only when its revision changes                                    |
+| `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                                           |
+| `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                               |
+| `propose_workspace_changes`                            | Submit a semantic change set for browser-owner review (default write path)                                       |
+| `apply_workspace_changes`                              | Direct semantic commit only inside a live UI-granted page lease                                                  |
+| `create_checkpoint`                                    | Snapshot the workspace as a named checkpoint (restore/fork stay browser-owner)                                   |
+| `list_checkpoints`                                     | List named checkpoints (id, name, revision, page count, author)                                                  |
+| `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`)        |
+| `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                                   |
+| `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                                |
 
 ### Authoring preferences (adaptive guidance)
 

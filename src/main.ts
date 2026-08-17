@@ -13,7 +13,7 @@ import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-500.css';
 import '@fontsource/jetbrains-mono/latin-600.css';
 import '@fontsource/jetbrains-mono/latin-700.css';
-import { Editor } from './editor/editor.js';
+import { Editor, type InlineEditRequest } from './editor/editor.js';
 import { clientToUser } from './editor/coords.js';
 import {
   applyPalette,
@@ -40,7 +40,19 @@ import {
   type DocSlot,
 } from './pages/persist.js';
 import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
-import { downloadBlob, exportPagePNG, exportPageSVG } from './editor/export.js';
+import {
+  copyPagePNG,
+  downloadBlob,
+  exportPagePNG,
+  exportPageSVG,
+  pagesToPDFBlob,
+  pageToSVG,
+  selectionPage,
+} from './editor/export.js';
+import { exportFlipbookHTML } from './render/flipbook.js';
+import { documentToDrawioXML } from './editor/drawio.js';
+import { userToClient } from './editor/coords.js';
+import { nodeBounds } from './api/geometry.js';
 import { legendSVG } from './editor/legend.js';
 import { captionSVG } from './editor/caption.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
@@ -113,6 +125,7 @@ app.innerHTML = `
         <button class="tbtn" id="fNew" title="New document">new</button>
         <button class="tbtn" id="fSave" title="Download the document as a JSON file">download</button>
         <button class="tbtn" id="fOpen" title="Open a JSON file">open</button>
+        <button class="tbtn" id="fShare" title="Publish a public share link / manage published links" hidden>share</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
@@ -123,10 +136,20 @@ app.innerHTML = `
       <div class="tgroup">
         <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
         <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
+        <select class="tbtn" id="fExport" title="More export formats" aria-label="More export formats">
+          <option value="">⤓ export…</option>
+          <option value="pdf-page">PDF — current frame</option>
+          <option value="pdf-all">PDF — all frames</option>
+          <option value="flipbook">Flipbook HTML — all frames</option>
+          <option value="drawio">draw.io XML — all frames (lossy)</option>
+          <option value="copy-png">Copy PNG to clipboard</option>
+          <option value="svg-selection">SVG — selection only</option>
+          <option value="png-selection">PNG — selection only</option>
+        </select>
         <span class="export-status" id="exportStatus" role="status" aria-live="polite"></span>
         <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
       </div>
-      <input type="file" id="fInput" accept="application/json,.json" hidden />
+      <input type="file" id="fInput" accept="application/json,.json,.mmd,.mermaid,.csv,.txt" hidden />
       <span class="saved" id="saved"></span>
     </div>
     <div class="bar-right">
@@ -144,6 +167,7 @@ app.innerHTML = `
         <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient, glass" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">⚙</button>
         <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">☀</button>
         <button class="tbtn ticon" id="tFit" title="Fit view (0)" aria-label="Fit view">⤢</button>
+        <button class="tbtn ticon" id="tPresent" title="Present — full-screen playback of all frames" aria-label="Present full-screen">▶</button>
         <button class="tbtn ticon" id="tHelp" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
       </div>
       <span class="bar-div"></span>
@@ -330,6 +354,7 @@ function markDirty(): void {
   }, 400);
 }
 function onDocChange(): void {
+  if (statusReady) updateMiniBar();
   renderFilmstrip();
   renderStatus();
   renderMinimap();
@@ -352,6 +377,7 @@ const editor = new Editor(
   () => {
     renderStatus();
     renderMinimap();
+    if (statusReady) updateMiniBar();
   },
   onZoneSelectChange,
 );
@@ -373,6 +399,345 @@ const renderLayerOpts = (): { layers: typeof doc.layers } => ({
   layers: doc.layers,
 });
 editor.setRenderOpts(renderLayerOpts);
+
+/* ── inline label editing (double-click a node / link / zone) ─────────
+ * The editor resolves the double-click into a selected element + a client-
+ * space anchor; this shell owns the floating <input> and commits through the
+ * same update paths the inspector uses, so undo/workspace ops are identical. */
+let inlineEditEl: HTMLInputElement | null = null;
+function closeInlineEdit(): void {
+  inlineEditEl?.remove();
+  inlineEditEl = null;
+}
+function openInlineLabelEditor(req: InlineEditRequest): void {
+  closeInlineEdit();
+  if (req.kind === 'empty') {
+    openQuickAdd(req);
+    return;
+  }
+  if (!req.id) return;
+  const host = document.querySelector<HTMLElement>('.canvas-host');
+  if (!host) return;
+  const hostRect = host.getBoundingClientRect();
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'inline-label-edit';
+  input.value = req.current;
+  input.setAttribute('aria-label', `Edit ${req.kind} label`);
+  const w = Math.max(140, Math.min(360, req.current.length * 9 + 60));
+  input.style.width = `${w}px`;
+  input.style.left = `${Math.round(req.clientX - hostRect.left - w / 2)}px`;
+  input.style.top = `${Math.round(req.clientY - hostRect.top - 15)}px`;
+  host.appendChild(input);
+  inlineEditEl = input;
+  let done = false;
+  const commit = (save: boolean): void => {
+    if (done) return;
+    done = true;
+    const val = input.value.trim();
+    closeInlineEdit();
+    if (!save || val === req.current) return;
+    if (req.kind === 'node') editor.updateNode({ label: val });
+    else if (req.kind === 'link') editor.updateLink({ label: val });
+    else if (req.kind === 'zone')
+      editor.updateAnnotation('zones', req.id!, { label: val });
+    renderInspector();
+  };
+  input.addEventListener('blur', () => commit(true));
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      commit(false);
+    }
+  });
+  input.focus();
+  input.select();
+}
+editor.setInlineEditHandler(openInlineLabelEditor);
+// Ctrl/Cmd+click on an element carrying an `href` opens it in a new tab —
+// mirroring the clickable <a> the renderer emits in SVG exports and /v/:id.
+editor.setOpenHrefHandler((href) => window.open(href, '_blank', 'noopener'));
+
+/* ── quick-add (double-click empty canvas → type-to-place a node) ─────
+ * A draw.io/Lucid-style creation accelerator: a small popover with the same
+ * type-ahead search the Node library uses; Enter/click places the chosen type
+ * exactly at the double-clicked point (grid-snapped when snap is on). */
+let quickAddEl: HTMLDivElement | null = null;
+function closeQuickAdd(): void {
+  quickAddEl?.remove();
+  quickAddEl = null;
+}
+function openQuickAdd(req: InlineEditRequest, connectFrom?: string): void {
+  closeQuickAdd();
+  closeInlineEdit();
+  const host = document.querySelector<HTMLElement>('.canvas-host');
+  if (!host) return;
+  const hostRect = host.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'quick-add';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute(
+    'aria-label',
+    connectFrom ? 'Add a connected node here' : 'Add a node here',
+  );
+  const W = 260;
+  const left = Math.max(
+    4,
+    Math.min(req.clientX - hostRect.left - W / 2, hostRect.width - W - 4),
+  );
+  const top = Math.max(
+    4,
+    Math.min(req.clientY - hostRect.top + 10, hostRect.height - 300),
+  );
+  pop.style.left = `${Math.round(left)}px`;
+  pop.style.top = `${Math.round(top)}px`;
+  pop.innerHTML =
+    `<input type="search" class="qa-input" placeholder="Add node… (type to search)" aria-label="Search node types" autocomplete="off">` +
+    `<div class="qa-list scroll-slim" role="listbox"></div>`;
+  host.appendChild(pop);
+  quickAddEl = pop;
+  const input = pop.querySelector<HTMLInputElement>('.qa-input')!;
+  const list = pop.querySelector<HTMLDivElement>('.qa-list')!;
+  let items: { type: string; label: string }[] = [];
+  let active = 0;
+  const place = (type: string): void => {
+    closeQuickAdd();
+    const g = editor.grid;
+    const sx = editor.snap
+      ? Math.round(req.pageX / g) * g
+      : Math.round(req.pageX);
+    const sy = editor.snap
+      ? Math.round(req.pageY / g) * g
+      : Math.round(req.pageY);
+    if (connectFrom) editor.quickConnectTo(connectFrom, type, sx, sy);
+    else editor.addNode(type, undefined, { x: sx, y: sy });
+  };
+  const renderList = (): void => {
+    items = filterNodeCatalog(input.value, doc.customNodes)
+      .slice(0, 8)
+      .map((i) => ({ type: i.type, label: i.label }));
+    active = Math.min(active, Math.max(0, items.length - 1));
+    list.innerHTML = items.length
+      ? items
+          .map(
+            (i, ix) =>
+              `<button class="qa-item${ix === active ? ' active' : ''}" role="option" aria-selected="${ix === active}" data-type="${esc(i.type)}">${nodePreviewSVG(i.type)}<span class="plabel">${esc(i.label)}</span></button>`,
+          )
+          .join('')
+      : `<div class="qa-none">No matching node type</div>`;
+    list.querySelectorAll<HTMLButtonElement>('.qa-item').forEach((b) =>
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); // beat the input's blur
+        place(b.dataset.type!);
+      }),
+    );
+  };
+  input.addEventListener('input', () => {
+    active = 0;
+    renderList();
+  });
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeQuickAdd();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const pick = items[active];
+      if (pick) place(pick.type);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!items.length) return;
+      active =
+        e.key === 'ArrowDown'
+          ? (active + 1) % items.length
+          : (active - 1 + items.length) % items.length;
+      renderList();
+    }
+  });
+  input.addEventListener('blur', () => {
+    // Give a same-popover pointerdown a beat to run first.
+    setTimeout(() => {
+      if (quickAddEl === pop && !pop.contains(document.activeElement))
+        closeQuickAdd();
+    }, 120);
+  });
+  renderList();
+  input.focus();
+}
+/* ── mini style bar (Phase 1.4) ───────────────────────────────────────
+ * A compact contextual bar floating above the selection with the top
+ * inspector actions — color swatches + frame emphasis for nodes, plus
+ * link type / routing for a selected link. Pure convenience over the
+ * inspector (same update paths); view state only, nothing persisted. */
+const miniBar = document.createElement('div');
+miniBar.className = 'mini-bar';
+miniBar.hidden = true;
+document.querySelector('.canvas-host')?.appendChild(miniBar);
+
+function miniBarHtml(kind: 'node' | 'link'): string {
+  const swatches = SWATCHES.map(
+    (c) =>
+      `<button class="mb-sw" data-mbcolor="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}"></button>`,
+  ).join('');
+  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this frame" aria-label="Emphasize on this frame">★</button>`;
+  if (kind === 'link') {
+    const info = editor.selectedLinkInfo();
+    const typeOpts = linkCatalog()
+      .map(
+        (l) =>
+          `<option value="${l.type}"${l.type === info?.type ? ' selected' : ''}>${esc(l.label)}</option>`,
+      )
+      .join('');
+    const styleOpts = ['straight', 'orthogonal', 'curved']
+      .map(
+        (s) =>
+          `<option value="${s}"${s === (info?.style ?? 'straight') ? ' selected' : ''}>${s}</option>`,
+      )
+      .join('');
+    return (
+      `<select class="mb-sel" id="mbType" title="Link type" aria-label="Link type">${typeOpts}</select>` +
+      `<select class="mb-sel" id="mbStyle" title="Routing" aria-label="Link routing">${styleOpts}</select>` +
+      `<span class="mb-div"></span>${swatches}<span class="mb-div"></span>${emph}`
+    );
+  }
+  return `${swatches}<span class="mb-div"></span>${emph}`;
+}
+
+/** Selection anchor (top-centre of the selection bbox) in client coords. */
+function miniBarAnchor(): { x: number; y: number } | null {
+  const link = editor.getSelectedLink();
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity;
+  if (link) {
+    const pts: { x: number; y: number }[] = [];
+    for (const id of [link.from, link.to]) {
+      const n = editor.page.nodes.find((m) => m.id === id);
+      const a = n ?? editor.page.anchors.find((m) => m.id === id);
+      if (a) pts.push({ x: a.x, y: a.y });
+    }
+    pts.push(...(link.waypoints ?? []));
+    if (pts.length === 0) return null;
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+    }
+  } else {
+    const sel = editor.selectionElements();
+    if (!sel || sel.nodes.length === 0) return null;
+    for (const n of sel.nodes) {
+      const b = nodeBounds(n);
+      minX = Math.min(minX, b.x);
+      minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w);
+    }
+  }
+  return userToClient(overlaySvg, (minX + maxX) / 2, minY);
+}
+
+let miniBarSuppressed = false;
+function updateMiniBar(): void {
+  const link = editor.getSelectedLink();
+  const nodeCount = link ? 0 : (editor.selectionElements()?.nodes.length ?? 0);
+  if (miniBarSuppressed || (!link && nodeCount === 0)) {
+    miniBar.hidden = true;
+    return;
+  }
+  const anchor = miniBarAnchor();
+  const host = document.querySelector<HTMLElement>('.canvas-host');
+  if (!anchor || !host) {
+    miniBar.hidden = true;
+    return;
+  }
+  const kind = link ? 'link' : 'node';
+  if (miniBar.dataset.kind !== kind || miniBar.hidden) {
+    miniBar.dataset.kind = kind;
+    miniBar.innerHTML = miniBarHtml(kind);
+  } else if (kind === 'link') {
+    // Keep the selects in sync when a different link is picked.
+    const info = editor.selectedLinkInfo();
+    const t = miniBar.querySelector<HTMLSelectElement>('#mbType');
+    const s = miniBar.querySelector<HTMLSelectElement>('#mbStyle');
+    if (t && info) t.value = info.type;
+    if (s && info) s.value = info.style;
+  }
+  miniBar.hidden = false;
+  const hostRect = host.getBoundingClientRect();
+  const w = miniBar.offsetWidth || 200;
+  const left = Math.max(
+    4,
+    Math.min(anchor.x - hostRect.left - w / 2, hostRect.width - w - 4),
+  );
+  const top = Math.max(4, anchor.y - hostRect.top - 46);
+  miniBar.style.left = `${Math.round(left)}px`;
+  miniBar.style.top = `${Math.round(top)}px`;
+  const emph = miniBar.querySelector<HTMLButtonElement>('#mbEmph');
+  if (emph) {
+    const ids = link ? [link.id] : (editor.selectedNodeIds() ?? []);
+    const on = ids.length > 0 && ids.every((id) => editor.isEmphasized(id));
+    emph.classList.toggle('on', on);
+  }
+}
+miniBar.addEventListener('click', (e) => {
+  const t = e.target as HTMLElement;
+  const sw = t.closest<HTMLButtonElement>('[data-mbcolor]');
+  if (sw) {
+    const color = sw.dataset.mbcolor!;
+    if (editor.getSelectedLink()) editor.updateLink({ color });
+    else editor.updateSelectedNodes({ color });
+    renderInspector();
+    return;
+  }
+  if (t.closest('#mbEmph')) {
+    const link = editor.getSelectedLink();
+    if (link) editor.toggleEmphasis(link.id);
+    else editor.emphasizeSelection();
+    renderInspector();
+    updateMiniBar();
+  }
+});
+miniBar.addEventListener('change', (e) => {
+  const t = e.target as HTMLSelectElement;
+  if (t.id === 'mbType') editor.updateLink({ type: t.value });
+  else if (t.id === 'mbStyle')
+    editor.updateLink({
+      lineStyle: t.value as 'orthogonal' | 'curved',
+    });
+  renderInspector();
+});
+// Hide while a canvas gesture is in flight; re-anchor when it settles.
+overlaySvg.addEventListener('pointerdown', () => {
+  miniBarSuppressed = true;
+  miniBar.hidden = true;
+});
+overlaySvg.addEventListener('pointerup', () => {
+  miniBarSuppressed = false;
+  // Selection callbacks fire before this listener; re-anchor now.
+  setTimeout(updateMiniBar, 0);
+});
+
+// A link dragged out from a node and released over empty canvas offers the
+// same picker in connect mode: pick a type → node + link in one undo step.
+editor.setConnectEmptyHandler((req) =>
+  openQuickAdd(
+    {
+      kind: 'empty',
+      id: null,
+      current: '',
+      clientX: req.clientX,
+      clientY: req.clientY,
+      pageX: req.pageX,
+      pageY: req.pageY,
+    },
+    req.from,
+  ),
+);
 
 editor.setViewInsets(() => {
   const canvas = overlaySvg.getBoundingClientRect();
@@ -655,6 +1020,104 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
       if (pngBtn) pngBtn.disabled = false;
     });
 });
+/* More export formats: PDF (raster @2× through the same pipeline as PNG, so
+ * it always matches the canvas), the standalone flipbook HTML (same generator
+ * as the MCP tool — no fork), clipboard PNG, and selection-only crops. */
+const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
+function pageExtra(page: Page): string {
+  return legendSVG(doc, page) + captionSVG(page);
+}
+function pageOpts(page: Page): {
+  layers: typeof doc.layers;
+  emphasis?: string[];
+} {
+  return {
+    layers: doc.layers,
+    ...(page.emphasis ? { emphasis: page.emphasis } : {}),
+  };
+}
+/** The selection as a cropped standalone page, or null when nothing usable. */
+function selectionAsPage(): Page | null {
+  const sel = editor.selectionElements();
+  if (!sel || sel.nodes.length === 0) return null;
+  return selectionPage(doc.pages[current]!, sel.nodes, sel.links);
+}
+async function runExport(kind: string): Promise<void> {
+  const page = doc.pages[current]!;
+  switch (kind) {
+    case 'pdf-page': {
+      const blob = await pagesToPDFBlob([
+        { page, opts: pageOpts(page), extra: pageExtra(page) },
+      ]);
+      downloadBlob(`${exportBase()}.pdf`, blob);
+      return;
+    }
+    case 'pdf-all': {
+      const blob = await pagesToPDFBlob(
+        doc.pages.map((p) => ({
+          page: p,
+          opts: pageOpts(p),
+          extra: pageExtra(p),
+        })),
+      );
+      downloadBlob(
+        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.pdf`,
+        blob,
+      );
+      return;
+    }
+    case 'flipbook': {
+      const html = exportFlipbookHTML(doc, (d, i) => {
+        const p = d.pages[i]!;
+        return pageToSVG(
+          p,
+          { ...pageOpts(p), calm: editor.calm },
+          pageExtra(p),
+        );
+      });
+      downloadBlob(
+        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_flipbook.html`,
+        new Blob([html], { type: 'text/html' }),
+      );
+      return;
+    }
+    case 'drawio': {
+      downloadBlob(
+        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.drawio`,
+        new Blob([documentToDrawioXML(doc)], { type: 'application/xml' }),
+      );
+      return;
+    }
+    case 'copy-png':
+      await copyPagePNG(page, pageExtra(page), pageOpts(page));
+      return;
+    case 'svg-selection': {
+      const sp = selectionAsPage();
+      if (!sp) throw new Error('select one or more nodes first');
+      exportPageSVG(`${exportBase()}_selection.svg`, sp, {
+        calm: true,
+        layers: doc.layers,
+      });
+      return;
+    }
+    case 'png-selection': {
+      const sp = selectionAsPage();
+      if (!sp) throw new Error('select one or more nodes first');
+      await exportPagePNG(`${exportBase()}_selection.png`, sp, 2, '', {
+        layers: doc.layers,
+      });
+      return;
+    }
+  }
+}
+exportSel.addEventListener('change', () => {
+  const kind = exportSel.value;
+  exportSel.value = '';
+  if (!kind) return;
+  void runExport(kind).catch((err) =>
+    alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`),
+  );
+});
 /* New from a starter template. */
 const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
 templateSel.innerHTML =
@@ -683,6 +1146,31 @@ fileInput.addEventListener('change', async () => {
   const text = await file.text();
 
   const classified = classifyOpenedFile(text);
+  if (classified.kind === 'mermaid' || classified.kind === 'csv') {
+    const what =
+      classified.kind === 'mermaid' ? 'Mermaid flowchart' : 'CSV data';
+    if (!classified.result.ok) {
+      alert(`Could not import this ${what}: ${classified.result.error}`);
+      return;
+    }
+    const { document, warnings } = classified.result;
+    const shown = warnings.slice(0, 8);
+    const summary =
+      `Imported from ${what}: ${document!.pages[0]!.nodes.length} node(s), ` +
+      `${document!.pages[0]!.links.length} link(s), ${warnings.length} warning(s)` +
+      (shown.length
+        ? ':\n' +
+          shown.map((w) => `- ${w}`).join('\n') +
+          (warnings.length > shown.length
+            ? `\n+ ${warnings.length - shown.length} more`
+            : '')
+        : '') +
+      '\nLoad it?';
+    if (!confirm(summary)) return;
+    if (!closeWorkspaceForDocumentReplacement()) return;
+    loadDoc(document!);
+    return;
+  }
   if (classified.kind === 'legacy') {
     if (!classified.result.ok) {
       alert(
@@ -1185,16 +1673,37 @@ function renderFindResults(): void {
 }
 function runFindQuery(q: string): void {
   const s = q.trim().toLowerCase();
+  // Match label / id / type / sublabel — and metadata keys AND values, so a
+  // node is findable by the IP, hostname, serial, etc. stored on it. The
+  // shown "type" slot carries the match reason when it came from metadata.
+  const reasonFor = (n: (typeof editor.page.nodes)[number]): string | null => {
+    if (!s) return n.type;
+    if (
+      (n.label ?? '').toLowerCase().includes(s) ||
+      n.id.toLowerCase().includes(s) ||
+      n.type.toLowerCase().includes(s)
+    )
+      return n.type;
+    if (((n.sublabel as string) ?? '').toLowerCase().includes(s))
+      return `${n.type} · ${String(n.sublabel)}`;
+    for (const [k, v] of Object.entries(n.meta ?? {})) {
+      if (k.toLowerCase().includes(s) || String(v).toLowerCase().includes(s))
+        return `${n.type} · ${k}: ${String(v)}`;
+    }
+    return null;
+  };
   findMatches = editor.page.nodes
+    .map((n) => ({ n, reason: reasonFor(n) }))
     .filter(
-      (n) =>
-        !s ||
-        (n.label ?? '').toLowerCase().includes(s) ||
-        n.id.toLowerCase().includes(s) ||
-        n.type.toLowerCase().includes(s),
+      (x): x is { n: (typeof editor.page.nodes)[number]; reason: string } =>
+        x.reason !== null,
     )
     .slice(0, 50)
-    .map((n) => ({ id: n.id, label: n.label || '(no label)', type: n.type }));
+    .map(({ n, reason }) => ({
+      id: n.id,
+      label: n.label || '(no label)',
+      type: reason,
+    }));
   findSel = 0;
   renderFindResults();
 }
@@ -1206,7 +1715,7 @@ function openFind(): void {
   findEl = document.createElement('div');
   findEl.className = 'find';
   findEl.innerHTML =
-    `<input type="text" placeholder="Find node by label / id / type…" aria-label="Find node by label, id, or type" />` +
+    `<input type="text" placeholder="Find node by label / id / type / metadata…" aria-label="Find node by label, id, type, or metadata" />` +
     `<div class="find-results scroll-slim"></div>`;
   app.appendChild(findEl);
   const input = findEl.querySelector('input')!;
@@ -1335,6 +1844,7 @@ inspectorResizer.addEventListener('pointerdown', (e) => {
 });
 
 function onLinkSelectChange(_linkId: string | null): void {
+  if (statusReady) updateMiniBar();
   renderInspector();
 }
 function onAnchorSelectChange(_anchorId: string | null): void {
@@ -1348,6 +1858,7 @@ function onZoneSelectChange(_zoneId: string | null): void {
 /* Align/distribute toolbar — shown when 2+ nodes are selected. */
 const alignGroup = app.querySelector<HTMLElement>('#alignGroup')!;
 function onSelectionChange(count: number): void {
+  if (statusReady) updateMiniBar();
   alignGroup.hidden = count < 2;
   alignGroup
     .querySelectorAll<HTMLButtonElement>('[data-dist]')
@@ -1542,7 +2053,7 @@ const LINK_GROUPS: FieldGroup[] = [
     title: 'Animation',
     keys: ['dots', 'flowSpeed', 'flowParticles', 'reverseFlow'],
   },
-  { title: 'Advanced', keys: ['locked', 'layer', 'source'] },
+  { title: 'Advanced', keys: ['href', 'tooltip', 'locked', 'layer', 'source'] },
 ];
 
 /** Node fields, grouped the same way. */
@@ -1552,9 +2063,9 @@ const NODE_GROUPS: FieldGroup[] = [
     keys: ['label', 'sublabel', 'labelColor', 'labelOffset'],
     open: true,
   },
-  { title: 'Appearance', keys: ['color', 'opacity'], open: true },
+  { title: 'Appearance', keys: ['color', 'opacity', 'status'], open: true },
   { title: 'Position', keys: ['x', 'y'] },
-  { title: 'Advanced', keys: ['locked', 'layer', 'source'] },
+  { title: 'Advanced', keys: ['href', 'tooltip', 'locked', 'layer', 'source'] },
 ];
 
 /**
@@ -1636,6 +2147,11 @@ function propertiesHtml(): string {
     `<label class="insp-row">Transition<select id="p-tr">` +
     `<option value="cut"${page.transition !== 'fade' ? ' selected' : ''}>cut</option>` +
     `<option value="fade"${page.transition === 'fade' ? ' selected' : ''}>fade</option>` +
+    `</select></label>` +
+    `<label class="insp-row" title="Draw a hop where standard line links cross others — the classic 'these wires aren't joined' notation">Link crossings<select id="p-jumps">` +
+    `<option value=""${!page.lineJumps ? ' selected' : ''}>overlap (none)</option>` +
+    `<option value="arc"${page.lineJumps === 'arc' ? ' selected' : ''}>jump — arc</option>` +
+    `<option value="gap"${page.lineJumps === 'gap' ? ' selected' : ''}>jump — gap</option>` +
     `</select></label>` +
     frameStoryHtml() +
     `<div class="insp-h">Legend</div>` +
@@ -1747,6 +2263,15 @@ function wireProperties(): void {
   tr?.addEventListener('change', () => {
     editor.updatePageProps({
       transition: tr.value === 'fade' ? 'fade' : undefined,
+    });
+  });
+  const jumps = inspector.querySelector<HTMLSelectElement>('#p-jumps');
+  jumps?.addEventListener('change', () => {
+    editor.updatePageProps({
+      lineJumps:
+        jumps.value === 'arc' || jumps.value === 'gap'
+          ? jumps.value
+          : undefined,
     });
   });
   // Legend (B.1) — a per-document setting; redraw the overlay so it shows live.
@@ -2492,6 +3017,12 @@ function buildPalette(): void {
 
   paletteList.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) =>
     b.addEventListener('click', () => {
+      // The Image entry opens a file picker instead of dropping a bare
+      // placeholder — the common intent is "put THIS picture on the canvas".
+      if (b.dataset.type === 'image') {
+        imageFileInput.click();
+        return;
+      }
       const variant = b.dataset.variant;
       editor.addNode(
         b.dataset.type!,
@@ -2537,6 +3068,76 @@ paletteSearch.addEventListener('keydown', (e) => {
   }
 });
 buildPalette();
+
+/* ── image upload (the palette's Image entry) ─────────────────────────
+ * Reads a picture, downscales it on a canvas until the data URI fits the
+ * 256KB validation cap (protecting the ~1.8MiB workspace page cap), and
+ * places an `image` node sized to the picture's aspect ratio. The data URI
+ * lives in the document JSON, so it travels with save/share/workspace. */
+const imageFileInput = document.createElement('input');
+imageFileInput.type = 'file';
+imageFileInput.accept = 'image/*';
+imageFileInput.hidden = true;
+imageFileInput.setAttribute('aria-hidden', 'true');
+document.body.appendChild(imageFileInput);
+imageFileInput.addEventListener('change', () => {
+  const f = imageFileInput.files?.[0];
+  imageFileInput.value = '';
+  if (f) void placeImageFile(f);
+});
+const IMAGE_DATA_CAP = 256 * 1024;
+async function placeImageFile(f: File): Promise<void> {
+  try {
+    const { uri, w, h } = await downscaleImage(f, 512, IMAGE_DATA_CAP);
+    // Display size: cap the on-canvas box while keeping the aspect ratio.
+    const scale = Math.min(1, 240 / w, 200 / h);
+    editor.addNode('image', f.name.replace(/\.[^.]+$/, '') || 'Image', {
+      imageHref: uri,
+      imageW: Math.max(16, Math.round(w * scale)),
+      imageH: Math.max(16, Math.round(h * scale)),
+    });
+  } catch (err) {
+    window.alert(`Could not load that image: ${String(err)}`);
+  }
+}
+async function downscaleImage(
+  f: File,
+  maxDim: number,
+  maxBytes: number,
+): Promise<{ uri: string; w: number; h: number }> {
+  const url = URL.createObjectURL(f);
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error('not a readable image file'));
+      img.src = url;
+    });
+    const alphaCapable = ['image/png', 'image/svg+xml', 'image/webp'].includes(
+      f.type,
+    );
+    let scale = Math.min(1, maxDim / Math.max(img.width, img.height, 1));
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas
+        .getContext('2d')!
+        .drawImage(img, 0, 0, canvas.width, canvas.height);
+      // First try keeps transparency (PNG); later passes trade it for size.
+      const uri =
+        alphaCapable && attempt === 0
+          ? canvas.toDataURL('image/png')
+          : canvas.toDataURL('image/jpeg', Math.max(0.4, 0.85 - attempt * 0.1));
+      if (uri.length <= maxBytes)
+        return { uri, w: canvas.width, h: canvas.height };
+      scale *= 0.7;
+    }
+    throw new Error('image is too large even after downscaling');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 let dragFrom = -1;
 
@@ -3172,6 +3773,267 @@ function openHelp(): void {
 }
 app.querySelector('#tHelp')?.addEventListener('click', () => openHelp());
 
+/* ── Present mode: full-screen playback of every frame ─────────────────
+ * A human-only view feature (DESIGN #2 carve-out — nothing persisted): the
+ * flipbook experience without leaving the editor. Reuses the SAME timing
+ * model as the filmstrip player and the exported flipbook (pages/playback),
+ * and the same per-frame SVG the exports produce. ←/→ step, Space toggles
+ * autoplay, Esc leaves. */
+let presentEl: HTMLElement | null = null;
+let releasePresentOverlay: (() => void) | null = null;
+let presentTimer: number | null = null;
+function closePresent(): void {
+  if (presentTimer !== null) clearTimeout(presentTimer);
+  presentTimer = null;
+  if (document.fullscreenElement) void document.exitFullscreen();
+  presentEl?.remove();
+  presentEl = null;
+  releasePresentOverlay?.();
+  releasePresentOverlay = null;
+}
+function openPresent(): void {
+  if (presentEl) {
+    closePresent();
+    return;
+  }
+  stopPlayback();
+  let frame = current;
+  let playing = doc.pages.length > 1;
+  const root = document.createElement('div');
+  root.className = 'present-root';
+  root.setAttribute('role', 'dialog');
+  root.setAttribute('aria-label', 'Presentation');
+  root.innerHTML =
+    `<div class="present-stage" id="presentStage"></div>` +
+    `<div class="present-bar">` +
+    `<button class="tbtn" id="presentPrev" title="Previous frame (←)" aria-label="Previous frame">‹</button>` +
+    `<button class="tbtn" id="presentPlay" title="Play / pause (Space)" aria-label="Play or pause">${playing ? '⏸' : '▶'}</button>` +
+    `<button class="tbtn" id="presentNext" title="Next frame (→)" aria-label="Next frame">›</button>` +
+    `<span class="present-count" id="presentCount"></span>` +
+    `<span class="present-name" id="presentName"></span>` +
+    `<button class="tbtn present-exit" id="presentExit" title="Exit (Esc)" aria-label="Exit presentation">✕ exit</button>` +
+    `</div>`;
+  document.body.appendChild(root);
+  presentEl = root;
+  const stage = root.querySelector<HTMLElement>('#presentStage')!;
+  const count = root.querySelector<HTMLElement>('#presentCount')!;
+  const name = root.querySelector<HTMLElement>('#presentName')!;
+  const playBtn = root.querySelector<HTMLButtonElement>('#presentPlay')!;
+  const show = (i: number, fade = false): void => {
+    frame = ((i % doc.pages.length) + doc.pages.length) % doc.pages.length;
+    const page = doc.pages[frame]!;
+    stage.innerHTML = pageToSVG(
+      page,
+      { ...pageOpts(page), calm: editor.calm },
+      pageExtra(page),
+    );
+    if (fade && page.transition === 'fade') {
+      stage.classList.remove('present-fade');
+      void stage.offsetWidth; // restart the animation
+      stage.classList.add('present-fade');
+    }
+    count.textContent = `${frame + 1} / ${doc.pages.length}`;
+    name.textContent = page.name;
+  };
+  const schedule = (): void => {
+    if (presentTimer !== null) clearTimeout(presentTimer);
+    presentTimer = null;
+    if (!playing || doc.pages.length < 2) return;
+    presentTimer = window.setTimeout(() => {
+      show(frame + 1, true);
+      schedule();
+    }, pageDuration(doc.pages[frame]!));
+  };
+  const setPlaying = (on: boolean): void => {
+    playing = on && doc.pages.length > 1;
+    playBtn.textContent = playing ? '⏸' : '▶';
+    schedule();
+  };
+  const step = (d: number): void => {
+    setPlaying(false);
+    show(frame + d, true);
+  };
+  root.querySelector('#presentPrev')?.addEventListener('click', () => step(-1));
+  root.querySelector('#presentNext')?.addEventListener('click', () => step(1));
+  playBtn.addEventListener('click', () => setPlaying(!playing));
+  root.querySelector('#presentExit')?.addEventListener('click', closePresent);
+  root.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+      e.preventDefault();
+      step(1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault();
+      step(-1);
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      setPlaying(!playing);
+    }
+  });
+  // Leaving browser-fullscreen (Esc) tears the presentation down too.
+  root.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && presentEl) closePresent();
+  });
+  releasePresentOverlay = registerOverlay(root, { close: closePresent });
+  show(frame);
+  setPlaying(playing);
+  void root.requestFullscreen?.().catch(() => {
+    /* fixed-position fallback still covers the viewport */
+  });
+}
+app.querySelector('#tPresent')?.addEventListener('click', () => openPresent());
+
+/* ── Share dialog (hosted only): publish a public /v/:id snapshot of the
+ * current document and manage (revoke) previously published links. The
+ * button is revealed by showUserChip() alongside the other hosted chips;
+ * the Worker enforces the session on every /api/share call. Closes finding
+ * M20 for the browser surface. */
+interface ShareRow {
+  id: string;
+  title: string;
+  createdAt: number;
+  expiresAt: number;
+}
+let shareEl: HTMLElement | null = null;
+let releaseShareOverlay: (() => void) | null = null;
+function closeShare(): void {
+  shareEl?.remove();
+  shareEl = null;
+  releaseShareOverlay?.();
+  releaseShareOverlay = null;
+}
+async function fetchShares(): Promise<ShareRow[]> {
+  const res = await fetch('/api/share', {
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`list failed (${res.status})`);
+  return ((await res.json()) as { shares?: ShareRow[] }).shares ?? [];
+}
+function shareRowHtml(s: ShareRow): string {
+  const url = `${location.origin}/v/${s.id}`;
+  const days = Math.max(
+    0,
+    Math.ceil((s.expiresAt - Date.now()) / (24 * 3600 * 1000)),
+  );
+  return (
+    `<div class="share-row" data-id="${esc(s.id)}">` +
+    `<div class="share-meta"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` +
+    `<span class="share-sub">${esc(new Date(s.createdAt).toLocaleDateString())} · expires in ${days}d</span></div>` +
+    `<button class="tbtn share-copy" data-url="${esc(url)}" title="Copy link">copy</button>` +
+    `<button class="tbtn share-revoke" data-id="${esc(s.id)}" title="Revoke — the public link stops resolving">revoke</button>` +
+    `</div>`
+  );
+}
+function openShare(): void {
+  if (shareEl) {
+    closeShare();
+    return;
+  }
+  shareEl = document.createElement('div');
+  shareEl.className = 'help-backdrop';
+  shareEl.innerHTML =
+    `<div class="help-card share-card scroll-slim" role="dialog" aria-modal="true" aria-label="Share">` +
+    `<div class="help-head"><h3>Share</h3>` +
+    `<button class="tbtn ticon" id="shareClose" title="Close (Esc)" aria-label="Close">✕</button></div>` +
+    `<p class="share-note">Publishing creates a <b>public</b> read-only snapshot at a /v/&lt;id&gt; link — no sign-in needed to view it. Links expire after 30 days; revoking one takes it down early (edge caches may serve it for up to about a minute). Don’t publish internal addresses or policy details unless they’re approved for public access.</p>` +
+    `<div class="share-actions"><button class="tbtn" id="sharePublish">⤴ publish current document</button><span class="share-status" id="shareStatus" role="status"></span></div>` +
+    `<div class="share-fresh" id="shareFresh" hidden></div>` +
+    `<h4 class="share-h">Published links</h4>` +
+    `<div class="share-list" id="shareList">loading…</div>` +
+    `</div>`;
+  app.appendChild(shareEl);
+  const status = shareEl.querySelector<HTMLElement>('#shareStatus')!;
+  const list = shareEl.querySelector<HTMLElement>('#shareList')!;
+  const fresh = shareEl.querySelector<HTMLElement>('#shareFresh')!;
+  const refresh = async (): Promise<void> => {
+    try {
+      const shares = await fetchShares();
+      list.innerHTML = shares.length
+        ? shares.map(shareRowHtml).join('')
+        : `<div class="share-sub">No live links.</div>`;
+    } catch (err) {
+      list.innerHTML = `<div class="share-sub">Could not load published links (${esc(String(err))}).</div>`;
+    }
+  };
+  shareEl.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    if (t === shareEl) {
+      closeShare();
+      return;
+    }
+    const copy = t.closest<HTMLButtonElement>('.share-copy');
+    if (copy) {
+      void navigator.clipboard?.writeText(copy.dataset.url!).then(
+        () => (copy.textContent = 'copied ✓'),
+        () => (copy.textContent = 'copy failed'),
+      );
+      return;
+    }
+    const revoke = t.closest<HTMLButtonElement>('.share-revoke');
+    if (revoke) {
+      revoke.disabled = true;
+      revoke.textContent = '…';
+      // The canonical revoke route (owner checked via snapshot metadata).
+      void fetch(`/api/topology/${encodeURIComponent(revoke.dataset.id!)}`, {
+        method: 'DELETE',
+      }).then(
+        (res) => {
+          if (res.ok) void refresh();
+          else {
+            revoke.disabled = false;
+            revoke.textContent = 'revoke';
+            status.textContent =
+              res.status === 403
+                ? 'only the publisher can revoke this link'
+                : `revoke failed (${res.status})`;
+          }
+        },
+        () => {
+          revoke.disabled = false;
+          revoke.textContent = 'revoke';
+          status.textContent = 'revoke failed (offline?)';
+        },
+      );
+    }
+  });
+  shareEl
+    .querySelector<HTMLButtonElement>('#sharePublish')!
+    .addEventListener('click', () => {
+      status.textContent = 'publishing…';
+      fresh.hidden = true;
+      void fetch('/api/share', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ document: JSON.parse(serializeDoc(doc)) }),
+      }).then(
+        async (res) => {
+          if (!res.ok) {
+            status.textContent = `publish failed (${res.status})`;
+            return;
+          }
+          const out = (await res.json()) as { id: string; url: string };
+          const url = out.url.startsWith('http')
+            ? out.url
+            : `${location.origin}${out.url}`;
+          status.textContent = '';
+          fresh.hidden = false;
+          fresh.innerHTML =
+            `<span class="share-sub">Published:</span> <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a> ` +
+            `<button class="tbtn share-copy" data-url="${esc(url)}">copy</button>`;
+          void refresh();
+        },
+        () => {
+          status.textContent = 'publish failed (offline?)';
+        },
+      );
+    });
+  shareEl
+    .querySelector('#shareClose')
+    ?.addEventListener('click', () => closeShare());
+  releaseShareOverlay = registerOverlay(shareEl, { close: closeShare });
+  void refresh();
+}
+app.querySelector('#fShare')?.addEventListener('click', () => openShare());
+
 /* Account menu. The Worker gates the app behind GitHub sign-in and reports the
  * current user at /api/me; when that succeeds we reveal a toolbar chip that opens
  * a small "Signed in as … / Sign out" menu. In Vite dev there's no Worker (auth is
@@ -3250,6 +4112,9 @@ async function showUserChip(): Promise<void> {
       wireAccountMenu(me.login);
       enableWorkspaceUi();
       profilePanelHandle.enable();
+      // Sharing needs the hosted Worker (KV + session); reveal only here.
+      const shareBtn = app.querySelector<HTMLButtonElement>('#fShare');
+      if (shareBtn) shareBtn.hidden = false;
       // The Admin chip is revealed only for the deployment owner; the real gate
       // is the /api/admin routes, so this is a cosmetic reveal.
       if (me.admin) adminDashboardHandle.enable();
@@ -3426,6 +4291,18 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
       { label: 'Duplicate', run: () => editor.duplicateSelection() },
       { label: 'Copy', run: () => editor.copySelection() },
       {
+        label: 'Copy as image',
+        run: () => {
+          const sp = selectionAsPage();
+          if (!sp) return;
+          void copyPagePNG(sp, '', { layers: doc.layers }).catch((err) =>
+            alert(
+              `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+        },
+      },
+      {
         label: 'Copy format',
         run: () => editor.copyFormat(),
         disabled: !editor.canCopyFormat(),
@@ -3499,6 +4376,17 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
   return [
     { label: 'Paste', run: () => editor.paste(), disabled: !editor.canPaste() },
     { label: 'Select all', run: () => editor.selectAll() },
+    {
+      label: 'Copy frame as image',
+      run: () => {
+        const page = doc.pages[current]!;
+        void copyPagePNG(page, pageExtra(page), pageOpts(page)).catch((err) =>
+          alert(
+            `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      },
+    },
     { sep: true },
     { label: 'Tidy layout', run: () => editor.tidy() },
     { label: 'Balance layout', run: () => editor.balance() },
