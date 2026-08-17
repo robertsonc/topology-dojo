@@ -142,9 +142,11 @@ reloaded document normally opens on its first page.
 
 The editor is organized into six areas.
 
-1. **Top toolbar.** File actions, undo and redo, **svg**, **png**, templates,
-   drawing tools, view controls, layout actions, selection actions, and the
-   optional workspace/profile/admin/account chips.
+1. **Top toolbar.** File actions (including **share** on hosted
+   deployments), undo and redo, **svg**, **png**, the **⤓ export…** menu
+   (PDF, flipbook HTML, clipboard PNG, selection-only exports), templates,
+   drawing tools, view controls (including **▶** Present), layout actions,
+   selection actions, and the optional workspace/profile/admin/account chips.
 2. **Node library.** A searchable, categorized catalog on the left. It also
    holds document custom nodes and stencils.
 3. **Canvas.** The current page, selection overlay, smart guides, link handles,
@@ -163,9 +165,10 @@ Properties, and pages strip. The palette, filmstrip, minimap, Problems panel,
 and Properties panel remember their local display state when browser storage is
 available.
 
-Use **Ctrl/Cmd+F** to search node labels, identifiers, and types, then jump to a
-result. The minimap provides an overview of content outside the current
-viewport.
+Use **Ctrl/Cmd+F** to search node labels, identifiers, types, sublabels, and
+metadata keys/values (find a node by the IP address, hostname, or model stored
+on it — the result row shows why it matched), then jump to a result. The
+minimap provides an overview of content outside the current viewport.
 
 ## 5. Build and edit a topology
 
@@ -190,6 +193,16 @@ viewport.
 
 - Type in **Search nodes…** to filter by name, type, category, or known aliases.
 - Click a catalog item to add it near the center of the visible page.
+- **Double-click empty canvas** to open the quick-add picker: type to filter
+  the same catalog, then press Enter (or click) to place that node exactly at
+  the double-clicked point.
+- **Double-click a node, link, or zone** to rename it in place: a small input
+  opens over the element; Enter commits, Escape cancels.
+- **Hover a node** to reveal four directional chevrons beyond its connection
+  dots. Click one to create a same-type node one step away in that direction,
+  already linked back and ready for its label. Drag from a chevron (or a
+  connection dot) and release over empty canvas to pick any type for the new
+  connected node at the drop point.
 - Return to **select** or press **V**, then drag a node to move it.
 - Grid snapping and smart alignment/spacing guides help place nodes. Toggle the
   grid with **R** and snapping with **G**.
@@ -318,7 +331,11 @@ focus inside the open overlay and restore focus when closed.
 | Mouse wheel                        | Zoom toward the cursor                                                        |
 | Space-drag or middle-drag          | Pan                                                                           |
 | 0                                  | Fit to content                                                                |
-| Ctrl/Cmd+F                         | Find and jump to a node                                                       |
+| Ctrl/Cmd+F                         | Find and jump to a node (labels, ids, types, metadata)                        |
+| Double-click node/link/zone        | Rename in place (Enter commits, Escape cancels)                               |
+| Double-click empty canvas          | Quick-add: type to pick a node type, Enter places it                          |
+| Ctrl/Cmd+click                     | Follow an element's hyperlink (when `href` is set)                            |
+| Pinch / two-finger drag (touch)    | Zoom about and pan with the gesture                                           |
 | R                                  | Toggle grid                                                                   |
 | G                                  | Toggle snap                                                                   |
 | M or P                             | Toggle minimap or Properties                                                  |
@@ -344,6 +361,9 @@ The built-in library covers:
 - application and infrastructure symbols such as apps, SaaS, servers,
   databases, identity cards, and text boxes;
 - generic geometric shapes;
+- an **Image** entry that opens a file picker: the picture is downscaled to a
+  compact data URI (≤256KB), embedded in the document, and placed sized to its
+  aspect ratio (https image URLs can also be set directly in Properties);
 - cloud-specific gateway/router symbols for AWS, Azure, and Google Cloud;
 - an **EC + Axis Connector (container)** variant.
 
@@ -357,13 +377,20 @@ With nothing selected, Properties shows the document and page settings:
 - **Title**, **Name**, **Canvas W**, **Canvas H**, and
   **fit to content**;
 - playback **Hold (ms)** and **Transition**;
+- **Link crossings** — draw a hop (arc or gap) where standard line links
+  cross links drawn earlier, the classic "these wires aren't joined"
+  notation;
 - frame **Caption** and **Emphasis**;
 - legend **Show key** and **Position**;
 - document layers.
 
 With a node selected, Properties is catalog-driven. Common fields include
-label, sublabel, type, color, opacity, label color/offset, lock, metadata, layer,
-and source identity. Type-specific controls add settings such as device variant,
+label, sublabel, type, color, opacity, **status** (an operational LED at the
+node's corner: OK, warning, down — with an attention ring —, maintenance, or
+unknown; in-use statuses join the legend), label color/offset, lock, metadata,
+**Link URL** (`href` — Ctrl/Cmd+click follows it in the editor, and SVG
+exports and public share views render it as a real clickable link) and
+**Tooltip** (shown on hover), layer, and source identity. Type-specific controls add settings such as device variant,
 managed/agent state, SaaS logo, switch ports, or text-box typography, fill,
 border, alignment, padding, and width.
 
@@ -508,6 +535,13 @@ the pages. For each page, set:
 Manual page selection stops playback. During playback, a fade uses a short
 visual transition; page hold duration controls when the next frame starts.
 
+### Present mode
+
+Choose the **▶** toolbar button to play the document full-screen: every frame
+renders exactly as exports do (caption, legend, emphasis, fade transitions),
+looping on each page's hold time. Use **←/→** to step manually, **Space** to
+pause/resume autoplay, and **Escape** to exit.
+
 ### Captions and emphasis
 
 With nothing selected, use the **Frame** section:
@@ -585,13 +619,55 @@ caption. Calm Canvas affects animated presentation in the SVG.
 Choose **png** to download the current frame as a two-times static raster. PNG
 export runs in the browser; there is no server/MCP PNG tool.
 
+### PDF, clipboard, and selection exports
+
+The **⤓ export…** toolbar menu adds:
+
+- **PDF — current frame** and **PDF — all frames** (one multi-page PDF, each
+  page sized to its frame). PDF export rasterizes at 2× through the same
+  pipeline as PNG, so it always matches the canvas.
+- **Copy PNG to clipboard** (also on the right-click menu as **Copy as
+  image** for a selection and **Copy frame as image** on empty canvas).
+- **SVG — selection only** and **PNG — selection only**: a cropped export of
+  just the selected nodes and the links between them.
+
 ### Flipbook HTML
 
-The MCP **export_flipbook** tool returns a self-contained HTML presentation of
-all pages. It includes page timing, cut/fade behavior, looped play/pause, and
-page navigation. Flipbook export is not currently a browser toolbar action.
+The **⤓ export… → Flipbook HTML** toolbar action (and the MCP
+**export_flipbook** tool — both use the same generator) returns a
+self-contained HTML presentation of all pages. It includes page timing,
+cut/fade behavior, looped play/pause, and page navigation.
+
+### Mermaid and CSV import
+
+The **open** dialog also accepts:
+
+- **Mermaid flowcharts** (`.mmd`, or any text starting with `flowchart …` /
+  `graph …`): nodes (shape brackets map to the closest vocabulary — `[(x)]`
+  becomes a database, `{x}` a diamond, and so on), edges with labels,
+  `subgraph … end` blocks as zones. The result is auto-laid-out following the
+  diagram's direction. Unsupported syntax is skipped with warnings shown in
+  the confirm summary.
+- **CSV data**: either `[nodes]` / `[links]` sections (headers `id`, `label`,
+  `type`, `zone`, `x`, `y`, `meta.*` and `from`, `to`, `type`, `label`,
+  `vlan`, …) or a bare `from,to` edge list (endpoints become hosts). Unknown
+  types fall back to host/line with line-numbered warnings.
+
+The MCP **import_topology** tool accepts the same text formats via
+`format: "mermaid" | "csv"` (or auto-detection).
 
 ### Public share links
+
+On a hosted deployment, the **share** toolbar button (shown after sign-in)
+opens the Share dialog: publish the current document, copy the fresh link,
+and see every live link you have published — each with **copy** and
+**revoke**. Revoking deletes the public snapshot; edge caches can serve it
+for up to about five more minutes. Links published before revocation existed
+cannot be listed or revoked and expire on their original schedule.
+
+Agents can do the same over MCP: **share_topology** publishes,
+**list_shares** enumerates the owner's live links, and **revoke_share**
+takes one down.
 
 The hosted, remote-only MCP **share_topology** tool publishes a snapshot and
 returns:
@@ -604,8 +680,8 @@ The link:
 - represents the document at publication time, not a live workspace;
 - expires after 30 days; publishing again creates a different snapshot and URL
   and does not extend the old URL;
-- can remain in browser or edge caches for up to 24 hours;
-- currently has no user-facing revoke/unpublish action.
+- can remain in browser or edge caches for up to about five minutes;
+- can be revoked early from the Share dialog or the **revoke_share** MCP tool.
 
 Do not publish internal addresses, credentials, sensitive metadata, or policy
 details unless they are approved for public access for that retention period.
@@ -675,6 +751,10 @@ Flow particles are separate; **Calm canvas** pauses glow and flow animation.
 
 If no Calm preference has been stored, the editor follows the operating
 system's reduced-motion preference. The user can still toggle Calm afterward.
+
+On a touch screen or trackpad, a two-finger pinch zooms about the gesture's
+midpoint and a two-finger drag pans; single-finger editing is unchanged. Full
+mobile editing remains undeclared (see the limitations section).
 
 ### Brand palette
 
@@ -969,7 +1049,7 @@ Workspace limits include:
 | Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                |
 | Edit content                 | **edit_topology**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**                                                                                                                                                  |
 | Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **inspect_render**                                                                                                                                                                  |
-| Output                       | **render_svg**, **export_flipbook**, hosted **share_topology**                                                                                                                                                                                                           |
+| Output                       | **render_svg**, **export_flipbook**, hosted **share_topology** / **list_shares** / **revoke_share**                                                                                                                                                                      |
 | Workspace                    | **create_workspace**, **list_workspaces**, **get_workspace_manifest**, **describe_workspace_operations**, **get_workspace_changes**, **get_workspace_elements**, **propose_workspace_changes**, **apply_workspace_changes**, **create_checkpoint**, **list_checkpoints** |
 | Preferences                  | **get_authoring_guidance**, **list_authoring_preferences**, **explain_authoring_preference**                                                                                                                                                                             |
 
@@ -1110,9 +1190,10 @@ KV bindings, and authenticated readiness checks using the
 
 - **Public means public.** A share snapshot needs no authentication and can
   contain the full topology, metadata, addresses, zones, and policy details.
-- **No share revocation.** Public snapshots currently expire after 30 days but
-  have no owner-facing unpublish action and can remain cached for up to 24
-  hours.
+- **Share revocation is bounded, not instant.** A revoked link stops being
+  served immediately, but edge/browser caches can keep a copy for up to about
+  five minutes. Links published before revocation shipped cannot be listed or
+  revoked.
 - **Share is a snapshot.** It is not live collaboration. Publish a new snapshot
   after changes.
 - **PNG is browser-only.** MCP renders SVG and flipbook HTML, not PNG.

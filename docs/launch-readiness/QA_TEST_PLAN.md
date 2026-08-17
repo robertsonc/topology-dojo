@@ -352,6 +352,26 @@ Status legend:
 
 ---
 
+### 7.8 Competitive gap-closing batch (2026-08-17)
+
+Features shipped by the UI gap-closing initiative (see the roadmap's
+"Competitive gap-closing batch" milestone and the matching capability-matrix
+rows). Automated evidence ran green locally against the feature branch.
+
+| ID     | Scenario and expected result                                                                                                                            | Status/environment                                                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GAP-01 | Double-click renames a node/link/zone in place (Enter commits one undo step + one semantic op; Escape cancels); double-click empty canvas quick-adds    | Automated: `src/editor/inline-edit.test.ts` (8) + e2e `gap-features.spec.ts`                                                                                |
+| GAP-02 | Chevron click creates a connected same-type node (one undo step, one gesture batch); drag-to-empty opens the connect picker; occupied spots are skipped | Automated: `src/editor/quick-connect.test.ts` (8) + e2e                                                                                                     |
+| GAP-03 | Share dialog publishes/lists/revokes; revocation is ownership-enforced; snapshot caching drops `immutable` (M20)                                        | Automated: `src/testing/share-api.test.ts` (10, incl. Miniflare through the real handler); UI mocked-API journey verified; Required: hosted staging journey |
+| GAP-04 | `href`/`tooltip` render as clickable `<a>`/`<title>` in exports and viewer; only http(s) is emitted; `javascript:` is a validation error                | Automated: `src/render/href-tooltip.test.ts` (7) + `src/api/href-tooltip.test.ts` (5)                                                                       |
+| GAP-05 | Image nodes render https/data:image sources clipped + placeholdered otherwise; ≤256KB inline cap enforced; palette upload downscales                    | Automated: `src/render/image-node.test.ts` (8); upload journey verified via scripted browser                                                                |
+| GAP-06 | PDF (single/multi-frame), clipboard PNG, selection-only exports, and the flipbook toolbar action produce correct artifacts                              | Automated: `src/editor/export.test.ts` crop math + e2e PDF download; clipboard/selection verified via scripted browser                                      |
+| GAP-07 | Mermaid flowcharts and CSV import through the open dialog and `import_topology` with warnings for unsupported syntax                                    | Automated: `src/import/mermaid.test.ts` (9), `src/import/csv.test.ts` (9), 4 MCP-level cases, e2e open-flow                                                 |
+| GAP-08 | Page `lineJumps` renders arc/gap hops (later-drawn line links hop earlier ones, exactly one of a pair), persists, validates                             | Automated: `src/render/line-jumps.test.ts` (5) + e2e persistence                                                                                            |
+| GAP-09 | Present mode plays frames full-screen on the shared timing model; ←/→/Space/Escape behave                                                               | Verified via scripted browser; Required: manual staging pass                                                                                                |
+| GAP-10 | Node `status` renders LEDs in both render paths and joins the legend; Ctrl+F matches metadata with a shown reason                                       | Automated: `src/render/status.test.ts` (6); find journey verified via scripted browser                                                                      |
+| GAP-11 | Pinch zoom/two-finger pan work without regressing single-finger editing                                                                                 | Verified via CDP-synthesized touch gestures; Required: real-device spot check                                                                               |
+
 ## 8. Non-functional suites
 
 All values below are release requirements unless a product owner records a

@@ -69,9 +69,11 @@ The original 2026-07-04 adversarial findings remain in
 status must be read from appended closure notes and `CAPABILITY_MATRIX.md`,
 not the historical top-line count. Former finding H1 is closed: algorithmic
 layout now carries anchors and manual waypoints with their nodes (commits
-`aa4e88c`, `7e3f8ed`). **M20 remains open**: published share links have no
-revoke/unpublish path and are public, unauthenticated, retained for 30 days,
-and cacheable for 24 hours.
+`aa4e88c`, `7e3f8ed`). **M20 is closed (2026-08-17)**: publishing now records
+an owner-indexed share record, the browser Share dialog and the MCP
+`list_shares`/`revoke_share` tools can take a link down early, and snapshot
+caching dropped `immutable` for a bounded 5-minute window (see the register's
+closure note and `worker/share.ts`).
 
 ## Now
 
@@ -141,9 +143,9 @@ packets:
 - **Richer explainability analytics** — once agent-activity foundation (Now
   item 3) ships, aggregate views (which guidance rules actually change agent
   behavior, correction-rate trends) become possible.
-- **Share-link revocation (finding M20)** — an authenticated unpublish
-  endpoint for `doc:<id>` KV entries, plus dropping the `immutable` cache
-  directive so revocation can actually take effect.
+- ~~**Share-link revocation (finding M20)**~~ — **shipped 2026-08-17**
+  (`worker/share.ts`, the browser Share dialog, MCP `list_shares` /
+  `revoke_share`, and revocation-compatible snapshot caching).
 - **More node/link art** — port additional renderers from the legacy
   monolith as needed; richer per-type inspector controls (ports, D2 waypoint
   UI).
@@ -485,6 +487,31 @@ an SD-WAN/SASE path, a three-tier app with a DMZ) as looping animated WebP
 stills, served ungated (image sub-resources aren't document navigations, so
 they're never behind the sign-in gate) and self-contained (no dependency on
 any ephemeral `/v/:id` share snapshot, so the landing page never rots).
+
+### Competitive gap-closing batch (2026-08-17)
+
+One vertical pass closing the highest-impact UI gaps against modern
+diagramming tools (draw.io / Lucidchart / Excalidraw / Miro), each shipped
+with catalog/validation/MCP parity where the document contract was touched
+(see `CAPABILITY_MATRIX.md` rows for evidence):
+
+- **Authoring velocity**: inline label editing (double-click a node / link /
+  zone), quick-add (double-click empty canvas → type-to-place), quick-connect
+  chevrons (click = create + connect the next node; drag to empty canvas =
+  create-and-connect picker).
+- **Sharing from the UI**: the browser Share dialog (publish / list / copy /
+  revoke) over one shared publish path with the MCP tools — closing finding
+  M20.
+- **Content vocabulary**: hyperlinks + hover tooltips on nodes / links /
+  zones (clickable SVG exports and `/v/:id`), an `image` node type (uploaded
+  pictures downscaled to ≤256KB data URIs), and node `status` LEDs
+  (ok / warn / down / maintenance / unknown) with legend integration.
+- **Interchange**: Mermaid flowchart + CSV import (browser open flow and
+  `import_topology`), PDF export (single / all frames), flipbook HTML export
+  from the toolbar, clipboard PNG copy, and selection-only exports.
+- **Canvas polish**: page-level line jumps at link crossings (arc / gap),
+  full-screen Present mode, pinch-zoom + two-finger pan, and metadata-aware
+  find (Ctrl+F matches the IP/hostname/etc. stored on a node).
 
 ## Retired (kept dormant)
 
