@@ -17,7 +17,7 @@ import {
   type PolicyMarkerConfig,
   type ZoneConfig,
 } from '../vendor/topology-ds.js';
-import { clientToUser } from './coords.js';
+import { clientToUser, userToClient } from './coords.js';
 import { balancePage, tidyPage } from '../api/tidy.js';
 import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
@@ -35,6 +35,7 @@ import {
   hitTestZone,
   linkPolyline,
   nodeBounds,
+  nodeHalf,
   nodesInRect,
   resolvePos,
   zoneBounds,
@@ -82,6 +83,27 @@ interface DragState {
   /** Effective (snapped) delta applied to the whole selection. */
   dx: number;
   dy: number;
+}
+
+/**
+ * A request to edit an element's label in place (double-click gesture). The
+ * editor computes what was hit and where its label anchor sits in *client*
+ * coordinates; the shell (main.ts) owns the floating DOM input and commits
+ * through the normal update paths. `kind: 'empty'` reports a double-click on
+ * blank canvas (the quick-add gesture).
+ */
+export interface InlineEditRequest {
+  kind: 'node' | 'link' | 'zone' | 'empty';
+  /** Hit element id; null for 'empty'. */
+  id: string | null;
+  /** Current label text ('' when unset). */
+  current: string;
+  /** Anchor for the floating editor, in viewport (client) coordinates. */
+  clientX: number;
+  clientY: number;
+  /** Model-space point of the double-click (used by quick-add placement). */
+  pageX: number;
+  pageY: number;
 }
 
 type Guide =
@@ -239,6 +261,8 @@ export class Editor {
   private nudgeTimer: ReturnType<typeof setTimeout> | undefined;
   /** Pending coalesced art render (rAF handle), or 0 when none is queued. */
   private artRaf = 0;
+  /** Inline label-edit requests (double-click) go to the shell through this. */
+  private onInlineEdit: ((req: InlineEditRequest) => void) | null = null;
 
   constructor(
     private art: SVGSVGElement,
@@ -2711,7 +2735,10 @@ export class Editor {
    * it lands on a segment's midpoint "+" handle, insert a new waypoint there and
    * drag that. Returns true when a grab started.
    */
-  private tryWaypointGrab(p: { x: number; y: number }): boolean {
+  private tryWaypointGrab(
+    p: { x: number; y: number },
+    suppressInsert = false,
+  ): boolean {
     const link = this.page.links.find((l) => l.id === this.linkSel);
     if (!link) return false;
     const pts = linkPolyline(this.page, link);
@@ -2724,6 +2751,9 @@ export class Editor {
         return true;
       }
     }
+    // The second press of a rapid double-click must not insert a waypoint —
+    // the double-click is heading for the inline label editor instead.
+    if (suppressInsert) return false;
     // Segment midpoint "add" handles → insert a waypoint at segment index k.
     for (let k = 0; k < pts.length - 1; k++) {
       const m = midpoint(pts[k]!, pts[k + 1]!);
@@ -2743,29 +2773,154 @@ export class Editor {
 
   /** Double-click a waypoint handle to remove that bend point. */
   private onDblClick(e: MouseEvent): void {
-    if (this.tool !== 'select' || !this.linkSel) return;
-    const link = this.page.links.find((l) => l.id === this.linkSel);
-    if (!link?.waypoints?.length) return;
-    const p = clientToUser(this.overlay, e.clientX, e.clientY);
-    const tol = this.handleSize() * 1.4;
-    for (let i = 0; i < link.waypoints.length; i++) {
-      if (dist(p, link.waypoints[i]!) <= tol) {
-        this.snapshot();
-        link.waypoints.splice(i, 1);
-        if (link.waypoints.length === 0) {
-          delete link.waypoints;
-          this.emitPatch('links', link.id, { unset: ['waypoints'] });
-        } else {
-          this.emitPatch('links', link.id, {
-            set: { waypoints: structuredClone(link.waypoints) },
-          });
+    // Already handled by the synthesized pointerup path? (see onUp)
+    if (Date.now() - this.synthDblAt < 400) return;
+    this.handleDoubleClick(e.clientX, e.clientY);
+  }
+
+  /** Shared double-click action: waypoint removal, else inline edit/quick-add. */
+  private handleDoubleClick(clientX: number, clientY: number): void {
+    if (this.tool !== 'select') return;
+    // 1) Waypoint removal on the selected link keeps priority (existing gesture).
+    if (this.linkSel) {
+      const link = this.page.links.find((l) => l.id === this.linkSel);
+      if (link?.waypoints?.length) {
+        const p = clientToUser(this.overlay, clientX, clientY);
+        const tol = this.handleSize() * 1.4;
+        for (let i = 0; i < link.waypoints.length; i++) {
+          if (dist(p, link.waypoints[i]!) <= tol) {
+            this.snapshot();
+            link.waypoints.splice(i, 1);
+            if (link.waypoints.length === 0) {
+              delete link.waypoints;
+              this.emitPatch('links', link.id, { unset: ['waypoints'] });
+            } else {
+              this.emitPatch('links', link.id, {
+                set: { waypoints: structuredClone(link.waypoints) },
+              });
+            }
+            this.renderArt();
+            this.renderOverlay();
+            this.onChange();
+            return;
+          }
         }
-        this.renderArt();
-        this.renderOverlay();
-        this.onChange();
-        return;
       }
     }
+    // 2) Inline label editing / quick-add (double-click anywhere else).
+    this.requestInlineEditAt(clientX, clientY);
+  }
+
+  /** Register the shell's inline label-edit / quick-add handler. */
+  setInlineEditHandler(fn: ((req: InlineEditRequest) => void) | null): void {
+    this.onInlineEdit = fn;
+  }
+
+  /**
+   * Resolve a double-click into an inline-edit request: hit-test the point,
+   * select what was hit (so the normal update paths apply to it), and hand the
+   * shell an anchored request. Returns the request kind, or null when no
+   * handler is registered. Public for tests and synthetic gestures.
+   */
+  requestInlineEditAt(clientX: number, clientY: number): string | null {
+    if (!this.onInlineEdit) return null;
+    const p = clientToUser(this.overlay, clientX, clientY);
+    const nodeId = hitTestNode(this.page, p.x, p.y);
+    if (nodeId) {
+      const node = this.page.nodes.find((n) => n.id === nodeId)!;
+      this.clearLinkSel();
+      this.clearAnchorSel();
+      this.clearZoneSel();
+      if (!(this.sel.size === 1 && this.sel.has(nodeId))) {
+        this.sel = new Set([nodeId]);
+        this.fireSelect();
+      }
+      this.renderOverlay();
+      // Anchor on the node's label position (just under the node art).
+      const h = nodeHalf(node);
+      const c = userToClient(this.overlay, node.x, node.y + h.h + 12);
+      this.onInlineEdit({
+        kind: 'node',
+        id: nodeId,
+        current: String(node.label ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return 'node';
+    }
+    const linkId = hitTestLink(this.page, p.x, p.y);
+    if (linkId) {
+      const link = this.page.links.find((l) => l.id === linkId)!;
+      this.sel.clear();
+      this.clearAnchorSel();
+      this.clearZoneSel();
+      this.fireSelect();
+      if (this.linkSel !== linkId) {
+        this.linkSel = linkId;
+        this.fireLinkSelect();
+      }
+      this.renderOverlay();
+      // Anchor on the centre-label position: polyline midpoint + offset.
+      const pts = linkPolyline(this.page, link);
+      let ax = p.x,
+        ay = p.y;
+      if (pts.length >= 2) {
+        const mid = Math.floor((pts.length - 1) / 2);
+        const a = pts[mid]!,
+          b = pts[mid + 1]!;
+        ax = (a.x + b.x) / 2;
+        ay = (a.y + b.y) / 2;
+      }
+      const off = (link as { labelOffset?: { x?: number; y?: number } })
+        .labelOffset;
+      if (off) {
+        ax += off.x ?? 0;
+        ay += off.y ?? 0;
+      }
+      const c = userToClient(this.overlay, ax, ay);
+      this.onInlineEdit({
+        kind: 'link',
+        id: linkId,
+        current: String(link.label ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return 'link';
+    }
+    const zoneId = hitTestZone(this.page, p.x, p.y);
+    if (zoneId) {
+      const zone = this.page.zones.find((z) => z.id === zoneId)!;
+      this.selectZone(zoneId);
+      const b = zoneBounds(this.page, zone);
+      const c = b
+        ? userToClient(this.overlay, b.x + b.w / 2, b.y + 6)
+        : userToClient(this.overlay, p.x, p.y);
+      this.onInlineEdit({
+        kind: 'zone',
+        id: zoneId,
+        current: String(zone.label ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return 'zone';
+    }
+    // Blank canvas — quick-add (the shell decides what to do with it).
+    this.onInlineEdit({
+      kind: 'empty',
+      id: null,
+      current: '',
+      clientX,
+      clientY,
+      pageX: p.x,
+      pageY: p.y,
+    });
+    return 'empty';
   }
 
   /** Wheel = zoom toward the cursor (keeps the point under the cursor fixed). */
@@ -2962,7 +3117,11 @@ export class Editor {
     }
 
     // Editing waypoints on the selected link takes priority over other hits.
-    if (this.tool === 'select' && this.linkSel && this.tryWaypointGrab(p)) {
+    if (
+      this.tool === 'select' &&
+      this.linkSel &&
+      this.tryWaypointGrab(p, this.isSecondClickDown(e))
+    ) {
       this.overlay.setPointerCapture(e.pointerId);
       this.renderOverlay();
       return;
@@ -3293,6 +3452,67 @@ export class Editor {
   }
 
   private onUp(e: PointerEvent): void {
+    // Detect a double-click from two stationary pointerups. Chrome suppresses
+    // the native click/dblclick pair whenever the pointerdown target left the
+    // DOM mid-gesture — which happens constantly here because renderOverlay()
+    // rebuilds the overlay's children on selection changes. So the editor
+    // synthesizes its own double-click; the native dblclick handler stays as
+    // a fallback and is de-duplicated via `synthDblAt`.
+    const synthDbl = this.detectSynthDblClick(e);
+    this.finishUp(e);
+    if (synthDbl) {
+      this.synthDblAt = Date.now();
+      this.handleDoubleClick(e.clientX, e.clientY);
+    }
+  }
+
+  /** Last stationary pointerup (for synthesized double-click detection). */
+  private lastClick = { t: 0, x: 0, y: 0 };
+  /** When a synthesized double-click last ran (guards the native handler). */
+  private synthDblAt = 0;
+
+  /**
+   * True when this pointerdown looks like the second press of a double-click
+   * (rapid + stationary relative to the last click's release) — used to keep
+   * single-press gestures (waypoint insert) out of the double-click's way.
+   */
+  private isSecondClickDown(e: PointerEvent): boolean {
+    return (
+      Date.now() - this.lastClick.t < 450 &&
+      Math.hypot(e.clientX - this.lastClick.x, e.clientY - this.lastClick.y) <=
+        6
+    );
+  }
+
+  /** True when this pointerup is the second stationary click of a double. */
+  private detectSynthDblClick(e: PointerEvent): boolean {
+    const m = this.marquee;
+    const gestureMoved =
+      this.pan !== null ||
+      !!this.labelDrag?.moved ||
+      !!this.wpDrag?.moved ||
+      !!this.dragLink?.moved ||
+      !!this.drag?.moved ||
+      (m !== null &&
+        (Math.abs(m.x1 - m.x0) > 2 || Math.abs(m.y1 - m.y0) > 2));
+    if (gestureMoved || this.tool !== 'select' || e.button !== 0) {
+      this.lastClick.t = 0;
+      return false;
+    }
+    const now = Date.now();
+    const isDouble =
+      now - this.lastClick.t < 450 &&
+      Math.hypot(e.clientX - this.lastClick.x, e.clientY - this.lastClick.y) <=
+        6;
+    if (isDouble) {
+      this.lastClick.t = 0; // a triple-click doesn't chain another double
+      return true;
+    }
+    this.lastClick = { t: now, x: e.clientX, y: e.clientY };
+    return false;
+  }
+
+  private finishUp(e: PointerEvent): void {
     this.overlay.releasePointerCapture(e.pointerId);
     if (this.pan) {
       this.pan = null;

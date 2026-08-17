@@ -13,7 +13,7 @@ import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-500.css';
 import '@fontsource/jetbrains-mono/latin-600.css';
 import '@fontsource/jetbrains-mono/latin-700.css';
-import { Editor } from './editor/editor.js';
+import { Editor, type InlineEditRequest } from './editor/editor.js';
 import { clientToUser } from './editor/coords.js';
 import {
   applyPalette,
@@ -366,6 +366,169 @@ const renderLayerOpts = (): { layers: typeof doc.layers } => ({
   layers: doc.layers,
 });
 editor.setRenderOpts(renderLayerOpts);
+
+/* ── inline label editing (double-click a node / link / zone) ─────────
+ * The editor resolves the double-click into a selected element + a client-
+ * space anchor; this shell owns the floating <input> and commits through the
+ * same update paths the inspector uses, so undo/workspace ops are identical. */
+let inlineEditEl: HTMLInputElement | null = null;
+function closeInlineEdit(): void {
+  inlineEditEl?.remove();
+  inlineEditEl = null;
+}
+function openInlineLabelEditor(req: InlineEditRequest): void {
+  closeInlineEdit();
+  if (req.kind === 'empty') {
+    openQuickAdd(req);
+    return;
+  }
+  if (!req.id) return;
+  const host = document.querySelector<HTMLElement>('.canvas-host');
+  if (!host) return;
+  const hostRect = host.getBoundingClientRect();
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'inline-label-edit';
+  input.value = req.current;
+  input.setAttribute('aria-label', `Edit ${req.kind} label`);
+  const w = Math.max(140, Math.min(360, req.current.length * 9 + 60));
+  input.style.width = `${w}px`;
+  input.style.left = `${Math.round(req.clientX - hostRect.left - w / 2)}px`;
+  input.style.top = `${Math.round(req.clientY - hostRect.top - 15)}px`;
+  host.appendChild(input);
+  inlineEditEl = input;
+  let done = false;
+  const commit = (save: boolean): void => {
+    if (done) return;
+    done = true;
+    const val = input.value.trim();
+    closeInlineEdit();
+    if (!save || val === req.current) return;
+    if (req.kind === 'node') editor.updateNode({ label: val });
+    else if (req.kind === 'link') editor.updateLink({ label: val });
+    else if (req.kind === 'zone')
+      editor.updateAnnotation('zones', req.id!, { label: val });
+    renderInspector();
+  };
+  input.addEventListener('blur', () => commit(true));
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      commit(false);
+    }
+  });
+  input.focus();
+  input.select();
+}
+editor.setInlineEditHandler(openInlineLabelEditor);
+
+/* ── quick-add (double-click empty canvas → type-to-place a node) ─────
+ * A draw.io/Lucid-style creation accelerator: a small popover with the same
+ * type-ahead search the Node library uses; Enter/click places the chosen type
+ * exactly at the double-clicked point (grid-snapped when snap is on). */
+let quickAddEl: HTMLDivElement | null = null;
+function closeQuickAdd(): void {
+  quickAddEl?.remove();
+  quickAddEl = null;
+}
+function openQuickAdd(req: InlineEditRequest): void {
+  closeQuickAdd();
+  closeInlineEdit();
+  const host = document.querySelector<HTMLElement>('.canvas-host');
+  if (!host) return;
+  const hostRect = host.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'quick-add';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', 'Add a node here');
+  const W = 260;
+  const left = Math.max(
+    4,
+    Math.min(req.clientX - hostRect.left - W / 2, hostRect.width - W - 4),
+  );
+  const top = Math.max(
+    4,
+    Math.min(req.clientY - hostRect.top + 10, hostRect.height - 300),
+  );
+  pop.style.left = `${Math.round(left)}px`;
+  pop.style.top = `${Math.round(top)}px`;
+  pop.innerHTML =
+    `<input type="search" class="qa-input" placeholder="Add node… (type to search)" aria-label="Search node types" autocomplete="off">` +
+    `<div class="qa-list scroll-slim" role="listbox"></div>`;
+  host.appendChild(pop);
+  quickAddEl = pop;
+  const input = pop.querySelector<HTMLInputElement>('.qa-input')!;
+  const list = pop.querySelector<HTMLDivElement>('.qa-list')!;
+  let items: { type: string; label: string }[] = [];
+  let active = 0;
+  const place = (type: string): void => {
+    closeQuickAdd();
+    const g = editor.grid;
+    const sx = editor.snap
+      ? Math.round(req.pageX / g) * g
+      : Math.round(req.pageX);
+    const sy = editor.snap
+      ? Math.round(req.pageY / g) * g
+      : Math.round(req.pageY);
+    editor.addNode(type, undefined, { x: sx, y: sy });
+  };
+  const renderList = (): void => {
+    items = filterNodeCatalog(input.value, doc.customNodes)
+      .slice(0, 8)
+      .map((i) => ({ type: i.type, label: i.label }));
+    active = Math.min(active, Math.max(0, items.length - 1));
+    list.innerHTML = items.length
+      ? items
+          .map(
+            (i, ix) =>
+              `<button class="qa-item${ix === active ? ' active' : ''}" role="option" aria-selected="${ix === active}" data-type="${esc(i.type)}">${nodePreviewSVG(i.type)}<span class="plabel">${esc(i.label)}</span></button>`,
+          )
+          .join('')
+      : `<div class="qa-none">No matching node type</div>`;
+    list.querySelectorAll<HTMLButtonElement>('.qa-item').forEach((b) =>
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); // beat the input's blur
+        place(b.dataset.type!);
+      }),
+    );
+  };
+  input.addEventListener('input', () => {
+    active = 0;
+    renderList();
+  });
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeQuickAdd();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const pick = items[active];
+      if (pick) place(pick.type);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!items.length) return;
+      active =
+        e.key === 'ArrowDown'
+          ? (active + 1) % items.length
+          : (active - 1 + items.length) % items.length;
+      renderList();
+    }
+  });
+  input.addEventListener('blur', () => {
+    // Give a same-popover pointerdown a beat to run first.
+    setTimeout(() => {
+      if (quickAddEl === pop && !pop.contains(document.activeElement))
+        closeQuickAdd();
+    }, 120);
+  });
+  renderList();
+  input.focus();
+}
 
 editor.setViewInsets(() => {
   const canvas = overlaySvg.getBoundingClientRect();
