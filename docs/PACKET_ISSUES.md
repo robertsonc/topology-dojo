@@ -135,6 +135,9 @@ live). Flag this design choice for review before implementing A2.
 
 **Human approval requirements:** None beyond normal PR review.
 
+**Status:** implemented this PR (A1–A6 landed together; flag = reuse
+`ANALYTICS_ENABLED`).
+
 ---
 
 ## A2 — Instrument `TopologyMcp` session lifecycle + tool dispatch
@@ -258,23 +261,27 @@ dashboard; escapes untrusted text exactly like the roster rendering does.
 **Problem:** N/A — closeout packet.
 
 **Outcome:** Full gate green; `docs/HANDOFF.md`/`docs/ROADMAP.md` truth-up;
-PR merged and deployed.
+PR open for human review. This implementing agent does not merge or deploy.
 
-**Scope:** Standard closeout.
+**Scope:** Standard closeout (docs + gate). Merge/deploy are human-only.
 
 **Dependencies:** A4, A5.
 
-**Acceptance criteria:** Owner can see "what has my agent been doing"
-end-to-end in production.
+**Acceptance criteria:** Code + docs land in one reviewable PR; owner can
+see "what has my agent been doing" after a human merge and production
+deploy.
 
 **Test requirements:** Full existing gate stays green plus everything added
 in A1–A5.
 
-**Deployment and migration notes:** A normal gated deploy; no
-bootstrap-then-activate ceremony needed if `ANALYTICS_ENABLED` was reused
-(it's already on).
+**Deployment and migration notes:** A normal gated deploy after human merge;
+no bootstrap-then-activate ceremony — `ANALYTICS_ENABLED` was reused and is
+already on.
 
-**Human approval requirements:** Approve the production deploy (standard).
+**Human approval requirements:** Approve the PR merge and the production
+deploy (standard). The implementing agent must not merge or deploy.
+
+**Status:** implemented this PR (docs + gate); pending human merge/deploy.
 
 ---
 

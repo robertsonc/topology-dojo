@@ -2,8 +2,8 @@
 
 | Plan metadata     | Value                                                                                                                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Version           | 2.0                                                                                                                                                                                              |
-| Effective date    | 2026-08-09                                                                                                                                                                                       |
+| Version           | 2.1                                                                                                                                                                                              |
+| Effective date    | 2026-08-19                                                                                                                                                                                       |
 | Status            | Living release-acceptance plan                                                                                                                                                                   |
 | System under test | Topology Dojo browser editor, public shared-copy experience, human-agent workspace, MCP authoring service, adaptive authoring preferences, owner administration, exports, and release operations |
 
@@ -108,10 +108,11 @@ untested.
 | Human-agent workspace, proposals, leases, checkpoints, presence, and offline recovery          | Feature-gated                                                            | `WORKSPACE_ENABLED=true`                                                                                                  |
 | Adaptive authoring preferences                                                                 | Feature-gated                                                            | `PROFILES_ENABLED=true`                                                                                                   |
 | Owner analytics/admin dashboard                                                                | Feature-gated and identity-gated                                         | `ANALYTICS_ENABLED=true` and a valid `ADMIN_GITHUB_ID`                                                                    |
+| Agent-session activity + guidance-consulted timeline signal                                    | Feature-gated (reuses analytics)                                         | Same `ANALYTICS_ENABLED` / admin identity; remote MCP only                                                                |
 | Mock live-fabric workflow                                                                      | Conditional integration baseline                                         | `TOPOLOGY_PROVIDER=mock` in a non-production test environment                                                             |
 | Real EdgeConnect import                                                                        | Conditional integration                                                  | Approved non-production Orchestrator, `ORCH_BASE_URL`, and secret `ORCH_API_KEY`; no secrets in prompts or tool arguments |
 | Touch-first full editing                                                                       | Deliberately excluded                                                    | Public-view readability may be assessed on narrow/touch devices; full touch authoring is not accepted here                |
-| Share-link revoke/unpublish, organization ACLs, and CRDT-style multi-master editing            | Deliberately excluded / residual risk                                    | Absence must be disclosed; see §12                                                                                        |
+| Organization ACLs and CRDT-style multi-master editing                                          | Deliberately excluded / residual risk                                    | Absence must be disclosed; see §12                                                                                        |
 
 ### 3.2 In scope
 
@@ -124,7 +125,8 @@ untested.
   offline workflows when the workspace flag is on.
 - Efficient MCP discovery, bounded reads, `edit_topology`, validation, layout,
   `inspect_render`, render, and error recovery.
-- Adaptive preferences and admin behavior when their flags are on.
+- Adaptive preferences, admin roster/workspace metadata, Agent Sessions, and
+  the non-causal guidance-consulted timeline signal when analytics is on.
 - Critical-journey accessibility, usability, operational release evidence, and
   conditional live-fabric import.
 
@@ -414,8 +416,8 @@ local document; browser B is signed out or signed in but contains
    confirmation warns that the locally saved document will be replaced. Cancel
    once and confirm local work remains; repeat and confirm only after accepting.
 6. Confirm the user guide or publish guidance states that the URL is public to
-   anyone who has it, expires after 30 days, cannot currently be revoked, and
-   may be cached. No sensitive fixture data is used.
+   anyone who has it, expires after 30 days, can be revoked by the publisher,
+   and may be cached for about a minute. No sensitive fixture data is used.
 
 **Acceptance:** The link works signed out; local and shared autosave slots never
 silently overwrite one another; back and keep behave exactly as described; the
@@ -701,8 +703,9 @@ known recent test logins/workspaces; no sensitive diagrams.
    leaking metadata.
 2. As the signed-in non-owner, repeat. Access is denied even if the login name
    resembles the owner; authorization uses the configured stable identity.
-3. As the owner, open the dashboard. Review login roster/counts and workspace
-   metadata. Values are understandable and correspond to the prepared activity.
+3. As the owner, open the dashboard. Review login roster/counts, workspace
+   metadata, and recent Agent Sessions (tool names and coarse outcomes only).
+   Values are understandable and correspond to the prepared activity.
 4. Inspect available detail and exported/network responses with the facilitator.
    They contain operational metadata only, never diagram content, labels, raw
    prompts, MCP arguments, credentials, or tokens.
@@ -970,9 +973,11 @@ These are not automatic failures when behavior matches the user guide and the
 release has not claimed otherwise. They must remain visible in the UAT report:
 
 1. **Public snapshots are bearer links.** Anyone with the URL can open the
-   snapshot without authentication. A snapshot expires after 30 days, cannot
-   currently be revoked/unpublished, and may remain in public cache for its
-   configured cache lifetime. Do not publish sensitive topology data.
+   snapshot without authentication. A snapshot expires after 30 days. The
+   publisher can revoke/unpublish a live link (Share dialog, MCP
+   `unpublish_topology`, or signed-in `DELETE /api/topology/:id`). Public GETs
+   may remain in cache for about a minute. Do not publish sensitive topology
+   data.
 2. **A public snapshot is immutable.** Publishing an update creates another
    snapshot/link; editing a loaded shared copy changes its separate browser
    autosave slot, not the published source.
@@ -990,7 +995,11 @@ release has not claimed otherwise. They must remain visible in the UAT report:
    and admin surfaces may be disabled independently. Documentation and support
    must not promise a gated surface when the target environment has it off.
 7. **Admin history is metadata-only and activation-bounded.** It is not a
-   complete historical audit log and must never expose diagram content.
+   complete historical audit log and must never expose diagram content, raw
+   prompts, or MCP tool arguments. MCP-session trails are bounded and
+   ephemeral with the session Durable Object. The revision-timeline guidance
+   marker records only that `get_authoring_guidance` ran earlier in the same
+   session — not that guidance caused the edit.
 8. **Human view state is not MCP parity state.** Theme, zoom, pan, calm-canvas,
    panel layout, and similar local controls are outside document-semantic
    round-trip guarantees.

@@ -94,11 +94,15 @@ packet-level ordering and what can run in parallel):
    synthetic-fault mechanism; packet O3 (rollback generalization) is done.
    **Human-only verification**: inspect/configure the Cloudflare notification
    policies as needed (O1), prove delivery, and execute/record the drill (O2).
-3. **Agent activity + explainability** — today an agent's authoring session
-   leaves almost no visible trace beyond the revision history's actor/summary
-   fields; there's no way for the owner (or the agent itself) to see "what did
-   the agent do and why" in one place, and the admin dashboard's "agents /
-   MCP-session detail" was an explicit MVP deferral. Packets: A1–A6.
+3. **Agent activity + explainability** — implemented (this PR; pending merge
+   and production deploy). Remote MCP sessions record a bounded metadata-only
+   tool-call trail on the existing per-session `TopologyMcp` Durable Object and
+   a bounded session index on already-live `AnalyticsLog` (migration `v5`). The
+   owner admin dashboard lists recent sessions and drills into a trail; the
+   workspace revision timeline shows an honest, non-causal “guidance was
+   consulted before this edit” signal when `get_authoring_guidance` succeeded
+   earlier in the same MCP session. Reuses `ANALYTICS_ENABLED` (already on);
+   no new flag, no new Durable Object class, no migration. Packets A1–A6.
 4. **Guided topology briefs + semantic templates** — today an agent (or a
    human) starts from either a blank page or one of six static starter
    templates (`list_templates`/`create_from_template`); there's no structured
@@ -115,7 +119,7 @@ packet-level ordering and what can run in parallel):
    and after a failure" the way the flipbook already does for static topology
    states. Packets: T1–T7.
 
-Items 3–6 can be scoped and start in parallel once items 1–2 land (see the
+Items 4–6 can be scoped and start in parallel (see the
 dependency graph); none of them share a Durable Object or migration, so they
 don't block each other structurally. See `IMPLEMENTATION_PLAN.md` for full
 packet specs, risk, and acceptance criteria for all six initiatives.
@@ -476,9 +480,15 @@ bounded recent-login log, best-effort, off the browser-login success path
 roster/totals and, per user, their workspace names/counts read live from the
 existing registries — metadata only, never diagram contents — fail-closed if
 `ADMIN_GITHUB_ID` is unset. Captures data going forward only (no historical
-backfill). **Deferred from the MVP:** session duration / "last active"
-(needs activity heartbeats), and agents / MCP-session detail — the latter is
-now folded into "Now" item 3 (agent activity + explainability).
+backfill). **Initiative A (this PR, pending merge/deploy)** closes the MVP
+deferral for agents / MCP-session detail: a bounded per-session tool-call
+trail (`{toolName, at, outcome}` only — never prompts or arguments) plus a
+bounded session index on the same `AnalyticsLog`, owner-gated
+`GET /api/admin/sessions` and `GET /api/admin/sessions/:id`, an Agent Sessions
+section on the admin dashboard, and a non-causal guidance-consulted signal on
+agent-authored revision timeline entries. Still deferred: session duration /
+"last active" (needs activity heartbeats). Gated by the already-live
+`ANALYTICS_ENABLED` flag; no new Durable Object or migration.
 
 ### Public showcase
 
