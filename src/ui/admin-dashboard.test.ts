@@ -12,11 +12,15 @@ import {
   renderAdminDisabledHtml,
   renderAdminForbiddenHtml,
   renderRosterHtml,
+  renderSessionTrailHtml,
+  renderSessionsHtml,
   renderUserWorkspacesHtml,
   type AdminPanelState,
+  type SessionTrailState,
   type WorkspacesState,
 } from './admin-dashboard.js';
 import type { AdminSummary, RosterEntry } from '../admin/model.js';
+import type { SessionSummary } from '../agent-activity/model.js';
 
 function entry(over: Partial<RosterEntry> = {}): RosterEntry {
   return {
@@ -50,6 +54,10 @@ function state(over: Partial<AdminPanelState> = {}): AdminPanelState {
     summary: null,
     expandedUid: null,
     workspaces: {},
+    sessions: null,
+    sessionsError: null,
+    expandedSessionId: null,
+    sessionTrails: {},
     ...over,
   };
 }
@@ -169,9 +177,9 @@ describe('renderAdminBodyHtml', () => {
 
   it('renders loading, and the roster once loaded', () => {
     expect(renderAdminBodyHtml(state({ loading: true }))).toContain('Loading…');
-    expect(renderAdminBodyHtml(state({ summary: summary() }))).toContain(
-      'admin-user',
-    );
+    const html = renderAdminBodyHtml(state({ summary: summary() }));
+    expect(html).toContain('admin-user');
+    expect(html).toContain('Agent Sessions');
   });
 
   it('keeps the roster visible under a non-fatal error', () => {
@@ -180,6 +188,113 @@ describe('renderAdminBodyHtml', () => {
     );
     expect(html).toContain('<div class="ws-error">refresh failed</div>');
     expect(html).toContain('admin-user');
+  });
+});
+
+describe('renderSessionsHtml', () => {
+  function sess(over: Partial<SessionSummary> = {}): SessionSummary {
+    return {
+      sessionId: 'abc123',
+      ownerId: 'u1',
+      ownerLogin: 'alice',
+      startedAt: '2026-08-19T09:00:00.000Z',
+      lastToolAt: '2026-08-19T09:05:00.000Z',
+      toolCallCount: 3,
+      ...over,
+    };
+  }
+
+  it('renders identity, call count, and the Trail toggle', () => {
+    const html = renderSessionsHtml([sess()], null, {}, null);
+    expect(html).toContain('Agent Sessions');
+    expect(html).toContain('alice');
+    expect(html).toContain('3 calls');
+    expect(html).toContain('session abc123');
+    expect(html).toContain('>Trail</button>');
+    expect(html).toContain('no prompts, arguments, or diagram contents');
+  });
+
+  it('singularizes a lone call and shows the empty state', () => {
+    expect(
+      renderSessionsHtml([sess({ toolCallCount: 1 })], null, {}, null),
+    ).toContain('1 call<');
+    expect(renderSessionsHtml([], null, {}, null)).toContain(
+      'No agent sessions recorded yet',
+    );
+  });
+
+  it('nests the trail only for the expanded session', () => {
+    const trails: Record<string, SessionTrailState> = {
+      abc123: { loading: false, error: null, events: [] },
+    };
+    expect(renderSessionsHtml([sess()], null, trails, null)).not.toContain(
+      'admin-session-trail',
+    );
+    expect(renderSessionsHtml([sess()], 'abc123', trails, null)).toContain(
+      'admin-session-trail',
+    );
+    expect(renderSessionsHtml([sess()], 'abc123', trails, null)).toContain(
+      'Hide trail',
+    );
+  });
+
+  it('escapes untrusted login, session id, and tool names', () => {
+    const html = renderSessionsHtml(
+      [sess({ ownerLogin: '<img src=x>', sessionId: '"onfocus="' })],
+      '"onfocus="',
+      {
+        '"onfocus="': {
+          loading: false,
+          error: null,
+          events: [
+            {
+              toolName: '<b>evil</b>',
+              at: '2026-08-19T09:00:00.000Z',
+              outcome: 'success',
+            },
+          ],
+        },
+      },
+      null,
+    );
+    expect(html).not.toContain('<img src=x>');
+    expect(html).toContain('&lt;img src=x&gt;');
+    expect(html).not.toContain('<b>evil</b>');
+    expect(html).toContain('&lt;b&gt;evil&lt;/b&gt;');
+    expect(html).toContain('&quot;onfocus=&quot;');
+  });
+});
+
+describe('renderSessionTrailHtml', () => {
+  it('shows loading, error, empty, and outcome badges', () => {
+    expect(
+      renderSessionTrailHtml({ loading: true, error: null, events: null }),
+    ).toContain('Loading trail…');
+    expect(
+      renderSessionTrailHtml({ loading: false, error: 'boom', events: null }),
+    ).toContain('boom');
+    expect(
+      renderSessionTrailHtml({ loading: false, error: null, events: [] }),
+    ).toContain('No tool calls recorded.');
+    const html = renderSessionTrailHtml({
+      loading: false,
+      error: null,
+      events: [
+        {
+          toolName: 'list_templates',
+          at: '2026-08-19T09:00:00.000Z',
+          outcome: 'success',
+        },
+        {
+          toolName: 'validate_topology',
+          at: '2026-08-19T09:01:00.000Z',
+          outcome: 'error',
+        },
+      ],
+    });
+    expect(html).toContain('list_templates');
+    expect(html).toContain('success');
+    expect(html).toContain('error');
   });
 });
 

@@ -16,10 +16,13 @@
 import {
   AdminDisabledError,
   AdminForbiddenError,
+  fetchAdminSession,
+  fetchAdminSessions,
   fetchAdminSummary,
   fetchUserWorkspaces,
 } from '../admin/client.js';
 import type { AdminSummary, RosterEntry } from '../admin/model.js';
+import type { SessionSummary, ToolCallEvent } from '../agent-activity/model.js';
 import type { WorkspaceListItem } from '../workspace/model.js';
 import { registerOverlay } from './overlay.js';
 
@@ -122,7 +125,90 @@ export function renderRosterHtml(
   );
 }
 
-/** The panel controller's render state (kept pure-renderable for tests). */
+/** Per-session trail fetch state, keyed by sessionId in the panel controller. */
+export interface SessionTrailState {
+  loading: boolean;
+  error: string | null;
+  events: ToolCallEvent[] | null;
+}
+
+/** Pure: one session's tool-call trail, shown when expanded. */
+export function renderSessionTrailHtml(state: SessionTrailState): string {
+  if (state.loading) return `<div class="ws-note">Loading trail…</div>`;
+  if (state.error) return `<div class="ws-error">${esc(state.error)}</div>`;
+  const events = state.events ?? [];
+  if (!events.length)
+    return `<div class="ws-empty">No tool calls recorded.</div>`;
+  return events
+    .map(
+      (event) =>
+        `<div class="ws-note admin-trail-row">` +
+        `<span class="ws-badge">${esc(event.outcome)}</span> ` +
+        `${esc(event.toolName)} · ${esc(formatWhen(event.at))}` +
+        `</div>`,
+    )
+    .join('');
+}
+
+/** Pure: one agent-session row with an optional expanded trail. */
+export function renderSessionRowHtml(
+  session: SessionSummary,
+  expanded: boolean,
+  trail: SessionTrailState | undefined,
+): string {
+  const who = session.ownerLogin
+    ? `${session.ownerLogin}`
+    : `id ${session.ownerId}`;
+  const when = session.lastToolAt ?? session.startedAt;
+  return (
+    `<div class="ws-card admin-session" data-sid="${esc(session.sessionId)}">` +
+    `<div class="ws-row"><span class="ws-v admin-login">${esc(who)}</span>` +
+    `<span class="ws-badge">${session.toolCallCount} call${session.toolCallCount === 1 ? '' : 's'}</span></div>` +
+    `<div class="ws-note">Last ${esc(formatWhen(when))} · started ${esc(formatWhen(session.startedAt))}</div>` +
+    `<div class="ws-note">session ${esc(session.sessionId)}</div>` +
+    `<div class="ws-actions"><button class="tbtn admin-session-toggle" data-sid="${esc(session.sessionId)}">${expanded ? 'Hide trail' : 'Trail'}</button></div>` +
+    (expanded && trail
+      ? `<div class="ws-card admin-session-trail">${renderSessionTrailHtml(trail)}</div>`
+      : '') +
+    `</div>`
+  );
+}
+
+/** Pure: the Agent Sessions section. */
+export function renderSessionsHtml(
+  sessions: SessionSummary[] | null,
+  expandedSessionId: string | null,
+  trails: Record<string, SessionTrailState>,
+  sessionsError: string | null,
+): string {
+  const header = `<div class="ws-section">Agent Sessions</div>`;
+  if (sessionsError)
+    return header + `<div class="ws-error">${esc(sessionsError)}</div>`;
+  if (!sessions) return header + `<div class="ws-note">Loading sessions…</div>`;
+  const note =
+    `<div class="ws-note">Recent MCP sessions. Tool names and coarse success/error only — ` +
+    `no prompts, arguments, or diagram contents.</div>`;
+  if (!sessions.length)
+    return (
+      header +
+      note +
+      `<div class="ws-card"><div class="ws-empty">No agent sessions recorded yet.</div></div>`
+    );
+  return (
+    header +
+    note +
+    sessions
+      .map((s) =>
+        renderSessionRowHtml(
+          s,
+          s.sessionId === expandedSessionId,
+          trails[s.sessionId],
+        ),
+      )
+      .join('')
+  );
+}
+
 export interface AdminPanelState {
   loading: boolean;
   disabled: boolean;
@@ -131,6 +217,10 @@ export interface AdminPanelState {
   summary: AdminSummary | null;
   expandedUid: string | null;
   workspaces: Record<string, WorkspacesState>;
+  sessions: SessionSummary[] | null;
+  sessionsError: string | null;
+  expandedSessionId: string | null;
+  sessionTrails: Record<string, SessionTrailState>;
 }
 
 /** Pure: the whole panel body for a given state. */
@@ -143,7 +233,14 @@ export function renderAdminBodyHtml(state: AdminPanelState): string {
     : '';
   if (!state.summary) return err;
   return (
-    err + renderRosterHtml(state.summary, state.expandedUid, state.workspaces)
+    err +
+    renderRosterHtml(state.summary, state.expandedUid, state.workspaces) +
+    renderSessionsHtml(
+      state.sessions,
+      state.expandedSessionId,
+      state.sessionTrails,
+      state.sessionsError,
+    )
   );
 }
 
@@ -172,6 +269,10 @@ export function mountAdminDashboard(
     summary: null,
     expandedUid: null,
     workspaces: {},
+    sessions: null,
+    sessionsError: null,
+    expandedSessionId: null,
+    sessionTrails: {},
   };
 
   function describe(error: unknown): string {
@@ -200,7 +301,51 @@ export function mountAdminDashboard(
       else if (error instanceof AdminForbiddenError) state.forbidden = true;
       else state.error = describe(error);
     }
+    state.sessions = null;
+    state.sessionsError = null;
+    if (state.summary && !state.disabled && !state.forbidden) {
+      try {
+        const { sessions } = await fetchAdminSessions();
+        state.sessions = sessions;
+      } catch (error) {
+        if (error instanceof AdminDisabledError) state.disabled = true;
+        else if (error instanceof AdminForbiddenError) state.forbidden = true;
+        else state.sessionsError = describe(error);
+      }
+    }
     state.loading = false;
+    renderPanel();
+  }
+
+  async function toggleSession(sessionId: string): Promise<void> {
+    if (state.expandedSessionId === sessionId) {
+      state.expandedSessionId = null;
+      renderPanel();
+      return;
+    }
+    state.expandedSessionId = sessionId;
+    if (!state.sessionTrails[sessionId]?.events) {
+      state.sessionTrails[sessionId] = {
+        loading: true,
+        error: null,
+        events: null,
+      };
+      renderPanel();
+      try {
+        const detail = await fetchAdminSession(sessionId);
+        state.sessionTrails[sessionId] = {
+          loading: false,
+          error: null,
+          events: detail.events,
+        };
+      } catch (error) {
+        state.sessionTrails[sessionId] = {
+          loading: false,
+          error: describe(error),
+          events: null,
+        };
+      }
+    }
     renderPanel();
   }
 
@@ -246,6 +391,14 @@ export function mountAdminDashboard(
         button.addEventListener(
           'click',
           () => void toggleWorkspaces(button.dataset.uid!),
+        ),
+      );
+    body
+      .querySelectorAll<HTMLButtonElement>('.admin-session-toggle')
+      .forEach((button) =>
+        button.addEventListener(
+          'click',
+          () => void toggleSession(button.dataset.sid!),
         ),
       );
   }

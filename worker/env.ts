@@ -135,12 +135,15 @@ export interface WorkerEnv {
   PROFILES_ENABLED?: string;
   /**
    * Feature flag gating the owner-analytics store + admin dashboard (migration
-   * `v5`). Like `PROFILES_ENABLED` this is a brand-new Durable Object class, so
-   * it defaults **OFF**: only the literal string `"true"` enables it (unset ⇒
+   * `v5`), including Initiative A's MCP-session activity trail and index.
+   * Activity recording reuses this flag (same owner-visibility posture as the
+   * dashboard it extends) rather than introducing a new one. Like
+   * `PROFILES_ENABLED` this is a brand-new Durable Object class, so it
+   * defaults **OFF**: only the literal string `"true"` enables it (unset ⇒
    * disabled). It must bootstrap disabled in production so the `v5` migration
-   * can ship inert (no login recording, no admin API), then be activated by a
-   * later deploy that sets `"ANALYTICS_ENABLED": "true"` at the top level.
-   * `env.staging` sets it `"true"`.
+   * can ship inert (no login recording, no admin API, no session index), then
+   * be activated by a later deploy that sets `"ANALYTICS_ENABLED": "true"` at
+   * the top level. `env.staging` sets it `"true"`. Currently on in production.
    */
   ANALYTICS_ENABLED?: string;
   /**
@@ -195,10 +198,13 @@ export function profilesEnabled(
 }
 
 /**
- * Whether the owner-analytics store + admin dashboard should run. Opt-in like
- * `profilesEnabled` (only the exact string `"true"` enables); any other value
- * — unset, `"false"`, a typo — fails closed to "disabled", so an un-activated
- * production deploy never records logins or serves the admin API.
+ * Whether the owner-analytics store + admin dashboard should run, including
+ * Initiative A's MCP-session activity trail/index. Reuses `ANALYTICS_ENABLED`
+ * (no new flag): same owner-visibility posture as the dashboard the trail
+ * extends. Opt-in like `profilesEnabled` (only the exact string `"true"`
+ * enables); any other value — unset, `"false"`, a typo — fails closed to
+ * "disabled", so an un-activated production deploy never records logins,
+ * session metadata, or the admin API.
  */
 export function analyticsEnabled(
   env: Pick<WorkerEnv, 'ANALYTICS_ENABLED'>,

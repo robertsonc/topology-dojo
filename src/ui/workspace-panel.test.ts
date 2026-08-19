@@ -741,6 +741,38 @@ describe('renderTimelineHtml', () => {
     expect(html).not.toContain('<img src=y>');
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
   });
+
+  it('shows the guidance-consulted signal only when stamped on the revision', () => {
+    const withGuidance = renderTimelineHtml(
+      activeWorkspace({
+        timeline: timeline([
+          change({
+            revision: 2,
+            actor: { kind: 'agent', id: 'a1', label: 'Claude' },
+            source: 'agent-lease',
+            guidanceConsultedBefore: true,
+            sessionId: 'sess1',
+          }),
+        ]),
+      }),
+    );
+    expect(withGuidance).toContain('Guidance was consulted before this edit');
+    expect(withGuidance).toContain('not a claim that the guidance caused');
+
+    const without = renderTimelineHtml(
+      activeWorkspace({
+        timeline: timeline([
+          change({
+            revision: 2,
+            actor: { kind: 'agent', id: 'a1', label: 'Claude' },
+            source: 'agent-lease',
+            sessionId: 'sess1',
+          }),
+        ]),
+      }),
+    );
+    expect(without).not.toContain('Guidance was consulted before this edit');
+  });
 });
 
 describe('renderChangedElementOverlay', () => {

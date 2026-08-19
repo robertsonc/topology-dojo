@@ -47,6 +47,16 @@ export function registerTopologyTools(
     toolName: string,
     args: Record<string, unknown>,
   ) => void | Promise<void>,
+  /**
+   * Best-effort activity hook (Initiative A). Invoked after the handler
+   * settles, on both success and error. Wrapped so a throw can never change
+   * the tool response — the remote `TopologyMcp` uses this to record a
+   * bounded `{toolName, at, outcome}` trail.
+   */
+  onToolSettled?: (
+    toolName: string,
+    outcome: 'success' | 'error',
+  ) => void | Promise<void>,
 ): TopologyStore {
   for (const tool of createTools(store, deps)) {
     server.registerTool(
@@ -63,8 +73,10 @@ export function registerTopologyTools(
           // payloads (documents, catalogs) it roughly doubles the size.
           const text =
             typeof result === 'string' ? result : JSON.stringify(result);
+          await settleActivity(onToolSettled, tool.name, 'success');
           return { content: [{ type: 'text' as const, text }] };
         } catch (err) {
+          await settleActivity(onToolSettled, tool.name, 'error');
           const message = err instanceof Error ? err.message : String(err);
           return {
             isError: true,
@@ -75,4 +87,19 @@ export function registerTopologyTools(
     );
   }
   return store;
+}
+
+async function settleActivity(
+  hook:
+    | ((toolName: string, outcome: 'success' | 'error') => void | Promise<void>)
+    | undefined,
+  toolName: string,
+  outcome: 'success' | 'error',
+): Promise<void> {
+  if (!hook) return;
+  try {
+    await hook(toolName, outcome);
+  } catch (err) {
+    console.error(`agent activity record failed after ${toolName}`, err);
+  }
 }
