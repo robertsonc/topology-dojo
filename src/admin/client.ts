@@ -6,6 +6,7 @@
  */
 import type { WorkspaceListItem } from '../workspace/model.js';
 import type { AdminSummary } from './model.js';
+import type { SessionDetail, SessionList } from '../agent-activity/model.js';
 
 /** The analytics/admin surface is disabled on this deployment
  * (`ANALYTICS_ENABLED` unset/!== "true"). */
@@ -61,4 +62,14 @@ export function fetchUserWorkspaces(
   uid: string,
 ): Promise<{ uid: string; login: string; workspaces: WorkspaceListItem[] }> {
   return request(`/api/admin/users/${encodeURIComponent(uid)}/workspaces`);
+}
+
+/** Recent MCP sessions (metadata only — tool names, not arguments). */
+export function fetchAdminSessions(): Promise<SessionList> {
+  return request('/api/admin/sessions');
+}
+
+/** One session's bounded tool-call trail. */
+export function fetchAdminSession(id: string): Promise<SessionDetail> {
+  return request(`/api/admin/sessions/${encodeURIComponent(id)}`);
 }

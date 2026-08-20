@@ -433,11 +433,15 @@ already have exactly the right shape:
    activated in production — rather than standing up a sixth DO class for a
    closely related concern.
 
-**Open decision for the implementing agent:** gate this behind
-`ANALYTICS_ENABLED` (recommended — same owner-visibility posture as the
-admin dashboard it extends) or a new flag. If a new flag, follow the exact
-D2/P2 precedent (opt-in, unset ⇒ off, documented in both `wrangler.jsonc`
-blocks).
+**Flag decision (resolved 2026-08-19):** reuse `ANALYTICS_ENABLED` (already
+on in production) — same owner-visibility posture as the admin dashboard.
+No new flag, no bootstrap-then-activate ceremony.
+
+**Status (2026-08-19):** Packets A1–A6 are implemented in one PR. Privacy:
+metadata only (tool name, timestamp, coarse success/error); no raw prompt
+or argument logging. The revision-timeline guidance marker is an honest
+non-causal presence signal. This PR must not be merged or deployed by the
+implementing agent.
 
 **Implementation packets:**
 
@@ -464,6 +468,7 @@ blocks).
 - **Acceptance criteria:** Pure, deterministic, 100% locally testable (no
   workerd needed), matching this repo's established pattern for DO-adjacent
   logic.
+- **Status: implemented this PR.**
 
 ### A2 — Instrument `TopologyMcp` session lifecycle + tool dispatch
 
@@ -573,23 +578,29 @@ blocks).
 ### A6 — Tests, docs, gate, rollout
 
 - **Outcome:** Full gate green; `docs/HANDOFF.md`/`docs/ROADMAP.md` truth-up
-  marking the initiative shipped; PR merged and (if a new flag was
-  introduced) deployed through the standard bootstrap-then-activate sequence
-  — otherwise a normal deploy suffices since it reuses the already-live
-  `ANALYTICS_ENABLED` flag.
+  marking the initiative implemented in this PR. Merge and production
+  deploy are human-only — this implementing agent must not merge or
+  deploy. Because `ANALYTICS_ENABLED` was reused (already on), a later
+  human deploy is a normal gated deploy with no bootstrap-then-activate
+  ceremony.
 - **Dependencies:** A4, A5.
-- **Scope:** Standard closeout packet, mirrors every prior initiative's final
-  packet in this repo's history.
+- **Scope:** Standard closeout packet (docs + gate), mirrors every prior
+  initiative's final packet in this repo's history except merge/deploy.
 - **Likely files:** `docs/HANDOFF.md`, `docs/ROADMAP.md`.
-- **Non-goals:** None.
+- **Non-goals:** Merge, production deploy, or any new Durable Object /
+  migration.
 - **Risk level:** Low.
 - **Migration impact:** None (per this initiative's design).
-- **Deployment impact:** A normal gated deploy; no bootstrap-then-activate
-  ceremony needed if `ANALYTICS_ENABLED` was reused (it's already on).
-- **Human action required:** Approve the production deploy (standard).
+- **Deployment impact:** A later human-approved gated deploy; no
+  bootstrap-then-activate ceremony — `ANALYTICS_ENABLED` was reused and is
+  already on.
+- **Human action required:** Review/merge this PR, then approve the
+  production deploy (standard). The implementing agent does not merge or
+  deploy.
 - **Required tests:** Full existing gate stays green plus everything added in
   A1–A5.
-- **Acceptance criteria:** Owner can see "what has my agent been doing"
+- **Acceptance criteria:** Code + docs land in one reviewable PR. After a
+  human merge and deploy, the owner can see "what has my agent been doing"
   end-to-end in production.
 
 **Testing strategy:** Pure-logic packets (A1) are locally testable without
@@ -1185,41 +1196,41 @@ here and would need its own evidence-triggered justification.
 _Full specs are in each initiative's section above; this is a cross-reference
 index only._
 
-| Packet | Initiative        | Depends on | Migration? | New flag/tool/secret? | Human action?            |
-| ------ | ----------------- | ---------- | ---------- | --------------------- | ------------------------ |
-| N1     | Docs reset        | —          | No         | No                    | No — **done**            |
-| N2     | Docs reset        | N1         | No         | No                    | No — **done**            |
-| N3     | Docs reset        | N2         | No         | No                    | **Done**                 |
-| O1     | Alerting/game day | —          | No         | No                    | **Yes, 100%**            |
-| O2     | Alerting/game day | O3         | No         | No                    | **Yes, significant**     |
-| O3     | Alerting/game day | —          | No         | No                    | No                       |
-| A1     | Explainability    | —          | No         | No                    | No                       |
-| A2     | Explainability    | A1         | No         | Flag (open decision)  | No                       |
-| A3     | Explainability    | A2         | No         | No                    | No                       |
-| A4     | Explainability    | A3         | No         | No                    | No                       |
-| A5     | Explainability    | A3         | No         | No                    | No                       |
-| A6     | Explainability    | A4, A5     | No         | No                    | Deploy approval          |
-| B1     | Briefs/templates  | —          | No         | No                    | No                       |
-| B2     | Briefs/templates  | B1         | No         | No                    | No                       |
-| B3     | Briefs/templates  | B2         | No         | New tool              | No                       |
-| B4     | Briefs/templates  | B2         | No         | No                    | No                       |
-| B5     | Briefs/templates  | B2         | No         | No                    | No                       |
-| B6     | Briefs/templates  | B3, B4     | No         | No                    | No                       |
-| B7     | Briefs/templates  | B5, B6     | No         | No                    | Deploy approval          |
-| E1     | EdgeConnect       | —          | No         | No                    | Real API access, ideally |
-| E2     | EdgeConnect       | —          | No         | No                    | No                       |
-| E3     | EdgeConnect       | —          | No         | No                    | No                       |
-| E4     | EdgeConnect       | E1, E2, E3 | No         | No                    | No                       |
-| E5     | EdgeConnect       | —          | No         | New secret (staging)  | **Yes, 100%**            |
-| E6     | EdgeConnect       | —          | No         | No                    | No                       |
-| E7     | EdgeConnect       | E4, E5, E6 | No         | No                    | Deploy approval          |
-| T1     | Storytelling      | —          | No         | No                    | No                       |
-| T2     | Storytelling      | T1, **E2** | No         | No                    | No                       |
-| T3     | Storytelling      | T2         | No         | No                    | No                       |
-| T4     | Storytelling      | T2         | No         | New tool              | No                       |
-| T5     | Storytelling      | T3, T4     | No         | No                    | No                       |
-| T6     | Storytelling      | T5         | No         | No                    | No                       |
-| T7     | Storytelling      | T6         | No         | No                    | Deploy approval          |
+| Packet | Initiative        | Depends on | Migration? | New flag/tool/secret?      | Human action?                                                      |
+| ------ | ----------------- | ---------- | ---------- | -------------------------- | ------------------------------------------------------------------ |
+| N1     | Docs reset        | —          | No         | No                         | No — **done**                                                      |
+| N2     | Docs reset        | N1         | No         | No                         | No — **done**                                                      |
+| N3     | Docs reset        | N2         | No         | No                         | **Done**                                                           |
+| O1     | Alerting/game day | —          | No         | No                         | **Yes, 100%**                                                      |
+| O2     | Alerting/game day | O3         | No         | No                         | **Yes, significant**                                               |
+| O3     | Alerting/game day | —          | No         | No                         | No                                                                 |
+| A1     | Explainability    | —          | No         | Reused `ANALYTICS_ENABLED` | No — **implemented this PR**                                       |
+| A2     | Explainability    | A1         | No         | No                         | No — **implemented this PR**                                       |
+| A3     | Explainability    | A2         | No         | No                         | No — **implemented this PR**                                       |
+| A4     | Explainability    | A3         | No         | No                         | No — **implemented this PR**                                       |
+| A5     | Explainability    | A3         | No         | No                         | No — **implemented this PR**                                       |
+| A6     | Explainability    | A4, A5     | No         | No                         | Merge/deploy approval — **code+docs this PR; do not merge/deploy** |
+| B1     | Briefs/templates  | —          | No         | No                         | No                                                                 |
+| B2     | Briefs/templates  | B1         | No         | No                         | No                                                                 |
+| B3     | Briefs/templates  | B2         | No         | New tool                   | No                                                                 |
+| B4     | Briefs/templates  | B2         | No         | No                         | No                                                                 |
+| B5     | Briefs/templates  | B2         | No         | No                         | No                                                                 |
+| B6     | Briefs/templates  | B3, B4     | No         | No                         | No                                                                 |
+| B7     | Briefs/templates  | B5, B6     | No         | No                         | Deploy approval                                                    |
+| E1     | EdgeConnect       | —          | No         | No                         | Real API access, ideally                                           |
+| E2     | EdgeConnect       | —          | No         | No                         | No                                                                 |
+| E3     | EdgeConnect       | —          | No         | No                         | No                                                                 |
+| E4     | EdgeConnect       | E1, E2, E3 | No         | No                         | No                                                                 |
+| E5     | EdgeConnect       | —          | No         | New secret (staging)       | **Yes, 100%**                                                      |
+| E6     | EdgeConnect       | —          | No         | No                         | No                                                                 |
+| E7     | EdgeConnect       | E4, E5, E6 | No         | No                         | Deploy approval                                                    |
+| T1     | Storytelling      | —          | No         | No                         | No                                                                 |
+| T2     | Storytelling      | T1, **E2** | No         | No                         | No                                                                 |
+| T3     | Storytelling      | T2         | No         | No                         | No                                                                 |
+| T4     | Storytelling      | T2         | No         | New tool                   | No                                                                 |
+| T5     | Storytelling      | T3, T4     | No         | No                         | No                                                                 |
+| T6     | Storytelling      | T5         | No         | No                         | No                                                                 |
+| T7     | Storytelling      | T6         | No         | No                         | Deploy approval                                                    |
 
 ## Risk register (cross-cutting)
 

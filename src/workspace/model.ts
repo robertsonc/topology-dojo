@@ -61,6 +61,17 @@ export interface WorkspaceActor {
   kind: 'user' | 'agent' | 'system';
   id: string;
   label?: string;
+  /**
+   * MCP session Durable Object id, when this actor was the remote agent in
+   * that session. Additive optional field — omitted by browser/UI callers.
+   */
+  sessionId?: string;
+  /**
+   * Honest, non-causal signal: `get_authoring_guidance` succeeded earlier in
+   * the same MCP session before this actor authored the revision/proposal.
+   * Never a claim that guidance caused the edit. Omitted when unknown.
+   */
+  guidanceConsultedBefore?: boolean;
 }
 
 export interface OperationSummary {
@@ -81,6 +92,17 @@ export interface WorkspaceChange {
   summary: OperationSummary;
   operations: WorkspaceOperation[];
   proposalId?: string;
+  /**
+   * MCP session id when this revision can be tied to one. Copied from the
+   * agent actor (leased commit) or the accepted proposal's `createdBy`.
+   * Additive; omitted when unknown. No schema version bump.
+   */
+  sessionId?: string;
+  /**
+   * Honest, non-causal: guidance was consulted in this session before the
+   * agent authored the change. Omitted rather than stored as false.
+   */
+  guidanceConsultedBefore?: boolean;
 }
 
 export interface WorkspaceLease {

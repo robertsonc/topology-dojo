@@ -16,7 +16,14 @@ export default {
       const workspace = String(input.workspace ?? 'w1');
       const stub = env.DOC.get(env.DOC.idFromName(owner + ':' + workspace));
       const user = { kind: 'user', id: owner };
-      const agent = { kind: 'agent', id: owner };
+      const agent = {
+        kind: 'agent',
+        id: owner,
+        ...(input.sessionId ? { sessionId: String(input.sessionId) } : {}),
+        ...(input.guidanceConsultedBefore
+          ? { guidanceConsultedBefore: true }
+          : {}),
+      };
       let result;
       switch (input.action) {
         case 'initialize': result = await stub.initialize(owner, workspace, input.document); break;
@@ -667,5 +674,112 @@ describe('TopologyDocument Durable Object', () => {
       workspace: W,
     });
     expect(list[0]!.createdBy.kind).toBe('agent');
+  }, 30_000);
+});
+
+describe('agent revision explainability (Initiative A)', () => {
+  it('stamps guidance-consulted only when the agent actor carried it; accept copies from the proposal', async () => {
+    const W = 'a4-explain';
+    await call({
+      action: 'initialize',
+      workspace: W,
+      document: { title: 'T', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    await call({ action: 'lease', workspace: W, pageId: 'p1' });
+
+    const guided = await call<{ ok: boolean; revision: number }>({
+      action: 'agent',
+      workspace: W,
+      sessionId: 'sess-guided',
+      guidanceConsultedBefore: true,
+      commit: {
+        baseRevision: 0,
+        operationId: 'a-guided',
+        operations: [patch('p1', 'a', { label: 'guided' })],
+      },
+    });
+    expect(guided).toMatchObject({ ok: true, revision: 1 });
+
+    const unguided = await call<{ ok: boolean; revision: number }>({
+      action: 'agent',
+      workspace: W,
+      sessionId: 'sess-plain',
+      commit: {
+        baseRevision: 1,
+        operationId: 'a-plain',
+        operations: [patch('p1', 'a', { x: 20 })],
+      },
+    });
+    expect(unguided).toMatchObject({ ok: true, revision: 2 });
+
+    const omitted = await call<{ ok: boolean; revision: number }>({
+      action: 'agent',
+      workspace: W,
+      commit: {
+        baseRevision: 2,
+        operationId: 'a-omit',
+        operations: [patch('p1', 'a', { y: 20 })],
+      },
+    });
+    expect(omitted).toMatchObject({ ok: true, revision: 3 });
+
+    const proposed = await call<{
+      ok: true;
+      proposal: {
+        id: string;
+        createdBy: {
+          sessionId?: string;
+          guidanceConsultedBefore?: boolean;
+        };
+      };
+    }>({
+      action: 'propose',
+      workspace: W,
+      sessionId: 'sess-prop',
+      guidanceConsultedBefore: true,
+      title: 'Relabel',
+      commit: {
+        baseRevision: 3,
+        operationId: 'pr-guided',
+        operations: [patch('p1', 'a', { label: 'from proposal' })],
+      },
+    });
+    expect(proposed.proposal.createdBy.sessionId).toBe('sess-prop');
+    expect(proposed.proposal.createdBy.guidanceConsultedBefore).toBe(true);
+
+    await call({
+      action: 'accept',
+      workspace: W,
+      proposalId: proposed.proposal.id,
+      operationId: 'acc-guided',
+    });
+
+    const log = await call<{
+      changes: Array<{
+        revision: number;
+        source: string;
+        sessionId?: string;
+        guidanceConsultedBefore?: boolean;
+      }>;
+    }>({ action: 'changes', workspace: W, since: 0 });
+    const byRev = Object.fromEntries(log.changes.map((c) => [c.revision, c]));
+
+    expect(byRev[1]).toMatchObject({
+      source: 'agent-lease',
+      sessionId: 'sess-guided',
+      guidanceConsultedBefore: true,
+    });
+    expect(byRev[2]).toMatchObject({
+      source: 'agent-lease',
+      sessionId: 'sess-plain',
+    });
+    expect(byRev[2]!.guidanceConsultedBefore).toBeUndefined();
+    expect(byRev[3]!.sessionId).toBeUndefined();
+    expect(byRev[3]!.guidanceConsultedBefore).toBeUndefined();
+    expect(byRev[4]).toMatchObject({
+      source: 'proposal',
+      sessionId: 'sess-prop',
+      guidanceConsultedBefore: true,
+    });
   }, 30_000);
 });

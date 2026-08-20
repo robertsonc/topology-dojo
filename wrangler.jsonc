@@ -86,9 +86,10 @@
       // Populated asynchronously from attributed correction outcomes; gated at
       // runtime by PROFILES_ENABLED (default off — see worker/env.ts).
       { "name": "AUTHORING_PROFILE", "class_name": "AuthoringProfile" },
-      // Owner-analytics login roster for the admin dashboard (migration v5).
-      // One global instance; gated at runtime by ANALYTICS_ENABLED (default
-      // off — see worker/env.ts). Metadata only, never diagram content.
+      // Owner-analytics login roster + MCP-session index for the admin
+      // dashboard (migration v5). One global instance; gated at runtime by
+      // ANALYTICS_ENABLED (Initiative A reuses this flag — no new flag).
+      // Metadata only: never diagram content, prompts, or tool arguments.
       { "name": "ANALYTICS", "class_name": "AnalyticsLog" },
     ],
   },

@@ -47,6 +47,16 @@ export interface WorkspaceServiceOptions {
    * hand-off stays an owner decision made in the browser.
    */
   migrateLegacyOnAccess?: boolean;
+  /**
+   * Optional MCP-session identity for agent-authored revisions/proposals
+   * (Initiative A). Additive: callers that omit it are unchanged. Stamped
+   * onto the agent actor so the revision timeline can show an honest
+   * "guidance was consulted before this edit" signal — never a causal claim.
+   */
+  mcpSession?: {
+    sessionId: string;
+    guidanceConsultedBefore(): boolean;
+  };
 }
 
 /** Explicit RPC facade avoids Cloudflare's conservative Stubable<> inference
@@ -145,6 +155,7 @@ function asWorkspaceUser(user: SessionUser): WorkspaceUser {
 export class WorkspaceService {
   private readonly user: WorkspaceUser;
   private readonly migrateLegacyOnAccess: boolean;
+  private readonly mcpSession: WorkspaceServiceOptions['mcpSession'];
   private legacyDraftsPulled = false;
 
   constructor(
@@ -154,6 +165,7 @@ export class WorkspaceService {
   ) {
     this.user = asWorkspaceUser(user);
     this.migrateLegacyOnAccess = options.migrateLegacyOnAccess ?? true;
+    this.mcpSession = options.mcpSession;
   }
 
   async list(): Promise<WorkspaceListItem[]> {
@@ -483,10 +495,18 @@ export class WorkspaceService {
   }
 
   private actor(kind: 'user' | 'agent'): WorkspaceActor {
-    return {
+    const base: WorkspaceActor = {
       kind,
       id: this.user.uid,
       label: this.user.login,
+    };
+    if (kind !== 'agent' || !this.mcpSession?.sessionId) return base;
+    return {
+      ...base,
+      sessionId: this.mcpSession.sessionId,
+      ...(this.mcpSession.guidanceConsultedBefore()
+        ? { guidanceConsultedBefore: true }
+        : {}),
     };
   }
 

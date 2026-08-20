@@ -23,6 +23,7 @@ import type { TopologyDocument } from '../src/pages/model.js';
 import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
 import type { WorkerEnv } from './env.js';
+import { analyticsEnabled } from './env.js';
 import { WorkspaceService } from './workspaces.js';
 import { workspaceToolNames } from './workspace-tools.js';
 import { profileToolNames } from './profile-tools.js';
@@ -40,6 +41,19 @@ import {
   type RateLimitResult,
 } from '../src/mcp/rate-limit.js';
 import { listShares, publishSnapshot, revokeShare } from './share.js';
+import type { ToolCallEvent } from '../src/agent-activity/model.js';
+import {
+  indexSession,
+  loadTrail,
+  persistTrail,
+  sessionGuidanceConsulted,
+} from './agent-activity.js';
+import {
+  MAX_ACTIVITY_STR,
+  MAX_ACTIVITY_TS,
+  appendTrail,
+  boundActivityString,
+} from '../src/agent-activity/trail.js';
 
 /**
  * Tools that do not mutate the legacy in-memory TopologyStore. Workspace write
@@ -84,6 +98,12 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
   private store = new TopologyStore();
   /** Session-local uid-keyed registry stub (dropped on hibernation). */
   private cachedRegistry?: DocStorage;
+  /**
+   * In-memory copy of this session's tool-call trail (Initiative A). Rehydrated
+   * from `ctx.storage` in `init()` so hibernation doesn't drop same-session
+   * explainability; appends stay in memory even if persist/index throws.
+   */
+  private activityTrail: ToolCallEvent[] = [];
 
   async init(): Promise<void> {
     // Rehydrate from the per-USER registry DO (not this session DO's storage):
@@ -91,6 +111,8 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     // opens. Without this, a topology created on one call vanishes on the next
     // (the "unknown topology" bug) because each session lands on a fresh DO.
     await this.rehydrate();
+    await this.rehydrateActivity();
+    this.indexSessionStart();
 
     // Live-data provider: LIVE_DATA_ENABLED (opt-in) × optional owner
     // allowlist × Orchestrator secrets. Secret presence alone must not
@@ -142,7 +164,21 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       this.store,
       (toolName) => this.persistAfter(toolName),
       (toolName, args) => this.beforeTool(toolName, args),
+      (toolName, outcome) => this.recordActivity(toolName, outcome),
     );
+  }
+
+  /**
+   * Owner-gated admin read of this session's tool-call trail (metadata only).
+   * Always served from storage so a hibernated DO still answers.
+   */
+  async getActivityTrail(): Promise<ToolCallEvent[]> {
+    try {
+      return await loadTrail(this.ctx.storage);
+    } catch (err) {
+      console.error('agent activity trail read failed', err);
+      return [];
+    }
   }
 
   /**
@@ -262,8 +298,97 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       // the browser. Agent tools must never trigger it implicitly — a
       // workspace read on a legacy draft errors instead of migrating, so the
       // direct authoring tools keep working on that draft.
-      { migrateLegacyOnAccess: false },
+      {
+        migrateLegacyOnAccess: false,
+        mcpSession: {
+          sessionId: this.sessionId(),
+          guidanceConsultedBefore: () =>
+            sessionGuidanceConsulted(this.activityTrail),
+        },
+      },
     );
+  }
+
+  /** Durable Object id hex — the lookup key for `GET /api/admin/sessions/:id`. */
+  private sessionId(): string {
+    return this.ctx.id.toString();
+  }
+
+  private sessionOwner(): { uid: string; login?: string } | undefined {
+    const props = this.props as { id?: number; login?: string } | undefined;
+    if (props?.id === undefined) return undefined;
+    return {
+      uid: String(props.id),
+      ...(props.login ? { login: props.login } : {}),
+    };
+  }
+
+  /** Rehydrate the trail after hibernation. Failure starts empty, never blocks. */
+  private async rehydrateActivity(): Promise<void> {
+    if (!analyticsEnabled(this.env)) return;
+    try {
+      this.activityTrail = await loadTrail(this.ctx.storage);
+    } catch (err) {
+      console.error('agent activity trail rehydrate failed', err);
+      this.activityTrail = [];
+    }
+  }
+
+  /** Best-effort session-index row at init; `waitUntil` so it never blocks tools. */
+  private indexSessionStart(): void {
+    if (!analyticsEnabled(this.env)) return;
+    const owner = this.sessionOwner();
+    if (!owner) return;
+    const startedAt = this.activityTrail[0]?.at ?? new Date().toISOString();
+    this.ctx.waitUntil(
+      indexSession(this.env, {
+        sessionId: this.sessionId(),
+        ownerId: owner.uid,
+        ownerLogin: owner.login,
+        startedAt,
+        toolCallCount: this.activityTrail.length,
+      }),
+    );
+  }
+
+  /**
+   * Append a bounded trail event in memory (so the next tool in this session
+   * can see it for explainability) and flush storage + the session index off
+   * the response path. Try/catch: a storage hiccup must never throw into the
+   * tool response (mirrors `recordLogin`).
+   */
+  private recordActivity(toolName: string, outcome: 'success' | 'error'): void {
+    if (!analyticsEnabled(this.env)) return;
+    try {
+      const name = boundActivityString(toolName, MAX_ACTIVITY_STR);
+      if (!name) return;
+      const at = boundActivityString(new Date().toISOString(), MAX_ACTIVITY_TS);
+      this.activityTrail = appendTrail(this.activityTrail, {
+        toolName: name,
+        at,
+        outcome,
+      });
+      this.ctx.waitUntil(this.flushActivity());
+    } catch (err) {
+      console.error('agent activity record failed', err);
+    }
+  }
+
+  private async flushActivity(): Promise<void> {
+    try {
+      await persistTrail(this.ctx.storage, this.activityTrail);
+      const owner = this.sessionOwner();
+      if (!owner) return;
+      await indexSession(this.env, {
+        sessionId: this.sessionId(),
+        ownerId: owner.uid,
+        ownerLogin: owner.login,
+        lastToolAt: this.activityTrail.at(-1)?.at,
+        toolCallCount: this.activityTrail.length,
+      });
+    } catch (err) {
+      console.error('agent activity record failed', err);
+    }
   }
 
   /**

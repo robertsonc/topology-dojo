@@ -1,6 +1,6 @@
 # Topology Dojo User Guide
 
-**Last reviewed:** 2026-08-17
+**Last reviewed:** 2026-08-19
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
 edit a diagram directly on the canvas, or an MCP-capable agent can author the
@@ -20,15 +20,15 @@ For product principles and technical details, see the
 
 Topology Dojo has several related but distinct surfaces.
 
-| Audience                    | Surface                 | Best for                                                                    | Important distinction                                                                                                                                  |
-| --------------------------- | ----------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Diagram author              | Hosted browser editor   | Interactive drawing, review, export, and shared-workspace ownership         | The main editor requires GitHub sign-in. A normal browser draft still autosaves locally until it is handed off to a workspace.                         |
-| Diagram author or developer | Local browser editor    | Local editing and development                                               | Runs through Vite without hosted authentication or Worker-backed workspace, profile, admin, and share services.                                        |
-| Link recipient              | Public shared-copy view | Reviewing or adapting an agent-published snapshot                           | No sign-in is required. The link is public, and edits go to a separate browser-local copy.                                                             |
-| Agent operator              | Local MCP server        | Local or development-time agent authoring                                   | Uses stdio. Its private draft state is process-local, and it cannot publish hosted share links.                                                        |
-| Agent operator              | Hosted MCP endpoint     | Durable private drafts, public snapshot publishing, and authenticated tools | Uses OAuth with GitHub at the deployment's **/mcp** endpoint.                                                                                          |
-| Human owner and agent       | Agent Workspace         | Revisioned collaboration on one canonical document                          | Agents are **Suggest only** by default. The browser owner reviews proposals and controls direct-write leases.                                          |
-| Deployment owner            | Admin dashboard         | Login and workspace metadata                                                | Available only when analytics is enabled and the signed-in GitHub numeric ID matches the configured administrator. It never displays diagram contents. |
+| Audience                    | Surface                 | Best for                                                                    | Important distinction                                                                                                                                                              |
+| --------------------------- | ----------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Diagram author              | Hosted browser editor   | Interactive drawing, review, export, and shared-workspace ownership         | The main editor requires GitHub sign-in. A normal browser draft still autosaves locally until it is handed off to a workspace.                                                     |
+| Diagram author or developer | Local browser editor    | Local editing and development                                               | Runs through Vite without hosted authentication or Worker-backed workspace, profile, admin, and share services.                                                                    |
+| Link recipient              | Public shared-copy view | Reviewing or adapting an agent-published snapshot                           | No sign-in is required. The link is public, and edits go to a separate browser-local copy.                                                                                         |
+| Agent operator              | Local MCP server        | Local or development-time agent authoring                                   | Uses stdio. Its private draft state is process-local, and it cannot publish hosted share links.                                                                                    |
+| Agent operator              | Hosted MCP endpoint     | Durable private drafts, public snapshot publishing, and authenticated tools | Uses OAuth with GitHub at the deployment's **/mcp** endpoint.                                                                                                                      |
+| Human owner and agent       | Agent Workspace         | Revisioned collaboration on one canonical document                          | Agents are **Suggest only** by default. The browser owner reviews proposals and controls direct-write leases.                                                                      |
+| Deployment owner            | Admin dashboard         | Login, workspace, and MCP-session metadata                                  | Available only when analytics is enabled and the signed-in GitHub numeric ID matches the configured administrator. It never displays diagram contents, prompts, or tool arguments. |
 
 ### The document model
 
@@ -121,19 +121,20 @@ GitHub sign-in alone does not move the open canvas into a canonical server
 workspace. Use this table when deciding whether a diagram is recoverable,
 shared, or public.
 
-| Data                                      | Storage location                                                            | Who can reach it                                                      | Retention and recovery                                                                                                                                                                                                                                                           |
-| ----------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Normal browser draft                      | Browser localStorage on the current browser/profile                         | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **download** for a portable backup.                                                                                                |
-| Shared-link working copy                  | A separate browser localStorage slot                                        | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **keep this copy** to adopt it or **back to my document** to discard it from the canvas.                                                                                                   |
-| Downloaded JSON                           | A file chosen by the browser                                                | Anyone who receives the file                                          | Full portable document backup under the user's control.                                                                                                                                                                                                                          |
-| Local MCP private draft                   | Memory in the local MCP process                                             | The connected local MCP client                                        | Treat as temporary. Export or retrieve the JSON before stopping the process.                                                                                                                                                                                                     |
-| Hosted MCP private draft                  | Per-user hosted registry                                                    | The authenticated GitHub owner and that owner's MCP session           | No user-facing automatic expiry is documented. The browser owner can open or hand the draft into a canonical workspace.                                                                                                                                                          |
-| Canonical Agent Workspace                 | Hosted per-document coordinator                                             | The authenticated owner and authorized tools operating for that owner | Revisioned and server-backed. Recent history can be compacted. Named checkpoints are capped at 12.                                                                                                                                                                               |
-| Workspace offline cache and pending queue | IndexedDB in the current browser plus a lightweight local workspace pointer | The person using that browser profile                                 | Supports reload and reconnection recovery. Do not clear site data while operations are pending.                                                                                                                                                                                  |
-| Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                        | Anyone with the URL; no login to view                                 | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. The publisher can revoke with **unpublish_topology** or **unpublish link** (signed-in `DELETE /api/topology/<id>`). Public GETs may be cached for about a minute. |
-| SVG, PNG, or flipbook export              | Downloaded file or MCP result                                               | Anyone who receives the artifact                                      | Outside Topology Dojo after export. Handle it according to the content's sensitivity.                                                                                                                                                                                            |
-| Authoring preferences                     | Hosted profile store, when enabled                                          | The owner; agents can read confirmed guidance only                    | The owner can confirm, pause, reject, or forget rules.                                                                                                                                                                                                                           |
-| Login analytics                           | Hosted analytics store, when enabled                                        | The configured deployment administrator                               | Login and workspace metadata only; no diagram contents. Collection is going-forward and best-effort.                                                                                                                                                                             |
+| Data                                      | Storage location                                                               | Who can reach it                                                      | Retention and recovery                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Normal browser draft                      | Browser localStorage on the current browser/profile                            | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **download** for a portable backup.                                                                                                |
+| Shared-link working copy                  | A separate browser localStorage slot                                           | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **keep this copy** to adopt it or **back to my document** to discard it from the canvas.                                                                                                   |
+| Downloaded JSON                           | A file chosen by the browser                                                   | Anyone who receives the file                                          | Full portable document backup under the user's control.                                                                                                                                                                                                                          |
+| Local MCP private draft                   | Memory in the local MCP process                                                | The connected local MCP client                                        | Treat as temporary. Export or retrieve the JSON before stopping the process.                                                                                                                                                                                                     |
+| Hosted MCP private draft                  | Per-user hosted registry                                                       | The authenticated GitHub owner and that owner's MCP session           | No user-facing automatic expiry is documented. The browser owner can open or hand the draft into a canonical workspace.                                                                                                                                                          |
+| Canonical Agent Workspace                 | Hosted per-document coordinator                                                | The authenticated owner and authorized tools operating for that owner | Revisioned and server-backed. Recent history can be compacted. Named checkpoints are capped at 12.                                                                                                                                                                               |
+| Workspace offline cache and pending queue | IndexedDB in the current browser plus a lightweight local workspace pointer    | The person using that browser profile                                 | Supports reload and reconnection recovery. Do not clear site data while operations are pending.                                                                                                                                                                                  |
+| Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                           | Anyone with the URL; no login to view                                 | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. The publisher can revoke with **unpublish_topology** or **unpublish link** (signed-in `DELETE /api/topology/<id>`). Public GETs may be cached for about a minute. |
+| SVG, PNG, or flipbook export              | Downloaded file or MCP result                                                  | Anyone who receives the artifact                                      | Outside Topology Dojo after export. Handle it according to the content's sensitivity.                                                                                                                                                                                            |
+| Authoring preferences                     | Hosted profile store, when enabled                                             | The owner; agents can read confirmed guidance only                    | The owner can confirm, pause, reject, or forget rules.                                                                                                                                                                                                                           |
+| Login analytics                           | Hosted analytics store, when enabled                                           | The configured deployment administrator                               | Login and workspace metadata only; no diagram contents. Collection is going-forward and best-effort.                                                                                                                                                                             |
+| MCP-session activity                      | Per-session `TopologyMcp` trail plus the analytics session index, when enabled | The configured deployment administrator                               | Tool name, timestamp, and coarse success/error only — never prompts or arguments. Bounded and ephemeral with the session Durable Object; going-forward, best-effort, never blocks a tool call.                                                                                   |
 
 The active page number is view state, not part of the document contract. A
 reloaded document normally opens on its first page.
@@ -915,8 +916,12 @@ are browser-owner actions.
 
 **Timeline** lists recent revisions newest-first with revision number, actor,
 source, operation summary, accepted-proposal marker, and checkpoint marker.
-Older detailed revisions can be compacted; the panel reports the history floor
-when that happens.
+When an agent-authored revision (leased commit or accepted proposal) can be
+tied to an MCP session in which **get_authoring_guidance** succeeded _before_
+that revision, the row also shows **Guidance was consulted before this edit**.
+That is an honest presence signal, not a claim that the guidance caused the
+edit — agents consume guidance at their discretion. Older detailed revisions
+can be compacted; the panel reports the history floor when that happens.
 
 **Present** shows connected browser editor sessions and, when reported, the page
 each is viewing. MCP agents do not currently open a presence socket. Presence
@@ -993,11 +998,19 @@ The dashboard shows:
 - GitHub login/name and stable numeric ID;
 - first-seen and last-login time;
 - login count;
-- expandable workspace metadata: title, page count, revision, or legacy state.
+- expandable workspace metadata: title, page count, revision, or legacy state;
+- **Agent Sessions**: recent remote MCP sessions (who, when, tool-call count)
+  with drill-down into a bounded tool-call trail (tool name, timestamp, and
+  coarse success/error only).
 
-It does not expose nodes, links, annotations, document JSON, or rendered diagram
-contents. Analytics are best-effort and do not block sign-in. There is no
-historical backfill when the feature is first enabled.
+It does not expose nodes, links, annotations, document JSON, rendered diagram
+contents, raw prompts, or tool arguments. Analytics are best-effort and do not
+block sign-in or MCP tool results. There is no historical backfill when the
+feature is first enabled. Session trails are bounded and ephemeral with the
+session Durable Object; they are not a long-term audit log.
+
+The guidance-consulted marker on a workspace timeline is not shown here; it
+appears on the Agent Workspace revision timeline for the document owner.
 
 If the dashboard says it is disabled or unauthorized, editing and workspaces
 continue normally; contact the deployment owner rather than attempting to
@@ -1252,8 +1265,11 @@ KV bindings, and authenticated readiness checks using the
   corrections, only confirmed rules reach agents, and they do not guarantee a
   particular agent result.
 - **Admin analytics are metadata-only but still identity data.** When enabled,
-  the deployment stores GitHub identity and login/workspace metadata. The
-  administrator cannot inspect diagram contents through the dashboard.
+  the deployment stores GitHub identity, login/workspace metadata, and bounded
+  MCP-session activity (tool names, timestamps, coarse success/error). The
+  administrator cannot inspect diagram contents, prompts, or tool arguments
+  through the dashboard. Agent-session trails are not a complete historical
+  audit log.
 - **Legacy import can lose concepts.** Keep the source and review conversion
   warnings.
 - **Live EdgeConnect support is conditional.** Tool registration and real

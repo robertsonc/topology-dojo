@@ -1,7 +1,7 @@
 # Topology Dojo — Living QA Test Plan
 
-- **Version:** 2.0
-- **Effective date:** 2026-08-09
+- **Version:** 2.1
+- **Effective date:** 2026-08-19
 - **Status:** Active living plan
 - **System under test:** Topology Dojo web editor, headless authoring API, local and remote MCP services, shared-workspace services, and the Cloudflare Worker deployment
 
@@ -70,9 +70,11 @@ therefore prove all of the following:
 - Cloudflare dashboard policy creation and notification delivery are external
   operator actions. Repository tests can verify the routes and synthetic fault,
   but operational readiness requires recorded dashboard and game-day evidence.
-- Share links are public snapshots with a 30-day KV lifetime and currently have
-  no revoke/unpublish workflow. Tests must verify and documentation must state
-  this behavior until a revocation feature ships.
+- Share links are public snapshots with a 30-day KV lifetime. The publisher
+  can revoke a live link (Share dialog, `unpublish_topology`, or signed-in
+  `DELETE /api/topology/:id`). Public GETs may be cached for about a minute
+  (`max-age=60`, no `immutable`). Tests must verify revocation and
+  documentation must state the remaining bearer-link residual risk.
 
 ---
 
@@ -326,15 +328,17 @@ Status legend:
 
 ### 7.6 Adaptive profiles and administration
 
-| ID       | Scenario and expected result                                                                                                                | Status/environment                                                   |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| PROF-01  | Observe-only outcomes dedupe, strengthen, cap, isolate owners, and never change coordinator responses                                       | Automated                                                            |
-| PROF-02  | Candidate confirmation is human-only and scope-aware; reject tombstones; pause/resume/forget and re-review follow the documented lifecycle  | Automated lower-level/UI HTML; mounted browser flow Required         |
-| PROF-03  | Bounded guidance serves only confirmed applicable rules, respects revisions/token limits/exceptions, and profile MCP tools remain read-only | Automated                                                            |
-| PROF-04  | `PROFILES_ENABLED` off produces the stable 503/no-tool/no-write posture; on activates API, panel, learner, and guidance                     | Automated gates; forward-disable staging drill Required              |
-| ADMIN-01 | `ANALYTICS_ENABLED` off returns stable 503 and records nothing; on records bounded login metadata                                           | Automated lower-level; staging drill Required                        |
-| ADMIN-02 | Unauthenticated is 401, signed-in non-admin is 403, configured numeric-ID admin sees the chip/roster/workspace metadata                     | Automated API/HTML helpers; mounted browser roles Required           |
-| ADMIN-03 | Admin responses and UI never include topology contents or another unintended identity field; hostile names/titles are escaped               | Automated rendering/API partial; privacy payload inspection Required |
+| ID       | Scenario and expected result                                                                                                                                                      | Status/environment                                                    |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| PROF-01  | Observe-only outcomes dedupe, strengthen, cap, isolate owners, and never change coordinator responses                                                                             | Automated                                                             |
+| PROF-02  | Candidate confirmation is human-only and scope-aware; reject tombstones; pause/resume/forget and re-review follow the documented lifecycle                                        | Automated lower-level/UI HTML; mounted browser flow Required          |
+| PROF-03  | Bounded guidance serves only confirmed applicable rules, respects revisions/token limits/exceptions, and profile MCP tools remain read-only                                       | Automated                                                             |
+| PROF-04  | `PROFILES_ENABLED` off produces the stable 503/no-tool/no-write posture; on activates API, panel, learner, and guidance                                                           | Automated gates; forward-disable staging drill Required               |
+| ADMIN-01 | `ANALYTICS_ENABLED` off returns stable 503 and records nothing; on records bounded login metadata                                                                                 | Automated lower-level; staging drill Required                         |
+| ADMIN-02 | Unauthenticated is 401, signed-in non-admin is 403, configured numeric-ID admin sees the chip/roster/workspace metadata                                                           | Automated API/HTML helpers; mounted browser roles Required            |
+| ADMIN-03 | Admin responses and UI never include topology contents or another unintended identity field; hostile names/titles are escaped                                                     | Automated rendering/API partial; privacy payload inspection Required  |
+| ADMIN-04 | Owner can list recent MCP sessions and drill into a metadata-only tool-call trail; 401/403/fail-closed match ADMIN-02; recording never changes MCP tool output                    | Automated API + register/Miniflare; staging trail inspection Required |
+| ADMIN-05 | Agent-authored timeline entries show “Guidance was consulted before this edit” only when `get_authoring_guidance` succeeded earlier in the same session — never as a causal claim | Automated workspace DO + panel HTML; browser timeline Required        |
 
 ### 7.7 Cloudflare delivery and operations
 

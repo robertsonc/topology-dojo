@@ -199,6 +199,23 @@ function proposalSummary(proposal: WorkspaceProposal): ProposalSummary {
   return summary;
 }
 
+/** Additive session/guidance fields for a revision. Omitted when unknown. */
+function revisionActivity(
+  actor: WorkspaceActor,
+  inherited?: {
+    sessionId?: string;
+    guidanceConsultedBefore?: boolean;
+  },
+): Pick<WorkspaceChange, 'sessionId' | 'guidanceConsultedBefore'> {
+  const sessionId = inherited?.sessionId || actor.sessionId;
+  const guidance =
+    inherited?.guidanceConsultedBefore || actor.guidanceConsultedBefore;
+  return {
+    ...(sessionId ? { sessionId } : {}),
+    ...(guidance ? { guidanceConsultedBefore: true as const } : {}),
+  };
+}
+
 function checkpointSummary(record: StoredCheckpoint): CheckpointSummary {
   return {
     id: record.id,
@@ -761,6 +778,10 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
           },
           'proposal',
           id,
+          {
+            sessionId: proposal.createdBy.sessionId,
+            guidanceConsultedBefore: proposal.createdBy.guidanceConsultedBefore,
+          },
         );
         if (result.ok) {
           acceptedForWindow = { ops: opsToApply, revision: result.revision };
@@ -1095,6 +1116,10 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     request: CommitRequest,
     source: WorkspaceChange['source'],
     proposalId?: string,
+    inheritedActivity?: {
+      sessionId?: string;
+      guidanceConsultedBefore?: boolean;
+    },
   ): Promise<CommitResult> {
     assertRequest(request);
     if (request.baseRevision > meta.revision)
@@ -1144,6 +1169,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       summary: summarizeOperations(request.operations),
       operations: structuredClone(request.operations),
       ...(proposalId ? { proposalId } : {}),
+      ...revisionActivity(actor, inheritedActivity),
     };
     await this.saveDocument(tx, meta, current, next, revision, timestamp);
     await tx.put(this.changeKey(revision), change);

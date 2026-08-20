@@ -65,6 +65,12 @@ release gate with CI-rendered baselines, and overlay/format-painter/accessibilit
 polish. The user guide, QA plan, UAT plan, and traceability matrix document this
 current surface.
 
+Initiative A (agent activity + explainability) is implemented in this branch:
+bounded MCP-session trails on existing `TopologyMcp` storage, a session index
+on `AnalyticsLog` (v5), owner-gated `/api/admin/sessions`, an Agent Sessions
+admin section, and a non-causal guidance-consulted timeline signal. Flag
+choice: reuse already-on `ANALYTICS_ENABLED`. Not merged, not deployed.
+
 ## Active implementation program
 
 Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
@@ -73,7 +79,7 @@ Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 | --- | ------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ |
 | N   | Living product/quality documentation        | Baseline refreshed 2026-08-09; maintain with each change  | None                                                                     |
 | O   | Cloudflare alerting + production game day   | Repo-side done 2026-07-19; O1/O2 human halves outstanding | None — human can start immediately                                       |
-| A   | Agent activity + explainability             | Not started                                               | None — soft dependency on N landing                                      |
+| A   | Agent activity + explainability             | Implemented this PR (A1–A6); pending merge/deploy         | None — reuses `ANALYTICS_ENABLED`; no new DO/migration                   |
 | B   | Guided topology briefs + semantic templates | Not started                                               | None — soft dependency on N landing                                      |
 | E   | EdgeConnect live-import hardening + UI      | Not started                                               | None — soft dependency on N landing                                      |
 | T   | Time-aware flow/failure storytelling        | Not started                                               | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
@@ -181,7 +187,7 @@ baselines are deliberately added. See `launch-readiness/QA_TEST_PLAN.md`.
 | Shared workspace coordinator     | `worker/document.ts` (revisions/proposals/leases/checkpoints/presence), `worker/registry.ts`, `worker/workspaces.ts`                    |
 | Workspace client                 | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                       |
 | Adaptive authoring profiles      | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`        |
-| Admin/analytics dashboard        | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`                                                 |
+| Admin/analytics dashboard        | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`, `src/agent-activity/`                          |
 | Auth + login page + showcase     | `worker/auth.ts`, `public/showcase/*.webp`                                                                                              |
 | Deployment config                | `wrangler.jsonc`, `.github/workflows/{deploy-staging,deploy-production,ci,nightly-staging-smoke}.yml`, `scripts/check-wrangler-env.mjs` |
 | Flags                            | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `isAdmin`)                                                  |
@@ -190,13 +196,10 @@ baselines are deliberately added. See `launch-readiness/QA_TEST_PLAN.md`.
 
 The 2026-07-04 findings register is preserved as an audit record; its original
 top-line counts are not a current open-defect summary. Read appended closure
-notes and `CAPABILITY_MATRIX.md`. Former finding H1 is fixed. One user-impacting
-open constraint remains especially important:
-
-- **M20** — published share links (`/v/:id`) have no revoke/unpublish path:
-  public, unauthenticated, 30-day KV retention, 24h immutable cache. Fix
-  needs an authenticated delete endpoint plus dropping the `immutable`
-  cache directive.
+notes and `CAPABILITY_MATRIX.md`. Former findings H1 and **M20** are fixed
+(M20 closed 2026-08-17 — publisher can revoke via the Share dialog,
+`unpublish_topology`, or signed-in `DELETE /api/topology/:id`; snapshots use
+`max-age=60` without `immutable`).
 
 Full register: `docs/launch-readiness/FINDINGS_REGISTER.md`.
 

@@ -1,5 +1,5 @@
 /**
- * Owner-only admin/analytics API (`/api/admin/*`, MVP). Mirrors
+ * Owner-only admin/analytics API (`/api/admin/*`, MVP + Initiative A). Mirrors
  * `worker/profile-api.ts`: the caller identity always comes from the session
  * cookie (`currentUser`), never request input. Two gates:
  *
@@ -9,9 +9,11 @@
  *      (`isAdmin` → 403). Fail-closed: with `ADMIN_GITHUB_ID` unset there is no
  *      admin and every request 403s.
  *
- * Strictly metadata: the roster (who logged in, when, how often) and each
- * user's workspace names/counts — read LIVE from their registry via the same
- * two-registry merge the browser/MCP list path uses. Never diagram contents.
+ * Strictly metadata: the roster (who logged in, when, how often), each user's
+ * workspace names/counts, and MCP-session activity (tool name / timestamp /
+ * coarse outcome — never prompts, arguments, or diagram contents). Workspace
+ * metadata is read LIVE from their registry via the same two-registry merge
+ * the browser/MCP list path uses.
  */
 import type { WorkerEnv } from './env.js';
 import { isAdmin } from './env.js';
@@ -22,11 +24,24 @@ import type {
   LoginEvent,
   RosterEntry,
 } from '../src/admin/model.js';
+import type {
+  SessionDetail,
+  SessionList,
+  SessionSummary,
+  ToolCallEvent,
+} from '../src/agent-activity/model.js';
 
 /** Narrow RPC view of the analytics DO (explicit — see `profile-api.ts`). */
 interface AnalyticsReadRpc {
   listRoster(): Promise<RosterEntry[]>;
   recentLogins(limit?: number): Promise<LoginEvent[]>;
+  listSessions(limit?: number): Promise<SessionSummary[]>;
+  getSession(sessionId: string): Promise<SessionSummary | null>;
+}
+
+/** Narrow RPC view of a per-session `TopologyMcp` DO's activity trail. */
+interface McpActivityRpc {
+  getActivityTrail(): Promise<ToolCallEvent[]>;
 }
 
 const JSON_HEADERS = {
@@ -96,6 +111,47 @@ export async function handleAdminApi(
         ...(entry.name ? { name: entry.name } : {}),
       }).list();
       return json({ uid, login: entry.login, workspaces });
+    }
+
+    // GET /api/admin/sessions — recent MCP sessions across all owners.
+    if (parts.length === 3 && parts[2] === 'sessions') {
+      if (request.method !== 'GET') return methodNotAllowed();
+      const sessions = await analytics.listSessions(50);
+      const body: SessionList = { sessions };
+      return json(body);
+    }
+
+    // GET /api/admin/sessions/:id — that session's tool-call trail.
+    if (parts.length === 4 && parts[2] === 'sessions') {
+      if (request.method !== 'GET') return methodNotAllowed();
+      const sessionId = decodeURIComponent(parts[3] ?? '');
+      if (!sessionId) return json({ error: 'session id is required' }, 400);
+      const session = await analytics.getSession(sessionId);
+      let events: ToolCallEvent[] = [];
+      try {
+        const ns = env.MCP_OBJECT;
+        const stub = ns.get(
+          ns.idFromString(sessionId),
+        ) as unknown as McpActivityRpc;
+        events = await stub.getActivityTrail();
+      } catch (err) {
+        // Malformed ids throw from idFromString; an evicted/uninitialized
+        // session DO just has an empty trail. Either way, fall through to
+        // the index row if we have one.
+        console.error('agent activity trail fetch failed', err);
+      }
+      if (!session && events.length === 0)
+        return json({ error: 'unknown session' }, 404);
+      const detail: SessionDetail = {
+        session: session ?? {
+          sessionId,
+          ownerId: '',
+          startedAt: events[0]?.at ?? '',
+          toolCallCount: events.length,
+        },
+        events,
+      };
+      return json(detail);
     }
 
     return json({ error: 'not found' }, 404);

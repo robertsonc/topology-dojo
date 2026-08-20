@@ -368,6 +368,9 @@ export function renderTimelineHtml(workspace: ActiveWorkspace): string {
         (change.proposalId
           ? `<div class="ws-note">✓ accepted proposal</div>`
           : '') +
+        (change.guidanceConsultedBefore
+          ? `<div class="ws-note" title="get_authoring_guidance ran in the same MCP session before this revision. This is not a claim that the guidance caused the edit.">Guidance was consulted before this edit</div>`
+          : '') +
         marks
           .map(
             (name) => `<div class="ws-note">◈ checkpoint “${esc(name)}”</div>`,
