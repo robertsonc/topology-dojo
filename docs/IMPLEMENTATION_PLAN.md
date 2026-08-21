@@ -995,8 +995,10 @@ what already exists rather than building new provider machinery.
 injectable `fetchImpl` seam; E4 needs the Miniflare harness (workspace/DO
 code); E5/E6 are docs/pure-UI respectively.
 
-**Deferred work:** A second real provider implementation (evidence-triggered
-in `ROADMAP.md` §"Next" — not started until this one is proven).
+**Deferred work:** The second real provider implementation — decided
+2026-08-20 to be **Juniper Mist** (Mist Campus Fabric + Mist WAN Assurance;
+see [`decisions/0002-second-provider-juniper-mist.md`](decisions/0002-second-provider-juniper-mist.md))
+— stays in `ROADMAP.md` §"Next" and is not started until this one is proven.
 
 ---
 
