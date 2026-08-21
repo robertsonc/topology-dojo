@@ -94,8 +94,8 @@ packet-level ordering and what can run in parallel):
    synthetic-fault mechanism; packet O3 (rollback generalization) is done.
    **Human-only verification**: inspect/configure the Cloudflare notification
    policies as needed (O1), prove delivery, and execute/record the drill (O2).
-3. **Agent activity + explainability** — implemented (this PR; pending merge
-   and production deploy). Remote MCP sessions record a bounded metadata-only
+3. **Agent activity + explainability** — implemented and shipped on production
+   (PR #243, SHA `5de7813`). Remote MCP sessions record a bounded metadata-only
    tool-call trail on the existing per-session `TopologyMcp` Durable Object and
    a bounded session index on already-live `AnalyticsLog` (migration `v5`). The
    owner admin dashboard lists recent sessions and drills into a trail; the
@@ -487,7 +487,7 @@ bounded recent-login log, best-effort, off the browser-login success path
 roster/totals and, per user, their workspace names/counts read live from the
 existing registries — metadata only, never diagram contents — fail-closed if
 `ADMIN_GITHUB_ID` is unset. Captures data going forward only (no historical
-backfill). **Initiative A (this PR, pending merge/deploy)** closes the MVP
+backfill). **Initiative A (shipped, PR #243)** closes the MVP
 deferral for agents / MCP-session detail: a bounded per-session tool-call
 trail (`{toolName, at, outcome}` only — never prompts or arguments) plus a
 bounded session index on the same `AnalyticsLog`, owner-gated
