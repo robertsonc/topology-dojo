@@ -129,10 +129,17 @@ packet specs, risk, and acceptance criteria for all six initiatives.
 Capabilities that logically follow the active program, not yet scoped into
 packets:
 
-- **Additional network providers** — the `TopologyProvider` abstraction is
-  vendor-neutral by design (`src/connect/types.ts`); a second real
-  implementation (any SD-WAN/SDN controller with a fabric-state API) would
-  prove the abstraction rather than just assert it.
+- **Second fabric provider: Juniper Mist** — the `TopologyProvider`
+  abstraction is vendor-neutral by design (`src/connect/types.ts`), and the
+  second real implementation that will prove it (rather than just assert it)
+  is now decided, not open-ended: **Juniper Mist**, targeting **Mist Campus
+  Fabric** and **Mist WAN Assurance**
+  ([decision 0002](decisions/0002-second-provider-juniper-mist.md),
+  Corey Robertson, 2026-08-20). EdgeConnect Orchestrator (`src/connect/`)
+  remains the first provider; this is a different vendor and product family,
+  not a second EdgeConnect client. Vendor/product choice only — no packet
+  scope or API design exists yet, and sequencing is unchanged (not started
+  until the EdgeConnect provider is proven via initiative E).
 - **Organization-level collaboration** — explicit collaborator/organization
   ACLs beyond the current single-owner-per-workspace model (proposal 0002's
   "Follow-on work" item 6, still deferred).
