@@ -65,11 +65,12 @@ release gate with CI-rendered baselines, and overlay/format-painter/accessibilit
 polish. The user guide, QA plan, UAT plan, and traceability matrix document this
 current surface.
 
-Initiative A (agent activity + explainability) is implemented in this branch:
+Initiative A (agent activity + explainability) is implemented and shipped:
 bounded MCP-session trails on existing `TopologyMcp` storage, a session index
 on `AnalyticsLog` (v5), owner-gated `/api/admin/sessions`, an Agent Sessions
 admin section, and a non-causal guidance-consulted timeline signal. Flag
-choice: reuse already-on `ANALYTICS_ENABLED`. Not merged, not deployed.
+choice: reuse already-on `ANALYTICS_ENABLED`. Merged as PR #243; live on
+production at `5de7813`.
 
 ## Active implementation program
 
@@ -79,7 +80,7 @@ Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 | --- | ------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ |
 | N   | Living product/quality documentation        | Baseline refreshed 2026-08-09; maintain with each change  | None                                                                     |
 | O   | Cloudflare alerting + production game day   | Repo-side done 2026-07-19; O1/O2 human halves outstanding | None — human can start immediately                                       |
-| A   | Agent activity + explainability             | Implemented this PR (A1–A6); pending merge/deploy         | None — reuses `ANALYTICS_ENABLED`; no new DO/migration                   |
+| A   | Agent activity + explainability             | Implemented A1–A6; shipped (PR #243, live `5de7813`)      | None — reuses `ANALYTICS_ENABLED`; no new DO/migration                   |
 | B   | Guided topology briefs + semantic templates | Not started                                               | None — soft dependency on N landing                                      |
 | E   | EdgeConnect live-import hardening + UI      | Not started                                               | None — soft dependency on N landing                                      |
 | T   | Time-aware flow/failure storytelling        | Not started                                               | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
