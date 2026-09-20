@@ -1917,14 +1917,114 @@ function swatchRow(key: string, current: string | undefined): string {
   );
 }
 
+/**
+ * The hex field of a colour row, with a live preview dot. `attrs` carries the
+ * data-* binding (node/link fields vs annotation fields use different keys).
+ */
+function hexInput(attrs: string, current: string | undefined): string {
+  const c = current ?? '';
+  return (
+    `<span class="hexwrap"><i class="hexdot" style="background:${esc(c) || 'transparent'}"></i>` +
+    `<input class="hex" ${attrs} value="${esc(c)}" placeholder="auto"/></span>`
+  );
+}
+
+/** Colour row: label + hex on one line, the swatch grid beneath. */
+function colorRow(label: string, hex: string, swatches: string): string {
+  return `<div class="insp-row color"><span>${label}</span>${hex}${swatches}</div>`;
+}
+
+/* ── Compass placement picker ───────────────────────────────────────
+ * The 3×3 grid classic Topology Studio had for label placement. Cells are
+ * compass codes; the centre cell is "auto" (clears the field). Enum fields
+ * store the code itself (node labelPlacement); point fields (link
+ * labelOffset) store the preset offset for that cell instead. */
+const COMPASS_CELLS: readonly (readonly [code: string, glyph: string])[] = [
+  ['nw', '↖'],
+  ['n', '↑'],
+  ['ne', '↗'],
+  ['w', '←'],
+  ['', '·'],
+  ['e', '→'],
+  ['sw', '↙'],
+  ['s', '↓'],
+  ['se', '↘'],
+];
+const COMPASS_TITLES: Readonly<Record<string, string>> = {
+  nw: 'Above left',
+  n: 'Above',
+  ne: 'Above right',
+  w: 'Left',
+  '': 'Auto (default)',
+  e: 'Right',
+  sw: 'Below left',
+  s: 'Below',
+  se: 'Below right',
+};
+/** Link centre-label presets (doc-space offset from the auto position). */
+const LINK_LABEL_PRESETS: Readonly<Record<string, { x: number; y: number }>> = {
+  nw: { x: -48, y: -18 },
+  n: { x: 0, y: -18 },
+  ne: { x: 48, y: -18 },
+  w: { x: -48, y: 0 },
+  e: { x: 48, y: 0 },
+  sw: { x: -48, y: 18 },
+  s: { x: 0, y: 18 },
+  se: { x: 48, y: 18 },
+};
+
+/** The compass code a stored value maps to (`''` = auto / none). */
+function compassCodeOf(f: FieldSpec, v: unknown): string {
+  if (f.kind === 'point') {
+    const p = v as { x?: unknown; y?: unknown } | undefined;
+    if (!p || typeof p !== 'object') return '';
+    for (const [code, o] of Object.entries(LINK_LABEL_PRESETS))
+      if (p.x === o.x && p.y === o.y) return code;
+    return '*'; // a custom (dragged) offset: no cell lit
+  }
+  return typeof v === 'string' && v in COMPASS_TITLES ? v : '';
+}
+
+/** What a compass cell writes: the code (enum) or its preset point. */
+function compassValueOf(f: FieldSpec, code: string): unknown {
+  if (f.kind === 'point') return code ? LINK_LABEL_PRESETS[code] : undefined;
+  return code || undefined;
+}
+
+function compassControl(
+  f: FieldSpec,
+  v: unknown,
+  attr: 'data-key' | 'data-akey',
+): string {
+  const cur = compassCodeOf(f, v);
+  const cells = COMPASS_CELLS.map(
+    ([code, glyph]) =>
+      `<button type="button" class="cc${code === cur ? ' on' : ''}" data-cval="${code}" title="${COMPASS_TITLES[code]}" aria-label="${COMPASS_TITLES[code]}" aria-pressed="${code === cur}">${glyph}</button>`,
+  ).join('');
+  return (
+    `<div class="insp-row"><span>${f.label}</span>` +
+    `<div class="compass" ${attr}="${f.key}" data-ckind="${f.kind}" role="group" aria-label="${f.label}">${cells}</div></div>`
+  );
+}
+
+/**
+ * Row class for a field: labels too long for the label column stack above
+ * their control instead of wrapping into three cramped lines.
+ */
+function rowClass(f: FieldSpec): string {
+  return f.label.length > 16 ? 'insp-row col' : 'insp-row';
+}
+
 /** A control for one catalog field, bound to the element's current value. */
 function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
   const v = cfg[f.key];
+  if (f.widget === 'compass') return compassControl(f, v, 'data-key');
+  const row = rowClass(f);
   switch (f.kind) {
     case 'boolean':
       return `<label class="insp-row"><span>${f.label}${f.animation ? ' ⟳' : ''}</span><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}/></label>`;
     case 'enum':
-      return `<label class="insp-row">${f.label}<select data-key="${f.key}">${(
+      return `<label class="${row}"><span>${f.label}</span><select data-key="${f.key}">${(
         f.options ?? []
       )
         .map(
@@ -1933,16 +2033,23 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         )
         .join('')}</select></label>`;
     case 'color':
-      return `<div class="insp-row col">${f.label}${swatchRow(f.key, v as string | undefined)}<input class="hex" data-key="${f.key}" data-kind="color" value="${esc(String(v ?? ''))}" placeholder="#rrggbb"/></div>`;
+      return colorRow(
+        f.label,
+        hexInput(
+          `data-key="${f.key}" data-kind="color"`,
+          v as string | undefined,
+        ),
+        swatchRow(f.key, v as string | undefined),
+      );
     case 'number':
-      return `<label class="insp-row">${f.label}<input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}"/></label>`;
+      return `<label class="${row}"><span>${f.label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"/></label>`;
     case 'point':
     case 'points':
-      return `<div class="insp-row"><span>${f.label}</span><span class="muted">${Array.isArray(v) ? v.length : 0} pt</span></div>`;
+      return `<div class="insp-row"><span>${f.label}</span><span class="insp-val">${Array.isArray(v) ? v.length : 0} pt</span></div>`;
     case 'record':
       return ''; // rendered by the dedicated metadata editor
     default:
-      return `<label class="insp-row">${f.label}<input data-key="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
+      return `<label class="${row}"><span>${f.label}</span><input data-key="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
   }
 }
 
@@ -2016,7 +2123,7 @@ function wireMeta(_meta?: Record<string, string | number | boolean>): void {
 
 function typeRow(current: string, types: string[]): string {
   const opts = types.includes(current) ? types : [current, ...types];
-  return `<label class="insp-row">Type<select id="i-type">${opts
+  return `<label class="insp-row"><span>Type</span><select id="i-type">${opts
     .map(
       (t) =>
         `<option value="${esc(t)}" ${t === current ? 'selected' : ''}>${esc(t)}</option>`,
@@ -2041,7 +2148,7 @@ const LINK_GROUPS: FieldGroup[] = [
   },
   {
     title: 'Label',
-    keys: ['label', 'fromLabel', 'toLabel', 'labelScale'],
+    keys: ['label', 'labelOffset', 'fromLabel', 'toLabel', 'labelScale'],
     open: true,
   },
   {
@@ -2060,7 +2167,14 @@ const LINK_GROUPS: FieldGroup[] = [
 const NODE_GROUPS: FieldGroup[] = [
   {
     title: 'Label',
-    keys: ['label', 'sublabel', 'labelColor', 'labelOffset'],
+    keys: [
+      'label',
+      'sublabel',
+      'labelPlacement',
+      'labelOffsetX',
+      'labelOffset',
+      'labelColor',
+    ],
     open: true,
   },
   { title: 'Appearance', keys: ['color', 'opacity', 'status'], open: true },
@@ -2136,27 +2250,28 @@ function propertiesHtml(): string {
   const [, , w, h] = page.viewBox.split(/\s+/).map(Number);
   return (
     `<div class="insp-h">Document</div>` +
-    `<label class="insp-row">Title<input id="p-title" value="${esc(doc.title)}"/></label>` +
+    `<label class="insp-row"><span>Title</span><input id="p-title" value="${esc(doc.title)}"/></label>` +
     `<div class="insp-h">Page</div>` +
-    `<label class="insp-row">Name<input id="p-name" value="${esc(page.name)}"/></label>` +
-    `<label class="insp-row">Canvas W<input type="number" id="p-w" min="1" value="${w || 0}"/></label>` +
-    `<label class="insp-row">Canvas H<input type="number" id="p-h" min="1" value="${h || 0}"/></label>` +
-    `<div class="insp-row"><span>Size</span><button class="tbtn ab" id="p-fit" title="Resize the page to wrap all content (Tidy/Balance grow it automatically)">⤢ fit to content</button></div>` +
+    `<label class="insp-row"><span>Name</span><input id="p-name" value="${esc(page.name)}"/></label>` +
+    `<div class="insp-row"><span>Canvas</span><span class="insp-pair">` +
+    `<input type="number" id="p-w" min="1" value="${w || 0}" aria-label="Canvas width" title="Width"/>` +
+    `<input type="number" id="p-h" min="1" value="${h || 0}" aria-label="Canvas height" title="Height"/></span></div>` +
+    `<div class="insp-row"><span>Size</span><span class="insp-btns"><button class="tbtn ab" id="p-fit" title="Resize the page to wrap all content (Tidy/Balance grow it automatically)">⤢ fit to content</button></span></div>` +
     `<div class="insp-h">Playback</div>` +
-    `<label class="insp-row">Hold (ms)<input type="number" id="p-dur" min="100" step="100" placeholder="${DEFAULT_PAGE_DURATION}" value="${page.duration ?? ''}"/></label>` +
-    `<label class="insp-row">Transition<select id="p-tr">` +
+    `<label class="insp-row"><span>Hold (ms)</span><input type="number" id="p-dur" min="100" step="100" placeholder="${DEFAULT_PAGE_DURATION}" value="${page.duration ?? ''}"/></label>` +
+    `<label class="insp-row"><span>Transition</span><select id="p-tr">` +
     `<option value="cut"${page.transition !== 'fade' ? ' selected' : ''}>cut</option>` +
     `<option value="fade"${page.transition === 'fade' ? ' selected' : ''}>fade</option>` +
     `</select></label>` +
-    `<label class="insp-row" title="Draw a hop where standard line links cross others — the classic 'these wires aren't joined' notation">Link crossings<select id="p-jumps">` +
+    `<label class="insp-row" title="Draw a hop where standard line links cross others — the classic 'these wires aren't joined' notation"><span>Crossings</span><select id="p-jumps">` +
     `<option value=""${!page.lineJumps ? ' selected' : ''}>overlap (none)</option>` +
     `<option value="arc"${page.lineJumps === 'arc' ? ' selected' : ''}>jump — arc</option>` +
     `<option value="gap"${page.lineJumps === 'gap' ? ' selected' : ''}>jump — gap</option>` +
     `</select></label>` +
     frameStoryHtml() +
     `<div class="insp-h">Legend</div>` +
-    `<label class="insp-row">Show key<input type="checkbox" id="p-legend"${doc.legend?.show ? ' checked' : ''}/></label>` +
-    `<label class="insp-row">Position<select id="p-legend-pos">` +
+    `<label class="insp-row"><span>Show key</span><input type="checkbox" id="p-legend"${doc.legend?.show ? ' checked' : ''}/></label>` +
+    `<label class="insp-row"><span>Position</span><select id="p-legend-pos">` +
     (['tl', 'tr', 'bl', 'br'] as const)
       .map(
         (p) =>
@@ -2217,7 +2332,7 @@ function frameStoryHtml(): string {
       : `<div class="emph-list scroll-slim">${nodeRows}${linkRows}</div>`;
   return (
     `<div class="insp-h">Frame</div>` +
-    `<label class="insp-row col">Caption` +
+    `<label class="insp-row"><span>Caption</span>` +
     `<input id="p-caption" value="${esc(page.caption ?? '')}" placeholder="what this frame shows"/></label>` +
     `<div class="insp-h">Emphasis (${emph.size})</div>` +
     `<div class="insp-hint">Tick elements to spotlight; the rest dim. Or right-click a selection → “Emphasize on this frame”.</div>` +
@@ -2392,10 +2507,12 @@ function renderInspector(): void {
   } else if (anchor) {
     html +=
       `<div class="insp-h">Anchor</div>` +
-      `<div class="insp-row"><span>Id</span><span class="muted">${esc(anchor.id)}</span></div>` +
-      `<label class="insp-row">X<input type="number" id="a-x" value="${anchor.x}"/></label>` +
-      `<label class="insp-row">Y<input type="number" id="a-y" value="${anchor.y}"/></label>` +
-      `<div class="insp-row"><span>Endpoint for ${editor.anchorLinkCount(anchor.id)} link(s)</span><button class="tbtn ab" id="a-del" title="Delete anchor">🗑 delete</button></div>`;
+      `<div class="insp-row"><span>Id</span><span class="insp-val">${esc(anchor.id)}</span></div>` +
+      `<div class="insp-row"><span>Position</span><span class="insp-pair">` +
+      `<input type="number" id="a-x" value="${anchor.x}" aria-label="Anchor x" title="X"/>` +
+      `<input type="number" id="a-y" value="${anchor.y}" aria-label="Anchor y" title="Y"/></span></div>` +
+      `<div class="insp-row"><span>Links</span><span class="insp-val">${editor.anchorLinkCount(anchor.id)}</span></div>` +
+      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button class="tbtn ab" id="a-del" title="Delete anchor">🗑 delete</button></span></div>`;
   } else if (zone) {
     // A zone region was clicked on canvas — edit it directly (the same control
     // surface as the annotations list, wired by wireAnnotations()).
@@ -2481,6 +2598,7 @@ function renderInspector(): void {
   wireFormatRow();
   wireGroups();
   wireAnnotations();
+  wireHexDots();
 }
 
 /** Z-order ("Arrange") controls — shown for a single node or a link. */
@@ -2554,6 +2672,38 @@ function wireFields(
       }),
     );
   });
+  inspector
+    .querySelectorAll<HTMLElement>('.compass[data-key]')
+    .forEach((grid) => wireCompass(grid, grid.dataset.key!, set));
+}
+
+/** Compass cells write the code (enum) or preset point (point) for `key`. */
+function wireCompass(
+  grid: HTMLElement,
+  key: string,
+  set: (key: string, val: unknown, commit: boolean) => void,
+): void {
+  const kind = grid.dataset.ckind === 'point' ? 'point' : 'enum';
+  const spec: FieldSpec = { key, label: key, kind };
+  grid.querySelectorAll<HTMLButtonElement>('[data-cval]').forEach((b) =>
+    b.addEventListener('click', () => {
+      set(key, compassValueOf(spec, b.dataset.cval ?? ''), true);
+      renderInspector();
+    }),
+  );
+}
+
+/** Keep each colour row's preview dot in step with its hex field as typed. */
+function wireHexDots(): void {
+  inspector.querySelectorAll<HTMLInputElement>('.hexwrap .hex').forEach((i) => {
+    const dot = i.parentElement?.querySelector<HTMLElement>('.hexdot');
+    if (!dot) return;
+    i.addEventListener('input', () => {
+      dot.style.background = /^#[0-9a-f]{3,8}$/i.test(i.value.trim())
+        ? i.value.trim()
+        : 'transparent';
+    });
+  });
 }
 
 /* ── Annotations (zones / flow paths / policy markers) ──────────────
@@ -2621,7 +2771,7 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
   const req = f.required ? ' *' : '';
   switch (f.kind) {
     case 'enum':
-      return `<label class="insp-row">${f.label}${req}<select data-akey="${f.key}">${(
+      return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${(
         f.options ?? []
       )
         .map(
@@ -2630,9 +2780,16 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         )
         .join('')}</select></label>`;
     case 'color':
-      return `<div class="insp-row col">${f.label}${aswatchRow(f.key, v as string | undefined)}<input class="hex" data-akey="${f.key}" data-akind="color" value="${esc(String(v ?? ''))}" placeholder="#rrggbb"/></div>`;
+      return colorRow(
+        f.label,
+        hexInput(
+          `data-akey="${f.key}" data-akind="color"`,
+          v as string | undefined,
+        ),
+        aswatchRow(f.key, v as string | undefined),
+      );
     case 'number':
-      return `<label class="insp-row">${f.label}<input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}"/></label>`;
+      return `<label class="insp-row"><span>${f.label}</span><input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}" placeholder="auto"/></label>`;
     case 'refs': {
       const ids = Array.isArray(v) ? (v as string[]) : [];
       const hint =
@@ -2640,7 +2797,7 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
           ? `<div class="refhint">Order is the route. Add nodes below or select them in order, then “＋ flow”. Reorder with ‹ ›.</div>`
           : '';
       return (
-        `<div class="insp-row col">${f.label}${req}` +
+        `<div class="insp-row col"><span>${f.label}${req}</span>` +
         `<div class="refchips" data-refkey="${f.key}">` +
         ids.map(refChip).join('') +
         `<select class="refadd" title="Add by node">${refAddOptions()}</select>` +
@@ -2648,9 +2805,9 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
       );
     }
     case 'ref':
-      return `<label class="insp-row">${f.label}${req}<input data-akey="${f.key}" value="${esc(String(v ?? ''))}" placeholder="id"/></label>`;
+      return `<label class="${rowClass(f)}"><span>${f.label}${req}</span><input data-akey="${f.key}" value="${esc(String(v ?? ''))}" placeholder="id"/></label>`;
     default:
-      return `<label class="insp-row">${f.label}<input data-akey="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
+      return `<label class="${rowClass(f)}"><span>${f.label}</span><input data-akey="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
   }
 }
 

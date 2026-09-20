@@ -266,7 +266,9 @@ document's cascade rules.
 5. Choose **Straighten (clear bends)** to remove every bend.
 
 The link's center label and endpoint/interface labels can be dragged
-independently. Alignment guides appear while moving labels.
+independently. Alignment guides appear while moving labels. The **Label**
+section's **Placement** compass snaps the center label to one of eight
+positions around its auto position; the center cell restores auto placement.
 
 ### Select, copy, format, and delete
 
@@ -388,10 +390,10 @@ Wi-Fi, PoE, and optical.
 
 With nothing selected, Properties shows the document and page settings:
 
-- **Title**, **Name**, **Canvas W**, **Canvas H**, and
+- **Title**, **Name**, **Canvas** (width × height), and
   **fit to content**;
 - playback **Hold (ms)** and **Transition**;
-- **Link crossings** — draw a hop (arc or gap) where standard line links
+- **Crossings** — draw a hop (arc or gap) where standard line links
   cross links drawn earlier, the classic "these wires aren't joined"
   notation;
 - frame **Caption** and **Emphasis**;
@@ -401,7 +403,12 @@ With nothing selected, Properties shows the document and page settings:
 With a node selected, Properties is catalog-driven. Common fields include
 label, sublabel, type, color, opacity, **status** (an operational LED at the
 node's corner: OK, warning, down — with an attention ring —, maintenance, or
-unknown; in-use statuses join the legend), label color/offset, lock, metadata,
+unknown; in-use statuses join the legend), label **Placement** (a 3×3 compass:
+above, below, left, right, or a corner of the node — the center cell is the
+default below-node label; on basic shapes it is the label inside the shape),
+**Label X** / **Label Y** (absolute offsets from the node center that
+fine-tune a placement; blank = the placement's default), label color, lock,
+metadata,
 **Link URL** (`href` — Ctrl/Cmd+click follows it in the editor, and SVG
 exports and public share views render it as a real clickable link) and
 **Tooltip** (shown on hover), layer, and source identity. Type-specific controls add settings such as device variant,

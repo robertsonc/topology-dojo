@@ -17,6 +17,7 @@
  *
  * Pure and DOM-free: takes a Page, returns a typed report, moves nothing.
  */
+import { nodeLabelPos } from './label-placement.js';
 import type { Page } from '../pages/model.js';
 import type {
   LinkConfig,
@@ -507,13 +508,21 @@ function nodeLabelRect(n: NodeConfig): BoundsRect | null {
   const t = n.type;
   if (t === 'text' || t === 'cloud' || t === 'idcard' || t === 'overlayCloud')
     return null;
-  if (t.startsWith('shape:') && n.labelOffset == null) return null;
+  if (t.startsWith('shape:') && n.labelOffset == null && !n.labelPlacement)
+    return null;
   const chars = Math.min(label.length, NODE_LABEL_MAX_CHARS + 1);
   const w = chars * NODE_LABEL_CHAR_W;
-  const offset = typeof n.labelOffset === 'number' ? n.labelOffset : 24;
   const h = NODE_LABEL_H + (n.sublabel ? NODE_SUBLABEL_H : 0);
-  // Baseline sits at y + offset; the glyph box starts ~10px above it.
-  return { x: n.x - w / 2, y: n.y + offset - 10, w, h };
+  // Baseline + anchor come from the placement mirror; the glyph box starts
+  // ~10px above the baseline and extends from the anchor per text-anchor.
+  const lp = nodeLabelPos(n);
+  const x =
+    lp.anchor === 'start'
+      ? lp.x
+      : lp.anchor === 'end'
+        ? lp.x - w
+        : lp.x - w / 2;
+  return { x, y: lp.y - 10, w, h };
 }
 
 /** The glass chip a link's centre label renders in, or null when unlabeled. */
