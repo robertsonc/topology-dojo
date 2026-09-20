@@ -975,9 +975,8 @@ class TopologyDesigner {
         if (this._ownLabelNode(nodeCfg)) {
           nodeSvg += this._renderShapeLabel(nodeCfg);
         } else {
-          const labelX = nodeCfg.x + (nodeCfg.labelOffsetX || 0);
-          const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || (nodeCfg.type === 'image' ? Math.max(16, Number(nodeCfg.imageH) || 72) / 2 + 14 : 24)));
-          nodeSvg += this._renderNodeLabel(labelX, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
+          const lp = this._nodeLabelPos(nodeCfg);
+          nodeSvg += this._renderNodeLabel(lp.x, lp.y, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor, lp.anchor);
         }
       }
 
@@ -3667,7 +3666,55 @@ ${grid}`;
    */
   _ownLabelNode(nodeCfg) {
     if (nodeCfg.type === 'text') return true;
-    return String(nodeCfg.type).startsWith('shape:') && nodeCfg.labelOffset == null;
+    return String(nodeCfg.type).startsWith('shape:') && nodeCfg.labelOffset == null && !nodeCfg.labelPlacement;
+  }
+
+  /**
+   * Where a node's label baseline sits and how it is anchored.
+   *
+   * `labelPlacement` is a compass code ('n','ne','e','se','s','sw','w','nw');
+   * absent = 's', the classic centred label below the node (baseline y+24;
+   * image nodes: half their height + 14). North placements put the block
+   * above the node (and lift it by a line when there is a sublabel, so the
+   * sublabel — which always renders below the label — stays clear of the
+   * glyph); east/west placements anchor the text start/end just outside the
+   * node's half-width so it never overlaps the icon.
+   *
+   * `labelOffsetX` / `labelOffset` are ABSOLUTE offsets from the node centre
+   * (horizontal / vertical baseline) that override the placement's default
+   * distances — so documents predating placement render exactly as before,
+   * and the inspector's nudge fields are simple absolute numbers. The legacy
+   * `labelY` (absolute page y) still wins for the baseline.
+   *
+   * Mirrored in TypeScript by src/render/label-placement.ts (headless
+   * inspect / layout metrics) — keep the two in step.
+   */
+  _nodeLabelPos(nodeCfg) {
+    const p = String(nodeCfg.labelPlacement || 's').toLowerCase();
+    const image = nodeCfg.type === 'image';
+    let hw = 22, hh = 18;
+    if (image) {
+      hw = Math.max(16, Number(nodeCfg.imageW) || 96) / 2;
+      hh = Math.max(16, Number(nodeCfg.imageH) || 72) / 2;
+    } else if (_STATUS_HALF[nodeCfg.type]) {
+      [hw, hh] = _STATUS_HALF[nodeCfg.type];
+    }
+    const north = p === 'n' || p === 'ne' || p === 'nw';
+    const south = p === 's' || p === 'se' || p === 'sw';
+    const east = p === 'e' || p === 'ne' || p === 'se';
+    const west = p === 'w' || p === 'nw' || p === 'sw';
+    let dx = 0, anchor = 'middle';
+    if (east) { dx = hw + 6; anchor = 'start'; }
+    else if (west) { dx = -(hw + 6); anchor = 'end'; }
+    let dy;
+    if (north) dy = -(hh + 6) - (nodeCfg.sublabel ? 13 : 0);
+    else if (south) dy = image ? hh + 14 : 24;
+    else dy = 4; // pure east/west: vertically centred on the glyph
+    const ox = Number(nodeCfg.labelOffsetX);
+    const oy = Number(nodeCfg.labelOffset);
+    const x = nodeCfg.x + (Number.isFinite(ox) && nodeCfg.labelOffsetX != null ? ox : dx);
+    const y = nodeCfg.labelY || (nodeCfg.y + (Number.isFinite(oy) && nodeCfg.labelOffset != null ? oy : dy));
+    return { x, y, anchor };
   }
 
   /** Centered, word-wrapped label inside a basic shape (shape:* node types). */
@@ -3688,10 +3735,10 @@ ${grid}`;
   }
 
   /** Node label (text below/beside a node) */
-  _renderNodeLabel(x, y, label, sublabel, color = '#e6e8e9') {
+  _renderNodeLabel(x, y, label, sublabel, color = '#e6e8e9', anchor = 'middle') {
     const displayLabel = label && label.length > 24 ? label.slice(0, 24) + '…' : label;
-    let s = `<text x="${x}" y="${y}" text-anchor="middle" fill="${color}" font-size="10" font-weight="600">${_esc(displayLabel)}</text>`;
-    if (sublabel) s += `<text x="${x}" y="${y+13}" text-anchor="middle" fill="#7d8a92" font-size="7.5">${_esc(sublabel)}</text>`;
+    let s = `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${color}" font-size="10" font-weight="600">${_esc(displayLabel)}</text>`;
+    if (sublabel) s += `<text x="${x}" y="${y+13}" text-anchor="${anchor}" fill="#7d8a92" font-size="7.5">${_esc(sublabel)}</text>`;
     return s;
   }
 
@@ -4492,8 +4539,8 @@ ${grid}`;
               if (this._ownLabelNode(nodeCfg)) {
                 nodeSvg += this._renderShapeLabel(nodeCfg);
               } else {
-                const labelY = nodeCfg.labelY || (nodeCfg.y + (nodeCfg.labelOffset || (nodeCfg.type === 'image' ? Math.max(16, Number(nodeCfg.imageH) || 72) / 2 + 14 : 24)));
-                nodeSvg += this._renderNodeLabel(nodeCfg.x, labelY, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor);
+                const lp = this._nodeLabelPos(nodeCfg);
+                nodeSvg += this._renderNodeLabel(lp.x, lp.y, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor, lp.anchor);
               }
             }
 

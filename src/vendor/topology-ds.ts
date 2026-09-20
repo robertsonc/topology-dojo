@@ -26,8 +26,22 @@ export interface NodeConfig {
   opacity?: number;
   /** Colour of the node's label text. */
   labelColor?: string;
-  /** Vertical distance of the label below the node centre (defaults to 24). */
+  /**
+   * Where the label sits relative to the node: a compass code. Absent = `'s'`
+   * (the classic centred label below the node). East/west placements anchor
+   * the text just outside the glyph; north placements stack label + sublabel
+   * above it. Shape nodes default to a label inside the shape; any placement
+   * moves it outside.
+   */
+  labelPlacement?: 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+  /**
+   * Absolute vertical offset of the label baseline from the node centre
+   * (positive = down). Overrides the placement's default distance (24 below
+   * for the classic placement).
+   */
   labelOffset?: number;
+  /** Absolute horizontal offset of the label anchor from the node centre. */
+  labelOffsetX?: number;
   /** When true, the editor won't move the node (drag/marquee/nudge skip it). */
   locked?: boolean;
   /**

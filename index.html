@@ -941,33 +941,28 @@
         padding-top: 10px;
       }
       .meta-row {
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 26px;
         gap: 4px;
         align-items: center;
       }
-      .meta-row input {
-        flex: 1;
-        min-width: 0;
-        background: var(--bg);
-        border: 1px solid var(--border);
-        color: var(--text);
-        border-radius: 6px;
-        padding: 4px 6px;
-        font-size: 11px;
-        font-family: var(--font);
+      .inspector .meta-row input {
+        padding: 0 6px;
       }
       .meta-row .meta-k {
         color: var(--muted);
       }
       .meta-x,
       .meta-addbtn {
+        height: var(--insp-ctl-h, 26px);
         background: none;
         border: 1px solid var(--border);
         color: var(--muted);
         border-radius: 6px;
         cursor: pointer;
-        padding: 2px 6px;
-        font-size: 11px;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1;
       }
       .meta-addbtn:hover {
         color: var(--accent);
@@ -1187,6 +1182,8 @@
         align-items: stretch;
       }
       .inspector {
+        --insp-label: 88px; /* label column; controls fill the rest */
+        --insp-ctl-h: 26px; /* one height for every input/select/button */
         width: 240px;
         min-width: 200px;
         flex: none;
@@ -1195,10 +1192,15 @@
         background: transparent;
         border: none;
         border-radius: 0;
-        padding: 0;
+        padding: 0 2px 0 0;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 6px;
+      }
+      /* The column scrolls; its sections must never flex-shrink to fit (an
+         overflow:auto child like the emphasis list would collapse to a sliver). */
+      .inspector > * {
+        flex: none;
       }
       .inspector[hidden],
       .inspector-wrap.collapsed .inspector-body {
@@ -1268,16 +1270,29 @@
       .insp-h {
         color: var(--muted);
         font-size: 10px;
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.6px;
+        line-height: 1.4;
+      }
+      /* Top-level section headers (Document / Page / Playback / Metadata…)
+         rule off from the section above them; the first one sits flush. */
+      .inspector > .insp-h:not(:first-child) {
+        margin-top: 4px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
       }
       /* Collapsible field section (Appearance / Routing / Animation / …) */
       .insp-group {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 6px;
         border-top: 1px solid var(--border);
-        padding-top: 10px;
+        padding-top: 8px;
+        margin-top: 2px;
+      }
+      .insp-group > summary {
+        min-height: 20px;
       }
       .insp-group > summary {
         list-style: none;
@@ -1303,22 +1318,194 @@
       .insp-group > summary:hover {
         color: var(--text);
       }
-      .insp-btns {
-        display: inline-flex;
-        gap: 4px;
-      }
+      /* ── Property rows: a two-column grid, [label | control] ──────────
+         Every row shares the label column width, so the controls' left edges
+         line up down the whole panel; every control is --insp-ctl-h tall. */
       .insp-row {
-        display: flex;
+        display: grid;
+        grid-template-columns: var(--insp-label) minmax(0, 1fr);
         align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        font-size: 12px;
+        column-gap: 8px;
+        min-height: var(--insp-ctl-h);
+        font-size: 11px;
         color: var(--muted);
       }
+      .insp-row > :first-child {
+        min-width: 0;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+      }
+      /* Stacked variant for wide editors (ref chips, captions). */
       .insp-row.col {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 6px;
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 4px;
+      }
+      /* Read-only value in the control column. */
+      .insp-val {
+        color: var(--text);
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* Two inputs sharing the control column (W × H, X / Y). */
+      .insp-pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        min-width: 0;
+      }
+      /* Button group in the control column. */
+      .insp-btns,
+      .arrange {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        min-width: 0;
+      }
+      .inspector .tbtn.ab {
+        height: 24px;
+        padding: 0 8px;
+        font-size: 11px;
+        line-height: 22px;
+        border-color: var(--border);
+        background: var(--bg);
+        color: var(--text);
+      }
+      .inspector .tbtn.ab:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .inspector .tbtn.ab:disabled:hover {
+        border-color: var(--border);
+        color: var(--text);
+      }
+      /* One look for every text / number / select control in the panel. */
+      .inspector input:not([type='checkbox']):not([type='range']),
+      .inspector select {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
+        height: var(--insp-ctl-h);
+        padding: 0 8px;
+        margin: 0;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        font-size: 11px;
+        font-family: var(--font);
+        line-height: 1;
+      }
+      .inspector input[type='number'] {
+        padding-right: 2px;
+        font-variant-numeric: tabular-nums;
+      }
+      .inspector input::placeholder {
+        color: var(--muted);
+        opacity: 0.7;
+      }
+      .inspector input:not([type='checkbox']):focus,
+      .inspector select:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(1, 169, 130, 0.18);
+      }
+      /* Booleans render as a small switch, aligned with the other controls. */
+      .insp-row input[type='checkbox'] {
+        appearance: none;
+        -webkit-appearance: none;
+        justify-self: start;
+        position: relative;
+        width: 30px;
+        height: 16px;
+        margin: 0;
+        border-radius: 999px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        cursor: pointer;
+        transition:
+          background 0.12s,
+          border-color 0.12s;
+      }
+      .insp-row input[type='checkbox']::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--muted);
+        transition:
+          transform 0.12s,
+          background 0.12s;
+      }
+      .insp-row input[type='checkbox']:checked {
+        background: rgba(1, 169, 130, 0.22);
+        border-color: var(--accent);
+      }
+      .insp-row input[type='checkbox']:checked::after {
+        transform: translateX(14px);
+        background: var(--accent);
+      }
+      .insp-row input[type='checkbox']:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(1, 169, 130, 0.25);
+      }
+      /* Colour rows: label + hex (with a preview dot), swatch grid beneath. */
+      .insp-row.color {
+        row-gap: 6px;
+      }
+      .insp-row.color .swatches {
+        grid-column: 1 / -1;
+      }
+      .hexwrap {
+        position: relative;
+        display: block;
+        min-width: 0;
+      }
+      .hexwrap .hexdot {
+        position: absolute;
+        left: 8px;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        margin-top: -5px;
+        border-radius: 3px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        pointer-events: none;
+      }
+      .inspector .hexwrap input.hex {
+        padding-left: 24px;
+      }
+      /* Compass placement picker (3×3): centre = auto, cells = compass codes. */
+      .compass {
+        display: grid;
+        grid-template-columns: repeat(3, 20px);
+        gap: 2px;
+        justify-self: start;
+      }
+      .compass .cc {
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .compass .cc:hover {
+        border-color: var(--accent);
+        color: var(--text);
+      }
+      .compass .cc.on {
+        background: rgba(1, 169, 130, 0.22);
+        border-color: var(--accent);
+        color: var(--accent);
       }
       /* Layers section (B.3) */
       .layer-row {
@@ -1358,7 +1545,7 @@
       .emph-actions {
         display: flex;
         gap: 6px;
-        margin: 2px 0 6px;
+        margin: 0 0 2px;
       }
       .emph-list {
         max-height: 168px;
@@ -1393,35 +1580,24 @@
         color: var(--muted);
       }
       .insp-btn {
-        margin-top: 6px;
-        background: var(--panel2);
-        border: 1px solid var(--border);
-        color: var(--text);
-        border-radius: 6px;
-        padding: 5px 8px;
-        font-size: 12px;
-        font-family: var(--font);
-        cursor: pointer;
-      }
-      .insp-btn:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      .insp-row input,
-      .insp-row select {
-        flex: 1;
-        min-width: 0;
+        margin-top: 2px;
+        height: var(--insp-ctl-h);
         background: var(--bg);
         border: 1px solid var(--border);
         color: var(--text);
         border-radius: 6px;
-        padding: 5px 8px;
-        font-size: 12px;
+        padding: 0 10px;
+        font-size: 11px;
         font-family: var(--font);
+        cursor: pointer;
       }
-      .insp-row .hex {
-        flex: none;
-        width: 100%;
+      .insp-btn:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .insp-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
       }
       /* Refs editor — flow waypoints / zone members as labelled chips. */
       .refchips {
@@ -1464,11 +1640,12 @@
       .refchip .refx:hover {
         color: #fc6161;
       }
-      .refchips .refadd {
+      .inspector .refchips .refadd {
         flex: 0 0 auto;
         width: auto;
         min-width: 84px;
-        padding: 3px 6px;
+        height: 22px;
+        padding: 0 6px;
         font-size: 11px;
       }
       .refhint {

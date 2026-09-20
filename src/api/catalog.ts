@@ -55,7 +55,45 @@ export interface FieldSpec {
    * `kind: 'record'`). Advertised to agents; enforced at Zod / `parseDoc`.
    */
   max?: number;
+  /**
+   * GUI hint only — how the inspector draws the control. `'compass'` renders a
+   * 3×3 placement grid: for an `enum` field the cells are the compass codes
+   * (centre = unset/auto); for a `point` field the cells write preset
+   * offsets. Headless callers ignore it.
+   */
+  widget?: 'compass';
 }
+
+/** Compass placement codes, clockwise from north. */
+export const PLACEMENT_OPTIONS = [
+  'n',
+  'ne',
+  'e',
+  'se',
+  's',
+  'sw',
+  'w',
+  'nw',
+] as const;
+const PLACEMENT_LABELS: Readonly<Record<string, string>> = {
+  n: 'Above',
+  ne: 'Above right',
+  e: 'Right',
+  se: 'Below right',
+  s: 'Below',
+  sw: 'Below left',
+  w: 'Left',
+  nw: 'Above left',
+};
+/** Node label placement — the 3×3 picker in the inspector (absent = below). */
+const LABEL_PLACEMENT_FIELD: FieldSpec = {
+  key: 'labelPlacement',
+  label: 'Placement',
+  kind: 'enum',
+  options: PLACEMENT_OPTIONS,
+  optionLabels: PLACEMENT_LABELS,
+  widget: 'compass',
+};
 
 export interface NodeTypeInfo {
   type: string;
@@ -129,7 +167,11 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'color', label: 'Color', kind: 'color' },
   { key: 'opacity', label: 'Opacity', kind: 'number' },
   { key: 'labelColor', label: 'Label color', kind: 'color' },
-  { key: 'labelOffset', label: 'Label offset', kind: 'number' },
+  LABEL_PLACEMENT_FIELD,
+  // Absolute label offsets from the node centre; blank = the placement's
+  // default distance (the classic below-node label sits at y + 24).
+  { key: 'labelOffsetX', label: 'Label X', kind: 'number' },
+  { key: 'labelOffset', label: 'Label Y', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   {
     key: 'meta',
@@ -340,6 +382,8 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
             max: TEXT_LIMITS.label,
           },
           { key: 'labelColor', label: 'Label color', kind: 'color' as const },
+          // Shapes default to a label inside the shape; a placement moves it out.
+          LABEL_PLACEMENT_FIELD,
           { key: 'color', label: 'Color', kind: 'color' as const },
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
           ...(SHAPE_EXTRAS[type] ?? []),
@@ -387,19 +431,27 @@ const LINK_COMMON: FieldSpec[] = [
   { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
   {
     key: 'fromLabel',
-    label: 'From interface (A)',
+    label: 'Port (A)',
     kind: 'string',
     max: TEXT_LIMITS.label,
   },
   {
     key: 'toLabel',
-    label: 'To interface (Z)',
+    label: 'Port (Z)',
     kind: 'string',
     max: TEXT_LIMITS.label,
   },
   // Per-link label size multiplier (1 = default). Scales all of this link's
   // labels about their anchor; the renderer clamps to [0.25, 4].
   { key: 'labelScale', label: 'Label size', kind: 'number' },
+  // Centre-label offset from its auto position (doc-space). The inspector's
+  // compass writes presets; dragging the label chip on canvas writes it too.
+  {
+    key: 'labelOffset',
+    label: 'Placement',
+    kind: 'point',
+    widget: 'compass',
+  },
   // B.2 first-class link metadata — renderable on the wire (see showMeta).
   // Stable per-field properties a future data feed can populate.
   { key: 'vlan', label: 'VLAN', kind: 'string', max: TEXT_LIMITS.label },
