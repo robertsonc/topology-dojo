@@ -469,7 +469,9 @@ describe('TopologyDocument Durable Object', () => {
 
     const snapshot = await call<{
       revision: number;
-      document: { pages: { nodes: { id: string; source?: { id: string } }[] }[] };
+      document: {
+        pages: { nodes: { id: string; source?: { id: string } }[] }[];
+      };
     }>({ action: 'snapshot', workspace: 'w-src' });
     expect(snapshot.revision).toBe(1);
     expect(

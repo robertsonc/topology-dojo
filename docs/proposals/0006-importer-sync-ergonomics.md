@@ -84,7 +84,7 @@ carries an `upsertExample`.
 
 Because normalization happens against the document at submission time, a
 proposal stores concrete `element.add`/`element.patch` operations. That alone
-would not keep the "never duplicates" contract for a *delayed* proposal: if
+would not keep the "never duplicates" contract for a _delayed_ proposal: if
 someone else binds the same source between propose and accept, the stored
 `element.add` carries a different element id, so element-id targets do not
 overlap. `operationTargets` therefore also emits a **source-identity target**
