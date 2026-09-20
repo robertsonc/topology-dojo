@@ -41,6 +41,7 @@ import {
   type RateLimitResult,
 } from '../src/mcp/rate-limit.js';
 import { listShares, publishSnapshot, revokeShare } from './share.js';
+import { principalAllows } from './api-keys.js';
 import type { ToolCallEvent } from '../src/agent-activity/model.js';
 import {
   indexSession,
@@ -119,7 +120,12 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     // register the fabric tools (issue #228). liveDataToolNames holds the
     // pure decision so the gate stays unit-testable outside this DO.
     const ownerId = (this.props as { id?: number } | undefined)?.id;
+    // API-key sessions (proposal 0005) carry scopes; an OAuth session keeps
+    // its full grant. A group outside the key's scopes is simply never
+    // registered, so it is absent from tools/list rather than refusing.
+    const props: unknown = this.props;
     const provider =
+      principalAllows(props, 'live-data') &&
       liveDataToolNames(
         this.env,
         ownerId !== undefined ? String(ownerId) : undefined,
@@ -136,12 +142,12 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     // decision (kept out of this file so it stays unit-testable without the
     // McpAgent Durable Object; the class/binding/migration are untouched).
     const workspaceService = this.workspaceService();
-    const workspace = workspaceToolNames(
-      this.env,
-      workspaceService !== undefined,
-    ).length
-      ? workspaceService
-      : undefined;
+    const workspace =
+      principalAllows(props, 'workspace') &&
+      workspaceToolNames(this.env, workspaceService !== undefined).length
+        ? workspaceService
+        : undefined;
+    const share = principalAllows(props, 'share');
     // Same shape for the read-only profile guidance tools: profileToolNames
     // (worker/profile-tools.ts) holds the pure PROFILES_ENABLED × authenticated
     // decision, so gating stays unit-testable outside this Durable Object.
@@ -154,9 +160,13 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
       this.server,
       {
         renderDocument,
-        publishTopology: (doc: TopologyDocument) => this.publish(doc),
-        unpublishTopology: (shareId: string) => this.unpublish(shareId),
-        listShares: () => listShares(this.env, this.ownerId()),
+        ...(share
+          ? {
+              publishTopology: (doc: TopologyDocument) => this.publish(doc),
+              unpublishTopology: (shareId: string) => this.unpublish(shareId),
+              listShares: () => listShares(this.env, this.ownerId()),
+            }
+          : {}),
         ...(provider ? { provider } : {}),
         ...(workspace ? { workspace } : {}),
         ...(profile ? { profile } : {}),

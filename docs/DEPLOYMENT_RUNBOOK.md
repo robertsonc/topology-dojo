@@ -356,6 +356,7 @@ environment at any time. The full check list (locked by
 | `me-unauth`         | `GET /api/me`                                 | `401`                                                                                                 |
 | `oauth-metadata`    | `GET /.well-known/oauth-authorization-server` | `200`, valid metadata                                                                                 |
 | `mcp-unauth`        | `POST /mcp` without credentials               | `401`                                                                                                 |
+| `mcp-apikey-unauth` | `POST /mcp` with an unknown `tdk_` API key    | `401` (proposal 0005: unknown keys are rejected like missing credentials, flag on or off)             |
 | `workspaces-unauth` | `GET /api/workspaces`                         | `401`; with `--expect-workspace-disabled`, exactly `503 {"error":"workspace_disabled"}`               |
 | `profile-unauth`    | `GET /api/profile/preferences`                | `401`; with `--expect-profiles-disabled`, exactly `503 {"error":"profiles_disabled"}`                 |
 | `admin-unauth`      | `GET /api/admin/summary`                      | `401`; with `--expect-analytics-disabled`, exactly `503 {"error":"admin_disabled"}`                   |

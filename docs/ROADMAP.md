@@ -198,9 +198,6 @@ Valuable but non-blocking; no current evidence anything is waiting on these:
   measured contention," `docs/HANDOFF.md`).
 - **Comments, mentions, and review threads** on workspace proposals/revisions
   (proposal 0002's "Follow-on work" item 8, still deferred).
-- **Per-key MCP auth** (mint/revoke/label individual credentials) — current
-  auth is already full OAuth 2.1 per-user; this would only matter for a
-  multi-service-account or machine-credential use case that doesn't exist yet.
 - **Standalone HTML/PNG export polish** — flipbook HTML export exists;
   further export format work (beyond the MCP-PNG gap already in "Next") is
   low-urgency.
@@ -393,6 +390,13 @@ register found something no longer true (see `DISCREPANCY_REGISTER.md`)._
   configured), and `share_topology` — OAuth 2.1 (GitHub) auth, one Durable
   Object per MCP session. Verified live end-to-end (auth → build → validate →
   tidy → render).
+- **User-tied API keys** (proposal 0005, 2026-09-20): a signed-in user mints
+  scoped, optionally expiring keys at `/keys`; an unattended agent presents
+  one as `Authorization: Bearer tdk_…` on `/mcp` and resolves to the same
+  identity through the provider's `resolveExternalToken` hook. Hashed at
+  rest, browser-only to manage, behind `API_KEYS_ENABLED` (staging on,
+  production pending UAT-MCP-04). The machine-credential use case that the
+  former _Later_ item was waiting for is the NetClaw integration.
 
 ### Phase 0 — shared human-agent workspace (vertical slice + follow-ons)
 

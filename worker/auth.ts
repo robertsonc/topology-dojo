@@ -17,6 +17,7 @@
 import type { WorkerEnv } from './env.js';
 import { analyticsEnabled, isAdmin } from './env.js';
 import {
+  SESSION_COOKIE_NAME,
   parseCookies,
   sessionHmacSecret,
   signSession,
@@ -60,7 +61,7 @@ async function recordLogin(env: WorkerEnv, user: SessionUser): Promise<void> {
   }
 }
 
-const COOKIE_SESSION = 'tdg_session';
+const COOKIE_SESSION = SESSION_COOKIE_NAME;
 const COOKIE_STATE = 'tdg_oauth_state';
 const WEB_STATE_PREFIX = 'web.';
 

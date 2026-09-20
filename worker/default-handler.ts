@@ -33,6 +33,12 @@ import { handleProfileApi } from './profile-api.js';
 import { handleAdminApi } from './admin-api.js';
 import { handleStagingFault, STAGING_FAULT_PATH } from './staging-fault.js';
 import { listShares, publishSnapshot, revokeShare } from './share.js';
+import {
+  apiKeysDisabledResponse,
+  apiKeysEnabled,
+  handleApiKeysApi,
+} from './api-keys.js';
+import { apiKeysPage, apiKeysScript } from './api-keys-page.js';
 import { parseDoc } from '../src/pages/persist.js';
 import {
   SNAPSHOT_GET_LIMIT,
@@ -603,6 +609,20 @@ async function route(
   }
   if (pathname === '/api/share' || pathname.startsWith('/api/share/')) {
     return handleShareApi(request, env);
+  }
+  // User-tied API keys (proposal 0005). The management page and its script
+  // are cookie-gated pages; the JSON routes are cookie-gated too and 503
+  // behind API_KEYS_ENABLED before any KV read, like the workspace gate.
+  if (pathname === '/keys') {
+    const user = await currentUser(request, env);
+    if (!user)
+      return Response.redirect(new URL('/login?go=%2Fkeys', url).href, 302);
+    return apiKeysPage(user, apiKeysEnabled(env));
+  }
+  if (pathname === '/keys.js') return apiKeysScript();
+  if (pathname === '/api/keys' || pathname.startsWith('/api/keys/')) {
+    if (!apiKeysEnabled(env)) return apiKeysDisabledResponse();
+    return handleApiKeysApi(request, env);
   }
   if (pathname === '/api/admin' || pathname.startsWith('/api/admin/')) {
     if (!analyticsEnabled(env)) return adminDisabledResponse();

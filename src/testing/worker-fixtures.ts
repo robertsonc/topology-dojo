@@ -359,3 +359,54 @@ export default {
   },
 };
 `;
+
+/**
+ * Proposal 0005: the real default handler (so `/keys`, `/keys.js` and the
+ * cookie-gated `/api/keys` routes are live) plus one test-only endpoint,
+ * `POST /__resolve-key`, that calls `resolveApiKeyToken` — the function
+ * `worker/index.ts` hands to the OAuth provider's `resolveExternalToken`
+ * hook — against Miniflare's real KV. The provider wrapper itself is not
+ * mounted (see DEFAULT_HANDLER_FIXTURE), so this proves the resolver and
+ * storage contract inside workerd; the wrapper's own bearer dispatch is a
+ * staging smoke check (`mcp-apikey-unauth`).
+ */
+export const API_KEY_RESOLVE_FIXTURE = String.raw`
+import { defaultHandler } from './worker/default-handler.ts';
+import { resolveApiKeyToken } from './worker/api-keys.ts';
+export { TopologyDocument } from './worker/document.ts';
+export { TopologyRegistry } from './worker/registry.ts';
+
+function unimplemented(name) {
+  return () => {
+    throw new Error(
+      'OAUTH_PROVIDER.' + name + ' is not stubbed by the worker-harness fixture',
+    );
+  };
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const { pathname } = new URL(request.url);
+    if (pathname === '/__resolve-key' && request.method === 'POST') {
+      const auth = request.headers.get('authorization') ?? '';
+      const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+      const resolved = await resolveApiKeyToken({ token, request, env });
+      return resolved
+        ? new Response(JSON.stringify(resolved.props), {
+            headers: { 'content-type': 'application/json' },
+          })
+        : new Response('Unauthorized', { status: 401 });
+    }
+    const stubbedEnv = Object.assign({}, env, {
+      OAUTH_PROVIDER: {
+        parseAuthRequest: unimplemented('parseAuthRequest'),
+        completeAuthorization: unimplemented('completeAuthorization'),
+      },
+      ASSETS:
+        env.ASSETS ??
+        { fetch: async () => new Response('Not Found', { status: 404 }) },
+    });
+    return defaultHandler.fetch(request, stubbedEnv, ctx);
+  },
+};
+`;

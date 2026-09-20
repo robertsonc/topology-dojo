@@ -67,8 +67,9 @@ npm run mcp         # run the MCP server over stdio
 2. **The headless API** (`src/api`) — build / mutate / validate / lay out /
    render a document in code, DOM-free. The GUI is just one client of it.
 3. **MCP** (`src/mcp`, `worker/`) — the same API exposed as tools over the Model
-   Context Protocol, both locally (stdio) and hosted on Cloudflare. See
-   [`src/mcp/README.md`](src/mcp/README.md).
+   Context Protocol, both locally (stdio) and hosted on Cloudflare (GitHub
+   OAuth for interactive clients, user-minted API keys for unattended agents).
+   See [`src/mcp/README.md`](src/mcp/README.md).
 
 ## Layout that holds up for AI
 
@@ -122,6 +123,9 @@ public/vendor/ the vendored engine + theme (classic script in the browser, Commo
 - [`docs/proposals/0004-isolated-staging-and-deployment-pipeline.md`](docs/proposals/0004-isolated-staging-and-deployment-pipeline.md)
   — implementation plan for isolated staging, gated deployments, Durable Object
   migrations, and smoke evidence.
+- [`docs/proposals/0005-api-key-auth.md`](docs/proposals/0005-api-key-auth.md)
+  — user-tied, scoped API keys for unattended agents on the hosted MCP
+  endpoint, beside the existing GitHub OAuth.
 - [`docs/DEPLOYMENT_RUNBOOK.md`](docs/DEPLOYMENT_RUNBOOK.md) and
   [`docs/ROLLBACK.md`](docs/ROLLBACK.md) — operator procedures for routine and
   migration-bearing releases, error 10211, rollback, and forward recovery.
@@ -142,3 +146,9 @@ environment-scoped `wrangler deploy`; `wrangler versions upload` fails with
 Cloudflare error 10211 and is not an approved preview path. See the
 [deployment plan](docs/proposals/0004-isolated-staging-and-deployment-pipeline.md)
 and [runbook](docs/DEPLOYMENT_RUNBOOK.md).
+
+## License
+
+Apache License 2.0 — see [`LICENSE`](LICENSE). This covers the whole
+repository, including the vendored Topology Studio rendering engine under
+`public/vendor/`, which is the maintainer's own work.

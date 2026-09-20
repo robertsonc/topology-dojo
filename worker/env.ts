@@ -96,6 +96,17 @@ export interface WorkerEnv {
    */
   LIVE_DATA_GITHUB_IDS?: string;
   /**
+   * Feature flag gating user-tied API keys for the hosted MCP endpoint
+   * (proposal 0005): the `/keys` page, the `/api/keys` routes, and the
+   * `resolveExternalToken` hook that lets `/mcp` accept `Bearer tdk_…`.
+   * Opt-in like `PROFILES_ENABLED`: only the literal `"true"` enables (see
+   * `apiKeysEnabled` in `worker/api-keys.ts`); unset/`"false"`/typo ⇒ every
+   * `tdk_` bearer is rejected and the routes answer 503 `api_keys_disabled`.
+   * No new binding or migration: records live in `OAUTH_KV` under their own
+   * prefixes. Staging opts in; production flips after staging UAT.
+   */
+  API_KEYS_ENABLED?: string;
+  /**
    * Feature flag gating the shared workspace surfaces — the `/api/workspaces`
    * REST routes (`default-handler.ts`) and the eight workspace MCP tools
    * (`mcp.ts`). Unset means enabled: local dev (`wrangler dev` with no vars

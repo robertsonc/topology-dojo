@@ -7,9 +7,13 @@
  *   /authorize, /callback    → GitHub sign-in (the default handler)
  *   /token, /register        → the OAuth provider's own endpoints
  *   /api/topology/:id, /v/:id, /* → the default handler (share API + static SPA)
+ *   /keys, /api/keys         → user-tied API keys (proposal 0005; default handler)
  *
  * An authenticated MCP session receives the GitHub user as `this.props` in the
- * agent. Setup (GitHub OAuth app, OAUTH_KV, GITHUB_CLIENT_SECRET,
+ * agent — from the OAuth grant, or (when `API_KEYS_ENABLED`) from a user-minted
+ * `Bearer tdk_…` API key resolved through the provider's `resolveExternalToken`
+ * hook (`worker/api-keys.ts`), which yields the same `{ id, login, name }` shape
+ * plus `auth: 'api_key'` and the key's scopes. Setup (GitHub OAuth app, OAUTH_KV, GITHUB_CLIENT_SECRET,
  * optional SESSION_HMAC_SECRET): see src/mcp/README.md → "Remote
  * (Cloudflare)". The DO class must be exported here.
  */
@@ -20,6 +24,7 @@ import { TopologyDocument } from './document.js';
 import { AuthoringProfile } from './profile.js';
 import { AnalyticsLog } from './analytics.js';
 import { defaultHandler } from './default-handler.js';
+import { resolveApiKeyToken } from './api-keys.js';
 import type { WorkerEnv } from './env.js';
 
 // Every Durable Object class must be exported from the Worker entry so the
@@ -54,4 +59,13 @@ export default new OAuthProvider({
   authorizeEndpoint: '/authorize',
   tokenEndpoint: '/token',
   clientRegistrationEndpoint: '/register',
+  // Bearers that are not one of the provider's own `<userId>:<grantId>:<secret>`
+  // tokens are handed here. Only `tdk_…` API keys are ever accepted, and only
+  // while API_KEYS_ENABLED; everything else stays an `invalid_token` 401.
+  resolveExternalToken: (input) =>
+    resolveApiKeyToken({
+      token: input.token,
+      request: input.request,
+      env: input.env as WorkerEnv,
+    }),
 });

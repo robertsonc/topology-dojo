@@ -404,6 +404,36 @@ async function checkMcpUnauth(base) {
 }
 
 /**
+ * POST /mcp with a well-formed but unknown `tdk_` API key (proposal 0005) →
+ * 401. The OAuth provider hands non-OAuth bearers to `resolveExternalToken`;
+ * an unknown key must be rejected exactly like a missing one, whether or not
+ * API_KEYS_ENABLED is on for this deployment.
+ */
+async function checkMcpApiKeyUnauth(base) {
+  const name = 'mcp-apikey-unauth';
+  let res;
+  try {
+    res = await request(new URL('/mcp', base), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer tdk_smokesmoke_' + 'A'.repeat(43),
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {},
+      }),
+    });
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  if (res.status !== 401) return fail(name, `expected 401, got ${res.status}`);
+  return pass(name, '401 for an unknown tdk_ API key');
+}
+
+/**
  * GET /api/workspaces unauthenticated. Normally 401; with
  * --expect-workspace-disabled, this packet instead asserts the 503
  * workspace_disabled contract introduced by Packet D2 (hardcoded per
@@ -755,6 +785,7 @@ export async function runSmoke(
     ['me-unauth', () => checkMeUnauth(baseUrl)],
     ['oauth-metadata', () => checkOAuthMetadata(baseUrl)],
     ['mcp-unauth', () => checkMcpUnauth(baseUrl)],
+    ['mcp-apikey-unauth', () => checkMcpApiKeyUnauth(baseUrl)],
     [
       'workspaces-unauth',
       () => checkWorkspacesUnauth(baseUrl, expectWorkspaceDisabled),

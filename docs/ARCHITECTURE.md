@@ -163,7 +163,11 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
 - **Identity:** new workspace directories and document addresses use GitHub's
   stable numeric user id. The old login-keyed registry is read only as a lazy
   migration source. `worker/index.ts` wraps the surfaces in OAuth 2.1 / GitHub
-  sign-in and serves static assets.
+  sign-in and serves static assets. Behind `API_KEYS_ENABLED`, a user-minted
+  `tdk_` API key (`worker/api-keys.ts`, proposal 0005) resolves through the
+  provider's `resolveExternalToken` hook to the same `{ id, login, name }`
+  props plus `auth`/`scopes`, so the coordinator, registry, quotas, and share
+  ownership see one identity model.
 
 ## Deployment and environment boundary
 

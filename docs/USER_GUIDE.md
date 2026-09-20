@@ -115,6 +115,34 @@ Deployment owners setting up OAuth, staging, secrets, and Durable Objects
 should use the [MCP deployment guide](../src/mcp/README.md) and
 [deployment runbook](DEPLOYMENT_RUNBOOK.md).
 
+### API keys for unattended agents
+
+When the deployment enables API keys (`API_KEYS_ENABLED`), a signed-in user
+can mint a key at **/keys** (also reachable from the account menu) and hand it
+to an agent that cannot complete a browser sign-in — a NetClaw instance, a
+script, a CI job. The agent sends it as a bearer header:
+
+    Authorization: Bearer tdk_<id>_<secret>
+
+The key acts **as you**: the same private drafts, workspaces, share links, and
+rate limits as your GitHub sign-in. Each key has a label, optional scopes
+(`share`, `workspace`, `live-data` — every key can author, validate, lay out,
+and render), and an optional expiry. The full key is shown once, at creation;
+only a hash is stored. Revoke a key on the same page; agents using it start
+receiving 401 within about a minute. Keys can be created and revoked only in
+the browser — never through MCP — and only work on `/mcp`.
+
+A minimal client configuration:
+
+    {
+      "mcpServers": {
+        "topology-dojo": {
+          "url": "https://<deployment-domain>/mcp",
+          "headers": { "Authorization": "Bearer tdk_…" }
+        }
+      }
+    }
+
 ## 3. Where data lives
 
 GitHub sign-in alone does not move the open canvas into a canonical server
@@ -1241,7 +1269,10 @@ live tools are deliberately not registered.
 
 For the hosted editor, sign out and retry **Sign in with GitHub**. For MCP,
 remove the stale client authorization and reconnect so OAuth discovery runs
-again. Deployment operators should verify the GitHub OAuth callback, secrets,
+again. For an API key that suddenly returns 401: check it was not revoked or
+expired on **/keys**, that the deployment still has `API_KEYS_ENABLED`, and
+that the client sends it only as an `Authorization: Bearer` header on `/mcp`;
+repeated wrong-key attempts from one address are refused for five minutes. Deployment operators should verify the GitHub OAuth callback, secrets,
 KV bindings, and authenticated readiness checks using the
 [deployment runbook](DEPLOYMENT_RUNBOOK.md).
 
@@ -1256,6 +1287,12 @@ KV bindings, and authenticated readiness checks using the
   or revoked this way.
 - **Share is a snapshot.** It is not live collaboration. Publish a new snapshot
   after changes.
+- **An API key is your identity.** Anyone holding it can act as you on `/mcp`
+  within the key's scopes until it expires or is revoked. Prefer a scoped,
+  expiring key per agent; revocation propagates within about a minute.
+- **API-key sessions are visible in the same places as OAuth sessions.** The
+  admin session index and activity trail record them under your identity
+  (metadata only); the key itself is never logged.
 - **PNG is browser-only.** MCP renders SVG and flipbook HTML, not PNG.
 - **Local browser autosave is not cloud backup.** It is tied to the browser
   profile/device until the document is handed off, downloaded, or otherwise
@@ -1307,6 +1344,8 @@ For operational privacy, incident response, and recovery behavior, use the
   guide, QA, UAT, and release-evidence mapping.
 - [Shared workspace proposal](proposals/0002-shared-human-agent-workspace.md) —
   revision, operation, proposal, lease, conflict, and migration contracts.
+- [API key auth proposal](proposals/0005-api-key-auth.md) — user-tied keys
+  for unattended agents on the hosted MCP endpoint.
 - [Adaptive preferences proposal](proposals/0003-adaptive-agent-authoring-profiles.md)
   — preference evidence, confirmation, scope, and agent guidance.
 - [Deployment runbook](DEPLOYMENT_RUNBOOK.md) — staged deployment and service
