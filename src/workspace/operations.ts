@@ -493,12 +493,24 @@ export function operationTargets(operation: WorkspaceOperation): string[] {
       return [
         `page/${operation.pageId}/element/${operation.kind}/${String(operation.element.id)}/**`,
         `page/${operation.pageId}/collection/${operation.kind}/order/${String(operation.element.id)}`,
+        ...sourceTargets(
+          operation.pageId,
+          operation.kind,
+          (operation.element as { source?: unknown }).source,
+        ),
       ];
     case 'element.patch':
-      return patchTargets(
-        `page/${operation.pageId}/element/${operation.kind}/${operation.elementId}/field`,
-        operation.patch,
-      );
+      return [
+        ...patchTargets(
+          `page/${operation.pageId}/element/${operation.kind}/${operation.elementId}/field`,
+          operation.patch,
+        ),
+        ...sourceTargets(
+          operation.pageId,
+          operation.kind,
+          operation.patch.set?.source,
+        ),
+      ];
     case 'element.remove':
       return [
         `page/${operation.pageId}/element/${operation.kind}/${operation.elementId}/**`,
@@ -507,6 +519,34 @@ export function operationTargets(operation: WorkspaceOperation): string[] {
     case 'element.reorder':
       return [`page/${operation.pageId}/collection/${operation.kind}/order/**`];
   }
+}
+
+/**
+ * Source identity as a conflict target (proposal 0006 review). An `element.add`
+ * or `element.patch` that binds a `source` {system, kind, id} claims that
+ * identity on the page, so a delayed proposal normalized to `element.add`
+ * conflicts — instead of creating a second element — when another revision
+ * bound the same source under a different element id in the meantime. The
+ * components are URI-encoded so a `/` or `*` inside an external id cannot
+ * forge a path segment.
+ */
+function sourceTargets(
+  pageId: string,
+  kind: string,
+  source: unknown,
+): string[] {
+  if (!source || typeof source !== 'object') return [];
+  const ref = source as { system?: unknown; kind?: unknown; id?: unknown };
+  if (
+    typeof ref.system !== 'string' ||
+    typeof ref.kind !== 'string' ||
+    typeof ref.id !== 'string'
+  )
+    return [];
+  const enc = encodeURIComponent;
+  return [
+    `page/${pageId}/source/${kind}/${enc(ref.system)}/${enc(ref.kind)}/${enc(ref.id)}`,
+  ];
 }
 
 function targetConflict(a: string, b: string): boolean {

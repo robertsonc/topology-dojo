@@ -411,6 +411,108 @@ describe('TopologyDocument Durable Object', () => {
     });
   }, 30_000);
 
+  it('a delayed upsert proposal conflicts instead of duplicating a source bound meanwhile (proposal 0006 review)', async () => {
+    await call({
+      action: 'initialize',
+      workspace: 'w-src',
+      document: { title: 'Src', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const upsert = (extra: Record<string, unknown>) => ({
+      type: 'element.upsert',
+      pageId: 'p1',
+      kind: 'nodes',
+      source: { system: 'netbox', kind: 'device', id: 'core9' },
+      element: { type: 'router', x: 40, y: 40, label: 'core9', ...extra },
+    });
+    const proposed = await call<{
+      ok: boolean;
+      proposal: { id: string; summary: { byType: Record<string, number> } };
+    }>({
+      action: 'propose',
+      workspace: 'w-src',
+      title: 'import',
+      commit: {
+        baseRevision: 0,
+        operationId: 'pr-src',
+        operations: [upsert({})],
+      },
+    });
+    expect(proposed.proposal.summary.byType).toEqual({ 'element.add': 1 });
+
+    // Meanwhile a leased apply binds the same source under another id.
+    await call({ action: 'lease', workspace: 'w-src', pageId: 'p1' });
+    const direct = await call<{ ok: boolean; revision: number }>({
+      action: 'agent',
+      workspace: 'w-src',
+      commit: {
+        baseRevision: 0,
+        operationId: 'ag-src',
+        operations: [upsert({ id: 'n-other' })],
+      },
+    });
+    expect(direct).toMatchObject({ ok: true, revision: 1 });
+
+    const accepted = await call<{
+      ok: boolean;
+      code?: string;
+      conflictingTargets?: string[];
+    }>({
+      action: 'accept',
+      workspace: 'w-src',
+      proposalId: proposed.proposal.id,
+      operationId: 'acc-src',
+    });
+    expect(accepted).toMatchObject({ ok: false, code: 'conflict' });
+    expect(accepted.conflictingTargets).toContain(
+      'page/p1/source/nodes/netbox/device/core9',
+    );
+
+    const snapshot = await call<{
+      revision: number;
+      document: { pages: { nodes: { id: string; source?: { id: string } }[] }[] };
+    }>({ action: 'snapshot', workspace: 'w-src' });
+    expect(snapshot.revision).toBe(1);
+    expect(
+      snapshot.document.pages[0]!.nodes.filter((n) => n.source?.id === 'core9'),
+    ).toHaveLength(1);
+  }, 30_000);
+
+  it('re-checks the 512 KiB batch limit after element.upsert normalization', async () => {
+    await call({
+      action: 'initialize',
+      workspace: 'w-big',
+      document: { title: 'Big', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const build = (labelLength: number) => [
+      {
+        type: 'element.upsert',
+        pageId: 'p1',
+        kind: 'nodes',
+        source: { system: 'netbox', kind: 'device', id: 'huge' },
+        element: { type: 'router', x: 1, y: 1, label: 'x'.repeat(labelLength) },
+      },
+    ];
+    const limit = 512 * 1024;
+    const size = (ops: unknown) =>
+      new TextEncoder().encode(JSON.stringify(ops)).byteLength;
+    // Input sits just under the limit; the minted id pushes the stored
+    // element.add over it (normalization adds ~19 bytes).
+    const length = limit - size(build(0)) - 8;
+    expect(size(build(length))).toBeLessThanOrEqual(limit);
+    await expect(
+      call({
+        action: 'propose',
+        workspace: 'w-big',
+        title: 'huge',
+        commit: {
+          baseRevision: 0,
+          operationId: 'pr-big',
+          operations: build(length),
+        },
+      }),
+    ).rejects.toThrow(/512 KiB limit after element.upsert normalization/);
+  }, 30_000);
+
   it('rejects a selective accept whose ops depend on unselected ones', async () => {
     const W = 'r2-dep';
     await call({

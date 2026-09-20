@@ -1119,7 +1119,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'upsert_by_source',
       description:
-        'Converge an element onto external data by its source identity (system + kind + id, e.g. an orchestrator appliance or tunnel). If an element of that kind already carries the same source, it is patched with `set` and its source ref refreshed; otherwise it is created (set must then include the kind’s required fields, e.g. type/x/y for a node). Re-running never duplicates — the idempotent write for live importers.',
+        'Converge an element onto external data by its source identity (system + kind + id, e.g. an orchestrator appliance or tunnel). If an element of that kind already carries the same source, it is patched with `set` and its source ref refreshed; otherwise it is created (set must then include the kind’s required fields, e.g. type/x/y for a node). Returns created (matched vs new) and changed (false when the call was a logical no-op apart from source.fetchedAt), so an importer can count created / updated / unchanged from the results. Re-running never duplicates — the idempotent write for live importers.',
       inputShape: {
         topologyId,
         pageIndex,
@@ -1485,9 +1485,11 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(typeof r.pageIndex === 'number'
               ? { pageIndex: r.pageIndex }
               : {}),
-            // upsert_by_source reports whether it created or patched; keep
-            // that so an importer can count without a pre-fetch diff.
+            // upsert_by_source reports whether it created or patched, and
+            // whether the content actually changed; keep both so an importer
+            // can count created / updated / unchanged without a pre-fetch diff.
             ...(typeof r.created === 'boolean' ? { created: r.created } : {}),
+            ...(typeof r.changed === 'boolean' ? { changed: r.changed } : {}),
           });
         });
       } catch (err) {
@@ -1690,7 +1692,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       {
         name: 'describe_workspace_operations',
         description:
-          'Return the versioned semantic operation vocabulary and examples. Call only before a first workspace write or when operationSchemaRevision changes; do not repeat it every turn. Revision 2 adds element.upsert (source-keyed converge, the workspace twin of upsert_by_source): the coordinator resolves it into element.add or element.patch against the current document, so re-submitting an import never duplicates.',
+          'Return the versioned semantic operation vocabulary and examples. Call only before a first workspace write or when operationSchemaRevision changes; do not repeat it every turn. Revision 2 adds element.upsert (source-keyed converge, the workspace twin of upsert_by_source): the coordinator resolves it into element.add or element.patch against the current document. A leased apply converges immediately. A proposal is resolved when submitted; if another revision binds the same source identity before it is accepted, acceptance reports a conflict on that source (page/<id>/source/...) instead of adding a second element — re-read get_workspace_changes, re-diff, and propose again.',
         inputShape: {},
         handler: () => ({
           operationSchemaRevision: 2,

@@ -1076,7 +1076,10 @@ Then:
 7. Submit a named, explained **propose_workspace_changes** batch for owner
    review. An importer converging external data uses `element.upsert`
    operations keyed by source identity; the coordinator turns each into an
-   add or a patch, so repeating the import never duplicates elements.
+   add or a patch, so repeating the import never duplicates elements. If
+   someone else binds the same source while a proposal waits for review,
+   accepting it reports a conflict on that source rather than adding a second
+   element; the agent re-diffs and proposes again.
 8. Use **apply_workspace_changes** only inside a visible, current-page lease.
 9. Optionally call **create_checkpoint** before a major change; restore and fork
    remain owner actions.

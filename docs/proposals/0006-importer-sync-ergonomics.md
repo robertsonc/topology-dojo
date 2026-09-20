@@ -83,10 +83,20 @@ types. `operationSchemaRevision` becomes **2** so agents know to re-read
 carries an `upsertExample`.
 
 Because normalization happens against the document at submission time, a
-proposal stores concrete `element.add`/`element.patch` operations. If the
-same source is created by someone else between propose and accept, the
-proposal conflicts on the element target exactly as an ordinary
-`element.add` would — the existing conflict model, not a new one.
+proposal stores concrete `element.add`/`element.patch` operations. That alone
+would not keep the "never duplicates" contract for a *delayed* proposal: if
+someone else binds the same source between propose and accept, the stored
+`element.add` carries a different element id, so element-id targets do not
+overlap. `operationTargets` therefore also emits a **source-identity target**
+(`page/<pageId>/source/<kind>/<system>/<kind>/<id>`, components URI-encoded)
+for every `element.add` whose element carries a `source` and every
+`element.patch` that sets one. Acceptance then reports `conflict` on that
+target instead of adding a second element; the agent re-reads
+`get_workspace_changes`, re-diffs, and proposes again (the upsert now resolves
+to a patch). A leased apply is unaffected: it converges immediately against
+the current document. The advertised 512 KiB batch limit is enforced twice —
+on the input and again on the normalized operations, since an upsert expands
+into a larger add/patch.
 
 ### Sourced-element listings
 

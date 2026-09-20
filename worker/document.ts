@@ -206,6 +206,12 @@ function normalizeRequest(
     request.operations as WorkspaceOperationInput[],
   );
   validateOperations(operations);
+  // An upsert expands into a larger add/patch (minted id, embedded source), so
+  // the advertised 512 KiB limit is enforced again on what is actually stored.
+  if (bytes(operations) > MAX_BATCH_BYTES)
+    throw new Error(
+      'operation batch exceeds the 512 KiB limit after element.upsert normalization',
+    );
   request.operations = operations;
 }
 

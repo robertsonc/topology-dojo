@@ -161,7 +161,10 @@ For a document shared with the browser, use the bounded workspace loop instead:
 6. `propose_workspace_changes` → a named operation batch for owner review.
    An importer uses `element.upsert` operations (schema revision 2): the
    coordinator resolves each one by source identity into `element.add` or
-   `element.patch`, so re-submitting a sync never duplicates.
+   `element.patch`, so re-submitting a sync never duplicates. A leased apply
+   converges immediately; a proposal whose source was bound by another
+   revision before acceptance is reported as a `conflict` on that source
+   identity (never a second element) — re-read changes, re-diff, propose again.
 7. Use `apply_workspace_changes` only when the browser explicitly shows a live,
    current-page lease.
 

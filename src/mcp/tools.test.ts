@@ -769,8 +769,29 @@ describe('MCP tools', () => {
       topologyId: id,
       pageIndex: 0,
       operations: [upsert],
-    }) as { results: { created?: boolean }[] };
-    expect(second.results[0]!.created).toBe(false);
+    }) as { results: { created?: boolean; changed?: boolean }[] };
+    expect(second.results[0]).toMatchObject({ created: false, changed: false });
+    expect(first.results[0]).toMatchObject({ changed: true });
+    // A real content change on a match: created:false, changed:true.
+    const third = call('edit_topology', {
+      topologyId: id,
+      pageIndex: 0,
+      operations: [{ ...upsert, set: { ...upsert.set, label: 'edge1 (r2)' } }],
+    }) as { results: { created?: boolean; changed?: boolean }[] };
+    expect(third.results[0]).toMatchObject({ created: false, changed: true });
+    // Only the refresh timestamp moving is not a change.
+    const fourth = call('edit_topology', {
+      topologyId: id,
+      pageIndex: 0,
+      operations: [
+        {
+          ...upsert,
+          source: { ...upsert.source, fetchedAt: '2026-09-21T00:00:00Z' },
+          set: { ...upsert.set, label: 'edge1 (r2)' },
+        },
+      ],
+    }) as { results: { created?: boolean; changed?: boolean }[] };
+    expect(fourth.results[0]).toMatchObject({ created: false, changed: false });
   });
 
   it('get_topology summary + pageIndex return bounded slices', () => {

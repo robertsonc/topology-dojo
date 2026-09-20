@@ -169,6 +169,67 @@ describe('workspace semantic operations', () => {
     ]);
   });
 
+  it('conflicts on the same source identity even when element ids differ', () => {
+    const source = { system: 'netbox', kind: 'device', id: 'core/1' };
+    const addX: WorkspaceOperation[] = [
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'nodes',
+        element: { id: 'x', type: 'router', x: 0, y: 0, source },
+      },
+    ];
+    const addY: WorkspaceOperation[] = [
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'nodes',
+        element: { id: 'y', type: 'router', x: 0, y: 0, source },
+      },
+    ];
+    const bindZ: WorkspaceOperation[] = [
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'nodes',
+        elementId: 'z',
+        patch: { set: { source } },
+      },
+    ];
+    const other: WorkspaceOperation[] = [
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'nodes',
+        element: {
+          id: 'w',
+          type: 'router',
+          x: 0,
+          y: 0,
+          source: { ...source, id: 'core/2' },
+        },
+      },
+    ];
+    const target = 'page/p1/source/nodes/netbox/device/core%2F1';
+    expect(conflictingTargets(addX, addY)).toEqual([target]);
+    expect(conflictingTargets(bindZ, addY)).toEqual([target]);
+    expect(conflictingTargets(addX, other)).toEqual([]);
+    // An unsourced add still does not conflict with a sourced one.
+    expect(
+      conflictingTargets(
+        [
+          {
+            type: 'element.add',
+            pageId: 'p1',
+            kind: 'nodes',
+            element: { id: 'v', type: 'router', x: 0, y: 0 },
+          },
+        ],
+        addY,
+      ),
+    ).toEqual([]);
+  });
+
   it('rejects invalid mutation batches without changing the source', () => {
     const before = fixture();
     expect(() =>
