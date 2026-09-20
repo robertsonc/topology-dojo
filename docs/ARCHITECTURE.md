@@ -159,7 +159,10 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
   Object per owner/document. It serializes operation batches, revisions,
   proposals and scoped leases. Both `/api/workspaces/*` and remote MCP workspace
   tools use `worker/workspaces.ts`, so browser and agent cannot bypass the
-  coordinator.
+  coordinator. Its input vocabulary accepts `element.upsert` (proposal 0006),
+  which `src/workspace/upsert.ts` normalizes into `element.add` /
+  `element.patch` by source identity before validation, conflict detection,
+  and storage — the stored vocabulary never grows.
 - **Identity:** new workspace directories and document addresses use GitHub's
   stable numeric user id. The old login-keyed registry is read only as a lazy
   migration source. `worker/index.ts` wraps the surfaces in OAuth 2.1 / GitHub

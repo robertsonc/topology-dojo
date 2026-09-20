@@ -1069,10 +1069,14 @@ Then:
 4. Call **get_workspace_changes** from the last observed revision rather than
    repeatedly loading the full document.
 5. Hydrate only relevant pages/elements with
-   **get_workspace_elements**.
+   **get_workspace_elements** (`sourcedOnly: true` lists just the elements an
+   importer owns; for private drafts, `get_topology` with `sources: true` does
+   the same).
 6. Retrieve applicable **get_authoring_guidance** when available.
 7. Submit a named, explained **propose_workspace_changes** batch for owner
-   review.
+   review. An importer converging external data uses `element.upsert`
+   operations keyed by source identity; the coordinator turns each into an
+   add or a patch, so repeating the import never duplicates elements.
 8. Use **apply_workspace_changes** only inside a visible, current-page lease.
 9. Optionally call **create_checkpoint** before a major change; restore and fork
    remain owner actions.
@@ -1307,6 +1311,8 @@ For operational privacy, incident response, and recovery behavior, use the
   guide, QA, UAT, and release-evidence mapping.
 - [Shared workspace proposal](proposals/0002-shared-human-agent-workspace.md) —
   revision, operation, proposal, lease, conflict, and migration contracts.
+- [Importer sync ergonomics proposal](proposals/0006-importer-sync-ergonomics.md)
+  — `element.upsert` for workspaces, sourced-element listings, upsert outcomes.
 - [Adaptive preferences proposal](proposals/0003-adaptive-agent-authoring-profiles.md)
   — preference evidence, confirmation, scope, and agent guidance.
 - [Deployment runbook](DEPLOYMENT_RUNBOOK.md) — staged deployment and service

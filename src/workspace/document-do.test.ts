@@ -254,6 +254,134 @@ describe('TopologyDocument Durable Object', () => {
     expect(changes.changes[0]).not.toHaveProperty('operations');
   }, 30_000);
 
+  it('normalizes element.upsert into add/patch by source identity (proposal 0006)', async () => {
+    await call({
+      action: 'initialize',
+      workspace: 'w-upsert',
+      document: { title: 'Upsert', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const upsert = (id: string, extra: Record<string, unknown>) => ({
+      type: 'element.upsert',
+      pageId: 'p1',
+      kind: 'nodes',
+      source: {
+        system: 'netbox',
+        kind: 'device',
+        id,
+        fetchedAt: '2026-09-20T00:00:00Z',
+      },
+      element: { type: 'router', x: 100, y: 100, label: id, ...extra },
+    });
+
+    // First proposal: nothing matches → element.add (with the requested id).
+    const first = await call<{
+      ok: boolean;
+      proposal: {
+        id: string;
+        operations: { type: string; element?: { id: string } }[];
+        summary: { byType: Record<string, number> };
+      };
+    }>({
+      action: 'propose',
+      workspace: 'w-upsert',
+      title: 'import',
+      commit: {
+        baseRevision: 0,
+        operationId: 'pr-1',
+        operations: [upsert('core1', { id: 'n-core1' }), upsert('core2', {})],
+      },
+    });
+    expect(first.ok).toBe(true);
+    expect(first.proposal.summary.byType).toEqual({ 'element.add': 2 });
+    expect(first.proposal.operations[0]).toMatchObject({
+      type: 'element.add',
+      element: { id: 'n-core1', source: { system: 'netbox', id: 'core1' } },
+    });
+    const generated = first.proposal.operations[1]!.element!.id;
+    expect(generated).toMatch(/^node-[0-9a-f]{8}$/);
+
+    await call({
+      action: 'accept',
+      workspace: 'w-upsert',
+      proposalId: first.proposal.id,
+      operationId: 'acc-1',
+    });
+
+    // Second batch (leased direct apply): same sources → element.patch, ids kept.
+    await call({ action: 'lease', workspace: 'w-upsert', pageId: 'p1' });
+    const second = await call<{ ok: boolean; revision: number }>({
+      action: 'agent',
+      workspace: 'w-upsert',
+      commit: {
+        baseRevision: 1,
+        operationId: 'ag-1',
+        operations: [
+          upsert('core1', { label: 'core1 (renamed)' }),
+          upsert('core3', {}),
+        ],
+      },
+    });
+    expect(second).toMatchObject({ ok: true, revision: 2 });
+    const changes = await call<{
+      changes: {
+        operations: {
+          type: string;
+          elementId?: string;
+          element?: { id: string };
+        }[];
+      }[];
+    }>({ action: 'changes', workspace: 'w-upsert', since: 1, detail: true });
+    const ops = changes.changes[0]!.operations;
+    expect(ops[0]).toMatchObject({
+      type: 'element.patch',
+      elementId: 'n-core1',
+    });
+    expect(ops[1]).toMatchObject({ type: 'element.add' });
+
+    const snapshot = await call<{
+      document: {
+        pages: {
+          nodes: { id: string; label: string; source?: { id: string } }[];
+        }[];
+      };
+    }>({
+      action: 'snapshot',
+      workspace: 'w-upsert',
+    });
+    const nodes = snapshot.document.pages[0]!.nodes;
+    expect(nodes.map((n) => n.source?.id ?? n.id).sort()).toEqual([
+      'a',
+      'core1',
+      'core2',
+      'core3',
+    ]);
+    expect(nodes.find((n) => n.id === 'n-core1')?.label).toBe(
+      'core1 (renamed)',
+    );
+
+    // Creating without the kind's required fields is rejected before storage.
+    const bad = await dispatch({
+      action: 'propose',
+      workspace: 'w-upsert',
+      title: 'bad',
+      commit: {
+        baseRevision: 2,
+        operationId: 'pr-bad',
+        operations: [
+          {
+            type: 'element.upsert',
+            pageId: 'p1',
+            kind: 'nodes',
+            source: { system: 'netbox', kind: 'device', id: 'new' },
+            element: { label: 'no type' },
+          },
+        ],
+      },
+    });
+    expect(bad.status).toBe(400);
+    expect(await bad.text()).toMatch(/requires: type, x, y/);
+  });
+
   it('stores an aggregate document above 2 MiB while rejecting an oversize page', async () => {
     const pages = Array.from({ length: 20 }, (_, index) => ({
       ...page(`large-${index}`, `n-${index}`),

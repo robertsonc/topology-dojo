@@ -199,7 +199,7 @@ export interface UpsertResult {
 }
 
 /** Per-kind create requirements an upsert must satisfy when nothing matches. */
-const CREATE_REQUIRED: Record<SourcedKind, string[]> = {
+export const CREATE_REQUIRED: Record<SourcedKind, string[]> = {
   node: ['type', 'x', 'y'],
   link: ['type', 'from', 'to'],
   zone: [],
