@@ -1272,7 +1272,7 @@ remove the stale client authorization and reconnect so OAuth discovery runs
 again. For an API key that suddenly returns 401: check it was not revoked or
 expired on **/keys**, that the deployment still has `API_KEYS_ENABLED`, and
 that the client sends it only as an `Authorization: Bearer` header on `/mcp`;
-repeated wrong-key attempts from one address are refused for five minutes. Deployment operators should verify the GitHub OAuth callback, secrets,
+repeated wrong-key attempts from one address are refused for about five minutes (a best-effort brake on guessing, not an exact quota). Deployment operators should verify the GitHub OAuth callback, secrets,
 KV bindings, and authenticated readiness checks using the
 [deployment runbook](DEPLOYMENT_RUNBOOK.md).
 

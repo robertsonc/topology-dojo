@@ -410,3 +410,51 @@ export default {
   },
 };
 `;
+
+/**
+ * Proposal 0005 review: the REAL `@cloudflare/workers-oauth-provider` wired
+ * exactly as `worker/index.ts` wires it (`apiRoute: '/mcp'`,
+ * `resolveExternalToken: resolveApiKeyToken`), in front of an API handler that
+ * echoes `ctx.props`. Proves a minted key travels provider → hook → handler
+ * props end to end, and that everything else stays the provider's 401.
+ */
+export const API_KEY_PROVIDER_FIXTURE = String.raw`
+import OAuthProvider from '@cloudflare/workers-oauth-provider';
+import { defaultHandler } from './worker/default-handler.ts';
+import { resolveApiKeyToken } from './worker/api-keys.ts';
+export { TopologyRegistry } from './worker/registry.ts';
+
+const apiHandler = {
+  async fetch(request, env, ctx) {
+    return new Response(JSON.stringify({ props: ctx.props ?? null }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  },
+};
+
+const withAssets = {
+  fetch(request, env, ctx) {
+    const stubbedEnv = Object.assign({}, env, {
+      ASSETS:
+        env.ASSETS ??
+        { fetch: async () => new Response('Not Found', { status: 404 }) },
+    });
+    return defaultHandler.fetch(request, stubbedEnv, ctx);
+  },
+};
+
+export default new OAuthProvider({
+  apiRoute: '/mcp',
+  apiHandler,
+  defaultHandler: withAssets,
+  authorizeEndpoint: '/authorize',
+  tokenEndpoint: '/token',
+  clientRegistrationEndpoint: '/register',
+  resolveExternalToken: (input) =>
+    resolveApiKeyToken({
+      token: input.token,
+      request: input.request,
+      env: input.env,
+    }),
+});
+`;

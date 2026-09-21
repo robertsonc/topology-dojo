@@ -57,7 +57,11 @@ export interface ApiKeyRecord {
   createdAt: string;
   /** ISO 8601; absent = never expires. */
   expiresAt?: string;
-  /** ISO 8601; written at most once an hour (see worker/api-keys.ts). */
+  /**
+   * @deprecated Usage telemetry lives under `apiKeyUsageKey(keyId)` so the
+   * authentication path never rewrites this record (a rewrite could race a
+   * revoke and resurrect the credential). Tolerated on old records only.
+   */
   lastUsedAt?: string;
 }
 
@@ -77,7 +81,11 @@ export function apiKeyPrefixForDisplay(keyId: string): string {
   return `${API_KEY_PREFIX}${keyId}_…`;
 }
 
-export function toPublic(record: ApiKeyRecord): ApiKeyPublic {
+export function toPublic(
+  record: ApiKeyRecord,
+  lastUsedAt?: string,
+): ApiKeyPublic {
+  const used = lastUsedAt ?? record.lastUsedAt;
   return {
     keyId: record.keyId,
     prefix: apiKeyPrefixForDisplay(record.keyId),
@@ -85,7 +93,7 @@ export function toPublic(record: ApiKeyRecord): ApiKeyPublic {
     scopes: [...record.scopes],
     createdAt: record.createdAt,
     ...(record.expiresAt ? { expiresAt: record.expiresAt } : {}),
-    ...(record.lastUsedAt ? { lastUsedAt: record.lastUsedAt } : {}),
+    ...(used ? { lastUsedAt: used } : {}),
   };
 }
 
@@ -212,6 +220,11 @@ export function apiKeyStorageKey(keyId: string): string {
 }
 
 /** KV key for one owner's list of keyIds. */
-export function apiKeyIndexKey(uid: string): string {
-  return `apikeys:${uid}`;
+/**
+ * Usage telemetry (`lastUsedAt`) for one key — a separate KV key so a
+ * successful authentication is read-only with respect to the credential
+ * record itself.
+ */
+export function apiKeyUsageKey(keyId: string): string {
+  return `apikeyuse:${keyId}`;
 }

@@ -11,11 +11,21 @@
  * the GitHub uid exactly as before. Nothing else in the Worker learns a new
  * identity concept.
  *
- * Storage is `OAUTH_KV` under distinct prefixes (`apikey:<keyId>` records,
- * `apikeys:<uid>` per-owner index) — credential-class data, already isolated
- * per environment by scripts/check-wrangler-env.mjs, no new binding, no
- * migration. KV is eventually consistent: a revoked key can keep working for
- * up to ~60 s at other edge locations (documented in the user guide).
+ * Storage splits by consistency need:
+ * - `OAUTH_KV` `apikey:<keyId>` — the credential record (hash, scopes, owner).
+ *   Read on every authentication at the edge; **never written by the auth
+ *   path** (a rewrite could race a revoke and resurrect the credential).
+ * - `OAUTH_KV` `apikeyuse:<keyId>` — `lastUsedAt` telemetry, its own key,
+ *   written at most hourly, best-effort.
+ * - the owner's `TopologyRegistry` Durable Object (`user-id:<uid>`) — the
+ *   per-owner index and the 10-key cap. A DO runs one request at a time, so
+ *   create/revoke never lose an entry to a KV read-modify-write race and the
+ *   cap is strict. Exposed to this module through the structural
+ *   `ApiKeyIndex` so the pure half stays unit-testable.
+ * Credential-class KV data is already isolated per environment by
+ * scripts/check-wrangler-env.mjs; no new binding, no migration. KV is
+ * eventually consistent: a revoked key can keep working for up to ~60 s at
+ * other edge locations (documented in the user guide).
  *
  * Deliberately structural (no `cloudflare:workers` / ambient types) so the
  * pure half is unit-testable from `src/testing` against an in-memory KV, the
@@ -23,8 +33,8 @@
  */
 import {
   MAX_API_KEYS_PER_USER,
-  apiKeyIndexKey,
   apiKeyStorageKey,
+  apiKeyUsageKey,
   hashSecret,
   isApiKeyExpired,
   looksLikeApiKey,
@@ -60,6 +70,54 @@ export interface ApiKeyKv {
   delete(key: string): Promise<unknown>;
 }
 
+/**
+ * The owner's key index — the serialization point for create/revoke and the
+ * cap. In the Worker this is the owner's `TopologyRegistry` DO
+ * (`registryApiKeyIndex`); tests supply an in-memory one.
+ */
+export interface ApiKeyIndex {
+  /**
+   * Reserve a slot for `keyId`; false when the owner already holds `max`
+   * live keys. Idempotent. The index prunes entries past `expiresAt` itself,
+   * so a slot is never released on the strength of a KV read.
+   */
+  reserve(keyId: string, max: number, expiresAt?: string): Promise<boolean>;
+  release(keyId: string): Promise<void>;
+  /** Live (unexpired) key ids, oldest first. */
+  ids(): Promise<string[]>;
+}
+
+export type ApiKeyIndexFactory = (uid: string) => ApiKeyIndex;
+
+/** The slice of the registry DO namespace/stub this module needs. */
+export interface ApiKeyIndexStub {
+  apiKeyReserve(
+    keyId: string,
+    max: number,
+    expiresAt?: string,
+  ): Promise<boolean>;
+  apiKeyRelease(keyId: string): Promise<void>;
+  apiKeyIds(): Promise<string[]>;
+}
+export interface ApiKeyIndexNamespace<Id = unknown> {
+  idFromName(name: string): Id;
+  get(id: Id): ApiKeyIndexStub;
+}
+
+/** The owner's registry DO as an `ApiKeyIndex` (same `user-id:<uid>` naming as drafts). */
+export function registryApiKeyIndex<Id>(
+  ns: ApiKeyIndexNamespace<Id>,
+  uid: string,
+): ApiKeyIndex {
+  const stub = ns.get(ns.idFromName(`user-id:${uid}`));
+  return {
+    reserve: (keyId, max, expiresAt) =>
+      stub.apiKeyReserve(keyId, max, expiresAt),
+    release: (keyId) => stub.apiKeyRelease(keyId),
+    ids: () => stub.apiKeyIds(),
+  };
+}
+
 /** The env slice: the KV namespace, the flag, and the session secrets. */
 export interface ApiKeyEnv {
   OAUTH_KV: ApiKeyKv;
@@ -84,6 +142,12 @@ export function apiKeysEnabled(
  * expired). Successful calls never count. Exhausted ⇒ the resolver answers
  * null (401) without touching the record, blunting online guessing. Fail-open
  * on KV errors: a limiter blip must not lock every agent out.
+ *
+ * **Best-effort, not strict**: the counter is a KV read-modify-write per
+ * IP/window, so concurrent failures can overwrite each other and KV may
+ * throttle writes to one key. It blunts online guessing of a 256-bit secret;
+ * it is not an exact quota. A strict budget would need a serialized primitive
+ * on the hot path (a DO hop per authentication), which is not worth it here.
  */
 export const API_KEY_AUTH_FAILURE_LIMIT: RateLimitSpec = {
   label: 'API key authentication failures',
@@ -91,7 +155,7 @@ export const API_KEY_AUTH_FAILURE_LIMIT: RateLimitSpec = {
   windowMs: 5 * 60_000,
 };
 
-/** `lastUsedAt` is written at most this often — one KV write per key per hour, not per request. */
+/** `lastUsedAt` telemetry is written at most this often — one KV write per key per hour, not per request. */
 export const LAST_USED_WRITE_INTERVAL_MS = 60 * 60_000;
 
 /** KV records for keys with an expiry get a TTL too, so KV prunes them itself. */
@@ -174,56 +238,40 @@ async function readRecord(
   }
 }
 
-async function readIndex(kv: ApiKeyKv, uid: string): Promise<string[]> {
-  const raw = await kv.get(apiKeyIndexKey(uid));
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((id): id is string => typeof id === 'string')
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeIndex(
+/** Best-effort telemetry read; never blocks a listing. */
+async function readUsage(
   kv: ApiKeyKv,
-  uid: string,
-  ids: string[],
-): Promise<void> {
-  if (ids.length) await kv.put(apiKeyIndexKey(uid), JSON.stringify(ids));
-  else await kv.delete(apiKeyIndexKey(uid));
+  keyId: string,
+): Promise<string | undefined> {
+  try {
+    const raw = await kv.get(apiKeyUsageKey(keyId));
+    return raw && Number.isFinite(Date.parse(raw)) ? raw : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
- * The owner's live keys (expired ones are dropped and pruned from the index,
- * best-effort). Never returns the hash.
+ * The owner's live keys. Never returns the hash. Read-only: an id whose KV
+ * record is missing (a create still in flight, or KV lagging at this edge)
+ * or expired is simply not listed — the index prunes expired slots itself,
+ * and nothing here may release a slot another request just reserved.
  */
 export async function listApiKeys(
   kv: ApiKeyKv,
+  index: ApiKeyIndex,
   uid: string,
   nowMs = Date.now(),
 ): Promise<ApiKeyPublic[]> {
-  const ids = await readIndex(kv, uid);
-  const live: ApiKeyRecord[] = [];
+  const ids = await index.ids();
+  const live: ApiKeyPublic[] = [];
   for (const id of ids) {
     const record = await readRecord(kv, id);
-    if (record && record.uid === uid && !isApiKeyExpired(record, nowMs))
-      live.push(record);
+    if (!record || record.uid !== uid || isApiKeyExpired(record, nowMs))
+      continue;
+    live.push(toPublic(record, await readUsage(kv, id)));
   }
-  if (live.length !== ids.length) {
-    try {
-      await writeIndex(
-        kv,
-        uid,
-        live.map((r) => r.keyId),
-      );
-    } catch {
-      // Pruning is a convenience; the listing above is already correct.
-    }
-  }
-  return live.map(toPublic);
+  return live;
 }
 
 export interface CreateApiKeyInput {
@@ -234,11 +282,14 @@ export interface CreateApiKeyInput {
 
 /**
  * Mint + store a key for `user`. Throws `ApiKeyRequestError` on bad input or
- * when the per-user cap is reached. The returned `token` is the only time the
- * plaintext exists outside the caller's hands.
+ * when the per-user cap is reached. The slot is reserved in the owner's index
+ * (serialized) BEFORE the credential exists, and released if the record write
+ * fails, so two concurrent creates cannot both pass the cap. The returned
+ * `token` is the only time the plaintext exists outside the caller's hands.
  */
 export async function createApiKey(
   kv: ApiKeyKv,
+  index: ApiKeyIndex,
   user: SessionUser,
   input: CreateApiKeyInput,
   nowMs = Date.now(),
@@ -250,11 +301,12 @@ export async function createApiKey(
   const days = normalizeExpiryDays(input.expiresInDays);
   if (days === undefined) throw new ApiKeyRequestError('invalid_expiry');
 
-  const existing = await listApiKeys(kv, user.uid, nowMs);
-  if (existing.length >= MAX_API_KEYS_PER_USER)
-    throw new ApiKeyRequestError('too_many_keys', 409);
-
+  const expiresAt = days
+    ? nowIso(nowMs + days * 24 * 60 * 60 * 1000)
+    : undefined;
   const minted = await mintApiKey();
+  if (!(await index.reserve(minted.keyId, MAX_API_KEYS_PER_USER, expiresAt)))
+    throw new ApiKeyRequestError('too_many_keys', 409);
   const record: ApiKeyRecord = {
     keyId: minted.keyId,
     uid: user.uid,
@@ -264,41 +316,63 @@ export async function createApiKey(
     scopes,
     label,
     createdAt: nowIso(nowMs),
-    ...(days ? { expiresAt: nowIso(nowMs + days * 24 * 60 * 60 * 1000) } : {}),
+    ...(expiresAt ? { expiresAt } : {}),
   };
-  await putRecord(kv, record, nowMs);
-  await writeIndex(kv, user.uid, [
-    ...existing.map((k) => k.keyId),
-    record.keyId,
-  ]);
+  try {
+    await putRecord(kv, record, nowMs);
+  } catch (err) {
+    await index.release(minted.keyId).catch(() => undefined);
+    throw err;
+  }
   return { token: minted.token, key: toPublic(record) };
 }
 
 /**
  * Owner-only revoke. A foreign or unknown keyId is `not_found` — the same
  * answer either way, so the endpoint never confirms another owner's keyId.
+ * The credential is deleted first (validity), then the slot is released
+ * (visibility); the auth path never recreates a deleted record.
  */
 export async function revokeApiKey(
   kv: ApiKeyKv,
+  index: ApiKeyIndex,
   uid: string,
   keyId: string,
 ): Promise<'revoked' | 'not_found'> {
   const record = await readRecord(kv, keyId);
   if (!record || record.uid !== uid) return 'not_found';
   await kv.delete(apiKeyStorageKey(keyId));
-  const ids = await readIndex(kv, uid);
-  await writeIndex(
-    kv,
-    uid,
-    ids.filter((id) => id !== keyId),
-  );
+  await kv.delete(apiKeyUsageKey(keyId)).catch(() => undefined);
+  await index.release(keyId);
   return 'revoked';
 }
 
 /**
+ * Refresh `lastUsedAt` telemetry at most hourly. Its own KV key: the
+ * credential record is never rewritten by an authentication, so a revoke that
+ * lands between the record read and this write cannot be undone.
+ */
+async function touchUsage(
+  kv: ApiKeyKv,
+  keyId: string,
+  nowMs: number,
+): Promise<void> {
+  try {
+    const raw = await kv.get(apiKeyUsageKey(keyId));
+    const last = raw ? Date.parse(raw) : NaN;
+    if (Number.isFinite(last) && nowMs - last < LAST_USED_WRITE_INTERVAL_MS)
+      return;
+    await kv.put(apiKeyUsageKey(keyId), nowIso(nowMs));
+  } catch {
+    // Best-effort telemetry; authentication already succeeded.
+  }
+}
+
+/**
  * Verify a bearer against storage. Null for anything not a live, matching
- * key. The hash compare is constant-time; `lastUsedAt` is refreshed at most
- * hourly and never blocks the result.
+ * key. The hash compare is constant-time. Read-only with respect to the
+ * credential record: the only write is the hourly usage telemetry on its own
+ * key, and it never blocks the result.
  */
 export async function resolveApiKey(
   kv: ApiKeyKv,
@@ -314,15 +388,7 @@ export async function resolveApiKey(
   if (isApiKeyExpired(record, nowMs)) return null;
   const id = Number(record.uid);
   if (!Number.isFinite(id)) return null;
-
-  const last = record.lastUsedAt ? Date.parse(record.lastUsedAt) : NaN;
-  if (!Number.isFinite(last) || nowMs - last >= LAST_USED_WRITE_INTERVAL_MS) {
-    try {
-      await putRecord(kv, { ...record, lastUsedAt: nowIso(nowMs) }, nowMs);
-    } catch {
-      // Best-effort telemetry; authentication already succeeded.
-    }
-  }
+  await touchUsage(kv, record.keyId, nowMs);
   return {
     id,
     login: record.login,
@@ -473,16 +539,18 @@ export function apiKeysDisabledResponse(): Response {
 export async function handleApiKeysApi(
   request: Request,
   env: ApiKeyEnv,
+  indexFor: ApiKeyIndexFactory,
 ): Promise<Response> {
   if (!apiKeysEnabled(env)) return apiKeysDisabledResponse();
   const user = await sessionUser(request, env);
   if (!user) return json({ error: 'authentication required' }, 401);
+  const index = indexFor(user.uid);
 
   const url = new URL(request.url);
   const rest = url.pathname.slice('/api/keys'.length).replace(/^\//, '');
 
   if (request.method === 'GET' && !rest) {
-    return json({ keys: await listApiKeys(env.OAUTH_KV, user.uid) });
+    return json({ keys: await listApiKeys(env.OAUTH_KV, index, user.uid) });
   }
   if (request.method === 'POST' && !rest) {
     let body: unknown;
@@ -493,7 +561,7 @@ export async function handleApiKeysApi(
     }
     const input = (body ?? {}) as CreateApiKeyInput;
     try {
-      const created = await createApiKey(env.OAUTH_KV, user, input);
+      const created = await createApiKey(env.OAUTH_KV, index, user, input);
       return json(created, 201);
     } catch (err) {
       if (err instanceof ApiKeyRequestError)
@@ -502,7 +570,7 @@ export async function handleApiKeysApi(
     }
   }
   if (request.method === 'DELETE' && rest && !rest.includes('/')) {
-    const result = await revokeApiKey(env.OAUTH_KV, user.uid, rest);
+    const result = await revokeApiKey(env.OAUTH_KV, index, user.uid, rest);
     return result === 'revoked'
       ? json({ revoked: true })
       : json({ error: 'not_found' }, 404);

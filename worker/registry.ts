@@ -25,6 +25,12 @@ import type {
 
 const WORKSPACE_PREFIX = 'workspace:';
 const LEGACY_PREFIX = 'tdoc:';
+/** Owner index of user-tied API keys (proposal 0005): `apikey:<keyId>` → entry. */
+const API_KEY_PREFIX = 'apikey:';
+interface ApiKeyIndexEntry {
+  createdAt: string;
+  expiresAt?: string;
+}
 
 export class TopologyRegistry
   extends DurableObject<WorkerEnv>
@@ -75,6 +81,74 @@ export class TopologyRegistry
    * sliding window here applies across every MCP session the user opens
    * without a new Durable Object class or migration.
    */
+  /* ── API key owner index (proposal 0005) ──────────────────────────────
+   * The credential records live in OAUTH_KV (global, edge-cached reads on
+   * the auth path); the OWNER INDEX and the per-user cap live here because a
+   * Durable Object executes one request at a time — a count-then-put inside
+   * one method cannot interleave with another create, so the cap is strict
+   * and the index never loses an entry to a lost read-modify-write.
+   *
+   * The index is the source of truth for slot occupancy and prunes EXPIRED
+   * entries by its own `expiresAt`; it is never released on the strength of
+   * a KV read (a record can be legitimately missing from KV for a moment
+   * while a create is in flight, or lag behind at another edge).
+   */
+
+  /** Reserve a slot for `keyId`; false when the owner already holds `max` live keys. Idempotent. */
+  async apiKeyReserve(
+    keyId: string,
+    max: number,
+    expiresAt?: string,
+  ): Promise<boolean> {
+    const live = await this.liveApiKeyEntries();
+    if (live.has(keyId)) return true;
+    if (live.size >= max) return false;
+    const entry: ApiKeyIndexEntry = {
+      createdAt: new Date().toISOString(),
+      ...(expiresAt ? { expiresAt } : {}),
+    };
+    await this.ctx.storage.put(API_KEY_PREFIX + keyId, entry);
+    return true;
+  }
+
+  async apiKeyRelease(keyId: string): Promise<void> {
+    await this.ctx.storage.delete(API_KEY_PREFIX + keyId);
+  }
+
+  /** The owner's live key ids, oldest first. */
+  async apiKeyIds(): Promise<string[]> {
+    const live = await this.liveApiKeyEntries();
+    return [...live.entries()]
+      .sort(
+        (a, b) =>
+          a[1].createdAt.localeCompare(b[1].createdAt) ||
+          a[0].localeCompare(b[0]),
+      )
+      .map(([keyId]) => keyId);
+  }
+
+  /** Index entries that have not expired; expired ones are deleted on the way. */
+  private async liveApiKeyEntries(
+    nowMs = Date.now(),
+  ): Promise<Map<string, ApiKeyIndexEntry>> {
+    const held = await this.ctx.storage.list<ApiKeyIndexEntry | string>({
+      prefix: API_KEY_PREFIX,
+    });
+    const live = new Map<string, ApiKeyIndexEntry>();
+    for (const [key, raw] of held) {
+      const keyId = key.slice(API_KEY_PREFIX.length);
+      // Tolerate the first-cut shape (a bare createdAt string).
+      const entry: ApiKeyIndexEntry =
+        typeof raw === 'string' ? { createdAt: raw } : raw;
+      if (entry.expiresAt && Date.parse(entry.expiresAt) <= nowMs) {
+        await this.ctx.storage.delete(key);
+        continue;
+      }
+      live.set(keyId, entry);
+    }
+    return live;
+  }
+
   async consumeQuota(
     bucket: RateLimitBucket,
     now = Date.now(),

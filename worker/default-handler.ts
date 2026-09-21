@@ -37,6 +37,7 @@ import {
   apiKeysDisabledResponse,
   apiKeysEnabled,
   handleApiKeysApi,
+  registryApiKeyIndex,
 } from './api-keys.js';
 import { apiKeysPage, apiKeysScript } from './api-keys-page.js';
 import { parseDoc } from '../src/pages/persist.js';
@@ -622,7 +623,9 @@ async function route(
   if (pathname === '/keys.js') return apiKeysScript();
   if (pathname === '/api/keys' || pathname.startsWith('/api/keys/')) {
     if (!apiKeysEnabled(env)) return apiKeysDisabledResponse();
-    return handleApiKeysApi(request, env);
+    return handleApiKeysApi(request, env, (uid) =>
+      registryApiKeyIndex(env.TOPOLOGY_REGISTRY, uid),
+    );
   }
   if (pathname === '/api/admin' || pathname.startsWith('/api/admin/')) {
     if (!analyticsEnabled(env)) return adminDisabledResponse();

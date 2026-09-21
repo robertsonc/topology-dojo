@@ -82,19 +82,40 @@ and can never collide with the provider's colon-delimited tokens.
 constant-time compare, scope/label/expiry validation) and is pure Web Crypto,
 so Node 22 tests and the Worker run the same code.
 
+### Compatibility mode, not a second OAuth
+
+A `tdk_` bearer is an **MCP compatibility mode** for unattended clients that
+cannot complete a browser OAuth flow. It resolves to the same tenancy
+(`props.id`, the GitHub uid) so the agent's drafts appear under the owner's
+account, but it is not equivalent to a provider-issued MCP access token: it
+is long-lived (until revoked or expired), it carries a fixed scope set chosen
+at mint time rather than a per-client grant, it is not refreshable, and it
+has no consent screen or client registration. Treat it as a static
+credential with the owner's blast radius (bounded by scopes and expiry), and
+prefer the OAuth flow wherever a browser is available.
+
 ### Storage
 
-`OAUTH_KV`, two prefixes, no new binding:
+Split by consistency need — KV where reads must be global and cheap, the
+owner's Durable Object where writes must serialize:
 
-| Key                           | Value                                                                                         | TTL                                  |
-| ----------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `apikey:<keyId>`              | `{ keyId, uid, login, name?, secretHash, scopes, label, createdAt, expiresAt?, lastUsedAt? }` | matches `expiresAt` (+60 s) when set |
-| `apikeys:<uid>`               | `[keyId, …]` — the owner's index for listing                                                  | none                                 |
-| `rl:apikeyfail:<ip>:<window>` | failed-authentication counter                                                                 | window + 1 s                         |
+| Where                                 | Key                           | Value                                                                                                                 | TTL                                  |
+| ------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `OAUTH_KV`                            | `apikey:<keyId>`              | `{ keyId, uid, login, name?, secretHash, scopes, label, createdAt, expiresAt? }` — **never written by the auth path** | matches `expiresAt` (+60 s) when set |
+| `OAUTH_KV`                            | `apikeyuse:<keyId>`           | ISO `lastUsedAt` telemetry, written at most hourly, best-effort                                                       | none                                 |
+| `OAUTH_KV`                            | `rl:apikeyfail:<ip>:<window>` | failed-authentication counter (best-effort, see below)                                                                | window + 1 s                         |
+| `TopologyRegistry` DO `user-id:<uid>` | `apikey:<keyId>`              | createdAt — the owner's index and the 10-key cap                                                                      | n/a                                  |
 
-Credential-class data lives beside the provider's own grants and tokens, and
-`scripts/check-wrangler-env.mjs` already guarantees staging and production
-never share this namespace.
+The Durable Object runs one request at a time, so `reserve → write record →
+(on failure) release` cannot interleave with another create: the cap is
+strict and the index never loses an entry to a lost read-modify-write.
+Revoke deletes the credential first (validity), then releases the slot
+(visibility). Because authentication never rewrites the credential record, a
+revoke landing between a resolver's read and its return cannot be undone.
+Credential-class KV data lives beside the provider's own grants and tokens,
+and `scripts/check-wrangler-env.mjs` already guarantees staging and
+production never share this namespace. No new binding, no migration: the
+registry DO already exists per owner.
 
 ### Authentication path
 
@@ -106,7 +127,7 @@ agent ──POST /mcp, Authorization: Bearer tdk_…──▶ OAuthProvider
                                       flag on? · prefix? · IP failure budget?
                                       parse → KV get apikey:<keyId>
                                       sha256(secret) ⟷ secretHash (constant time)
-                                      not expired? → touch lastUsedAt (≤ hourly)
+                                      not expired? → touch apikeyuse:<keyId> (≤ hourly, own key)
                                                     │
                                                     ▼
                     ctx.props = { id, login, name, auth: "api_key", keyId, scopes }
@@ -117,14 +138,23 @@ agent ──POST /mcp, Authorization: Bearer tdk_…──▶ OAuthProvider
 ```
 
 `worker/api-keys.ts` is structural (no ambient Cloudflare types) so the
-resolver and store are unit-tested against an in-memory KV, and exercised in
-Miniflare against real KV through a test fixture; the provider's own bearer
-dispatch is covered by the `mcp-apikey-unauth` smoke check.
+resolver and store are unit-tested against an in-memory KV and index, and
+exercised in Miniflare against real KV and the real registry DO through a
+test fixture. The provider's own bearer dispatch is exercised end to end in
+Miniflare too: a fixture wires the real `OAuthProvider` with
+`resolveExternalToken` exactly as `worker/index.ts` does, in front of an API
+handler that echoes `ctx.props` (minted key ⇒ 200 with the principal; no,
+unknown, tampered or provider-shaped bearer ⇒ 401; revoked ⇒ 401). The
+`mcp-apikey-unauth` smoke check covers the deployed binary.
 
 Fail-closed rules: flag off ⇒ null; parse failure ⇒ null before any I/O;
 storage error during lookup ⇒ null. The failure budget (20 per 5 minutes per
 client IP, successes never count) fails **open** on KV errors so a limiter
-blip cannot lock every agent out.
+blip cannot lock every agent out — and it is **best-effort**, not a strict
+quota: the counter is a KV read-modify-write, so a burst of concurrent
+failures can under-count and KV may throttle writes to one key. It blunts
+online guessing of a 256-bit secret; a strict budget would need a serialized
+primitive on the authentication hot path and is not worth that latency.
 
 ### Scopes
 
@@ -178,8 +208,14 @@ already on `props`.
   workspaces (if scoped), and share links (if scoped), until revoked. Scopes
   and expiry bound it; `lastUsedAt` makes stale keys visible.
 - **Online guessing.** 10 + 43 characters of alphabet-36/64 randomness plus a
-  per-IP failure budget; the keyId lookup means a wrong secret costs one KV
-  read and one hash, no enumeration signal beyond 401.
+  best-effort per-IP failure budget; the keyId lookup means a wrong secret
+  costs one KV read and one hash, no enumeration signal beyond 401.
+- **Authentication is read-only.** A successful resolve writes nothing to the
+  credential record (telemetry has its own key), so it can never race a
+  revoke and resurrect a deleted key.
+- **Create/revoke serialize.** The owner index and the cap live in the
+  owner's Durable Object; concurrent mints cannot exceed ten or leave a
+  credential that is valid but invisible on `/keys`.
 - **Revocation latency.** KV is eventually consistent; a revoked key can work
   for up to ~60 s at other edge locations. Documented in the user guide. If
   that ever matters, move the record store to a global Durable Object.
@@ -203,10 +239,15 @@ deployment regardless of the flag.
 - [x] `npm run typecheck`, `npm test`, `npm run lint`, `npm run build`,
       `node scripts/check-wrangler-env.mjs` green.
 - [x] Unit: primitives (`src/server/api-key.test.ts`); store, resolver,
-      failure budget, flag, scope gate (`src/testing/api-keys.test.ts` half 1).
+      read-only auth path + revoke race, concurrent cap, failure budget,
+      flag, scope gate (`src/testing/api-keys.test.ts` half 1).
 - [x] Miniflare: cookie gating, mint → list → resolve → foreign revoke 404 →
-      owner revoke → 401, page + script, flag-off 503 contract
-      (`src/testing/api-keys.test.ts` half 2).
+      owner revoke → 401, concurrent mints against the real registry DO,
+      page + script, flag-off 503 contract (`src/testing/api-keys.test.ts`
+      half 2).
+- [x] Miniflare through the real `OAuthProvider`: minted key ⇒ `ctx.props`
+      in the API handler; missing/unknown/tampered/provider-shaped bearer ⇒
+      401; revoked ⇒ 401 (`src/testing/api-keys.test.ts` half 3).
 - [x] Smoke check registered and pinned (`scripts/smoke.mjs`,
       `src/testing/smoke-checks.test.ts`, `DEPLOYMENT_RUNBOOK.md`).
 - [ ] **Staging UAT (`UAT-MCP-04`)**: sign in, mint a `share`-less key on

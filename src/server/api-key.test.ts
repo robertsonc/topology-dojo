@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   API_KEY_SCOPES,
-  apiKeyIndexKey,
+  apiKeyUsageKey,
   apiKeyStorageKey,
   hashSecret,
   isApiKeyExpired,
@@ -129,6 +129,6 @@ describe('api-key primitives (proposal 0005)', () => {
 
   it('uses prefixes disjoint from the OAuth provider and the share store', () => {
     expect(apiKeyStorageKey('abc')).toBe('apikey:abc');
-    expect(apiKeyIndexKey('42')).toBe('apikeys:42');
+    expect(apiKeyUsageKey('abc')).toBe('apikeyuse:abc');
   });
 });
