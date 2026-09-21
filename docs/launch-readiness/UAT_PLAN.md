@@ -674,10 +674,11 @@ MCP client that can send a static bearer header (or `curl`).
    browser as the same account: the draft appears in the registry listing.
 4. Create a second key with the `share` scope. With it, `share_topology`
    publishes a link that opens publicly; `unpublish_topology` revokes it.
-5. Send twenty requests with a malformed secret from one client. The
-   twenty-first request with the **valid** key from that client is refused
-   (401) until the five-minute window passes; a different client is
-   unaffected.
+5. Send twenty requests with a malformed secret from one client, one after
+   another (sequentially — the counter is a best-effort KV budget, so a
+   concurrent burst may under-count; see proposal 0005). The next request
+   with the **valid** key from that client is refused (401) until the
+   five-minute window passes; a different client is unaffected.
 6. Revoke both keys on **/keys**. Within one minute every request with them
    returns 401. `/api/keys` from a second account cannot list or revoke them.
 7. Confirm no key value appears in Worker logs, the admin activity trail, or
