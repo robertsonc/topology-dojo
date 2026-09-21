@@ -10,6 +10,10 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import type { WorkerEnv } from './env.js';
+import {
+  API_KEY_PENDING_TTL_MS,
+  API_KEY_TOMBSTONE_TTL_MS,
+} from '../src/server/api-key.js';
 import type { DocStorage } from '../src/mcp/persist-store.js';
 import {
   RATE_LIMITS,
@@ -25,6 +29,31 @@ import type {
 
 const WORKSPACE_PREFIX = 'workspace:';
 const LEGACY_PREFIX = 'tdoc:';
+/** Owner index of user-tied API keys (proposal 0005): `apikey:<keyId>` → entry. */
+const API_KEY_PREFIX = 'apikey:';
+/** `apikeytomb:<keyId>` → ISO time: reconciliation owns this id; confirm/reserve refuse it. */
+const API_KEY_TOMBSTONE_PREFIX = 'apikeytomb:';
+interface ApiKeyIndexRecord {
+  createdAt: string;
+  expiresAt?: string;
+  /** True between `reserve` and `confirm`. */
+  pending?: boolean;
+}
+export interface ApiKeyIndexEntry {
+  keyId: string;
+  createdAt: string;
+  expiresAt?: string;
+  pending: boolean;
+}
+function normalizeApiKeyEntry(
+  raw: ApiKeyIndexRecord | string | undefined,
+): ApiKeyIndexRecord | null {
+  if (raw === undefined) return null;
+  // Tolerate the first-cut shape (a bare createdAt string) as confirmed.
+  if (typeof raw === 'string') return { createdAt: raw, pending: false };
+  if (typeof raw.createdAt !== 'string') return null;
+  return raw;
+}
 
 export class TopologyRegistry
   extends DurableObject<WorkerEnv>
@@ -75,6 +104,153 @@ export class TopologyRegistry
    * sliding window here applies across every MCP session the user opens
    * without a new Durable Object class or migration.
    */
+  /* ── API key owner index (proposal 0005) ──────────────────────────────
+   * The credential records live in OAUTH_KV (global, edge-cached reads on
+   * the auth path); the OWNER INDEX and the per-user cap live here because a
+   * Durable Object executes one request at a time — a count-then-put inside
+   * one method cannot interleave with another create, so the cap is strict
+   * and the index never loses an entry to a lost read-modify-write.
+   *
+   * Lifecycle of a slot: `reserve` (pending) → the caller writes the KV
+   * record → `confirm`. A reservation that is never confirmed (the record
+   * write failed AND the release failed) expires on its own after
+   * API_KEY_PENDING_TTL_MS, so no failure sequence can strand a slot forever.
+   * Expired keys are pruned here by their own `expiresAt`. Nothing in this
+   * object consults KV: a confirmed slot is released only by an explicit
+   * `release` (revoke, or the store's grace-gated orphan reconciliation).
+   */
+
+  /** Reserve a pending slot for `keyId`; false when the owner already holds `max` live keys. Idempotent. */
+  async apiKeyReserve(
+    keyId: string,
+    max: number,
+    expiresAt?: string,
+  ): Promise<boolean> {
+    if (await this.apiKeyTombstoned(keyId)) return false;
+    const live = await this.liveApiKeyEntries();
+    if (live.has(keyId)) return true;
+    if (live.size >= max) return false;
+    const entry: ApiKeyIndexRecord = {
+      createdAt: new Date().toISOString(),
+      pending: true,
+      ...(expiresAt ? { expiresAt } : {}),
+    };
+    await this.ctx.storage.put(API_KEY_PREFIX + keyId, entry);
+    return true;
+  }
+
+  /**
+   * Mark the slot durable once its KV record exists. If the pending
+   * reservation was pruned meanwhile (a create that stalled past the pending
+   * TTL), the slot is re-acquired under the same `max` rule — never
+   * resurrected unconditionally — so a resumed create cannot confirm an
+   * eleventh key. Returns false when there is no capacity; the caller then
+   * deletes the record it wrote.
+   */
+  async apiKeyConfirm(
+    keyId: string,
+    max: number,
+    expiresAt?: string,
+  ): Promise<boolean> {
+    if (await this.apiKeyTombstoned(keyId)) return false;
+    const live = await this.liveApiKeyEntries();
+    const prior = live.get(keyId);
+    if (!prior && live.size >= max) return false;
+    const entry: ApiKeyIndexRecord = {
+      createdAt: prior?.createdAt ?? new Date().toISOString(),
+      pending: false,
+      ...((expiresAt ?? prior?.expiresAt)
+        ? { expiresAt: expiresAt ?? prior?.expiresAt }
+        : {}),
+    };
+    await this.ctx.storage.put(API_KEY_PREFIX + keyId, entry);
+    return true;
+  }
+
+  /**
+   * Reconciliation's atomic claim on an id it wants to purge. Runs inside the
+   * DO, so it is serialized against `apiKeyConfirm`: if the id holds a live
+   * slot (pending or confirmed) the claim is refused and the record is kept;
+   * otherwise a tombstone is written and every later confirm/reserve of that
+   * id is refused, so a create that raced past its pending TTL fails cleanly
+   * (409, record discarded) instead of returning a token whose record the
+   * reconciliation deleted. Idempotent. Tombstones expire on their own.
+   */
+  async apiKeyTombstone(keyId: string): Promise<boolean> {
+    if (await this.apiKeyTombstoned(keyId)) return true;
+    const live = await this.liveApiKeyEntries();
+    if (live.has(keyId)) return false;
+    await this.ctx.storage.put(
+      API_KEY_TOMBSTONE_PREFIX + keyId,
+      new Date().toISOString(),
+    );
+    return true;
+  }
+
+  private async apiKeyTombstoned(
+    keyId: string,
+    nowMs = Date.now(),
+  ): Promise<boolean> {
+    const stamp = await this.ctx.storage.get<string>(
+      API_KEY_TOMBSTONE_PREFIX + keyId,
+    );
+    if (typeof stamp !== 'string') return false;
+    if (Date.parse(stamp) + API_KEY_TOMBSTONE_TTL_MS <= nowMs) {
+      await this.ctx.storage.delete(API_KEY_TOMBSTONE_PREFIX + keyId);
+      return false;
+    }
+    return true;
+  }
+
+  async apiKeyRelease(keyId: string): Promise<void> {
+    await this.ctx.storage.delete(API_KEY_PREFIX + keyId);
+  }
+
+  /** The owner's live entries (confirmed and still-pending), oldest first. */
+  async apiKeyEntries(): Promise<ApiKeyIndexEntry[]> {
+    const live = await this.liveApiKeyEntries();
+    return [...live.entries()]
+      .sort(
+        (a, b) =>
+          a[1].createdAt.localeCompare(b[1].createdAt) ||
+          a[0].localeCompare(b[0]),
+      )
+      .map(([keyId, entry]) => ({
+        keyId,
+        createdAt: entry.createdAt,
+        pending: entry.pending === true,
+        ...(entry.expiresAt ? { expiresAt: entry.expiresAt } : {}),
+      }));
+  }
+
+  /** Entries that are neither expired nor stale-pending; the rest are deleted on the way. */
+  private async liveApiKeyEntries(
+    nowMs = Date.now(),
+  ): Promise<Map<string, ApiKeyIndexRecord>> {
+    const held = await this.ctx.storage.list<ApiKeyIndexRecord | string>({
+      prefix: API_KEY_PREFIX,
+    });
+    const live = new Map<string, ApiKeyIndexRecord>();
+    for (const [key, raw] of held) {
+      const entry = normalizeApiKeyEntry(raw);
+      if (!entry) {
+        await this.ctx.storage.delete(key);
+        continue;
+      }
+      const expired =
+        entry.expiresAt !== undefined && Date.parse(entry.expiresAt) <= nowMs;
+      const stalePending =
+        entry.pending === true &&
+        Date.parse(entry.createdAt) + API_KEY_PENDING_TTL_MS <= nowMs;
+      if (expired || stalePending) {
+        await this.ctx.storage.delete(key);
+        continue;
+      }
+      live.set(key.slice(API_KEY_PREFIX.length), entry);
+    }
+    return live;
+  }
+
   async consumeQuota(
     bucket: RateLimitBucket,
     now = Date.now(),

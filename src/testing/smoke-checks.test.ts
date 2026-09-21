@@ -94,6 +94,7 @@ describe('smoke suite against a fully-enabled deployment', () => {
       'me-unauth',
       'oauth-metadata',
       'mcp-unauth',
+      'mcp-apikey-unauth',
       'workspaces-unauth',
       'profile-unauth',
       'admin-unauth',

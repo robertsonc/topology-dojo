@@ -58,6 +58,14 @@
     // this deployment (optional LIVE_DATA_GITHUB_IDS can narrow that
     // grant). Secrets are dashboard-only; never commit them.
     "LIVE_DATA_ENABLED": "false",
+    // User-tied API keys for the hosted MCP endpoint (proposal 0005). Opt-in
+    // flag (worker/api-keys.ts apiKeysEnabled — only the literal "true"
+    // enables): the /keys page, the /api/keys routes, and `Bearer tdk_…` on
+    // /mcp. No new binding or migration (records live in OAUTH_KV under
+    // `apikey:` / `apikeys:` prefixes). Production stays "false" until the
+    // staging UAT in proposal 0005 passes; forward-only recovery like every
+    // other flag: redeploy with "false" to disable, never roll back.
+    "API_KEYS_ENABLED": "false",
   },
   "assets": {
     "directory": "./dist",
@@ -94,7 +102,8 @@
     ],
   },
   // TOPOLOGY_KV backs `share_topology` snapshots; OAUTH_KV backs the OAuth
-  // provider's grants/tokens. Create each once in the dashboard (Storage &
+  // provider's grants/tokens and, under its own `apikey:`/`apikeys:` prefixes,
+  // the user-tied API keys of proposal 0005 (gated by API_KEYS_ENABLED). Create each once in the dashboard (Storage &
   // Databases → KV) and paste its id below (replace the placeholder).
   "kv_namespaces": [
     { "binding": "TOPOLOGY_KV", "id": "4a215923f07c43729f70e5f81042befe" },
@@ -163,6 +172,10 @@
         // a non-production Orchestrator is provisioned for that env.
         // worker/env.ts liveDataEnabled() — only the literal "true" enables.
         "LIVE_DATA_ENABLED": "false",
+        // Staging opts INTO user-tied API keys (proposal 0005) so the mint →
+        // use → revoke journey can be exercised end to end before production
+        // activates it. worker/api-keys.ts apiKeysEnabled().
+        "API_KEYS_ENABLED": "true",
         // Staging-only synthetic-fault gate (worker/staging-fault.ts, game-day
         // drills — docs/GAME_DAY.md). Must be exactly "staging", must exist
         // ONLY here: check-wrangler-env.mjs fails the build if any

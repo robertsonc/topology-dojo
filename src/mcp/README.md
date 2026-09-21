@@ -46,6 +46,26 @@ user is exposed to the agent as `this.props`. The provider also serves OAuth
 discovery (`/.well-known/oauth-authorization-server`) and dynamic client
 registration (`/register`), so compatible clients configure themselves.
 
+**API keys (proposal 0005, `API_KEYS_ENABLED`).** For an agent that cannot
+complete a browser sign-in, a signed-in user mints a key at `/keys` and the
+client sends it as `Authorization: Bearer tdk_…` on `/mcp`. The provider's
+`resolveExternalToken` hook (`worker/api-keys.ts`) resolves it to the same
+`props` an OAuth grant produces, plus `auth: "api_key"` and the key's
+`scopes` (`author` always; `share`, `workspace`, `live-data` opt-in — a group
+outside the scopes is not registered at all). Keys are hashed at rest, shown
+once, revocable, optionally expiring, and only mintable in the browser.
+
+```jsonc
+{
+  "mcpServers": {
+    "topology-dojo": {
+      "url": "https://<deployment-domain>/mcp",
+      "headers": { "Authorization": "Bearer tdk_…" },
+    },
+  },
+}
+```
+
 > **Durable Object migrations require a full, environment-scoped deploy.** This
 > Worker declares migrations including the shared `TopologyDocument`
 > coordinator. `wrangler versions upload` fails with error 10211 when a new

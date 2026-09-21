@@ -51,6 +51,10 @@ function hmacKey(secret: string): Promise<CryptoKey> {
 /** Default session lifetime: 7 days. */
 export const SESSION_TTL_SEC = 7 * 24 * 3600;
 
+/** Name of the signed browser session cookie (set by worker/auth.ts, read by
+ * every cookie-authenticated route including worker/api-keys.ts). */
+export const SESSION_COOKIE_NAME = 'tdg_session';
+
 /**
  * HMAC key for browser session cookies.
  *

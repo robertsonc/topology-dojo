@@ -51,16 +51,16 @@ interaction state and are not part of MCP parity acceptance.
 
 ### 2.1 Acceptance personas
 
-| Persona                          | Representative need                                                                                           | Primary scenarios                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| New author                       | Create, edit, save, and deliver a first topology with understandable in-product guidance.                     | UAT-NA-01, UAT-NA-02               |
-| Power user / network architect   | Build a rich multi-page story efficiently and preserve document semantics through advanced edits and exports. | UAT-PU-01, UAT-PU-02               |
-| Public recipient / reviewer      | Open a public snapshot without signing in, navigate it, and avoid replacing unrelated local work.             | UAT-PR-01, UAT-PR-02               |
-| Human-agent workspace owner      | Hand off a document, review proposals, resolve conflicts, manage authority, and recover work.                 | UAT-WS-01, UAT-WS-02, UAT-WS-03    |
-| MCP operator                     | Configure an MCP client and guide an agent through efficient, bounded topology authoring.                     | UAT-MCP-01, UAT-MCP-02, UAT-MCP-03 |
-| Preference manager               | Review, scope, pause, reject, and forget adaptive authoring preferences.                                      | UAT-PM-01                          |
-| Deployment owner / administrator | Review access and usage metadata without access to document content.                                          | UAT-AD-01                          |
-| Release operator                 | Promote an exact build through the gated deployment and recovery process.                                     | UAT-OP-01, UAT-OP-02               |
+| Persona                          | Representative need                                                                                           | Primary scenarios                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| New author                       | Create, edit, save, and deliver a first topology with understandable in-product guidance.                     | UAT-NA-01, UAT-NA-02                           |
+| Power user / network architect   | Build a rich multi-page story efficiently and preserve document semantics through advanced edits and exports. | UAT-PU-01, UAT-PU-02                           |
+| Public recipient / reviewer      | Open a public snapshot without signing in, navigate it, and avoid replacing unrelated local work.             | UAT-PR-01, UAT-PR-02                           |
+| Human-agent workspace owner      | Hand off a document, review proposals, resolve conflicts, manage authority, and recover work.                 | UAT-WS-01, UAT-WS-02, UAT-WS-03                |
+| MCP operator                     | Configure an MCP client and guide an agent through efficient, bounded topology authoring.                     | UAT-MCP-01, UAT-MCP-02, UAT-MCP-03, UAT-MCP-04 |
+| Preference manager               | Review, scope, pause, reject, and forget adaptive authoring preferences.                                      | UAT-PM-01                                      |
+| Deployment owner / administrator | Review access and usage metadata without access to document content.                                          | UAT-AD-01                                      |
+| Release operator                 | Promote an exact build through the gated deployment and recovery process.                                     | UAT-OP-01, UAT-OP-02                           |
 
 Accessibility is a characteristic of every persona, not a separate kind of
 user. UAT-AX-01 is therefore run across the new-author, public-recipient, and
@@ -651,6 +651,41 @@ secrets injected only through environment configuration.
 **Acceptance:** Mock steps must pass for the conditional capability baseline.
 The real branch is PASS only with complete source reconciliation evidence; when
 no approved tenant is available it is `N/A — condition unavailable`, not PASS.
+
+### UAT-MCP-04 — API key mint, scoped use, and revocation
+
+**Priority:** P0 for a release activating `API_KEYS_ENABLED`
+**Capability state:** Feature-gated — `API_KEYS_ENABLED`
+**Persona:** MCP operator
+**Business outcome:** BO-05
+
+**Preconditions:** Staging with the flag on; a signed-in GitHub account; an
+MCP client that can send a static bearer header (or `curl`).
+
+**Steps and expected results:**
+
+1. Open **/keys** from the account menu. Create a key labelled for the test
+   with no extra scopes and no expiry. The full key is shown once with a
+   client snippet; the list shows only its prefix, label, scopes, and dates.
+2. Connect the client with only `Authorization: Bearer <key>` on `/mcp`.
+   `tools/list` contains the authoring tools and **not** `share_topology`,
+   `list_shares`, `unpublish_topology`, or any workspace tool.
+3. Run the private-draft golden loop (UAT-MCP-01) with that key. Open the
+   browser as the same account: the draft appears in the registry listing.
+4. Create a second key with the `share` scope. With it, `share_topology`
+   publishes a link that opens publicly; `unpublish_topology` revokes it.
+5. Send twenty requests with a malformed secret from one client, one after
+   another (sequentially — the counter is a best-effort KV budget, so a
+   concurrent burst may under-count; see proposal 0005). The next request
+   with the **valid** key from that client is refused (401) until the
+   five-minute window passes; a different client is unaffected.
+6. Revoke both keys on **/keys**. Within one minute every request with them
+   returns 401. `/api/keys` from a second account cannot list or revoke them.
+7. Confirm no key value appears in Worker logs, the admin activity trail, or
+   the client transcript beyond the initial reveal.
+
+**Acceptance:** All steps pass. Any key accepted on a cookie route, any
+plaintext at rest, or any scope leak (step 2) is a P0 failure.
 
 ### UAT-PM-01 — Preference observation, confirmation, scope, and control
 

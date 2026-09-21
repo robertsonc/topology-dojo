@@ -4216,6 +4216,7 @@ function wireAccountMenu(login: string): void {
   menu.hidden = true;
   menu.innerHTML =
     `<div class="um-head">Signed in as <b></b></div>` +
+    `<a class="um-item" href="/keys" role="menuitem">API keys</a>` +
     `<a class="um-item" href="/logout" role="menuitem">Sign out</a>`;
   menu.querySelector('b')!.textContent = login;
   document.body.appendChild(menu);
@@ -4249,7 +4250,7 @@ function wireAccountMenu(login: string): void {
   });
   // Sign out via an explicit navigation — robust even if the anchor default is
   // ever intercepted; the localStorage autosave preserves the open document.
-  menu.querySelector('.um-item')?.addEventListener('click', (e) => {
+  menu.querySelector('a[href="/logout"]')?.addEventListener('click', (e) => {
     e.preventDefault();
     window.location.assign('/logout');
   });
