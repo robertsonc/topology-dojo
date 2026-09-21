@@ -32,7 +32,10 @@
  * same way `worker/share.ts` is.
  */
 import {
+  API_KEY_PENDING_TTL_MS,
   MAX_API_KEYS_PER_USER,
+  apiKeyOwnerMarkerKey,
+  apiKeyOwnerPrefix,
   apiKeyStorageKey,
   apiKeyUsageKey,
   hashSecret,
@@ -62,6 +65,11 @@ import {
 /** The slice of `KVNamespace` this module needs (structural, test-friendly). */
 export interface ApiKeyKv {
   get(key: string): Promise<string | null>;
+  list(options: { prefix: string; cursor?: string }): Promise<{
+    keys: { name: string }[];
+    list_complete: boolean;
+    cursor?: string;
+  }>;
   put(
     key: string,
     value: string,
@@ -90,8 +98,12 @@ export interface ApiKeyIndex {
    * expires on its own, so no failure sequence can strand a slot forever.
    */
   reserve(keyId: string, max: number, expiresAt?: string): Promise<boolean>;
-  /** Make the slot durable once the KV record exists (re-creates it if pruned). */
-  confirm(keyId: string, expiresAt?: string): Promise<void>;
+  /**
+   * Make the slot durable once the KV record exists. If the reservation was
+   * pruned meanwhile, capacity is re-acquired under `max`; false means there
+   * is none and the caller must delete the record it wrote.
+   */
+  confirm(keyId: string, max: number, expiresAt?: string): Promise<boolean>;
   release(keyId: string): Promise<void>;
   /** Live entries (confirmed and still-pending), oldest first. Never consults KV. */
   entries(): Promise<ApiKeyIndexEntry[]>;
@@ -106,7 +118,11 @@ export interface ApiKeyIndexStub {
     max: number,
     expiresAt?: string,
   ): Promise<boolean>;
-  apiKeyConfirm(keyId: string, expiresAt?: string): Promise<void>;
+  apiKeyConfirm(
+    keyId: string,
+    max: number,
+    expiresAt?: string,
+  ): Promise<boolean>;
   apiKeyRelease(keyId: string): Promise<void>;
   apiKeyEntries(): Promise<ApiKeyIndexEntry[]>;
 }
@@ -124,7 +140,8 @@ export function registryApiKeyIndex<Id>(
   return {
     reserve: (keyId, max, expiresAt) =>
       stub.apiKeyReserve(keyId, max, expiresAt),
-    confirm: (keyId, expiresAt) => stub.apiKeyConfirm(keyId, expiresAt),
+    confirm: (keyId, max, expiresAt) =>
+      stub.apiKeyConfirm(keyId, max, expiresAt),
     release: (keyId) => stub.apiKeyRelease(keyId),
     entries: () => stub.apiKeyEntries(),
   };
@@ -272,13 +289,28 @@ async function readUsage(
   }
 }
 
+/** Every marker the owner has, following KV pagination. */
+async function ownerMarkerKeyIds(kv: ApiKeyKv, uid: string): Promise<string[]> {
+  const prefix = apiKeyOwnerPrefix(uid);
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 64; page++) {
+    const result = await kv.list({ prefix, ...(cursor ? { cursor } : {}) });
+    for (const { name } of result.keys) ids.push(name.slice(prefix.length));
+    if (result.list_complete || !result.cursor) break;
+    cursor = result.cursor;
+  }
+  return ids;
+}
+
 /**
- * The owner's live keys. Never returns the hash. Read-only: an id whose KV
- * record is missing (a create still in flight, or KV lagging at this edge)
- * or expired is simply not listed — the index prunes its own slots, and
- * nothing here may release a slot another request just reserved. A key whose
- * record exists but whose slot is still pending (its confirm failed) is
- * listed and confirmed here, best-effort.
+ * The owner's live keys. Never returns the hash. Read-only for slots: an id
+ * whose KV record is missing (a create still in flight, or KV lagging at this
+ * edge) or expired is simply not listed — the index prunes its own slots, and
+ * nothing here may release a slot another request just reserved. A record
+ * whose slot is still pending (its confirm failed) is confirmed here under
+ * the cap, best-effort; if there is no capacity it stays unlisted and
+ * `reconcileOrphans` purges it once it is old enough.
  */
 export async function listApiKeys(
   kv: ApiKeyKv,
@@ -292,8 +324,12 @@ export async function listApiKeys(
     const record = await readRecord(kv, entry.keyId);
     if (!record || record.uid !== uid || isApiKeyExpired(record, nowMs))
       continue;
-    if (entry.pending)
-      await index.confirm(entry.keyId, record.expiresAt).catch(() => undefined);
+    if (entry.pending) {
+      const confirmed = await index
+        .confirm(entry.keyId, MAX_API_KEYS_PER_USER, record.expiresAt)
+        .catch(() => false);
+      if (!confirmed) continue;
+    }
     live.push(toPublic(record, await readUsage(kv, entry.keyId)));
   }
   return live;
@@ -318,15 +354,50 @@ export async function orphanedKeyIds(
   return orphaned;
 }
 
-/** Release every orphaned slot (see `orphanedKeyIds`). Idempotent. Returns what was freed. */
+export interface Reconciliation {
+  /** Index slots released because their record has been gone past the grace period. */
+  released: string[];
+  /** Credential records deleted because nothing in the owner's index anchored them. */
+  purged: string[];
+}
+
+/**
+ * The idempotent reconciliation path, safe to run any time:
+ *
+ * 1. index slot, no record for > ORPHAN_GRACE_MS → release the slot;
+ * 2. owner marker, record present, NO index slot (any state), record older
+ *    than API_KEY_PENDING_TTL_MS → the record is garbage (its create never
+ *    returned a token: the confirm failed or found no capacity, and the
+ *    record delete failed) → delete record, usage and marker;
+ * 3. owner marker with neither record nor slot → delete the marker.
+ *
+ * A record younger than the pending TTL is left alone: its create may still be
+ * between the record write and the confirm.
+ */
 export async function reconcileOrphans(
   kv: ApiKeyKv,
   index: ApiKeyIndex,
+  uid: string,
   nowMs = Date.now(),
-): Promise<string[]> {
-  const orphaned = await orphanedKeyIds(kv, index, nowMs);
-  for (const keyId of orphaned) await index.release(keyId);
-  return orphaned;
+): Promise<Reconciliation> {
+  const released = await orphanedKeyIds(kv, index, nowMs);
+  for (const keyId of released) await index.release(keyId);
+  const anchored = new Set((await index.entries()).map((e) => e.keyId));
+  const purged: string[] = [];
+  for (const keyId of await ownerMarkerKeyIds(kv, uid)) {
+    if (anchored.has(keyId)) continue;
+    const record = await readRecord(kv, keyId);
+    if (record) {
+      if (record.uid !== uid) continue; // never touch a foreign record
+      if (Date.parse(record.createdAt) + API_KEY_PENDING_TTL_MS > nowMs)
+        continue;
+      await kv.delete(apiKeyStorageKey(keyId));
+      await kv.delete(apiKeyUsageKey(keyId)).catch(() => undefined);
+      purged.push(keyId);
+    }
+    await kv.delete(apiKeyOwnerMarkerKey(uid, keyId)).catch(() => undefined);
+  }
+  return { released, purged };
 }
 
 export interface CreateApiKeyInput {
@@ -336,19 +407,42 @@ export interface CreateApiKeyInput {
 }
 
 /**
+ * Delete a credential that must not stay live (its create is failing). The
+ * index slot is released ONLY once the record is known to be gone; if the
+ * record delete fails, the slot (pending or confirmed) and the owner marker
+ * are kept so the record stays anchored and discoverable — a later listing
+ * confirms or `reconcileOrphans` purges it. Never throws.
+ */
+async function discardCredential(
+  kv: ApiKeyKv,
+  index: ApiKeyIndex,
+  uid: string,
+  keyId: string,
+): Promise<void> {
+  try {
+    await kv.delete(apiKeyStorageKey(keyId));
+  } catch {
+    return;
+  }
+  await kv.delete(apiKeyOwnerMarkerKey(uid, keyId)).catch(() => undefined);
+  await index.release(keyId).catch(() => undefined);
+}
+
+/**
  * Mint + store a key for `user`. Throws `ApiKeyRequestError` on bad input or
  * when the per-user cap is reached. Slot lifecycle, all against the owner's
  * serialized index:
  *
- *   reserve (pending) → write KV record → confirm
+ *   reserve (pending) → write owner marker → write KV record → confirm (max)
  *
- * - record write fails → release (best-effort); even if that fails too, the
- *   pending reservation expires on its own — no permanent ghost slot;
- * - confirm fails → the record is deleted (best-effort) and the slot released,
- *   the create fails; a record that somehow survives is still listed and
- *   re-confirmed by the next listing while its reservation is pending;
- * - cap reached → orphaned slots (confirmed, record gone for > ORPHAN_GRACE_MS)
- *   are reclaimed once and the reservation retried.
+ * - marker or record write fails → release (best-effort); even if that fails
+ *   too, the pending reservation expires on its own — no permanent ghost slot;
+ * - confirm finds no capacity (the reservation was pruned while the create
+ *   stalled and the owner refilled) → 409 and the record is discarded;
+ * - confirm throws → the record is discarded; when that delete fails the slot
+ *   and marker are kept so the record stays anchored, and reconciliation
+ *   purges it later;
+ * - cap reached → orphaned slots are reclaimed once and the reservation retried.
  *
  * The returned `token` is the only time the plaintext exists outside the
  * caller's hands.
@@ -376,12 +470,20 @@ export async function createApiKey(
     MAX_API_KEYS_PER_USER,
     expiresAt,
   );
-  if (!reserved && (await reconcileOrphans(kv, index, nowMs)).length)
-    reserved = await index.reserve(
-      minted.keyId,
-      MAX_API_KEYS_PER_USER,
-      expiresAt,
+  if (!reserved) {
+    const { released, purged } = await reconcileOrphans(
+      kv,
+      index,
+      user.uid,
+      nowMs,
     );
+    if (released.length || purged.length)
+      reserved = await index.reserve(
+        minted.keyId,
+        MAX_API_KEYS_PER_USER,
+        expiresAt,
+      );
+  }
   if (!reserved) throw new ApiKeyRequestError('too_many_keys', 409);
   const record: ApiKeyRecord = {
     keyId: minted.keyId,
@@ -395,17 +497,29 @@ export async function createApiKey(
     ...(expiresAt ? { expiresAt } : {}),
   };
   try {
+    await kv.put(apiKeyOwnerMarkerKey(user.uid, minted.keyId), '1');
     await putRecord(kv, record, nowMs);
   } catch (err) {
+    await kv
+      .delete(apiKeyOwnerMarkerKey(user.uid, minted.keyId))
+      .catch(() => undefined);
     await index.release(minted.keyId).catch(() => undefined);
     throw err;
   }
+  let confirmed: boolean;
   try {
-    await index.confirm(minted.keyId, expiresAt);
+    confirmed = await index.confirm(
+      minted.keyId,
+      MAX_API_KEYS_PER_USER,
+      expiresAt,
+    );
   } catch (err) {
-    await kv.delete(apiKeyStorageKey(minted.keyId)).catch(() => undefined);
-    await index.release(minted.keyId).catch(() => undefined);
+    await discardCredential(kv, index, user.uid, minted.keyId);
     throw err;
+  }
+  if (!confirmed) {
+    await discardCredential(kv, index, user.uid, minted.keyId);
+    throw new ApiKeyRequestError('too_many_keys', 409);
   }
   return { token: minted.token, key: toPublic(record) };
 }
@@ -413,7 +527,7 @@ export async function createApiKey(
 /**
  * Owner-only revoke. A foreign or unknown keyId is `not_found` — the same
  * answer either way, so the endpoint never confirms another owner's keyId.
- * Order: delete the credential (validity), then release the slot
+ * Order: delete the credential (validity), then the marker and the slot
  * (visibility). Retry-safe: when the record is already gone but the owner's
  * index still holds the slot (a previous attempt's release failed, or an
  * orphan), the slot is released and the answer is still `revoked`.
@@ -429,6 +543,7 @@ export async function revokeApiKey(
   if (record) {
     await kv.delete(apiKeyStorageKey(keyId));
     await kv.delete(apiKeyUsageKey(keyId)).catch(() => undefined);
+    await kv.delete(apiKeyOwnerMarkerKey(uid, keyId)).catch(() => undefined);
     await index.release(keyId);
     return 'revoked';
   }
@@ -641,11 +756,18 @@ export async function handleApiKeysApi(
   const rest = url.pathname.slice('/api/keys'.length).replace(/^\//, '');
 
   if (request.method === 'GET' && !rest) {
-    // `orphaned`: confirmed slots whose record is gone (revoke half-done);
-    // DELETE /api/keys/:keyId frees one, a create at the cap frees them all.
+    // The owner opening /keys is the natural moment to reconcile: slots whose
+    // record is gone are released, records nothing anchors are purged. Both
+    // idempotent and best-effort; the listing itself never depends on them.
+    const reconciled = await reconcileOrphans(
+      env.OAUTH_KV,
+      index,
+      user.uid,
+    ).catch(() => ({ released: [], purged: [] }));
     return json({
       keys: await listApiKeys(env.OAUTH_KV, index, user.uid),
       orphaned: await orphanedKeyIds(env.OAUTH_KV, index),
+      reconciled,
     });
   }
   if (request.method === 'POST' && !rest) {

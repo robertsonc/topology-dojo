@@ -239,3 +239,16 @@ export function apiKeyStorageKey(keyId: string): string {
 export function apiKeyUsageKey(keyId: string): string {
   return `apikeyuse:${keyId}`;
 }
+
+/**
+ * Per-owner discovery marker, one KV key per credential (never a
+ * read-modify-write): written before the record, deleted after it. Lets
+ * reconciliation find a record that lost its owner-index entry without a
+ * global KV scan; `list({ prefix: apiKeyOwnerPrefix(uid) })` is the query.
+ */
+export function apiKeyOwnerPrefix(uid: string): string {
+  return `apikeyowner:${uid}:`;
+}
+export function apiKeyOwnerMarkerKey(uid: string, keyId: string): string {
+  return `${apiKeyOwnerPrefix(uid)}${keyId}`;
+}

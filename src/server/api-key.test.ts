@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   API_KEY_SCOPES,
   apiKeyUsageKey,
+  apiKeyOwnerMarkerKey,
+  apiKeyOwnerPrefix,
   KEY_ID_LENGTH,
   apiKeyStorageKey,
   hashSecret,
@@ -144,5 +146,9 @@ describe('api-key primitives (proposal 0005)', () => {
   it('uses prefixes disjoint from the OAuth provider and the share store', () => {
     expect(apiKeyStorageKey('abc')).toBe('apikey:abc');
     expect(apiKeyUsageKey('abc')).toBe('apikeyuse:abc');
+    expect(apiKeyOwnerMarkerKey('42', 'abc')).toBe('apikeyowner:42:abc');
+    expect(
+      apiKeyOwnerMarkerKey('42', 'abc').startsWith(apiKeyOwnerPrefix('42')),
+    ).toBe(true);
   });
 });

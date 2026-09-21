@@ -134,15 +134,21 @@ export class TopologyRegistry
   }
 
   /**
-   * Mark the slot durable once its KV record exists. Re-creates the entry if
-   * a pending reservation was pruned meanwhile, so a confirmed credential is
-   * always visible on /keys.
+   * Mark the slot durable once its KV record exists. If the pending
+   * reservation was pruned meanwhile (a create that stalled past the pending
+   * TTL), the slot is re-acquired under the same `max` rule — never
+   * resurrected unconditionally — so a resumed create cannot confirm an
+   * eleventh key. Returns false when there is no capacity; the caller then
+   * deletes the record it wrote.
    */
-  async apiKeyConfirm(keyId: string, expiresAt?: string): Promise<void> {
-    const existing = await this.ctx.storage.get<ApiKeyIndexRecord | string>(
-      API_KEY_PREFIX + keyId,
-    );
-    const prior = normalizeApiKeyEntry(existing);
+  async apiKeyConfirm(
+    keyId: string,
+    max: number,
+    expiresAt?: string,
+  ): Promise<boolean> {
+    const live = await this.liveApiKeyEntries();
+    const prior = live.get(keyId);
+    if (!prior && live.size >= max) return false;
     const entry: ApiKeyIndexRecord = {
       createdAt: prior?.createdAt ?? new Date().toISOString(),
       pending: false,
@@ -151,6 +157,7 @@ export class TopologyRegistry
         : {}),
     };
     await this.ctx.storage.put(API_KEY_PREFIX + keyId, entry);
+    return true;
   }
 
   async apiKeyRelease(keyId: string): Promise<void> {

@@ -103,33 +103,46 @@ prefer the OAuth flow wherever a browser is available.
 Split by consistency need — KV where reads must be global and cheap, the
 owner's Durable Object where writes must serialize:
 
-| Where                                 | Key                           | Value                                                                                                                 | TTL                                  |
-| ------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `OAUTH_KV`                            | `apikey:<keyId>`              | `{ keyId, uid, login, name?, secretHash, scopes, label, createdAt, expiresAt? }` — **never written by the auth path** | matches `expiresAt` (+60 s) when set |
-| `OAUTH_KV`                            | `apikeyuse:<keyId>`           | ISO `lastUsedAt` telemetry, written at most hourly, best-effort                                                       | none                                 |
-| `OAUTH_KV`                            | `rl:apikeyfail:<ip>:<window>` | failed-authentication counter (best-effort, see below)                                                                | window + 1 s                         |
-| `TopologyRegistry` DO `user-id:<uid>` | `apikey:<keyId>`              | `{ createdAt, expiresAt?, pending }` — the owner's index and the 10-key cap                                           | pending: 2 min; else n/a             |
+| Where                                 | Key                           | Value                                                                                                                                                                                          | TTL                                  |
+| ------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `OAUTH_KV`                            | `apikey:<keyId>`              | `{ keyId, uid, login, name?, secretHash, scopes, label, createdAt, expiresAt? }` — **never written by the auth path**                                                                          | matches `expiresAt` (+60 s) when set |
+| `OAUTH_KV`                            | `apikeyowner:<uid>:<keyId>`   | owner marker, one key per credential (no read-modify-write), written before the record and deleted after it — lets reconciliation find a record that lost its index slot without a global scan | none                                 |
+| `OAUTH_KV`                            | `apikeyuse:<keyId>`           | ISO `lastUsedAt` telemetry, written at most hourly, best-effort                                                                                                                                | none                                 |
+| `OAUTH_KV`                            | `rl:apikeyfail:<ip>:<window>` | failed-authentication counter (best-effort, see below)                                                                                                                                         | window + 1 s                         |
+| `TopologyRegistry` DO `user-id:<uid>` | `apikey:<keyId>`              | `{ createdAt, expiresAt?, pending }` — the owner's index and the 10-key cap                                                                                                                    | pending: 2 min; else n/a             |
 
 The Durable Object runs one request at a time, so `reserve → write record →
 confirm` cannot interleave with another create: the cap is strict and the
 index never loses an entry to a lost read-modify-write. Slot lifecycle:
 
-- `reserve` creates a **pending** slot; the KV record is written; `confirm`
-  makes it durable. A pending slot that is never confirmed (record write
-  failed _and_ the release failed) is dropped by the DO after two minutes, so
-  no failure sequence can strand a slot forever. A failed confirm deletes the
-  record and releases the slot (best-effort); a record that survives is still
-  listed and re-confirmed by the next listing.
+- `reserve` creates a **pending** slot; the owner marker and the KV record
+  are written; `confirm` makes the slot durable **under the same cap rule**:
+  if the reservation was pruned while the create stalled, capacity is
+  re-acquired, never resurrected unconditionally, so a resumed create can not
+  confirm an eleventh key (it gets 409 and its record is discarded). A
+  pending slot that is never confirmed (record write failed _and_ the
+  release failed) is dropped by the DO after two minutes, so no failure
+  sequence can strand a slot forever.
+- Discarding a record (confirm failed or found no capacity) deletes the
+  record first and releases the slot **only when that delete succeeded**;
+  otherwise the slot and the marker are kept so the record stays anchored —
+  the next listing confirms it under the cap, or reconciliation purges it.
+- Reconciliation (`reconcileOrphans`, idempotent; run when the owner opens
+  `/keys` and when a create hits the cap): a confirmed slot whose record has
+  been missing for more than ten minutes is released; a record found through
+  the owner marker that no slot anchors and that is older than the pending
+  TTL is garbage (its create never returned a token) and is deleted along
+  with its marker; a marker with neither record nor slot is deleted. A record
+  younger than the pending TTL is left alone: its create may still be between
+  the record write and the confirm.
 - Revoke deletes the credential first (validity), then releases the slot
   (visibility). It is retry-safe: when the record is already gone but the
   owner's index still holds the slot, the retry releases it and answers
   `revoked`.
-- A **confirmed** slot whose record has been missing for more than ten
-  minutes (far beyond KV's ~60 s propagation) is an orphan: `GET /api/keys`
-  reports it under `orphaned`, `DELETE /api/keys/:keyId` frees it, and a
-  create that hits the cap reclaims all orphans once before failing. Nothing
-  else releases a slot on the strength of a KV read — a record is
-  legitimately absent while a create is in flight.
+- `GET /api/keys` reports index orphans under `orphaned` and what the run
+  reconciled under `reconciled`; `DELETE /api/keys/:keyId` frees one slot on
+  demand. Nothing else releases a slot on the strength of a KV read — a
+  record is legitimately absent while a create is in flight.
 
 Because authentication never rewrites the credential record, a revoke landing
 between a resolver's read and its return cannot be undone.
@@ -237,9 +250,10 @@ already on `props`.
 - **Create/revoke serialize.** The owner index and the cap live in the
   owner's Durable Object; concurrent mints cannot exceed ten or leave a
   credential that is valid but invisible on `/keys`.
-- **No permanent ghost slot.** Reservations are pending until confirmed and
-  expire on their own; revoke is retry-safe; confirmed orphans are reported
-  and reclaimed after a grace period (see Storage).
+- **No permanent ghost slot, no unanchored credential.** Reservations are
+  pending until confirmed under the cap and expire on their own; revoke is
+  retry-safe; a record is only ever un-anchored by a failed delete, and the
+  owner marker lets reconciliation find and purge it (see Storage).
 - **No cross-owner id collision.** ~103-bit key ids; a collision on the
   global `apikey:<keyId>` record is not a realistic event.
 - **Revocation latency.** KV is eventually consistent; a revoked key can work
@@ -266,9 +280,11 @@ deployment regardless of the flag.
       `node scripts/check-wrangler-env.mjs` green.
 - [x] Unit: primitives (`src/server/api-key.test.ts`); store, resolver,
       read-only auth path + revoke race, concurrent cap, pending-slot expiry
-      after a failed write + failed release, failed confirm, retry-safe
-      revoke, orphan report/reclaim, failure budget, flag, scope gate
-      (`src/testing/api-keys.test.ts` half 1).
+      after a failed write + failed release, failed confirm with and without
+      a failed delete, the stalled-create/pruned-reservation cap race,
+      unanchored-record purge via the owner marker (never before the pending
+      TTL), retry-safe revoke, orphan report/reclaim, failure budget, flag,
+      scope gate (`src/testing/api-keys.test.ts` half 1).
 - [x] Miniflare: cookie gating, mint → list → resolve → foreign revoke 404 →
       owner revoke → 401, concurrent mints against the real registry DO,
       page + script, flag-off 503 contract (`src/testing/api-keys.test.ts`

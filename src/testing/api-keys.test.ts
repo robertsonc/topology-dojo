@@ -85,6 +85,14 @@ function memoryKv(): MemoryKv {
     async delete(key) {
       map.delete(key);
     },
+    async list({ prefix }) {
+      return {
+        keys: [...map.keys()]
+          .filter((k) => k.startsWith(prefix))
+          .map((name) => ({ name })),
+        list_complete: true,
+      };
+    },
     dump: () => map,
   };
   return kv;
@@ -133,12 +141,14 @@ function memoryIndex(clock: () => number = Date.now): MemoryIndex {
       });
       return true;
     },
-    async confirm(keyId, expiresAt) {
+    async confirm(keyId, max, expiresAt) {
       if (index.failNextConfirm) {
         index.failNextConfirm = false;
         throw new Error('registry unavailable');
       }
+      prune();
       const prior = held.get(keyId);
+      if (!prior && held.size >= max) return false;
       held.set(keyId, {
         keyId,
         createdAt: prior?.createdAt ?? new Date(clock()).toISOString(),
@@ -147,6 +157,7 @@ function memoryIndex(clock: () => number = Date.now): MemoryIndex {
           ? { expiresAt: expiresAt ?? prior?.expiresAt }
           : {}),
       });
+      return true;
     },
     async release(keyId) {
       if (index.failNextRelease) {
@@ -210,7 +221,9 @@ describe('api-keys store (pure, in-memory KV)', () => {
     expect(stored.secretHash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(stored)).not.toContain(parsed.secret);
     expect(index.held()).toEqual([key.keyId]);
-    expect([...kv.dump().keys()]).toEqual([`apikey:${key.keyId}`]);
+    expect([...kv.dump().keys()].sort()).toEqual(
+      [`apikey:${key.keyId}`, `apikeyowner:42:${key.keyId}`].sort(),
+    );
     expect(kv.dump().get(`apikey:${key.keyId}`)!.ttl).toBeUndefined();
   });
 
@@ -443,33 +456,148 @@ describe('api-keys store (pure, in-memory KV)', () => {
     expect(index.held()).toEqual([]); // gone on its own
   });
 
-  it('a failed confirm removes the record and the slot; the create fails cleanly', async () => {
+  it('a failed confirm discards the record; when that delete fails the record stays anchored and is purged later', async () => {
+    const now = NOW;
     const kv = memoryKv();
-    const index = memoryIndex();
+    const index = memoryIndex(() => now);
     index.failNextConfirm = true;
     await expect(
-      createApiKey(kv, index, octocat, { label: 'a' }, NOW),
+      createApiKey(kv, index, octocat, { label: 'a' }, now),
     ).rejects.toThrow('registry unavailable');
     expect([...kv.dump().keys()]).toEqual([]);
     expect(index.held()).toEqual([]);
-    // A record that survived a failed confirm is still listed and re-confirmed.
+
+    // Confirm fails AND the record delete fails: the slot is NOT released, so
+    // the record stays anchored (pending) and discoverable.
     index.failNextConfirm = true;
     const originalDelete = kv.delete.bind(kv);
     kv.delete = async () => {
       throw new Error('kv delete failed');
     };
     await expect(
-      createApiKey(kv, index, octocat, { label: 'b' }, NOW),
+      createApiKey(kv, index, octocat, { label: 'b' }, now),
     ).rejects.toThrow('registry unavailable');
     kv.delete = originalDelete;
-    expect(index.held()).toEqual([]); // release worked, record survived
-    const survivor = [...kv.dump().keys()].find((k) => k.startsWith('apikey:'));
-    expect(survivor).toBeDefined();
-    // The owner can still revoke it (record present, owner matches).
+    const survivor = [...kv.dump().keys()]
+      .find((k) => k.startsWith('apikey:'))!
+      .slice('apikey:'.length);
+    expect(index.held()).toEqual([survivor]);
+    expect((await index.entries())[0]?.pending).toBe(true);
+    // A listing confirms it under the cap (there is capacity), so it is visible and revocable.
+    expect(await listApiKeys(kv, index, '42', now)).toMatchObject([
+      { keyId: survivor },
+    ]);
+    expect((await index.entries())[0]?.pending).toBe(false);
+    expect(await revokeApiKey(kv, index, '42', survivor)).toBe('revoked');
+    expect([...kv.dump().keys()]).toEqual([]);
+    expect(index.held()).toEqual([]);
+  });
+
+  it('an unanchored record (confirm failed, delete failed, slot then expired) is found by the owner marker and purged', async () => {
+    let now = NOW;
+    const kv = memoryKv();
+    const index = memoryIndex(() => now);
+    index.failNextConfirm = true;
+    const originalDelete = kv.delete.bind(kv);
+    kv.delete = async () => {
+      throw new Error('kv delete failed');
+    };
+    await expect(
+      createApiKey(kv, index, octocat, { label: 'a' }, now),
+    ).rejects.toThrow('registry unavailable');
+    kv.delete = originalDelete;
+    const ghost = [...kv.dump().keys()]
+      .find((k) => k.startsWith('apikey:'))!
+      .slice('apikey:'.length);
+    // The pending slot expires; the record is now anchored by nothing in the index…
+    now = NOW + API_KEY_PENDING_TTL_MS + 1;
+    expect(index.held()).toEqual([]);
+    expect(kv.dump().has(`apikey:${ghost}`)).toBe(true);
+    expect(await listApiKeys(kv, index, '42', now)).toEqual([]);
+    // …but the owner marker still finds it, and reconciliation purges it.
+    const result = await reconcileOrphans(kv, index, '42', now);
+    expect(result).toEqual({ released: [], purged: [ghost] });
+    expect([...kv.dump().keys()]).toEqual([]);
+    // Idempotent.
+    expect(await reconcileOrphans(kv, index, '42', now)).toEqual({
+      released: [],
+      purged: [],
+    });
+  });
+
+  it('a record younger than the pending TTL is never purged (its create may still be confirming)', async () => {
+    const kv = memoryKv();
+    const index = memoryIndex();
+    // Simulate the window between record write and confirm: marker + record, no slot yet.
+    await kv.put('apikeyowner:42:youngyoungyoungyoung', '1');
+    await kv.put(
+      'apikey:youngyoungyoungyoung',
+      JSON.stringify({
+        keyId: 'youngyoungyoungyoung',
+        uid: '42',
+        login: 'octocat',
+        secretHash: 'f'.repeat(64),
+        scopes: ['author'],
+        label: 'young',
+        createdAt: new Date(NOW).toISOString(),
+      }),
+    );
+    expect(await reconcileOrphans(kv, index, '42', NOW + 1000)).toEqual({
+      released: [],
+      purged: [],
+    });
+    expect(kv.dump().has('apikey:youngyoungyoungyoung')).toBe(true);
     expect(
-      await revokeApiKey(kv, index, '42', survivor!.slice('apikey:'.length)),
-    ).toBe('revoked');
-    expect(kv.dump().has(survivor!)).toBe(false);
+      await reconcileOrphans(kv, index, '42', NOW + API_KEY_PENDING_TTL_MS + 1),
+    ).toEqual({ released: [], purged: ['youngyoungyoungyoung'] });
+  });
+
+  it('confirm re-acquires capacity: a stalled create whose reservation was pruned cannot become an 11th key', async () => {
+    let now = NOW;
+    const kv = memoryKv();
+    const index = memoryIndex(() => now);
+    // A create reserves, then stalls on the record write past the pending TTL.
+    let releaseStall: (() => void) | null = null;
+    let stallReached: (() => void) | null = null;
+    const reached = new Promise<void>((resolve) => {
+      stallReached = resolve;
+    });
+    const originalPut = kv.put.bind(kv);
+    let stalled = false;
+    kv.put = async (key, value, options) => {
+      if (!stalled && key.startsWith('apikey:')) {
+        stalled = true;
+        stallReached!();
+        await new Promise<void>((resolve) => {
+          releaseStall = resolve;
+        });
+      }
+      return originalPut(key, value, options);
+    };
+    const slow = createApiKey(kv, index, octocat, { label: 'slow' }, now).then(
+      () => 'ok' as const,
+      (e: unknown) => (e as ApiKeyRequestError).code ?? 'error',
+    );
+    await reached; // deterministic: the create is now parked inside the record write
+    expect(index.held()).toHaveLength(1); // pending
+    // Time passes: the pending slot is pruned, and the owner fills up to ten.
+    now = NOW + API_KEY_PENDING_TTL_MS + 1;
+    kv.put = originalPut;
+    for (let i = 0; i < MAX_API_KEYS_PER_USER; i++)
+      await createApiKey(kv, index, octocat, { label: `k${i}` }, now);
+    expect(index.held()).toHaveLength(MAX_API_KEYS_PER_USER);
+    // The stalled create resumes: its record is written, but confirm finds no capacity.
+    kv.put = originalPut;
+    releaseStall!();
+    expect(await slow).toBe('too_many_keys');
+    expect(index.held()).toHaveLength(MAX_API_KEYS_PER_USER);
+    const records = [...kv.dump().keys()].filter((k) =>
+      k.startsWith('apikey:'),
+    );
+    expect(records).toHaveLength(MAX_API_KEYS_PER_USER);
+    expect(await listApiKeys(kv, index, '42', now)).toHaveLength(
+      MAX_API_KEYS_PER_USER,
+    );
   });
 
   it('revoke is retry-safe: a failed release is finished by the next attempt', async () => {
@@ -525,7 +653,10 @@ describe('api-keys store (pure, in-memory KV)', () => {
     expect(index.held()).not.toContain(victim);
     expect(index.held()).toContain(key.keyId);
     expect(index.held()).toHaveLength(MAX_API_KEYS_PER_USER);
-    expect(await reconcileOrphans(kv, index, now)).toEqual([]);
+    expect(await reconcileOrphans(kv, index, '42', now)).toEqual({
+      released: [],
+      purged: [],
+    });
     // A pending (in-flight) entry is never an orphan, however old the clock says.
     await index.reserve('pendingpendingpendin', MAX_API_KEYS_PER_USER + 1);
     expect(await orphanedKeyIds(kv, index, now + ORPHAN_GRACE_MS)).toEqual([]);
@@ -564,6 +695,9 @@ describe('api-keys store (pure, in-memory KV)', () => {
     expect(await resolveApiKey(kv, token, NOW)).toBeNull();
     expect(await listApiKeys(kv, index, '42', NOW)).toEqual([]);
     expect(index.held()).toEqual([]);
+    expect(
+      [...kv.dump().keys()].some((k) => k.startsWith('apikeyowner:')),
+    ).toBe(false);
   });
 
   it('expired keys stop resolving even before KV prunes the record', async () => {
@@ -875,7 +1009,11 @@ describe('/api/keys, /keys and the provider hook (Miniflare, API_KEYS_ENABLED)',
     expect(after.status).toBe(401);
     await expect(
       handle.fetch('/api/keys', { headers: { cookie } }).then((r) => r.json()),
-    ).resolves.toEqual({ keys: [], orphaned: [] });
+    ).resolves.toEqual({
+      keys: [],
+      orphaned: [],
+      reconciled: { released: [], purged: [] },
+    });
   });
 
   it('rejects malformed bodies and unknown scopes with 400', async () => {
