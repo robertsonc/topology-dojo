@@ -43,6 +43,11 @@ The initial vocabulary is deliberately small:
 - `page.add`, `page.patch`, `page.remove`, `page.reorder`
 - `element.add`, `element.patch`, `element.remove`, `element.reorder`
 
+_Addendum (proposal 0006, schema revision 2): clients may also submit
+`element.upsert`, a source-keyed converge that the coordinator normalizes into
+`element.add` or `element.patch` before storage — the stored vocabulary above
+is unchanged._
+
 An operation names stable page and element ids. It never names a page by array
 index. A browser compatibility adapter may diff its already-local last-synced
 snapshot to produce these operations; that diff is local computation and sends

@@ -179,6 +179,7 @@ export interface ToolDeps {
       kinds?: ElementKind[],
       cursor?: number,
       limit?: number,
+      sourcedOnly?: boolean,
     ): Promise<ElementPageResult>;
     propose(
       id: string,
@@ -290,6 +291,20 @@ const elementKindSchema = z.enum(ELEMENT_KINDS);
 // Keep routine MCP discovery small. The strict, versioned vocabulary is
 // returned on demand by describe_workspace_operations and is always validated
 // again inside the document coordinator.
+/** Collections whose elements can carry a `source` ref (anchors cannot). */
+const SOURCED_COLLECTIONS = [
+  'nodes',
+  'links',
+  'zones',
+  'flowPaths',
+  'policyMarkers',
+] as const;
+interface SourcedElement {
+  id: string;
+  label?: unknown;
+  source?: { system: string; kind: string; id: string; fetchedAt?: string };
+}
+
 const compactWorkspaceOperations = z
   .array(z.record(z.string(), z.unknown()))
   .min(1)
@@ -407,7 +422,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'get_topology',
       description:
-        'Return the document JSON for a topology (the canonical, portable contract). The full document can be large: pass summary:true for a compact overview (page names + element counts), or pageIndex to fetch a single page — prefer those unless the whole document is really needed.',
+        'Return the document JSON for a topology (the canonical, portable contract). The full document can be large: pass summary:true for a compact overview (page names + element counts), pageIndex to fetch a single page, or sources:true for just the source-carrying elements ({id, kind, source, label}) per page — the cheap input for an importer’s absent-at-source diff. Prefer those unless the whole document is really needed.',
       inputShape: {
         topologyId,
         summary: z
@@ -419,9 +434,53 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .int()
           .optional()
           .describe('Return only this page (with document title/page count).'),
+        sources: z
+          .boolean()
+          .optional()
+          .describe(
+            'List only elements that carry a source ref (id, kind, source, label) per page — no geometry, no unsourced elements.',
+          ),
+        system: z
+          .string()
+          .max(120)
+          .optional()
+          .describe('With sources:true, restrict to this source.system.'),
       },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
+        if (a.sources) {
+          const system = a.system === undefined ? undefined : String(a.system);
+          const pages = doc.pages.map((p, index) => ({
+            index,
+            id: p.id,
+            name: p.name,
+            elements: SOURCED_COLLECTIONS.flatMap((kind) =>
+              (p[kind] as unknown as SourcedElement[])
+                .filter(
+                  (el) =>
+                    el.source &&
+                    (system === undefined || el.source.system === system),
+                )
+                .map((el) => ({
+                  id: el.id,
+                  kind,
+                  source: el.source,
+                  ...(typeof el.label === 'string' ? { label: el.label } : {}),
+                })),
+            ),
+          }));
+          if (a.pageIndex !== undefined) {
+            const page = pages[Number(a.pageIndex)];
+            if (!page)
+              throw new Error(`page index ${Number(a.pageIndex)} out of range`);
+            return {
+              title: doc.title,
+              pageCount: doc.pages.length,
+              pages: [page],
+            };
+          }
+          return { title: doc.title, pageCount: doc.pages.length, pages };
+        }
         if (a.summary) {
           return {
             title: doc.title,
@@ -1060,7 +1119,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'upsert_by_source',
       description:
-        'Converge an element onto external data by its source identity (system + kind + id, e.g. an orchestrator appliance or tunnel). If an element of that kind already carries the same source, it is patched with `set` and its source ref refreshed; otherwise it is created (set must then include the kind’s required fields, e.g. type/x/y for a node). Re-running never duplicates — the idempotent write for live importers.',
+        'Converge an element onto external data by its source identity (system + kind + id, e.g. an orchestrator appliance or tunnel). If an element of that kind already carries the same source, it is patched with `set` and its source ref refreshed; otherwise it is created (set must then include the kind’s required fields, e.g. type/x/y for a node). Returns created (matched vs new) and changed (false when the call was a logical no-op apart from source.fetchedAt), so an importer can count created / updated / unchanged from the results. Re-running never duplicates — the idempotent write for live importers.',
       inputShape: {
         topologyId,
         pageIndex,
@@ -1069,11 +1128,17 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe('Element kind to upsert.'),
         source: z
           .object({
-            system: z.string().describe('External system, e.g. "edgeconnect".'),
+            // Non-empty, like the workspace twin `element.upsert`: an empty
+            // component would make every such element "the same source".
+            system: z
+              .string()
+              .min(1)
+              .describe('External system, e.g. "edgeconnect".'),
             kind: z
               .string()
+              .min(1)
               .describe('Object kind there, e.g. "appliance" | "tunnel".'),
-            id: z.string().describe('The object’s id in that system.'),
+            id: z.string().min(1).describe('The object’s id in that system.'),
             fetchedAt: z
               .string()
               .optional()
@@ -1377,7 +1442,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     description:
       'Apply a BATCH of authoring operations to a topology in ONE call — strongly preferred over per-element tool calls when adding or editing more than a couple of elements. Each operation is {op, …args}: op is one of ' +
       BATCH_OPS.join(', ') +
-      ' and the remaining keys are that tool’s arguments (topologyId and pageIndex are inherited from this call; a per-op pageIndex overrides). Operations apply in order, so later ops can reference ids created earlier. Atomic: if any operation fails the document is left unchanged and the failing index is reported. Returns compact per-op results (ids), not full elements.',
+      ' and the remaining keys are that tool’s arguments (topologyId and pageIndex are inherited from this call; a per-op pageIndex overrides). Operations apply in order, so later ops can reference ids created earlier. Atomic: if any operation fails the document is left unchanged and the failing index is reported. Returns compact per-op results (ids, plus created:true|false and changed:true|false for upsert_by_source — changed is false when the op was a logical no-op apart from source.fetchedAt, so created / updated / unchanged can be counted from the results), not full elements.',
     inputShape: {
       topologyId,
       pageIndex,
@@ -1426,6 +1491,11 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(typeof r.pageIndex === 'number'
               ? { pageIndex: r.pageIndex }
               : {}),
+            // upsert_by_source reports whether it created or patched, and
+            // whether the content actually changed; keep both so an importer
+            // can count created / updated / unchanged without a pre-fetch diff.
+            ...(typeof r.created === 'boolean' ? { created: r.created } : {}),
+            ...(typeof r.changed === 'boolean' ? { changed: r.changed } : {}),
           });
         });
       } catch (err) {
@@ -1628,10 +1698,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       {
         name: 'describe_workspace_operations',
         description:
-          'Return the versioned semantic operation vocabulary and one example. Call only before a first workspace write or when operationSchemaRevision changes; do not repeat it every turn.',
+          'Return the versioned semantic operation vocabulary and examples. Call only before a first workspace write or when operationSchemaRevision changes; do not repeat it every turn. Revision 2 adds element.upsert (source-keyed converge, the workspace twin of upsert_by_source): the coordinator resolves it into element.add or element.patch against the current document. A leased apply converges immediately. A proposal is resolved when submitted; if another revision binds the same source identity before it is accepted, acceptance reports a conflict on that source (page/<id>/source/...) instead of adding a second element — re-read get_workspace_changes, re-diff, and propose again.',
         inputShape: {},
         handler: () => ({
-          operationSchemaRevision: 1,
+          operationSchemaRevision: 2,
           limits: { maxOperations: 250, maxSerializedBytes: 524288 },
           patch: {
             set: 'top-level fields to set or replace',
@@ -1648,6 +1718,8 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             'element.patch': '{ type, pageId, kind, elementId, patch }',
             'element.remove': '{ type, pageId, kind, elementId }',
             'element.reorder': '{ type, pageId, kind, elementIds: string[] }',
+            'element.upsert':
+              '{ type, pageId, kind (not anchors), source: { system, kind, id, fetchedAt? }, element?: fields to set (create-required fields when nothing matches; id honoured on create), afterElementId?: string|null } — normalized to element.add or element.patch by source identity',
           },
           elementKinds: ELEMENT_KINDS,
           example: {
@@ -1656,6 +1728,13 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             kind: 'nodes',
             elementId: 'node-id',
             patch: { set: { label: 'Branch A', x: 240 } },
+          },
+          upsertExample: {
+            type: 'element.upsert',
+            pageId: 'page-id',
+            kind: 'nodes',
+            source: { system: 'netbox', kind: 'device', id: 'core1' },
+            element: { type: 'router', x: 120, y: 80, label: 'core1' },
           },
         }),
       },
@@ -1680,7 +1759,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       {
         name: 'get_workspace_elements',
         description:
-          'Hydrate a bounded page slice instead of loading the full document. Filter by element ids and/or collections; paginate with nextCursor.',
+          'Hydrate a bounded page slice instead of loading the full document. Filter by element ids and/or collections, or sourcedOnly:true for just the elements carrying a source ref (an importer’s diff input); paginate with nextCursor.',
         inputShape: {
           workspaceId,
           pageId: z.string(),
@@ -1688,6 +1767,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           kinds: z.array(elementKindSchema).optional(),
           cursor: z.number().int().min(0).optional(),
           limit: z.number().int().min(1).max(100).optional(),
+          sourcedOnly: z
+            .boolean()
+            .optional()
+            .describe('Only elements with a source ref.'),
         },
         handler: (a) =>
           workspace.elements(
@@ -1697,6 +1780,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             a.kinds as ElementKind[] | undefined,
             a.cursor as number | undefined,
             a.limit as number | undefined,
+            a.sourcedOnly === undefined ? undefined : Boolean(a.sourcedOnly),
           ),
       },
       {

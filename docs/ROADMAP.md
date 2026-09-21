@@ -147,10 +147,12 @@ packets:
   current 6 static starter templates: user-authored, shareable component
   groups (a "sub-topology" a person or agent can drop in and parameterize).
   Builds naturally on the guided-briefs work above once that contract exists.
-- **Source-drift reconciliation** — `upsert_by_source` already converges a
-  re-import instead of duplicating; there's no surface yet for "this element's
-  source data changed since last import, review the diff" the way workspace
-  proposals do for human/agent edits.
+- **Source-drift reconciliation** — `upsert_by_source` (drafts) and, since
+  proposal 0006, `element.upsert` (workspaces) converge a re-import instead
+  of duplicating, and `get_topology sources:true` / `get_workspace_elements
+sourcedOnly:true` list what an importer owns; there's no surface yet for
+  "this element's source data changed since last import, review the diff"
+  the way workspace proposals do for human/agent edits.
 - **Richer explainability analytics** — once agent-activity foundation (Now
   item 3) ships, aggregate views (which guidance rules actually change agent
   behavior, correction-rate trends) become possible.
@@ -393,6 +395,12 @@ register found something no longer true (see `DISCREPANCY_REGISTER.md`)._
   configured), and `share_topology` — OAuth 2.1 (GitHub) auth, one Durable
   Object per MCP session. Verified live end-to-end (auth → build → validate →
   tidy → render).
+- **Importer sync ergonomics** (proposal 0006, 2026-09-20): `element.upsert`
+  for shared workspaces (schema revision 2; normalized by the coordinator into
+  `element.add`/`element.patch`, stored vocabulary unchanged), sourced-element
+  listings for drafts and workspaces, and `created` outcomes in
+  `edit_topology` results — so a re-syncing importer such as NetClaw does
+  idempotent writes and cheap diffs without hydrating pages.
 
 ### Phase 0 — shared human-agent workspace (vertical slice + follow-ons)
 

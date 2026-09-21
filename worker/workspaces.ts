@@ -83,6 +83,7 @@ interface DocumentRpc {
     kinds?: ElementKind[],
     cursor?: number,
     limit?: number,
+    sourcedOnly?: boolean,
   ): Promise<ElementPageResult>;
   applyUserOperations(
     ownerId: string,
@@ -233,6 +234,7 @@ export class WorkspaceService {
     kinds?: ElementKind[],
     cursor?: number,
     limit?: number,
+    sourcedOnly?: boolean,
   ): Promise<ElementPageResult> {
     const document = await this.ensure(id);
     return document.getElements(
@@ -242,6 +244,7 @@ export class WorkspaceService {
       kinds,
       cursor,
       limit,
+      sourcedOnly,
     );
   }
 

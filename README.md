@@ -122,6 +122,9 @@ public/vendor/ the vendored engine + theme (classic script in the browser, Commo
 - [`docs/proposals/0004-isolated-staging-and-deployment-pipeline.md`](docs/proposals/0004-isolated-staging-and-deployment-pipeline.md)
   — implementation plan for isolated staging, gated deployments, Durable Object
   migrations, and smoke evidence.
+- [`docs/proposals/0006-importer-sync-ergonomics.md`](docs/proposals/0006-importer-sync-ergonomics.md)
+  — `element.upsert` for shared workspaces, sourced-element listings, and
+  upsert outcomes, so re-syncing importers stay idempotent and cheap.
 - [`docs/DEPLOYMENT_RUNBOOK.md`](docs/DEPLOYMENT_RUNBOOK.md) and
   [`docs/ROLLBACK.md`](docs/ROLLBACK.md) — operator procedures for routine and
   migration-bearing releases, error 10211, rollback, and forward recovery.

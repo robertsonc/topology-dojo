@@ -683,6 +683,146 @@ describe('MCP tools', () => {
     expect(byQuery.nodeTypes[0]!.fields.length).toBeGreaterThan(0);
   });
 
+  it('get_topology sources:true lists only source-carrying elements (proposal 0006)', () => {
+    const { id } = call('create_topology', { title: 'Sync' }) as { id: string };
+    call('edit_topology', {
+      topologyId: id,
+      pageIndex: 0,
+      operations: [
+        { op: 'add_node', type: 'ec', x: 10, y: 10, nodeId: 'plain' },
+        {
+          op: 'upsert_by_source',
+          kind: 'node',
+          source: { system: 'netbox', kind: 'device', id: 'core1' },
+          set: { type: 'router', x: 100, y: 100, label: 'core1' },
+        },
+        {
+          op: 'upsert_by_source',
+          kind: 'node',
+          source: { system: 'cml', kind: 'node', id: 'n7' },
+          set: { type: 'switch', x: 200, y: 100, label: 'n7' },
+        },
+      ],
+    });
+    const listing = call('get_topology', { topologyId: id, sources: true }) as {
+      title: string;
+      pageCount: number;
+      pages: {
+        index: number;
+        elements: {
+          id: string;
+          kind: string;
+          source: { system: string };
+          label?: string;
+        }[];
+      }[];
+    };
+    expect(listing.title).toBe('Sync');
+    expect(listing.pageCount).toBe(1);
+    const elements = listing.pages[0]!.elements;
+    expect(elements.map((e) => e.source.system).sort()).toEqual([
+      'cml',
+      'netbox',
+    ]);
+    expect(elements.every((e) => e.kind === 'nodes')).toBe(true);
+    expect(elements.some((e) => e.id === 'plain')).toBe(false);
+    expect(elements.find((e) => e.source.system === 'netbox')?.label).toBe(
+      'core1',
+    );
+    expect(JSON.stringify(listing)).not.toContain('"x":');
+
+    const filtered = call('get_topology', {
+      topologyId: id,
+      sources: true,
+      system: 'netbox',
+    }) as { pages: { elements: unknown[] }[] };
+    expect(filtered.pages[0]!.elements).toHaveLength(1);
+    expect(() =>
+      call('get_topology', { topologyId: id, sources: true, pageIndex: 4 }),
+    ).toThrow(/out of range/);
+  });
+
+  it('upsert_by_source rejects an empty source component, alone and in a batch', () => {
+    const { id } = call('create_topology', { title: 'Empty source' }) as {
+      id: string;
+    };
+    expect(() =>
+      call('upsert_by_source', {
+        topologyId: id,
+        pageIndex: 0,
+        kind: 'node',
+        source: { system: 'netbox', kind: 'device', id: '' },
+        set: { type: 'router', x: 1, y: 1 },
+      }),
+    ).toThrow(/non-empty system, kind and id/);
+    expect(() =>
+      call('edit_topology', {
+        topologyId: id,
+        pageIndex: 0,
+        operations: [
+          {
+            op: 'upsert_by_source',
+            kind: 'node',
+            source: { system: '', kind: 'device', id: 'x' },
+            set: { type: 'router', x: 1, y: 1 },
+          },
+        ],
+      }),
+    ).toThrow(/operations\[0\] \(upsert_by_source\): source\.system/);
+  });
+
+  it('edit_topology reports created:true|false for upsert_by_source ops', () => {
+    const { id } = call('create_topology', { title: 'Counts' }) as {
+      id: string;
+    };
+    const upsert = {
+      op: 'upsert_by_source',
+      kind: 'node',
+      source: { system: 'netbox', kind: 'device', id: 'edge1' },
+      set: { type: 'router', x: 50, y: 50, label: 'edge1' },
+    };
+    const first = call('edit_topology', {
+      topologyId: id,
+      pageIndex: 0,
+      operations: [
+        upsert,
+        { op: 'add_node', type: 'ec', x: 1, y: 1, nodeId: 'z' },
+      ],
+    }) as { results: { op: string; created?: boolean }[] };
+    expect(first.results[0]).toMatchObject({
+      op: 'upsert_by_source',
+      created: true,
+    });
+    expect(first.results[1]!.created).toBeUndefined();
+    const second = call('edit_topology', {
+      topologyId: id,
+      pageIndex: 0,
+      operations: [upsert],
+    }) as { results: { created?: boolean; changed?: boolean }[] };
+    expect(second.results[0]).toMatchObject({ created: false, changed: false });
+    expect(first.results[0]).toMatchObject({ changed: true });
+    // A real content change on a match: created:false, changed:true.
+    const third = call('edit_topology', {
+      topologyId: id,
+      pageIndex: 0,
+      operations: [{ ...upsert, set: { ...upsert.set, label: 'edge1 (r2)' } }],
+    }) as { results: { created?: boolean; changed?: boolean }[] };
+    expect(third.results[0]).toMatchObject({ created: false, changed: true });
+    // Only the refresh timestamp moving is not a change.
+    const fourth = call('edit_topology', {
+      topologyId: id,
+      pageIndex: 0,
+      operations: [
+        {
+          ...upsert,
+          source: { ...upsert.source, fetchedAt: '2026-09-21T00:00:00Z' },
+          set: { ...upsert.set, label: 'edge1 (r2)' },
+        },
+      ],
+    }) as { results: { created?: boolean; changed?: boolean }[] };
+    expect(fourth.results[0]).toMatchObject({ created: false, changed: false });
+  });
+
   it('get_topology summary + pageIndex return bounded slices', () => {
     const { id } = call('create_topology', { title: 'Big' }) as { id: string };
     call('add_node', {
@@ -1158,9 +1298,47 @@ describe('MCP tools', () => {
       (tool) => tool.name === 'describe_workspace_operations',
     )!;
     expect(describe.handler({})).toMatchObject({
-      operationSchemaRevision: 1,
+      operationSchemaRevision: 2,
       limits: { maxOperations: 250 },
     });
+    // Proposal 0006: the input vocabulary documents element.upsert.
+    const described = describe.handler({}) as {
+      operations: Record<string, string>;
+      upsertExample: { type: string };
+    };
+    expect(described.operations['element.upsert']).toContain('source');
+    expect(described.upsertExample.type).toBe('element.upsert');
+
+    // get_workspace_elements forwards sourcedOnly to the service.
+    let seen: unknown[] = [];
+    const spyWorkspace: NonNullable<ToolDeps['workspace']> = {
+      ...workspace,
+      elements: async (...args: unknown[]) => {
+        seen = args;
+        return {
+          workspaceId: 'w1',
+          revision: 1,
+          page: { id: 'p1', name: 'p1', viewBox: '0 0 1 1' },
+          elements: [],
+          nextCursor: null,
+        };
+      },
+    };
+    const withSpy = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      workspace: spyWorkspace,
+    });
+    const elementsTool = withSpy.find(
+      (tool) => tool.name === 'get_workspace_elements',
+    )!;
+    elementsTool.handler(
+      parseToolArgs(elementsTool, {
+        workspaceId: 'w1',
+        pageId: 'p1',
+        sourcedOnly: true,
+      }),
+    );
+    expect(seen[6]).toBe(true);
   });
 
   it('registers the read-only authoring-profile tools only when wired — and no confirm surface', () => {
