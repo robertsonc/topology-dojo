@@ -10,6 +10,7 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import type { WorkerEnv } from './env.js';
+import { API_KEY_PENDING_TTL_MS } from '../src/server/api-key.js';
 import type { DocStorage } from '../src/mcp/persist-store.js';
 import {
   RATE_LIMITS,
@@ -27,9 +28,26 @@ const WORKSPACE_PREFIX = 'workspace:';
 const LEGACY_PREFIX = 'tdoc:';
 /** Owner index of user-tied API keys (proposal 0005): `apikey:<keyId>` → entry. */
 const API_KEY_PREFIX = 'apikey:';
-interface ApiKeyIndexEntry {
+interface ApiKeyIndexRecord {
   createdAt: string;
   expiresAt?: string;
+  /** True between `reserve` and `confirm`. */
+  pending?: boolean;
+}
+export interface ApiKeyIndexEntry {
+  keyId: string;
+  createdAt: string;
+  expiresAt?: string;
+  pending: boolean;
+}
+function normalizeApiKeyEntry(
+  raw: ApiKeyIndexRecord | string | undefined,
+): ApiKeyIndexRecord | null {
+  if (raw === undefined) return null;
+  // Tolerate the first-cut shape (a bare createdAt string) as confirmed.
+  if (typeof raw === 'string') return { createdAt: raw, pending: false };
+  if (typeof raw.createdAt !== 'string') return null;
+  return raw;
 }
 
 export class TopologyRegistry
@@ -88,13 +106,16 @@ export class TopologyRegistry
    * one method cannot interleave with another create, so the cap is strict
    * and the index never loses an entry to a lost read-modify-write.
    *
-   * The index is the source of truth for slot occupancy and prunes EXPIRED
-   * entries by its own `expiresAt`; it is never released on the strength of
-   * a KV read (a record can be legitimately missing from KV for a moment
-   * while a create is in flight, or lag behind at another edge).
+   * Lifecycle of a slot: `reserve` (pending) → the caller writes the KV
+   * record → `confirm`. A reservation that is never confirmed (the record
+   * write failed AND the release failed) expires on its own after
+   * API_KEY_PENDING_TTL_MS, so no failure sequence can strand a slot forever.
+   * Expired keys are pruned here by their own `expiresAt`. Nothing in this
+   * object consults KV: a confirmed slot is released only by an explicit
+   * `release` (revoke, or the store's grace-gated orphan reconciliation).
    */
 
-  /** Reserve a slot for `keyId`; false when the owner already holds `max` live keys. Idempotent. */
+  /** Reserve a pending slot for `keyId`; false when the owner already holds `max` live keys. Idempotent. */
   async apiKeyReserve(
     keyId: string,
     max: number,
@@ -103,20 +124,41 @@ export class TopologyRegistry
     const live = await this.liveApiKeyEntries();
     if (live.has(keyId)) return true;
     if (live.size >= max) return false;
-    const entry: ApiKeyIndexEntry = {
+    const entry: ApiKeyIndexRecord = {
       createdAt: new Date().toISOString(),
+      pending: true,
       ...(expiresAt ? { expiresAt } : {}),
     };
     await this.ctx.storage.put(API_KEY_PREFIX + keyId, entry);
     return true;
   }
 
+  /**
+   * Mark the slot durable once its KV record exists. Re-creates the entry if
+   * a pending reservation was pruned meanwhile, so a confirmed credential is
+   * always visible on /keys.
+   */
+  async apiKeyConfirm(keyId: string, expiresAt?: string): Promise<void> {
+    const existing = await this.ctx.storage.get<ApiKeyIndexRecord | string>(
+      API_KEY_PREFIX + keyId,
+    );
+    const prior = normalizeApiKeyEntry(existing);
+    const entry: ApiKeyIndexRecord = {
+      createdAt: prior?.createdAt ?? new Date().toISOString(),
+      pending: false,
+      ...((expiresAt ?? prior?.expiresAt)
+        ? { expiresAt: expiresAt ?? prior?.expiresAt }
+        : {}),
+    };
+    await this.ctx.storage.put(API_KEY_PREFIX + keyId, entry);
+  }
+
   async apiKeyRelease(keyId: string): Promise<void> {
     await this.ctx.storage.delete(API_KEY_PREFIX + keyId);
   }
 
-  /** The owner's live key ids, oldest first. */
-  async apiKeyIds(): Promise<string[]> {
+  /** The owner's live entries (confirmed and still-pending), oldest first. */
+  async apiKeyEntries(): Promise<ApiKeyIndexEntry[]> {
     const live = await this.liveApiKeyEntries();
     return [...live.entries()]
       .sort(
@@ -124,27 +166,38 @@ export class TopologyRegistry
           a[1].createdAt.localeCompare(b[1].createdAt) ||
           a[0].localeCompare(b[0]),
       )
-      .map(([keyId]) => keyId);
+      .map(([keyId, entry]) => ({
+        keyId,
+        createdAt: entry.createdAt,
+        pending: entry.pending === true,
+        ...(entry.expiresAt ? { expiresAt: entry.expiresAt } : {}),
+      }));
   }
 
-  /** Index entries that have not expired; expired ones are deleted on the way. */
+  /** Entries that are neither expired nor stale-pending; the rest are deleted on the way. */
   private async liveApiKeyEntries(
     nowMs = Date.now(),
-  ): Promise<Map<string, ApiKeyIndexEntry>> {
-    const held = await this.ctx.storage.list<ApiKeyIndexEntry | string>({
+  ): Promise<Map<string, ApiKeyIndexRecord>> {
+    const held = await this.ctx.storage.list<ApiKeyIndexRecord | string>({
       prefix: API_KEY_PREFIX,
     });
-    const live = new Map<string, ApiKeyIndexEntry>();
+    const live = new Map<string, ApiKeyIndexRecord>();
     for (const [key, raw] of held) {
-      const keyId = key.slice(API_KEY_PREFIX.length);
-      // Tolerate the first-cut shape (a bare createdAt string).
-      const entry: ApiKeyIndexEntry =
-        typeof raw === 'string' ? { createdAt: raw } : raw;
-      if (entry.expiresAt && Date.parse(entry.expiresAt) <= nowMs) {
+      const entry = normalizeApiKeyEntry(raw);
+      if (!entry) {
         await this.ctx.storage.delete(key);
         continue;
       }
-      live.set(keyId, entry);
+      const expired =
+        entry.expiresAt !== undefined && Date.parse(entry.expiresAt) <= nowMs;
+      const stalePending =
+        entry.pending === true &&
+        Date.parse(entry.createdAt) + API_KEY_PENDING_TTL_MS <= nowMs;
+      if (expired || stalePending) {
+        await this.ctx.storage.delete(key);
+        continue;
+      }
+      live.set(key.slice(API_KEY_PREFIX.length), entry);
     }
     return live;
   }

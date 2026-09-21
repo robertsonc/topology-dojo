@@ -417,7 +417,7 @@ async function checkMcpApiKeyUnauth(base) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: 'Bearer tdk_smokesmoke_' + 'A'.repeat(43),
+        authorization: 'Bearer tdk_smokesmokesmokesmoke_' + 'A'.repeat(43),
       },
       body: JSON.stringify({
         jsonrpc: '2.0',

@@ -75,16 +75,26 @@ export interface ApiKeyKv {
  * cap. In the Worker this is the owner's `TopologyRegistry` DO
  * (`registryApiKeyIndex`); tests supply an in-memory one.
  */
+export interface ApiKeyIndexEntry {
+  keyId: string;
+  createdAt: string;
+  expiresAt?: string;
+  /** True between `reserve` and `confirm`; a stale pending entry expires on its own. */
+  pending: boolean;
+}
+
 export interface ApiKeyIndex {
   /**
-   * Reserve a slot for `keyId`; false when the owner already holds `max`
-   * live keys. Idempotent. The index prunes entries past `expiresAt` itself,
-   * so a slot is never released on the strength of a KV read.
+   * Reserve a PENDING slot for `keyId`; false when the owner already holds
+   * `max` live keys. Idempotent. A reservation that is never confirmed
+   * expires on its own, so no failure sequence can strand a slot forever.
    */
   reserve(keyId: string, max: number, expiresAt?: string): Promise<boolean>;
+  /** Make the slot durable once the KV record exists (re-creates it if pruned). */
+  confirm(keyId: string, expiresAt?: string): Promise<void>;
   release(keyId: string): Promise<void>;
-  /** Live (unexpired) key ids, oldest first. */
-  ids(): Promise<string[]>;
+  /** Live entries (confirmed and still-pending), oldest first. Never consults KV. */
+  entries(): Promise<ApiKeyIndexEntry[]>;
 }
 
 export type ApiKeyIndexFactory = (uid: string) => ApiKeyIndex;
@@ -96,8 +106,9 @@ export interface ApiKeyIndexStub {
     max: number,
     expiresAt?: string,
   ): Promise<boolean>;
+  apiKeyConfirm(keyId: string, expiresAt?: string): Promise<void>;
   apiKeyRelease(keyId: string): Promise<void>;
-  apiKeyIds(): Promise<string[]>;
+  apiKeyEntries(): Promise<ApiKeyIndexEntry[]>;
 }
 export interface ApiKeyIndexNamespace<Id = unknown> {
   idFromName(name: string): Id;
@@ -113,8 +124,9 @@ export function registryApiKeyIndex<Id>(
   return {
     reserve: (keyId, max, expiresAt) =>
       stub.apiKeyReserve(keyId, max, expiresAt),
+    confirm: (keyId, expiresAt) => stub.apiKeyConfirm(keyId, expiresAt),
     release: (keyId) => stub.apiKeyRelease(keyId),
-    ids: () => stub.apiKeyIds(),
+    entries: () => stub.apiKeyEntries(),
   };
 }
 
@@ -154,6 +166,15 @@ export const API_KEY_AUTH_FAILURE_LIMIT: RateLimitSpec = {
   limit: 20,
   windowMs: 5 * 60_000,
 };
+
+/**
+ * A CONFIRMED index slot whose KV record has been missing for at least this
+ * long is an orphan (a revoke whose release failed, or a cross-owner overwrite
+ * that the 103-bit key id makes practically impossible) and may be reclaimed.
+ * Far longer than KV's ~60 s propagation, so a fresh key read at another edge
+ * is never mistaken for one.
+ */
+export const ORPHAN_GRACE_MS = 10 * 60_000;
 
 /** `lastUsedAt` telemetry is written at most this often — one KV write per key per hour, not per request. */
 export const LAST_USED_WRITE_INTERVAL_MS = 60 * 60_000;
@@ -254,8 +275,10 @@ async function readUsage(
 /**
  * The owner's live keys. Never returns the hash. Read-only: an id whose KV
  * record is missing (a create still in flight, or KV lagging at this edge)
- * or expired is simply not listed — the index prunes expired slots itself,
- * and nothing here may release a slot another request just reserved.
+ * or expired is simply not listed — the index prunes its own slots, and
+ * nothing here may release a slot another request just reserved. A key whose
+ * record exists but whose slot is still pending (its confirm failed) is
+ * listed and confirmed here, best-effort.
  */
 export async function listApiKeys(
   kv: ApiKeyKv,
@@ -263,15 +286,47 @@ export async function listApiKeys(
   uid: string,
   nowMs = Date.now(),
 ): Promise<ApiKeyPublic[]> {
-  const ids = await index.ids();
+  const entries = await index.entries();
   const live: ApiKeyPublic[] = [];
-  for (const id of ids) {
-    const record = await readRecord(kv, id);
+  for (const entry of entries) {
+    const record = await readRecord(kv, entry.keyId);
     if (!record || record.uid !== uid || isApiKeyExpired(record, nowMs))
       continue;
-    live.push(toPublic(record, await readUsage(kv, id)));
+    if (entry.pending)
+      await index.confirm(entry.keyId, record.expiresAt).catch(() => undefined);
+    live.push(toPublic(record, await readUsage(kv, entry.keyId)));
   }
   return live;
+}
+
+/**
+ * Confirmed slots whose KV record has been gone for longer than
+ * ORPHAN_GRACE_MS. Read-only; `reconcileOrphans` is the path that frees them,
+ * and `revokeApiKey` frees one on demand.
+ */
+export async function orphanedKeyIds(
+  kv: ApiKeyKv,
+  index: ApiKeyIndex,
+  nowMs = Date.now(),
+): Promise<string[]> {
+  const orphaned: string[] = [];
+  for (const entry of await index.entries()) {
+    if (entry.pending) continue;
+    if (Date.parse(entry.createdAt) + ORPHAN_GRACE_MS > nowMs) continue;
+    if (!(await readRecord(kv, entry.keyId))) orphaned.push(entry.keyId);
+  }
+  return orphaned;
+}
+
+/** Release every orphaned slot (see `orphanedKeyIds`). Idempotent. Returns what was freed. */
+export async function reconcileOrphans(
+  kv: ApiKeyKv,
+  index: ApiKeyIndex,
+  nowMs = Date.now(),
+): Promise<string[]> {
+  const orphaned = await orphanedKeyIds(kv, index, nowMs);
+  for (const keyId of orphaned) await index.release(keyId);
+  return orphaned;
 }
 
 export interface CreateApiKeyInput {
@@ -282,10 +337,21 @@ export interface CreateApiKeyInput {
 
 /**
  * Mint + store a key for `user`. Throws `ApiKeyRequestError` on bad input or
- * when the per-user cap is reached. The slot is reserved in the owner's index
- * (serialized) BEFORE the credential exists, and released if the record write
- * fails, so two concurrent creates cannot both pass the cap. The returned
- * `token` is the only time the plaintext exists outside the caller's hands.
+ * when the per-user cap is reached. Slot lifecycle, all against the owner's
+ * serialized index:
+ *
+ *   reserve (pending) → write KV record → confirm
+ *
+ * - record write fails → release (best-effort); even if that fails too, the
+ *   pending reservation expires on its own — no permanent ghost slot;
+ * - confirm fails → the record is deleted (best-effort) and the slot released,
+ *   the create fails; a record that somehow survives is still listed and
+ *   re-confirmed by the next listing while its reservation is pending;
+ * - cap reached → orphaned slots (confirmed, record gone for > ORPHAN_GRACE_MS)
+ *   are reclaimed once and the reservation retried.
+ *
+ * The returned `token` is the only time the plaintext exists outside the
+ * caller's hands.
  */
 export async function createApiKey(
   kv: ApiKeyKv,
@@ -305,8 +371,18 @@ export async function createApiKey(
     ? nowIso(nowMs + days * 24 * 60 * 60 * 1000)
     : undefined;
   const minted = await mintApiKey();
-  if (!(await index.reserve(minted.keyId, MAX_API_KEYS_PER_USER, expiresAt)))
-    throw new ApiKeyRequestError('too_many_keys', 409);
+  let reserved = await index.reserve(
+    minted.keyId,
+    MAX_API_KEYS_PER_USER,
+    expiresAt,
+  );
+  if (!reserved && (await reconcileOrphans(kv, index, nowMs)).length)
+    reserved = await index.reserve(
+      minted.keyId,
+      MAX_API_KEYS_PER_USER,
+      expiresAt,
+    );
+  if (!reserved) throw new ApiKeyRequestError('too_many_keys', 409);
   const record: ApiKeyRecord = {
     keyId: minted.keyId,
     uid: user.uid,
@@ -324,14 +400,23 @@ export async function createApiKey(
     await index.release(minted.keyId).catch(() => undefined);
     throw err;
   }
+  try {
+    await index.confirm(minted.keyId, expiresAt);
+  } catch (err) {
+    await kv.delete(apiKeyStorageKey(minted.keyId)).catch(() => undefined);
+    await index.release(minted.keyId).catch(() => undefined);
+    throw err;
+  }
   return { token: minted.token, key: toPublic(record) };
 }
 
 /**
  * Owner-only revoke. A foreign or unknown keyId is `not_found` — the same
  * answer either way, so the endpoint never confirms another owner's keyId.
- * The credential is deleted first (validity), then the slot is released
- * (visibility); the auth path never recreates a deleted record.
+ * Order: delete the credential (validity), then release the slot
+ * (visibility). Retry-safe: when the record is already gone but the owner's
+ * index still holds the slot (a previous attempt's release failed, or an
+ * orphan), the slot is released and the answer is still `revoked`.
  */
 export async function revokeApiKey(
   kv: ApiKeyKv,
@@ -340,9 +425,15 @@ export async function revokeApiKey(
   keyId: string,
 ): Promise<'revoked' | 'not_found'> {
   const record = await readRecord(kv, keyId);
-  if (!record || record.uid !== uid) return 'not_found';
-  await kv.delete(apiKeyStorageKey(keyId));
-  await kv.delete(apiKeyUsageKey(keyId)).catch(() => undefined);
+  if (record && record.uid !== uid) return 'not_found';
+  if (record) {
+    await kv.delete(apiKeyStorageKey(keyId));
+    await kv.delete(apiKeyUsageKey(keyId)).catch(() => undefined);
+    await index.release(keyId);
+    return 'revoked';
+  }
+  const held = (await index.entries()).some((e) => e.keyId === keyId);
+  if (!held) return 'not_found';
   await index.release(keyId);
   return 'revoked';
 }
@@ -550,7 +641,12 @@ export async function handleApiKeysApi(
   const rest = url.pathname.slice('/api/keys'.length).replace(/^\//, '');
 
   if (request.method === 'GET' && !rest) {
-    return json({ keys: await listApiKeys(env.OAUTH_KV, index, user.uid) });
+    // `orphaned`: confirmed slots whose record is gone (revoke half-done);
+    // DELETE /api/keys/:keyId frees one, a create at the cap frees them all.
+    return json({
+      keys: await listApiKeys(env.OAUTH_KV, index, user.uid),
+      orphaned: await orphanedKeyIds(env.OAUTH_KV, index),
+    });
   }
   if (request.method === 'POST' && !rest) {
     let body: unknown;

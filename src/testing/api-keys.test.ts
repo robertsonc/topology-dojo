@@ -29,11 +29,19 @@ import {
   resolveApiKey,
   resolveApiKeyToken,
   revokeApiKey,
+  ORPHAN_GRACE_MS,
+  orphanedKeyIds,
+  reconcileOrphans,
   type ApiKeyEnv,
   type ApiKeyIndex,
+  type ApiKeyIndexEntry,
   type ApiKeyKv,
 } from '../../worker/api-keys.js';
-import { MAX_API_KEYS_PER_USER, parseApiKey } from '../server/api-key.js';
+import {
+  API_KEY_PENDING_TTL_MS,
+  MAX_API_KEYS_PER_USER,
+  parseApiKey,
+} from '../server/api-key.js';
 import { signSession, type SessionUser } from '../server/session.js';
 import {
   buildWorkerBundle,
@@ -86,34 +94,77 @@ function memoryKv(): MemoryKv {
  * In-memory stand-in for the registry DO's index. `reserve` has no await, so
  * it is atomic the way a DO method is (one request at a time).
  */
-function memoryIndex(
-  clock: () => number = Date.now,
-): ApiKeyIndex & { held(): string[] } {
-  const held = new Map<string, string | undefined>(); // keyId → expiresAt
+type MemoryIndex = ApiKeyIndex & {
+  held(): string[];
+  /** Make the next `release` throw once (a failed DO RPC). */
+  failNextRelease: boolean;
+  failNextConfirm: boolean;
+};
+/**
+ * In-memory stand-in for the registry DO's index with the same lifecycle:
+ * pending reservations expire after API_KEY_PENDING_TTL_MS, expired keys are
+ * pruned by their own expiresAt, nothing consults KV. `reserve` has no await,
+ * so it is atomic the way a DO method is (one request at a time).
+ */
+function memoryIndex(clock: () => number = Date.now): MemoryIndex {
+  const held = new Map<string, ApiKeyIndexEntry>();
   const prune = () => {
-    for (const [id, expiresAt] of held)
-      if (expiresAt && Date.parse(expiresAt) <= clock()) held.delete(id);
+    for (const [id, e] of held) {
+      if (e.expiresAt && Date.parse(e.expiresAt) <= clock()) held.delete(id);
+      else if (
+        e.pending &&
+        Date.parse(e.createdAt) + API_KEY_PENDING_TTL_MS <= clock()
+      )
+        held.delete(id);
+    }
   };
-  return {
+  const index: MemoryIndex = {
+    failNextRelease: false,
+    failNextConfirm: false,
     async reserve(keyId, max, expiresAt) {
       prune();
       if (held.has(keyId)) return true;
       if (held.size >= max) return false;
-      held.set(keyId, expiresAt);
+      held.set(keyId, {
+        keyId,
+        createdAt: new Date(clock()).toISOString(),
+        pending: true,
+        ...(expiresAt ? { expiresAt } : {}),
+      });
       return true;
     },
+    async confirm(keyId, expiresAt) {
+      if (index.failNextConfirm) {
+        index.failNextConfirm = false;
+        throw new Error('registry unavailable');
+      }
+      const prior = held.get(keyId);
+      held.set(keyId, {
+        keyId,
+        createdAt: prior?.createdAt ?? new Date(clock()).toISOString(),
+        pending: false,
+        ...((expiresAt ?? prior?.expiresAt)
+          ? { expiresAt: expiresAt ?? prior?.expiresAt }
+          : {}),
+      });
+    },
     async release(keyId) {
+      if (index.failNextRelease) {
+        index.failNextRelease = false;
+        throw new Error('registry unavailable');
+      }
       held.delete(keyId);
     },
-    async ids() {
+    async entries() {
       prune();
-      return [...held.keys()];
+      return [...held.values()];
     },
     held: () => {
       prune();
       return [...held.keys()];
     },
   };
+  return index;
 }
 
 const octocat: SessionUser = {
@@ -230,7 +281,11 @@ describe('api-keys store (pure, in-memory KV)', () => {
     const tampered = token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A');
     expect(await resolveApiKey(kv, tampered, NOW)).toBeNull();
     expect(
-      await resolveApiKey(kv, 'tdk_zzzzzzzzzz_' + 'x'.repeat(43), NOW),
+      await resolveApiKey(
+        kv,
+        'tdk_zzzzzzzzzzzzzzzzzzzz_' + 'x'.repeat(43),
+        NOW,
+      ),
     ).toBeNull();
     expect(await resolveApiKey(kv, 'not-a-key', NOW)).toBeNull();
   });
@@ -335,9 +390,9 @@ describe('api-keys store (pure, in-memory KV)', () => {
     const index = memoryIndex();
     // Another request has reserved a slot and not yet written its record —
     // the exact window a concurrent create is in.
-    await index.reserve('inflight000', MAX_API_KEYS_PER_USER);
+    await index.reserve('inflight000inflight0', MAX_API_KEYS_PER_USER);
     expect(await listApiKeys(kv, index, '42', NOW)).toEqual([]);
-    expect(index.held()).toEqual(['inflight000']);
+    expect(index.held()).toEqual(['inflight000inflight0']);
     await createApiKey(kv, index, octocat, { label: 'a' }, NOW);
     expect(index.held()).toHaveLength(2);
   });
@@ -369,6 +424,111 @@ describe('api-keys store (pure, in-memory KV)', () => {
     expect(await listApiKeys(kv, index, '42', now)).toMatchObject([
       { keyId: key.keyId },
     ]);
+  });
+
+  it('a failed record write whose release also fails cannot strand the slot: the pending reservation expires', async () => {
+    let now = NOW;
+    const kv = memoryKv();
+    const index = memoryIndex(() => now);
+    kv.put = async () => {
+      throw new Error('kv write failed');
+    };
+    index.failNextRelease = true;
+    await expect(
+      createApiKey(kv, index, octocat, { label: 'a' }, NOW),
+    ).rejects.toThrow('kv write failed');
+    expect(index.held()).toHaveLength(1); // the ghost, for now
+    expect((await index.entries())[0]?.pending).toBe(true);
+    now = NOW + API_KEY_PENDING_TTL_MS + 1;
+    expect(index.held()).toEqual([]); // gone on its own
+  });
+
+  it('a failed confirm removes the record and the slot; the create fails cleanly', async () => {
+    const kv = memoryKv();
+    const index = memoryIndex();
+    index.failNextConfirm = true;
+    await expect(
+      createApiKey(kv, index, octocat, { label: 'a' }, NOW),
+    ).rejects.toThrow('registry unavailable');
+    expect([...kv.dump().keys()]).toEqual([]);
+    expect(index.held()).toEqual([]);
+    // A record that survived a failed confirm is still listed and re-confirmed.
+    index.failNextConfirm = true;
+    const originalDelete = kv.delete.bind(kv);
+    kv.delete = async () => {
+      throw new Error('kv delete failed');
+    };
+    await expect(
+      createApiKey(kv, index, octocat, { label: 'b' }, NOW),
+    ).rejects.toThrow('registry unavailable');
+    kv.delete = originalDelete;
+    expect(index.held()).toEqual([]); // release worked, record survived
+    const survivor = [...kv.dump().keys()].find((k) => k.startsWith('apikey:'));
+    expect(survivor).toBeDefined();
+    // The owner can still revoke it (record present, owner matches).
+    expect(
+      await revokeApiKey(kv, index, '42', survivor!.slice('apikey:'.length)),
+    ).toBe('revoked');
+    expect(kv.dump().has(survivor!)).toBe(false);
+  });
+
+  it('revoke is retry-safe: a failed release is finished by the next attempt', async () => {
+    const kv = memoryKv();
+    const index = memoryIndex();
+    const { token, key } = await createApiKey(
+      kv,
+      index,
+      octocat,
+      { label: 'a' },
+      NOW,
+    );
+    index.failNextRelease = true;
+    await expect(revokeApiKey(kv, index, '42', key.keyId)).rejects.toThrow(
+      'registry unavailable',
+    );
+    // Credential gone, slot still held — the ghost state.
+    expect(await resolveApiKey(kv, token, NOW)).toBeNull();
+    expect(index.held()).toEqual([key.keyId]);
+    // Second attempt: record missing, but the owner's index holds it → revoked.
+    expect(await revokeApiKey(kv, index, '42', key.keyId)).toBe('revoked');
+    expect(index.held()).toEqual([]);
+    // A third attempt, and a foreign owner, both get not_found.
+    expect(await revokeApiKey(kv, index, '42', key.keyId)).toBe('not_found');
+    expect(await revokeApiKey(kv, memoryIndex(), '99', key.keyId)).toBe(
+      'not_found',
+    );
+  });
+
+  it('orphaned confirmed slots are reported, and reclaimed at the cap after the grace period', async () => {
+    let now = NOW;
+    const kv = memoryKv();
+    const index = memoryIndex(() => now);
+    for (let i = 0; i < MAX_API_KEYS_PER_USER; i++)
+      await createApiKey(kv, index, octocat, { label: `k${i}` }, now);
+    // Simulate a half-done revoke on one key: record gone, slot held.
+    const victim = index.held()[3]!;
+    await kv.delete(`apikey:${victim}`);
+    expect(await orphanedKeyIds(kv, index, now)).toEqual([]); // too fresh to judge
+    await expect(
+      createApiKey(kv, index, octocat, { label: 'full' }, now),
+    ).rejects.toMatchObject({ code: 'too_many_keys' });
+    now = NOW + ORPHAN_GRACE_MS + 1;
+    expect(await orphanedKeyIds(kv, index, now)).toEqual([victim]);
+    // At the cap, the orphan is reclaimed once and the create succeeds.
+    const { key } = await createApiKey(
+      kv,
+      index,
+      octocat,
+      { label: 'after' },
+      now,
+    );
+    expect(index.held()).not.toContain(victim);
+    expect(index.held()).toContain(key.keyId);
+    expect(index.held()).toHaveLength(MAX_API_KEYS_PER_USER);
+    expect(await reconcileOrphans(kv, index, now)).toEqual([]);
+    // A pending (in-flight) entry is never an orphan, however old the clock says.
+    await index.reserve('pendingpendingpendin', MAX_API_KEYS_PER_USER + 1);
+    expect(await orphanedKeyIds(kv, index, now + ORPHAN_GRACE_MS)).toEqual([]);
   });
 
   it('a failed record write releases the reserved slot', async () => {
@@ -493,7 +653,7 @@ describe('api-keys store (pure, in-memory KV)', () => {
       { label: 'a' },
       NOW,
     );
-    const bogus = 'tdk_zzzzzzzzzz_' + 'x'.repeat(43);
+    const bogus = 'tdk_zzzzzzzzzzzzzzzzzzzz_' + 'x'.repeat(43);
     for (let i = 0; i < API_KEY_AUTH_FAILURE_LIMIT.limit; i++) {
       expect(
         await resolveApiKeyToken({
@@ -661,7 +821,7 @@ describe('/api/keys, /keys and the provider hook (Miniflare, API_KEYS_ENABLED)',
       token: string;
       key: { keyId: string; prefix: string; scopes: string[] };
     };
-    expect(token).toMatch(/^tdk_[a-z0-9]{10}_[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^tdk_[a-z0-9]{20}_[A-Za-z0-9_-]{43}$/);
     expect(key.scopes).toEqual(['author', 'share']);
 
     const listed = await handle.fetch('/api/keys', { headers: { cookie } });
@@ -715,7 +875,7 @@ describe('/api/keys, /keys and the provider hook (Miniflare, API_KEYS_ENABLED)',
     expect(after.status).toBe(401);
     await expect(
       handle.fetch('/api/keys', { headers: { cookie } }).then((r) => r.json()),
-    ).resolves.toEqual({ keys: [] });
+    ).resolves.toEqual({ keys: [], orphaned: [] });
   });
 
   it('rejects malformed bodies and unknown scopes with 400', async () => {
@@ -840,7 +1000,7 @@ describe('OAuthProvider → resolveExternalToken → API handler (Miniflare)', (
     const tampered = token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A');
     for (const authorization of [
       undefined,
-      'Bearer tdk_zzzzzzzzzz_' + 'x'.repeat(43),
+      'Bearer tdk_zzzzzzzzzzzzzzzzzzzz_' + 'x'.repeat(43),
       `Bearer ${tampered}`,
       'Bearer 42:grant:secret',
     ]) {

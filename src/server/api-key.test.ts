@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   API_KEY_SCOPES,
   apiKeyUsageKey,
+  KEY_ID_LENGTH,
   apiKeyStorageKey,
   hashSecret,
   isApiKeyExpired,
@@ -17,9 +18,11 @@ import {
 } from './api-key.js';
 
 describe('api-key primitives (proposal 0005)', () => {
-  it('mints tdk_<10 id>_<43 secret> tokens that parse back and hash to the stored value', async () => {
+  it('mints tdk_<20 id>_<43 secret> tokens that parse back and hash to the stored value', async () => {
     const minted = await mintApiKey();
-    expect(minted.token).toMatch(/^tdk_[a-z0-9]{10}_[A-Za-z0-9_-]{43}$/);
+    expect(minted.token).toMatch(/^tdk_[a-z0-9]{20}_[A-Za-z0-9_-]{43}$/);
+    // Global-uniqueness budget: records are keyed by id in shared KV.
+    expect(KEY_ID_LENGTH * Math.log2(36)).toBeGreaterThanOrEqual(96);
     const parsed = parseApiKey(minted.token);
     expect(parsed?.keyId).toBe(minted.keyId);
     expect(await hashSecret(parsed!.secret)).toBe(minted.secretHash);
@@ -43,11 +46,22 @@ describe('api-key primitives (proposal 0005)', () => {
   });
 
   it('rejects anything that is not exactly the format', () => {
-    expect(parseApiKey('tdk_abcdefghij_' + 'x'.repeat(43))).not.toBeNull();
-    expect(parseApiKey('tdk_ABCDEFGHIJ_' + 'x'.repeat(43))).toBeNull(); // id must be lowercase
-    expect(parseApiKey('tdk_abcdefghij_' + 'x'.repeat(42))).toBeNull();
-    expect(parseApiKey('tdk_abcdefghij_' + 'x'.repeat(44))).toBeNull();
-    expect(parseApiKey('tdk_abcdefghij_' + 'x'.repeat(42) + '=')).toBeNull();
+    expect(
+      parseApiKey('tdk_abcdefghijklmnopqrst_' + 'x'.repeat(43)),
+    ).not.toBeNull();
+    expect(
+      parseApiKey('tdk_ABCDEFGHIJKLMNOPQRST_' + 'x'.repeat(43)),
+    ).toBeNull(); // id must be lowercase
+    expect(parseApiKey('tdk_abcdefghij_' + 'x'.repeat(43))).toBeNull(); // the pre-release 10-char id
+    expect(
+      parseApiKey('tdk_abcdefghijklmnopqrst_' + 'x'.repeat(42)),
+    ).toBeNull();
+    expect(
+      parseApiKey('tdk_abcdefghijklmnopqrst_' + 'x'.repeat(44)),
+    ).toBeNull();
+    expect(
+      parseApiKey('tdk_abcdefghijklmnopqrst_' + 'x'.repeat(42) + '='),
+    ).toBeNull();
     expect(parseApiKey('user:grant:secret')).toBeNull(); // the provider's own token shape
     expect(parseApiKey('')).toBeNull();
     expect(looksLikeApiKey('tdk_')).toBe(true);

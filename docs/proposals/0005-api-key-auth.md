@@ -72,12 +72,16 @@ depends on a bridge the deployment does not control.
 ```
 tdk_<keyId>_<secret>
      │       └─ 32 random bytes, base64url (43 chars); only SHA-256(secret) is stored
-     └───────── 10 lowercase alphanumerics; public handle for storage, listing, revoke
+     └───────── 20 lowercase alphanumerics (~103 bits); public handle for storage, listing, revoke
 ```
 
 The `tdk_` prefix makes a key recognizable in secret scanning and in a
 client's contract test (NetClaw asserts no `tdk_` literal in tracked files),
-and can never collide with the provider's colon-delimited tokens.
+and can never collide with the provider's colon-delimited tokens. The id is
+wide (~103 bits) because records are keyed globally as `apikey:<keyId>` in
+shared KV while uniqueness is only reserved inside each owner's registry DO:
+the id itself must make a cross-owner collision impossible in practice, so no
+cross-user coordination is needed.
 `src/server/api-key.ts` holds the primitives (mint, parse, hash,
 constant-time compare, scope/label/expiry validation) and is pure Web Crypto,
 so Node 22 tests and the Worker run the same code.
@@ -104,14 +108,31 @@ owner's Durable Object where writes must serialize:
 | `OAUTH_KV`                            | `apikey:<keyId>`              | `{ keyId, uid, login, name?, secretHash, scopes, label, createdAt, expiresAt? }` — **never written by the auth path** | matches `expiresAt` (+60 s) when set |
 | `OAUTH_KV`                            | `apikeyuse:<keyId>`           | ISO `lastUsedAt` telemetry, written at most hourly, best-effort                                                       | none                                 |
 | `OAUTH_KV`                            | `rl:apikeyfail:<ip>:<window>` | failed-authentication counter (best-effort, see below)                                                                | window + 1 s                         |
-| `TopologyRegistry` DO `user-id:<uid>` | `apikey:<keyId>`              | createdAt — the owner's index and the 10-key cap                                                                      | n/a                                  |
+| `TopologyRegistry` DO `user-id:<uid>` | `apikey:<keyId>`              | `{ createdAt, expiresAt?, pending }` — the owner's index and the 10-key cap                                           | pending: 2 min; else n/a             |
 
 The Durable Object runs one request at a time, so `reserve → write record →
-(on failure) release` cannot interleave with another create: the cap is
-strict and the index never loses an entry to a lost read-modify-write.
-Revoke deletes the credential first (validity), then releases the slot
-(visibility). Because authentication never rewrites the credential record, a
-revoke landing between a resolver's read and its return cannot be undone.
+confirm` cannot interleave with another create: the cap is strict and the
+index never loses an entry to a lost read-modify-write. Slot lifecycle:
+
+- `reserve` creates a **pending** slot; the KV record is written; `confirm`
+  makes it durable. A pending slot that is never confirmed (record write
+  failed _and_ the release failed) is dropped by the DO after two minutes, so
+  no failure sequence can strand a slot forever. A failed confirm deletes the
+  record and releases the slot (best-effort); a record that survives is still
+  listed and re-confirmed by the next listing.
+- Revoke deletes the credential first (validity), then releases the slot
+  (visibility). It is retry-safe: when the record is already gone but the
+  owner's index still holds the slot, the retry releases it and answers
+  `revoked`.
+- A **confirmed** slot whose record has been missing for more than ten
+  minutes (far beyond KV's ~60 s propagation) is an orphan: `GET /api/keys`
+  reports it under `orphaned`, `DELETE /api/keys/:keyId` frees it, and a
+  create that hits the cap reclaims all orphans once before failing. Nothing
+  else releases a slot on the strength of a KV read — a record is
+  legitimately absent while a create is in flight.
+
+Because authentication never rewrites the credential record, a revoke landing
+between a resolver's read and its return cannot be undone.
 Credential-class KV data lives beside the provider's own grants and tokens,
 and `scripts/check-wrangler-env.mjs` already guarantees staging and
 production never share this namespace. No new binding, no migration: the
@@ -207,7 +228,7 @@ already on `props`.
 - **Blast radius equals the owner's.** A leaked key is the owner's drafts,
   workspaces (if scoped), and share links (if scoped), until revoked. Scopes
   and expiry bound it; `lastUsedAt` makes stale keys visible.
-- **Online guessing.** 10 + 43 characters of alphabet-36/64 randomness plus a
+- **Online guessing.** 20 + 43 characters of alphabet-36/64 randomness plus a
   best-effort per-IP failure budget; the keyId lookup means a wrong secret
   costs one KV read and one hash, no enumeration signal beyond 401.
 - **Authentication is read-only.** A successful resolve writes nothing to the
@@ -216,6 +237,11 @@ already on `props`.
 - **Create/revoke serialize.** The owner index and the cap live in the
   owner's Durable Object; concurrent mints cannot exceed ten or leave a
   credential that is valid but invisible on `/keys`.
+- **No permanent ghost slot.** Reservations are pending until confirmed and
+  expire on their own; revoke is retry-safe; confirmed orphans are reported
+  and reclaimed after a grace period (see Storage).
+- **No cross-owner id collision.** ~103-bit key ids; a collision on the
+  global `apikey:<keyId>` record is not a realistic event.
 - **Revocation latency.** KV is eventually consistent; a revoked key can work
   for up to ~60 s at other edge locations. Documented in the user guide. If
   that ever matters, move the record store to a global Durable Object.
@@ -239,8 +265,10 @@ deployment regardless of the flag.
 - [x] `npm run typecheck`, `npm test`, `npm run lint`, `npm run build`,
       `node scripts/check-wrangler-env.mjs` green.
 - [x] Unit: primitives (`src/server/api-key.test.ts`); store, resolver,
-      read-only auth path + revoke race, concurrent cap, failure budget,
-      flag, scope gate (`src/testing/api-keys.test.ts` half 1).
+      read-only auth path + revoke race, concurrent cap, pending-slot expiry
+      after a failed write + failed release, failed confirm, retry-safe
+      revoke, orphan report/reclaim, failure budget, flag, scope gate
+      (`src/testing/api-keys.test.ts` half 1).
 - [x] Miniflare: cookie gating, mint → list → resolve → foreign revoke 404 →
       owner revoke → 401, concurrent mints against the real registry DO,
       page + script, flag-off 503 contract (`src/testing/api-keys.test.ts`

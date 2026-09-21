@@ -9,8 +9,13 @@
  *              `git grep`, or a client's contract test, and so the OAuth
  *              provider's own `<userId>:<grantId>:<secret>` tokens can never be
  *              mistaken for one (see `resolveExternalToken` in worker/index.ts).
- *   - keyId    10 lowercase alphanumerics — the public, loggable handle used
- *              for storage, listing, and revocation. Not secret.
+ *   - keyId    20 lowercase alphanumerics (~103 bits) — the public, loggable
+ *              handle used for storage, listing, and revocation. Not secret,
+ *              but wide enough that two owners can never mint the same id:
+ *              records are keyed globally as `apikey:<keyId>` in shared KV
+ *              while uniqueness is only reserved inside each owner's registry
+ *              DO, so the id itself must make a cross-owner collision
+ *              impossible in practice.
  *   - secret   32 random bytes, base64url (43 chars). Only its SHA-256 is ever
  *              stored; the plaintext token is shown exactly once at mint time.
  *
@@ -18,10 +23,10 @@
  */
 
 export const API_KEY_PREFIX = 'tdk_';
-export const KEY_ID_LENGTH = 10;
+export const KEY_ID_LENGTH = 20;
 const KEY_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const SECRET_BYTES = 32;
-const API_KEY_RE = /^tdk_([a-z0-9]{10})_([A-Za-z0-9_-]{43})$/;
+const API_KEY_RE = /^tdk_([a-z0-9]{20})_([A-Za-z0-9_-]{43})$/;
 
 /**
  * Scopes a key may carry. `author` is implicit on every key (private-draft
@@ -39,6 +44,12 @@ export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
 /** Hard cap per user — keys are per-agent credentials, not per-request. */
 export const MAX_API_KEYS_PER_USER = 10;
+/**
+ * A slot reserved in the owner's index but never confirmed (the record write
+ * failed AND the release failed) is dropped by the index after this long, so
+ * no failure sequence can strand a slot forever (worker/registry.ts).
+ */
+export const API_KEY_PENDING_TTL_MS = 2 * 60_000;
 export const MAX_API_KEY_LABEL = 64;
 /** Expiry choices offered by the UI (days). `null` = no expiry (revocable). */
 export const API_KEY_EXPIRY_DAYS = [30, 90, 365] as const;
@@ -102,7 +113,7 @@ export function looksLikeApiKey(token: string): boolean {
   return token.startsWith(API_KEY_PREFIX);
 }
 
-/** Strict parse; anything not exactly `tdk_<10>_<43>` is rejected. */
+/** Strict parse; anything not exactly `tdk_<20>_<43>` is rejected. */
 export function parseApiKey(
   token: string,
 ): { keyId: string; secret: string } | null {
