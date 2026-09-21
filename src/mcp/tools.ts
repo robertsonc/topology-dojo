@@ -1128,11 +1128,17 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe('Element kind to upsert.'),
         source: z
           .object({
-            system: z.string().describe('External system, e.g. "edgeconnect".'),
+            // Non-empty, like the workspace twin `element.upsert`: an empty
+            // component would make every such element "the same source".
+            system: z
+              .string()
+              .min(1)
+              .describe('External system, e.g. "edgeconnect".'),
             kind: z
               .string()
+              .min(1)
               .describe('Object kind there, e.g. "appliance" | "tunnel".'),
-            id: z.string().describe('The object’s id in that system.'),
+            id: z.string().min(1).describe('The object’s id in that system.'),
             fetchedAt: z
               .string()
               .optional()
@@ -1436,7 +1442,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     description:
       'Apply a BATCH of authoring operations to a topology in ONE call — strongly preferred over per-element tool calls when adding or editing more than a couple of elements. Each operation is {op, …args}: op is one of ' +
       BATCH_OPS.join(', ') +
-      ' and the remaining keys are that tool’s arguments (topologyId and pageIndex are inherited from this call; a per-op pageIndex overrides). Operations apply in order, so later ops can reference ids created earlier. Atomic: if any operation fails the document is left unchanged and the failing index is reported. Returns compact per-op results (ids, plus created:true|false for upsert_by_source), not full elements.',
+      ' and the remaining keys are that tool’s arguments (topologyId and pageIndex are inherited from this call; a per-op pageIndex overrides). Operations apply in order, so later ops can reference ids created earlier. Atomic: if any operation fails the document is left unchanged and the failing index is reported. Returns compact per-op results (ids, plus created:true|false and changed:true|false for upsert_by_source — changed is false when the op was a logical no-op apart from source.fetchedAt, so created / updated / unchanged can be counted from the results), not full elements.',
     inputShape: {
       topologyId,
       pageIndex,

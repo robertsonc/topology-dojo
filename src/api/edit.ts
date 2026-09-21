@@ -237,6 +237,10 @@ export function upsertBySource(
   source: SourceRef,
   props: Record<string, unknown> = {},
 ): UpsertResult {
+  // Same rule as the workspace twin `element.upsert`: every identity
+  // component must be non-empty, or unrelated elements would converge.
+  if (!source.system || !source.kind || !source.id)
+    throw new Error('upsert source needs non-empty system, kind and id');
   const collection = {
     node: page.nodes,
     link: page.links,

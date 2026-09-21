@@ -742,6 +742,35 @@ describe('MCP tools', () => {
     ).toThrow(/out of range/);
   });
 
+  it('upsert_by_source rejects an empty source component, alone and in a batch', () => {
+    const { id } = call('create_topology', { title: 'Empty source' }) as {
+      id: string;
+    };
+    expect(() =>
+      call('upsert_by_source', {
+        topologyId: id,
+        pageIndex: 0,
+        kind: 'node',
+        source: { system: 'netbox', kind: 'device', id: '' },
+        set: { type: 'router', x: 1, y: 1 },
+      }),
+    ).toThrow(/source.id/);
+    expect(() =>
+      call('edit_topology', {
+        topologyId: id,
+        pageIndex: 0,
+        operations: [
+          {
+            op: 'upsert_by_source',
+            kind: 'node',
+            source: { system: '', kind: 'device', id: 'x' },
+            set: { type: 'router', x: 1, y: 1 },
+          },
+        ],
+      }),
+    ).toThrow(/operations\[0\] \(upsert_by_source\): source\.system/);
+  });
+
   it('edit_topology reports created:true|false for upsert_by_source ops', () => {
     const { id } = call('create_topology', { title: 'Counts' }) as {
       id: string;
