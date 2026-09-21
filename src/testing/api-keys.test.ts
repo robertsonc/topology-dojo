@@ -39,6 +39,7 @@ import {
 } from '../../worker/api-keys.js';
 import {
   API_KEY_PENDING_TTL_MS,
+  API_KEY_TOMBSTONE_TTL_MS,
   MAX_API_KEYS_PER_USER,
   parseApiKey,
 } from '../server/api-key.js';
@@ -116,6 +117,16 @@ type MemoryIndex = ApiKeyIndex & {
  */
 function memoryIndex(clock: () => number = Date.now): MemoryIndex {
   const held = new Map<string, ApiKeyIndexEntry>();
+  const tombs = new Map<string, number>(); // keyId → written at
+  const tombstoned = (keyId: string) => {
+    const at = tombs.get(keyId);
+    if (at === undefined) return false;
+    if (at + API_KEY_TOMBSTONE_TTL_MS <= clock()) {
+      tombs.delete(keyId);
+      return false;
+    }
+    return true;
+  };
   const prune = () => {
     for (const [id, e] of held) {
       if (e.expiresAt && Date.parse(e.expiresAt) <= clock()) held.delete(id);
@@ -131,6 +142,7 @@ function memoryIndex(clock: () => number = Date.now): MemoryIndex {
     failNextConfirm: false,
     async reserve(keyId, max, expiresAt) {
       prune();
+      if (tombstoned(keyId)) return false;
       if (held.has(keyId)) return true;
       if (held.size >= max) return false;
       held.set(keyId, {
@@ -147,6 +159,7 @@ function memoryIndex(clock: () => number = Date.now): MemoryIndex {
         throw new Error('registry unavailable');
       }
       prune();
+      if (tombstoned(keyId)) return false;
       const prior = held.get(keyId);
       if (!prior && held.size >= max) return false;
       held.set(keyId, {
@@ -169,6 +182,13 @@ function memoryIndex(clock: () => number = Date.now): MemoryIndex {
     async entries() {
       prune();
       return [...held.values()];
+    },
+    async tombstone(keyId) {
+      prune();
+      if (tombstoned(keyId)) return true;
+      if (held.has(keyId)) return false;
+      tombs.set(keyId, clock());
+      return true;
     },
     held: () => {
       prune();
@@ -550,6 +570,100 @@ describe('api-keys store (pure, in-memory KV)', () => {
     expect(
       await reconcileOrphans(kv, index, '42', NOW + API_KEY_PENDING_TTL_MS + 1),
     ).toEqual({ released: [], purged: ['youngyoungyoungyoung'] });
+  });
+
+  /**
+   * Start a create and park it right after its owner marker is written, inside
+   * the record write (`kv.put` of `apikey:<id>`). Returns the parked promise
+   * (resolving to the outcome code), a resume() and the reserved key id.
+   */
+  async function parkCreate(
+    kv: MemoryKv,
+    index: MemoryIndex,
+    now: () => number,
+    label = 'slow',
+  ) {
+    let releaseStall: (() => void) | null = null;
+    let stallReached: (() => void) | null = null;
+    const reached = new Promise<void>((resolve) => {
+      stallReached = resolve;
+    });
+    const originalPut = kv.put.bind(kv);
+    let stalled = false;
+    kv.put = async (key, value, options) => {
+      if (!stalled && key.startsWith('apikey:')) {
+        stalled = true;
+        await originalPut(key, value, options); // the record IS written…
+        stallReached!();
+        await new Promise<void>((resolve) => {
+          releaseStall = resolve; // …but the create has not confirmed yet
+        });
+        return;
+      }
+      return originalPut(key, value, options);
+    };
+    const outcome = createApiKey(kv, index, octocat, { label }, now()).then(
+      () => 'ok' as const,
+      (e: unknown) => (e as ApiKeyRequestError).code ?? 'error',
+    );
+    await reached;
+    kv.put = originalPut;
+    const keyId = index.held()[index.held().length - 1]!;
+    return { outcome, resume: () => releaseStall!(), keyId };
+  }
+
+  it('reconciliation cannot purge the record of a create that then confirms: the tombstone is the decision', async () => {
+    let now = NOW;
+    const kv = memoryKv();
+    const index = memoryIndex(() => now);
+    const parked = await parkCreate(kv, index, () => now);
+    expect(kv.dump().has(`apikey:${parked.keyId}`)).toBe(true);
+    // The create outlives its pending TTL: the slot is pruned, the record is old.
+    now = NOW + API_KEY_PENDING_TTL_MS + 1;
+    expect(index.held()).toEqual([]);
+    // Reconciliation runs and takes its anchored-id snapshot; the create then
+    // confirms BEFORE reconciliation reaches the purge (the reviewer's tighter
+    // variant): the marker listing is the hook.
+    const originalList = kv.list.bind(kv);
+    kv.list = async (opts) => {
+      kv.list = originalList;
+      parked.resume();
+      expect(await parked.outcome).toBe('ok'); // confirm re-acquired capacity
+      return originalList(opts);
+    };
+    const result = await reconcileOrphans(kv, index, '42', now);
+    // The tombstone claim was refused (the id holds a live slot) → nothing purged.
+    expect(result).toEqual({ released: [], purged: [] });
+    expect(kv.dump().has(`apikey:${parked.keyId}`)).toBe(true);
+    expect(index.held()).toEqual([parked.keyId]);
+    expect(await listApiKeys(kv, index, '42', now)).toMatchObject([
+      { keyId: parked.keyId },
+    ]);
+  });
+
+  it('a create that resumes after reconciliation purged its record fails cleanly instead of returning a dead token', async () => {
+    let now = NOW;
+    const kv = memoryKv();
+    const index = memoryIndex(() => now);
+    const parked = await parkCreate(kv, index, () => now);
+    now = NOW + API_KEY_PENDING_TTL_MS + 1;
+    // Reconciliation wins the tombstone and purges the unanchored record.
+    expect(await reconcileOrphans(kv, index, '42', now)).toEqual({
+      released: [],
+      purged: [parked.keyId],
+    });
+    expect(kv.dump().has(`apikey:${parked.keyId}`)).toBe(false);
+    // The create resumes: confirm is refused by the tombstone → 409, not 201.
+    parked.resume();
+    expect(await parked.outcome).toBe('too_many_keys');
+    expect(index.held()).toEqual([]);
+    expect([...kv.dump().keys()]).toEqual([]);
+    // The tombstone also refuses a reserve of that id, and expires later.
+    expect(await index.reserve(parked.keyId, MAX_API_KEYS_PER_USER)).toBe(
+      false,
+    );
+    now = NOW + API_KEY_TOMBSTONE_TTL_MS + API_KEY_PENDING_TTL_MS + 2;
+    expect(await index.reserve(parked.keyId, MAX_API_KEYS_PER_USER)).toBe(true);
   });
 
   it('confirm re-acquires capacity: a stalled create whose reservation was pruned cannot become an 11th key', async () => {

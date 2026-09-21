@@ -107,6 +107,7 @@ owner's Durable Object where writes must serialize:
 | ------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | `OAUTH_KV`                            | `apikey:<keyId>`              | `{ keyId, uid, login, name?, secretHash, scopes, label, createdAt, expiresAt? }` — **never written by the auth path**                                                                          | matches `expiresAt` (+60 s) when set |
 | `OAUTH_KV`                            | `apikeyowner:<uid>:<keyId>`   | owner marker, one key per credential (no read-modify-write), written before the record and deleted after it — lets reconciliation find a record that lost its index slot without a global scan | none                                 |
+| `TopologyRegistry` DO `user-id:<uid>` | `apikeytomb:<keyId>`          | tombstone (ISO time, expires after an hour): reconciliation owns this id; `confirm`/`reserve` of it are refused                                                                                | 1 h                                  |
 | `OAUTH_KV`                            | `apikeyuse:<keyId>`           | ISO `lastUsedAt` telemetry, written at most hourly, best-effort                                                                                                                                | none                                 |
 | `OAUTH_KV`                            | `rl:apikeyfail:<ip>:<window>` | failed-authentication counter (best-effort, see below)                                                                                                                                         | window + 1 s                         |
 | `TopologyRegistry` DO `user-id:<uid>` | `apikey:<keyId>`              | `{ createdAt, expiresAt?, pending }` — the owner's index and the 10-key cap                                                                                                                    | pending: 2 min; else n/a             |
@@ -129,12 +130,17 @@ index never loses an entry to a lost read-modify-write. Slot lifecycle:
   the next listing confirms it under the cap, or reconciliation purges it.
 - Reconciliation (`reconcileOrphans`, idempotent; run when the owner opens
   `/keys` and when a create hits the cap): a confirmed slot whose record has
-  been missing for more than ten minutes is released; a record found through
-  the owner marker that no slot anchors and that is older than the pending
-  TTL is garbage (its create never returned a token) and is deleted along
-  with its marker; a marker with neither record nor slot is deleted. A record
-  younger than the pending TTL is left alone: its create may still be between
-  the record write and the confirm.
+  been missing for more than ten minutes is released. A marker that no slot
+  anchors, older than the pending TTL (as is its record, if any), is a
+  candidate for purge — but the decision is **atomic in the DO**: reconciliation
+  asks for a tombstone on the id, which the DO refuses if the id holds a live
+  slot (a confirm won meanwhile → the record is kept) and otherwise writes,
+  after which every later `confirm`/`reserve` of that id is refused. Only then
+  are the record, usage and marker deleted. A create that raced past its
+  pending TTL therefore ends in a clean 409 with its record discarded, never
+  a 201 whose record reconciliation removed. Anything younger than the
+  pending TTL is left alone: its create may still be between the record
+  write and the confirm.
 - Revoke deletes the credential first (validity), then releases the slot
   (visibility). It is retry-safe: when the record is already gone but the
   owner's index still holds the slot, the retry releases it and answers
@@ -250,10 +256,11 @@ already on `props`.
 - **Create/revoke serialize.** The owner index and the cap live in the
   owner's Durable Object; concurrent mints cannot exceed ten or leave a
   credential that is valid but invisible on `/keys`.
-- **No permanent ghost slot, no unanchored credential.** Reservations are
-  pending until confirmed under the cap and expire on their own; revoke is
-  retry-safe; a record is only ever un-anchored by a failed delete, and the
-  owner marker lets reconciliation find and purge it (see Storage).
+- **No permanent ghost slot, no unanchored credential, no dead token.**
+  Reservations are pending until confirmed under the cap and expire on their
+  own; revoke is retry-safe; a record is only ever un-anchored by a failed
+  delete, the owner marker lets reconciliation find it, and a DO-arbitrated
+  tombstone makes "purge" and "confirm" mutually exclusive (see Storage).
 - **No cross-owner id collision.** ~103-bit key ids; a collision on the
   global `apikey:<keyId>` record is not a realistic event.
 - **Revocation latency.** KV is eventually consistent; a revoked key can work
@@ -283,8 +290,10 @@ deployment regardless of the flag.
       after a failed write + failed release, failed confirm with and without
       a failed delete, the stalled-create/pruned-reservation cap race,
       unanchored-record purge via the owner marker (never before the pending
-      TTL), retry-safe revoke, orphan report/reclaim, failure budget, flag,
-      scope gate (`src/testing/api-keys.test.ts` half 1).
+      TTL), the purge-vs-confirm race both ways (confirm wins → record kept;
+      purge wins → the create answers 409, never a dead token), retry-safe
+      revoke, orphan report/reclaim, failure budget, flag, scope gate
+      (`src/testing/api-keys.test.ts` half 1).
 - [x] Miniflare: cookie gating, mint → list → resolve → foreign revoke 404 →
       owner revoke → 401, concurrent mints against the real registry DO,
       page + script, flag-off 503 contract (`src/testing/api-keys.test.ts`

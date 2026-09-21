@@ -107,6 +107,12 @@ export interface ApiKeyIndex {
   release(keyId: string): Promise<void>;
   /** Live entries (confirmed and still-pending), oldest first. Never consults KV. */
   entries(): Promise<ApiKeyIndexEntry[]>;
+  /**
+   * Reconciliation's atomic claim on an id before purging its record: false
+   * when the id holds a live slot (keep the record); true when a tombstone is
+   * now in place, after which confirm/reserve of that id are refused.
+   */
+  tombstone(keyId: string): Promise<boolean>;
 }
 
 export type ApiKeyIndexFactory = (uid: string) => ApiKeyIndex;
@@ -125,6 +131,7 @@ export interface ApiKeyIndexStub {
   ): Promise<boolean>;
   apiKeyRelease(keyId: string): Promise<void>;
   apiKeyEntries(): Promise<ApiKeyIndexEntry[]>;
+  apiKeyTombstone(keyId: string): Promise<boolean>;
 }
 export interface ApiKeyIndexNamespace<Id = unknown> {
   idFromName(name: string): Id;
@@ -144,6 +151,7 @@ export function registryApiKeyIndex<Id>(
       stub.apiKeyConfirm(keyId, max, expiresAt),
     release: (keyId) => stub.apiKeyRelease(keyId),
     entries: () => stub.apiKeyEntries(),
+    tombstone: (keyId) => stub.apiKeyTombstone(keyId),
   };
 }
 
@@ -303,6 +311,21 @@ async function ownerMarkerKeyIds(kv: ApiKeyKv, uid: string): Promise<string[]> {
   return ids;
 }
 
+/** When the marker was written (its value), or the epoch if unreadable. */
+async function markerWrittenAt(
+  kv: ApiKeyKv,
+  uid: string,
+  keyId: string,
+): Promise<number> {
+  try {
+    const raw = await kv.get(apiKeyOwnerMarkerKey(uid, keyId));
+    const at = raw ? Date.parse(raw) : NaN;
+    return Number.isFinite(at) ? at : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * The owner's live keys. Never returns the hash. Read-only for slots: an id
  * whose KV record is missing (a create still in flight, or KV lagging at this
@@ -365,14 +388,18 @@ export interface Reconciliation {
  * The idempotent reconciliation path, safe to run any time:
  *
  * 1. index slot, no record for > ORPHAN_GRACE_MS → release the slot;
- * 2. owner marker, record present, NO index slot (any state), record older
- *    than API_KEY_PENDING_TTL_MS → the record is garbage (its create never
- *    returned a token: the confirm failed or found no capacity, and the
- *    record delete failed) → delete record, usage and marker;
- * 3. owner marker with neither record nor slot → delete the marker.
+ * 2. owner marker not anchored by any slot, marker (and record, if present)
+ *    older than API_KEY_PENDING_TTL_MS → ask the registry DO for a
+ *    **tombstone** on that id. The DO serializes this against `confirm`: if
+ *    the id has meanwhile acquired a live slot the claim is refused and the
+ *    record is kept; otherwise the tombstone is in place, no later confirm or
+ *    reserve of that id can succeed, and the record, usage and marker are
+ *    deleted. A create that raced past its pending TTL therefore ends in a
+ *    clean 409 with its record discarded — never a 201 whose record is gone.
  *
- * A record younger than the pending TTL is left alone: its create may still be
- * between the record write and the confirm.
+ * A marker or record younger than the pending TTL is left alone: its create
+ * may still be between the record write and the confirm. The anchored-id
+ * snapshot is only a cheap pre-filter; the tombstone is the decision.
  */
 export async function reconcileOrphans(
   kv: ApiKeyKv,
@@ -386,11 +413,18 @@ export async function reconcileOrphans(
   const purged: string[] = [];
   for (const keyId of await ownerMarkerKeyIds(kv, uid)) {
     if (anchored.has(keyId)) continue;
+    if (
+      (await markerWrittenAt(kv, uid, keyId)) + API_KEY_PENDING_TTL_MS >
+      nowMs
+    )
+      continue;
     const record = await readRecord(kv, keyId);
+    if (record && record.uid !== uid) continue; // never touch a foreign record
+    if (record && Date.parse(record.createdAt) + API_KEY_PENDING_TTL_MS > nowMs)
+      continue;
+    // The atomic decision: refused ⇒ a slot exists now (confirm won) ⇒ keep.
+    if (!(await index.tombstone(keyId))) continue;
     if (record) {
-      if (record.uid !== uid) continue; // never touch a foreign record
-      if (Date.parse(record.createdAt) + API_KEY_PENDING_TTL_MS > nowMs)
-        continue;
       await kv.delete(apiKeyStorageKey(keyId));
       await kv.delete(apiKeyUsageKey(keyId)).catch(() => undefined);
       purged.push(keyId);
@@ -418,10 +452,16 @@ async function discardCredential(
   index: ApiKeyIndex,
   uid: string,
   keyId: string,
+  nowMs: number,
 ): Promise<void> {
   try {
     await kv.delete(apiKeyStorageKey(keyId));
   } catch {
+    // Keep the record discoverable: make sure its marker exists (reconciliation
+    // may have removed it) so a later run can find and purge the record.
+    await kv
+      .put(apiKeyOwnerMarkerKey(uid, keyId), nowIso(nowMs))
+      .catch(() => undefined);
     return;
   }
   await kv.delete(apiKeyOwnerMarkerKey(uid, keyId)).catch(() => undefined);
@@ -497,7 +537,7 @@ export async function createApiKey(
     ...(expiresAt ? { expiresAt } : {}),
   };
   try {
-    await kv.put(apiKeyOwnerMarkerKey(user.uid, minted.keyId), '1');
+    await kv.put(apiKeyOwnerMarkerKey(user.uid, minted.keyId), nowIso(nowMs));
     await putRecord(kv, record, nowMs);
   } catch (err) {
     await kv
@@ -514,11 +554,11 @@ export async function createApiKey(
       expiresAt,
     );
   } catch (err) {
-    await discardCredential(kv, index, user.uid, minted.keyId);
+    await discardCredential(kv, index, user.uid, minted.keyId, nowMs);
     throw err;
   }
   if (!confirmed) {
-    await discardCredential(kv, index, user.uid, minted.keyId);
+    await discardCredential(kv, index, user.uid, minted.keyId, nowMs);
     throw new ApiKeyRequestError('too_many_keys', 409);
   }
   return { token: minted.token, key: toPublic(record) };

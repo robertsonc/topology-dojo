@@ -10,7 +10,10 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import type { WorkerEnv } from './env.js';
-import { API_KEY_PENDING_TTL_MS } from '../src/server/api-key.js';
+import {
+  API_KEY_PENDING_TTL_MS,
+  API_KEY_TOMBSTONE_TTL_MS,
+} from '../src/server/api-key.js';
 import type { DocStorage } from '../src/mcp/persist-store.js';
 import {
   RATE_LIMITS,
@@ -28,6 +31,8 @@ const WORKSPACE_PREFIX = 'workspace:';
 const LEGACY_PREFIX = 'tdoc:';
 /** Owner index of user-tied API keys (proposal 0005): `apikey:<keyId>` → entry. */
 const API_KEY_PREFIX = 'apikey:';
+/** `apikeytomb:<keyId>` → ISO time: reconciliation owns this id; confirm/reserve refuse it. */
+const API_KEY_TOMBSTONE_PREFIX = 'apikeytomb:';
 interface ApiKeyIndexRecord {
   createdAt: string;
   expiresAt?: string;
@@ -121,6 +126,7 @@ export class TopologyRegistry
     max: number,
     expiresAt?: string,
   ): Promise<boolean> {
+    if (await this.apiKeyTombstoned(keyId)) return false;
     const live = await this.liveApiKeyEntries();
     if (live.has(keyId)) return true;
     if (live.size >= max) return false;
@@ -146,6 +152,7 @@ export class TopologyRegistry
     max: number,
     expiresAt?: string,
   ): Promise<boolean> {
+    if (await this.apiKeyTombstoned(keyId)) return false;
     const live = await this.liveApiKeyEntries();
     const prior = live.get(keyId);
     if (!prior && live.size >= max) return false;
@@ -157,6 +164,41 @@ export class TopologyRegistry
         : {}),
     };
     await this.ctx.storage.put(API_KEY_PREFIX + keyId, entry);
+    return true;
+  }
+
+  /**
+   * Reconciliation's atomic claim on an id it wants to purge. Runs inside the
+   * DO, so it is serialized against `apiKeyConfirm`: if the id holds a live
+   * slot (pending or confirmed) the claim is refused and the record is kept;
+   * otherwise a tombstone is written and every later confirm/reserve of that
+   * id is refused, so a create that raced past its pending TTL fails cleanly
+   * (409, record discarded) instead of returning a token whose record the
+   * reconciliation deleted. Idempotent. Tombstones expire on their own.
+   */
+  async apiKeyTombstone(keyId: string): Promise<boolean> {
+    if (await this.apiKeyTombstoned(keyId)) return true;
+    const live = await this.liveApiKeyEntries();
+    if (live.has(keyId)) return false;
+    await this.ctx.storage.put(
+      API_KEY_TOMBSTONE_PREFIX + keyId,
+      new Date().toISOString(),
+    );
+    return true;
+  }
+
+  private async apiKeyTombstoned(
+    keyId: string,
+    nowMs = Date.now(),
+  ): Promise<boolean> {
+    const stamp = await this.ctx.storage.get<string>(
+      API_KEY_TOMBSTONE_PREFIX + keyId,
+    );
+    if (typeof stamp !== 'string') return false;
+    if (Date.parse(stamp) + API_KEY_TOMBSTONE_TTL_MS <= nowMs) {
+      await this.ctx.storage.delete(API_KEY_TOMBSTONE_PREFIX + keyId);
+      return false;
+    }
     return true;
   }
 

@@ -50,6 +50,12 @@ export const MAX_API_KEYS_PER_USER = 10;
  * no failure sequence can strand a slot forever (worker/registry.ts).
  */
 export const API_KEY_PENDING_TTL_MS = 2 * 60_000;
+/**
+ * A tombstone marks a key id that reconciliation is purging. It outlives any
+ * create that could still try to confirm that id (a Worker request cannot
+ * run anywhere near this long), then expires.
+ */
+export const API_KEY_TOMBSTONE_TTL_MS = 60 * 60_000;
 export const MAX_API_KEY_LABEL = 64;
 /** Expiry choices offered by the UI (days). `null` = no expiry (revocable). */
 export const API_KEY_EXPIRY_DAYS = [30, 90, 365] as const;
@@ -242,7 +248,8 @@ export function apiKeyUsageKey(keyId: string): string {
 
 /**
  * Per-owner discovery marker, one KV key per credential (never a
- * read-modify-write): written before the record, deleted after it. Lets
+ * read-modify-write): written before the record (value = ISO write time),
+ * deleted after it. Lets
  * reconciliation find a record that lost its owner-index entry without a
  * global KV scan; `list({ prefix: apiKeyOwnerPrefix(uid) })` is the query.
  */
