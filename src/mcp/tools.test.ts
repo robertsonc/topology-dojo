@@ -754,7 +754,7 @@ describe('MCP tools', () => {
         source: { system: 'netbox', kind: 'device', id: '' },
         set: { type: 'router', x: 1, y: 1 },
       }),
-    ).toThrow(/source.id/);
+    ).toThrow(/non-empty system, kind and id/);
     expect(() =>
       call('edit_topology', {
         topologyId: id,
