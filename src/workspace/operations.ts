@@ -527,9 +527,15 @@ export function operationTargets(operation: WorkspaceOperation): string[] {
  * identity on the page, so a delayed proposal normalized to `element.add`
  * conflicts — instead of creating a second element — when another revision
  * bound the same source under a different element id in the meantime. The
- * components are URI-encoded so a `/` or `*` inside an external id cannot
- * forge a path segment.
+ * components go through `targetSegment`, which percent-encodes `/` (a path
+ * separator) and, unlike bare `encodeURIComponent`, also `*` — otherwise an
+ * external id of `**` would end the target in `/**` and `targetConflict`
+ * would read it as a prefix wildcard over the whole source namespace.
  */
+function targetSegment(value: string): string {
+  return encodeURIComponent(value).replace(/\*/g, '%2A');
+}
+
 function sourceTargets(
   pageId: string,
   kind: string,
@@ -543,9 +549,8 @@ function sourceTargets(
     typeof ref.id !== 'string'
   )
     return [];
-  const enc = encodeURIComponent;
   return [
-    `page/${pageId}/source/${kind}/${enc(ref.system)}/${enc(ref.kind)}/${enc(ref.id)}`,
+    `page/${pageId}/source/${kind}/${targetSegment(ref.system)}/${targetSegment(ref.kind)}/${targetSegment(ref.id)}`,
   ];
 }
 

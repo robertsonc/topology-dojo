@@ -3,6 +3,7 @@ import type { TopologyDocument } from '../pages/model.js';
 import {
   applyOperations,
   conflictingTargets,
+  operationTargets,
   diffDocuments,
   subsetDependencyErrors,
   summarizeOperations,
@@ -228,6 +229,35 @@ describe('workspace semantic operations', () => {
         addY,
       ),
     ).toEqual([]);
+  });
+
+  it('an external id of "**" cannot forge the wildcard conflict syntax', () => {
+    const star = (id: string, elementId: string): WorkspaceOperation[] => [
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'nodes',
+        element: {
+          id: elementId,
+          type: 'router',
+          x: 0,
+          y: 0,
+          source: { system: 'netbox', kind: 'device', id },
+        },
+      },
+    ];
+    const targets = operationTargets(star('**', 'a')[0]!);
+    expect(targets).toContain('page/p1/source/nodes/netbox/device/%2A%2A');
+    expect(
+      targets.some((t) => t.endsWith('/**') && t.includes('/source/')),
+    ).toBe(false);
+    // The same source still conflicts with itself…
+    expect(conflictingTargets(star('**', 'a'), star('**', 'b'))).toEqual([
+      'page/p1/source/nodes/netbox/device/%2A%2A',
+    ]);
+    // …and never with unrelated sources in the namespace it would have wildcarded.
+    expect(conflictingTargets(star('**', 'a'), star('core1', 'c'))).toEqual([]);
+    expect(conflictingTargets(star('*', 'a'), star('core1', 'c'))).toEqual([]);
   });
 
   it('rejects invalid mutation batches without changing the source', () => {
