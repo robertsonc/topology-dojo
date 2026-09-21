@@ -24,6 +24,10 @@ import {
   summarizeOperations,
   validateOperations,
 } from '../src/workspace/operations.js';
+import {
+  normalizeOperations,
+  type WorkspaceOperationInput,
+} from '../src/workspace/upsert.js';
 import { extractFeatures } from '../src/profile/features.js';
 import type { AuthoringOutcome } from '../src/profile/model.js';
 import {
@@ -65,7 +69,12 @@ const MAX_META_BYTES = 1_800 * 1024;
 const MAX_OPERATIONS = 250;
 const HISTORY_LIMIT = 500;
 const REQUEST_LIMIT = 200;
-const OPERATION_SCHEMA_REVISION = 1;
+/**
+ * 2 (proposal 0006): the input vocabulary accepts `element.upsert`, normalized
+ * by this coordinator into `element.add` / `element.patch` before validation,
+ * conflict detection, and storage — the stored vocabulary is unchanged.
+ */
+const OPERATION_SCHEMA_REVISION = 2;
 const MAX_PENDING_PROPOSALS = 20;
 const MAX_PROPOSALS = 50;
 const MAX_CHECKPOINTS = 12;
@@ -164,7 +173,12 @@ function assertOwner(meta: StoredMeta, ownerId: string): void {
   if (meta.ownerId !== ownerId) throw new Error('workspace access denied');
 }
 
-function assertRequest(request: CommitRequest): void {
+/**
+ * Shape checks that need no document: bounds and ids. Operation validation
+ * happens after `element.upsert` normalization (which needs the document),
+ * via `normalizeRequest` inside the transaction.
+ */
+function assertRequestShape(request: CommitRequest): void {
   if (!Number.isInteger(request.baseRevision) || request.baseRevision < 0)
     throw new Error('baseRevision must be a non-negative integer');
   if (!request.operationId || request.operationId.length > 128)
@@ -175,7 +189,30 @@ function assertRequest(request: CommitRequest): void {
     throw new Error(`operation batch exceeds ${MAX_OPERATIONS} operations`);
   if (bytes(request.operations) > MAX_BATCH_BYTES)
     throw new Error('operation batch exceeds the 512 KiB limit');
-  validateOperations(request.operations);
+}
+
+/**
+ * Resolve `element.upsert` inputs against `document` (proposal 0006) and
+ * validate the resulting batch. Mutates `request.operations` in place so every
+ * later consumer of the request — conflict targets, summary, the stored
+ * change/proposal, the profile learner — sees only the stored vocabulary.
+ */
+function normalizeRequest(
+  request: CommitRequest,
+  document: TopologyDocumentModel,
+): void {
+  const { operations } = normalizeOperations(
+    document,
+    request.operations as WorkspaceOperationInput[],
+  );
+  validateOperations(operations);
+  // An upsert expands into a larger add/patch (minted id, embedded source), so
+  // the advertised 512 KiB limit is enforced again on what is actually stored.
+  if (bytes(operations) > MAX_BATCH_BYTES)
+    throw new Error(
+      'operation batch exceeds the 512 KiB limit after element.upsert normalization',
+    );
+  request.operations = operations;
 }
 
 function activeLease(meta: StoredMeta): WorkspaceLease | null {
@@ -508,6 +545,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     kinds: ElementKind[] | undefined,
     cursor = 0,
     limit = 50,
+    sourcedOnly = false,
   ): Promise<ElementPageResult> {
     const meta = await this.requiredMeta(this.ctx.storage, ownerId);
     if (!meta.pageIds.includes(pageId))
@@ -523,6 +561,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
         string,
         unknown
       >[]) {
+        if (sourcedOnly && !element.source) continue;
         if (!idSet || idSet.has(String(element.id)))
           all.push({ kind, element });
       }
@@ -569,7 +608,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
   ): Promise<ProposalResult> {
     if (actor.kind !== 'agent')
       throw new Error('proposals require an agent actor');
-    assertRequest(request);
+    assertRequestShape(request);
     const titleNorm = normalizeText(title);
     if (!titleNorm) throw new Error('proposal title is required');
     const rationaleNorm =
@@ -596,13 +635,14 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
         await this.rememberRequest(tx, meta, request.operationId, result);
         return result;
       }
+      const document = await this.loadDocument(tx, meta);
+      normalizeRequest(request, document);
       const conflicts = await this.conflictsSince(
         tx,
         request.baseRevision,
         meta.revision,
         request.operations,
       );
-      const document = await this.loadDocument(tx, meta);
       if (!conflicts.length) applyOperations(document, request.operations);
       await this.makeProposalRoom(tx);
       const timestamp = nowIso();
@@ -1054,7 +1094,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     source: WorkspaceChange['source'],
     requireLease: boolean,
   ): Promise<CommitResult> {
-    assertRequest(request);
+    assertRequestShape(request);
     const result = await this.ctx.storage.transaction(async (tx) => {
       const meta = await this.requiredMeta(tx, ownerId);
       const duplicate = await tx.get<CommitResult>(
@@ -1121,7 +1161,9 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       guidanceConsultedBefore?: boolean;
     },
   ): Promise<CommitResult> {
-    assertRequest(request);
+    assertRequestShape(request);
+    const current = await this.loadDocument(tx, meta);
+    normalizeRequest(request, current);
     if (request.baseRevision > meta.revision)
       throw new Error(
         `base revision ${request.baseRevision} is ahead of current revision ${meta.revision}`,
@@ -1154,7 +1196,6 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       await this.rememberRequest(tx, meta, request.operationId, result);
       return result;
     }
-    const current = await this.loadDocument(tx, meta);
     const next = applyOperations(current, request.operations);
     this.assertDocumentSizes(next);
     const revision = meta.revision + 1;

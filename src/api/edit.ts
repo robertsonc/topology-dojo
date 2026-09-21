@@ -194,12 +194,29 @@ export function removeElement(
 
 export interface UpsertResult {
   created: boolean;
+  /**
+   * Whether the element's content differs from before the call. Always true
+   * on create; on a match, false when `props` was a logical no-op (only
+   * `source.fetchedAt` moved). Lets an importer count created / updated /
+   * unchanged from the results alone.
+   */
+  changed: boolean;
   kind: SourcedKind;
   element: Record<string, unknown>;
 }
 
+/** Element content with the refresh timestamp masked, for change detection. */
+function contentKey(element: unknown): string {
+  const copy = structuredClone(element) as {
+    source?: { fetchedAt?: string };
+  };
+  if (copy && typeof copy === 'object' && copy.source)
+    delete copy.source.fetchedAt;
+  return JSON.stringify(copy);
+}
+
 /** Per-kind create requirements an upsert must satisfy when nothing matches. */
-const CREATE_REQUIRED: Record<SourcedKind, string[]> = {
+export const CREATE_REQUIRED: Record<SourcedKind, string[]> = {
   node: ['type', 'x', 'y'],
   link: ['type', 'from', 'to'],
   zone: [],
@@ -220,6 +237,10 @@ export function upsertBySource(
   source: SourceRef,
   props: Record<string, unknown> = {},
 ): UpsertResult {
+  // Same rule as the workspace twin `element.upsert`: every identity
+  // component must be non-empty, or unrelated elements would converge.
+  if (!source.system || !source.kind || !source.id)
+    throw new Error('upsert source needs non-empty system, kind and id');
   const collection = {
     node: page.nodes,
     link: page.links,
@@ -232,11 +253,17 @@ export function upsertBySource(
     (e) => e.source && sameSource(e.source, source),
   );
   if (existing) {
+    const before = contentKey(existing);
     const { element } = updateElement(page, existing.id, {
       ...props,
       source,
     });
-    return { created: false, kind, element };
+    return {
+      created: false,
+      changed: contentKey(element) !== before,
+      kind,
+      element,
+    };
   }
 
   const missing = CREATE_REQUIRED[kind].filter(
@@ -258,6 +285,7 @@ export function upsertBySource(
   }[kind]();
   return {
     created: true,
+    changed: true,
     kind,
     element: created as unknown as Record<string, unknown>,
   };

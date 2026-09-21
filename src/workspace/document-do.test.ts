@@ -254,6 +254,134 @@ describe('TopologyDocument Durable Object', () => {
     expect(changes.changes[0]).not.toHaveProperty('operations');
   }, 30_000);
 
+  it('normalizes element.upsert into add/patch by source identity (proposal 0006)', async () => {
+    await call({
+      action: 'initialize',
+      workspace: 'w-upsert',
+      document: { title: 'Upsert', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const upsert = (id: string, extra: Record<string, unknown>) => ({
+      type: 'element.upsert',
+      pageId: 'p1',
+      kind: 'nodes',
+      source: {
+        system: 'netbox',
+        kind: 'device',
+        id,
+        fetchedAt: '2026-09-20T00:00:00Z',
+      },
+      element: { type: 'router', x: 100, y: 100, label: id, ...extra },
+    });
+
+    // First proposal: nothing matches → element.add (with the requested id).
+    const first = await call<{
+      ok: boolean;
+      proposal: {
+        id: string;
+        operations: { type: string; element?: { id: string } }[];
+        summary: { byType: Record<string, number> };
+      };
+    }>({
+      action: 'propose',
+      workspace: 'w-upsert',
+      title: 'import',
+      commit: {
+        baseRevision: 0,
+        operationId: 'pr-1',
+        operations: [upsert('core1', { id: 'n-core1' }), upsert('core2', {})],
+      },
+    });
+    expect(first.ok).toBe(true);
+    expect(first.proposal.summary.byType).toEqual({ 'element.add': 2 });
+    expect(first.proposal.operations[0]).toMatchObject({
+      type: 'element.add',
+      element: { id: 'n-core1', source: { system: 'netbox', id: 'core1' } },
+    });
+    const generated = first.proposal.operations[1]!.element!.id;
+    expect(generated).toMatch(/^node-[0-9a-f]{8}$/);
+
+    await call({
+      action: 'accept',
+      workspace: 'w-upsert',
+      proposalId: first.proposal.id,
+      operationId: 'acc-1',
+    });
+
+    // Second batch (leased direct apply): same sources → element.patch, ids kept.
+    await call({ action: 'lease', workspace: 'w-upsert', pageId: 'p1' });
+    const second = await call<{ ok: boolean; revision: number }>({
+      action: 'agent',
+      workspace: 'w-upsert',
+      commit: {
+        baseRevision: 1,
+        operationId: 'ag-1',
+        operations: [
+          upsert('core1', { label: 'core1 (renamed)' }),
+          upsert('core3', {}),
+        ],
+      },
+    });
+    expect(second).toMatchObject({ ok: true, revision: 2 });
+    const changes = await call<{
+      changes: {
+        operations: {
+          type: string;
+          elementId?: string;
+          element?: { id: string };
+        }[];
+      }[];
+    }>({ action: 'changes', workspace: 'w-upsert', since: 1, detail: true });
+    const ops = changes.changes[0]!.operations;
+    expect(ops[0]).toMatchObject({
+      type: 'element.patch',
+      elementId: 'n-core1',
+    });
+    expect(ops[1]).toMatchObject({ type: 'element.add' });
+
+    const snapshot = await call<{
+      document: {
+        pages: {
+          nodes: { id: string; label: string; source?: { id: string } }[];
+        }[];
+      };
+    }>({
+      action: 'snapshot',
+      workspace: 'w-upsert',
+    });
+    const nodes = snapshot.document.pages[0]!.nodes;
+    expect(nodes.map((n) => n.source?.id ?? n.id).sort()).toEqual([
+      'a',
+      'core1',
+      'core2',
+      'core3',
+    ]);
+    expect(nodes.find((n) => n.id === 'n-core1')?.label).toBe(
+      'core1 (renamed)',
+    );
+
+    // Creating without the kind's required fields is rejected before storage.
+    const bad = await dispatch({
+      action: 'propose',
+      workspace: 'w-upsert',
+      title: 'bad',
+      commit: {
+        baseRevision: 2,
+        operationId: 'pr-bad',
+        operations: [
+          {
+            type: 'element.upsert',
+            pageId: 'p1',
+            kind: 'nodes',
+            source: { system: 'netbox', kind: 'device', id: 'new' },
+            element: { label: 'no type' },
+          },
+        ],
+      },
+    });
+    expect(bad.status).toBe(400);
+    expect(await bad.text()).toMatch(/requires: type, x, y/);
+  });
+
   it('stores an aggregate document above 2 MiB while rejecting an oversize page', async () => {
     const pages = Array.from({ length: 20 }, (_, index) => ({
       ...page(`large-${index}`, `n-${index}`),
@@ -281,6 +409,110 @@ describe('TopologyDocument Durable Object', () => {
     await expect(oversize.json()).resolves.toMatchObject({
       error: expect.stringContaining('1.8 MiB'),
     });
+  }, 30_000);
+
+  it('a delayed upsert proposal conflicts instead of duplicating a source bound meanwhile (proposal 0006 review)', async () => {
+    await call({
+      action: 'initialize',
+      workspace: 'w-src',
+      document: { title: 'Src', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const upsert = (extra: Record<string, unknown>) => ({
+      type: 'element.upsert',
+      pageId: 'p1',
+      kind: 'nodes',
+      source: { system: 'netbox', kind: 'device', id: 'core9' },
+      element: { type: 'router', x: 40, y: 40, label: 'core9', ...extra },
+    });
+    const proposed = await call<{
+      ok: boolean;
+      proposal: { id: string; summary: { byType: Record<string, number> } };
+    }>({
+      action: 'propose',
+      workspace: 'w-src',
+      title: 'import',
+      commit: {
+        baseRevision: 0,
+        operationId: 'pr-src',
+        operations: [upsert({})],
+      },
+    });
+    expect(proposed.proposal.summary.byType).toEqual({ 'element.add': 1 });
+
+    // Meanwhile a leased apply binds the same source under another id.
+    await call({ action: 'lease', workspace: 'w-src', pageId: 'p1' });
+    const direct = await call<{ ok: boolean; revision: number }>({
+      action: 'agent',
+      workspace: 'w-src',
+      commit: {
+        baseRevision: 0,
+        operationId: 'ag-src',
+        operations: [upsert({ id: 'n-other' })],
+      },
+    });
+    expect(direct).toMatchObject({ ok: true, revision: 1 });
+
+    const accepted = await call<{
+      ok: boolean;
+      code?: string;
+      conflictingTargets?: string[];
+    }>({
+      action: 'accept',
+      workspace: 'w-src',
+      proposalId: proposed.proposal.id,
+      operationId: 'acc-src',
+    });
+    expect(accepted).toMatchObject({ ok: false, code: 'conflict' });
+    expect(accepted.conflictingTargets).toContain(
+      'page/p1/source/nodes/netbox/device/core9',
+    );
+
+    const snapshot = await call<{
+      revision: number;
+      document: {
+        pages: { nodes: { id: string; source?: { id: string } }[] }[];
+      };
+    }>({ action: 'snapshot', workspace: 'w-src' });
+    expect(snapshot.revision).toBe(1);
+    expect(
+      snapshot.document.pages[0]!.nodes.filter((n) => n.source?.id === 'core9'),
+    ).toHaveLength(1);
+  }, 30_000);
+
+  it('re-checks the 512 KiB batch limit after element.upsert normalization', async () => {
+    await call({
+      action: 'initialize',
+      workspace: 'w-big',
+      document: { title: 'Big', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    const build = (labelLength: number) => [
+      {
+        type: 'element.upsert',
+        pageId: 'p1',
+        kind: 'nodes',
+        source: { system: 'netbox', kind: 'device', id: 'huge' },
+        element: { type: 'router', x: 1, y: 1, label: 'x'.repeat(labelLength) },
+      },
+    ];
+    const limit = 512 * 1024;
+    const size = (ops: unknown) =>
+      new TextEncoder().encode(JSON.stringify(ops)).byteLength;
+    // Input sits just under the limit; the minted id pushes the stored
+    // element.add over it (normalization adds ~19 bytes).
+    const length = limit - size(build(0)) - 8;
+    expect(size(build(length))).toBeLessThanOrEqual(limit);
+    await expect(
+      call({
+        action: 'propose',
+        workspace: 'w-big',
+        title: 'huge',
+        commit: {
+          baseRevision: 0,
+          operationId: 'pr-big',
+          operations: build(length),
+        },
+      }),
+    ).rejects.toThrow(/512 KiB limit after element.upsert normalization/);
   }, 30_000);
 
   it('rejects a selective accept whose ops depend on unselected ones', async () => {
