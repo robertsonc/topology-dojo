@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   hitTestAnchor,
+  hitTestLink,
+  hitTestNode,
+  hitTestNodeLabel,
   hitTestZone,
   resolvePos,
   zoneBounds,
@@ -102,5 +105,101 @@ describe('zone geometry', () => {
     });
     // (200,200) is inside both; the smaller 'small' zone wins.
     expect(hitTestZone(nested, 200, 200)).toBe('small');
+  });
+});
+
+describe('link hit-testing follows the drawn route', () => {
+  const pg = page({
+    nodes: [
+      { id: 'a', type: 'router', x: 100, y: 100 },
+      { id: 'b', type: 'router', x: 300, y: 300 },
+    ],
+    links: [{ id: 'ab', type: 'line', from: 'a', to: 'b' }],
+  });
+  // An orthogonal L-route: right along y=100, then down x=300.
+  const ell = [
+    [
+      { x: 100, y: 100 },
+      { x: 300, y: 100 },
+      { x: 300, y: 300 },
+    ],
+  ];
+
+  it('without a rendered shape, only the centre-to-centre line hits', () => {
+    expect(hitTestLink(pg, 200, 200)).toBe('ab'); // on the diagonal
+    expect(hitTestLink(pg, 300, 150)).toBeNull(); // on the L's leg
+  });
+
+  it('with the rendered shape, the drawn route hits and the old diagonal misses', () => {
+    const shapeOf = (id: string) => (id === 'ab' ? ell : undefined);
+    expect(hitTestLink(pg, 300, 150, 7, shapeOf)).toBe('ab');
+    expect(hitTestLink(pg, 200, 104, 7, shapeOf)).toBe('ab');
+    expect(hitTestLink(pg, 200, 200, 7, shapeOf)).toBeNull();
+  });
+
+  it('picks the nearest link, not merely the topmost within tolerance', () => {
+    const two = page({
+      nodes: [
+        { id: 'a', type: 'router', x: 0, y: 0 },
+        { id: 'b', type: 'router', x: 200, y: 0 },
+        { id: 'c', type: 'router', x: 0, y: 10 },
+        { id: 'd', type: 'router', x: 200, y: 10 },
+      ],
+      links: [
+        { id: 'near', type: 'line', from: 'a', to: 'b' },
+        { id: 'top', type: 'line', from: 'c', to: 'd' },
+      ],
+    });
+    expect(hitTestLink(two, 100, 3, 8)).toBe('near');
+    expect(hitTestLink(two, 100, 7, 8)).toBe('top');
+  });
+});
+
+describe('node caption hit-testing', () => {
+  const pg = page({
+    nodes: [{ id: 'sw', type: 'switch', x: 100, y: 100, label: 'Leaf-01' }],
+  });
+
+  it('a click on the label under a thin glyph resolves to the node', () => {
+    expect(hitTestNode(pg, 100, 122)).toBeNull(); // below the ±8 glyph
+    expect(hitTestNodeLabel(pg, 100, 122)).toBe('sw'); // default 's' caption
+    expect(hitTestNodeLabel(pg, 100, 160)).toBeNull();
+  });
+
+  it('follows the label placement', () => {
+    const east = page({
+      nodes: [
+        {
+          id: 'r',
+          type: 'router',
+          x: 100,
+          y: 100,
+          label: 'R1',
+          labelPlacement: 'e',
+        },
+      ],
+    });
+    expect(hitTestNodeLabel(east, 130, 102)).toBe('r');
+    expect(hitTestNodeLabel(east, 100, 124)).toBeNull();
+  });
+});
+
+describe('nested zone bounds', () => {
+  it('a parent zone frames its child zones members (matches the engine)', () => {
+    const pg = page({
+      nodes: [
+        { id: 'n1', type: 'router', x: 100, y: 100 },
+        { id: 'n2', type: 'router', x: 500, y: 100 },
+      ],
+      zones: [
+        { id: 'outer', nodes: ['n1'] },
+        { id: 'inner', nodes: ['n2'], parentZone: 'outer' },
+      ],
+    });
+    const b = zoneBounds(pg, pg.zones[0]!)!;
+    expect(b.x + b.w).toBe(500 + 40 + 40);
+    // Smallest wins inside the child; the parent owns the rest.
+    expect(hitTestZone(pg, 500, 60)).toBe('inner');
+    expect(hitTestZone(pg, 300, 100)).toBe('outer');
   });
 });

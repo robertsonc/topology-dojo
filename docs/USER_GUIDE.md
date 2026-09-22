@@ -268,9 +268,22 @@ bandwidth, transport, line color and opacity, routing style, corner radius,
 ports, animation, direction, speed, lock state, layer, and source metadata when
 those fields apply.
 
-Link routing supports straight, orthogonal, and curved styles. Use
-**Swap endpoints** to reverse the endpoints and waypoint order. Use
-**Straighten (clear bends)** to remove all manual waypoints.
+Link routing supports straight, orthogonal, and curved styles. A link is
+picked where it is drawn — click anywhere on its visible route (an orthogonal
+auto-route, a curve, a fanned-out parallel link), not the straight line between
+its endpoints. Use **Swap endpoints** to reverse the endpoints and waypoint
+order. Use **Straighten (clear bends)** to remove all manual waypoints.
+
+### Move a link to another node
+
+- **Drag an end:** select the link, then drag one of the round end handles
+  (where the line meets the node) onto another node or anchor. The target is
+  highlighted; release over empty canvas to cancel.
+- **Pick in Properties:** the **From** and **To** pickers list every node (by
+  label) and anchor on the page; choose one to re-attach that end.
+
+Either way, waypoints are kept and a pinned port on the moved end is cleared.
+Self-loops are refused.
 
 ### Anchors
 
@@ -469,6 +482,11 @@ node. A useful flow normally requires at least two ordered waypoints.
 Zones visually group related nodes. Edit the label, sublabel, description,
 member list, color, border, padding, alignment, parent zone, layer, and source
 fields as needed.
+
+Zones are always the bottom layer — behind nodes, links, and anchors, for
+drawing and for clicks. Anything inside a zone (including a node's label) wins
+the click. Dragging from a zone's empty space rubber-bands the nodes inside it;
+a plain click there selects the zone.
 
 The membership editor uses chips. Zone membership is node-only:
 
