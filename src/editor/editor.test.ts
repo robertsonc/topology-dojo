@@ -366,3 +366,115 @@ describe('deleteSelected cascade (#215, shared with remove_element)', () => {
     }
   });
 });
+
+/* ── link re-attach + zone-as-bottom-layer gestures ──────────────────────── */
+
+describe('reconnectLink', () => {
+  function threeNodePage(): Page {
+    const p = basePage();
+    p.nodes.push({ id: 'c', type: 'ec', x: 500, y: 100, label: 'C' });
+    p.anchors.push({ id: 'an', x: 400, y: 400 });
+    return p;
+  }
+
+  it('moves one end to another node and is undoable', () => {
+    const editor = mkEditor(threeNodePage());
+    expect(editor.reconnectLink('ab', 'to', 'c')).toBe(true);
+    expect(editor.page.links[0]).toMatchObject({ from: 'a', to: 'c' });
+    editor.undo();
+    expect(editor.page.links[0]).toMatchObject({ from: 'a', to: 'b' });
+  });
+
+  it('can re-attach to an anchor and drops that ends pinned port only', () => {
+    const page = threeNodePage();
+    page.links[0]!.fromPort = 'e';
+    page.links[0]!.toPort = 'w';
+    const editor = mkEditor(page);
+    expect(editor.reconnectLink('ab', 'from', 'an')).toBe(true);
+    expect(editor.page.links[0]!.from).toBe('an');
+    expect(editor.page.links[0]!.fromPort).toBeUndefined();
+    expect(editor.page.links[0]!.toPort).toBe('w');
+  });
+
+  it('refuses self-loops, unknown targets and no-op moves', () => {
+    const editor = mkEditor(threeNodePage());
+    expect(editor.reconnectLink('ab', 'to', 'a')).toBe(false);
+    expect(editor.reconnectLink('ab', 'to', 'nope')).toBe(false);
+    expect(editor.reconnectLink('ab', 'to', 'b')).toBe(false);
+    expect(editor.reconnectLink('missing', 'to', 'c')).toBe(false);
+    expect(editor.canUndo()).toBe(false);
+  });
+});
+
+describe('zones are the bottom layer', () => {
+  type Priv = {
+    onDown: (e: Partial<PointerEvent>) => void;
+    onMove: (e: Partial<PointerEvent>) => void;
+    onUp: (e: Partial<PointerEvent>) => void;
+  };
+  const ev = (x: number, y: number, extra: Partial<PointerEvent> = {}) =>
+    ({
+      clientX: x,
+      clientY: y,
+      button: 0,
+      buttons: 1,
+      pointerId: 1,
+      pointerType: 'mouse',
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      preventDefault() {},
+      ...extra,
+    }) as Partial<PointerEvent>;
+
+  function zonedEditor(): { editor: Editor; zones: string[] } {
+    const page = basePage();
+    page.nodes.push({ id: 'c', type: 'ec', x: 200, y: 200, label: 'C' });
+    page.zones.push({ id: 'z', nodes: ['a', 'b', 'c'], label: 'Z' });
+    const zones: string[] = [];
+    // Identity client → page mapping (clientToUser falls back when no CTM).
+    const overlay = Object.assign(fakeSvg(), { getScreenCTM: () => null });
+    const editor = new Editor(
+      fakeSvg(),
+      overlay,
+      page,
+      () => {},
+      () => {},
+      () => {},
+      () => {},
+      () => {},
+      (id) => {
+        if (id) zones.push(id);
+      },
+    );
+    return { editor, zones };
+  }
+
+  it('a plain click on a zones empty space selects the zone', () => {
+    const { editor, zones } = zonedEditor();
+    const priv = editor as unknown as Priv;
+    priv.onDown(ev(200, 140));
+    priv.onUp(ev(200, 140, { buttons: 0 }));
+    expect(editor.getSelectedZone()?.id).toBe('z');
+    expect(zones).toEqual(['z']);
+  });
+
+  it('dragging from inside a zone rubber-bands its nodes instead', () => {
+    const { editor } = zonedEditor();
+    const priv = editor as unknown as Priv;
+    priv.onDown(ev(80, 70));
+    priv.onMove(ev(320, 130));
+    priv.onUp(ev(320, 130, { buttons: 0 }));
+    expect(editor.getSelectedZone()).toBeNull();
+    expect(editor.selectedNodeIds().sort()).toEqual(['a', 'b']);
+  });
+
+  it('a node inside a zone wins the click', () => {
+    const { editor } = zonedEditor();
+    const priv = editor as unknown as Priv;
+    priv.onDown(ev(200, 200));
+    priv.onUp(ev(200, 200, { buttons: 0 }));
+    expect(editor.getSelectedZone()).toBeNull();
+    expect(editor.selectedNodeIds()).toEqual(['c']);
+  });
+});

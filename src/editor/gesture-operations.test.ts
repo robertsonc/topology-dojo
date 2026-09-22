@@ -365,6 +365,17 @@ const cases: GestureCase[] = [
     undoable: true,
   },
   {
+    name: 're-attach a link end (reconnectLink)',
+    run: (e) => e.reconnectLink('ab', 'to', 'c'),
+    undoable: true,
+  },
+  {
+    name: 're-attach a link end, dropping its pinned port',
+    setup: (_e, p) => (p.links[0]!.fromPort = 'e'),
+    run: (e) => e.reconnectLink('ab', 'from', 'an1'),
+    undoable: true,
+  },
+  {
     name: 'cycle link type',
     setup: (e) => e.focusLink('ab'),
     run: (e) => e.cycleLinkType(),

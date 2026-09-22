@@ -28,12 +28,15 @@ import type {
   FieldPatch,
   WorkspaceOperation,
 } from '../workspace/model.js';
+import { layerView, type LayerDef } from '../api/layers.js';
 import {
   hitTestAnchor,
   hitTestLink,
   hitTestNode,
+  hitTestNodeLabel,
   hitTestZone,
   linkPolyline,
+  type LinkShape,
   nodeBounds,
   nodeHalf,
   nodesInRect,
@@ -264,6 +267,27 @@ export class Editor {
   private zoneSeq = 0;
   /** The selected zone region (clicked on canvas), or null. */
   private zoneSel: string | null = null;
+  /**
+   * A press on a zone's empty interior: zones are the bottom layer, so the
+   * press starts a marquee (to rubber-band the zone's nodes) and only selects
+   * the zone if it is released without dragging.
+   */
+  private zonePress: string | null = null;
+  /**
+   * Rendered link geometry sampled from the art DOM (id → polylines), filled
+   * lazily per link and dropped whenever the art re-renders. Lets hit-testing
+   * and the selection highlight follow the route actually drawn (orthogonal
+   * auto-routes, curves, parallel fan-out) instead of the centre-to-centre line.
+   */
+  private linkShapes = new Map<string, LinkShape | null>();
+  /** Dragging one end of the selected link to re-attach it elsewhere. */
+  private endDrag: {
+    lid: string;
+    end: 'from' | 'to';
+    start: { x: number; y: number };
+    cursor: { x: number; y: number };
+    moved: boolean;
+  } | null = null;
   /** Copy/paste buffer (cloned elements, page-independent). */
   private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
   /** Format-painter buffer: a copied node/link style to brush onto others. */
@@ -340,6 +364,8 @@ export class Editor {
     this.linkSel = null;
     this.linkStart = null;
     this.dragLink = null;
+    this.endDrag = null;
+    this.zonePress = null;
     this.hoverNode = null;
     this.anchorSel = null;
     this.selAnchors.clear();
@@ -711,6 +737,7 @@ export class Editor {
       cancelAnimationFrame(this.artRaf);
       this.artRaf = 0;
     }
+    this.linkShapes.clear();
     renderPageInto(this.art, this.page, {
       ...this.renderOpts?.(),
       emphasis: this.page.emphasis,
@@ -735,7 +762,10 @@ export class Editor {
     if (this.artRaf) return;
     this.artRaf = requestAnimationFrame(() => {
       this.artRaf = 0;
+      this.linkShapes.clear();
       renderPageInto(this.art, this.page, {
+        ...this.renderOpts?.(),
+        emphasis: this.page.emphasis,
         calm: this.calm,
         ambient: this.ambient,
         light: this.light,
@@ -923,13 +953,25 @@ export class Editor {
     if (!link) return '';
     const pts = linkPolyline(this.page, link);
     if (pts.length < 2) return '';
-    const d = 'M' + pts.map((p) => `${p.x},${p.y}`).join(' L');
-    let out = `<path d="${d}" fill="none" stroke="${ACCENT}" stroke-width="3" opacity="0.5"/>`;
+    // Highlight the route as drawn (orthogonal/curved/fanned-out), falling
+    // back to the from → waypoints → to polyline when it can't be measured.
+    const shape = this.linkShape(link.id) ?? [pts];
+    let out = '';
+    for (const poly of shape) {
+      if (poly.length < 2) continue;
+      const d = 'M' + poly.map((p) => `${p.x},${p.y}`).join(' L');
+      out += `<path d="${d}" fill="none" stroke="${ACCENT}" stroke-width="3" opacity="0.5"/>`;
+    }
     const s = this.handleSize();
-    // Endpoints (follow their nodes — not draggable): small dim dots.
-    const ends = [pts[0]!, pts[pts.length - 1]!];
-    for (const p of ends)
-      out += `<circle cx="${p.x}" cy="${p.y}" r="${s * 0.5}" fill="${ACCENT}" opacity="0.6"/>`;
+    // Endpoint handles: drag one onto another node/anchor to re-attach that
+    // end (hidden while that end is mid-drag; locked links show no handles).
+    const ends = this.linkEnds(link);
+    if (ends && !link.locked)
+      for (const which of ['from', 'to'] as const) {
+        if (this.endDrag?.moved && this.endDrag.end === which) continue;
+        const p = ends[which];
+        out += `<circle data-link-end="${which}" cx="${p.x}" cy="${p.y}" r="${s * 0.75}" fill="#0b0e14" stroke="${ACCENT}" stroke-width="2"/>`;
+      }
     // Midpoint "add" handles: hollow circle with a + on each segment.
     for (let k = 0; k < pts.length - 1; k++) {
       const m = midpoint(pts[k]!, pts[k + 1]!);
@@ -960,6 +1002,237 @@ export class Editor {
   private anchorHitPad(): number {
     const wpx = this.overlay.getBoundingClientRect().width || 1;
     return Math.max(8, (14 * this.view.w) / wpx);
+  }
+
+  /* ── hit-testing (layer-aware, route-aware) ────────────────────── */
+
+  /**
+   * The page as the user sees it, for hit-testing: elements on hidden layers
+   * dropped and the rest in paint order (base first, then declared layers
+   * bottom → top), so the element drawn on top is the one a click lands on.
+   */
+  private hitPage(): Page {
+    const opts = this.renderOpts?.() ?? {};
+    const layers = (opts.layers as LayerDef[] | undefined) ?? [];
+    const visible = opts.visibleLayers as string[] | undefined;
+    if (!layers.length && !visible) return this.page;
+    return {
+      ...this.page,
+      nodes: layerView(this.page.nodes, layers, visible),
+      links: layerView(this.page.links, layers, visible),
+      zones: layerView(this.page.zones ?? [], layers, visible),
+    };
+  }
+
+  /** The node under `p`: its glyph first, then its caption (label). */
+  private nodeAt(p: { x: number; y: number }): string | null {
+    const page = this.hitPage();
+    return hitTestNode(page, p.x, p.y) ?? hitTestNodeLabel(page, p.x, p.y);
+  }
+
+  /** The link under `p`, measured against its rendered route. */
+  private linkAt(p: { x: number; y: number }): string | null {
+    return hitTestLink(this.hitPage(), p.x, p.y, this.linkHitPad(), (id) =>
+      this.linkShape(id),
+    );
+  }
+
+  /** The zone whose empty region holds `p` (zones are always the bottom layer). */
+  private zoneAt(p: { x: number; y: number }): string | null {
+    return hitTestZone(this.hitPage(), p.x, p.y);
+  }
+
+  /** Link pick tolerance: ≈9 screen px, never under 7 user units. */
+  private linkHitPad(): number {
+    const wpx = this.overlay.getBoundingClientRect().width || 1;
+    return Math.max(7, (9 * this.view.w) / wpx);
+  }
+
+  /**
+   * A link's drawn geometry, sampled from its `<g data-tds-link>` group in the
+   * art (cached until the next art render). Undefined when the art has no
+   * measurable geometry for it (e.g. no layout engine, as in unit tests) —
+   * callers then fall back to the from → waypoints → to polyline.
+   */
+  private linkShape(id: string): LinkShape | undefined {
+    if (!this.linkShapes.has(id)) this.linkShapes.set(id, this.measureLink(id));
+    return this.linkShapes.get(id) ?? undefined;
+  }
+
+  private measureLink(id: string): LinkShape | null {
+    const artCtm = this.art.getScreenCTM?.();
+    if (!artCtm) return null;
+    let inv: DOMMatrix;
+    try {
+      inv = artCtm.inverse();
+    } catch {
+      return null; // zero-size canvas — nothing measurable
+    }
+    const shape: LinkShape = [];
+    for (const g of this.art.querySelectorAll('g[data-tds-link]')) {
+      if (g.getAttribute('data-tds-link') !== id) continue;
+      for (const el of g.querySelectorAll<SVGGeometryElement>(
+        'path, line, polyline',
+      )) {
+        if (el.closest('text, defs, marker, mask, clipPath')) continue;
+        if (typeof el.getTotalLength !== 'function') continue;
+        const ctm = el.getScreenCTM?.();
+        if (!ctm) continue;
+        let len: number;
+        try {
+          len = el.getTotalLength();
+        } catch {
+          continue; // not rendered (display:none) — no geometry
+        }
+        if (!Number.isFinite(len) || len <= 0) continue;
+        const m = inv.multiply(ctm);
+        const n = Math.min(240, Math.max(2, Math.ceil(len / 5)));
+        const pts: { x: number; y: number }[] = [];
+        for (let k = 0; k <= n; k++) {
+          const q = el.getPointAtLength((len * k) / n);
+          pts.push({
+            x: m.a * q.x + m.c * q.y + m.e,
+            y: m.b * q.x + m.d * q.y + m.f,
+          });
+        }
+        shape.push(pts);
+      }
+    }
+    return shape.length ? shape : null;
+  }
+
+  /**
+   * Where the selected link's endpoint handles sit: on the rendered route's
+   * ends (the node edge the line attaches to) when measurable, else pulled
+   * from the endpoint's centre to its glyph edge along the first/last segment
+   * — so grabbing a handle never competes with dragging the node body.
+   */
+  private linkEnds(link: LinkConfig): {
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+  } | null {
+    const pts = linkPolyline(this.page, link);
+    if (pts.length < 2) return null;
+    const a = pts[0]!,
+      b = pts[pts.length - 1]!;
+    const shape = this.linkShape(link.id);
+    if (shape) {
+      // The longest drawn stroke is the wire itself (arrowheads, crossing
+      // hops and decorations are short); orient it by proximity to `from`.
+      const main = shape.reduce((x, y) => (y.length > x.length ? y : x));
+      const s0 = main[0]!,
+        s1 = main[main.length - 1]!;
+      return dist(s0, a) + dist(s1, b) <= dist(s0, b) + dist(s1, a)
+        ? { from: s0, to: s1 }
+        : { from: s1, to: s0 };
+    }
+    return {
+      from: this.edgePoint(link.from, a, pts[1]!),
+      to: this.edgePoint(link.to, b, pts[pts.length - 2]!),
+    };
+  }
+
+  /** The point where the ray centre → toward leaves the node's glyph box. */
+  private edgePoint(
+    id: string,
+    c: { x: number; y: number },
+    toward: { x: number; y: number },
+  ): { x: number; y: number } {
+    const n = this.page.nodes.find((m) => m.id === id);
+    if (!n) return c; // anchors are points
+    const h = nodeHalf(n);
+    const dx = toward.x - c.x,
+      dy = toward.y - c.y;
+    const len = Math.hypot(dx, dy);
+    if (!len) return c;
+    const ux = dx / len,
+      uy = dy / len;
+    const t = Math.min(
+      len,
+      1 / Math.max(Math.abs(ux) / (h.w || 1), Math.abs(uy) / (h.h || 1)) + 3,
+    );
+    return { x: c.x + ux * t, y: c.y + uy * t };
+  }
+
+  /** Which end handle of the selected link (if any) is under `p`. */
+  private endpointHit(p: { x: number; y: number }): 'from' | 'to' | null {
+    const link = this.page.links.find((l) => l.id === this.linkSel);
+    if (!link || link.locked) return null;
+    const ends = this.linkEnds(link);
+    if (!ends) return null;
+    const tol = this.handleSize() * 1.6;
+    const df = dist(p, ends.from),
+      dt = dist(p, ends.to);
+    if (Math.min(df, dt) > tol) return null;
+    return df <= dt ? 'from' : 'to';
+  }
+
+  /**
+   * Re-attach one end of a link to another node or anchor. A pinned port on
+   * that end is dropped (it described a side of the old endpoint); waypoints
+   * are kept. Refuses unknown targets and self-loops. Returns true on change.
+   */
+  reconnectLink(linkId: string, end: 'from' | 'to', target: string): boolean {
+    const link = this.page.links.find((l) => l.id === linkId);
+    if (!link || link[end] === target) return false;
+    const other = end === 'from' ? link.to : link.from;
+    if (target === other) return false;
+    if (!resolvePos(this.page, target)) return false;
+    this.snapshot();
+    link[end] = target;
+    const portKey = end === 'from' ? 'fromPort' : 'toPort';
+    const hadPort = link[portKey] !== undefined;
+    delete link[portKey];
+    this.emitPatch('links', link.id, {
+      set: { [end]: target },
+      ...(hadPort ? { unset: [portKey] } : {}),
+    });
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    this.fireLinkSelect();
+    return true;
+  }
+
+  /** Overlay art for an endpoint drag: rubber band + target highlight. */
+  private endDragSvg(): string {
+    const ed = this.endDrag;
+    if (!ed || !ed.moved) return '';
+    const link = this.page.links.find((l) => l.id === ed.lid);
+    if (!link) return '';
+    const fixed = resolvePos(
+      this.page,
+      ed.end === 'from' ? link.to : link.from,
+    );
+    if (!fixed) return '';
+    let out = `<line x1="${fixed.x}" y1="${fixed.y}" x2="${ed.cursor.x}" y2="${ed.cursor.y}" stroke="${ACCENT}" stroke-width="2" stroke-dasharray="5 4" opacity="0.85"/>`;
+    const target = this.endDropTarget(ed.cursor);
+    if (target) {
+      const n = this.page.nodes.find((m) => m.id === target);
+      if (n) {
+        const b = nodeBounds(n);
+        out += `<rect x="${b.x - 6}" y="${b.y - 6}" width="${b.w + 12}" height="${b.h + 12}" rx="6" fill="${ACCENT}" fill-opacity="0.1" stroke="${ACCENT}" stroke-width="2"/>`;
+      } else {
+        const a = resolvePos(this.page, target)!;
+        out += `<circle cx="${a.x}" cy="${a.y}" r="${this.handleSize() * 1.4}" fill="none" stroke="${ACCENT}" stroke-width="2"/>`;
+      }
+    }
+    out += `<circle cx="${ed.cursor.x}" cy="${ed.cursor.y}" r="${this.handleSize() * 0.7}" fill="${ACCENT}"/>`;
+    return out;
+  }
+
+  /** A valid re-attach target under `p` for the endpoint being dragged. */
+  private endDropTarget(
+    p: { x: number; y: number },
+    ed = this.endDrag,
+  ): string | null {
+    if (!ed) return null;
+    const link = this.page.links.find((l) => l.id === ed.lid);
+    if (!link) return null;
+    const t =
+      this.nodeAt(p) ?? hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
+    const other = ed.end === 'from' ? link.to : link.from;
+    return t && t !== other ? t : null;
   }
 
   private linkPreviewSvg(): string {
@@ -1027,7 +1300,7 @@ export class Editor {
    * affordances stay reachable even though they sit outside the node's body).
    */
   private hoverNodeAt(p: { x: number; y: number }): string | null {
-    const direct = hitTestNode(this.page, p.x, p.y);
+    const direct = this.nodeAt(p);
     if (direct) return direct;
     const r = this.dotRadius() * 1.8;
     for (let i = this.page.nodes.length - 1; i >= 0; i--) {
@@ -1361,7 +1634,8 @@ export class Editor {
       this.connectionDotsSvg() +
       this.chevronsSvg() +
       this.marqueeSvg() +
-      this.linkPreviewSvg();
+      this.linkPreviewSvg() +
+      this.endDragSvg();
     // Cache the grid fill so applyView can track it without rebuilding the overlay.
     this.gridRect = this.overlay.querySelector<SVGRectElement>('rect.tds-grid');
     // Cache the badge shapes the same way, so a zoom step can resize them
@@ -1840,7 +2114,7 @@ export class Editor {
     clientY: number,
   ): { kind: 'node' | 'link' | 'empty'; id: string | null } {
     const p = clientToUser(this.overlay, clientX, clientY);
-    const node = hitTestNode(this.page, p.x, p.y);
+    const node = this.nodeAt(p);
     if (node) {
       this.clearLinkSel();
       this.clearAnchorSel();
@@ -1852,7 +2126,7 @@ export class Editor {
       this.renderOverlay();
       return { kind: 'node', id: node };
     }
-    const link = hitTestLink(this.page, p.x, p.y);
+    const link = this.linkAt(p);
     if (link) {
       this.sel.clear();
       this.clearAnchorSel();
@@ -3047,7 +3321,7 @@ export class Editor {
   requestInlineEditAt(clientX: number, clientY: number): string | null {
     if (!this.onInlineEdit) return null;
     const p = clientToUser(this.overlay, clientX, clientY);
-    const nodeId = hitTestNode(this.page, p.x, p.y);
+    const nodeId = this.nodeAt(p);
     if (nodeId) {
       const node = this.page.nodes.find((n) => n.id === nodeId)!;
       this.clearLinkSel();
@@ -3072,7 +3346,7 @@ export class Editor {
       });
       return 'node';
     }
-    const linkId = hitTestLink(this.page, p.x, p.y);
+    const linkId = this.linkAt(p);
     if (linkId) {
       const link = this.page.links.find((l) => l.id === linkId)!;
       this.sel.clear();
@@ -3113,7 +3387,7 @@ export class Editor {
       });
       return 'link';
     }
-    const zoneId = hitTestZone(this.page, p.x, p.y);
+    const zoneId = this.zoneAt(p);
     if (zoneId) {
       const zone = this.page.zones.find((z) => z.id === zoneId)!;
       this.selectZone(zoneId);
@@ -3404,18 +3678,34 @@ export class Editor {
       e.button === 0 &&
       this.onOpenHref
     ) {
-      const hitId = hitTestNode(this.page, p.x, p.y);
+      const hitId = this.nodeAt(p);
+      const linkId = hitId ? null : this.linkAt(p);
       const el = hitId
         ? this.page.nodes.find((n) => n.id === hitId)
-        : this.page.links.find(
-            (l) => l.id === hitTestLink(this.page, p.x, p.y),
-          );
+        : this.page.links.find((l) => l.id === linkId);
       const href =
         el && typeof (el as { href?: unknown }).href === 'string'
           ? ((el as { href: string }).href ?? '').trim()
           : '';
       if (/^https?:\/\//i.test(href)) {
         this.onOpenHref(href);
+        return;
+      }
+    }
+
+    // Grabbing an end handle of the selected link starts re-attaching that
+    // end: drop it on another node/anchor to move the link there.
+    if (this.tool === 'select' && this.linkSel && !e.shiftKey) {
+      const end = this.endpointHit(p);
+      if (end) {
+        this.endDrag = {
+          lid: this.linkSel,
+          end,
+          start: p,
+          cursor: p,
+          moved: false,
+        };
+        this.overlay.setPointerCapture(e.pointerId);
         return;
       }
     }
@@ -3476,7 +3766,7 @@ export class Editor {
       }
     }
 
-    const hit = hitTestNode(this.page, p.x, p.y);
+    const hit = this.nodeAt(p);
 
     // Select tool: pressing a connection dot (the handles shown when hovering a
     // node) drags out a link — no tool switch needed. Dot beats node-body so you
@@ -3575,7 +3865,7 @@ export class Editor {
         this.renderOverlay();
         return;
       }
-      const link = hitTestLink(this.page, p.x, p.y);
+      const link = this.linkAt(p);
       if (link) {
         this.clearZoneSel();
         this.sel.clear();
@@ -3588,21 +3878,11 @@ export class Editor {
         this.renderOverlay();
         return;
       }
-      // No node/anchor/link — an empty spot inside a zone's region selects the
-      // zone (so it's reachable on canvas, not only via the inspector list).
-      const zoneHit = hitTestZone(this.page, p.x, p.y);
-      if (zoneHit) {
-        this.clearLinkSel();
-        this.sel.clear();
-        this.selAnchors.clear();
-        this.syncAnchorSel();
-        this.zoneSel = zoneHit;
-        this.fireSelect();
-        this.fireZoneSelect();
-        this.overlay.setPointerCapture(e.pointerId);
-        this.renderOverlay();
-        return;
-      }
+      // No node/anchor/link. Zones are always the bottom layer: a press on a
+      // zone's empty space starts a marquee like bare canvas does (so nodes
+      // inside a zone can be rubber-banded), and a click released without
+      // dragging selects the zone (see finishUp).
+      this.zonePress = e.shiftKey ? null : this.zoneAt(p);
       this.clearLinkSel();
       this.clearZoneSel();
       if (!e.shiftKey) {
@@ -3711,6 +3991,18 @@ export class Editor {
         this.scheduleArt();
         this.renderOverlay();
       }
+      return;
+    }
+    if (this.endDrag) {
+      const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      this.endDrag.cursor = pp;
+      if (dist(pp, this.endDrag.start) > this.nodeEdgeBand())
+        this.endDrag.moved = true;
+      if (this.endDrag.moved)
+        this.overlay.style.cursor = this.endDropTarget(pp)
+          ? 'crosshair'
+          : 'grabbing';
+      this.renderOverlay();
       return;
     }
     if (this.dragLink) {
@@ -3834,6 +4126,7 @@ export class Editor {
     const gestureMoved =
       this.pan !== null ||
       this.dragLink !== null ||
+      !!this.endDrag?.moved ||
       !!this.labelDrag?.moved ||
       !!this.wpDrag?.moved ||
       !!this.drag?.moved ||
@@ -3904,6 +4197,29 @@ export class Editor {
       this.renderOverlay();
       return;
     }
+    if (this.endDrag) {
+      const ed = this.endDrag;
+      this.endDrag = null;
+      this.overlay.style.cursor = '';
+      if (ed.moved) {
+        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+        const target = this.endDropTarget(pp, ed);
+        if (target) this.reconnectLink(ed.lid, ed.end, target);
+      } else {
+        // A click (no drag) on a handle that overlaps a node — likely when
+        // zoomed far out — means "select that node", as it would unselected.
+        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+        const node = this.nodeAt(pp);
+        if (node) {
+          this.clearLinkSel();
+          this.sel = new Set([node]);
+          this.fireSelect();
+        }
+      }
+      // Released over nothing: the link stays as it was.
+      this.renderOverlay();
+      return;
+    }
     if (this.dragLink) {
       const dl = this.dragLink;
       this.dragLink = null;
@@ -3913,7 +4229,7 @@ export class Editor {
         // registered one; otherwise cancel as before.
         const pp = clientToUser(this.overlay, e.clientX, e.clientY);
         const target =
-          hitTestNode(this.page, pp.x, pp.y) ??
+          this.nodeAt(pp) ??
           hitTestAnchor(this.page, pp.x, pp.y, this.anchorHitPad());
         if (target && target !== dl.from) this.createLink(dl.from, target);
         else if (!target && this.onConnectEmpty) {
@@ -3955,7 +4271,13 @@ export class Editor {
       this.drag = null;
     } else if (this.marquee) {
       const { x0, y0, x1, y1 } = this.marquee;
-      if (Math.abs(x1 - x0) > 2 || Math.abs(y1 - y0) > 2) {
+      const zonePress = this.zonePress;
+      this.zonePress = null;
+      if (Math.abs(x1 - x0) <= 2 && Math.abs(y1 - y0) <= 2 && zonePress) {
+        // A plain click on a zone's empty space selects the zone.
+        this.zoneSel = zonePress;
+        this.fireZoneSelect();
+      } else if (Math.abs(x1 - x0) > 2 || Math.abs(y1 - y0) > 2) {
         for (const id of nodesInRect(this.page, x0, y0, x1, y1))
           this.sel.add(id);
         // Anchors whose point falls in the rect join the selection too.

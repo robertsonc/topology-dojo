@@ -2496,6 +2496,8 @@ function renderInspector(): void {
     html +=
       `<div class="insp-h">Link</div>` +
       typeRow(link.type, types) +
+      endpointRow('from', link.from, link.to) +
+      endpointRow('to', link.to, link.from) +
       `<div class="insp-row"><span>Endpoints</span><span class="insp-btns"><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button>${
         editor.selectedLinkHasBends()
           ? `<button class="tbtn ab" id="i-straighten" title="Clear bends — straight line">╱ straighten</button>`
@@ -2549,6 +2551,14 @@ function renderInspector(): void {
     wireFields((key, val, commit) =>
       editor.updateLink({ [key]: val } as Record<string, unknown>, commit),
     );
+    for (const end of ['from', 'to'] as const)
+      inspector
+        .querySelector<HTMLSelectElement>(`#i-${end}`)
+        ?.addEventListener('change', (ev) => {
+          const target = (ev.target as HTMLSelectElement).value;
+          editor.reconnectLink(link.id, end, target);
+          renderInspector();
+        });
     inspector.querySelector('#i-swap')?.addEventListener('click', () => {
       editor.swapLink();
       renderInspector();
@@ -2599,6 +2609,46 @@ function renderInspector(): void {
   wireGroups();
   wireAnnotations();
   wireHexDots();
+}
+
+/**
+ * A link endpoint picker: every node (by label) and anchor on the page, except
+ * the link's other end (a link can't loop back onto one element). Changing it
+ * re-attaches that end — the inspector twin of dragging the end handle.
+ */
+function endpointRow(
+  end: 'from' | 'to',
+  current: string,
+  other: string,
+): string {
+  const p = editor.page;
+  const opt = (id: string, text: string): string =>
+    `<option value="${esc(id)}"${id === current ? ' selected' : ''}>${esc(text)}</option>`;
+  const nodes = p.nodes
+    .filter((n) => n.id !== other)
+    .map((n) => {
+      const label = String(n.label ?? '').trim();
+      return {
+        id: n.id,
+        text: label && label !== n.id ? `${label} (${n.id})` : n.id,
+      };
+    })
+    .sort((a, b) => a.text.localeCompare(b.text));
+  const anchors = p.anchors.filter((a) => a.id !== other);
+  let opts = nodes.map((n) => opt(n.id, n.text)).join('');
+  if (anchors.length)
+    opts += `<optgroup label="Anchors">${anchors.map((a) => opt(a.id, `⌖ ${a.id}`)).join('')}</optgroup>`;
+  // A dangling reference still shows (and stays selected) so it can be fixed.
+  if (
+    !p.nodes.some((n) => n.id === current) &&
+    !p.anchors.some((a) => a.id === current)
+  )
+    opts = opt(current, `${current} (missing)`) + opts;
+  const title = end === 'from' ? 'From' : 'To';
+  return (
+    `<label class="insp-row"><span>${title}</span>` +
+    `<select id="i-${end}" aria-label="Link ${end} endpoint" title="Re-attach the ${end} end (or drag its handle on the canvas)">${opts}</select></label>`
+  );
 }
 
 /** Z-order ("Arrange") controls — shown for a single node or a link. */
