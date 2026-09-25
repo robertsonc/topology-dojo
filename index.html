@@ -1318,6 +1318,15 @@
       .insp-group > summary:hover {
         color: var(--text);
       }
+      .insp-group .insp-group {
+        border-top: 0;
+        padding-top: 0;
+        margin-top: 0;
+      }
+      .insp-group .insp-group > summary {
+        text-transform: none;
+        letter-spacing: 0;
+      }
       /* ── Property rows: a two-column grid, [label | control] ──────────
          Every row shares the label column width, so the controls' left edges
          line up down the whole panel; every control is --insp-ctl-h tall. */

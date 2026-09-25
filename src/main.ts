@@ -64,6 +64,8 @@ import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
 import { mountAdminDashboard } from './ui/admin-dashboard.js';
 import { overlayActive, registerOverlay } from './ui/overlay.js';
+import { nodeLabelNudge, linkLabelNudge } from './ui/label-position.js';
+import type { LabelPlacement } from './render/label-placement.js';
 import {
   MOBILE_LAYOUT_MQ,
   defaultPanelCollapsed,
@@ -1999,11 +2001,12 @@ function compassControl(
   const cur = compassCodeOf(f, v);
   const cells = COMPASS_CELLS.map(
     ([code, glyph]) =>
-      `<button type="button" class="cc${code === cur ? ' on' : ''}" data-cval="${code}" title="${COMPASS_TITLES[code]}" aria-label="${COMPASS_TITLES[code]}" aria-pressed="${code === cur}">${glyph}</button>`,
+      `<button type="button" class="cc${code === cur ? ' on' : ''}" data-cval="${code}" title="${COMPASS_TITLES[code]}${code ? ' — click to place; double-click to nudge 1 unit' : ' — reset placement and fine tuning'}" aria-label="${COMPASS_TITLES[code]}" aria-pressed="${code === cur}">${glyph}</button>`,
   ).join('');
   return (
     `<div class="insp-row"><span>${f.label}</span>` +
-    `<div class="compass" ${attr}="${f.key}" data-ckind="${f.kind}" role="group" aria-label="${f.label}">${cells}</div></div>`
+    `<div class="compass" ${attr}="${f.key}" data-ckind="${f.kind}" role="group" aria-label="${f.label}" aria-describedby="label-placement-hint">${cells}</div></div>` +
+    `<div class="insp-hint" id="label-placement-hint">Click to place · double-click to nudge 1 unit.</div>`
   );
 }
 
@@ -2135,6 +2138,7 @@ function typeRow(current: string, types: string[]): string {
 interface FieldGroup {
   title: string;
   keys: string[];
+  fineTune?: string[];
   /** Whether the section starts expanded (defaults to collapsed). */
   open?: boolean;
 }
@@ -2175,6 +2179,7 @@ const NODE_GROUPS: FieldGroup[] = [
       'labelOffset',
       'labelColor',
     ],
+    fineTune: ['labelOffsetX', 'labelOffset'],
     open: true,
   },
   { title: 'Appearance', keys: ['color', 'opacity', 'status'], open: true },
@@ -2207,13 +2212,21 @@ function groupedFieldsHtml(
     title: string,
     specs: FieldSpec[],
     fallbackOpen: boolean,
+    fineTuneKeys: string[] = [],
   ): string => {
     if (!specs.length) return '';
     const open = groupOpen.get(title) ?? fallbackOpen;
+    const fineTune = specs.filter((f) => fineTuneKeys.includes(f.key));
+    const controls = specs
+      .map((f) => {
+        if (!fineTuneKeys.includes(f.key)) return fieldControl(f, cfg);
+        return f === fineTune[0] ? section('Fine Tune', fineTune, false) : '';
+      })
+      .join('');
     return (
       `<details class="insp-group" data-group="${esc(title)}"${open ? ' open' : ''}>` +
       `<summary class="insp-h">${title}</summary>` +
-      specs.map((f) => fieldControl(f, cfg)).join('') +
+      controls +
       `</details>`
     );
   };
@@ -2224,7 +2237,7 @@ function groupedFieldsHtml(
       .map((k) => byKey.get(k))
       .filter((f): f is FieldSpec => Boolean(f));
     specs.forEach((f) => used.add(f.key));
-    html += section(g.title, specs, g.open ?? false);
+    html += section(g.title, specs, g.open ?? false, g.fineTune);
   }
   const rest = fields.filter((f) => !used.has(f.key));
   return html + section('Type options', rest, true);
@@ -2727,7 +2740,7 @@ function wireFields(
     .forEach((grid) => wireCompass(grid, grid.dataset.key!, set));
 }
 
-/** Compass cells write the code (enum) or preset point (point) for `key`. */
+/** Keep the grid mounted so the browser can deliver both clicks and dblclick. */
 function wireCompass(
   grid: HTMLElement,
   key: string,
@@ -2735,12 +2748,73 @@ function wireCompass(
 ): void {
   const kind = grid.dataset.ckind === 'point' ? 'point' : 'enum';
   const spec: FieldSpec = { key, label: key, kind };
-  grid.querySelectorAll<HTMLButtonElement>('[data-cval]').forEach((b) =>
-    b.addEventListener('click', () => {
-      set(key, compassValueOf(spec, b.dataset.cval ?? ''), true);
-      renderInspector();
-    }),
-  );
+  const buttons = grid.querySelectorAll<HTMLButtonElement>('[data-cval]');
+  let pending: ReturnType<typeof setTimeout> | undefined;
+
+  const refresh = (): void => {
+    const cfg =
+      kind === 'point' ? editor.getSelectedLink() : editor.getSelectedNode();
+    const cur = compassCodeOf(spec, cfg?.[key]);
+    buttons.forEach((b) => {
+      const on = b.dataset.cval === cur;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    for (const offset of ['labelOffsetX', 'labelOffset']) {
+      const input = inspector.querySelector<HTMLInputElement>(
+        `input[data-key="${offset}"]`,
+      );
+      if (input) input.value = String(cfg?.[offset] ?? '');
+    }
+  };
+  const place = (code: string): void => {
+    if (!grid.isConnected) return;
+    if (kind === 'enum') {
+      editor.updateNode({
+        labelPlacement: (code || undefined) as LabelPlacement | undefined,
+        labelOffsetX: undefined,
+        labelOffset: undefined,
+        labelY: undefined,
+      });
+    } else {
+      set(key, compassValueOf(spec, code), true);
+    }
+    refresh();
+  };
+  const nudge = (code: LabelPlacement): void => {
+    if (!grid.isConnected) return;
+    const node = editor.getSelectedNode();
+    const link = editor.getSelectedLink();
+    if (kind === 'enum' && node) editor.updateNode(nodeLabelNudge(node, code));
+    else if (kind === 'point' && link)
+      editor.updateLink(linkLabelNudge(link, code));
+    refresh();
+  };
+
+  grid.addEventListener('focusout', (e) => {
+    if (!grid.contains(e.relatedTarget as Node | null)) clearTimeout(pending);
+  });
+  buttons.forEach((b) => {
+    const code = b.dataset.cval ?? '';
+    b.addEventListener('mousedown', (e) => {
+      if (e.detail > 1) clearTimeout(pending);
+    });
+    b.addEventListener('click', (e) => {
+      clearTimeout(pending);
+      if (e.detail === 0) {
+        place(code); // Keyboard activation doesn't need double-click arbitration.
+      } else if (e.detail === 1) {
+        // A double-click must nudge from the current position, not a new preset.
+        pending = setTimeout(() => place(code), 400);
+      }
+    });
+    b.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      clearTimeout(pending);
+      if (code) nudge(code as LabelPlacement);
+      else place('');
+    });
+  });
 }
 
 /** Keep each colour row's preview dot in step with its hex field as typed. */
