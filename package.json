@@ -4,7 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "description": "Human-and-agent network topology diagram workspace",
+  "description": "Network topology diagram workspace with an MCP server for human and agent authoring",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
