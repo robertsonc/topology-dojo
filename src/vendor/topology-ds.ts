@@ -333,17 +333,21 @@ export function applyPalette(svg: string, palette: BrandPalette): string {
  * source colour in a single linear pass, so the text→`#1d1f27` mapping below is
  * applied after the `#1d1f27` surface remap and is left untouched.
  */
-const LIGHT_CANVAS: { from: string; rgb: string; to: string; toRgb: string }[] =
-  [
-    // Card / shape surface fills (dark → light).
-    { from: '292d3a', rgb: '41,45,58', to: '#ffffff', toRgb: '255,255,255' },
-    { from: '22252e', rgb: '34,37,46', to: '#f2f5f8', toRgb: '242,245,248' },
-    { from: '1d1f27', rgb: '29,31,39', to: '#e9edf2', toRgb: '233,237,242' },
-    // Card border / divider grey (dark → light).
-    { from: '3e4550', rgb: '62,69,80', to: '#ccd4dc', toRgb: '204,212,220' },
-    // On-card + node-label text (light → dark) — must come after the surfaces.
-    { from: 'e6e8e9', rgb: '230,232,233', to: '#1d1f27', toRgb: '29,31,39' },
-  ];
+export const LIGHT_CANVAS: {
+  from: string;
+  rgb: string;
+  to: string;
+  toRgb: string;
+}[] = [
+  // Card / shape surface fills (dark → light).
+  { from: '292d3a', rgb: '41,45,58', to: '#ffffff', toRgb: '255,255,255' },
+  { from: '22252e', rgb: '34,37,46', to: '#f2f5f8', toRgb: '242,245,248' },
+  { from: '1d1f27', rgb: '29,31,39', to: '#e9edf2', toRgb: '233,237,242' },
+  // Card border / divider grey (dark → light).
+  { from: '3e4550', rgb: '62,69,80', to: '#ccd4dc', toRgb: '204,212,220' },
+  // On-card + node-label text (light → dark) — must come after the surfaces.
+  { from: 'e6e8e9', rgb: '230,232,233', to: '#1d1f27', toRgb: '29,31,39' },
+];
 
 /** Recolour a rendered SVG's card surfaces + text for a light canvas. */
 export function lightenCanvas(svg: string): string {

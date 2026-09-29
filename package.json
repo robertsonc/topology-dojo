@@ -16,6 +16,7 @@
     "check:wrangler": "node scripts/check-wrangler-env.mjs",
     "deploy:staging": "npm run build && node scripts/check-wrangler-env.mjs && wrangler deploy --env staging",
     "smoke": "node scripts/smoke.mjs",
+    "export:icons": "tsx scripts/export-icons.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test:e2e": "playwright test"
