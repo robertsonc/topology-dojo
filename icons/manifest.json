@@ -1,0 +1,658 @@
+[
+  {
+    "id": "ec",
+    "file": "nodes/ec.svg",
+    "label": "Ec",
+    "group": "node",
+    "source": "ec"
+  },
+  {
+    "id": "switch",
+    "file": "nodes/switch.svg",
+    "label": "Switch",
+    "group": "node",
+    "source": "switch"
+  },
+  {
+    "id": "switchEnterprise",
+    "file": "nodes/switchEnterprise.svg",
+    "label": "Switch Enterprise",
+    "group": "node",
+    "source": "switchEnterprise"
+  },
+  {
+    "id": "cloud",
+    "file": "nodes/cloud.svg",
+    "label": "Cloud",
+    "group": "node",
+    "source": "cloud"
+  },
+  {
+    "id": "host",
+    "file": "nodes/host.svg",
+    "label": "Host",
+    "group": "node",
+    "source": "host"
+  },
+  {
+    "id": "connector",
+    "file": "nodes/connector.svg",
+    "label": "Connector",
+    "group": "node",
+    "source": "connector"
+  },
+  {
+    "id": "apps",
+    "file": "nodes/apps.svg",
+    "label": "Apps",
+    "group": "node",
+    "source": "apps"
+  },
+  {
+    "id": "saas",
+    "file": "nodes/saas.svg",
+    "label": "Saas",
+    "group": "node",
+    "source": "saas"
+  },
+  {
+    "id": "server",
+    "file": "nodes/server.svg",
+    "label": "Server",
+    "group": "node",
+    "source": "server"
+  },
+  {
+    "id": "router",
+    "file": "nodes/router.svg",
+    "label": "Router",
+    "group": "node",
+    "source": "router"
+  },
+  {
+    "id": "firewall",
+    "file": "nodes/firewall.svg",
+    "label": "Firewall",
+    "group": "node",
+    "source": "firewall"
+  },
+  {
+    "id": "database",
+    "file": "nodes/database.svg",
+    "label": "Database",
+    "group": "node",
+    "source": "database"
+  },
+  {
+    "id": "idcard",
+    "file": "nodes/idcard.svg",
+    "label": "Idcard",
+    "group": "node",
+    "source": "idcard"
+  },
+  {
+    "id": "ap",
+    "file": "nodes/ap.svg",
+    "label": "Ap",
+    "group": "node",
+    "source": "ap"
+  },
+  {
+    "id": "overlayCloud",
+    "file": "nodes/overlayCloud.svg",
+    "label": "Overlay Cloud",
+    "group": "node",
+    "source": "overlayCloud"
+  },
+  {
+    "id": "text",
+    "file": "nodes/text.svg",
+    "label": "Text",
+    "group": "node",
+    "source": "text"
+  },
+  {
+    "id": "callout",
+    "file": "nodes/callout.svg",
+    "label": "Callout",
+    "group": "node",
+    "source": "callout"
+  },
+  {
+    "id": "shape-arrow",
+    "file": "nodes/shape-arrow.svg",
+    "label": " Shape arrow",
+    "group": "node",
+    "source": "shape:arrow"
+  },
+  {
+    "id": "shape-square",
+    "file": "nodes/shape-square.svg",
+    "label": " Shape square",
+    "group": "node",
+    "source": "shape:square"
+  },
+  {
+    "id": "shape-rectangle",
+    "file": "nodes/shape-rectangle.svg",
+    "label": " Shape rectangle",
+    "group": "node",
+    "source": "shape:rectangle"
+  },
+  {
+    "id": "shape-triangle",
+    "file": "nodes/shape-triangle.svg",
+    "label": " Shape triangle",
+    "group": "node",
+    "source": "shape:triangle"
+  },
+  {
+    "id": "shape-circle",
+    "file": "nodes/shape-circle.svg",
+    "label": " Shape circle",
+    "group": "node",
+    "source": "shape:circle"
+  },
+  {
+    "id": "shape-ellipse",
+    "file": "nodes/shape-ellipse.svg",
+    "label": " Shape ellipse",
+    "group": "node",
+    "source": "shape:ellipse"
+  },
+  {
+    "id": "shape-diamond",
+    "file": "nodes/shape-diamond.svg",
+    "label": " Shape diamond",
+    "group": "node",
+    "source": "shape:diamond"
+  },
+  {
+    "id": "shape-pentagon",
+    "file": "nodes/shape-pentagon.svg",
+    "label": " Shape pentagon",
+    "group": "node",
+    "source": "shape:pentagon"
+  },
+  {
+    "id": "shape-hexagon",
+    "file": "nodes/shape-hexagon.svg",
+    "label": " Shape hexagon",
+    "group": "node",
+    "source": "shape:hexagon"
+  },
+  {
+    "id": "shape-star",
+    "file": "nodes/shape-star.svg",
+    "label": " Shape star",
+    "group": "node",
+    "source": "shape:star"
+  },
+  {
+    "id": "shape-cross",
+    "file": "nodes/shape-cross.svg",
+    "label": " Shape cross",
+    "group": "node",
+    "source": "shape:cross"
+  },
+  {
+    "id": "ec-virtual",
+    "file": "nodes/ec-virtual.svg",
+    "label": "Ec (virtual)",
+    "group": "node",
+    "source": "ec"
+  },
+  {
+    "id": "ec-physical",
+    "file": "nodes/ec-physical.svg",
+    "label": "Ec (physical)",
+    "group": "node",
+    "source": "ec"
+  },
+  {
+    "id": "ec-aws",
+    "file": "nodes/ec-aws.svg",
+    "label": "Ec (aws)",
+    "group": "node",
+    "source": "ec"
+  },
+  {
+    "id": "ec-azure",
+    "file": "nodes/ec-azure.svg",
+    "label": "Ec (azure)",
+    "group": "node",
+    "source": "ec"
+  },
+  {
+    "id": "ec-gcp",
+    "file": "nodes/ec-gcp.svg",
+    "label": "Ec (gcp)",
+    "group": "node",
+    "source": "ec"
+  },
+  {
+    "id": "ec-oracle",
+    "file": "nodes/ec-oracle.svg",
+    "label": "Ec (oracle)",
+    "group": "node",
+    "source": "ec"
+  },
+  {
+    "id": "ec-axis",
+    "file": "nodes/ec-axis.svg",
+    "label": "Ec (axis)",
+    "group": "node",
+    "source": "ec"
+  },
+  {
+    "id": "host-managed",
+    "file": "nodes/host-managed.svg",
+    "label": "Host (managed)",
+    "group": "node",
+    "source": "host"
+  },
+  {
+    "id": "connector-pe",
+    "file": "nodes/connector-pe.svg",
+    "label": "Connector (pe)",
+    "group": "node",
+    "source": "connector"
+  },
+  {
+    "id": "tgw",
+    "file": "stock/tgw.svg",
+    "label": "Transit Gateway",
+    "group": "stock",
+    "source": "tgw"
+  },
+  {
+    "id": "igw",
+    "file": "stock/igw.svg",
+    "label": "Internet Gateway",
+    "group": "stock",
+    "source": "igw"
+  },
+  {
+    "id": "natgw",
+    "file": "stock/natgw.svg",
+    "label": "NAT Gateway",
+    "group": "stock",
+    "source": "natgw"
+  },
+  {
+    "id": "vpngw",
+    "file": "stock/vpngw.svg",
+    "label": "VPN Gateway",
+    "group": "stock",
+    "source": "vpngw"
+  },
+  {
+    "id": "dxgw",
+    "file": "stock/dxgw.svg",
+    "label": "Direct Connect GW",
+    "group": "stock",
+    "source": "dxgw"
+  },
+  {
+    "id": "vwanhub",
+    "file": "stock/vwanhub.svg",
+    "label": "Virtual WAN Hub",
+    "group": "stock",
+    "source": "vwanhub"
+  },
+  {
+    "id": "expressroute",
+    "file": "stock/expressroute.svg",
+    "label": "ExpressRoute GW",
+    "group": "stock",
+    "source": "expressroute"
+  },
+  {
+    "id": "cloudrouter",
+    "file": "stock/cloudrouter.svg",
+    "label": "Cloud Router",
+    "group": "stock",
+    "source": "cloudrouter"
+  },
+  {
+    "id": "loadbalancer",
+    "file": "stock/loadbalancer.svg",
+    "label": "Load Balancer",
+    "group": "stock",
+    "source": "loadbalancer"
+  },
+  {
+    "id": "proxy",
+    "file": "stock/proxy.svg",
+    "label": "Proxy",
+    "group": "stock",
+    "source": "proxy"
+  },
+  {
+    "id": "wlc",
+    "file": "stock/wlc.svg",
+    "label": "Wireless Controller",
+    "group": "stock",
+    "source": "wlc"
+  },
+  {
+    "id": "modem",
+    "file": "stock/modem.svg",
+    "label": "Modem / ONT",
+    "group": "stock",
+    "source": "modem"
+  },
+  {
+    "id": "dns",
+    "file": "stock/dns.svg",
+    "label": "DNS Server",
+    "group": "stock",
+    "source": "dns"
+  },
+  {
+    "id": "webserver",
+    "file": "stock/webserver.svg",
+    "label": "Web Server",
+    "group": "stock",
+    "source": "webserver"
+  },
+  {
+    "id": "mailserver",
+    "file": "stock/mailserver.svg",
+    "label": "Mail Server",
+    "group": "stock",
+    "source": "mailserver"
+  },
+  {
+    "id": "nas",
+    "file": "stock/nas.svg",
+    "label": "NAS / Storage",
+    "group": "stock",
+    "source": "nas"
+  },
+  {
+    "id": "ups",
+    "file": "stock/ups.svg",
+    "label": "UPS",
+    "group": "stock",
+    "source": "ups"
+  },
+  {
+    "id": "printer",
+    "file": "stock/printer.svg",
+    "label": "Printer",
+    "group": "stock",
+    "source": "printer"
+  },
+  {
+    "id": "camera",
+    "file": "stock/camera.svg",
+    "label": "IP Camera",
+    "group": "stock",
+    "source": "camera"
+  },
+  {
+    "id": "voip",
+    "file": "stock/voip.svg",
+    "label": "VoIP Phone",
+    "group": "stock",
+    "source": "voip"
+  },
+  {
+    "id": "iot",
+    "file": "stock/iot.svg",
+    "label": "IoT Device",
+    "group": "stock",
+    "source": "iot"
+  },
+  {
+    "id": "vm",
+    "file": "stock/vm.svg",
+    "label": "Virtual Machine",
+    "group": "stock",
+    "source": "vm"
+  },
+  {
+    "id": "containerNode",
+    "file": "stock/containerNode.svg",
+    "label": "Container",
+    "group": "stock",
+    "source": "containerNode"
+  },
+  {
+    "id": "k8s",
+    "file": "stock/k8s.svg",
+    "label": "Kubernetes",
+    "group": "stock",
+    "source": "k8s"
+  },
+  {
+    "id": "ids",
+    "file": "stock/ids.svg",
+    "label": "IDS / IPS",
+    "group": "stock",
+    "source": "ids"
+  },
+  {
+    "id": "vpnconc",
+    "file": "stock/vpnconc.svg",
+    "label": "VPN Concentrator",
+    "group": "stock",
+    "source": "vpnconc"
+  },
+  {
+    "id": "usergroup",
+    "file": "stock/usergroup.svg",
+    "label": "User Group",
+    "group": "stock",
+    "source": "usergroup"
+  },
+  {
+    "id": "glyph-shield",
+    "file": "glyphs/shield.svg",
+    "label": "shield",
+    "group": "glyph",
+    "source": "shield",
+    "category": "Security"
+  },
+  {
+    "id": "glyph-lock",
+    "file": "glyphs/lock.svg",
+    "label": "lock",
+    "group": "glyph",
+    "source": "lock",
+    "category": "Security"
+  },
+  {
+    "id": "glyph-key",
+    "file": "glyphs/key.svg",
+    "label": "key",
+    "group": "glyph",
+    "source": "key",
+    "category": "Security"
+  },
+  {
+    "id": "glyph-eye",
+    "file": "glyphs/eye.svg",
+    "label": "eye",
+    "group": "glyph",
+    "source": "eye",
+    "category": "Security"
+  },
+  {
+    "id": "glyph-globe",
+    "file": "glyphs/globe.svg",
+    "label": "globe",
+    "group": "glyph",
+    "source": "globe",
+    "category": "Network"
+  },
+  {
+    "id": "glyph-wifi",
+    "file": "glyphs/wifi.svg",
+    "label": "wifi",
+    "group": "glyph",
+    "source": "wifi",
+    "category": "Network"
+  },
+  {
+    "id": "glyph-signal",
+    "file": "glyphs/signal.svg",
+    "label": "signal",
+    "group": "glyph",
+    "source": "signal",
+    "category": "Network"
+  },
+  {
+    "id": "glyph-link",
+    "file": "glyphs/link.svg",
+    "label": "link",
+    "group": "glyph",
+    "source": "link",
+    "category": "Network"
+  },
+  {
+    "id": "glyph-server",
+    "file": "glyphs/server.svg",
+    "label": "server",
+    "group": "glyph",
+    "source": "server",
+    "category": "Infra"
+  },
+  {
+    "id": "glyph-database",
+    "file": "glyphs/database.svg",
+    "label": "database",
+    "group": "glyph",
+    "source": "database",
+    "category": "Infra"
+  },
+  {
+    "id": "glyph-cloud",
+    "file": "glyphs/cloud.svg",
+    "label": "cloud",
+    "group": "glyph",
+    "source": "cloud",
+    "category": "Infra"
+  },
+  {
+    "id": "glyph-cpu",
+    "file": "glyphs/cpu.svg",
+    "label": "cpu",
+    "group": "glyph",
+    "source": "cpu",
+    "category": "Infra"
+  },
+  {
+    "id": "glyph-terminal",
+    "file": "glyphs/terminal.svg",
+    "label": "terminal",
+    "group": "glyph",
+    "source": "terminal",
+    "category": "Infra"
+  },
+  {
+    "id": "glyph-lightning",
+    "file": "glyphs/lightning.svg",
+    "label": "lightning",
+    "group": "glyph",
+    "source": "lightning",
+    "category": "Status"
+  },
+  {
+    "id": "glyph-check",
+    "file": "glyphs/check.svg",
+    "label": "check",
+    "group": "glyph",
+    "source": "check",
+    "category": "Status"
+  },
+  {
+    "id": "glyph-xmark",
+    "file": "glyphs/xmark.svg",
+    "label": "xmark",
+    "group": "glyph",
+    "source": "xmark",
+    "category": "Status"
+  },
+  {
+    "id": "glyph-warning",
+    "file": "glyphs/warning.svg",
+    "label": "warning",
+    "group": "glyph",
+    "source": "warning",
+    "category": "Status"
+  },
+  {
+    "id": "glyph-heart",
+    "file": "glyphs/heart.svg",
+    "label": "heart",
+    "group": "glyph",
+    "source": "heart",
+    "category": "Status"
+  },
+  {
+    "id": "glyph-bell",
+    "file": "glyphs/bell.svg",
+    "label": "bell",
+    "group": "glyph",
+    "source": "bell",
+    "category": "Status"
+  },
+  {
+    "id": "glyph-user",
+    "file": "glyphs/user.svg",
+    "label": "user",
+    "group": "glyph",
+    "source": "user",
+    "category": "Identity"
+  },
+  {
+    "id": "glyph-users",
+    "file": "glyphs/users.svg",
+    "label": "users",
+    "group": "glyph",
+    "source": "users",
+    "category": "Identity"
+  },
+  {
+    "id": "glyph-fingerprint",
+    "file": "glyphs/fingerprint.svg",
+    "label": "fingerprint",
+    "group": "glyph",
+    "source": "fingerprint",
+    "category": "Identity"
+  },
+  {
+    "id": "glyph-gear",
+    "file": "glyphs/gear.svg",
+    "label": "gear",
+    "group": "glyph",
+    "source": "gear",
+    "category": "Misc"
+  },
+  {
+    "id": "glyph-layers",
+    "file": "glyphs/layers.svg",
+    "label": "layers",
+    "group": "glyph",
+    "source": "layers",
+    "category": "Misc"
+  },
+  {
+    "id": "glyph-code",
+    "file": "glyphs/code.svg",
+    "label": "code",
+    "group": "glyph",
+    "source": "code",
+    "category": "Misc"
+  },
+  {
+    "id": "glyph-power",
+    "file": "glyphs/power.svg",
+    "label": "power",
+    "group": "glyph",
+    "source": "power",
+    "category": "Misc"
+  }
+]
