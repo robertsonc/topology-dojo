@@ -1,6 +1,7 @@
 # Topology Dojo
 
-A studio for designing **network topology diagrams** — built so the persisted
+A studio for designing **network topology diagrams**, with a built-in
+**MCP (Model Context Protocol) server** — built so the persisted
 diagram vocabulary is equally authorable by **people** (a direct-manipulation
 canvas editor) and by **agents** (a headless API exposed over MCP). Both use the
 same document contract and renderer; browser-only view preferences and
