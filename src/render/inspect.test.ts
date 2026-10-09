@@ -270,3 +270,173 @@ describe('self-labelled nodes (#253)', () => {
     expect(r.counts.text.problems).toBe(0);
   });
 });
+
+describe('link crossings on drawn geometry (#258)', () => {
+  const routing = (r: InspectReport) =>
+    r.findings.filter((f) => f.category === 'routing');
+
+  it('reports a K2,2 crossing as an expected dual-homed mesh note', () => {
+    // Two tiers drawn as rows, fully meshed: the diagonal pair must cross.
+    const r = inspectPage(
+      page({
+        nodes: [
+          node('a1', 300, 200),
+          node('a2', 700, 200),
+          node('b1', 300, 500),
+          node('b2', 700, 500),
+        ],
+        links: [
+          link('l11', 'a1', 'b1'),
+          link('l12', 'a1', 'b2'),
+          link('l21', 'a2', 'b1'),
+          link('l22', 'a2', 'b2'),
+        ],
+      }),
+    );
+    const rf = routing(r);
+    expect(rf.length).toBe(1);
+    expect(rf[0]!.severity).toBe('note');
+    expect(rf[0]!.message).toMatch(/^links "l12" and "l21" cross — expected/);
+    expect(rf[0]!.message).toMatch(
+      /— expected \(dual-homed mesh between a1,a2 and b1,b2\)$/,
+    );
+    expect(r.crossings).toEqual({ total: 1, unavoidable: 1, avoidable: 0 });
+    expect(r.counts.routing).toEqual({ problems: 0, notes: 1 });
+    expect(r.clean).toBe(true);
+  });
+
+  it('counts every K2,4 crossing pair as unavoidable', () => {
+    const tops = [node('a1', 200, 200), node('a2', 800, 200)];
+    const bottoms = [200, 400, 600, 800].map((x, i) =>
+      node(`b${i + 1}`, x, 500),
+    );
+    const links: LinkConfig[] = [];
+    for (const a of tops)
+      for (const b of bottoms) links.push(link(`${a.id}-${b.id}`, a.id, b.id));
+    const r = inspectPage(page({ nodes: [...tops, ...bottoms], links }));
+    expect(r.crossings.total).toBe(6);
+    expect(r.crossings.unavoidable).toBe(6);
+    expect(r.crossings.avoidable).toBe(0);
+    expect(r.counts.routing.problems).toBe(0);
+    expect(routing(r).every((f) => f.severity === 'note')).toBe(true);
+    expect(r.clean).toBe(true);
+  });
+
+  it('keeps an X between two unrelated links as a problem', () => {
+    const r = inspectPage(
+      page({
+        nodes: [
+          node('p', 300, 200),
+          node('q', 700, 500),
+          node('s', 300, 500),
+          node('t', 700, 200),
+        ],
+        links: [link('x1', 'p', 'q'), link('x2', 's', 't')],
+      }),
+    );
+    const rf = routing(r);
+    expect(rf.length).toBe(1);
+    expect(rf[0]!.severity).toBe('problem');
+    expect(rf[0]!.message).toMatch(/^links "x1" and "x2" cross — reorder/);
+    expect(r.crossings).toEqual({ total: 1, unavoidable: 0, avoidable: 1 });
+    expect(r.clean).toBe(false);
+  });
+
+  it('honours waypoints that route a link around a node its chord would hit', () => {
+    // The a→b chord slices straight through "mid" (and through the vertical
+    // c→d link); the drawn route goes up and over both.
+    const nodes = [
+      node('a', 300, 350),
+      node('mid', 500, 350),
+      node('b', 700, 350),
+      node('c', 600, 250),
+      node('d', 600, 450),
+    ];
+    const chord = inspectPage(
+      page({ nodes, links: [link('l1', 'a', 'b'), link('v', 'c', 'd')] }),
+    );
+    expect(messages(chord)).toMatch(/link "l1" passes through unrelated node/);
+    expect(chord.crossings.total).toBe(1);
+
+    const routed = inspectPage(
+      page({
+        nodes,
+        links: [
+          {
+            ...link('l1', 'a', 'b'),
+            waypoints: [
+              { x: 300, y: 150 },
+              { x: 700, y: 150 },
+            ],
+          },
+          link('v', 'c', 'd'),
+        ],
+      }),
+    );
+    expect(messages(routed)).not.toMatch(/passes through/);
+    expect(messages(routed)).not.toMatch(/cross/);
+    expect(routed.crossings).toEqual({
+      total: 0,
+      unavoidable: 0,
+      avoidable: 0,
+    });
+    expect(routed.counts.routing.problems).toBe(0);
+  });
+
+  it('collapses a bused crossover into one finding naming every link', () => {
+    // Four left→right links bend through (almost) the same crossover point
+    // above the rows; every one of the 6 pairs intersects within a few px.
+    // (Identical waypoints would make the polylines touch at a shared vertex,
+    // which — like a shared endpoint — is a junction, not a crossing.)
+    const left = [200, 300, 400, 500].map((y, i) => node(`n${i + 1}`, 200, y));
+    const right = [200, 300, 400, 500].map((y, i) => node(`r${i + 1}`, 800, y));
+    const bus: { x: number; y: number }[] = [
+      { x: 497, y: 150 },
+      { x: 503, y: 150 },
+      { x: 500, y: 147 },
+      { x: 500, y: 153 },
+    ];
+    const links: LinkConfig[] = left.map((n, i) => ({
+      ...link(`l${i + 1}`, n.id, right[3 - i]!.id),
+      waypoints: [bus[i]!],
+    }));
+    const r = inspectPage(page({ nodes: [...left, ...right], links }));
+    expect(r.crossings).toEqual({ total: 6, unavoidable: 0, avoidable: 6 });
+    const rf = routing(r);
+    expect(rf.length).toBe(1);
+    expect(rf[0]!.severity).toBe('problem');
+    expect(rf[0]!.message).toMatch(
+      /^4 links cross at \(\d+,\d+\): l1, l2, l3, l4 — reorder/,
+    );
+    // The crossover sits where the waypoints put it, not on the chords
+    // (which would meet at (500,350)).
+    const at = /at \((\d+),(\d+)\)/.exec(rf[0]!.message)!;
+    expect(Number(at[1])).toBeCloseTo(500, -1);
+    expect(Number(at[2])).toBeCloseTo(150, -1);
+    expect(r.counts.routing).toEqual({ problems: 1, notes: 0 });
+  });
+
+  it('models the orthogonal elbow when checking for nodes a link passes through', () => {
+    // Chord a→b at x=520 is at y≈365, well clear of "blocker" at (520,200);
+    // the orthogonal L runs horizontally along y=200 first and hits it.
+    const nodes = [
+      node('a', 300, 200),
+      node('b', 700, 500),
+      node('blocker', 520, 200),
+    ];
+    const straight = inspectPage(
+      page({ nodes, links: [link('l1', 'a', 'b')] }),
+    );
+    expect(messages(straight)).not.toMatch(/passes through/);
+
+    const ortho = inspectPage(
+      page({
+        nodes,
+        links: [{ ...link('l1', 'a', 'b'), lineStyle: 'orthogonal' }],
+      }),
+    );
+    expect(messages(ortho)).toMatch(
+      /link "l1" passes through unrelated node "blocker"/,
+    );
+  });
+});
