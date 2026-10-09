@@ -1202,6 +1202,56 @@ describe('MCP tools', () => {
     expect(parsed.label).toBe('Branch A');
   });
 
+  it('accepts a long-form callout/text body via extra, capped at TEXT_LIMITS.body with newlines kept (#259)', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    const addNode = tools.find((t) => t.name === 'add_node')!;
+    const long = 'b'.repeat(1500);
+    const stored = addNode.handler(
+      parseToolArgs(addNode, {
+        topologyId: id,
+        type: 'callout',
+        x: 100,
+        y: 100,
+        nodeId: 'note',
+        label: 'Note',
+        extra: { body: long },
+      }),
+    ) as { body?: string };
+    expect(stored.body).toBe(long);
+    // One past the cap is rejected at the Zod boundary (same path as every
+    // other DISPLAY_FIELD_LIMITS string that rides in `extra`).
+    expect(() =>
+      parseToolArgs(addNode, {
+        topologyId: id,
+        type: 'text',
+        x: 0,
+        y: 0,
+        extra: { body: 'b'.repeat(TEXT_LIMITS.body + 1) },
+      }),
+    ).toThrow(/body.*exceeds 2000|exceeds 2000/);
+    // Multiline normalisation: CRLF → LF, runs of blank lines collapse to
+    // one, controls stripped, inline whitespace collapsed, newlines kept.
+    const update = tools.find((t) => t.name === 'update_element')!;
+    update.handler(
+      parseToolArgs(update, {
+        topologyId: id,
+        elementId: 'note',
+        set: { body: 'First line\r\nSecond  line\n\n\n\nThird\u0000 line' },
+      }),
+    );
+    const node = store.page(id).nodes.find((n) => n.id === 'note') as {
+      body?: string;
+    };
+    expect(node.body).toBe('First line\nSecond line\n\nThird line');
+    expect(() =>
+      parseToolArgs(update, {
+        topologyId: id,
+        elementId: 'note',
+        set: { body: 'b'.repeat(TEXT_LIMITS.body + 1) },
+      }),
+    ).toThrow(/exceeds/);
+  });
+
   it('omits the live-data tools unless a provider is wired in', () => {
     const liveNames = [
       'describe_data_source',

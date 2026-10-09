@@ -8,6 +8,7 @@ import {
   parseViewBox,
 } from './layout.js';
 import { tidyPage } from './tidy.js';
+import { nodeBounds } from './geometry.js';
 
 const has = (probs: { message: string }[], re: RegExp): boolean =>
   probs.some((p) => re.test(p.message));
@@ -195,6 +196,57 @@ describe('self-labelled node footprints (#253)', () => {
     expect(has(probs, /"note".*page edge/)).toBe(false);
     expect(has(probs, /"sw1" and "note"|"note" and "sw1"/)).toBe(false);
     expect(has(probs, /"note" and "d1"|"d1" and "note"/)).toBe(false);
+  });
+
+  it('counts a callout body into its footprint (#259)', () => {
+    // ~310 chars at 180px wraps to well over a dozen lines.
+    const BODY = Array.from(
+      { length: 5 },
+      (_, i) =>
+        `Step ${i + 1}: drain the standby, verify tunnels, then fail back.`,
+    ).join(' ');
+    const note = {
+      id: 'note',
+      type: 'callout',
+      x: 500,
+      y: 350,
+      width: 180,
+      label: LONG,
+      body: BODY,
+    };
+    const { body: _omit, ...plain } = note;
+    const tall = nodeBounds(note);
+    expect(tall.h).toBeGreaterThan(nodeBounds(plain).h + 100);
+    expect(tall.w).toBe(180);
+
+    // Neighbours visibly beside the note stay clear, however long the body.
+    const clear = createDocument()
+      .page()
+      .node(note)
+      .node({ id: 'sw1', type: 'switch', x: 300, y: 350, label: 'core-sw' })
+      .node({ id: 'd1', type: 'server', x: 700, y: 350, label: 'd1' })
+      .build();
+    const ok = analyzeLayout(clear);
+    expect(has(ok, /"note".*page edge/)).toBe(false);
+    expect(has(ok, /"note"/)).toBe(false);
+
+    // A node sitting under the body's lower lines is a real overlap — and
+    // only because of the body: the same spot is clear without it.
+    const underY = Math.round(350 + tall.h / 2 - 10);
+    const hit = createDocument()
+      .page()
+      .node(note)
+      .node({ id: 'd1', type: 'server', x: 500, y: underY, label: 'd1' })
+      .build();
+    expect(has(analyzeLayout(hit), /"note" and "d1"|"d1" and "note"/)).toBe(
+      true,
+    );
+    const miss = createDocument()
+      .page()
+      .node(plain)
+      .node({ id: 'd1', type: 'server', x: 500, y: underY, label: 'd1' })
+      .build();
+    expect(has(analyzeLayout(miss), /"note"/)).toBe(false);
   });
 
   it('does not place a text box inside a zone it merely sits near', () => {

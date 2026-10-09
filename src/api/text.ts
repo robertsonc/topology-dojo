@@ -13,6 +13,8 @@ export const TEXT_LIMITS = {
   caption: 500,
   /** Zone description (and similarly long notes). */
   description: 1000,
+  /** Long-form paragraph text on callout / text nodes; newlines preserved. */
+  body: 2000,
   /** Node / flow-hop `meta` string values. */
   metaValue: 2000,
   /** Document title, proposal title. */
@@ -63,6 +65,9 @@ export const DISPLAY_FIELD_LIMITS: Readonly<
   badgeText: { max: TEXT_LIMITS.label },
   caption: { max: TEXT_LIMITS.caption, multiline: true },
   description: { max: TEXT_LIMITS.description, multiline: true },
+  // Callout / text node paragraph block (#259): Zod rejects above the cap,
+  // `parseDoc` truncates, and both keep newline boundaries.
+  body: { max: TEXT_LIMITS.body, multiline: true },
   rationale: { max: TEXT_LIMITS.rationale, multiline: true },
   title: { max: TEXT_LIMITS.title },
   name: { max: TEXT_LIMITS.name },

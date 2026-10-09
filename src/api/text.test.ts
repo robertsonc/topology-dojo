@@ -93,6 +93,21 @@ describe('sanitizeDisplayFields / meta', () => {
     expect(page.nodes[0]!.meta.ports).toBe(48);
   });
 
+  it('truncates a callout / text body as multiline (#259)', () => {
+    const page = {
+      nodes: [
+        {
+          type: 'callout',
+          body: `para one\r\n\n\n\npara two ${'b'.repeat(TEXT_LIMITS.body)}`,
+        },
+      ],
+    };
+    sanitizeDisplayFields(page);
+    const body = page.nodes[0]!.body;
+    expect(body.length).toBe(TEXT_LIMITS.body);
+    expect(body.startsWith('para one\n\npara two ')).toBe(true);
+  });
+
   it('normalizes meta keys and drops empty ones', () => {
     const meta: Record<string, unknown> = {
       '  ser\u0000ial  ': 'SN1',

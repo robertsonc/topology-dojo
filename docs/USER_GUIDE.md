@@ -412,7 +412,11 @@ The built-in library covers:
 - a **Callout** sticky note — a tinted folded-corner note whose text wraps
   at its width, with an optional dashed leader line pointing at a target
   element (set **Points at** in Properties; deleting the target keeps the
-  note and clears the pointer);
+  note and clears the pointer). Both callouts and text boxes take an
+  optional **Body** — a long-form paragraph (up to 2000 characters, line
+  breaks kept) that wraps at the note's width between the label and the
+  sublabel, so a multi-sentence note no longer has to squeeze into the
+  200-character label;
 - a generic IT/network pack — load balancer, proxy, wireless controller,
   modem, DNS/web/mail servers, NAS, UPS, printer, IP camera, VoIP phone, IoT
   device, VM, container, Kubernetes, IDS/IPS, VPN concentrator, and user

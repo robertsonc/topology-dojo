@@ -3022,18 +3022,17 @@ ${grid}`;
   }
 
   /**
-   * Freeform text node. `width` turns it into a sized text box: the label (and
-   * sublabel) word-wrap to fit. `fill` draws a background panel for legibility,
-   * `borderColor` outlines it, `align` sets left/center/right within the box.
-   * Without those options it renders exactly like the classic centered label.
-   */
-  /**
    * Callout / sticky-note annotation — a tinted note with word-wrapped text
    * and an optional dashed leader line to a target element (`cfg.target`,
    * pre-resolved into `cfg._targetPos` by the render pass, the same trick
    * overlayCloud uses for spans). The whiteboard-annotation staple: label is
-   * the note text, sublabel a smaller second block, `width` wraps, `color`
-   * tints. Draws its own text (excluded from the generic below-node label).
+   * the note text, `body` an optional long-form paragraph block under it
+   * (same size, regular weight, explicit newlines kept), sublabel a smaller
+   * third block, `width` wraps, `color` tints. Draws its own text (excluded
+   * from the generic below-node label).
+   *
+   * Box metrics are mirrored by nodeHalf() in src/api/geometry.ts — keep the
+   * two in lockstep so overlap / density checks track the drawn note.
    */
   static renderCallout(x, y, cfg = {}) {
     const width = Math.max(60, Number(cfg.width) || 160);
@@ -3044,14 +3043,24 @@ ${grid}`;
     const innerW = width - pad * 2;
     const label = String(cfg.label || 'Note');
     const lines = TopologyDesigner._wrapText(label, innerW, fs);
+    const bodyLines = cfg.body
+      ? TopologyDesigner._wrapText(String(cfg.body), innerW, fs)
+      : [];
     const subFs = Math.max(7, fs * 0.8);
     const subLines = cfg.sublabel
       ? TopologyDesigner._wrapText(String(cfg.sublabel), innerW, subFs)
       : [];
     const lineH = fs * 1.35;
     const subLineH = subFs * 1.35;
+    // The body block is set off from the label above and the sublabel below
+    // by the same gap; without a body the sublabel keeps its classic gap.
+    const bodyGap = fs * 0.4;
     const blockH =
-      lines.length * lineH + (subLines.length ? subLines.length * subLineH + subFs * 0.4 : 0);
+      lines.length * lineH +
+      (bodyLines.length ? bodyGap + bodyLines.length * lineH : 0) +
+      (subLines.length
+        ? subLines.length * subLineH + (bodyLines.length ? bodyGap : subFs * 0.4)
+        : 0);
     const h = blockH + pad * 2;
     const x0 = x - width / 2, y0 = y - h / 2;
     const fold = Math.min(14, width * 0.15);
@@ -3077,8 +3086,15 @@ ${grid}`;
       s += `<text x="${x0 + pad}" y="${round2(ty)}" fill="${textColor}" font-size="${fs}" font-weight="600">${_esc(line)}</text>`;
       ty += lineH;
     }
+    if (bodyLines.length) {
+      ty += bodyGap;
+      for (const line of bodyLines) {
+        s += `<text x="${x0 + pad}" y="${round2(ty)}" fill="${textColor}" font-size="${fs}" font-weight="400" opacity=".9">${_esc(line)}</text>`;
+        ty += lineH;
+      }
+    }
     if (subLines.length) {
-      ty += subFs * 0.4;
+      ty += bodyLines.length ? bodyGap : subFs * 0.4;
       for (const line of subLines) {
         s += `<text x="${x0 + pad}" y="${round2(ty - subLineH + subFs)}" fill="${textColor}" font-size="${subFs}" opacity=".75">${_esc(line)}</text>`;
         ty += subLineH;
@@ -3114,21 +3130,44 @@ ${grid}`;
       `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="${r}" fill="none" stroke="#7d8a92" stroke-opacity=".35"/>`;
   }
 
+  /**
+   * Freeform text node. `width` turns it into a sized text box: the label,
+   * the optional long-form `body` paragraph (0.9× the label size, regular
+   * weight, explicit newlines kept) and the sublabel word-wrap to fit.
+   * `fill` draws a background panel, `borderColor` outlines it, `align`
+   * sets left/center/right within the box.
+   *
+   * Box metrics are mirrored by nodeHalf() in src/api/geometry.ts — keep the
+   * two in lockstep so overlap / density checks track the drawn box.
+   */
   static renderText(x, y, cfg = {}) {
     const { label = '', color = '#e6e8e9', fontSize = 14, fontWeight = '600', sublabel = '',
-            width = 0, fill = '', borderColor = '', align = 'center', padding = 8 } = cfg;
+            body = '', width = 0, fill = '', borderColor = '', align = 'center', padding = 8 } = cfg;
     const text = label || 'Text';
     const innerW = width > 0 ? Math.max(8, width - padding * 2) : 0;
     const lines = width > 0 ? TopologyDesigner._wrapText(text, innerW, fontSize) : String(text).split('\n');
+    const bodySize = fontSize * 0.9;
+    const bodyLines = body
+      ? (width > 0 ? TopologyDesigner._wrapText(String(body), innerW, bodySize) : String(body).split('\n'))
+      : [];
     const subSize = Math.max(8, fontSize * 0.7);
     const subLines = sublabel
       ? (width > 0 ? TopologyDesigner._wrapText(sublabel, innerW, subSize) : String(sublabel).split('\n'))
       : [];
     const lineH = fontSize * 1.3;
     const subLineH = subSize * 1.4;
-    const blockH = lines.length * lineH + (subLines.length ? subLines.length * subLineH + subSize * 0.3 : 0);
+    // The body block is set off from the label above and the sublabel below
+    // by the same gap; without a body the sublabel keeps its classic gap.
+    const bodyGap = fontSize * 0.4;
+    const blockH =
+      lines.length * lineH +
+      (bodyLines.length ? bodyGap + bodyLines.length * lineH : 0) +
+      (subLines.length
+        ? subLines.length * subLineH + (bodyLines.length ? bodyGap : subSize * 0.3)
+        : 0);
     const estW = Math.max(
       ...lines.map(l => l.length * fontSize * 0.6),
+      ...(bodyLines.length ? bodyLines.map(l => l.length * bodySize * 0.6) : [0]),
       ...(subLines.length ? subLines.map(l => l.length * subSize * 0.6) : [0]),
     );
     const boxW = width > 0 ? width : estW + padding * 2;
@@ -3145,8 +3184,19 @@ ${grid}`;
       s += `<text x="${tx}" y="${ty}" text-anchor="${anchor}" fill="${color}" font-size="${fontSize}" font-weight="${fontWeight}" opacity=".9">${_esc(line)}</text>`;
       ty += lineH;
     }
-    // Re-anchor from the main block's bottom edge: gap + first sub baseline.
-    ty += subSize * 1.2 - fontSize * 0.9;
+    if (bodyLines.length) {
+      // Body baselines sit at the label's offset within the shared line height.
+      ty += bodyGap;
+      for (const line of bodyLines) {
+        s += `<text x="${tx}" y="${ty}" text-anchor="${anchor}" fill="${color}" font-size="${bodySize}" font-weight="400" opacity=".85">${_esc(line)}</text>`;
+        ty += lineH;
+      }
+      // Re-anchor from the body block's bottom edge: gap + first sub baseline.
+      ty += bodyGap + subSize * 0.9 - fontSize * 0.9;
+    } else {
+      // Re-anchor from the main block's bottom edge: gap + first sub baseline.
+      ty += subSize * 1.2 - fontSize * 0.9;
+    }
     for (const line of subLines) {
       s += `<text x="${tx}" y="${ty}" text-anchor="${anchor}" fill="${color}" font-size="${subSize}" font-weight="400" opacity=".65">${_esc(line)}</text>`;
       ty += subLineH;

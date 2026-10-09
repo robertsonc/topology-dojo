@@ -56,6 +56,13 @@ export interface FieldSpec {
    */
   max?: number;
   /**
+   * For `kind: 'string'`: long-form text whose newline boundaries are kept
+   * (Zod / `parseDoc` normalise it in multiline mode — see
+   * DISPLAY_FIELD_LIMITS). The inspector draws a textarea instead of a
+   * single-line input. Headless callers may ignore it.
+   */
+  multiline?: boolean;
+  /**
    * GUI hint only — how the inspector draws the control. `'compass'` renders a
    * 3×3 placement grid: for an `enum` field the cells are the compass codes
    * (centre = unset/auto); for a `point` field the cells write preset
@@ -267,6 +274,13 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
       max: TEXT_LIMITS.label,
     },
     { key: 'width', label: 'Box width (wraps text)', kind: 'number' },
+    {
+      key: 'body',
+      label: 'Body',
+      kind: 'string',
+      multiline: true,
+      max: TEXT_LIMITS.body,
+    },
     { key: 'fill', label: 'Background fill', kind: 'color' },
     { key: 'borderColor', label: 'Border color', kind: 'color' },
     {
@@ -300,6 +314,13 @@ const NODE_EXTRAS: Record<string, FieldSpec[]> = {
   callout: [
     { key: 'target', label: 'Points at (element id)', kind: 'ref' },
     { key: 'width', label: 'Note width (wraps text)', kind: 'number' },
+    {
+      key: 'body',
+      label: 'Body',
+      kind: 'string',
+      multiline: true,
+      max: TEXT_LIMITS.body,
+    },
     { key: 'fontSize', label: 'Font size', kind: 'number' },
     { key: 'padding', label: 'Padding', kind: 'number' },
   ],
