@@ -1627,6 +1627,79 @@ describe('MCP tools', () => {
     ).toThrow(/HTML export exceeds the 6 MiB limit/);
   });
 
+  describe('render theme (#264)', () => {
+    function themed(): string {
+      const { id } = call('create_topology', {}) as { id: string };
+      call('add_node', {
+        topologyId: id,
+        type: 'ec',
+        x: 200,
+        y: 200,
+        nodeId: 'a',
+      });
+      call('add_node', {
+        topologyId: id,
+        type: 'cloud',
+        x: 600,
+        y: 200,
+        nodeId: 'b',
+      });
+      call('add_link', {
+        topologyId: id,
+        from: 'a',
+        to: 'b',
+        type: 'tunnel',
+        label: 'ipsec',
+      });
+      call('add_page', { topologyId: id, name: 'Frame 2' });
+      return id;
+    }
+
+    it('render_svg: theme "light" differs from the default and is light', () => {
+      const id = themed();
+      const dark = call('render_svg', { topologyId: id }) as string;
+      const explicitDark = call('render_svg', {
+        topologyId: id,
+        theme: 'dark',
+      }) as string;
+      const light = call('render_svg', {
+        topologyId: id,
+        theme: 'light',
+      }) as string;
+      expect(explicitDark).toBe(dark);
+      expect(light).not.toBe(dark);
+      expect(dark).toContain('fill="#0e1613"');
+      expect(light).toContain('fill="#f0f1f3"');
+      expect(light).not.toContain('#e6e8e9'); // no light-on-light label text
+      expect(light).toContain('ipsec'); // content intact
+    });
+
+    it('export_flipbook: theme "light" themes every frame and the chrome', () => {
+      const id = themed();
+      const dark = call('export_flipbook', { topologyId: id }) as string;
+      const light = call('export_flipbook', {
+        topologyId: id,
+        theme: 'light',
+      }) as string;
+      expect(light).not.toBe(dark);
+      expect(light.match(/fill="#f0f1f3"/g)?.length).toBe(2); // both frames
+      expect(light).toContain('background: #f0f1f3'); // player chrome
+      expect(light).not.toContain('#e6e8e9');
+      expect(dark).not.toContain('#f0f1f3');
+    });
+
+    it('rejects an unknown theme on both tools', () => {
+      const id = themed();
+      for (const name of ['render_svg', 'export_flipbook']) {
+        const tool = tools.find((t) => t.name === name)!;
+        expect(() =>
+          parseToolArgs(tool, { topologyId: id, theme: 'sepia' }),
+        ).toThrow(/theme/);
+        expect(() => parseToolArgs(tool, { topologyId: id })).not.toThrow();
+      }
+    });
+  });
+
   it('add_page targets the new page by default; pageIndex overrides', () => {
     const { id } = call('create_topology', {}) as { id: string };
     call('add_page', { topologyId: id, name: 'Frame 2' });

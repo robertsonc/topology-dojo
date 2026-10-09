@@ -10,10 +10,39 @@
  */
 import type { TopologyDocument } from '../pages/model.js';
 import { flipbookSchedule } from '../pages/playback.js';
+import type { RenderTheme } from './theme.js';
 
 export interface FlipbookRenderer {
   (doc: TopologyDocument, pageIndex: number): string;
 }
+
+export interface FlipbookOptions {
+  /**
+   * Theme for the player chrome (stage, bar, buttons) — pass the same theme
+   * the injected renderer uses so frames and chrome agree. Default dark.
+   */
+  theme?: RenderTheme;
+}
+
+/** Player chrome colours per theme (frames are themed by the renderer). */
+const CHROME = {
+  dark: {
+    body: '#14161c',
+    text: '#c8ccd4',
+    bar: '#1d1f27',
+    button: '#292d3a',
+    border: '#3a3f4f',
+    dot: '#01a982',
+  },
+  light: {
+    body: '#f0f1f3',
+    text: '#1d1f27',
+    bar: '#ffffff',
+    button: '#f2f5f8',
+    border: '#ccd4dc',
+    dot: '#00875a',
+  },
+} as const;
 
 function escAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -22,7 +51,9 @@ function escAttr(s: string): string {
 export function exportFlipbookHTML(
   doc: TopologyDocument,
   renderPage: FlipbookRenderer,
+  opts: FlipbookOptions = {},
 ): string {
+  const c = CHROME[opts.theme === 'light' ? 'light' : 'dark'];
   const schedule = flipbookSchedule(doc);
   const frames = doc.pages
     .map(
@@ -43,7 +74,7 @@ export function exportFlipbookHTML(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escAttr(doc.title)} — flipbook</title>
 <style>
-  body { margin: 0; background: #14161c; color: #c8ccd4; font: 13px/1.4 ui-monospace, monospace; }
+  body { margin: 0; background: ${c.body}; color: ${c.text}; font: 13px/1.4 ui-monospace, monospace; }
   .stage { display: grid; place-items: center; min-height: calc(100vh - 56px); }
   .frame { display: none; max-width: 96vw; }
   .frame.on { display: block; }
@@ -51,11 +82,11 @@ export function exportFlipbookHTML(
   @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
   .frame svg { max-width: 96vw; height: auto; }
   .bar { position: fixed; inset: auto 0 0 0; height: 56px; display: flex; gap: 12px;
-         align-items: center; justify-content: center; background: #1d1f27; }
-  button { background: #292d3a; color: #c8ccd4; border: 1px solid #3a3f4f;
+         align-items: center; justify-content: center; background: ${c.bar}; }
+  button { background: ${c.button}; color: ${c.text}; border: 1px solid ${c.border};
            border-radius: 6px; padding: 6px 14px; cursor: pointer; font: inherit; }
   .dot { width: 12px; height: 12px; border-radius: 50%; padding: 0; }
-  .dot.on { background: #01a982; border-color: #01a982; }
+  .dot.on { background: ${c.dot}; border-color: ${c.dot}; }
   .name { min-width: 14ch; text-align: center; opacity: 0.8; }
 </style>
 <div class="stage">

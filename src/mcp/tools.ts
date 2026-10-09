@@ -201,6 +201,21 @@ export interface ToolDeps {
 const topologyId = z
   .string()
   .describe('Topology id returned by create_topology / import_topology.');
+/** Render theme for the export tools (#264): "dark" (default) or "light". */
+const renderTheme = z
+  .enum(['dark', 'light'])
+  .optional()
+  .describe(
+    'Render theme: "dark" (default, the canvas look) or "light" — light backdrop, dark text, light cards, accents darkened for contrast; for slides, docs and print.',
+  );
+/** The `theme` render option from parsed tool args (omitted when unset). */
+function themeOpt(a: Record<string, unknown>): {
+  theme?: RenderOptions['theme'];
+} {
+  return a.theme !== undefined
+    ? { theme: a.theme as RenderOptions['theme'] }
+    : {};
+}
 const pageIndex = z
   .number()
   .int()
@@ -1380,7 +1395,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. NOTE: the returned SVG is large (often 20–300KB) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. `theme: "light"` renders for a light page (light backdrop, dark text, light cards, accents darkened for contrast) — for slides, docs and print; the default "dark" is the canvas look. NOTE: the returned SVG is large (often 20–300KB) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -1392,15 +1407,19 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .array(z.string())
           .optional()
           .describe('Layer ids to draw (omit for the layers’ defaults).'),
+        theme: renderTheme,
       },
       handler: (a) =>
         assertExportWithinLimit(
           deps.renderDocument(
             store.get(String(a.topologyId)),
             (a.pageIndex as number | undefined) ?? 0,
-            a.visibleLayers !== undefined
-              ? { visibleLayers: a.visibleLayers as string[] }
-              : {},
+            {
+              ...(a.visibleLayers !== undefined
+                ? { visibleLayers: a.visibleLayers as string[] }
+                : {}),
+              ...themeOpt(a),
+            },
           ),
           MAX_SVG_EXPORT_BYTES,
           'SVG',
@@ -1409,12 +1428,14 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'export_flipbook',
       description:
-        'Export the whole document as one standalone, self-playing HTML flipbook: every page rendered to SVG, played in order on each page’s duration (default 2000ms) with cut/fade transitions, loop, play/pause, and frame dots. No external assets — save it as an .html file and open in any browser. Rejected above 6 MiB — for a long story, render_svg pages individually. This is how an animated multi-frame story (e.g. a flow’s setup → steady state → teardown) is delivered end to end.',
-      inputShape: { topologyId },
+        'Export the whole document as one standalone, self-playing HTML flipbook: every page rendered to SVG, played in order on each page’s duration (default 2000ms) with cut/fade transitions, loop, play/pause, and frame dots. No external assets — save it as an .html file and open in any browser. `theme: "light"` renders every frame and the player chrome for a light page (default "dark"). Rejected above 6 MiB — for a long story, render_svg pages individually. This is how an animated multi-frame story (e.g. a flow’s setup → steady state → teardown) is delivered end to end.',
+      inputShape: { topologyId, theme: renderTheme },
       handler: (a) =>
         assertExportWithinLimit(
-          exportFlipbookHTML(store.get(String(a.topologyId)), (doc, i) =>
-            deps.renderDocument(doc, i),
+          exportFlipbookHTML(
+            store.get(String(a.topologyId)),
+            (doc, i) => deps.renderDocument(doc, i, themeOpt(a)),
+            themeOpt(a),
           ),
           MAX_HTML_EXPORT_BYTES,
           'HTML',

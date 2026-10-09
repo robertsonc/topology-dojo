@@ -18,6 +18,11 @@ import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { applyPalette, flattenViewer } from '../vendor/topology-ds.js';
 import { legendSVG } from '../editor/legend.js';
+import {
+  applyRenderTheme,
+  themeBackground,
+  type RenderTheme,
+} from './theme.js';
 
 export interface EngineInstance {
   node(id: string, cfg: Record<string, unknown>): void;
@@ -33,6 +38,8 @@ export interface EngineInstance {
   _steps: unknown[];
   step: number;
   reducedMotion: boolean;
+  /** Engine light canvas: lifts the hardcoded dark grid/vignette (#8). */
+  light?: boolean;
 }
 export interface EngineStatic {
   new (cfg: Record<string, unknown>): EngineInstance;
@@ -51,6 +58,13 @@ export interface RenderOptions {
   visibleLayers?: string[];
   /** Per-frame emphasis (2.2): node/link ids to spotlight; others dim to 25%. */
   emphasis?: string[];
+  /**
+   * Render theme (#264). Default `'dark'` — the engine's native, byte-identical
+   * output. `'light'` renders a light backdrop/grid and remaps every
+   * engine-sourced colour through `LIGHT_THEME_MAP` (render/theme) so the SVG
+   * reads on a light page: dark text, light cards/glass, darkened accents.
+   */
+  theme?: RenderTheme;
 }
 
 /** Provide the minimal browser globals the engine constructor sniffs (idempotent). */
@@ -73,12 +87,19 @@ function registerCustomTypes(E: EngineStatic, specs: CustomNodeSpec[]): void {
   }
 }
 
-/** Render one page to a complete, standalone SVG string (with a dark backdrop). */
-export function renderPageWithEngine(
+/**
+ * Render one page to a complete, standalone SVG string in the engine's native
+ * (dark) colours — the wrapper, the themed backdrop fill and the flattened
+ * art, but WITHOUT the theme colour remap, which the public entry points apply
+ * last (after the legend + brand palette) so every piece is remapped exactly
+ * once. The engine's own `light` flag is still set for a light theme so the
+ * grid/vignette defs come out light.
+ */
+function renderPageUnthemed(
   E: EngineStatic,
   page: Page,
-  customNodes: CustomNodeSpec[] = [],
-  opts: RenderOptions = {},
+  customNodes: CustomNodeSpec[],
+  opts: RenderOptions,
 ): string {
   ensureShim();
   // Stock cloud types ship with the app; the document's own custom types layer
@@ -87,6 +108,8 @@ export function renderPageWithEngine(
 
   const topo = new E({ viewBox: page.viewBox });
   if (opts.calm) topo.reducedMotion = true;
+  // Only set for a light theme so the dark output stays byte-identical.
+  if (opts.theme === 'light') topo.light = true;
   // Line jumps at link crossings — the page-level setting, applied at render
   // time (same as the browser facade, so exports match the canvas).
   (topo as unknown as { lineJumps?: string }).lineJumps = page.lineJumps;
@@ -175,9 +198,22 @@ export function renderPageWithEngine(
   const art = flattenViewer(topo._renderSVG(), opts.emphasis ?? []);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
-    `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#0e1613"/>` +
+    `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${themeBackground(opts.theme)}"/>` +
     art +
     `</svg>`
+  );
+}
+
+/** Render one page to a complete, standalone SVG string (dark backdrop by default). */
+export function renderPageWithEngine(
+  E: EngineStatic,
+  page: Page,
+  customNodes: CustomNodeSpec[] = [],
+  opts: RenderOptions = {},
+): string {
+  return applyRenderTheme(
+    renderPageUnthemed(E, page, customNodes, opts),
+    opts.theme ?? 'dark',
   );
 }
 
@@ -190,17 +226,19 @@ export function renderDocumentWithEngine(
 ): string {
   const page = doc.pages[pageIndex];
   if (!page) throw new Error(`page index ${pageIndex} out of range`);
-  let svg = renderPageWithEngine(E, page, doc.customNodes, {
+  let svg = renderPageUnthemed(E, page, doc.customNodes, {
     ...opts,
     layers: opts.layers ?? doc.layers ?? [],
     emphasis: opts.emphasis ?? page.emphasis,
   });
   // Document-level overlays the per-page engine render doesn't know about:
   // the auto-legend (drawn into the page), then the brand palette remap over
-  // the whole thing (so legend swatches match the recoloured canvas). Mirrors
-  // what the editor composites, so MCP/headless output matches the GUI.
+  // the whole thing (so legend swatches match the recoloured canvas), then
+  // the theme remap LAST — the palette consumes the engine's source accents,
+  // so a document's brand colour is never darkened by the light theme.
+  // Mirrors what the editor composites, so MCP/headless output matches the GUI.
   const legend = legendSVG(doc, page);
   if (legend) svg = svg.replace('</svg>', `${legend}</svg>`);
   if (doc.palette) svg = applyPalette(svg, doc.palette);
-  return svg;
+  return applyRenderTheme(svg, opts.theme ?? 'dark');
 }

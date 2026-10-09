@@ -8,6 +8,11 @@
  */
 import { renderPageSVG, type RenderOptions } from '../vendor/topology-ds.js';
 import type { Page } from '../pages/model.js';
+import {
+  applyRenderTheme,
+  resolveTheme,
+  themeBackground,
+} from '../render/theme.js';
 
 /** All four viewBox components — origins can be non-zero or negative after
  * fit-to-content/layout growth, so the backdrop must track (vx, vy). */
@@ -27,18 +32,21 @@ function viewBoxParts(viewBox: string): {
 }
 
 /** A complete, standalone SVG string for a page (wrapper + backdrop + art).
- * `extra` is appended after the art (e.g. a legend `<g>` in page coordinates). */
+ * `extra` is appended after the art (e.g. a legend `<g>` in page coordinates).
+ * `opts.theme` (#264) picks the backdrop and remaps the art AND the extras —
+ * the art inside `renderPageSVG`, the extras here — so each is themed once. */
 export function pageToSVG(
   page: Page,
   opts: RenderOptions = {},
   extra = '',
 ): string {
   const { vx, vy, vw, vh } = viewBoxParts(page.viewBox);
+  const theme = resolveTheme(opts);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
-    `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#0e1613"/>` +
+    `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${themeBackground(theme)}"/>` +
     renderPageSVG(page, opts) +
-    extra +
+    applyRenderTheme(extra, theme) +
     `</svg>`
   );
 }
