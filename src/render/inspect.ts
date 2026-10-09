@@ -15,6 +15,18 @@
  * 9 (~5.4px/char) just inside the zone's top edge. Zone boxes pad the member
  * positions ±40x/±30y plus the zone padding, exactly as `_renderZoneRect` does.
  *
+ * Routing checks measure the DRAWN link geometry, not the centre-to-centre
+ * chord: each link is a polyline centre → `waypoints` → centre, with the
+ * engine's `_buildLinkPath` elbows (`{x: p[i].x, y: p[i-1].y}` between
+ * consecutive points) inserted for `lineStyle: 'orthogonal'`, and the control
+ * polygon used for `lineStyle: 'curved'` (a 2-point curve bulges ≤20px, so the
+ * chord is close enough). Link/link crossings are classified: a crossing whose
+ * four endpoints are closed into a 4-cycle by other links on the page is an
+ * unavoidable dual-homed mesh (K2,2 / K2,4 drawn as rows) and is reported as a
+ * `note`; every other crossing stays a `problem`. Crossing points within 20px
+ * of each other collapse into one finding (a bused crossover), while
+ * `crossings` keeps the per-pair totals.
+ *
  * Pure and DOM-free: takes a Page, returns a typed report, moves nothing.
  */
 import { nodeLabelPos } from './label-placement.js';
@@ -44,6 +56,12 @@ export interface InspectReport {
   margins: { left: number; right: number; top: number; bottom: number } | null;
   /** True totals per category — never reduced by the findings cap. */
   counts: Record<InspectCategory, { problems: number; notes: number }>;
+  /**
+   * Link/link crossing PAIRS (before co-located crossings are collapsed into
+   * one finding). `unavoidable` pairs are forced by a dual-homed mesh on the
+   * page and are reported as notes; `avoidable` ones are routing problems.
+   */
+  crossings: { total: number; unavoidable: number; avoidable: number };
   /** Capped per category (problems kept first); `counts` holds the totals. */
   findings: InspectFinding[];
   /** Findings dropped by the per-category cap. */
@@ -72,6 +90,8 @@ const ZONE_LABEL_H = 14;
 /** Below this endpoint distance the perimeter trims cross and the engine falls
  * back to a centre→centre line (see render/link-crossing.test.ts). */
 const DEGENERATE_LINK_DIST = 40;
+/** Crossing points closer than this collapse into one "bused" finding. */
+const CROSSING_CLUSTER_RADIUS = 20;
 
 /** Inspect one page and return the bounded visual-quality report. */
 export function inspectPage(
@@ -111,7 +131,7 @@ export function inspectPage(
 
   checkCrop(page, pageRect, glyphs, labels, zoneBoxes, add);
   checkText(page, glyphs, labels, pos, zones, zoneBoxes, add);
-  checkRouting(page, pos, glyphs, add);
+  const crossings = checkRouting(page, pos, glyphs, add);
   checkDensity(page, glyphs, labels, add);
 
   // Content bounds + margins (also feeds the whitespace-balance check below).
@@ -151,6 +171,7 @@ export function inspectPage(
     contentBounds: content ? roundRect(content) : null,
     margins,
     counts,
+    crossings,
     findings,
     omitted: all.length - findings.length,
     clean: !all.some((f) => f.severity === 'problem'),
@@ -345,64 +366,146 @@ function checkRouting(
   pos: Map<string, { x: number; y: number }>,
   glyphs: Map<string, BoundsRect>,
   add: (s: InspectSeverity, c: InspectCategory, m: string) => void,
-): void {
-  interface Seg {
+): InspectReport['crossings'] {
+  interface Route {
     link: LinkConfig;
-    a: { x: number; y: number };
-    b: { x: number; y: number };
+    /** Centre → waypoints (+ orthogonal elbows) → centre, as drawn. */
+    pts: Pt[];
   }
-  const segs: Seg[] = [];
+  const routes: Route[] = [];
   for (const l of page.links) {
     const a = pos.get(l.from);
     const b = pos.get(l.to);
-    if (a && b) segs.push({ link: l, a, b });
+    if (a && b) routes.push({ link: l, pts: linkPolyline(l, a, b) });
   }
 
-  // Link/link crossings (straight centre-to-centre segments; shared endpoints
-  // are a junction, not a crossing).
-  for (let i = 0; i < segs.length; i++) {
-    for (let j = i + 1; j < segs.length; j++) {
-      const s = segs[i]!,
-        t = segs[j]!;
+  // Undirected adjacency, for recognising crossings a dual-homed mesh forces.
+  const adjacent = new Set<string>();
+  const pairKey = (u: string, v: string): string =>
+    u < v ? `${u}\u0000${v}` : `${v}\u0000${u}`;
+  for (const l of page.links) adjacent.add(pairKey(l.from, l.to));
+  const linked = (u: string, v: string): boolean => adjacent.has(pairKey(u, v));
+
+  // Link/link crossings on the drawn polylines (shared endpoints are a
+  // junction, not a crossing; one crossing per link pair).
+  interface Crossing {
+    at: Pt;
+    links: [LinkConfig, LinkConfig];
+    /** The forcing mesh's description, or null when the crossing is avoidable. */
+    mesh: string | null;
+  }
+  const crossings: Crossing[] = [];
+  for (let i = 0; i < routes.length; i++) {
+    for (let j = i + 1; j < routes.length; j++) {
+      const s = routes[i]!,
+        t = routes[j]!;
       const shared =
         s.link.from === t.link.from ||
         s.link.from === t.link.to ||
         s.link.to === t.link.from ||
         s.link.to === t.link.to;
       if (shared) continue;
-      if (segmentsCross(s.a, s.b, t.a, t.b))
-        add(
-          'problem',
-          'routing',
-          `links "${s.link.id}" and "${t.link.id}" cross — reorder nodes or route one around`,
-        );
+      const at = polylinesCross(s.pts, t.pts);
+      if (!at) continue;
+      // L1 = a1–b1, L2 = a2–b2. The crossing is forced when other links close
+      // a 4-cycle through the four endpoints: either a1–b2 + a2–b1 (mesh
+      // between {a1,a2} and {b1,b2}) or a1–a2 + b1–b2 ({a1,b2} vs {a2,b1}).
+      const a1 = s.link.from,
+        b1 = s.link.to,
+        a2 = t.link.from,
+        b2 = t.link.to;
+      const mesh =
+        linked(a1, b2) && linked(a2, b1)
+          ? meshDesc([a1, a2], [b1, b2])
+          : linked(a1, a2) && linked(b1, b2)
+            ? meshDesc([a1, b2], [a2, b1])
+            : null;
+      crossings.push({ at, links: [s.link, t.link], mesh });
     }
   }
 
-  for (const s of segs) {
-    // Links drawn through the box of a node that is not an endpoint.
+  // Collapse co-located crossings (a bused crossover) into one finding each:
+  // greedy clustering, a crossing joins the first cluster whose centroid is
+  // within CROSSING_CLUSTER_RADIUS.
+  interface Cluster {
+    sumX: number;
+    sumY: number;
+    members: Crossing[];
+  }
+  const clusters: Cluster[] = [];
+  for (const c of crossings) {
+    const home = clusters.find((k) => {
+      const n = k.members.length;
+      return (
+        Math.hypot(k.sumX / n - c.at.x, k.sumY / n - c.at.y) <=
+        CROSSING_CLUSTER_RADIUS
+      );
+    });
+    if (home) {
+      home.sumX += c.at.x;
+      home.sumY += c.at.y;
+      home.members.push(c);
+    } else clusters.push({ sumX: c.at.x, sumY: c.at.y, members: [c] });
+  }
+  for (const k of clusters) {
+    const avoidable = k.members.some((c) => c.mesh === null);
+    const meshes = [
+      ...new Set(k.members.flatMap((c) => (c.mesh === null ? [] : [c.mesh]))),
+    ];
+    const suffix = avoidable
+      ? '— reorder nodes or route one around'
+      : `— expected (dual-homed mesh ${meshes.join('; ')})`;
+    const severity: InspectSeverity = avoidable ? 'problem' : 'note';
+    if (k.members.length === 1) {
+      const [l1, l2] = k.members[0]!.links;
+      add(
+        severity,
+        'routing',
+        `links "${l1.id}" and "${l2.id}" cross ${suffix}`,
+      );
+      continue;
+    }
+    const ids: string[] = [];
+    for (const r of routes)
+      if (k.members.some((c) => c.links.includes(r.link))) ids.push(r.link.id);
+    const n = k.members.length;
+    const cx = round(k.sumX / n),
+      cy = round(k.sumY / n);
+    add(
+      severity,
+      'routing',
+      `${ids.length} links cross at (${cx},${cy}): ${ids.join(', ')} ${suffix}`,
+    );
+  }
+
+  for (const r of routes) {
+    // Links drawn through the box of a node that is not an endpoint — every
+    // segment of the drawn polyline is tested, so a waypointed detour that
+    // misses the node is not flagged and an orthogonal elbow that hits it is.
     for (const n of page.nodes) {
-      if (n.id === s.link.from || n.id === s.link.to) continue;
-      if (segmentIntersectsRect(s.a, s.b, glyphs.get(n.id)!))
+      if (n.id === r.link.from || n.id === r.link.to) continue;
+      if (polylineIntersectsRect(r.pts, glyphs.get(n.id)!))
         add(
           'problem',
           'routing',
-          `link "${s.link.id}" passes through unrelated node "${n.id}" — route around it or move the node`,
+          `link "${r.link.id}" passes through unrelated node "${n.id}" — route around it or move the node`,
         );
     }
     // Degenerate geometry: endpoints so close the perimeter trims collapse.
-    const dist = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
+    const a = r.pts[0]!,
+      b = r.pts[r.pts.length - 1]!;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
     if (dist < 0.5)
       add(
         'problem',
         'routing',
-        `link "${s.link.id}" has zero length — its endpoints share one position`,
+        `link "${r.link.id}" has zero length — its endpoints share one position`,
       );
     else if (dist < DEGENERATE_LINK_DIST)
       add(
         'note',
         'routing',
-        `link "${s.link.id}" spans only ~${round(dist)}px — too short to draw cleanly between the node boundaries`,
+        `link "${r.link.id}" spans only ~${round(dist)}px — too short to draw cleanly between the node boundaries`,
       );
   }
 
@@ -435,6 +538,13 @@ function checkRouting(
           `flow path "${f.id}" doubles back over "${wps[i + 1]}" (…${wps[i]} → ${wps[i + 1]} → ${wps[i + 2]}…)`,
         );
   }
+
+  const unavoidable = crossings.filter((c) => c.mesh !== null).length;
+  return {
+    total: crossings.length,
+    unavoidable,
+    avoidable: crossings.length - unavoidable,
+  };
 }
 
 /* ── density / balance ────────────────────────────────────────────── */
@@ -655,6 +765,57 @@ function segmentsCross(a: Pt, b: Pt, c: Pt, d: Pt): boolean {
   const o3 = orient(c, d, a);
   const o4 = orient(c, d, b);
   return o1 !== o2 && o3 !== o4 && o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0;
+}
+
+/** The point where segments a→b and c→d properly cross, or null. */
+function segmentIntersection(a: Pt, b: Pt, c: Pt, d: Pt): Pt | null {
+  if (!segmentsCross(a, b, c, d)) return null;
+  const denom = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
+  if (denom === 0) return null; // parallel — segmentsCross already excludes it
+  const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / denom;
+  return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+}
+
+/**
+ * The polyline a link is drawn along: centre → waypoints → centre, with the
+ * engine's `_buildLinkPath` orthogonal elbows inserted, or the control polygon
+ * for a curved link (its 2-point bulge is ≤20px, so the chord stands in).
+ */
+function linkPolyline(l: LinkConfig, from: Pt, to: Pt): Pt[] {
+  const wps = (l.waypoints ?? []).filter(
+    (p) => Number.isFinite(p.x) && Number.isFinite(p.y),
+  );
+  const pts: Pt[] = [from, ...wps.map((p) => ({ x: p.x, y: p.y })), to];
+  if (l.lineStyle !== 'orthogonal') return pts;
+  const out: Pt[] = [pts[0]!];
+  for (let i = 1; i < pts.length; i++) {
+    out.push({ x: pts[i]!.x, y: pts[i - 1]!.y }, pts[i]!);
+  }
+  return out;
+}
+
+/** "between a1,a2 and b1,b2" — each side sorted so link direction and
+ * discovery order never change the wording. */
+function meshDesc(sideA: string[], sideB: string[]): string {
+  const [x, y] = [sideA, sideB].map((side) => [...side].sort().join(','));
+  return `between ${x} and ${y}`;
+}
+
+/** First point where two polylines properly cross, or null. */
+function polylinesCross(p: Pt[], q: Pt[]): Pt | null {
+  for (let i = 0; i + 1 < p.length; i++)
+    for (let j = 0; j + 1 < q.length; j++) {
+      const at = segmentIntersection(p[i]!, p[i + 1]!, q[j]!, q[j + 1]!);
+      if (at) return at;
+    }
+  return null;
+}
+
+/** True when any segment of the polyline intersects the rect. */
+function polylineIntersectsRect(p: Pt[], r: BoundsRect): boolean {
+  for (let i = 0; i + 1 < p.length; i++)
+    if (segmentIntersectsRect(p[i]!, p[i + 1]!, r)) return true;
+  return false;
 }
 
 /** True when segment a→b intersects the rect (endpoint inside or edge cross). */
