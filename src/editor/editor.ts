@@ -3508,7 +3508,7 @@ export class Editor {
       let best: { x: number; y: number } | null = null;
       let bestD = Infinity;
       for (const t of texts) {
-        if ((t.textContent ?? '') !== txt) continue;
+        if (labelTextOf(t) !== txt) continue;
         let b: DOMRect;
         try {
           b = t.getBBox();
@@ -3572,7 +3572,7 @@ export class Editor {
       let best: SVGTextElement | null = null;
       let bestD = Infinity;
       for (const t of texts) {
-        if ((t.textContent ?? '') !== txt) continue;
+        if (labelTextOf(t) !== txt) continue;
         let b: DOMRect;
         try {
           b = t.getBBox();
@@ -4388,6 +4388,15 @@ function clamp(v: number, lo: number, hi: number): number {
 function defaultLabel(type: string): string {
   const t = type.replace(/^shape:/, '');
   return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/**
+ * The label a rendered `<text>` stands for: a word-wrapped wire label (link /
+ * flow / marker pill, see render/wire-labels) is split into `<tspan>`s and
+ * carries the full text in `data-tds-label`; a one-line label is its content.
+ */
+function labelTextOf(t: SVGTextElement): string {
+  return t.getAttribute('data-tds-label') ?? t.textContent ?? '';
 }
 
 /** The LinkConfig field holding a given label's drag offset. */

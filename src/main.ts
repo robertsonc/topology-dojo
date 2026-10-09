@@ -2897,6 +2897,9 @@ function refAddOptions(): string {
 function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
   const v = cfg[f.key];
   const req = f.required ? ' *' : '';
+  // A point field with the compass widget (flow-path labelOffset) gets the
+  // same 3×3 placement picker a link label has; wired in renderAnnotations.
+  if (f.widget === 'compass') return compassControl(f, v, 'data-akey');
   switch (f.kind) {
     case 'enum':
       return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${(
@@ -3089,6 +3092,21 @@ function wireAnnotations(): void {
             editing = true;
           });
         }
+      });
+    // Compass placement picker on a point field (flow-path labelOffset):
+    // click a cell to write its preset offset, the centre to clear it.
+    host
+      .querySelectorAll<HTMLElement>('.compass[data-akey]')
+      .forEach((grid) => {
+        const key = grid.dataset.akey!;
+        const spec: FieldSpec = { key, label: key, kind: 'point' };
+        grid.querySelectorAll<HTMLButtonElement>('[data-cval]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            e.preventDefault();
+            setA(key, compassValueOf(spec, b.dataset.cval ?? ''), true);
+            renderInspector();
+          }),
+        );
       });
     host.querySelectorAll<HTMLElement>('[data-aswatch]').forEach((group) => {
       const key = group.dataset.aswatch!;
