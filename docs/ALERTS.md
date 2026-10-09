@@ -18,7 +18,8 @@ the approved activation thresholds this matrix inherits), and
 Verified directly against the repository and both live origins:
 
 - **Sole production deploy path**: `deploy-production.yml` — `main`-only
-  guard, protected `production` GitHub Environment approval, re-runs full CI,
+  guard, `production` GitHub Environment limited to `main` (required
+  reviewers removed 2026-10-09), re-runs full CI,
   deploys with `wrangler deploy --env=""`, then runs the credential-free
   smoke with `--sha` assertion. Workers Builds Git integration disconnected
   (operator O9). Staging deploys via `deploy-staging.yml` only.

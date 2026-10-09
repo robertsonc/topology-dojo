@@ -31,21 +31,21 @@ not merely a successful chat session. Every completed unit ends with:
 
 ## Authority model
 
-| Action                                                     | Implementation agent | Human approval required                           |
-| ---------------------------------------------------------- | -------------------- | ------------------------------------------------- |
-| Read repository/docs and run local diagnostics             | Yes                  | No                                                |
-| Create a feature branch/worktree                           | Yes                  | No                                                |
-| Edit scoped source/docs/tests                              | Yes                  | No, after task scope is accepted                  |
-| Install declared development dependencies                  | Yes                  | Only if policy/cost requires it                   |
-| Commit and push a scoped branch                            | Yes                  | No, when explicitly authorized by the task        |
-| Open/update a draft PR                                     | Yes                  | No, when explicitly authorized by the task        |
-| Resolve review feedback in scope                           | Yes                  | Human selects ambiguous/product-changing feedback |
-| Merge a PR                                                 | No                   | Yes                                               |
-| Deploy to stable staging                                   | No by default        | Yes or protected workflow approval                |
-| Deploy to production                                       | No                   | Yes, protected production approval                |
-| Create/rotate secrets, OAuth Apps, or production resources | No                   | Yes                                               |
-| Add/change a Durable Object migration                      | Plan and implement   | Explicit architecture and release approval        |
-| Learn/broaden a user preference or MCP instruction         | Propose only         | Yes, under proposal 0003                          |
+| Action                                                     | Implementation agent              | Human approval required                                 |
+| ---------------------------------------------------------- | --------------------------------- | ------------------------------------------------------- |
+| Read repository/docs and run local diagnostics             | Yes                               | No                                                      |
+| Create a feature branch/worktree                           | Yes                               | No                                                      |
+| Edit scoped source/docs/tests                              | Yes                               | No, after task scope is accepted                        |
+| Install declared development dependencies                  | Yes                               | Only if policy/cost requires it                         |
+| Commit and push a scoped branch                            | Yes                               | No, when explicitly authorized by the task              |
+| Open/update a draft PR                                     | Yes                               | No, when explicitly authorized by the task              |
+| Resolve review feedback in scope                           | Yes                               | Human selects ambiguous/product-changing feedback       |
+| Merge a PR                                                 | No                                | Yes                                                     |
+| Deploy to stable staging                                   | No by default                     | Yes or protected workflow approval                      |
+| Deploy to production                                       | Only on a quoted chat instruction | Yes, by dispatching `deploy-production.yml` from `main` |
+| Create/rotate secrets, OAuth Apps, or production resources | No                                | Yes                                                     |
+| Add/change a Durable Object migration                      | Plan and implement                | Explicit architecture and release approval              |
+| Learn/broaden a user preference or MCP instruction         | Propose only                      | Yes, under proposal 0003                                |
 
 Terminal conditions such as “finish” or “do not stop” increase persistence, not
 authority. An agent does not infer permission to deploy, merge, rotate secrets,

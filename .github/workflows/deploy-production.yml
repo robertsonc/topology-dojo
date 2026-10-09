@@ -1,11 +1,15 @@
 name: Deploy Production
 
 # Manual-only, protected by branch protection on the required `CI / check`
-# status plus the `production` GitHub Environment's required reviewers
-# (operator checklist O6). The `guard` job below additionally enforces that
-# a normal run only ever dispatches from `main`; `recovery_sha` is the sole,
-# explicit escape hatch for forward-recovery (proposal 0004, decision 5 /
-# docs/ROLLBACK.md).
+# status plus the `production` GitHub Environment's deployment-branch rule
+# (`main` only). The environment's required-reviewer gate was removed on
+# 2026-10-09: with a single owner it only ever asked the dispatcher to
+# approve their own dispatch, and the agent acts under the owner's GitHub
+# identity, so the click gated nothing. The dispatch from `main` IS the
+# human release decision (docs/DEPLOYMENT_RUNBOOK.md). The `guard` job
+# below additionally enforces that a normal run only ever dispatches from
+# `main`; `recovery_sha` is the sole, explicit escape hatch for
+# forward-recovery (proposal 0004, decision 5 / docs/ROLLBACK.md).
 on:
   workflow_dispatch:
     inputs:

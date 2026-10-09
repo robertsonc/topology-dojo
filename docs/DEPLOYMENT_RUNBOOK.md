@@ -11,7 +11,11 @@ the operational companion to
 2. A Durable Object migration is applied only by `wrangler deploy` against the
    intended environment.
 3. `wrangler versions upload` is not a preview mechanism for this Worker.
-4. Production deployment starts only after required CI and explicit approval.
+4. Production deployment starts only after required CI and an explicit human
+   release decision: the dispatch of `deploy-production.yml` from `main`. The
+   `production` environment's required-reviewer gate was removed 2026-10-09
+   (a single owner was approving their own dispatch); its deployment-branch
+   rule (`main` only) remains.
 5. Migration entries are append-only. Never delete, rename, reorder, or reuse a
    tag after deployment.
 6. The deployed commit SHA and smoke result are recorded for every environment.
@@ -217,8 +221,9 @@ their recorded SHA does not match the current deployment.
 3. Confirm no new migration tag appears.
 4. Dispatch [`deploy-production.yml`](../.github/workflows/deploy-production.yml)
    from `main` (its `guard` job rejects any other ref unless an explicit
-   `recovery_sha` is supplied) and obtain the required `production`
-   environment approval.
+   `recovery_sha` is supplied). The dispatch is the release decision; no
+   environment approval follows. An agent may run the dispatch only on an
+   explicit human instruction quoted in the session.
 5. The workflow re-runs `ci.yml`, then deploys with
    `wrangler deploy --env=""` (the explicit empty-string environment is
    required once `env.staging` exists — a bare `wrangler deploy` only warns
