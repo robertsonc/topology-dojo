@@ -4099,7 +4099,14 @@ ${grid}`;
     return _polyPathWithJumps(pts, obstacles, this.lineJumps);
   }
 
-  _renderLinkSVG(linkCfg, stepId, phaseNum) {
+  /**
+   * The geometry a link draws with: its endpoints after parallel-edge fan-out
+   * and boundary/port attachment, plus the explicit-waypoint / lineStyle path
+   * and the smart-routed path (either may be null). Shared by the link
+   * renderer and by flow paths that follow their links (`followLinks`), so
+   * the two can never drift apart.
+   */
+  _linkGeometry(linkCfg) {
     let from = this._pos(linkCfg.from);
     let to = this._pos(linkCfg.to);
     // Fan out parallel edges (e.g. dual transports A↔B) so they don't overlap.
@@ -4138,14 +4145,6 @@ ${grid}`;
         to = toA;
       }
     }
-    const op = linkCfg.opacity != null ? linkCfg.opacity : Math.min(this._dimFor(linkCfg.from), this._dimFor(linkCfg.to));
-    const color = linkCfg.color || '#01a982';
-    // Per-link label size multiplier (1 = default), threaded into every label
-    // renderer below so all of this link's labels scale uniformly.
-    const labelScale = this._labelScaleOf(linkCfg);
-    const _flow = { speed: linkCfg.flowSpeed, particles: linkCfg.flowParticles, reverse: linkCfg.reverseFlow };
-    let svg = '';
-
     // Path through explicit waypoints — or, with none, honor a non-straight
     // lineStyle directly: 'orthogonal' auto-routes an L-path and 'curved' bows
     // the line, instead of silently falling back to a straight diagonal.
@@ -4174,6 +4173,79 @@ ${grid}`;
       this._anchors.has(linkCfg.from) || this._anchors.has(linkCfg.to);
     const routedPath = !hasWaypoints && !hasAnchorEnd && (linkCfg.type === 'line' || linkCfg.type === 'tunnel')
       ? this._routeLink(from, to, linkCfg.id) : null;
+    return { from, to, waypointPath, routedPath };
+  }
+
+  /** The path `d` a line/tunnel link renders along (before crossing jumps). */
+  _linkPathD(linkCfg) {
+    const g = this._linkGeometry(linkCfg);
+    return g.waypointPath || g.routedPath || `M${g.from.x},${g.from.y} L${g.to.x},${g.to.y}`;
+  }
+
+  /**
+   * Reverse an absolute M/L/Q/C path so it runs end→start (cubic control
+   * points swap). Returns null for any other command so callers fall back
+   * instead of drawing garbage.
+   */
+  static _reversePathD(d) {
+    const ARITY = { M: 1, L: 1, Q: 2, C: 3 };
+    const segs = [];
+    const re = /([A-Za-z])([^A-Za-z]*)/g;
+    let m;
+    while ((m = re.exec(d))) {
+      const cmd = m[1];
+      const n = ARITY[cmd];
+      if (!n) return null;
+      const nums = (m[2].match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
+      if (nums.length !== n * 2 || nums.some((v) => !Number.isFinite(v))) return null;
+      const pts = [];
+      for (let i = 0; i < nums.length; i += 2) pts.push({ x: nums[i], y: nums[i + 1] });
+      segs.push({ cmd, pts });
+    }
+    if (segs.length < 2 || segs[0].cmd !== 'M') return null;
+    const P = (p) => `${p.x},${p.y}`;
+    const end = (s) => s.pts[s.pts.length - 1];
+    let out = `M${P(end(segs[segs.length - 1]))}`;
+    for (let i = segs.length - 1; i >= 1; i--) {
+      const s = segs[i];
+      const start = end(segs[i - 1]);
+      if (s.cmd === 'L') out += ` L${P(start)}`;
+      else if (s.cmd === 'Q') out += ` Q${P(s.pts[0])} ${P(start)}`;
+      else out += ` C${P(s.pts[1])} ${P(s.pts[0])} ${P(start)}`;
+    }
+    return out;
+  }
+
+  /**
+   * The drawn path of the link joining two consecutive flow-path waypoints,
+   * oriented a→b, or null when no link connects them. Prefers a link on the
+   * flow's own layer, else the first declared; a link declared b→a is
+   * reversed so the flow runs the right way along it.
+   */
+  _flowHopPath(aId, bId, layer) {
+    let best = null;
+    for (const cfg of this._links.values()) {
+      const fwd = cfg.from === aId && cfg.to === bId;
+      const back = cfg.from === bId && cfg.to === aId;
+      if (!fwd && !back) continue;
+      const cand = { cfg, reversed: back };
+      if (layer && cfg.layer === layer) { best = cand; break; }
+      if (!best) best = cand;
+    }
+    if (!best) return null;
+    const d = this._linkPathD(best.cfg);
+    return best.reversed ? TopologyDesigner._reversePathD(d) : d;
+  }
+
+  _renderLinkSVG(linkCfg, stepId, phaseNum) {
+    const { from, to, waypointPath, routedPath } = this._linkGeometry(linkCfg);
+    const op = linkCfg.opacity != null ? linkCfg.opacity : Math.min(this._dimFor(linkCfg.from), this._dimFor(linkCfg.to));
+    const color = linkCfg.color || '#01a982';
+    // Per-link label size multiplier (1 = default), threaded into every label
+    // renderer below so all of this link's labels scale uniformly.
+    const labelScale = this._labelScaleOf(linkCfg);
+    const _flow = { speed: linkCfg.flowSpeed, particles: linkCfg.flowParticles, reverse: linkCfg.reverseFlow };
+    let svg = '';
 
     switch (linkCfg.type) {
       case 'line':
@@ -4693,9 +4765,25 @@ ${grid}`;
         const points = waypoints.map(wId => this._posCached(wId)).filter(Boolean);
         if (points.length < 2) continue;
 
-        let pathD = `M${points[0].x},${points[0].y}`;
-        for (let i = 1; i < points.length; i++) {
-          pathD += ` L${points[i].x},${points[i].y}`;
+        let pathD;
+        if (fp.followLinks) {
+          // Ride the drawn link between each consecutive pair (curves, bus
+          // waypoints, orthogonal routes, ports); a pair with no link keeps
+          // the straight centre→centre hop. Hops are stitched with an L so
+          // the flow crosses each node from the previous link's arrival
+          // point to the next link's exit point.
+          pathD = '';
+          for (let i = 1; i < waypoints.length; i++) {
+            const a = this._posCached(waypoints[i - 1]), b = this._posCached(waypoints[i]);
+            const hop = this._flowHopPath(waypoints[i - 1], waypoints[i], fp.layer) ||
+              `M${a.x},${a.y} L${b.x},${b.y}`;
+            pathD += pathD ? ' ' + hop.replace(/^M/, 'L') : hop;
+          }
+        } else {
+          pathD = `M${points[0].x},${points[0].y}`;
+          for (let i = 1; i < points.length; i++) {
+            pathD += ` L${points[i].x},${points[i].y}`;
+          }
         }
 
         const color = fp.color || '#01a982';
