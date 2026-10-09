@@ -565,3 +565,68 @@ describe('wire-label pills (#261)', () => {
     );
   });
 });
+
+describe('mesh classification requires same-kind links (#265)', () => {
+  // Same geometry as the K2,2 case above; only the link kinds vary.
+  const meshNodes = [
+    node('a1', 300, 200),
+    node('a2', 700, 200),
+    node('b1', 300, 500),
+    node('b2', 700, 500),
+  ];
+  const problems = (r: InspectReport) =>
+    r.findings.filter(
+      (f) => f.category === 'routing' && f.severity === 'problem',
+    );
+
+  it('still treats four same-kind links as a mesh', () => {
+    const r = inspectPage(
+      page({
+        nodes: meshNodes,
+        links: [
+          { ...link('l11', 'a1', 'b1'), layer: 'physical' },
+          { ...link('l12', 'a1', 'b2'), layer: 'physical' },
+          { ...link('l21', 'a2', 'b1'), layer: 'physical' },
+          { ...link('l22', 'a2', 'b2'), layer: 'physical' },
+        ],
+      }),
+    );
+    expect(r.crossings).toEqual({ total: 1, unavoidable: 1, avoidable: 0 });
+    expect(problems(r)).toHaveLength(0);
+  });
+
+  it('keeps a tunnel crossing a WAN line as a problem', () => {
+    const r = inspectPage(
+      page({
+        nodes: meshNodes,
+        links: [
+          link('l11', 'a1', 'b1'),
+          { ...link('t12', 'a1', 'b2'), type: 'tunnel', layer: 'overlay' },
+          link('l21', 'a2', 'b1'),
+          { ...link('t22', 'a2', 'b2'), type: 'tunnel', layer: 'overlay' },
+        ],
+      }),
+    );
+    expect(r.crossings).toEqual({ total: 1, unavoidable: 0, avoidable: 1 });
+    expect(problems(r)).toHaveLength(1);
+    expect(problems(r)[0]!.message).toMatch(/^links "t12" and "l21" cross —/);
+    expect(problems(r)[0]!.message).not.toMatch(/dual-homed mesh/);
+    expect(r.clean).toBe(false);
+  });
+
+  it('keeps a dashed OOB cable crossing a WAN line as a problem', () => {
+    const r = inspectPage(
+      page({
+        nodes: meshNodes,
+        links: [
+          link('l11', 'a1', 'b1'),
+          { ...link('o12', 'a1', 'b2'), dashed: true },
+          link('l21', 'a2', 'b1'),
+          { ...link('o22', 'a2', 'b2'), dashed: true },
+        ],
+      }),
+    );
+    expect(r.crossings).toEqual({ total: 1, unavoidable: 0, avoidable: 1 });
+    expect(problems(r)).toHaveLength(1);
+  });
+});
