@@ -8,6 +8,7 @@
 import type { TopologyDocument, Page, Stencil, BrandPalette } from './model.js';
 import { newPageId } from './model.js';
 import { sanitizeDisplayFields } from '../api/text.js';
+import { clampLabelWidth } from '../render/wire-labels.js';
 
 /** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
 function hexColor(v: unknown): string | undefined {
@@ -55,6 +56,14 @@ function scrubColors(el: Record<string, unknown>): void {
   }
 }
 
+/** Clamp a wire label's `labelWidth` into the renderer's range; drop junk. */
+function boundLabelWidth(el: Record<string, unknown>): void {
+  if (!('labelWidth' in el)) return;
+  const w = clampLabelWidth(el.labelWidth);
+  if (w === undefined) delete el.labelWidth;
+  else el.labelWidth = w;
+}
+
 /** Sanitize a page's elements against markup injection (in place). */
 function sanitizeElements(pg: Page): void {
   for (const n of pg.nodes as unknown as Record<string, unknown>[]) {
@@ -64,10 +73,13 @@ function sanitizeElements(pg: Page): void {
   for (const l of pg.links as unknown as Record<string, unknown>[]) {
     l.type = safeType(l.type, 'line');
     scrubColors(l);
+    boundLabelWidth(l);
   }
   for (const coll of [pg.zones, pg.flowPaths, pg.policyMarkers])
-    for (const el of coll as unknown as Record<string, unknown>[])
+    for (const el of coll as unknown as Record<string, unknown>[]) {
       scrubColors(el);
+      boundLabelWidth(el);
+    }
 }
 
 /** Sanitize a custom node spec; returns null if it has no markup-safe name. */

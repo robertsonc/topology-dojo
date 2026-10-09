@@ -440,3 +440,128 @@ describe('link crossings on drawn geometry (#258)', () => {
     );
   });
 });
+
+describe('wire-label pills (#261)', () => {
+  it('reports a flow-path pill the renderer cannot slide clear of a node', () => {
+    // a→b label pill at (450, 312) × 'HA' is 25px wide; node n's hit box
+    // (418–482 × 318–352) covers it and no ≤1-width slide clears it.
+    const r = inspectPage(
+      page({
+        nodes: [node('a', 200, 300), node('b', 700, 300), node('n', 450, 335)],
+        flowPaths: [{ id: 'fp', waypoints: ['a', 'b'], label: 'HA' }],
+      }),
+    );
+    const f = r.findings.find(
+      (x) =>
+        x.category === 'text' &&
+        x.severity === 'problem' &&
+        /label of flow path "fp" sits on node "n"/.test(x.message),
+    );
+    expect(f).toBeDefined();
+  });
+
+  it('does not report a pill the renderer slides clear, and does report one it cannot', () => {
+    const nodes = [
+      node('a', 200, 300),
+      node('b', 700, 300),
+      node('n', 450, 335),
+    ];
+    const cleared = inspectPage(
+      page({
+        nodes,
+        links: [{ ...link('l1', 'a', 'b'), label: 'Primary uplink 10G' }],
+      }),
+    );
+    expect(messages(cleared)).not.toMatch(/label of link "l1" sits on node/);
+    const stuck = inspectPage(
+      page({ nodes, links: [{ ...link('l1', 'a', 'b'), label: 'HA' }] }),
+    );
+    expect(messages(stuck)).toMatch(/label of link "l1" sits on node "n"/);
+  });
+
+  it('notes a marker label longer than 24 chars', () => {
+    const r = inspectPage(
+      page({
+        nodes: [node('a', 500, 350)],
+        policyMarkers: [
+          {
+            id: 'm',
+            nodeId: 'a',
+            type: 'inspect',
+            label: 'Inspect all outbound traffic',
+          },
+        ],
+      }),
+    );
+    const f = r.findings.find(
+      (x) => x.category === 'text' && /marker "m" is 28 chars/.test(x.message),
+    );
+    expect(f?.severity).toBe('note');
+  });
+
+  it('still flags two link chips that collide', () => {
+    // Two parallel tunnels 10px apart share the same chip spot (tunnel
+    // chips are fixed, so no nudge separates them).
+    const r = inspectPage(
+      page({
+        nodes: [
+          node('a', 200, 300),
+          node('b', 700, 300),
+          node('c', 200, 310),
+          node('d', 700, 310),
+        ],
+        links: [
+          { ...link('l1', 'a', 'b'), type: 'tunnel', label: 'One' },
+          { ...link('l2', 'c', 'd'), type: 'tunnel', label: 'Two' },
+        ],
+      }),
+    );
+    expect(messages(r)).toMatch(/labels of links "l1" and "l2" collide/);
+  });
+
+  it('flags a link drawn through a zone title', () => {
+    // Zone box over m: 420–580 × 280–420, title strip at (428, 285–299).
+    const r = inspectPage(
+      page({
+        nodes: [
+          node('m', 500, 350, 'Member'),
+          node('o1', 300, 292),
+          node('o2', 700, 292),
+        ],
+        links: [link('l1', 'o1', 'o2')],
+        zones: [{ id: 'z1', label: 'Branch', nodes: ['m'] }],
+      }),
+    );
+    expect(messages(r)).toMatch(
+      /link "l1" runs through the title of zone "z1"/,
+    );
+    // A link well below the strip is not flagged.
+    const clean = inspectPage(
+      page({
+        nodes: [
+          node('m', 500, 350, 'Member'),
+          node('o1', 300, 330),
+          node('o2', 700, 330),
+        ],
+        links: [link('l1', 'o1', 'o2')],
+        zones: [{ id: 'z1', label: 'Branch', nodes: ['m'] }],
+      }),
+    );
+    expect(messages(clean)).not.toMatch(/runs through the title/);
+  });
+
+  it('flags a flow pill sitting on a zone title', () => {
+    // Flow label on a→b sits at (450, 312); a zone whose member is at
+    // (470, 377) boxes from y=307, so its title strip (312–326) is under it.
+    const r = inspectPage(
+      page({
+        nodes: [node('a', 200, 300), node('b', 700, 300), node('m', 470, 377)],
+        flowPaths: [{ id: 'fp', waypoints: ['a', 'b'], label: 'HA' }],
+        zones: [{ id: 'z1', label: 'Core services zone', nodes: ['m'] }],
+      }),
+    );
+    expect(messages(r)).toMatch(
+      /label of flow path "fp" sits on the title of zone "z1"/,
+    );
+  });
+});

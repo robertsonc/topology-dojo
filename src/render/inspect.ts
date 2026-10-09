@@ -9,11 +9,25 @@
  *
  * Label sizes are heuristic ESTIMATES mirroring the engine's conventions
  * (public/vendor/topology-ds.js): node labels render at font-size 10 truncated
- * to 24 chars (~6px/char, baseline at y + labelOffset, default 24); link label
- * chips are `len × 5.6 + 14` wide × 20 tall at the segment midpoint, nudged
- * 12px perpendicular and scaled by labelScale; zone labels render at font-size
- * 9 (~5.4px/char) just inside the zone's top edge. Zone boxes pad the member
- * positions ±40x/±30y plus the zone padding, exactly as `_renderZoneRect` does.
+ * to 24 chars (~6px/char, baseline at y + labelOffset, default 24); zone labels
+ * render at font-size 9 (~5.4px/char) just inside the zone's top edge. Zone
+ * boxes pad the member positions ±40x/±30y plus the zone padding, exactly as
+ * `_renderZoneRect` does.
+ *
+ * Wire labels (link centre labels, flow-path labels, policy-marker labels)
+ * are glass PILLS whose metrics live in `./wire-labels` (the engine keeps a
+ * mirrored copy): the label word-wraps at `labelWidth` px or ~26 characters,
+ * the pill sizes to the wrapped block, and after placement a pill that
+ * overlaps a node hit box, a zone title strip or an earlier pill slides along
+ * its segment by fixed fractions of its width (the engine's collision nudge).
+ * Placement: a link label sits at the chord midpoint nudged 12px
+ * perpendicular (+ labelOffset, × labelScale; only `line` links are nudged
+ * for collisions, the other link types draw fixed chips); a flow-path label
+ * sits on the longest drawn segment of its route (each hop follows its
+ * link's polyline, or the straight hop with `followLinks: false`); a marker
+ * label hangs under its badge. Pill/node and the nudge use the engine's hit
+ * AABB (`engineNodeAABB`), so a pill the renderer slid clear is never
+ * reported, and one it could not clear is.
  *
  * Routing checks measure the DRAWN link geometry, not the centre-to-centre
  * chord: each link is a polyline centre → `waypoints` → centre, with the
@@ -32,12 +46,28 @@
 import { nodeLabelPos } from './label-placement.js';
 import type { Page } from '../pages/model.js';
 import type {
+  FlowPathConfig,
   LinkConfig,
   NodeConfig,
+  PolicyMarkerConfig,
   ZoneConfig,
 } from '../vendor/topology-ds.js';
 import { drawsOwnLabel, nodeBounds, type BoundsRect } from '../api/geometry.js';
 import { LAYOUT_RULES, parseViewBox, rectGap } from '../api/layout.js';
+import {
+  MARKER_LABEL_GAP,
+  MARKER_LABEL_NOTE_CHARS,
+  engineNodeAABB,
+  labelLines,
+  longestSegment,
+  markerBadgeCenter,
+  nudgePill,
+  pillRectAt,
+  pillSize,
+  polylineSegments,
+  segmentLabelAnchor,
+  type PathSegment,
+} from './wire-labels.js';
 
 export type InspectSeverity = 'problem' | 'note';
 export type InspectCategory = 'crop' | 'text' | 'routing' | 'density';
@@ -82,9 +112,6 @@ const NODE_LABEL_CHAR_W = 6; // ~0.6em at the 10px node-label font
 const NODE_LABEL_MAX_CHARS = 24; // engine truncates longer labels with '…'
 const NODE_LABEL_H = 12;
 const NODE_SUBLABEL_H = 13;
-const LINK_CHIP_CHAR_W = 5.6;
-const LINK_CHIP_PAD = 14;
-const LINK_CHIP_H = 20;
 const ZONE_LABEL_CHAR_W = 5.4; // ~0.6em at the 9px zone-label font
 const ZONE_LABEL_H = 14;
 /** Below this endpoint distance the perimeter trims cross and the engine falls
@@ -113,10 +140,13 @@ export function inspectPage(
 
   // Estimated drawn geometry, computed once and shared by every check.
   const glyphs = new Map<string, BoundsRect>();
+  // The engine's coarser hit AABB per node — what wire-label placement avoids.
+  const hit = new Map<string, BoundsRect>();
   const labels = new Map<string, BoundsRect>();
   const pos = new Map<string, { x: number; y: number }>();
   for (const n of page.nodes) {
     glyphs.set(n.id, nodeBounds(n));
+    hit.set(n.id, engineNodeAABB(n));
     const lr = nodeLabelRect(n);
     if (lr) labels.set(n.id, lr);
     pos.set(n.id, { x: n.x, y: n.y });
@@ -130,7 +160,7 @@ export function inspectPage(
   }
 
   checkCrop(page, pageRect, glyphs, labels, zoneBoxes, add);
-  checkText(page, glyphs, labels, pos, zones, zoneBoxes, add);
+  checkText(page, glyphs, hit, labels, pos, zones, zoneBoxes, add);
   const crossings = checkRouting(page, pos, glyphs, add);
   checkDensity(page, glyphs, labels, add);
 
@@ -260,6 +290,7 @@ function checkWhitespace(
 function checkText(
   page: Page,
   glyphs: Map<string, BoundsRect>,
+  hit: Map<string, BoundsRect>,
   labels: Map<string, BoundsRect>,
   pos: Map<string, { x: number; y: number }>,
   zones: ZoneConfig[],
@@ -311,42 +342,82 @@ function checkText(
     }
   }
 
-  // Link label chips vs each other and vs unrelated node glyphs.
-  const chips: { link: LinkConfig; rect: BoundsRect }[] = [];
-  for (const l of page.links) {
-    const rect = linkChipRect(l, pos);
-    if (rect) chips.push({ link: l, rect });
+  // Wire-label pills (link / flow path / marker), placed in the engine's
+  // paint order with its collision nudge, then checked against each other,
+  // node hit boxes + below-node labels, and zone title strips.
+  const zoneTitles = new Map<string, BoundsRect>();
+  for (const z of zones) {
+    const box = zoneBoxes.get(z.id);
+    if (box) zoneTitles.set(z.id, zoneLabelRect(z, box));
   }
-  for (let i = 0; i < chips.length; i++) {
-    const a = chips[i]!;
-    for (let j = i + 1; j < chips.length; j++) {
-      const b = chips[j]!;
+  const pills = placePills(page, pos, hit, zoneTitles);
+  const describe = (p: Pill): string =>
+    `label of ${p.kind === 'link' ? 'link' : p.kind === 'flow' ? 'flow path' : 'marker'} "${p.id}"`;
+  for (let i = 0; i < pills.length; i++) {
+    const a = pills[i]!;
+    for (let j = i + 1; j < pills.length; j++) {
+      const b = pills[j]!;
       const gap = rectGap(a.rect, b.rect);
-      if (gap < 0)
+      if (gap >= 0) continue;
+      if (a.kind === 'link' && b.kind === 'link')
         add(
           'problem',
           'text',
-          `labels of links "${a.link.id}" and "${b.link.id}" collide (~${round(-gap)}px overlap) — offset one with labelOffset`,
+          `labels of links "${a.id}" and "${b.id}" collide (~${round(-gap)}px overlap) — offset one with labelOffset`,
+        );
+      else
+        add(
+          'problem',
+          'text',
+          `${describe(a)} collides with ${describe(b)} (~${round(-gap)}px overlap) — offset one with labelOffset`,
         );
     }
     for (const n of page.nodes) {
-      if (n.id === a.link.from || n.id === a.link.to) continue;
-      const gap = rectGap(a.rect, glyphs.get(n.id)!);
+      if (a.skipNodes.has(n.id)) continue;
+      const gap = rectGap(a.rect, hit.get(n.id)!);
       if (gap < 0)
         add(
           'problem',
           'text',
-          `label of link "${a.link.id}" sits on node "${n.id}" (~${round(-gap)}px overlap) — offset it with labelOffset`,
+          `${describe(a)} sits on node "${n.id}" (~${round(-gap)}px overlap) — offset it with labelOffset`,
+        );
+      const lr = labels.get(n.id);
+      if (lr) {
+        const lGap = rectGap(a.rect, lr);
+        if (lGap < 0)
+          add(
+            'problem',
+            'text',
+            `${describe(a)} overlaps the label of node "${n.id}" (~${round(-lGap)}px) — offset it with labelOffset`,
+          );
+      }
+    }
+    for (const [zid, strip] of zoneTitles) {
+      const gap = rectGap(a.rect, strip);
+      if (gap < 0)
+        add(
+          'problem',
+          'text',
+          `${describe(a)} sits on the title of zone "${zid}" (~${round(-gap)}px overlap) — offset it with labelOffset`,
         );
     }
   }
+  for (const m of page.policyMarkers ?? []) {
+    const label = typeof m.label === 'string' ? m.label : '';
+    if (label.length > MARKER_LABEL_NOTE_CHARS)
+      add(
+        'note',
+        'text',
+        `label "${label}" on marker "${m.id}" is ${label.length} chars — it wraps to 2 lines under the badge (and is cut with an ellipsis past that); shorten it or set labelWidth`,
+      );
+  }
 
   // Zone labels render just inside the zone's top edge — flag member/other
-  // nodes drawn over that strip (the label becomes unreadable).
+  // nodes drawn over that strip (the label becomes unreadable), and links
+  // whose drawn polyline runs through it.
   for (const z of zones) {
-    const box = zoneBoxes.get(z.id);
-    if (!box) continue;
-    const lr = zoneLabelRect(z, box);
+    const lr = zoneTitles.get(z.id);
+    if (!lr) continue;
     for (const n of page.nodes) {
       const gap = rectGap(lr, union(glyphs.get(n.id)!, labels.get(n.id)));
       if (gap < 0)
@@ -356,7 +427,168 @@ function checkText(
           `label of zone "${z.id}" is overlapped by node "${n.id}" (~${round(-gap)}px) — enlarge the zone padding or move the node down`,
         );
     }
+    for (const l of page.links) {
+      const a = pos.get(l.from),
+        b = pos.get(l.to);
+      if (!a || !b) continue;
+      if (polylineIntersectsRect(linkPolyline(l, a, b), lr))
+        add(
+          'problem',
+          'text',
+          `link "${l.id}" runs through the title of zone "${z.id}" — route it around the title strip (waypoints) or move the zone label (labelAlign)`,
+        );
+    }
   }
+}
+
+/* ── wire-label pills (engine placement mirror) ────────────────────── */
+
+interface Pill {
+  kind: 'link' | 'flow' | 'marker';
+  id: string;
+  rect: BoundsRect;
+  /** Still overlapping an obstacle after the nudge trials. */
+  blocked: boolean;
+  /** Nodes not reported as collisions (a link's own endpoints). */
+  skipNodes: Set<string>;
+}
+
+/**
+ * Every wire-label pill on the page, placed the way the engine does it: links
+ * in page order, then flow paths, then markers; each slid clear of node hit
+ * boxes, zone title strips and the pills before it when it collides.
+ */
+function placePills(
+  page: Page,
+  pos: Map<string, { x: number; y: number }>,
+  hit: Map<string, BoundsRect>,
+  zoneTitles: Map<string, BoundsRect>,
+): Pill[] {
+  const fixed = [...hit.values(), ...zoneTitles.values()];
+  const pills: Pill[] = [];
+  const place = (
+    kind: Pill['kind'],
+    id: string,
+    rect: BoundsRect,
+    dir: { x: number; y: number } | null,
+    skipNodes: Set<string>,
+  ): void => {
+    const obstacles = [...fixed, ...pills.map((p) => p.rect)];
+    const r = dir
+      ? nudgePill(rect, dir, obstacles)
+      : { rect, blocked: obstacles.some((o) => rectGap(rect, o) < 0) };
+    pills.push({ kind, id, rect: r.rect, blocked: r.blocked, skipNodes });
+  };
+
+  for (const l of page.links) {
+    const label = typeof l.label === 'string' ? l.label : '';
+    const a = pos.get(l.from),
+      b = pos.get(l.to);
+    if (!label || !a || !b) continue;
+    const seg = polylineSegments([a, b])[0]!;
+    const anchor = segmentLabelAnchor(seg);
+    const s =
+      typeof l.labelScale === 'number' && Number.isFinite(l.labelScale)
+        ? Math.min(4, Math.max(0.25, l.labelScale))
+        : 1;
+    const size = pillSize('link', labelLines('link', label, l.labelWidth), s);
+    const rect = pillRectAt(
+      anchor.x + (l.labelOffset?.x ?? 0),
+      anchor.y + (l.labelOffset?.y ?? 0),
+      size,
+    );
+    // Only `line` links go through the engine's nudging label renderer.
+    place(
+      'link',
+      l.id,
+      rect,
+      l.type === 'line' ? anchor.dir : null,
+      new Set([l.from, l.to]),
+    );
+  }
+
+  for (const f of page.flowPaths ?? []) {
+    const label = typeof f.label === 'string' ? f.label : '';
+    if (!label) continue;
+    const seg = longestSegment(flowSegments(page, f, pos));
+    if (!seg) continue;
+    const anchor = segmentLabelAnchor(seg);
+    const size = pillSize('flow', labelLines('flow', label, f.labelWidth));
+    const rect = pillRectAt(
+      anchor.x + (f.labelOffset?.x ?? 0),
+      anchor.y + (f.labelOffset?.y ?? 0),
+      size,
+    );
+    place('flow', f.id, rect, anchor.dir, new Set());
+  }
+
+  // Markers stack per (node, align) in declaration order, like the engine.
+  const groups = new Map<string, PolicyMarkerConfig[]>();
+  for (const m of page.policyMarkers ?? []) {
+    const key = `${m.nodeId}|${m.align ?? 'NE'}`;
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(m);
+  }
+  for (const markers of groups.values()) {
+    markers.forEach((m, idx) => {
+      const label = typeof m.label === 'string' ? m.label : '';
+      const box = hit.get(m.nodeId);
+      if (!label || !box) return;
+      const c = markerBadgeCenter(box, m.align, idx);
+      const size = pillSize(
+        'marker',
+        labelLines('marker', label, m.labelWidth),
+      );
+      const rect = pillRectAt(c.x, c.y + MARKER_LABEL_GAP + size.h / 2, size);
+      place('marker', m.id, rect, c.dir, new Set());
+    });
+  }
+  return pills;
+}
+
+/**
+ * The label-site segments of a flow path as drawn: each hop rides the
+ * polyline of the link joining its two waypoints (the flow's own layer
+ * preferred, else the first declared; reversed when declared the other way),
+ * or is the straight centre→centre hop when no link joins them or
+ * `followLinks` is false.
+ */
+function flowSegments(
+  page: Page,
+  f: FlowPathConfig,
+  pos: Map<string, { x: number; y: number }>,
+): PathSegment[] {
+  const wps = f.waypoints ?? [];
+  const segs: PathSegment[] = [];
+  for (let i = 0; i + 1 < wps.length; i++) {
+    const aId = wps[i]!,
+      bId = wps[i + 1]!;
+    const a = pos.get(aId),
+      b = pos.get(bId);
+    if (!a || !b) continue;
+    let pts: Pt[] = [a, b];
+    if (f.followLinks !== false) {
+      let best: { link: LinkConfig; reversed: boolean } | null = null;
+      for (const l of page.links) {
+        const fwd = l.from === aId && l.to === bId;
+        const back = l.from === bId && l.to === aId;
+        if (!fwd && !back) continue;
+        const cand = { link: l, reversed: back };
+        if (f.layer && l.layer === f.layer) {
+          best = cand;
+          break;
+        }
+        if (!best) best = cand;
+      }
+      if (best) {
+        const from = pos.get(best.link.from)!,
+          to = pos.get(best.link.to)!;
+        pts = linkPolyline(best.link, from, to);
+        if (best.reversed) pts = [...pts].reverse();
+      }
+    }
+    segs.push(...polylineSegments(pts));
+  }
+  return segs;
 }
 
 /* ── routing quality ──────────────────────────────────────────────── */
@@ -631,28 +863,6 @@ function nodeLabelRect(n: NodeConfig): BoundsRect | null {
         ? lp.x - w
         : lp.x - w / 2;
   return { x, y: lp.y - 10, w, h };
-}
-
-/** The glass chip a link's centre label renders in, or null when unlabeled. */
-function linkChipRect(
-  l: LinkConfig,
-  pos: Map<string, { x: number; y: number }>,
-): BoundsRect | null {
-  const label = typeof l.label === 'string' ? l.label : '';
-  if (!label) return null;
-  const a = pos.get(l.from);
-  const b = pos.get(l.to);
-  if (!a || !b) return null;
-  const ang = Math.atan2(b.y - a.y, b.x - a.x);
-  const lx = (a.x + b.x) / 2 - Math.sin(ang) * 12 + (l.labelOffset?.x ?? 0);
-  const ly = (a.y + b.y) / 2 + Math.cos(ang) * 12 + (l.labelOffset?.y ?? 0);
-  const s =
-    typeof l.labelScale === 'number' && Number.isFinite(l.labelScale)
-      ? Math.min(4, Math.max(0.25, l.labelScale))
-      : 1;
-  const w = (label.length * LINK_CHIP_CHAR_W + LINK_CHIP_PAD) * s;
-  const h = LINK_CHIP_H * s;
-  return { x: lx - w / 2, y: ly - h / 2, w, h };
 }
 
 /** The padded box the engine draws around a zone's (recursive) members. */

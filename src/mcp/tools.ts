@@ -884,6 +884,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe(
             'Per-link label size multiplier (1 = default; clamped to 0.25–4).',
           ),
+        labelWidth: z
+          .number()
+          .optional()
+          .describe(
+            'Wrap width (px) of the centre label; absent = auto-wrap at ~26 characters. Clamped to 40–600.',
+          ),
         lineStyle: z.enum(['straight', 'orthogonal', 'curved']).optional(),
         flowSpeed: z
           .number()
@@ -913,6 +919,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.labelScale !== undefined
               ? { labelScale: Number(a.labelScale) }
+              : {}),
+            ...(a.labelWidth !== undefined
+              ? { labelWidth: Number(a.labelWidth) }
               : {}),
             ...(a.lineStyle !== undefined
               ? { lineStyle: a.lineStyle as 'orthogonal' | 'curved' }
@@ -1014,6 +1023,18 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             'Ride the drawn link between consecutive waypoints (default true); false draws straight centre→centre segments.',
           ),
         label: displayString(TEXT_LIMITS.label).optional(),
+        labelWidth: z
+          .number()
+          .optional()
+          .describe(
+            'Wrap width (px) of the label; absent = auto-wrap at ~26 characters. Clamped to 40–600.',
+          ),
+        labelOffset: z
+          .object({ x: z.number(), y: z.number() })
+          .optional()
+          .describe(
+            'Doc-space {x,y} shift of the label from its auto position on the longest drawn segment (same as a link labelOffset).',
+          ),
         color: z.string().optional(),
         animation: z.enum(ANIMATION).optional(),
         speed: z.union([z.number(), z.enum(SPEED)]).optional(),
@@ -1033,6 +1054,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               ? { followLinks: Boolean(a.followLinks) }
               : {}),
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
+            ...(a.labelWidth !== undefined
+              ? { labelWidth: Number(a.labelWidth) }
+              : {}),
+            ...(a.labelOffset !== undefined
+              ? { labelOffset: a.labelOffset as { x: number; y: number } }
+              : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.animation !== undefined
               ? { animation: a.animation as (typeof ANIMATION)[number] }
@@ -1058,7 +1085,15 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         pageIndex,
         nodeId: z.string(),
         type: z.enum(MARKER),
-        label: displayString(TEXT_LIMITS.label).optional(),
+        label: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe('Rendered under the badge at 8px, up to 2 lines.'),
+        labelWidth: z
+          .number()
+          .optional()
+          .describe(
+            'Wrap width (px) of the label; absent = auto-wrap at ~26 characters. Clamped to 40–600.',
+          ),
         color: z.string().optional(),
         icon: displayString(TEXT_LIMITS.label)
           .optional()
@@ -1076,6 +1111,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             nodeId: String(a.nodeId),
             type: a.type as (typeof MARKER)[number],
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
+            ...(a.labelWidth !== undefined
+              ? { labelWidth: Number(a.labelWidth) }
+              : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.icon !== undefined ? { icon: String(a.icon) } : {}),
             ...(a.align !== undefined

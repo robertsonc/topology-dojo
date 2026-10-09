@@ -13,6 +13,85 @@ function _esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/* ── Wire-label pills ────────────────────────────────────────────────
+   Metrics + placement rules for link centre labels, flow-path labels and
+   policy-marker labels. MIRROR OF src/render/wire-labels.ts — the inspector
+   (`inspect_render`) estimates pill rects from that module, so any change
+   here must be made there too (and vice versa), constant for constant. */
+const WIRE_LABEL = {
+  link:   { fontSize: 7.5, charW: 5.6, lineH: 10, padX: 7, padY: 5 },
+  flow:   { fontSize: 8,   charW: 6,   lineH: 11, padX: 7, padY: 4.5 },
+  marker: { fontSize: 8,   charW: 6,   lineH: 11, padX: 6, padY: 3, maxLines: 2 },
+};
+/** Auto-wrap width in characters when no `labelWidth` is set. */
+const WIRE_LABEL_WRAP_CHARS = 26;
+/** Bounds for an explicit `labelWidth` (px). */
+const WIRE_LABEL_WIDTH_MIN = 40, WIRE_LABEL_WIDTH_MAX = 600;
+/** Perpendicular nudge of a link / flow label off its wire. */
+const WIRE_LABEL_PERP = 12;
+/** Gap between a marker badge's circle (r=10) and the top of its label pill. */
+const WIRE_LABEL_MARKER_GAP = 13;
+/** Collision-nudge trial offsets, as fractions of the pill's own width. */
+const WIRE_LABEL_NUDGE_STEPS = [0.25, -0.25, 0.5, -0.5, 1, -1];
+
+/** Strict rectangle overlap (touching edges do not count). */
+function _rectsOverlap(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/**
+ * Collision nudge (mirror of `nudgePill` in src/render/wire-labels.ts): when
+ * `rect` overlaps any obstacle, slide it along `dir` (unit vector) by each
+ * trial fraction of its own width and take the first clear position; else
+ * leave it. Returns the shift to apply.
+ */
+function _nudgePill(rect, dir, obstacles) {
+  const hits = (r) => obstacles.some((o) => _rectsOverlap(r, o));
+  if (!hits(rect)) return { dx: 0, dy: 0 };
+  for (const f of WIRE_LABEL_NUDGE_STEPS) {
+    const dx = dir.x * f * rect.w, dy = dir.y * f * rect.w;
+    if (!hits({ x: rect.x + dx, y: rect.y + dy, w: rect.w, h: rect.h })) return { dx, dy };
+  }
+  return { dx: 0, dy: 0 };
+}
+
+/**
+ * Split an absolute M/L/Q/C path into label-site segments: each L is a
+ * straight piece, each Q/C piece is its chord with `mid` on the curve
+ * itself (t=0.5). Unknown commands end the parse (the pieces so far stand).
+ */
+function _pathDSegments(d) {
+  const segs = [];
+  const re = /([A-Za-z])([^A-Za-z]*)/g;
+  let prev = null, m;
+  while ((m = re.exec(String(d || '')))) {
+    const cmd = m[1];
+    const n = (m[2].match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
+    if (n.some((v) => !Number.isFinite(v))) break;
+    const pts = [];
+    for (let i = 0; i + 1 < n.length; i += 2) pts.push({ x: n[i], y: n[i + 1] });
+    if (cmd === 'M' && pts.length >= 1) { prev = pts[pts.length - 1]; continue; }
+    if (!prev) break;
+    let b, mid;
+    if (cmd === 'L' && pts.length >= 1) {
+      b = pts[pts.length - 1];
+      mid = { x: (prev.x + b.x) / 2, y: (prev.y + b.y) / 2 };
+    } else if (cmd === 'Q' && pts.length === 2) {
+      b = pts[1];
+      mid = { x: 0.25 * prev.x + 0.5 * pts[0].x + 0.25 * b.x, y: 0.25 * prev.y + 0.5 * pts[0].y + 0.25 * b.y };
+    } else if (cmd === 'C' && pts.length === 3) {
+      b = pts[2];
+      mid = {
+        x: 0.125 * prev.x + 0.375 * pts[0].x + 0.375 * pts[1].x + 0.125 * b.x,
+        y: 0.125 * prev.y + 0.375 * pts[0].y + 0.375 * pts[1].y + 0.125 * b.y,
+      };
+    } else break;
+    segs.push({ a: prev, b, mid, len: Math.hypot(b.x - prev.x, b.y - prev.y) });
+    prev = b;
+  }
+  return segs;
+}
+
 /**
  * Wrap an element's rendered art with its optional hover tooltip (`tooltip` →
  * an SVG `<title>` inside the group) and hyperlink (`href` → an `<a>` around
@@ -3007,7 +3086,12 @@ ${grid}`;
    * rather than being broken mid-word.
    */
   static _wrapText(text, maxWidth, fontSize) {
-    const maxChars = Math.max(1, Math.floor(maxWidth / (fontSize * 0.6)));
+    return TopologyDesigner._wrapChars(text, Math.max(1, Math.floor(maxWidth / (fontSize * 0.6))));
+  }
+
+  /** Greedy word-wrap at `maxChars` per line (mirror of `wrapAtChars` in
+   * src/render/wire-labels.ts). Explicit newlines are respected. */
+  static _wrapChars(text, maxChars) {
     const lines = [];
     for (const para of String(text).split('\n')) {
       let line = '';
@@ -3800,27 +3884,10 @@ ${grid}`;
 
   /** Zone annotation rectangle — encompasses nodes and child zones with a labeled border */
   _renderZoneRect(zone) {
-    // Include both direct nodes and all descendant nodes from child zones
-    const allNodes = this._getZoneNodesRecursive(zone.id);
-    if (allNodes.length === 0) return '';
-    const pad = zone.padding || 40;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const nId of allNodes) {
-      // Only include nodes visible at the current step
-      if (this.step > 0) {
-        const sp = this._findShowPhase(nId);
-        if (!sp || this.step < this._stepIndex[sp.stepId]) continue;
-      }
-      const pos = this._pos(nId);
-      if (!pos) continue;
-      minX = Math.min(minX, pos.x - 40);
-      minY = Math.min(minY, pos.y - 30);
-      maxX = Math.max(maxX, pos.x + 40);
-      maxY = Math.max(maxY, pos.y + 30);
-    }
-    if (!isFinite(minX)) return '';
-    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-    const w = maxX - minX, h = maxY - minY;
+    // Box over direct + descendant nodes visible at this step (see _zoneBox).
+    const box = this._zoneBox(zone);
+    if (!box) return '';
+    const minX = box.x, minY = box.y, w = box.w, h = box.h, maxX = box.x + box.w;
     const c = zone.color || '#7d8a92';
     const dash = zone.borderStyle === 'dotted' ? '2 3' : zone.borderStyle === 'solid' ? 'none' : '6 4';
     const align = zone.labelAlign || 'left';
@@ -3931,23 +3998,132 @@ ${grid}`;
       : `<g transform="translate(${cx} ${cy}) scale(${s}) translate(${-cx} ${-cy})">${inner}</g>`;
   }
 
-  _renderLinkLabel(from, to, label, color, op, labelOffset, scale = 1) {
+  _renderLinkLabel(from, to, label, color, op, labelOffset, scale = 1, cfg = null) {
     const a = Math.atan2(to.y - from.y, to.x - from.x);
     const mx = (from.x + to.x) / 2,
       my = (from.y + to.y) / 2;
     // Default: nudge perpendicular off the wire so it doesn't sit on the line.
-    const lx = mx - Math.sin(a) * 12 + (labelOffset?.x || 0);
-    const ly = my + Math.cos(a) * 12 + (labelOffset?.y || 0);
-    const w = String(label).length * 5.6 + 14;
+    const lx = mx - Math.sin(a) * WIRE_LABEL_PERP + (labelOffset?.x || 0);
+    const ly = my + Math.cos(a) * WIRE_LABEL_PERP + (labelOffset?.y || 0);
+    const pill = this._placePill('link', cfg && cfg.id, label, lx, ly, { x: Math.cos(a), y: Math.sin(a) }, scale, cfg && cfg.labelWidth);
     return this._scaleLabel(
-      `<g class="tds-fade" style="opacity:${op}">` +
-        `<rect x="${lx - w / 2}" y="${ly - 10}" width="${w}" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
-        `<rect x="${lx - w / 2 + 1}" y="${ly - 9}" width="${w - 2}" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
-        `<text x="${lx}" y="${ly + 3}" text-anchor="middle" fill="${color}" font-size="7.5" font-weight="600">${_esc(label)}</text></g>`,
-      lx,
-      ly,
+      `<g class="tds-fade" style="opacity:${op}">` + this._pillSVG('link', pill, color, '') + `</g>`,
+      pill.cx,
+      pill.cy,
       scale,
     );
+  }
+
+  /* ── Wire-label pills (mirror of src/render/wire-labels.ts) ───────── */
+
+  /** Clamp an explicit `labelWidth` into [40, 600]; undefined when unset. */
+  static _labelWidthOf(v) {
+    const n = Number(v);
+    if (v == null || v === '' || !Number.isFinite(n)) return undefined;
+    return Math.min(WIRE_LABEL_WIDTH_MAX, Math.max(WIRE_LABEL_WIDTH_MIN, n));
+  }
+
+  /** The lines a wire label renders as (wrapped at labelWidth or 26 chars,
+   * capped at the kind's maxLines with an ellipsis). */
+  static _labelLines(kind, label, labelWidth) {
+    const m = WIRE_LABEL[kind];
+    const w = TopologyDesigner._labelWidthOf(labelWidth);
+    const maxChars = w === undefined ? WIRE_LABEL_WRAP_CHARS : Math.max(1, Math.floor(w / m.charW));
+    const lines = TopologyDesigner._wrapChars(label, maxChars);
+    if (!m.maxLines || lines.length <= m.maxLines) return lines;
+    const kept = lines.slice(0, m.maxLines);
+    kept[m.maxLines - 1] = kept[m.maxLines - 1].slice(0, Math.max(1, maxChars - 1)) + '…';
+    return kept;
+  }
+
+  /** The axis-aligned box a zone draws (member positions ±40/±30 + padding),
+   * or null when no member is visible at the current step. */
+  _zoneBox(zone) {
+    const allNodes = this._getZoneNodesRecursive(zone.id);
+    if (allNodes.length === 0) return null;
+    const pad = zone.padding || 40;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const nId of allNodes) {
+      // Only include nodes visible at the current step
+      if (this.step > 0) {
+        const sp = this._findShowPhase(nId);
+        if (!sp || this.step < this._stepIndex[sp.stepId]) continue;
+      }
+      const pos = this._pos(nId);
+      if (!pos) continue;
+      minX = Math.min(minX, pos.x - 40);
+      minY = Math.min(minY, pos.y - 30);
+      maxX = Math.max(maxX, pos.x + 40);
+      maxY = Math.max(maxY, pos.y + 30);
+    }
+    if (!isFinite(minX)) return null;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  /** The strip a zone's title occupies just inside its top edge (mirror of
+   * `zoneLabelRect` in src/render/inspect.ts: 9px ≈ 5.4px/char, 14 tall). */
+  _zoneTitleRect(zone, box) {
+    const w = String(zone.label || zone.id).length * 5.4;
+    const align = zone.labelAlign || 'left';
+    const x = align === 'center' ? box.x + box.w / 2 - w / 2 : align === 'right' ? box.x + box.w - 8 - w : box.x + 8;
+    return { x, y: box.y + 5, w, h: 14 };
+  }
+
+  /** Per-render obstacle registry for pill placement: node hit boxes + zone
+   * title strips (fixed), plus every pill placed so far keyed by owner. Reset
+   * at the top of each full render; built lazily for incremental ones. */
+  _resetLabelObstacles() {
+    const fixed = [];
+    for (const cfg of this._nodes.values()) fixed.push(this._getNodeAABB(cfg));
+    for (const zone of this._zones.values()) {
+      const box = this._zoneBox(zone);
+      if (box) fixed.push(this._zoneTitleRect(zone, box));
+    }
+    this._labelObstacles = { fixed, pills: new Map() };
+  }
+
+  /**
+   * Place a wire-label pill of `kind` for `owner` centred on (cx, cy): wrap
+   * the label, size the pill (scaled about the anchor), slide it along `dir`
+   * if it collides with a node, a zone title or an earlier pill, and record
+   * it as an obstacle for later pills. Returns the final anchor + geometry.
+   */
+  _placePill(kind, owner, label, cx, cy, dir, scale = 1, labelWidth) {
+    if (!this._labelObstacles) this._resetLabelObstacles();
+    const m = WIRE_LABEL[kind];
+    const lines = TopologyDesigner._labelLines(kind, label, labelWidth);
+    const longest = lines.reduce((n, l) => Math.max(n, l.length), 0);
+    const w = longest * m.charW + m.padX * 2, h = lines.length * m.lineH + m.padY * 2;
+    const rect = { x: cx - (w * scale) / 2, y: cy - (h * scale) / 2, w: w * scale, h: h * scale };
+    const key = owner == null ? null : `${kind}:${owner}`;
+    const obstacles = [...this._labelObstacles.fixed];
+    for (const [k, r] of this._labelObstacles.pills) if (k !== key) obstacles.push(r);
+    const { dx, dy } = _nudgePill(rect, dir, obstacles);
+    const placed = { x: rect.x + dx, y: rect.y + dy, w: rect.w, h: rect.h };
+    if (key) this._labelObstacles.pills.set(key, placed);
+    return { lines, cx: cx + dx, cy: cy + dy, w, h, label };
+  }
+
+  /** The glass pill + (possibly multi-line) text for a placed label. A
+   * single line keeps the classic one-`<text>` markup; wrapped labels use
+   * `<tspan>`s and carry the full label in `data-tds-label` for the editor. */
+  _pillSVG(kind, pill, color, textAttrs = '') {
+    const m = WIRE_LABEL[kind];
+    const { cx, cy, w, h, lines } = pill;
+    const left = cx - w / 2, top = cy - h / 2;
+    const baseline = top + m.padY + m.lineH * 0.8;
+    let text;
+    if (lines.length === 1) {
+      text = `<text x="${cx}" y="${baseline}" text-anchor="middle" fill="${color}" font-size="${m.fontSize}" font-weight="600"${textAttrs}>${_esc(lines[0])}</text>`;
+    } else {
+      text = `<text x="${cx}" y="${baseline}" text-anchor="middle" fill="${color}" font-size="${m.fontSize}" font-weight="600"${textAttrs} data-tds-label="${_esc(pill.label)}">` +
+        lines.map((l, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : m.lineH}">${_esc(l)}</tspan>`).join('') +
+        `</text>`;
+    }
+    return `<rect x="${left}" y="${top}" width="${w}" height="${h}" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
+      `<rect x="${left + 1}" y="${top + 1}" width="${w - 2}" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
+      text;
   }
 
   /** Render endpoint (port) labels near link source/destination */
@@ -4317,7 +4493,7 @@ ${grid}`;
         // Line links carry a centre label too — every other link type renders
         // its own, but the line/flow renderers don't, so do it here. Honors the
         // link's labelOffset (so the label is moveable, like the others).
-        if (linkCfg.label) svg += this._renderLinkLabel(from, to, linkCfg.label, color, op, linkCfg.labelOffset, labelScale);
+        if (linkCfg.label) svg += this._renderLinkLabel(from, to, linkCfg.label, color, op, linkCfg.labelOffset, labelScale, linkCfg);
         break;
       case 'tunnel': {
         const tunnelPath = waypointPath || routedPath || `M${from.x},${from.y} L${to.x},${to.y}`;
@@ -4557,6 +4733,7 @@ ${grid}`;
   _renderSVG() {
     this._clearPosCache(); // Reset position cache for this render cycle
     this._buildJumpIndex(); // Line-jump crossing registry for this render cycle
+    this._resetLabelObstacles(); // Wire-label pill collision registry for this render cycle
     const vb = this.viewBox.split(' ').map(Number);
     const w = vb[2] || 1050, h = vb[3] || 700;
     let svg = this._svgDefs() + this._svgAmbient(w, h);
@@ -4816,6 +4993,9 @@ ${grid}`;
         if (points.length < 2) continue;
 
         let pathD;
+        // Label sites: the hops as drawn (the stitch segments across a node
+        // between two hops are never label sites), or the straight hops.
+        const labelSegs = [];
         if (fp.followLinks !== false) {
           // Default: ride the drawn link between each consecutive pair
           // (curves, bus waypoints, orthogonal routes, ports); a pair with
@@ -4828,6 +5008,7 @@ ${grid}`;
             const a = this._posCached(waypoints[i - 1]), b = this._posCached(waypoints[i]);
             const hop = this._flowHopPath(waypoints[i - 1], waypoints[i], fp.layer) ||
               `M${a.x},${a.y} L${b.x},${b.y}`;
+            labelSegs.push(..._pathDSegments(hop));
             pathD += pathD ? ' ' + hop.replace(/^M/, 'L') : hop;
           }
         } else {
@@ -4835,6 +5016,7 @@ ${grid}`;
           for (let i = 1; i < points.length; i++) {
             pathD += ` L${points[i].x},${points[i].y}`;
           }
+          labelSegs.push(..._pathDSegments(pathD));
         }
 
         const color = fp.color || '#01a982';
@@ -4878,13 +5060,26 @@ ${grid}`;
           }
         }
 
-        // Label at midpoint
+        // Label on the longest drawn segment (a hop, never the stitch across a
+        // node), nudged perpendicular like a link label, shifted by
+        // `labelOffset`, then slid along the segment if it collides (see
+        // _placePill). Mirrored by flowPillRect in src/render/inspect.ts.
         if (fp.label) {
-          const midIdx = Math.floor(points.length / 2);
-          const mx = midIdx > 0 ? (points[midIdx - 1].x + points[midIdx].x) / 2 : points[0].x;
-          const my = midIdx > 0 ? (points[midIdx - 1].y + points[midIdx].y) / 2 : points[0].y;
-          fpSvg += `<rect x="${mx - 50}" y="${my - 10}" width="100" height="20" rx="5" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
-            `<text x="${mx}" y="${my + 4}" text-anchor="middle" fill="${color}" font-size="8" font-weight="600">${_esc(fp.label)}</text>`;
+          let seg = null;
+          for (const s of labelSegs) if (!seg || s.len > seg.len) seg = s;
+          let lx, ly, dir;
+          if (seg) {
+            const ang = Math.atan2(seg.b.y - seg.a.y, seg.b.x - seg.a.x);
+            lx = seg.mid.x - Math.sin(ang) * WIRE_LABEL_PERP;
+            ly = seg.mid.y + Math.cos(ang) * WIRE_LABEL_PERP;
+            dir = { x: Math.cos(ang), y: Math.sin(ang) };
+          } else {
+            lx = points[0].x; ly = points[0].y; dir = { x: 1, y: 0 };
+          }
+          lx += fp.labelOffset?.x || 0;
+          ly += fp.labelOffset?.y || 0;
+          const pill = this._placePill('flow', fpId, fp.label, lx, ly, dir, 1, fp.labelWidth);
+          fpSvg += this._pillSVG('flow', pill, color, '');
         }
 
         svg += `<g data-tds-flowpath="${fpId}" opacity="${fpOpacity}">${fpSvg}</g>`;
@@ -4915,7 +5110,7 @@ ${grid}`;
           case 'C':  cx = nodeCfg.x;             cy = nodeCfg.y;              sdx = 1;  sdy = 0; break;
           default:   cx = nodeCfg.x + hw + margin; cy = nodeCfg.y - hh - margin;
         }
-        return { x: cx + sdx * gap * idx, y: cy + sdy * gap * idx };
+        return { x: cx + sdx * gap * idx, y: cy + sdy * gap * idx, dir: { x: sdx, y: sdy } };
       };
       // Group markers by (node, align) for stacking
       const byNodeAlign = new Map();
@@ -4937,7 +5132,13 @@ ${grid}`;
           let mSvg = `<circle cx="${mx}" cy="${my}" r="10" fill="rgba(0,0,0,.6)" stroke="${color}" stroke-width="1"/>`;
           mSvg += `<text x="${mx}" y="${my + 4}" text-anchor="middle" fill="${color}" font-size="10" font-weight="700">${icon}</text>`;
           if (m.label) {
-            mSvg += `<text x="${mx}" y="${my + 20}" text-anchor="middle" fill="${color}" font-size="6" font-weight="600" opacity=".8">${_esc(m.label)}</text>`;
+            // Label pill hangs below the badge (up to 2 lines, 8px), slid
+            // along the stacking axis if it collides (see _placePill).
+            // Mirrored by markerPillRect in src/render/inspect.ts.
+            const lines = TopologyDesigner._labelLines('marker', m.label, m.labelWidth);
+            const ph = lines.length * WIRE_LABEL.marker.lineH + WIRE_LABEL.marker.padY * 2;
+            const pill = this._placePill('marker', mId, m.label, mx, my + WIRE_LABEL_MARKER_GAP + ph / 2, p.dir, 1, m.labelWidth);
+            mSvg += this._pillSVG('marker', pill, color, ' opacity=".9"');
           }
           svg += `<g data-tds-marker="${mId}" opacity="${layerOp}">${mSvg}</g>`;
         });

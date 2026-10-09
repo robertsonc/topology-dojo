@@ -100,6 +100,12 @@ export interface LinkConfig {
    * [0.25, 4]. Backward-compatible: unset documents render unchanged.
    */
   labelScale?: number;
+  /**
+   * Wrap width (px) for the centre label's text. Absent = auto-wrap at ~26
+   * characters; the renderer clamps to [40, 600]. The pill sizes to the
+   * wrapped block (see render/wire-labels).
+   */
+  labelWidth?: number;
   waypoints?: { x: number; y: number }[];
   lineStyle?: 'orthogonal' | 'curved';
   /**
@@ -202,6 +208,13 @@ export interface FlowPathConfig {
    */
   followLinks?: boolean;
   label?: string;
+  /**
+   * Moveable label offset, doc-space {x,y}, applied after the label is placed
+   * on the longest drawn segment (same shape as a link's `labelOffset`).
+   */
+  labelOffset?: { x: number; y: number };
+  /** Wrap width (px) for the label; absent = ~26 chars. Clamped to [40, 600]. */
+  labelWidth?: number;
   name?: string;
   color?: string;
   animation?: 'particles' | 'dashed' | 'pulse';
@@ -232,7 +245,10 @@ export interface PolicyMarkerConfig {
   /** Id of the node the badge attaches to. */
   nodeId: string;
   type: PolicyMarkerType;
+  /** Rendered under the badge at 8px, up to 2 lines (then an ellipsis). */
   label?: string;
+  /** Wrap width (px) for the label; absent = ~26 chars. Clamped to [40, 600]. */
+  labelWidth?: number;
   color?: string;
   /** Glyph override; defaults to the type's glyph (see api/markers). */
   icon?: string;

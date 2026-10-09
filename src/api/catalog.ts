@@ -465,6 +465,9 @@ const LINK_COMMON: FieldSpec[] = [
   // Per-link label size multiplier (1 = default). Scales all of this link's
   // labels about their anchor; the renderer clamps to [0.25, 4].
   { key: 'labelScale', label: 'Label size', kind: 'number' },
+  // Wrap width (px) of the centre label; absent = auto-wrap at ~26 chars.
+  // The renderer clamps to [40, 600] (see render/wire-labels).
+  { key: 'labelWidth', label: 'Label width', kind: 'number' },
   // Centre-label offset from its auto position (doc-space). The inspector's
   // compass writes presets; dragging the label chip on canvas writes it too.
   {
@@ -645,6 +648,16 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
     collection: 'flowPaths',
     fields: [
       { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
+      // Wrap width (px) of the label; absent = auto-wrap at ~26 chars.
+      { key: 'labelWidth', label: 'Label width', kind: 'number' },
+      // Label offset from its auto position on the longest drawn segment —
+      // the same point shape (and compass widget) as a link's labelOffset.
+      {
+        key: 'labelOffset',
+        label: 'Label placement',
+        kind: 'point',
+        widget: 'compass',
+      },
       { key: 'waypoints', label: 'Waypoints', kind: 'refs', required: true },
       { key: 'followLinks', label: 'Follow link geometry', kind: 'boolean' },
       { key: 'color', label: 'Color', kind: 'color' },
@@ -689,6 +702,8 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
       },
       { key: 'nodeId', label: 'On node', kind: 'ref', required: true },
       { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
+      // Wrap width (px) of the label (8px, up to 2 lines); absent = ~26 chars.
+      { key: 'labelWidth', label: 'Label width', kind: 'number' },
       { key: 'color', label: 'Color', kind: 'color' },
       {
         key: 'icon',

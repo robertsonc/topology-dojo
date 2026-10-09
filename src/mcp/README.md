@@ -347,8 +347,11 @@ without the SVG payload: it estimates the drawn geometry (glyphs, labels, link
 label chips, zone boxes) from the renderer's own metrics and returns a compact
 report — page/viewBox vs content bounds and margins, crop/clipping problems,
 text-legibility findings (labels overflowing nodes or colliding with
-neighbours, link labels stacking, zone labels overlapped by content,
-24-character truncation), routing quality (link/link crossings, links through
+neighbours; link, flow-path and marker label pills colliding with each other,
+with nodes or with zone titles after the renderer's own collision nudge; links
+drawn through a zone title; zone labels overlapped by content; 24-character
+truncation of node labels, and marker labels past 24 characters that wrap to
+two lines), routing quality (link/link crossings, links through
 unrelated node boxes, degenerate link/flow geometry), and density/balance
 signals (overlaps, crowding clusters, unbalanced whitespace). Findings are
 severity-tagged (`problem` vs `note`) and capped per category with true totals
