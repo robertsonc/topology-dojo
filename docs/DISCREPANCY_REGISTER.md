@@ -43,3 +43,21 @@ Severity guide: **Critical** = a reader would materially misjudge production ris
 
 - **Rows 15–16**: citation/list staleness with no risk of misjudging current system state once a reader consults `docs/ROADMAP.md` or `docs/CAPABILITY_MATRIX.md`. Low value relative to the size of the change.
 - **Full `docs/ROLLBACK.md` generalization to a migration-agnostic template**: row 11's pointer note is a safe, cheap mitigation; a full rewrite is a larger editorial project better scoped as its own small packet (see `docs/IMPLEMENTATION_PLAN.md` → N-series).
+
+## Follow-up — 2026-10-09
+
+- `deploy-production.yml` drifted from proposal 0004 decision 3 (its table
+  says "Push/merge to `main` → required checks, protected production
+  approval → Production"): the implementation is manual-dispatch plus a
+  `production` environment required-reviewer click. With one owner that click
+  only ever approved the dispatcher's own dispatch, and the agent's GitHub
+  identity is the owner's, so it gated nothing while adding a desktop-only
+  step (GitHub Mobile cannot approve it). The required reviewers were removed
+  2026-10-09; the deployment-branch rule (`main` only) and the `guard` job
+  remain the controls. Docs updated in the same change: `DEPLOYMENT_RUNBOOK`,
+  `GAME_DAY`, `HANDOFF`, `AGENTIC_IMPLEMENTATION_WORKFLOW`, `ALERTS`,
+  `CAPABILITY_MATRIX`, `ROADMAP`. A merge-is-release redesign (push to
+  `main` → CI → staging rehearsal → migration guard → production) is under
+  discussion and, if adopted, lands as a new proposal. Historical records
+  (`IMPLEMENTATION_PLAN`, `PACKET_ISSUES`) keep their original "approve the
+  production deploy" wording as the record of what was done.

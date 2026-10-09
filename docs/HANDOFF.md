@@ -208,8 +208,12 @@ Full register: `docs/launch-readiness/FINDINGS_REGISTER.md`.
 
 Things no agent in this repo can complete alone:
 
-1. **Approve production deploys** — the protected `production` GitHub
-   Environment gate requires a human click every time, by design.
+1. **Decide a production release** — the dispatch of `deploy-production.yml`
+   from `main` is the human decision. An agent may perform the dispatch only
+   on an explicit chat instruction quoted in the session. (The `production`
+   environment's required-reviewer click was removed 2026-10-09: the sole
+   owner was approving their own dispatch, and the agent's GitHub identity is
+   the owner's, so it gated nothing.)
 2. **Configure Cloudflare alerting** (`IMPLEMENTATION_PLAN.md` packet O1) —
    a Cloudflare dashboard action; the exact steps + evidence requirements
    are `docs/CLOUDFLARE_OPERATOR_RUNBOOK.md` (CF-1..CF-6 checklist).
@@ -253,5 +257,6 @@ staging` with a generated ≥16-char value kept only in the operator's
   size).
 - Independently verify the risky properties and run the full gate before
   committing — don't trust a sub-agent's self-report on correctness.
-- Staging deploys are safe to dispatch on request; production requires the
-  protected environment approval every time, no exceptions.
+- Staging deploys are safe to dispatch on request; a production dispatch
+  needs an explicit human instruction quoted in the session, no exceptions
+  (there is no second approval click since 2026-10-09).

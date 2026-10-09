@@ -18,9 +18,10 @@ drill; completed drills live as dated evidence records.
    (`worker/staging-fault.ts`; CI rejects `DIAGNOSTICS_*` in production
    config; tests prove production rejection). Phase 3 uses only
    non-destructive reads and feature-flag forward deployments.
-2. **Every production step requires the protected `production` GitHub
-   Environment approval** — the owner clicks approve per deploy, exactly as
-   for a release. The game day changes nothing about the deploy path.
+2. **Every production step is a real `deploy-production.yml` dispatch from
+   `main`** — the dispatch is the owner's decision per deploy, exactly as for
+   a release (the environment's required-reviewer gate was removed
+   2026-10-09). The game day changes nothing about the deploy path.
 3. **Forward-only recovery.** No step ever rolls production or staging back
    across a Durable Object migration boundary (`ROLLBACK.md` first
    principle). All recovery in this drill is a forward deploy with a flag
@@ -42,14 +43,15 @@ drill; completed drills live as dated evidence records.
 
 ## Roles
 
-- **Operator** — a human with GitHub dispatch + production-approval rights
-  and Cloudflare dashboard access. Executes every step.
+- **Operator** — a human with GitHub workflow-dispatch rights and Cloudflare
+  dashboard access. Executes every step.
 - **Observer** (optional, may be the same person on a solo team wearing two
   hats deliberately) — keeps the evidence record current in real time
   rather than reconstructing it afterwards.
 
 Agents may prepare PRs (e.g. the production flag-change PRs in Phase 3) but
-never dispatch production deploys or approve environments.
+never dispatch production deploys on their own initiative; a dispatch by an
+agent needs an explicit human instruction quoted in the session.
 
 ## Phase 1 — Preparation (no changes made)
 
@@ -60,7 +62,7 @@ Record each item in the evidence record before any exercise:
 | 1.1  | Current production SHA: `GET https://topology-dojo.harnessed.cloud/healthz` → `sha`, and confirm it matches the latest `Deploy Production` run's recorded SHA.                                                                                                      |
 | 1.2  | Current staging SHA: same via the staging origin. **Known 2026-07-19 state: staging serves `da8f704…`, behind `main` — the first drill action (S-0) is a routine staging deploy of current `main`.**                                                                |
 | 1.3  | No deployment in flight: both deploy workflows idle; no open `production-smoke`/`nightly-smoke` issues (or accept + note them).                                                                                                                                     |
-| 1.4  | Operator permissions: can dispatch `deploy-staging`, `production-verify`; is a required reviewer of the `production` environment.                                                                                                                                   |
+| 1.4  | Operator permissions: can dispatch `deploy-staging`, `deploy-production`, `production-verify` (the `production` environment has had no required reviewers since 2026-10-09; its deployment-branch rule is `main` only).                                             |
 | 1.5  | Notification paths: GitHub notification email deliverable; Cloudflare destination state per `CLOUDFLARE_OPERATOR_RUNBOOK.md` CF-2 (it is valid to run Phase 2 before any Cloudflare policies exist — record "L1-only" so timing results are interpreted correctly). |
 | 1.6  | Feature flags: read `wrangler.jsonc` top-level + `env.staging`; record all six values.                                                                                                                                                                              |
 | 1.7  | Recovery assumptions: staging owns no production data (isolated KV/DO namespaces — `check:wrangler` green proves config isolation); disposable staging drafts/workspaces may be created and abandoned.                                                              |
@@ -92,28 +94,28 @@ before ending the session, even on abort.
 ## Phase 3 — Production-safe exercises
 
 Non-destructive reads, plus feature-flag **forward deployments** only. Every
-deploy here is a real protected production deploy: PR review + `production`
-environment approval by the owner. Schedule these in a low-usage window;
+deploy here is a real production deploy: PR review + merge, then the owner's
+dispatch from `main`. Schedule these in a low-usage window;
 each disable is user-visible while active (single-owner deployment, so the
 "users" affected are the owner's own sessions/agents).
 
-**Approval documentation:** the environment-approval click on each deploy
-run **is** the explicit owner approval; the evidence record links each run.
+**Approval documentation:** the dispatch of each deploy run (its recorded
+actor) **is** the explicit owner approval; the evidence record links each run.
 
-| #    | Scenario                              | Action                                                                                                                                                                                                                                        | Expected result                                                                                                                                                       |
-| ---- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-1  | Verify production health + readiness  | Dispatch `Production Verify` with `expected_sha=<current prod SHA>`; owner additionally opens `/readyz` in a signed-in browser session.                                                                                                       | 14/14 green incl. SHA assertion; `/readyz` 200 with all bindings ok.                                                                                                  |
-| P-2  | Login + showcase + share surfaces     | Covered by P-1's checks (`login`, `showcase`, `viewer-shell`, `share-404`, `oauth-metadata`); owner spot-opens `/login` in a private window.                                                                                                  | All green; login page renders with the filmstrip.                                                                                                                     |
-| P-3  | Approval-gate confirmation (negative) | A second GitHub identity (or the drill record if none exists) confirms a `deploy-production` dispatch **waits** for environment approval and can be **rejected**.                                                                             | The rejected run deploys nothing; the gate demonstrably blocks. (If no second identity is available, approve-then-observe the wait state and record that limitation.) |
-| P-4  | Disable shared workspace (forward)    | PR editing top-level `wrangler.jsonc`: `WORKSPACE_ENABLED` → `"false"`; merge; dispatch `deploy-production` with `expect_workspace_disabled=true`; owner approves.                                                                            | Deploy green with the workflow smoke asserting the 503 contract; degraded behavior per the forward-recovery table; `v3` untouched.                                    |
-| P-5  | Confirm degraded behavior + detection | `node scripts/smoke.mjs <prod> --expect-workspace-disabled`; also run a plain `Production Verify` dispatch and observe it **fail** the workspace contract check.                                                                              | Both behave as designed — the plain verify failing proves flag-state drift is detectable; it files the `production-smoke` issue (leave it open for P-6 to close).     |
-| P-6  | Restore shared workspace (forward)    | Revert PR (`"true"`); merge; dispatch + approve; then dispatch `Production Verify` (plain).                                                                                                                                                   | Green; the `production-smoke` issue closes automatically. Record disable→restore wall-clock as the measured forward-recovery time.                                    |
-| P-7  | Disable profiles (forward)            | Same PR flow: remove `PROFILES_ENABLED` (or set `"false"`); deploy + approve; verify with `--expect-profiles-disabled`.                                                                                                                       | 503 `profiles_disabled` on the profile API; authoring/workspace unaffected; learner stops observing (by design, no data loss — candidates simply stop accruing).      |
-| P-8  | Restore profiles (forward)            | Revert; deploy + approve; plain verify.                                                                                                                                                                                                       | Green; preferences panel live again.                                                                                                                                  |
-| P-9  | Disable analytics (forward)           | Same flow: remove `ANALYTICS_ENABLED`; verify with `--expect-analytics-disabled`.                                                                                                                                                             | 503 `admin_disabled`; logins work but are not recorded (gap in roster during the window is expected and permanent — no backfill).                                     |
-| P-10 | Restore analytics (forward)           | Revert; deploy + approve; plain verify; owner signs in once and confirms the roster records it.                                                                                                                                               | Green; recording resumed.                                                                                                                                             |
-| P-11 | Alert + recovery notifications        | For each Cloudflare policy configured in CF-3: confirm whether the P-4..P-10 window fired anything (it should **not** — flag disables are clean 503s, not errors) and that the GitHub issue open/close in P-5/P-6 notified the owner's email. | No false-positive Cloudflare alerts from clean disables; GitHub notifications received; record both.                                                                  |
-| P-12 | Close out                             | Final `Production Verify` with `expected_sha`; confirm flags match `wrangler.jsonc`; no open `production-smoke` issues.                                                                                                                       | Production exactly at its pre-drill configuration and SHA lineage (the SHA advances past the drill PRs — record old + new).                                           |
+| #    | Scenario                              | Action                                                                                                                                                                                                                                        | Expected result                                                                                                                                                   |
+| ---- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-1  | Verify production health + readiness  | Dispatch `Production Verify` with `expected_sha=<current prod SHA>`; owner additionally opens `/readyz` in a signed-in browser session.                                                                                                       | 14/14 green incl. SHA assertion; `/readyz` 200 with all bindings ok.                                                                                              |
+| P-2  | Login + showcase + share surfaces     | Covered by P-1's checks (`login`, `showcase`, `viewer-shell`, `share-404`, `oauth-metadata`); owner spot-opens `/login` in a private window.                                                                                                  | All green; login page renders with the filmstrip.                                                                                                                 |
+| P-3  | Guard confirmation (negative)         | Retired 2026-10-09 as an approval-gate drill (the gate was removed). Replacement: dispatch `deploy-production` from a non-`main` branch with no `recovery_sha`.                                                                               | The `guard` job fails before `resolve-ref`; nothing is checked out, built, or deployed.                                                                           |
+| P-4  | Disable shared workspace (forward)    | PR editing top-level `wrangler.jsonc`: `WORKSPACE_ENABLED` → `"false"`; merge; owner dispatches `deploy-production` with `expect_workspace_disabled=true`.                                                                                    | Deploy green with the workflow smoke asserting the 503 contract; degraded behavior per the forward-recovery table; `v3` untouched.                                |
+| P-5  | Confirm degraded behavior + detection | `node scripts/smoke.mjs <prod> --expect-workspace-disabled`; also run a plain `Production Verify` dispatch and observe it **fail** the workspace contract check.                                                                              | Both behave as designed — the plain verify failing proves flag-state drift is detectable; it files the `production-smoke` issue (leave it open for P-6 to close). |
+| P-6  | Restore shared workspace (forward)    | Revert PR (`"true"`); merge; dispatch; then dispatch `Production Verify` (plain).                                                                                                                                                             | Green; the `production-smoke` issue closes automatically. Record disable→restore wall-clock as the measured forward-recovery time.                                |
+| P-7  | Disable profiles (forward)            | Same PR flow: remove `PROFILES_ENABLED` (or set `"false"`); dispatch; verify with `--expect-profiles-disabled`.                                                                                                                               | 503 `profiles_disabled` on the profile API; authoring/workspace unaffected; learner stops observing (by design, no data loss — candidates simply stop accruing).  |
+| P-8  | Restore profiles (forward)            | Revert; dispatch; plain verify.                                                                                                                                                                                                               | Green; preferences panel live again.                                                                                                                              |
+| P-9  | Disable analytics (forward)           | Same flow: remove `ANALYTICS_ENABLED`; verify with `--expect-analytics-disabled`.                                                                                                                                                             | 503 `admin_disabled`; logins work but are not recorded (gap in roster during the window is expected and permanent — no backfill).                                 |
+| P-10 | Restore analytics (forward)           | Revert; deploy + approve; plain verify; owner signs in once and confirms the roster records it.                                                                                                                                               | Green; recording resumed.                                                                                                                                         |
+| P-11 | Alert + recovery notifications        | For each Cloudflare policy configured in CF-3: confirm whether the P-4..P-10 window fired anything (it should **not** — flag disables are clean 503s, not errors) and that the GitHub issue open/close in P-5/P-6 notified the owner's email. | No false-positive Cloudflare alerts from clean disables; GitHub notifications received; record both.                                                              |
+| P-12 | Close out                             | Final `Production Verify` with `expected_sha`; confirm flags match `wrangler.jsonc`; no open `production-smoke` issues.                                                                                                                       | Production exactly at its pre-drill configuration and SHA lineage (the SHA advances past the drill PRs — record old + new).                                       |
 
 ## Phase 4 — Findings and follow-up
 
@@ -138,7 +140,7 @@ Complete in the evidence record, same day where possible:
 
 The tested, supported way to take any of the three live features out of (and
 back into) production service. All three: deploy path =
-`deploy-production.yml` from `main` with owner approval; Durable Object
+`deploy-production.yml` dispatched from `main` by the owner; Durable Object
 implications = **none removed ever** — bindings, classes, and migrations
 `v1`–`v5` stay declared in every state; stored data is preserved untouched
 while the flag is off. Never recover any of these by rolling back across a

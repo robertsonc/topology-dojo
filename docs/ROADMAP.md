@@ -54,7 +54,7 @@ migration through `v5` is applied and active. Concretely, today a user can:
   their own GitHub identity, and a pre-login showcase filmstrip demonstrates
   the tool's output to visitors before they sign in.
 
-Every production deploy goes through a CI-gated, protected-environment-approval
+Every production deploy goes through a CI-gated, `main`-only dispatch
 GitHub Actions pipeline (`deploy-production.yml`); Durable Object migrations
 are append-only. Feature migrations `v3`–`v5` established the safer
 inert-bootstrap-then-activate pattern for future feature classes. Recovery from
