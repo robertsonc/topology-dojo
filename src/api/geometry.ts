@@ -139,6 +139,30 @@ export function nodeHalf(node: NodeConfig): { w: number; h: number } {
   return HALF[node.type] ?? HALF.custom!;
 }
 
+/**
+ * True for node types whose label is drawn inside (or not at all by) the
+ * glyph rather than as the classic below-node label the engine truncates at
+ * 24 chars: text boxes and callouts word-wrap at their width, cloud / idcard /
+ * overlayCloud render their own text, and basic shapes centre a wrapped label
+ * inside the shape unless an explicit placement moves it outside. Shared by
+ * the layout analyzer and the render inspector so neither grows a phantom
+ * below-node label for these types.
+ */
+export function drawsOwnLabel(node: NodeConfig): boolean {
+  const t = node.type;
+  if (
+    t === 'text' ||
+    t === 'callout' ||
+    t === 'cloud' ||
+    t === 'idcard' ||
+    t === 'overlayCloud'
+  )
+    return true;
+  return (
+    t.startsWith('shape:') && node.labelOffset == null && !node.labelPlacement
+  );
+}
+
 export interface BoundsRect {
   x: number;
   y: number;

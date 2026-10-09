@@ -24,7 +24,7 @@ import type {
   NodeConfig,
   ZoneConfig,
 } from '../vendor/topology-ds.js';
-import { nodeBounds, type BoundsRect } from '../api/geometry.js';
+import { drawsOwnLabel, nodeBounds, type BoundsRect } from '../api/geometry.js';
 import { LAYOUT_RULES, parseViewBox, rectGap } from '../api/layout.js';
 
 export type InspectSeverity = 'problem' | 'note';
@@ -247,14 +247,16 @@ function checkText(
 ): void {
   for (const n of page.nodes) {
     const label = typeof n.label === 'string' ? n.label : '';
+    // Only the classic below-node label is truncated; text boxes, callouts
+    // and shapes word-wrap theirs in full, so they never get a label rect.
+    const lr = labels.get(n.id);
+    if (!lr) continue;
     if (label.length > NODE_LABEL_MAX_CHARS)
       add(
         'note',
         'text',
         `label "${label}" on node "${n.id}" is ${label.length} chars — the renderer truncates it to ${NODE_LABEL_MAX_CHARS} with an ellipsis`,
       );
-    const lr = labels.get(n.id);
-    if (!lr) continue;
     const glyph = glyphs.get(n.id)!;
     const overflow = lr.w - glyph.w;
     if (overflow > 96)
@@ -505,11 +507,7 @@ function checkDensity(
 function nodeLabelRect(n: NodeConfig): BoundsRect | null {
   const label = typeof n.label === 'string' ? n.label : '';
   if (!label) return null;
-  const t = n.type;
-  if (t === 'text' || t === 'cloud' || t === 'idcard' || t === 'overlayCloud')
-    return null;
-  if (t.startsWith('shape:') && n.labelOffset == null && !n.labelPlacement)
-    return null;
+  if (drawsOwnLabel(n)) return null;
   const chars = Math.min(label.length, NODE_LABEL_MAX_CHARS + 1);
   const w = chars * NODE_LABEL_CHAR_W;
   const h = NODE_LABEL_H + (n.sublabel ? NODE_SUBLABEL_H : 0);
