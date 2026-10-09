@@ -336,3 +336,114 @@ describe('headless render (Node, no browser)', () => {
     );
   });
 });
+
+describe('flow paths that follow link geometry (#256)', () => {
+  /** The `d` of the first <path> inside a flow path's group. */
+  const flowD = (svg: string, id: string): string => {
+    const g = svg.indexOf(`data-tds-flowpath="${id}"`);
+    expect(g).toBeGreaterThan(-1);
+    const m = /<path d="([^"]+)"/.exec(svg.slice(g));
+    expect(m).not.toBeNull();
+    return m![1]!;
+  };
+
+  it('opts out to straight centre→centre segments with followLinks:false', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 600, y: 200 })
+      .link({
+        id: 'l',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        lineStyle: 'curved',
+        waypoints: [{ x: 400, y: 100 }],
+      })
+      .flowPath({ id: 'f', waypoints: ['a', 'b'], followLinks: false })
+      .build();
+    expect(flowD(renderDocumentToSVG(doc), 'f')).toBe('M200,200 L600,200');
+  });
+
+  it('rides a curved, waypointed link by default', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 600, y: 200 })
+      .link({
+        id: 'l',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        lineStyle: 'curved',
+        waypoints: [{ x: 400, y: 100 }],
+      })
+      .flowPath({ id: 'f', waypoints: ['a', 'b'] })
+      .build();
+    const svg = renderDocumentToSVG(doc);
+    const d = flowD(svg, 'f');
+    expect(d).toMatch(/ C/); // the link's Catmull-Rom spline, not a chord
+    expect(d).toContain(' 400,100'); // passes through the bus waypoint
+    // The link itself renders the same path (its own <path d> appears too).
+    expect(svg.split(`d="${d}"`).length).toBeGreaterThan(2);
+  });
+
+  it('reverses a link declared the other way so the flow runs a→b', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 600, y: 400 })
+      .link({
+        id: 'l',
+        type: 'line',
+        from: 'b',
+        to: 'a',
+        lineStyle: 'orthogonal',
+        waypoints: [{ x: 600, y: 200 }],
+      })
+      .flowPath({ id: 'f', waypoints: ['a', 'b'], followLinks: true })
+      .build();
+    const d = flowD(renderDocumentToSVG(doc), 'f');
+    const pts = [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((m) => ({
+      x: Number(m[1]),
+      y: Number(m[2]),
+    }));
+    // Starts near a (x≈200, attached to a's east edge), ends near b.
+    expect(pts[0]!.x).toBeGreaterThan(200);
+    expect(pts[0]!.x).toBeLessThan(260);
+    expect(pts[0]!.y).toBe(200);
+    const last = pts[pts.length - 1]!;
+    expect(last.x).toBe(600);
+    expect(last.y).toBeLessThan(400);
+    expect(d).toContain('L600,200'); // the elbow waypoint, in order
+  });
+
+  it('starts at a pinned port rather than the node centre', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 600, y: 200 })
+      .link({ id: 'l', type: 'line', from: 'a', to: 'b', fromPort: 's' })
+      .flowPath({ id: 'f', waypoints: ['a', 'b'], followLinks: true })
+      .build();
+    const d = flowD(renderDocumentToSVG(doc), 'f');
+    const start = /^M(-?[\d.]+),(-?[\d.]+)/.exec(d)!;
+    expect(Number(start[1])).toBe(200); // south port: same x as the centre …
+    expect(Number(start[2])).toBeGreaterThan(200); // … below it
+  });
+
+  it('keeps a straight hop where no link joins the pair, stitched to the next', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 400, y: 200 })
+      .node({ id: 'c', type: 'ec', x: 600, y: 400 })
+      .link({ id: 'l', type: 'line', from: 'b', to: 'c', lineStyle: 'curved' })
+      .flowPath({ id: 'f', waypoints: ['a', 'b', 'c'], followLinks: true })
+      .build();
+    const d = flowD(renderDocumentToSVG(doc), 'f');
+    expect(d.startsWith('M200,200 L400,200')).toBe(true); // a→b: no link
+    expect((d.match(/M/g) ?? []).length).toBe(1); // one continuous path
+    expect(d).toMatch(/ Q/); // b→c: the curved link
+  });
+});

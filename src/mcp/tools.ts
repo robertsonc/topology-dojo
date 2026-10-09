@@ -1002,11 +1002,17 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'add_flow_path',
       description:
-        'Add an animated overlay route threaded through an ordered list of node/anchor ids (≥2 waypoints).',
+        'Add an animated overlay route threaded through an ordered list of node/anchor ids (≥2 waypoints). Each hop rides the drawn link between its two waypoints (curves, bus waypoints, orthogonal routes, ports); a pair with no connecting link gets a straight centre→centre hop. Set followLinks:false for plain straight segments throughout, threading anchors placed along the route into waypoints if it must still approximate one.',
       inputShape: {
         topologyId,
         pageIndex,
         waypoints: z.array(z.string()).describe('Ordered node/anchor ids.'),
+        followLinks: z
+          .boolean()
+          .optional()
+          .describe(
+            'Ride the drawn link between consecutive waypoints (default true); false draws straight centre→centre segments.',
+          ),
         label: displayString(TEXT_LIMITS.label).optional(),
         color: z.string().optional(),
         animation: z.enum(ANIMATION).optional(),
@@ -1023,6 +1029,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           {
             id: a.flowPathId as string | undefined,
             waypoints: (a.waypoints as string[]) ?? [],
+            ...(a.followLinks !== undefined
+              ? { followLinks: Boolean(a.followLinks) }
+              : {}),
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.animation !== undefined

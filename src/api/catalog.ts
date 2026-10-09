@@ -625,6 +625,7 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
     fields: [
       { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
       { key: 'waypoints', label: 'Waypoints', kind: 'refs', required: true },
+      { key: 'followLinks', label: 'Follow link geometry', kind: 'boolean' },
       { key: 'color', label: 'Color', kind: 'color' },
       {
         key: 'animation',

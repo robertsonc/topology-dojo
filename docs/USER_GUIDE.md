@@ -511,6 +511,13 @@ Flow paths support label, color, animation style, dashed/pulse/particle
 presentation, speed, direction, width, opacity, layer, source, and optional hop
 metadata. Use chip **‹/›** controls to correct the order.
 
+Each hop rides the link that joins its two waypoints, so the flow stays on a
+curved, bused (waypointed), orthogonal or ported link; a pair with no
+connecting link gets a straight segment between the two centres. Turn off
+**Follow link geometry** (`followLinks: false` in the API) for plain straight
+segments throughout; thread anchors placed along the route into the waypoints
+if such a flow must still approximate one.
+
 ### Policy markers
 
 A policy marker badges a node and can optionally associate with a flow path.
