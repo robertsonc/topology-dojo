@@ -35,9 +35,10 @@
  * consecutive points) inserted for `lineStyle: 'orthogonal'`, and the control
  * polygon used for `lineStyle: 'curved'` (a 2-point curve bulges ≤20px, so the
  * chord is close enough). Link/link crossings are classified: a crossing whose
- * four endpoints are closed into a 4-cycle by other links on the page is an
- * unavoidable dual-homed mesh (K2,2 / K2,4 drawn as rows) and is reported as a
- * `note`; every other crossing stays a `problem`. Crossing points within 20px
+ * four endpoints are closed into a 4-cycle by other links of the SAME kind
+ * (type, layer, dashed) is an unavoidable dual-homed mesh (K2,2 / K2,4 drawn
+ * as rows) and is reported as a `note`; every other crossing, including a
+ * tunnel or OOB cable over a WAN link, stays a `problem`. Crossing points within 20px
  * of each other collapse into one finding (a bused crossover), while
  * `crossings` keeps the per-pair totals.
  *
@@ -611,12 +612,24 @@ function checkRouting(
     if (a && b) routes.push({ link: l, pts: linkPolyline(l, a, b) });
   }
 
-  // Undirected adjacency, for recognising crossings a dual-homed mesh forces.
-  const adjacent = new Set<string>();
+  // Undirected adjacency keyed by link KIND (type + layer + dashed), for
+  // recognising crossings a dual-homed mesh forces. A 4-cycle made of unlike
+  // links (a WAN line, a tunnel on the overlay layer, an OOB dashed cable) is
+  // two planes sharing endpoints, not a mesh: that crossing stays avoidable
+  // (#265).
+  const linkKind = (l: LinkConfig): string =>
+    `${l.type}\u0000${l.layer ?? ''}\u0000${l.dashed ? 1 : 0}`;
+  const adjacent = new Map<string, Set<string>>();
   const pairKey = (u: string, v: string): string =>
     u < v ? `${u}\u0000${v}` : `${v}\u0000${u}`;
-  for (const l of page.links) adjacent.add(pairKey(l.from, l.to));
-  const linked = (u: string, v: string): boolean => adjacent.has(pairKey(u, v));
+  for (const l of page.links) {
+    const k = pairKey(l.from, l.to);
+    let kinds = adjacent.get(k);
+    if (!kinds) adjacent.set(k, (kinds = new Set()));
+    kinds.add(linkKind(l));
+  }
+  const linked = (u: string, v: string, kind: string): boolean =>
+    adjacent.get(pairKey(u, v))?.has(kind) ?? false;
 
   // Link/link crossings on the drawn polylines (shared endpoints are a
   // junction, not a crossing; one crossing per link pair).
@@ -646,12 +659,15 @@ function checkRouting(
         b1 = s.link.to,
         a2 = t.link.from,
         b2 = t.link.to;
+      const kind = linkKind(s.link);
       const mesh =
-        linked(a1, b2) && linked(a2, b1)
-          ? meshDesc([a1, a2], [b1, b2])
-          : linked(a1, a2) && linked(b1, b2)
-            ? meshDesc([a1, b2], [a2, b1])
-            : null;
+        kind !== linkKind(t.link)
+          ? null
+          : linked(a1, b2, kind) && linked(a2, b1, kind)
+            ? meshDesc([a1, a2], [b1, b2])
+            : linked(a1, a2, kind) && linked(b1, b2, kind)
+              ? meshDesc([a1, b2], [a2, b1])
+              : null;
       crossings.push({ at, links: [s.link, t.link], mesh });
     }
   }
