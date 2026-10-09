@@ -11,7 +11,7 @@
  */
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { NodeConfig, ZoneConfig } from '../vendor/topology-ds.js';
-import { nodeBounds, type BoundsRect } from './geometry.js';
+import { drawsOwnLabel, nodeBounds, type BoundsRect } from './geometry.js';
 import type { Problem } from './validate.js';
 
 /** Quantitative layout rules — the numbers the checker enforces and the agent should target. */
@@ -142,9 +142,13 @@ export function isWellLaidOut(doc: TopologyDocument): boolean {
 
 /* ── geometry helpers ─────────────────────────────────────────────── */
 
-/** A node's footprint: its drawn glyph plus the label that renders below it. */
+/** A node's footprint: its drawn glyph plus the label that renders below it.
+ * Types that draw their label inside the glyph (text boxes, callouts, basic
+ * shapes, …) already size it in `nodeBounds`; widening them by the raw label
+ * length would ignore their wrap width and invent overlaps (#253). */
 export function nodeFootprint(n: NodeConfig): BoundsRect {
   const b = nodeBounds(n);
+  if (drawsOwnLabel(n)) return b;
   const label = typeof n.label === 'string' ? n.label : '';
   const labelW = label ? label.length * LAYOUT_RULES.labelCharWidth : 0;
   const halfW = Math.max(b.w / 2, labelW / 2);

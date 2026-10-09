@@ -59,3 +59,52 @@ describe('auto-legend (B.1)', () => {
     expect(tl).toContain('translate(16,16)'); // top-left = page origin + margin
   });
 });
+
+describe('annotation nodes (#254)', () => {
+  it('does not list text boxes or callouts, whatever their colour', () => {
+    const doc = createDocument('K')
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({
+        id: 'k1',
+        type: 'text',
+        x: 0,
+        y: 100,
+        width: 200,
+        label: 'HPE',
+        color: '#05cc93',
+      })
+      .node({
+        id: 'k2',
+        type: 'text',
+        x: 0,
+        y: 200,
+        width: 200,
+        label: 'DMZ',
+        color: '#fc6161',
+      })
+      .node({
+        id: 'k3',
+        type: 'text',
+        x: 0,
+        y: 300,
+        width: 200,
+        label: 'SRX',
+        color: '#65aef9',
+      })
+      .node({
+        id: 'c1',
+        type: 'callout',
+        x: 0,
+        y: 400,
+        width: 200,
+        label: 'note',
+        color: '#deb146',
+      })
+      .build();
+    const items = buildLegendItems(doc, doc.pages[0]!);
+    expect(items.filter((i) => /^text$/i.test(i.label))).toHaveLength(0);
+    expect(items.filter((i) => /callout/i.test(i.label))).toHaveLength(0);
+    expect(items.some((i) => /ec|edgeconnect/i.test(i.label))).toBe(true);
+  });
+});

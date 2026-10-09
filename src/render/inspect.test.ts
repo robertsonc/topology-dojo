@@ -224,3 +224,49 @@ describe('inspectPage', () => {
     expect(JSON.stringify(r).length).toBeLessThan(4096);
   });
 });
+
+describe('self-labelled nodes (#253)', () => {
+  const LONG =
+    'SRX: one table, zone per VRF. Import: Transit 0/0 only, HPE ClearPass list only, others own CIDR.';
+
+  it('does not report wrapped text-box or callout labels as truncated', () => {
+    const r = inspectPage(
+      page({
+        nodes: [
+          { id: 'key', type: 'text', x: 300, y: 350, width: 260, label: LONG },
+          {
+            id: 'co',
+            type: 'callout',
+            x: 700,
+            y: 350,
+            width: 340,
+            label: LONG,
+          },
+        ],
+      }),
+    );
+    expect(messages(r)).not.toMatch(/truncates it to 24/);
+  });
+
+  it('gives a callout no phantom below-node label that collides with neighbours', () => {
+    // A 97-char label would be a 150px label rect at y+24; the callout box
+    // itself (340 wide) ends at x=620 and the node at 700 is well clear.
+    const r = inspectPage(
+      page({
+        nodes: [
+          {
+            id: 'co',
+            type: 'callout',
+            x: 450,
+            y: 350,
+            width: 340,
+            label: LONG,
+          },
+          node('w2', 700, 350, 'w2'),
+        ],
+      }),
+    );
+    expect(messages(r)).not.toMatch(/label .* on node "co"/);
+    expect(r.counts.text.problems).toBe(0);
+  });
+});

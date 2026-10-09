@@ -152,3 +152,80 @@ describe('analyzeLayout', () => {
     expect(has(analyzeLayout(nested), /overlap/)).toBe(false);
   });
 });
+
+describe('self-labelled node footprints (#253)', () => {
+  const LONG =
+    'Key: solid = underlay, dashed = overlay tunnel, red = blocked by policy, green = allowed';
+
+  it('sizes a wide text box by its wrap width, not its label length', () => {
+    // 88 chars × 6px would be a 528px footprint; the box is 220px wide and
+    // wraps, so the switch 190px away and the page edge are both clear.
+    const doc = createDocument()
+      .page()
+      .node({
+        id: 'key',
+        type: 'text',
+        x: 150,
+        y: 560,
+        width: 220,
+        label: LONG,
+      })
+      .node({ id: 'sw1', type: 'switch', x: 360, y: 560, label: 'core-sw' })
+      .build();
+    const probs = analyzeLayout(doc);
+    expect(has(probs, /"key".*page edge/)).toBe(false);
+    expect(has(probs, /"key" and "sw1"/)).toBe(false);
+  });
+
+  it('sizes a callout by its declared width and wrapped height', () => {
+    const doc = createDocument()
+      .page()
+      .node({
+        id: 'note',
+        type: 'callout',
+        x: 500,
+        y: 560,
+        width: 180,
+        label: LONG,
+      })
+      .node({ id: 'sw1', type: 'switch', x: 360, y: 560, label: 'core-sw' })
+      .node({ id: 'd1', type: 'server', x: 700, y: 560, label: 'd1' })
+      .build();
+    const probs = analyzeLayout(doc);
+    expect(has(probs, /"note".*page edge/)).toBe(false);
+    expect(has(probs, /"sw1" and "note"|"note" and "sw1"/)).toBe(false);
+    expect(has(probs, /"note" and "d1"|"d1" and "note"/)).toBe(false);
+  });
+
+  it('does not place a text box inside a zone it merely sits near', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'ec', type: 'ec', x: 200, y: 200, label: 'ec' })
+      .node({
+        id: 'key',
+        type: 'text',
+        x: 500,
+        y: 200,
+        width: 200,
+        label: LONG,
+      })
+      .zone({ id: 'z', label: 'Edge', nodes: ['ec'] })
+      .build();
+    expect(has(analyzeLayout(doc), /zone "z".*"key"/)).toBe(false);
+  });
+
+  it('still widens a classic node footprint by its below-node label', () => {
+    const doc = createDocument()
+      .page()
+      .node({
+        id: 'a',
+        type: 'ec',
+        x: 300,
+        y: 300,
+        label: 'edge-router-fallback-2',
+      })
+      .node({ id: 'b', type: 'ec', x: 400, y: 300, label: 'b' })
+      .build();
+    expect(has(analyzeLayout(doc), /"a" and "b"/)).toBe(true);
+  });
+});

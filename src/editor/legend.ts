@@ -26,6 +26,9 @@ function escXml(s: string): string {
   );
 }
 
+/** Node types that carry prose rather than a symbol worth a legend row. */
+const ANNOTATION_TYPES = new Set(['text', 'callout']);
+
 /** The distinct in-use symbols for a page, in a stable display order. */
 export function buildLegendItems(
   doc: TopologyDocument,
@@ -39,8 +42,11 @@ export function buildLegendItems(
     items.push(item);
   };
 
-  // Node types in use → one entry per (type, colour).
+  // Node types in use → one entry per (type, colour). Annotation nodes (text
+  // boxes, callouts) are prose, not symbols, and are coloured per box for
+  // emphasis — listing each colour as its own "Text" row says nothing (#254).
   for (const n of page.nodes) {
+    if (ANNOTATION_TYPES.has(n.type)) continue;
     const color = n.color ?? DEFAULT_NODE_COLOR;
     const label = getNodeType(n.type, doc.customNodes)?.label ?? n.type;
     push(`node:${n.type}:${color}`, { color, label, shape: 'dot' });
