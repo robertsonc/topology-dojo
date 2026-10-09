@@ -743,7 +743,7 @@ export class Editor {
       emphasis: this.page.emphasis,
       calm: this.calm,
       ambient: this.ambient,
-      light: this.light,
+      theme: this.light ? 'light' : 'dark',
       palette: this.palette,
     });
     // renderPageInto resets the art viewBox to the page's; re-apply the view.
@@ -768,7 +768,7 @@ export class Editor {
         emphasis: this.page.emphasis,
         calm: this.calm,
         ambient: this.ambient,
-        light: this.light,
+        theme: this.light ? 'light' : 'dark',
         palette: this.palette,
       });
       this.applyView();

@@ -20,8 +20,17 @@ describe('lightenCanvas (light-mode card remap, #8)', () => {
     expect(out).toContain('fill="#ffffff"');
   });
 
-  it('leaves semantic accent/alert colours untouched', () => {
+  it('darkens the engine accent/alert colours for contrast on a light page (#264)', () => {
     const svg = '<rect stroke="#01a982"/><rect stroke="#fc6161"/>';
+    const out = lightenCanvas(svg);
+    expect(out).not.toContain('#01a982');
+    expect(out).not.toContain('#fc6161');
+    expect(out).toContain('#00875a');
+    expect(out).toContain('#dc2626');
+  });
+
+  it('leaves document-sourced colours untouched', () => {
+    const svg = '<rect stroke="#9b8cff"/><rect fill="#ff8800"/>';
     expect(lightenCanvas(svg)).toBe(svg);
   });
 });

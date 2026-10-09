@@ -692,6 +692,23 @@ Choose **svg** to download the current frame as standalone vector SVG. The
 export includes the current layer presentation, frame emphasis, legend, and
 caption. Calm Canvas affects animated presentation in the SVG.
 
+### Light and dark exports
+
+Every image export (SVG, PNG, PDF, clipboard, selection crops, flipbook HTML)
+follows the editor's **☀ / 🌙** theme toggle: a light canvas exports light, a
+dark canvas exports dark. The light export is not just a light backdrop — the
+engine's dark-tuned constants are remapped so the page reads on white: dark
+label text, white cards and label chips, and accents darkened for contrast.
+Colours set on your own nodes, links, zones and brand palette are left as they
+are. To get the other theme, flip the toggle and export again.
+
+Over MCP, pass `theme: "light"` to **render_svg** or **export_flipbook**
+(default `"dark"`, which is the unchanged canvas look):
+
+```json
+{ "topologyId": "…", "pageIndex": 0, "theme": "light" }
+```
+
 ### PNG
 
 Choose **png** to download the current frame as a two-times static raster. PNG

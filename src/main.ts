@@ -55,6 +55,7 @@ import { userToClient } from './editor/coords.js';
 import { nodeBounds } from './api/geometry.js';
 import { legendSVG } from './editor/legend.js';
 import { captionSVG } from './editor/caption.js';
+import { applyRenderTheme, type RenderTheme } from './render/theme.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { STOCK_NODE_SPECS } from './nodes/stock.js';
@@ -391,8 +392,12 @@ const editor = new Editor(
  */
 // Draw the auto-legend (B.1) on the canvas — recomputed each overlay paint from
 // the elements in use, so it tracks edits live. Off unless the document opts in.
-editor.setOverlayExtra(
-  () => legendSVG(doc, editor.page) + captionSVG(editor.page),
+// Themed like the art (#264) so the on-canvas legend/caption read in light mode.
+editor.setOverlayExtra(() =>
+  applyRenderTheme(
+    legendSVG(doc, editor.page) + captionSVG(editor.page),
+    currentTheme(),
+  ),
 );
 
 // Feed declared layers (with their visibility/opacity, B.3) into every render so
@@ -994,7 +999,12 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
     exportPageSVG(
       filename,
       page,
-      { calm: editor.calm, layers: doc.layers, emphasis: page.emphasis },
+      {
+        calm: editor.calm,
+        layers: doc.layers,
+        emphasis: page.emphasis,
+        theme: currentTheme(),
+      },
       exportExtra(page),
     );
     reportExport('ok', '✓ exported svg', filename);
@@ -1012,6 +1022,7 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
   void exportPagePNG(filename, page, 2, exportExtra(page), {
     layers: doc.layers,
     emphasis: page.emphasis,
+    theme: currentTheme(),
   })
     .then(() => reportExport('ok', '✓ exported png', filename))
     .catch((err: unknown) => {
@@ -1029,13 +1040,17 @@ const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
 function pageExtra(page: Page): string {
   return legendSVG(doc, page) + captionSVG(page);
 }
+/* Exports follow the editor's current light/dark toggle (#264): a light
+ * canvas exports light, a dark canvas exports dark. */
 function pageOpts(page: Page): {
   layers: typeof doc.layers;
   emphasis?: string[];
+  theme: RenderTheme;
 } {
   return {
     layers: doc.layers,
     ...(page.emphasis ? { emphasis: page.emphasis } : {}),
+    theme: currentTheme(),
   };
 }
 /** The selection as a cropped standalone page, or null when nothing usable. */
@@ -1069,14 +1084,18 @@ async function runExport(kind: string): Promise<void> {
       return;
     }
     case 'flipbook': {
-      const html = exportFlipbookHTML(doc, (d, i) => {
-        const p = d.pages[i]!;
-        return pageToSVG(
-          p,
-          { ...pageOpts(p), calm: editor.calm },
-          pageExtra(p),
-        );
-      });
+      const html = exportFlipbookHTML(
+        doc,
+        (d, i) => {
+          const p = d.pages[i]!;
+          return pageToSVG(
+            p,
+            { ...pageOpts(p), calm: editor.calm },
+            pageExtra(p),
+          );
+        },
+        { theme: currentTheme() },
+      );
       downloadBlob(
         `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_flipbook.html`,
         new Blob([html], { type: 'text/html' }),
@@ -1099,6 +1118,7 @@ async function runExport(kind: string): Promise<void> {
       exportPageSVG(`${exportBase()}_selection.svg`, sp, {
         calm: true,
         layers: doc.layers,
+        theme: currentTheme(),
       });
       return;
     }
@@ -1107,6 +1127,7 @@ async function runExport(kind: string): Promise<void> {
       if (!sp) throw new Error('select one or more nodes first');
       await exportPagePNG(`${exportBase()}_selection.png`, sp, 2, '', {
         layers: doc.layers,
+        theme: currentTheme(),
       });
       return;
     }
@@ -3734,6 +3755,12 @@ badgesBtn.addEventListener('click', () => applyBadgesVisible(!badgesVisible));
 const themeBtn = app.querySelector<HTMLButtonElement>('#tTheme')!;
 const THEME_KEY = 'topology-dojo:theme';
 const tdsRoot = app.querySelector<HTMLElement>('.tds-root');
+/** The render theme matching the editor's current light/dark toggle (#264). */
+function currentTheme(): RenderTheme {
+  return document.documentElement.classList.contains('light')
+    ? 'light'
+    : 'dark';
+}
 function applyTheme(light: boolean): void {
   document.documentElement.classList.toggle('light', light);
   themeBtn.classList.toggle('on', light);

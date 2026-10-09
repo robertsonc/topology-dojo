@@ -219,8 +219,8 @@ to the task's affected region and change summaries, not total document size.
 | `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                       |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)                                                                          |
 | `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                       |
-| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters)                                                                     |
-| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations                                                                           |
+| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"` for a light page)                                  |
+| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations (`theme: "light"` optional)                                               |
 | `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                                              |
 | `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                                                                                      |
 | `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                                                           |

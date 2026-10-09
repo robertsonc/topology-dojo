@@ -225,6 +225,12 @@ export type { PolicyMarkerType } from '../api/markers.js';
 import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import type { SourceRef } from '../api/source.js';
+import {
+  applyRenderTheme,
+  hexChannels,
+  resolveTheme,
+  type RenderTheme,
+} from '../render/theme.js';
 
 /** A policy marker — an enforcement / posture badge pinned to a node. */
 export interface PolicyMarkerConfig {
@@ -298,14 +304,6 @@ const ENGINE_BRAND = {
   secondary: { hex: '65aef9', rgb: '101,174,249' },
 } as const;
 
-/** `#rrggbb` → `r,g,b` channel string; null for anything not a 6-digit hex. */
-function hexChannels(hex: string): string | null {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return null;
-  const n = parseInt(m[1]!, 16);
-  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
-}
-
 /** Remap one engine brand colour (all `#hex` + `rgb/rgba(...)` forms) to `toHex`. */
 function remapColor(
   svg: string,
@@ -337,44 +335,19 @@ export function applyPalette(svg: string, palette: BrandPalette): string {
 }
 
 /**
- * Light-mode canvas (#8 follow-up). The engine bakes a DARK card surface and
- * LIGHT on-card / label text straight into the SVG, so in light mode node cards
- * stayed dark and their labels (drawn on the now-light canvas) became
- * unreadable. This flips the surface fills to light and the text to dark — in
- * both `#hex` and `rgb()/rgba()` (label-glass) forms — leaving the semantic
- * accent/alert/grey colours alone. Order-safe: each entry replaces only its own
- * source colour in a single linear pass, so the text→`#1d1f27` mapping below is
- * applied after the `#1d1f27` surface remap and is left untouched.
+ * Light-mode canvas (#8 follow-up, generalised by #264). The engine bakes a
+ * DARK card surface and LIGHT on-card / label text straight into the SVG, so
+ * in light mode node cards stayed dark and their labels (drawn on the
+ * now-light canvas) became unreadable. The remap table now lives in
+ * `render/theme` (`LIGHT_THEME_MAP`) and is shared by the headless export
+ * path, so the in-app light canvas and a `theme: 'light'` export match.
+ * `LIGHT_CANVAS` is the card/text subset the icon-library exporter themes.
  */
-export const LIGHT_CANVAS: {
-  from: string;
-  rgb: string;
-  to: string;
-  toRgb: string;
-}[] = [
-  // Card / shape surface fills (dark → light).
-  { from: '292d3a', rgb: '41,45,58', to: '#ffffff', toRgb: '255,255,255' },
-  { from: '22252e', rgb: '34,37,46', to: '#f2f5f8', toRgb: '242,245,248' },
-  { from: '1d1f27', rgb: '29,31,39', to: '#e9edf2', toRgb: '233,237,242' },
-  // Card border / divider grey (dark → light).
-  { from: '3e4550', rgb: '62,69,80', to: '#ccd4dc', toRgb: '204,212,220' },
-  // On-card + node-label text (light → dark) — must come after the surfaces.
-  { from: 'e6e8e9', rgb: '230,232,233', to: '#1d1f27', toRgb: '29,31,39' },
-];
+export { LIGHT_CANVAS } from '../render/theme.js';
 
-/** Recolour a rendered SVG's card surfaces + text for a light canvas. */
+/** Recolour a rendered SVG for a light canvas — `applyRenderTheme(svg, 'light')`. */
 export function lightenCanvas(svg: string): string {
-  let out = svg;
-  for (const c of LIGHT_CANVAS) {
-    out = out.replace(new RegExp(`#${c.from}`, 'gi'), c.to);
-    out = out.split(`(${c.rgb}`).join(`(${c.toRgb}`);
-  }
-  // Label chips fill from the `tds-labelGlass` gradient, whose stops use
-  // `rgba()` — which Chromium ignores in SVG `stop-color`, falling back to
-  // black. Remapping the stops therefore does nothing; swap the chips to a
-  // solid light fill so they read on a light canvas.
-  out = out.split('url(#tds-labelGlass)').join('#ffffff');
-  return out;
+  return applyRenderTheme(svg, 'light');
 }
 
 /**
@@ -442,10 +415,13 @@ export interface RenderOptions {
    */
   ambient?: 'off' | 'static' | 'animated';
   /**
-   * Render the canvas backdrop, grid and vignette for a light theme. The
-   * vendored engine only ships a dark canvas; this lifts the hardcoded dark
-   * grid/vignette so the SVG sits coherently on a light page.
+   * Render theme (#264), default `'dark'` (the engine's native output).
+   * `'light'` lifts the hardcoded dark grid/vignette AND remaps every
+   * engine-sourced colour (surfaces, text greys, overlays, accents) through
+   * `LIGHT_THEME_MAP` so the SVG reads on a light page.
    */
+  theme?: RenderTheme;
+  /** Older boolean alias for `theme: 'light'`; `theme` wins when both are set. */
   light?: boolean;
   /** Document brand palette — remaps the engine's accent colours at render time. */
   palette?: BrandPalette;
@@ -532,7 +508,8 @@ export function renderPageSVG(
   // now re-enable animation when off.
   topo.reducedMotion = !!opts.calm;
   if (opts.ambient) topo.ambient = opts.ambient;
-  topo.light = !!opts.light;
+  const theme = resolveTheme(opts);
+  topo.light = theme === 'light';
   // Line jumps at link crossings — a page-level setting (persisted; part of
   // the document contract via set_page_properties), applied at render time.
   (topo as unknown as { lineJumps?: string }).lineJumps = page.lineJumps;
@@ -619,12 +596,13 @@ export function renderPageSVG(
   topo.step = topo._steps.length; // sit on the trailing step (within range)
 
   let svg = topo._renderSVG();
-  // The engine bakes colours straight into the SVG string, so both the
-  // light-canvas card remap (#8) and the brand palette (#7) are applied as
-  // final colour-substitution passes over the markup. They target disjoint
-  // colours (surfaces/text vs accents), so order is irrelevant.
-  if (opts.light) svg = lightenCanvas(svg);
+  // The engine bakes colours straight into the SVG string, so both the brand
+  // palette (#7) and the light theme (#8/#264) are applied as final
+  // colour-substitution passes over the markup. Palette FIRST: it consumes the
+  // engine's source accents, so the theme pass (which darkens those same
+  // accents for a light page) never touches a document's chosen brand colour.
   if (opts.palette) svg = applyPalette(svg, opts.palette);
+  svg = applyRenderTheme(svg, theme);
   // Flatten the cinematic FX (glow/bloom/ambient) last — glow survives only as
   // the emphasis channel. Applied to both the live canvas and the export path
   // (which shares this function), so exported SVG/PNG/flipbook match.
