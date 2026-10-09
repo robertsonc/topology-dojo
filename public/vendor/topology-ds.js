@@ -4766,12 +4766,13 @@ ${grid}`;
         if (points.length < 2) continue;
 
         let pathD;
-        if (fp.followLinks) {
-          // Ride the drawn link between each consecutive pair (curves, bus
-          // waypoints, orthogonal routes, ports); a pair with no link keeps
-          // the straight centre→centre hop. Hops are stitched with an L so
-          // the flow crosses each node from the previous link's arrival
-          // point to the next link's exit point.
+        if (fp.followLinks !== false) {
+          // Default: ride the drawn link between each consecutive pair
+          // (curves, bus waypoints, orthogonal routes, ports); a pair with
+          // no link keeps the straight centre→centre hop. Hops are stitched
+          // with an L so the flow crosses each node from the previous link's
+          // arrival point to the next link's exit point. `followLinks:false`
+          // opts out to plain centre→centre segments.
           pathD = '';
           for (let i = 1; i < waypoints.length; i++) {
             const a = this._posCached(waypoints[i - 1]), b = this._posCached(waypoints[i]);

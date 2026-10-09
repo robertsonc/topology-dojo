@@ -192,7 +192,7 @@ export interface FlowPathConfig {
    * Ride the drawn link between each consecutive waypoint pair (its curve,
    * bus waypoints, orthogonal route and ports) instead of a straight
    * centre→centre segment. A pair with no connecting link still gets the
-   * straight hop. Default false (straight segments).
+   * straight hop. Default true; set false for plain centre→centre segments.
    */
   followLinks?: boolean;
   label?: string;

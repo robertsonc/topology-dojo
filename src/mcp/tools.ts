@@ -1002,7 +1002,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'add_flow_path',
       description:
-        'Add an animated overlay route threaded through an ordered list of node/anchor ids (≥2 waypoints). By default each hop is a straight centre→centre segment, which drifts off curved, bused (waypointed), orthogonal or ported links; set followLinks:true so each hop rides the drawn link between its two waypoints (a pair with no link keeps the straight hop). Without followLinks, thread anchors placed along the route into waypoints to approximate it.',
+        'Add an animated overlay route threaded through an ordered list of node/anchor ids (≥2 waypoints). Each hop rides the drawn link between its two waypoints (curves, bus waypoints, orthogonal routes, ports); a pair with no connecting link gets a straight centre→centre hop. Set followLinks:false for plain straight segments throughout, threading anchors placed along the route into waypoints if it must still approximate one.',
       inputShape: {
         topologyId,
         pageIndex,
@@ -1011,7 +1011,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .boolean()
           .optional()
           .describe(
-            'Ride the drawn link between consecutive waypoints instead of a straight segment (default false).',
+            'Ride the drawn link between consecutive waypoints (default true); false draws straight centre→centre segments.',
           ),
         label: displayString(TEXT_LIMITS.label).optional(),
         color: z.string().optional(),

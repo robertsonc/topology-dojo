@@ -347,7 +347,25 @@ describe('flow paths that follow link geometry (#256)', () => {
     return m![1]!;
   };
 
-  it('defaults to straight centre→centre segments', () => {
+  it('opts out to straight centre→centre segments with followLinks:false', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 600, y: 200 })
+      .link({
+        id: 'l',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        lineStyle: 'curved',
+        waypoints: [{ x: 400, y: 100 }],
+      })
+      .flowPath({ id: 'f', waypoints: ['a', 'b'], followLinks: false })
+      .build();
+    expect(flowD(renderDocumentToSVG(doc), 'f')).toBe('M200,200 L600,200');
+  });
+
+  it('rides a curved, waypointed link by default', () => {
     const doc = createDocument()
       .page()
       .node({ id: 'a', type: 'ec', x: 200, y: 200 })
@@ -361,24 +379,6 @@ describe('flow paths that follow link geometry (#256)', () => {
         waypoints: [{ x: 400, y: 100 }],
       })
       .flowPath({ id: 'f', waypoints: ['a', 'b'] })
-      .build();
-    expect(flowD(renderDocumentToSVG(doc), 'f')).toBe('M200,200 L600,200');
-  });
-
-  it('rides a curved, waypointed link when followLinks is set', () => {
-    const doc = createDocument()
-      .page()
-      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
-      .node({ id: 'b', type: 'ec', x: 600, y: 200 })
-      .link({
-        id: 'l',
-        type: 'line',
-        from: 'a',
-        to: 'b',
-        lineStyle: 'curved',
-        waypoints: [{ x: 400, y: 100 }],
-      })
-      .flowPath({ id: 'f', waypoints: ['a', 'b'], followLinks: true })
       .build();
     const svg = renderDocumentToSVG(doc);
     const d = flowD(svg, 'f');
