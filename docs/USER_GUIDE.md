@@ -515,6 +515,14 @@ Flow paths support label, color, animation style, dashed/pulse/particle
 presentation, speed, direction, width, opacity, layer, source, and optional hop
 metadata. Use chip **‹/›** controls to correct the order.
 
+The label sits on the longest drawn segment of the route, just off the wire,
+in a glass pill that word-wraps at about 26 characters (set **Label width**
+in px, 40–600, to wrap narrower or wider — explicit newlines are kept). The
+**Label placement** compass shifts it off that spot (`labelOffset` in the
+API, the same `{x, y}` a link label takes). A label that would cover a node,
+a zone title or another label slides along its segment by up to one pill
+width to find clear space; link centre labels and marker labels do the same.
+
 Each hop rides the link that joins its two waypoints, so the flow stays on a
 curved, bused (waypointed), orthogonal or ported link; a pair with no
 connecting link gets a straight segment between the two centres. Turn off
@@ -534,7 +542,9 @@ Built-in marker vocabulary includes:
   and geo-block.
 
 Edit the marker label, color, icon, target node, flow path, and alignment around
-the target in Properties.
+the target in Properties. The label hangs under the badge in a pill, up to two
+lines (wrapped at **Label width** or ~26 characters; longer text is cut with
+an ellipsis), and slides sideways off the node when it would cover it.
 
 ### Layers
 
