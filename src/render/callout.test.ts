@@ -74,6 +74,71 @@ describe('callout rendering', () => {
   });
 });
 
+describe('callout body (#259)', () => {
+  // ~770 chars: far past the 200-char label cap, wraps to many lines.
+  const BODY = Array.from(
+    { length: 10 },
+    (_, i) =>
+      `Step ${i + 1} drains traffic from the standby appliance and verifies every tunnel`,
+  ).join(' ');
+  // Baselines may be negative: the tall note is centred at y=150.
+  const BODY_LINE =
+    /<text x="[^"]+" y="(-?[\d.]+)" fill="[^"]+" font-size="12" font-weight="400"/g;
+
+  /** Height of the note card path: M{x0},{y0} H… L… V{y0+h} H{x0} Z. */
+  function cardHeight(svg: string): number {
+    const m = svg.match(
+      /<path d="M-?[\d.]+,(-?[\d.]+) H-?[\d.]+ L-?[\d.]+,-?[\d.]+ V(-?[\d.]+) H/,
+    );
+    expect(m).not.toBeNull();
+    return Number(m![2]) - Number(m![1]);
+  }
+
+  it('renders every word of a long body, wrapped at the note width', () => {
+    const svg = renderPageToSVG(page({ body: BODY }), []);
+    expect(svg).not.toContain('…');
+    expect(svg).not.toContain(`>${BODY}<`);
+    for (const word of BODY.split(' ')) expect(svg).toContain(word);
+    // Regular-weight body lines, distinct from the bold label lines.
+    expect((svg.match(BODY_LINE) ?? []).length).toBeGreaterThan(5);
+  });
+
+  it('stacks label, body, sublabel and grows the card to fit the body', () => {
+    const cfg = { body: BODY, sublabel: 'SubUniqueTail' };
+    const withBody = renderPageToSVG(page(cfg), []);
+    const without = renderPageToSVG(page({ sublabel: 'SubUniqueTail' }), []);
+    const bodyYs = [...withBody.matchAll(BODY_LINE)].map((m) => Number(m[1]));
+    const labelY = Number(
+      withBody.match(
+        /<text x="[^"]+" y="(-?[\d.]+)" fill="[^"]+" font-size="12" font-weight="600"/,
+      )![1],
+    );
+    const subY = Number(
+      withBody.match(/<text x="[^"]+" y="(-?[\d.]+)"[^>]*>SubUniqueTail</)![1],
+    );
+    expect(Math.min(...bodyYs)).toBeGreaterThan(labelY);
+    expect(subY).toBeGreaterThan(Math.max(...bodyYs));
+    expect(cardHeight(withBody)).toBeGreaterThan(cardHeight(without) + 100);
+    // The geometry mirror (nodeHalf) must agree with the drawn card exactly,
+    // otherwise validate_topology / inspect_render drift from the picture.
+    const node = page(cfg).nodes.find((n) => n.id === 'note1')!;
+    expect(cardHeight(withBody)).toBeCloseTo(nodeHalf(node).h * 2, 6);
+    expect(cardHeight(without)).toBeCloseTo(
+      nodeHalf(page({ sublabel: 'SubUniqueTail' }).nodes[2]!).h * 2,
+      6,
+    );
+  });
+
+  it('keeps explicit newlines in the body', () => {
+    const svg = renderPageToSVG(
+      page({ body: 'Alpha first line\n\nBeta second line' }),
+      [],
+    );
+    expect(svg).toContain('>Alpha first line<');
+    expect(svg).toContain('>Beta second line<');
+  });
+});
+
 describe('callout geometry + contract', () => {
   it('nodeHalf tracks the declared width and the wrapped block', () => {
     const short = nodeHalf({

@@ -21,6 +21,12 @@ export interface NodeConfig {
   y: number;
   label?: string;
   sublabel?: string;
+  /**
+   * Long-form paragraph text (up to TEXT_LIMITS.body, newlines kept).
+   * Rendered only by the `callout` and `text` node types, as a word-wrapped
+   * block between the label and the sublabel; other types ignore it.
+   */
+  body?: string;
   color?: string;
   /** Node opacity, 0–1 (defaults to 1). */
   opacity?: number;

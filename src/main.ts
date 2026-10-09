@@ -2052,6 +2052,10 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
     case 'record':
       return ''; // rendered by the dedicated metadata editor
     default:
+      // Long-form strings (callout / text `body`) get a stacked textarea so
+      // newlines survive; wireFields treats it like any other text control.
+      if (f.multiline)
+        return `<label class="insp-row col"><span>${f.label}</span><textarea data-key="${f.key}" rows="4"${f.max ? ` maxlength="${f.max}"` : ''} spellcheck="true">${esc(String(v ?? ''))}</textarea></label>`;
       return `<label class="${row}"><span>${f.label}</span><input data-key="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
   }
 }

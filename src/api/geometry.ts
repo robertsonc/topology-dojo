@@ -70,13 +70,16 @@ function wrappedLines(text: string, width: number, fontSize: number): number {
 
 export function nodeHalf(node: NodeConfig): { w: number; h: number } {
   if (node.type === 'text') {
-    // Mirror the engine's text-box metrics (renderText): wrap width, padding,
-    // main + sublabel blocks — so selection and overlap checks track the box.
+    // Mirror the engine's text-box metrics (renderText in
+    // public/vendor/topology-ds.js): wrap width, padding, main + body +
+    // sublabel blocks — so selection and overlap checks track the box. Keep
+    // the constants in lockstep with the renderer.
     const fontSize = posNum(node.fontSize) ?? 14;
     const padding = posNum(node.padding) ?? 8;
     const width = posNum(node.width);
     const label =
       typeof node.label === 'string' && node.label ? node.label : 'Text';
+    const body = typeof node.body === 'string' ? node.body : '';
     const sublabel = typeof node.sublabel === 'string' ? node.sublabel : '';
     const innerW = width
       ? Math.max(8, width - padding * 2)
@@ -84,22 +87,44 @@ export function nodeHalf(node: NodeConfig): { w: number; h: number } {
     const lines = width
       ? wrappedLines(label, innerW, fontSize)
       : label.split('\n').length;
+    const bodySize = fontSize * 0.9;
+    const bodyLines = body
+      ? width
+        ? wrappedLines(body, innerW, bodySize)
+        : body.split('\n').length
+      : 0;
     const subSize = Math.max(8, fontSize * 0.7);
     const subLines = sublabel
       ? width
         ? wrappedLines(sublabel, innerW, subSize)
         : sublabel.split('\n').length
       : 0;
+    // Body lines share the label's line height, set off by a gap above and
+    // (when a sublabel follows) below; without a body the sublabel keeps its
+    // classic gap.
+    const bodyGap = fontSize * 0.4;
     const blockH =
       lines * fontSize * 1.3 +
-      (subLines ? subLines * subSize * 1.4 + subSize * 0.3 : 0);
+      (bodyLines ? bodyGap + bodyLines * fontSize * 1.3 : 0) +
+      (subLines
+        ? subLines * subSize * 1.4 + (bodyLines ? bodyGap : subSize * 0.3)
+        : 0);
+    // Unsized boxes grow to their longest line (label, or a body paragraph).
+    const longestBody = body
+      ? Math.max(...body.split('\n').map((l) => l.length)) * bodySize * 0.6
+      : 0;
     const estW =
-      width ?? Math.max(50, label.length * fontSize * 0.6 + padding * 2);
+      width ??
+      Math.max(
+        50,
+        Math.max(label.length * fontSize * 0.6, longestBody) + padding * 2,
+      );
     return { w: estW / 2, h: (blockH + padding * 2) / 2 };
   }
   if (node.type === 'callout') {
-    // Mirror the engine's renderCallout box: wrapped label (+sublabel) block
-    // plus padding, at the declared width.
+    // Mirror the engine's renderCallout box (public/vendor/topology-ds.js):
+    // wrapped label (+body +sublabel) block plus padding, at the declared
+    // width. Keep the constants in lockstep with the renderer.
     const fontSize = posNum(node.fontSize) ?? 12;
     const padding = posNum(node.padding) ?? 10;
     const width = Math.max(60, posNum(node.width) ?? 160);
@@ -107,12 +132,18 @@ export function nodeHalf(node: NodeConfig): { w: number; h: number } {
     const label =
       typeof node.label === 'string' && node.label ? node.label : 'Note';
     const lines = wrappedLines(label, innerW, fontSize);
+    const body = typeof node.body === 'string' ? node.body : '';
+    const bodyLines = body ? wrappedLines(body, innerW, fontSize) : 0;
     const subSize = Math.max(7, fontSize * 0.8);
     const sublabel = typeof node.sublabel === 'string' ? node.sublabel : '';
     const subLines = sublabel ? wrappedLines(sublabel, innerW, subSize) : 0;
+    const bodyGap = fontSize * 0.4;
     const blockH =
       lines * fontSize * 1.35 +
-      (subLines ? subLines * subSize * 1.35 + subSize * 0.4 : 0);
+      (bodyLines ? bodyGap + bodyLines * fontSize * 1.35 : 0) +
+      (subLines
+        ? subLines * subSize * 1.35 + (bodyLines ? bodyGap : subSize * 0.4)
+        : 0);
     return { w: width / 2, h: (blockH + padding * 2) / 2 };
   }
   if (node.type === 'image') {
