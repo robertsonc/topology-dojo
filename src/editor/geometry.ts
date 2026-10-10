@@ -8,55 +8,20 @@
 import type { Page } from '../pages/model.js';
 import type { ZoneConfig } from '../vendor/topology-ds.js';
 import { nodeHalf, nodeBounds, type BoundsRect } from '../api/geometry.js';
-import { nodeLabelPos } from '../render/label-placement.js';
+import { nodeLabelRect } from '../render/label-placement.js';
+import { zoneBox } from '../render/zone-box.js';
 
 export { nodeHalf, nodeBounds, type BoundsRect };
 
-/** Member node ids of a zone plus those of its descendant zones (cycle-safe). */
-function zoneNodeIds(
-  page: Page,
-  zoneId: string,
-  seen = new Set<string>(),
-): string[] {
-  if (seen.has(zoneId)) return [];
-  seen.add(zoneId);
-  const zones = page.zones ?? [];
-  const zone = zones.find((z) => z.id === zoneId);
-  if (!zone) return [];
-  const ids = [...(zone.nodes ?? [])];
-  for (const child of zones)
-    if (child.parentZone === zoneId)
-      ids.push(...zoneNodeIds(page, child.id, seen));
-  return ids;
-}
-
 /**
  * Bounding box of a zone region, matching the engine's `_renderZoneRect`
- * geometry: each member node — including those of descendant zones — adds a
- * ±40×±30 box, and the whole is expanded by the zone's padding (default 40).
- * Returns null when the zone has no present members (nothing to frame).
+ * geometry (see render/zone-box: each member — including those of descendant
+ * zones — adds its centre ±40×±30, its hit box and its label block, and the
+ * whole is expanded by the zone's padding, default 40). Returns null when the
+ * zone has no present members (nothing to frame).
  */
 export function zoneBounds(page: Page, zone: ZoneConfig): BoundsRect | null {
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  for (const nId of zoneNodeIds(page, zone.id)) {
-    const n = page.nodes.find((m) => m.id === nId);
-    if (!n) continue;
-    minX = Math.min(minX, n.x - 40);
-    minY = Math.min(minY, n.y - 30);
-    maxX = Math.max(maxX, n.x + 40);
-    maxY = Math.max(maxY, n.y + 30);
-  }
-  if (!Number.isFinite(minX)) return null;
-  const pad = zone.padding ?? 40;
-  return {
-    x: minX - pad,
-    y: minY - pad,
-    w: maxX - minX + pad * 2,
-    h: maxY - minY + pad * 2,
-  };
+  return zoneBox(page, zone);
 }
 
 /**
@@ -99,20 +64,12 @@ export function hitTestNode(
   return null;
 }
 
-/** Node types whose label is drawn inside the glyph (or is the glyph). */
-const OWN_LABEL = new Set([
-  'cloud',
-  'idcard',
-  'overlayCloud',
-  'text',
-  'callout',
-]);
-
 /**
- * Topmost node whose rendered caption (the label/sublabel drawn beside the
- * glyph — below it by default) contains the point, else null. Lets a click on
- * a node's name select the node instead of falling through to a link or the
- * zone behind it. Box sizes are estimates (≈6 units per glyph, 11 tall).
+ * Topmost node whose rendered caption (the label/sublabel block drawn beside
+ * the glyph — below it by default) contains the point, else null. Lets a
+ * click on a node's name select the node instead of falling through to a
+ * link or the zone behind it. The block is the renderer's estimated label
+ * rect (render/node-labels: wrapped lines × char width), grown by `pad`.
  */
 export function hitTestNodeLabel(
   page: Page,
@@ -122,21 +79,14 @@ export function hitTestNodeLabel(
 ): string | null {
   for (let i = page.nodes.length - 1; i >= 0; i--) {
     const n = page.nodes[i]!;
-    if (OWN_LABEL.has(n.type) || n.type.startsWith('shape:')) continue;
-    const label = typeof n.label === 'string' ? n.label : '';
-    if (!label) continue;
-    const sub = typeof n.sublabel === 'string' ? n.sublabel : '';
-    const lp = nodeLabelPos(n);
-    const w = Math.max(label.length * 6, sub.length * 5);
-    const x0 =
-      lp.anchor === 'start'
-        ? lp.x
-        : lp.anchor === 'end'
-          ? lp.x - w
-          : lp.x - w / 2;
-    const y0 = lp.y - 11;
-    const y1 = lp.y + (sub ? 16 : 4);
-    if (x >= x0 - pad && x <= x0 + w + pad && y >= y0 - pad && y <= y1 + pad)
+    const r = nodeLabelRect(n);
+    if (!r) continue;
+    if (
+      x >= r.x - pad &&
+      x <= r.x + r.w + pad &&
+      y >= r.y - pad &&
+      y <= r.y + r.h + pad
+    )
       return n.id;
   }
   return null;

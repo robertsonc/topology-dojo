@@ -30,8 +30,8 @@ import type {
   LinkConfig,
   NodeConfig,
 } from '../vendor/topology-ds.js';
-import { drawsOwnLabel, type BoundsRect } from '../api/geometry.js';
-import { nodeLabelPos } from './label-placement.js';
+import type { BoundsRect } from '../api/geometry.js';
+import { nodeLabelRect } from './label-placement.js';
 import { engineNodeAABB } from './wire-labels.js';
 
 export type Pt = { x: number; y: number };
@@ -94,29 +94,6 @@ function nodeShape(n: NodeConfig): 'circle' | 'ellipse' | 'rect' {
   return 'rect';
 }
 
-/**
- * The classic below/beside-node label block (label line + optional sublabel)
- * as the engine's `_nodeLabelBlock` estimates it, in page coordinates: ~6px
- * per glyph at the 10px font, truncated at 24 chars (+ ellipsis), 12px tall
- * plus 13px for a sublabel, placed per `nodeLabelPos`. Null for nodes that
- * draw their own label (text / callout / cloud / idcard / shapes) or none.
- */
-export function nodeLabelRect(n: NodeConfig): BoundsRect | null {
-  const label = typeof n.label === 'string' ? n.label : '';
-  if (!label) return null;
-  if (drawsOwnLabel(n)) return null;
-  const w = Math.min(label.length, 25) * 6;
-  const h = 12 + (n.sublabel ? 13 : 0);
-  const lp = nodeLabelPos(n);
-  const x =
-    lp.anchor === 'start'
-      ? lp.x
-      : lp.anchor === 'end'
-        ? lp.x - w
-        : lp.x - w / 2;
-  return { x, y: lp.y - 10, w, h };
-}
-
 /** Resolved options for one node (`_linkAttachFor`). */
 export interface ResolvedLinkAttach {
   pad: number;
@@ -149,12 +126,21 @@ export function effectiveLinkAttach(
   return { pad, distribute: pick('distribute') === true };
 }
 
-/** The anchor box relative to the node centre (`_anchorBox`). */
+/**
+ * The anchor box relative to the node centre (`_anchorBox`): `l/r/t/b` is the
+ * box after the label-side extension; `il/ir/it/ib` the ICON span of each
+ * axis before it (where distribute slots go, so none sits level with the
+ * label text).
+ */
 interface RelBox {
   l: number;
   r: number;
   t: number;
   b: number;
+  il: number;
+  ir: number;
+  it: number;
+  ib: number;
   labelSides: Side[];
 }
 
@@ -167,8 +153,13 @@ function relBox(n: NodeConfig, pad: number, hitBoxes?: HitBoxes): RelBox {
     r: hw + pad,
     t: -(hh + pad),
     b: hh + pad,
+    il: -(hw + pad),
+    ir: hw + pad,
+    it: -(hh + pad),
+    ib: hh + pad,
     labelSides: [],
   };
+  // The one label-metrics source (render/label-placement + node-labels).
   const abs = nodeLabelRect(n);
   if (!abs) return box;
   const lb = { x: abs.x - n.x, y: abs.y - n.y, w: abs.w, h: abs.h };
@@ -243,11 +234,20 @@ function boxExit(
   return side ? { t, side } : null;
 }
 
-/** A point on a side: `u` in [0,1] runs left→right (n/s) or top→bottom (e/w). */
+/**
+ * A distribute slot on a side: `u` in [0,1] runs left→right (n/s) or
+ * top→bottom (e/w) along the face's ICON span, never a label-extended one.
+ */
 function boxSidePoint(box: RelBox, side: Side, u: number): Pt {
   if (side === 'n' || side === 's')
-    return { x: box.l + (box.r - box.l) * u, y: side === 'n' ? box.t : box.b };
-  return { x: side === 'e' ? box.r : box.l, y: box.t + (box.b - box.t) * u };
+    return {
+      x: box.il + (box.ir - box.il) * u,
+      y: side === 'n' ? box.t : box.b,
+    };
+  return {
+    x: side === 'e' ? box.r : box.l,
+    y: box.it + (box.ib - box.it) * u,
+  };
 }
 
 /** A side-port pin: `frac` runs from the centre line (0) to the side's ends (±1). */

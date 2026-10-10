@@ -66,6 +66,14 @@ export interface NodeConfig {
   labelOffset?: number;
   /** Absolute horizontal offset of the label anchor from the node centre. */
   labelOffsetX?: number;
+  /**
+   * Wrap width (px) for the classic label block. Absent = the label is cut
+   * at 24 characters with an ellipsis and the sublabel wraps at ~26
+   * characters (2 lines); set, both wrap at this width (label: 2 lines of
+   * 10px; sublabel: 2 lines of 7.5px). The renderer clamps to [40, 600].
+   * See render/node-labels.
+   */
+  labelWidth?: number;
   /** When true, the editor won't move the node (drag/marquee/nudge skip it). */
   locked?: boolean;
   /**

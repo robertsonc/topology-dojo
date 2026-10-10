@@ -70,6 +70,7 @@ import type { Page, TopologyDocument } from '../pages/model.js';
 import type { ZoneConfig } from '../vendor/topology-ds.js';
 import { pageToSVG } from '../editor/export.js';
 import { nodeBounds, type BoundsRect } from '../api/geometry.js';
+import { zoneBox } from '../render/zone-box.js';
 
 /** One revision's stored summary (the timeline reads exactly this — no ops). */
 export type ChangeSummary = ChangesResult['changes'][number];
@@ -614,46 +615,12 @@ function elementPoint(page: Page, id: string): { x: number; y: number } | null {
   return anchor ? { x: anchor.x, y: anchor.y } : null;
 }
 
-/** Member node ids of a zone including nested child zones, mirroring the
- * engine's `_getZoneNodesRecursive`; `seen` guards a parentZone cycle. */
-function zoneMemberIds(
-  page: Page,
-  zone: ZoneConfig,
-  seen = new Set<string>(),
-): string[] {
-  if (seen.has(zone.id)) return [];
-  seen.add(zone.id);
-  const ids = [...zone.nodes];
-  for (const child of page.zones)
-    if (child.parentZone === zone.id)
-      ids.push(...zoneMemberIds(page, child, seen));
-  return ids;
-}
-
 /** The zone's drawn rectangle, mirroring the engine's `_renderZoneRect` math
- * (member node centers ± 40×30, expanded by `padding` (default 40)). Null
- * when no member resolves — the engine draws nothing then, so neither do we. */
+ * (see render/zone-box: member centres ± 40×30, hit boxes and label blocks,
+ * expanded by `padding`, default 40). Null when no member resolves — the
+ * engine draws nothing then, so neither do we. */
 function zoneRect(page: Page, zone: ZoneConfig): BoundsRect | null {
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  for (const id of zoneMemberIds(page, zone)) {
-    const pos = elementPoint(page, id);
-    if (!pos) continue;
-    minX = Math.min(minX, pos.x - 40);
-    minY = Math.min(minY, pos.y - 30);
-    maxX = Math.max(maxX, pos.x + 40);
-    maxY = Math.max(maxY, pos.y + 30);
-  }
-  if (!isFinite(minX)) return null;
-  const pad = zone.padding || 40;
-  return {
-    x: minX - pad,
-    y: minY - pad,
-    w: maxX - minX + pad * 2,
-    h: maxY - minY + pad * 2,
-  };
+  return zoneBox(page, zone);
 }
 
 /** SVG `points` attribute for a polyline through resolved doc-space points. */

@@ -42,6 +42,24 @@ const _PORT_DIRS = {
 /** Collision-nudge trial offsets, as fractions of the pill's own width. */
 const WIRE_LABEL_NUDGE_STEPS = [0.25, -0.25, 0.5, -0.5, 1, -1];
 
+/* ── Node labels ─────────────────────────────────────────────────────
+   Metrics + line-count rule for the classic beside-the-glyph node label
+   (label + sublabel). MIRROR OF src/render/node-labels.ts — the inspector,
+   the layout analyzer, the zone box and the editor size the drawn block from
+   that module, so any change here must be made there too, constant for
+   constant. A label without `labelWidth` is truncated to `truncateChars` on
+   one line (pre-#271 output, byte-identical); with `labelWidth` it wraps at
+   labelWidth / charW into up to `maxLines`. A sublabel always wraps: at
+   labelWidth / charW, or WIRE_LABEL_WRAP_CHARS without a width. */
+const NODE_LABEL = {
+  label:    { fontSize: 10,  charW: 6,   lineH: 12, maxLines: 2, truncateChars: 24 },
+  sublabel: { fontSize: 7.5, charW: 4.5, lineH: 9,  maxLines: 2 },
+  /** Baseline gap from the last label line to the first sublabel line. */
+  subGap: 13,
+  /** How far the text box reaches above the label's first baseline. */
+  ascent: 10,
+};
+
 /** Strict rectangle overlap (touching edges do not count). */
 function _rectsOverlap(a, b) {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -1070,7 +1088,7 @@ class TopologyDesigner {
           nodeSvg += this._renderShapeLabel(nodeCfg);
         } else {
           const lp = this._nodeLabelPos(nodeCfg);
-          nodeSvg += this._renderNodeLabel(lp.x, lp.y, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor, lp.anchor);
+          nodeSvg += this._renderNodeLabel(lp.x, lp.y, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor, lp.anchor, nodeCfg.labelWidth);
         }
       }
 
@@ -1418,38 +1436,25 @@ class TopologyDesigner {
   }
 
   /**
-   * The classic below/beside-node label block (label line + optional
-   * sublabel) as a rect RELATIVE to the node centre, or null when the node
-   * draws no such label (own-label types, no label). Metrics mirror
-   * `_renderNodeLabel` the way the inspector estimates them: ~6px per glyph
-   * at the 10px font, truncated at 24 chars (+ ellipsis), 12px tall, +13px
-   * for the sublabel line.
-   */
-  _nodeLabelBlock(nodeCfg) {
-    const label = nodeCfg.label;
-    if (!label || typeof label !== 'string') return null;
-    const t = nodeCfg.type;
-    if (t === 'cloud' || t === 'idcard' || t === 'overlayCloud' || t === 'text' || t === 'callout') return null;
-    if (this._ownLabelNode(nodeCfg)) return null;
-    const w = Math.min(label.length, 25) * 6;
-    const h = 12 + (nodeCfg.sublabel ? 13 : 0);
-    const lp = this._nodeLabelPos(nodeCfg);
-    const x = lp.anchor === 'start' ? lp.x : lp.anchor === 'end' ? lp.x - w : lp.x - w / 2;
-    return { x: x - nodeCfg.x, y: lp.y - 10 - nodeCfg.y, w, h };
-  }
-
-  /**
    * The anchor box for a node, RELATIVE to its centre: the hit AABB inflated
    * by `pad`, with the side(s) carrying the label (per `labelPlacement`;
-   * south by default) extended to clear the label block + pad. `labelSides`
-   * lists the sides that were extended.
+   * south by default) extended to clear the label block (`_nodeLabelRect`,
+   * the one label-metrics source) + pad. `labelSides` lists the sides that
+   * were extended; `il/ir/it/ib` keep the ICON span of each axis (the box
+   * before any label extension) — distribute slots stay on that span so a
+   * face's slots never sit level with the label text.
    */
   _anchorBox(nodeCfg, pad) {
     const ab = this._getNodeAABB(nodeCfg);
     const hw = ab.w / 2, hh = ab.h / 2;
-    const box = { l: -(hw + pad), r: hw + pad, t: -(hh + pad), b: hh + pad, labelSides: [] };
-    const lb = this._nodeLabelBlock(nodeCfg);
-    if (!lb) return box;
+    const box = {
+      l: -(hw + pad), r: hw + pad, t: -(hh + pad), b: hh + pad,
+      il: -(hw + pad), ir: hw + pad, it: -(hh + pad), ib: hh + pad,
+      labelSides: [],
+    };
+    const abs = this._nodeLabelRect(nodeCfg);
+    if (!abs) return box;
+    const lb = { x: abs.x - nodeCfg.x, y: abs.y - nodeCfg.y, w: abs.w, h: abs.h };
     const p = String(nodeCfg.labelPlacement || 's').toLowerCase();
     const north = p === 'n' || p === 'ne' || p === 'nw';
     const south = p === 's' || p === 'se' || p === 'sw';
@@ -1472,11 +1477,15 @@ class TopologyDesigner {
     return side ? { t, side } : null;
   }
 
-  /** A point on a box side: `u` in [0,1] runs left→right (n/s) or top→bottom (e/w). */
+  /**
+   * A distribute slot on a box side: `u` in [0,1] runs left→right (n/s) or
+   * top→bottom (e/w) along the face's ICON span (`il..ir` / `it..ib`), not a
+   * label-extended span, so slots never land beside the label text.
+   */
   static _boxSidePoint(box, side, u) {
     if (side === 'n' || side === 's')
-      return { x: box.l + (box.r - box.l) * u, y: side === 'n' ? box.t : box.b };
-    return { x: side === 'e' ? box.r : box.l, y: box.t + (box.b - box.t) * u };
+      return { x: box.il + (box.ir - box.il) * u, y: side === 'n' ? box.t : box.b };
+    return { x: side === 'e' ? box.r : box.l, y: box.it + (box.ib - box.it) * u };
   }
 
   /**
@@ -4112,7 +4121,9 @@ ${grid}`;
     if (east) { dx = hw + 6; anchor = 'start'; }
     else if (west) { dx = -(hw + 6); anchor = 'end'; }
     let dy;
-    if (north) dy = -(hh + 6) - (nodeCfg.sublabel ? 13 : 0);
+    // North: lift the block by its descent (extra label lines + sublabel
+    // lines) so its last baseline sits just above the glyph.
+    if (north) dy = -(hh + 6) - TopologyDesigner._nodeLabelDescent(TopologyDesigner._nodeLabelLines(nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelWidth));
     else if (south) dy = image ? hh + 14 : 24;
     else dy = 4; // pure east/west: vertically centred on the glyph
     const ox = Number(nodeCfg.labelOffsetX);
@@ -4139,11 +4150,71 @@ ${grid}`;
     return s;
   }
 
-  /** Node label (text below/beside a node) */
-  _renderNodeLabel(x, y, label, sublabel, color = '#e6e8e9', anchor = 'middle') {
-    const displayLabel = label && label.length > 24 ? label.slice(0, 24) + '…' : label;
-    let s = `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${color}" font-size="10" font-weight="600">${_esc(displayLabel)}</text>`;
-    if (sublabel) s += `<text x="${x}" y="${y+13}" text-anchor="${anchor}" fill="#7d8a92" font-size="7.5">${_esc(sublabel)}</text>`;
+  /** The lines a node's label and sublabel render as (see NODE_LABEL; mirror
+   * of `nodeLabelLines` in src/render/node-labels.ts). */
+  static _nodeLabelLines(label, sublabel, labelWidth) {
+    const w = TopologyDesigner._labelWidthOf(labelWidth);
+    const L = NODE_LABEL.label, S = NODE_LABEL.sublabel;
+    const cap = (text, maxChars, maxLines) => {
+      const lines = TopologyDesigner._wrapChars(text, maxChars);
+      if (lines.length <= maxLines) return lines;
+      const kept = lines.slice(0, maxLines);
+      kept[maxLines - 1] = kept[maxLines - 1].slice(0, Math.max(1, maxChars - 1)) + '…';
+      return kept;
+    };
+    const lab = label == null ? '' : String(label);
+    const sub = sublabel == null ? '' : String(sublabel);
+    const out = { label: [], sublabel: [] };
+    if (lab) {
+      out.label = w === undefined
+        ? [lab.length > L.truncateChars ? lab.slice(0, L.truncateChars) + '…' : lab]
+        : cap(lab, Math.max(1, Math.floor(w / L.charW)), L.maxLines);
+    }
+    if (sub) out.sublabel = cap(sub, w === undefined ? WIRE_LABEL_WRAP_CHARS : Math.max(1, Math.floor(w / S.charW)), S.maxLines);
+    return out;
+  }
+
+  /** How far the block's last baseline sits below the label's first baseline
+   * (0 for a one-line label with no sublabel). Mirror of `nodeLabelDescent`. */
+  static _nodeLabelDescent(lines) {
+    let d = Math.max(0, lines.label.length - 1) * NODE_LABEL.label.lineH;
+    if (lines.sublabel.length) d += NODE_LABEL.subGap + (lines.sublabel.length - 1) * NODE_LABEL.sublabel.lineH;
+    return d;
+  }
+
+  /** The rect of a node's classic label block at its drawn placement (mirror
+   * of `nodeLabelRect` in src/render/label-placement.ts), or null when the
+   * node has no label or draws its own (cloud / idcard / overlayCloud / text /
+   * callout / in-shape). */
+  _nodeLabelRect(nodeCfg) {
+    const t = nodeCfg.type;
+    if (!nodeCfg.label || t === 'cloud' || t === 'idcard' || t === 'overlayCloud' || t === 'text' || t === 'callout' || this._ownLabelNode(nodeCfg)) return null;
+    const lines = TopologyDesigner._nodeLabelLines(nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelWidth);
+    const longest = (ls) => ls.reduce((n, l) => Math.max(n, l.length), 0);
+    const w = Math.max(longest(lines.label) * NODE_LABEL.label.charW, longest(lines.sublabel) * NODE_LABEL.sublabel.charW);
+    const h = NODE_LABEL.label.lineH + TopologyDesigner._nodeLabelDescent(lines);
+    const lp = this._nodeLabelPos(nodeCfg);
+    const x = lp.anchor === 'start' ? lp.x : lp.anchor === 'end' ? lp.x - w : lp.x - w / 2;
+    return { x, y: lp.y - NODE_LABEL.ascent, w, h };
+  }
+
+  /** Node label (text below/beside a node). A one-line label and a one-line
+   * sublabel keep the classic markup; a wrapped block adds one `<text>` per
+   * line (label lines 12px apart, sublabel lines 9px apart, the first
+   * sublabel line 13px under the last label line — see NODE_LABEL). */
+  _renderNodeLabel(x, y, label, sublabel, color = '#e6e8e9', anchor = 'middle', labelWidth) {
+    const lines = TopologyDesigner._nodeLabelLines(label, sublabel, labelWidth);
+    let s = '';
+    let ly = y;
+    for (const line of lines.label) {
+      s += `<text x="${x}" y="${ly}" text-anchor="${anchor}" fill="${color}" font-size="10" font-weight="600">${_esc(line)}</text>`;
+      ly += NODE_LABEL.label.lineH;
+    }
+    let sy = y + (lines.label.length - 1) * NODE_LABEL.label.lineH + NODE_LABEL.subGap;
+    for (const line of lines.sublabel) {
+      s += `<text x="${x}" y="${sy}" text-anchor="${anchor}" fill="#7d8a92" font-size="7.5">${_esc(line)}</text>`;
+      sy += NODE_LABEL.sublabel.lineH;
+    }
     return s;
   }
 
@@ -4307,13 +4378,23 @@ ${grid}`;
     return kept;
   }
 
-  /** The axis-aligned box a zone draws (member positions ±40/±30 + padding),
-   * or null when no member is visible at the current step. */
+  /** The axis-aligned box a zone draws, or null when no member is visible at
+   * the current step. MIRROR OF src/render/zone-box.ts `zoneBox`: each member
+   * adds its centre ±40/±30 (the pre-#271 rule, kept as a floor so sparse
+   * zones never shrink), its hit AABB and its classic label rect at the
+   * placement actually drawn; the union is padded by `zone.padding`
+   * (default 40). Anchors listed as members add their centre pad only. */
   _zoneBox(zone) {
     const allNodes = this._getZoneNodesRecursive(zone.id);
     if (allNodes.length === 0) return null;
     const pad = zone.padding || 40;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const grow = (r) => {
+      minX = Math.min(minX, r.x);
+      minY = Math.min(minY, r.y);
+      maxX = Math.max(maxX, r.x + r.w);
+      maxY = Math.max(maxY, r.y + r.h);
+    };
     for (const nId of allNodes) {
       // Only include nodes visible at the current step
       if (this.step > 0) {
@@ -4322,10 +4403,12 @@ ${grid}`;
       }
       const pos = this._pos(nId);
       if (!pos) continue;
-      minX = Math.min(minX, pos.x - 40);
-      minY = Math.min(minY, pos.y - 30);
-      maxX = Math.max(maxX, pos.x + 40);
-      maxY = Math.max(maxY, pos.y + 30);
+      grow({ x: pos.x - 40, y: pos.y - 30, w: 80, h: 60 });
+      const cfg = this._nodes.get(nId);
+      if (!cfg) continue;
+      grow(this._getNodeAABB(cfg));
+      const lr = this._nodeLabelRect(cfg);
+      if (lr) grow(lr);
     }
     if (!isFinite(minX)) return null;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
@@ -5136,7 +5219,7 @@ ${grid}`;
                 nodeSvg += this._renderShapeLabel(nodeCfg);
               } else {
                 const lp = this._nodeLabelPos(nodeCfg);
-                nodeSvg += this._renderNodeLabel(lp.x, lp.y, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor, lp.anchor);
+                nodeSvg += this._renderNodeLabel(lp.x, lp.y, nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelColor, lp.anchor, nodeCfg.labelWidth);
               }
             }
 

@@ -49,6 +49,9 @@
  *
  * Pure and DOM-free: takes a Page, returns a typed report, moves nothing.
  */
+import { nodeLabelRect } from './label-placement.js';
+import { NODE_LABEL, nodeLabelLines } from './node-labels.js';
+import { zoneBox } from './zone-box.js';
 import type { Page } from '../pages/model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type {
@@ -61,7 +64,6 @@ import { nodeBounds, type BoundsRect } from '../api/geometry.js';
 import {
   createAttachContext,
   engineHitBoxes,
-  nodeLabelRect,
   type AttachContext,
 } from './link-attach.js';
 import { LAYOUT_RULES, parseViewBox, rectGap } from '../api/layout.js';
@@ -124,9 +126,7 @@ export interface InspectOptions {
 
 const DEFAULT_MAX_PER_CATEGORY = 8;
 
-/* Engine label metrics (see module header; the label rect itself comes from
- * render/link-attach `nodeLabelRect`, shared with the anchor box). */
-const NODE_LABEL_MAX_CHARS = 24; // engine truncates longer labels with '…'
+/* Engine label metrics (see module header; node labels: render/node-labels). */
 const ZONE_LABEL_CHAR_W = 5.4; // ~0.6em at the 9px zone-label font
 const ZONE_LABEL_H = 14;
 /** Below this endpoint distance the perimeter trims cross and the engine falls
@@ -339,11 +339,27 @@ function checkText(
     // and shapes word-wrap theirs in full, so they never get a label rect.
     const lr = labels.get(n.id);
     if (!lr) continue;
-    if (label.length > NODE_LABEL_MAX_CHARS)
+    const lines = nodeLabelLines(n);
+    if (lines.labelCut)
       add(
         'note',
         'text',
-        `label "${label}" on node "${n.id}" is ${label.length} chars — the renderer truncates it to ${NODE_LABEL_MAX_CHARS} with an ellipsis`,
+        `label "${label}" on node "${n.id}" is ${label.length} chars — it wraps to ${NODE_LABEL.label.maxLines} lines at labelWidth ${String(n.labelWidth)} and is cut with an ellipsis; widen labelWidth or shorten it`,
+      );
+    else if (
+      n.labelWidth == null &&
+      label.length > NODE_LABEL.label.truncateChars
+    )
+      add(
+        'note',
+        'text',
+        `label "${label}" on node "${n.id}" is ${label.length} chars — the renderer truncates it to ${NODE_LABEL.label.truncateChars} with an ellipsis; set labelWidth to wrap it instead`,
+      );
+    if (lines.sublabelCut)
+      add(
+        'note',
+        'text',
+        `sublabel on node "${n.id}" is ${String(n.sublabel).length} chars — it wraps to ${NODE_LABEL.sublabel.maxLines} lines and is cut with an ellipsis; set labelWidth or shorten it`,
       );
     const glyph = glyphs.get(n.id)!;
     const overflow = lr.w - glyph.w;
@@ -894,42 +910,6 @@ function checkDensity(
 }
 
 /* ── estimated drawn geometry (engine metric mirrors) ─────────────── */
-
-/** The padded box the engine draws around a zone's (recursive) members. */
-function zoneBox(page: Page, zone: ZoneConfig): BoundsRect | null {
-  const ids = zoneMemberIds(page, zone.id);
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  for (const id of ids) {
-    const n = page.nodes.find((m) => m.id === id);
-    if (!n) continue;
-    minX = Math.min(minX, n.x - 40);
-    minY = Math.min(minY, n.y - 30);
-    maxX = Math.max(maxX, n.x + 40);
-    maxY = Math.max(maxY, n.y + 30);
-  }
-  if (!isFinite(minX)) return null;
-  const pad = zone.padding ?? LAYOUT_RULES.zonePadding;
-  return {
-    x: minX - pad,
-    y: minY - pad,
-    w: maxX - minX + pad * 2,
-    h: maxY - minY + pad * 2,
-  };
-}
-
-/** Node ids of a zone and its descendant zones. */
-function zoneMemberIds(page: Page, zoneId: string): string[] {
-  const zones = page.zones ?? [];
-  const zone = zones.find((z) => z.id === zoneId);
-  if (!zone) return [];
-  const ids = [...(zone.nodes ?? [])];
-  for (const child of zones)
-    if (child.parentZone === zoneId) ids.push(...zoneMemberIds(page, child.id));
-  return ids;
-}
 
 /** The strip the zone label occupies just inside the zone's top edge. */
 function zoneLabelRect(zone: ZoneConfig, box: BoundsRect): BoundsRect {

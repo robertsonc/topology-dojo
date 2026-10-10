@@ -290,9 +290,9 @@ describe('link-attach mirror agrees with the engine', () => {
 const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
 
 describe('byte-identical output when the options are absent', () => {
-  // SHA-256 of the headless render on main (438fa09, before this feature);
-  // recomputed with scripts/… is not needed: any legitimate render change in
-  // a later PR must update these alongside its own snapshot.
+  // SHA-256 of the headless render on origin/main at 5b82648 (PR #272, the
+  // merge base of this feature) with no linkAttach anywhere. Any legitimate
+  // render change in a later PR must update these alongside its own snapshot.
   const EXPECTED: Record<string, string> = {
     sampleDocument:
       '7c1a47f161b10e708b27ca9406740089f2864437c3b51f391795b5b74d5fc56e',
@@ -468,12 +468,16 @@ describe('distribute', () => {
     const c = createAttachContext(p);
     const e1 = c.endpoints(p.links[0]!)!;
     const e2 = c.endpoints(p.links[1]!)!;
-    // `a` distributes: two east slots at 1/3 and 2/3 of its side, which runs
-    // from the padded top (300 − 17 − 6) to below the label block
-    // (300 + 24 − 10 + 12 + 6): 55px.
+    // `a` distributes: two east slots at 1/3 and 2/3 of the face's ICON span
+    // (padded 17 + 6 each way = 46px) — the south label extends the box but
+    // never the slot span, so no slot sits level with the label text.
     expect(e1.from.x).toBe(200 + 32 + 6);
     expect(e2.from.x).toBe(200 + 32 + 6);
-    expect(Math.abs(e1.from.y - e2.from.y)).toBeCloseTo(55 / 3, 6);
+    expect(Math.abs(e1.from.y - e2.from.y)).toBeCloseTo(46 / 3, 6);
+    for (const e of [e1, e2]) {
+      expect(e.from.y).toBeGreaterThan(300 - 23);
+      expect(e.from.y).toBeLessThan(300 + 23);
+    }
     // `b` keeps the classic ±4.5px fan-out on its end (its trims converge a
     // little toward `a`'s single centre, so just under 9px apart) …
     expect(Math.abs(e1.to.y - e2.to.y)).toBeGreaterThan(8);
