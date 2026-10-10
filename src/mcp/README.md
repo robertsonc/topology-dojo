@@ -166,6 +166,27 @@ compact **index** (type names/categories only); request editable fields with
 full fields for just the types the task needs (pass a `topologyId` to include
 that document's custom node types).
 
+### Link anchor box (experimental)
+
+Links attach to the edge of the node icon by default, so a south-attached
+link runs through the node label. `set_page_properties` takes
+`linkAttach: { pad?, distribute? }` (`{}` = on with defaults, `"none"` clears)
+to attach links to an **anchor box** instead: the node's hit box inflated by
+`pad` (default 6) and extended past the label block on the label side. Ports
+pin to that box; auto endpoints clip to its faces (circle/ellipse icons keep a
+padded round outline off the label side). A node's own `linkAttach` (same
+shape, via `update_element` / `add_node`) merges over the page's and activates
+the feature for that node alone. `distribute: true` spreads every endpoint on
+a node side into evenly spaced slots ordered by the far end (deterministic, no
+crossings at the node; the parallel-sibling fan-out is suppressed on that
+side). Links take `fromPortOffset` / `toPortOffset` in `[-1, 1]`, a fractional
+shift along the attached side (side ports and auto endpoints; corner ports
+ignore it). When two nodes sit too close for the padded box the renderer
+shrinks it (pad 0, then the classic edge trim, then centre→centre) rather than
+drawing the link backwards. Documents without these fields render
+byte-identically to before; `inspect_render` measures the drawn endpoints in
+either mode.
+
 For a document shared with the browser, use the bounded workspace loop instead:
 
 1. `create_workspace` for a new shared document, or `list_workspaces` to choose

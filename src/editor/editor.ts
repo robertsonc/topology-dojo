@@ -44,6 +44,14 @@ import {
   zoneBounds,
 } from './geometry.js';
 import type { BadgePlacement } from './problem-badges.js';
+import {
+  anchorBox,
+  effectiveLinkAttach,
+  engineHitBoxes,
+} from '../render/link-attach.js';
+
+/** Hit boxes for the anchor-box outline (stock types; custom types default). */
+const EDITOR_HIT_BOXES = engineHitBoxes();
 
 const ACCENT = '#01a982';
 /** Escape a string for use inside an SVG/HTML attribute value. */
@@ -650,7 +658,10 @@ export class Editor {
    */
   updatePageProps(
     patch: Partial<
-      Pick<Page, 'caption' | 'duration' | 'transition' | 'lineJumps'>
+      Pick<
+        Page,
+        'caption' | 'duration' | 'transition' | 'lineJumps' | 'linkAttach'
+      >
     >,
     commit = true,
   ): void {
@@ -665,8 +676,9 @@ export class Editor {
       else (this.page as unknown as Record<string, unknown>)[key] = patch[key];
     }
     this.emitPagePatch(fp);
-    // lineJumps changes the drawn art itself, not just the overlay extras.
-    if (keys.includes('lineJumps')) this.renderArt();
+    // lineJumps / linkAttach change the drawn art itself, not just the overlay.
+    if (keys.includes('lineJumps') || keys.includes('linkAttach'))
+      this.renderArt();
     this.renderOverlay(); // caption renders via the overlayExtra hook
     this.onChange();
   }
@@ -882,6 +894,13 @@ export class Editor {
         continue;
       }
       out += `<rect x="${b.x - p}" y="${b.y - p}" width="${b.w + p * 2}" height="${b.h + p * 2}" fill="none" stroke="${ACCENT}" stroke-width="1.5" rx="4"/>`;
+      // Experimental link anchor box: a faint dashed outline of the box the
+      // node's links attach to (its label side extended past the label).
+      const la = effectiveLinkAttach(this.page.linkAttach, n);
+      if (la) {
+        const ab = anchorBox(n, la.pad, EDITOR_HIT_BOXES);
+        out += `<rect x="${ab.x}" y="${ab.y}" width="${ab.w}" height="${ab.h}" fill="none" stroke="${ACCENT}" stroke-width="1" stroke-dasharray="4 3" opacity="0.55" rx="3"/>`;
+      }
       // corner handles
       for (const [hx, hy] of [
         [b.x - p, b.y - p],
@@ -4430,6 +4449,7 @@ function serialize(page: Page): PageSnapshot {
     caption: page.caption,
     emphasis: page.emphasis,
     lineJumps: page.lineJumps,
+    linkAttach: page.linkAttach,
     nodes: page.nodes,
     links: page.links,
     anchors: page.anchors,

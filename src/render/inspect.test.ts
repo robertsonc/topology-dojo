@@ -417,11 +417,12 @@ describe('link crossings on drawn geometry (#258)', () => {
   });
 
   it('models the orthogonal elbow when checking for nodes a link passes through', () => {
-    // Chord a→b at x=520 is at y≈365, well clear of "blocker" at (520,200);
-    // the orthogonal L runs horizontally along y=200 first and hits it.
+    // The link starts on a's drawn east edge (≈335, 209): the straight chord
+    // from there passes x=520 at y≈255, clear of "blocker" at (520,200);
+    // the orthogonal L runs horizontally along y≈209 first and hits it.
     const nodes = [
       node('a', 300, 200),
-      node('b', 700, 500),
+      node('b', 700, 300),
       node('blocker', 520, 200),
     ];
     const straight = inspectPage(

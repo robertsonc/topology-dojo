@@ -31,6 +31,14 @@ const WIRE_LABEL_WIDTH_MIN = 40, WIRE_LABEL_WIDTH_MAX = 600;
 const WIRE_LABEL_PERP = 12;
 /** Gap between a marker badge's circle (r=10) and the top of its label pill. */
 const WIRE_LABEL_MARKER_GAP = 13;
+
+/* Link anchor box (experimental): default inflation of the hit AABB when a
+ * `linkAttach` object is present without `pad`, and the A.5 port directions. */
+const _LINK_ATTACH_DEFAULT_PAD = 6;
+const _PORT_DIRS = {
+  n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0],
+  ne: [1, -1], nw: [-1, -1], se: [1, 1], sw: [-1, 1],
+};
 /** Collision-nudge trial offsets, as fractions of the pill's own width. */
 const WIRE_LABEL_NUDGE_STEPS = [0.25, -0.25, 0.5, -0.5, 1, -1];
 
@@ -311,6 +319,13 @@ class TopologyDesigner {
     // ── Link Routing (Goal 1c) ──
     this._routingEnabled = cfg.routing !== false;
     this._routeCache = new Map();     // linkId -> routed path
+
+    // ── Link anchor box (experimental, opt-in) ──
+    // Page-level `linkAttach: { pad?, distribute? }` — see _linkAttachFor.
+    // Absent (null) = the classic silhouette attachment, byte for byte.
+    this.linkAttach =
+      cfg.linkAttach && typeof cfg.linkAttach === 'object' ? cfg.linkAttach : null;
+    this._slotCache = new Map();      // `${nodeId}|${pad}` -> distribute slots (per render)
 
     // ── Choreography Smoothing (Goal 2b) ──
     this._interpolating = false;
@@ -1365,6 +1380,262 @@ class TopologyDesigner {
       s = 1 / Math.max(Math.abs(ux) / hw, Math.abs(uy) / hh);
     }
     return { x: pos.x + ux * (s + GAP), y: pos.y + uy * (s + GAP) };
+  }
+
+  /* ══════════════════════════════════════════
+     LINK ANCHOR BOX (experimental, opt-in)
+
+     When a page (`linkAttach: { pad, distribute }`) or a node (the same
+     object, merged over the page's) opts in, link endpoints attach to an
+     ANCHOR BOX instead of the icon silhouette: the hit AABB inflated by
+     `pad`, with the side carrying the label extended to clear the label
+     block — so a south-attached link no longer runs through the label text.
+     `distribute` spreads every endpoint on a side into evenly spaced slots.
+     Mirrored in TypeScript by src/render/link-attach.ts (the inspect_render
+     geometry) — keep the two in step; a test asserts they agree.
+     ══════════════════════════════════════════ */
+
+  /**
+   * The effective options for a node, or null when the feature is inactive
+   * for it (neither the page nor the node carries a `linkAttach` object).
+   * Node fields merge over the page's; `pad` defaults to 6 and is clamped
+   * at 0; `distribute` is a strict boolean.
+   */
+  _linkAttachFor(nodeCfg) {
+    const page = this.linkAttach && typeof this.linkAttach === 'object' ? this.linkAttach : null;
+    const own = nodeCfg && nodeCfg.linkAttach && typeof nodeCfg.linkAttach === 'object' ? nodeCfg.linkAttach : null;
+    if (!page && !own) return null;
+    const pick = (k) => (own && own[k] !== undefined ? own[k] : page ? page[k] : undefined);
+    const padRaw = pick('pad');
+    const pad = typeof padRaw === 'number' && Number.isFinite(padRaw) ? Math.max(0, padRaw) : _LINK_ATTACH_DEFAULT_PAD;
+    return { pad, distribute: pick('distribute') === true };
+  }
+
+  /** True when either endpoint of a link is a node the feature is active for. */
+  _linkAttachActive(linkCfg) {
+    const f = this._nodes.get(linkCfg.from), t = this._nodes.get(linkCfg.to);
+    return !!((f && this._linkAttachFor(f)) || (t && this._linkAttachFor(t)));
+  }
+
+  /**
+   * The classic below/beside-node label block (label line + optional
+   * sublabel) as a rect RELATIVE to the node centre, or null when the node
+   * draws no such label (own-label types, no label). Metrics mirror
+   * `_renderNodeLabel` the way the inspector estimates them: ~6px per glyph
+   * at the 10px font, truncated at 24 chars (+ ellipsis), 12px tall, +13px
+   * for the sublabel line.
+   */
+  _nodeLabelBlock(nodeCfg) {
+    const label = nodeCfg.label;
+    if (!label || typeof label !== 'string') return null;
+    const t = nodeCfg.type;
+    if (t === 'cloud' || t === 'idcard' || t === 'overlayCloud' || t === 'text' || t === 'callout') return null;
+    if (this._ownLabelNode(nodeCfg)) return null;
+    const w = Math.min(label.length, 25) * 6;
+    const h = 12 + (nodeCfg.sublabel ? 13 : 0);
+    const lp = this._nodeLabelPos(nodeCfg);
+    const x = lp.anchor === 'start' ? lp.x : lp.anchor === 'end' ? lp.x - w : lp.x - w / 2;
+    return { x: x - nodeCfg.x, y: lp.y - 10 - nodeCfg.y, w, h };
+  }
+
+  /**
+   * The anchor box for a node, RELATIVE to its centre: the hit AABB inflated
+   * by `pad`, with the side(s) carrying the label (per `labelPlacement`;
+   * south by default) extended to clear the label block + pad. `labelSides`
+   * lists the sides that were extended.
+   */
+  _anchorBox(nodeCfg, pad) {
+    const ab = this._getNodeAABB(nodeCfg);
+    const hw = ab.w / 2, hh = ab.h / 2;
+    const box = { l: -(hw + pad), r: hw + pad, t: -(hh + pad), b: hh + pad, labelSides: [] };
+    const lb = this._nodeLabelBlock(nodeCfg);
+    if (!lb) return box;
+    const p = String(nodeCfg.labelPlacement || 's').toLowerCase();
+    const north = p === 'n' || p === 'ne' || p === 'nw';
+    const south = p === 's' || p === 'se' || p === 'sw';
+    const east = p === 'e' || p === 'ne' || p === 'se';
+    const west = p === 'w' || p === 'nw' || p === 'sw';
+    if (south) { box.b = Math.max(box.b, lb.y + lb.h + pad); box.labelSides.push('s'); }
+    if (north) { box.t = Math.min(box.t, lb.y - pad); box.labelSides.push('n'); }
+    if (east) { box.r = Math.max(box.r, lb.x + lb.w + pad); box.labelSides.push('e'); }
+    if (west) { box.l = Math.min(box.l, lb.x - pad); box.labelSides.push('w'); }
+    return box;
+  }
+
+  /** Where a unit ray from the box centre leaves the box: {t, side} or null. */
+  static _boxExit(box, ux, uy) {
+    let t = Infinity, side = null;
+    if (ux > 0 && box.r / ux < t) { t = box.r / ux; side = 'e'; }
+    if (ux < 0 && box.l / ux < t) { t = box.l / ux; side = 'w'; }
+    if (uy > 0 && box.b / uy < t) { t = box.b / uy; side = 's'; }
+    if (uy < 0 && box.t / uy < t) { t = box.t / uy; side = 'n'; }
+    return side ? { t, side } : null;
+  }
+
+  /** A point on a box side: `u` in [0,1] runs left→right (n/s) or top→bottom (e/w). */
+  static _boxSidePoint(box, side, u) {
+    if (side === 'n' || side === 's')
+      return { x: box.l + (box.r - box.l) * u, y: side === 'n' ? box.t : box.b };
+    return { x: side === 'e' ? box.r : box.l, y: box.t + (box.b - box.t) * u };
+  }
+
+  /**
+   * A side-port pin: `frac` in [-1, 1] runs from the side's centre line
+   * (0 = level with the node centre) to its ends (±1), so an asymmetric
+   * (label-extended) side still reaches both corners.
+   */
+  static _boxSideAt(box, side, frac) {
+    const f = Math.max(-1, Math.min(1, frac || 0));
+    if (side === 'n' || side === 's')
+      return { x: f >= 0 ? f * box.r : -f * box.l, y: side === 'n' ? box.t : box.b };
+    return { x: side === 'e' ? box.r : box.l, y: f >= 0 ? f * box.b : -f * box.t };
+  }
+
+  /** Shift a point on `side` by `frac` of the side's half-length, clamped to the side. */
+  static _boxShift(box, side, pt, frac) {
+    if (!frac) return pt;
+    if (side === 'n' || side === 's')
+      return { x: Math.max(box.l, Math.min(box.r, pt.x + (frac * (box.r - box.l)) / 2)), y: pt.y };
+    return { x: pt.x, y: Math.max(box.t, Math.min(box.b, pt.y + (frac * (box.b - box.t)) / 2)) };
+  }
+
+  /**
+   * Anchor-box attachment for one node endpoint (no distribute). A port pins
+   * to the box side (side ports take `offset`, the fractional shift along the
+   * side) or corner (offset ignored); an auto endpoint clips the centre→toward
+   * ray to the box — or, for circle/ellipse silhouettes, to the silhouette
+   * inflated by `pad`, unless the ray exits through the label side or the
+   * endpoint carries an offset (both need the box). Returns {x, y, side}.
+   */
+  _attachEndpointBox(cfg, pos, toward, port, pad, offset) {
+    const box = this._anchorBox(cfg, pad);
+    if (port && _PORT_DIRS[port]) {
+      if (port.length === 2) {
+        const [sx, sy] = _PORT_DIRS[port];
+        return { x: pos.x + (sx > 0 ? box.r : box.l), y: pos.y + (sy > 0 ? box.b : box.t), side: null };
+      }
+      const pt = TopologyDesigner._boxSideAt(box, port, offset);
+      return { x: pos.x + pt.x, y: pos.y + pt.y, side: port };
+    }
+    const dx = toward.x - pos.x, dy = toward.y - pos.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return { x: pos.x, y: pos.y, side: null };
+    const ux = dx / len, uy = dy / len;
+    const exit = TopologyDesigner._boxExit(box, ux, uy);
+    if (!exit) return { x: pos.x, y: pos.y, side: null };
+    const shape = this._nodeShape(cfg);
+    if (!offset && !box.labelSides.includes(exit.side) && (shape === 'circle' || shape === 'ellipse')) {
+      const ab = this._getNodeAABB(cfg);
+      const hw = ab.w / 2, hh = ab.h / 2;
+      const s = shape === 'circle'
+        ? Math.min(hw, hh) + pad
+        : 1 / Math.sqrt((ux / (hw + pad)) ** 2 + (uy / (hh + pad)) ** 2);
+      return { x: pos.x + ux * s, y: pos.y + uy * s, side: exit.side };
+    }
+    const pt = TopologyDesigner._boxShift(box, exit.side, { x: ux * exit.t, y: uy * exit.t }, offset);
+    return { x: pos.x + pt.x, y: pos.y + pt.y, side: exit.side };
+  }
+
+  /** True when a node id names a node that distributes its endpoints. */
+  _nodeDistributes(id) {
+    const cfg = this._nodes.get(id);
+    const opt = cfg && this._linkAttachFor(cfg);
+    return !!(opt && opt.distribute);
+  }
+
+  /**
+   * Everything one end of a link needs to attach, as a pure function of the
+   * page config: its centre (parallel-offset unless the node distributes —
+   * slots already separate siblings), the next point on the path (first/last
+   * waypoint, else the other end's centre, offset likewise), the pinned port
+   * and the clamped port offset. Shared by the geometry and the slot scan so
+   * the exit side both compute is the same.
+   */
+  _endContext(linkCfg, end) {
+    const id = linkCfg[end];
+    const otherId = end === 'from' ? linkCfg.to : linkCfg.from;
+    const off = this._parallelOffset(linkCfg);
+    const base = this._pos(id), other = this._pos(otherId);
+    const pos = this._nodeDistributes(id) ? base : { x: base.x + off.dx, y: base.y + off.dy };
+    const otherPos = this._nodeDistributes(otherId) ? other : { x: other.x + off.dx, y: other.y + off.dy };
+    const wps = linkCfg.waypoints;
+    const toward = wps && wps.length ? (end === 'from' ? wps[0] : wps[wps.length - 1]) : otherPos;
+    const port = end === 'from' ? linkCfg.fromPort : linkCfg.toPort;
+    const offRaw = end === 'from' ? linkCfg.fromPortOffset : linkCfg.toPortOffset;
+    const offset = typeof offRaw === 'number' && Number.isFinite(offRaw) ? Math.max(-1, Math.min(1, offRaw)) : 0;
+    return { pos, toward, port, offset };
+  }
+
+  /**
+   * Distribute slots for a node: per side n/s/e/w, every link endpoint that
+   * attaches to that side (auto endpoints by the face their ray exits, side
+   * ports by their side; corner ports excluded), sorted by the far end's
+   * coordinate along the side's axis, tie-broken by link id (then end).
+   * Memoised per render (`_slotCache`, reset by _renderSVG).
+   */
+  _distributeSlots(nodeId, pad) {
+    const key = `${nodeId}|${pad}`;
+    const hit = this._slotCache.get(key);
+    if (hit) return hit;
+    const cfg = this._nodes.get(nodeId);
+    const box = this._anchorBox(cfg, pad);
+    const sides = { n: [], s: [], e: [], w: [] };
+    for (const link of this._links.values()) {
+      for (const end of ['from', 'to']) {
+        if (link[end] !== nodeId) continue;
+        const ctx = this._endContext(link, end);
+        let side = null;
+        if (ctx.port) {
+          if (sides[ctx.port]) side = ctx.port;
+        } else {
+          const dx = ctx.toward.x - ctx.pos.x, dy = ctx.toward.y - ctx.pos.y;
+          const len = Math.hypot(dx, dy);
+          const exit = len === 0 ? null : TopologyDesigner._boxExit(box, dx / len, dy / len);
+          side = exit ? exit.side : null;
+        }
+        if (!side) continue;
+        sides[side].push({
+          id: link.id, end,
+          axis: side === 'n' || side === 's' ? ctx.toward.x : ctx.toward.y,
+        });
+      }
+    }
+    const cmp = (a, b) =>
+      a.axis - b.axis ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : a.end < b.end ? -1 : a.end > b.end ? 1 : 0);
+    for (const k of Object.keys(sides)) sides[k].sort(cmp);
+    this._slotCache.set(key, sides);
+    return sides;
+  }
+
+  /**
+   * Attach one end of a link under the anchor-box feature. `mode` is the
+   * degenerate-guard step: 'box' (pad as configured), 'icon' (pad 0) or
+   * 'legacy' (the classic silhouette + gap). A distributing node places the
+   * end in its slot; otherwise the box attachment applies.
+   */
+  _attachEnd(linkCfg, end, ctx, mode) {
+    const id = linkCfg[end];
+    if (this._anchors.has(id)) return ctx.pos;
+    const cfg = this._nodes.get(id);
+    if (!cfg) return ctx.pos;
+    const opt = this._linkAttachFor(cfg);
+    if (!opt || mode === 'legacy') return this._attachEndpoint(id, ctx.pos, ctx.toward, ctx.port);
+    const pad = mode === 'box' ? opt.pad : 0;
+    if (opt.distribute) {
+      const slots = this._distributeSlots(id, pad);
+      for (const side of ['n', 's', 'e', 'w']) {
+        const list = slots[side];
+        const i = list.findIndex((s) => s.id === linkCfg.id && s.end === end);
+        if (i < 0) continue;
+        const box = this._anchorBox(cfg, pad);
+        const at = TopologyDesigner._boxSidePoint(box, side, (i + 1) / (list.length + 1));
+        const pt = TopologyDesigner._boxShift(box, side, at, ctx.offset);
+        return { x: ctx.pos.x + pt.x, y: ctx.pos.y + pt.y };
+      }
+    }
+    const a = this._attachEndpointBox(cfg, ctx.pos, ctx.toward, ctx.port, pad, ctx.offset);
+    return { x: a.x, y: a.y };
   }
 
   /**
@@ -4335,6 +4606,30 @@ ${grid}`;
   _linkGeometry(linkCfg) {
     let from = this._pos(linkCfg.from);
     let to = this._pos(linkCfg.to);
+    if (this._linkAttachActive(linkCfg)) {
+      // Experimental anchor-box attachment (see _attachEnd). Each end's
+      // centre, next point, port and offset come from _endContext; the
+      // degenerate guard retries with a shrinking box — pad as set, pad 0,
+      // the classic silhouette — and finally keeps centre→centre.
+      const wps = linkCfg.waypoints;
+      const fromCtx = this._endContext(linkCfg, 'from');
+      const toCtx = this._endContext(linkCfg, 'to');
+      const fromC = fromCtx.pos, toC = toCtx.pos;
+      from = fromC;
+      to = toC;
+      for (const mode of ['box', 'icon', 'legacy']) {
+        const fromA = this._attachEnd(linkCfg, 'from', fromCtx, mode);
+        const toA = this._attachEnd(linkCfg, 'to', toCtx, mode);
+        const reversed =
+          !(wps && wps.length) &&
+          (toC.x - fromC.x) * (toA.x - fromA.x) + (toC.y - fromC.y) * (toA.y - fromA.y) <= 0;
+        if (!reversed) {
+          from = fromA;
+          to = toA;
+          break;
+        }
+      }
+    } else {
     // Fan out parallel edges (e.g. dual transports A↔B) so they don't overlap.
     const off = this._parallelOffset(linkCfg);
     if (off.dx || off.dy) {
@@ -4370,6 +4665,7 @@ ${grid}`;
         from = fromA;
         to = toA;
       }
+    }
     }
     // Path through explicit waypoints — or, with none, honor a non-straight
     // lineStyle directly: 'orthogonal' auto-routes an L-path and 'curved' bows
@@ -4732,6 +5028,7 @@ ${grid}`;
    */
   _renderSVG() {
     this._clearPosCache(); // Reset position cache for this render cycle
+    this._slotCache = new Map(); // Link anchor-box distribute slots for this render cycle
     this._buildJumpIndex(); // Line-jump crossing registry for this render cycle
     this._resetLabelObstacles(); // Wire-label pill collision registry for this render cycle
     const vb = this.viewBox.split(' ').map(Number);

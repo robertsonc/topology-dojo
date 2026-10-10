@@ -31,7 +31,9 @@ export type FieldKind =
   /** An ordered list of id references. */
   | 'refs'
   /** A flat key/value map (string/number/boolean values) — e.g. node metadata. */
-  | 'record';
+  | 'record'
+  /** A nested object with its own typed `fields` (e.g. a node's linkAttach). */
+  | 'object';
 
 export interface FieldSpec {
   key: string;
@@ -69,7 +71,33 @@ export interface FieldSpec {
    * offsets. Headless callers ignore it.
    */
   widget?: 'compass';
+  /**
+   * For `kind: 'number'`: the inclusive [min, max] the renderer honours.
+   * Advertised to agents; `validate_topology` warns outside it; the
+   * inspector sets the input's min/max.
+   */
+  range?: readonly [number, number];
+  /** For `kind: 'object'`: the nested field specs (keys are the object's own). */
+  fields?: FieldSpec[];
 }
+
+/**
+ * EXPERIMENTAL link anchor box — the `{ pad, distribute }` object a page or
+ * node may carry (a node's merges over the page's). Present = active: links
+ * attach to the node's hit box inflated by `pad` (default 6), extended on the
+ * label side to clear the label text; `distribute` spreads a side's
+ * endpoints into even slots. See render/link-attach.
+ */
+export const LINK_ATTACH_FIELDS: FieldSpec[] = [
+  { key: 'pad', label: 'Box padding', kind: 'number', range: [0, 200] },
+  { key: 'distribute', label: 'Distribute endpoints', kind: 'boolean' },
+];
+export const LINK_ATTACH_FIELD: FieldSpec = {
+  key: 'linkAttach',
+  label: 'Link anchor box (experimental)',
+  kind: 'object',
+  fields: LINK_ATTACH_FIELDS,
+};
 
 /** Compass placement codes, clockwise from north. */
 export const PLACEMENT_OPTIONS = [
@@ -180,6 +208,7 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'labelOffsetX', label: 'Label X', kind: 'number' },
   { key: 'labelOffset', label: 'Label Y', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
+  LINK_ATTACH_FIELD,
   {
     key: 'meta',
     label: 'Metadata',
@@ -409,6 +438,7 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           { key: 'shapeSize', label: 'Size', kind: 'number' as const },
           ...(SHAPE_EXTRAS[type] ?? []),
           { key: 'locked', label: 'Locked', kind: 'boolean' as const },
+          LINK_ATTACH_FIELD,
           HREF_FIELD,
           TOOLTIP_FIELD,
           LAYER_FIELD,
@@ -518,6 +548,21 @@ const LINK_COMMON: FieldSpec[] = [
     kind: 'enum',
     options: PORT_OPTIONS,
     optionLabels: PORT_LABELS,
+  },
+  // EXPERIMENTAL (link anchor box): fractional shift of an endpoint along the
+  // side it attaches to, in [-1, 1] (0 = centre, ±1 = the side's ends). Side
+  // ports and auto endpoints only; corner ports ignore it; needs linkAttach.
+  {
+    key: 'fromPortOffset',
+    label: 'From side offset',
+    kind: 'number',
+    range: [-1, 1],
+  },
+  {
+    key: 'toPortOffset',
+    label: 'To side offset',
+    kind: 'number',
+    range: [-1, 1],
   },
   { key: 'waypoints', label: 'Waypoints', kind: 'points' },
   {

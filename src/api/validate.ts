@@ -16,6 +16,7 @@ import {
   getLinkType,
   getNodeType,
   type FieldSpec,
+  LINK_ATTACH_FIELD,
 } from './catalog.js';
 
 export interface Problem {
@@ -146,6 +147,9 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       page.lineJumps !== 'gap'
     )
       warn(at, `lineJumps "${String(page.lineJumps)}" not in [arc, gap]`);
+    // Experimental link anchor box: the page-level object has the node
+    // field's shape (pad ≥ 0, distribute boolean).
+    checkEnums({ linkAttach: page.linkAttach }, [LINK_ATTACH_FIELD], at, warn);
 
     // Element ids unique within the page; collect endpoints (nodes + anchors).
     const ids = new Set<string>();
@@ -412,19 +416,48 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
   return problems;
 }
 
-/** Warn when an enum-typed field carries a value outside its catalog options. */
+/**
+ * Warn when a catalog-typed field carries a value the renderer won't honour:
+ * an enum outside its options, a ranged number outside its [min, max], or a
+ * nested `object` field that is not an object (its own fields are then
+ * checked strictly — booleans must be booleans — since the shape is new and
+ * carries no legacy documents).
+ */
 function checkEnums(
   cfg: Record<string, unknown>,
   fields: FieldSpec[] | undefined,
   where: string,
   warn: (where: string, message: string) => void,
+  strict = false,
 ): void {
   if (!fields) return;
   for (const f of fields) {
-    if (f.kind !== 'enum' || !f.options) continue;
     const v = cfg[f.key];
-    if (v !== undefined && !f.options.includes(String(v)))
-      warn(where, `${f.key} "${String(v)}" not in [${f.options.join(', ')}]`);
+    if (v === undefined) continue;
+    if (f.kind === 'enum' && f.options) {
+      if (!f.options.includes(String(v)))
+        warn(where, `${f.key} "${String(v)}" not in [${f.options.join(', ')}]`);
+    } else if (f.kind === 'number' && f.range) {
+      const [lo, hi] = f.range;
+      if (typeof v !== 'number' || !(v >= lo && v <= hi))
+        warn(
+          where,
+          `${f.key} ${String(v)} should be a number between ${lo} and ${hi}`,
+        );
+    } else if (f.kind === 'object' && f.fields) {
+      if (typeof v !== 'object' || v === null || Array.isArray(v))
+        warn(where, `${f.key} must be an object`);
+      else
+        checkEnums(
+          v as Record<string, unknown>,
+          f.fields,
+          `${where} ${f.key}`,
+          warn,
+          true,
+        );
+    } else if (strict && f.kind === 'boolean' && typeof v !== 'boolean') {
+      warn(where, `${f.key} ${String(v)} should be true or false`);
+    }
   }
 }
 

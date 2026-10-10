@@ -9,6 +9,7 @@ import type { TopologyDocument, Page, Stencil, BrandPalette } from './model.js';
 import { newPageId } from './model.js';
 import { sanitizeDisplayFields } from '../api/text.js';
 import { clampLabelWidth } from '../render/wire-labels.js';
+import type { LinkAttachOptions } from '../vendor/topology-ds.js';
 
 /** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
 function hexColor(v: unknown): string | undefined {
@@ -120,6 +121,21 @@ import type { LayerDef } from '../api/layers.js';
 
 const KEY = 'topology-dojo:doc';
 
+/**
+ * The page-level link anchor box option (experimental), kept only when it is
+ * an object; unknown keys are dropped, a negative pad is clamped to 0. An
+ * empty object is meaningful (the feature on, at its defaults).
+ */
+function parseLinkAttach(v: unknown): LinkAttachOptions | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const out: LinkAttachOptions = {};
+  if (typeof o.pad === 'number' && Number.isFinite(o.pad))
+    out.pad = Math.max(0, o.pad);
+  if (typeof o.distribute === 'boolean') out.distribute = o.distribute;
+  return out;
+}
+
 export function serializeDoc(doc: TopologyDocument): string {
   return JSON.stringify(
     {
@@ -171,6 +187,9 @@ export function parseDoc(input: unknown): TopologyDocument | null {
         : {}),
       ...(p.lineJumps === 'arc' || p.lineJumps === 'gap'
         ? { lineJumps: p.lineJumps }
+        : {}),
+      ...(parseLinkAttach(p.linkAttach)
+        ? { linkAttach: parseLinkAttach(p.linkAttach)! }
         : {}),
       ...(Array.isArray(p.emphasis)
         ? {

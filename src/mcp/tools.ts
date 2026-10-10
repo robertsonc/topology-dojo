@@ -29,6 +29,7 @@ import {
   linkCatalog,
   nodeCatalog,
 } from '../api/catalog.js';
+import type { LinkAttachOptions } from '../vendor/topology-ds.js';
 import { LAYER_KINDS } from '../api/layers.js';
 import {
   removeElement,
@@ -701,7 +702,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_page_properties',
       description:
-        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, and/or lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear).',
+        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (EXPERIMENTAL link anchor box: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; {} = on with defaults, "none" clears; a node’s own linkAttach merges over it).',
       inputShape: {
         topologyId,
         pageIndex,
@@ -717,6 +718,28 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .optional()
           .describe(
             'Crossing hops for standard line links ("none" clears the setting).',
+          ),
+        linkAttach: z
+          .union([
+            z.literal('none'),
+            z.object({
+              pad: z
+                .number()
+                .min(0)
+                .max(200)
+                .optional()
+                .describe('Box padding in px (default 6).'),
+              distribute: z
+                .boolean()
+                .optional()
+                .describe(
+                  'Spread every endpoint on a node side into evenly spaced slots.',
+                ),
+            }),
+          ])
+          .optional()
+          .describe(
+            'EXPERIMENTAL link anchor box for the page ({} = on with defaults; "none" clears).',
           ),
       },
       handler: (a) => {
@@ -737,6 +760,18 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           if (a.lineJumps === 'none') delete page.lineJumps;
           else page.lineJumps = a.lineJumps as 'arc' | 'gap';
         }
+        if (a.linkAttach !== undefined) {
+          if (a.linkAttach === 'none') delete page.linkAttach;
+          else {
+            const la = a.linkAttach as LinkAttachOptions;
+            page.linkAttach = {
+              ...(la.pad !== undefined ? { pad: la.pad } : {}),
+              ...(la.distribute !== undefined
+                ? { distribute: la.distribute }
+                : {}),
+            };
+          }
+        }
         return {
           name: page.name,
           viewBox: page.viewBox,
@@ -746,6 +781,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             : {}),
           ...(page.lineJumps !== undefined
             ? { lineJumps: page.lineJumps }
+            : {}),
+          ...(page.linkAttach !== undefined
+            ? { linkAttach: page.linkAttach }
             : {}),
         };
       },
@@ -1429,12 +1467,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         return {
           pageIndex: index,
           pageName: page.name,
-          ...inspectPage(
-            page,
-            a.maxFindingsPerCategory !== undefined
+          ...inspectPage(page, {
+            customNodes: doc.customNodes,
+            ...(a.maxFindingsPerCategory !== undefined
               ? { maxPerCategory: Number(a.maxFindingsPerCategory) }
-              : {},
-          ),
+              : {}),
+          }),
         };
       },
     },

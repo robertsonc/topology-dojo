@@ -13,6 +13,24 @@
  * satisfied, then read `_renderSVG()`.
  */
 
+/**
+ * Link anchor box (EXPERIMENTAL, opt-in). When a page or node carries this
+ * object, link endpoints attach to an ANCHOR BOX instead of the icon
+ * silhouette: the node's hit box inflated by `pad` (default 6) on every side,
+ * with the side carrying the label extended to clear the label block — so a
+ * south-attached link no longer runs through the label text. `distribute`
+ * spreads every endpoint on a side into evenly spaced slots (ordered by the
+ * far end's position, so links never cross at the node). A node's object
+ * merges over the page's. Absent on both = the classic attachment, unchanged.
+ * Mirrored headlessly by `render/link-attach` (the inspect_render geometry).
+ */
+export interface LinkAttachOptions {
+  /** Inflation of the hit box, px (≥ 0). Default 6 when the object is present. */
+  pad?: number;
+  /** Spread the endpoints on each side of the node into even slots. */
+  distribute?: boolean;
+}
+
 /** A node on a page — the legacy node config shape (permissive by design). */
 export interface NodeConfig {
   id: string;
@@ -70,6 +88,12 @@ export interface NodeConfig {
   layer?: string;
   /** External identity in a source system (see api/source); enables upsert. */
   source?: SourceRef;
+  /**
+   * EXPERIMENTAL: per-node link anchor box, merged over the page's
+   * `linkAttach` (see `LinkAttachOptions`). Present = active for this node
+   * even when the page has no setting.
+   */
+  linkAttach?: LinkAttachOptions;
   [key: string]: unknown;
 }
 
@@ -114,6 +138,15 @@ export interface LinkConfig {
    */
   fromPort?: 'n' | 'e' | 's' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
   toPort?: 'n' | 'e' | 's' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+  /**
+   * EXPERIMENTAL (link anchor box): fractional shift of the endpoint along
+   * the side it attaches to, in [-1, 1] (0 = the side's centre line, ±1 = its
+   * ends; clamped). Applies to side ports (n/s/e/w) and auto endpoints,
+   * ignored for corner ports, and only when `linkAttach` is active for the
+   * node at that end.
+   */
+  fromPortOffset?: number;
+  toPortOffset?: number;
   /**
    * B.2 first-class link metadata — renderable on the wire when `showMeta` is
    * set. Endpoint interface names reuse `fromLabel`/`toLabel`. All optional and
@@ -504,6 +537,11 @@ export interface RenderablePage {
   policyMarkers?: PolicyMarkerConfig[];
   /** Line-jump rendering at link crossings ('arc' | 'gap'; absent = none). */
   lineJumps?: 'arc' | 'gap';
+  /**
+   * EXPERIMENTAL: page-level link anchor box (see `LinkAttachOptions`);
+   * absent = the classic silhouette attachment, unchanged.
+   */
+  linkAttach?: LinkAttachOptions;
 }
 
 /**
@@ -529,6 +567,10 @@ export function renderPageSVG(
   // Line jumps at link crossings — a page-level setting (persisted; part of
   // the document contract via set_page_properties), applied at render time.
   (topo as unknown as { lineJumps?: string }).lineJumps = page.lineJumps;
+  // Experimental link anchor box — page-level setting, applied at render time
+  // (left null when absent so the classic attachment is untouched).
+  (topo as unknown as { linkAttach?: LinkAttachOptions | null }).linkAttach =
+    page.linkAttach ?? null;
 
   // The layer view: hidden layers dropped, the rest stacked bottom → top
   // (insertion order is the engine's paint order within each collection).

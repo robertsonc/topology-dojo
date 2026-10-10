@@ -16,7 +16,11 @@ import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
-import { applyPalette, flattenViewer } from '../vendor/topology-ds.js';
+import {
+  applyPalette,
+  flattenViewer,
+  type LinkAttachOptions,
+} from '../vendor/topology-ds.js';
 import { legendSVG } from '../editor/legend.js';
 import {
   applyRenderTheme,
@@ -113,6 +117,10 @@ function renderPageUnthemed(
   // Line jumps at link crossings — the page-level setting, applied at render
   // time (same as the browser facade, so exports match the canvas).
   (topo as unknown as { lineJumps?: string }).lineJumps = page.lineJumps;
+  // Experimental link anchor box — the page-level setting, applied at render
+  // time (null when absent so the classic attachment stays byte-identical).
+  (topo as unknown as { linkAttach?: LinkAttachOptions | null }).linkAttach =
+    page.linkAttach ?? null;
 
   // The layer view: hidden layers dropped, the rest stacked bottom → top
   // (insertion order is the engine's paint order within each collection).
