@@ -1,8 +1,10 @@
 name: CI
 
+# PR gate + reusable check set. No `push: main` trigger: since proposal 0007
+# release.yml runs these same jobs (via workflow_call) on every merge SHA it
+# releases, so a second standalone run on push would only duplicate them.
+# Branch protection requires `CI / check` and `CI / e2e` on pull requests.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_call:
     inputs:

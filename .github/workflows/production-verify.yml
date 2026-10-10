@@ -6,12 +6,22 @@ name: Production Verify
 #
 #   - workflow_dispatch: on-demand verification (incident triage, game-day
 #     Phase 3 read-only checks, post-deploy spot checks). The optional
-#     `expected_sha` input turns the /healthz check into a deployed-SHA
-#     assertion — dispatch with the SHA the latest production deploy run
-#     recorded to detect a deployed-SHA mismatch.
-#   - schedule: a daily synthetic check of production, currently the only
-#     automated production-outage signal (Cloudflare-side alerting is a
-#     human-configured, separate layer — see docs/CLOUDFLARE_OPERATOR_RUNBOOK.md).
+#     `expected_sha` input pins the deployed-SHA assertion to a specific
+#     commit.
+#   - schedule: hourly synthetic check of production (proposal 0007 — with
+#     merge-is-release there is no human watching a dispatch, so this is the
+#     primary post-release watch; still the only automated production-outage
+#     signal — Cloudflare-side alerting is a separate human-configured layer,
+#     see docs/CLOUDFLARE_OPERATOR_RUNBOOK.md).
+#
+# Deployed-SHA cross-check: when `expected_sha` is empty, the newest
+# `production` GitHub Deployment with a `success` status is the record of
+# what should be live (release.yml stamps each one with the SHA it actually
+# deployed, which differs from the run's commit for recovery/rollback
+# deploys). `/healthz` must report that SHA. If it instead reports the SHA
+# of a deployment whose latest status is in_progress / error / failure, the
+# release run died after `wrangler deploy` — reported as an "unrecorded
+# pipeline deploy", distinct from a genuine out-of-band deploy.
 #
 # Notification is GitHub-native and deduplicated, mirroring
 # nightly-staging-smoke.yml: a failure files or updates a single
@@ -21,14 +31,13 @@ name: Production Verify
 # needs no environment approval or secret.
 on:
   schedule:
-    - cron: '30 7 * * *' # 07:30 UTC daily (before the 08:00 staging smoke)
+    - cron: '17 * * * *' # hourly at :17 (jittered off the top of the hour)
   workflow_dispatch:
     inputs:
       expected_sha:
         description: >-
-          Commit SHA production is expected to serve (from the latest
-          Deploy Production run). When set, /healthz must report exactly
-          this SHA or the run fails — the deployed-SHA mismatch check.
+          Commit SHA production is expected to serve. Empty = the newest
+          successful `production` deployment per the Deployments API.
         required: false
         type: string
         default: ''
@@ -36,6 +45,7 @@ on:
 permissions:
   contents: read
   issues: write
+  deployments: read
 
 # Never overlap two verification runs; never cancel one mid-flight (its
 # result is the point).
@@ -54,13 +64,85 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Resolve what production SHOULD serve (input, else the Deployments
+      # API) and classify what it DOES serve. `expected_sha` is free-text
+      # workflow_dispatch input: read through `env:` only.
+      - name: Resolve the expected SHA from the deployment record
+        id: expected
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_SHA_INPUT: ${{ inputs.expected_sha }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const hex40 = /^[0-9a-f]{40}$/;
+            const input = (process.env.EXPECTED_SHA_INPUT || '').trim();
+            if (input && !hex40.test(input)) core.setFailed('expected_sha must be a full 40-hex commit SHA');
+
+            // What production serves right now.
+            let actual = 'unknown';
+            try {
+              const res = await fetch(`${process.env.PRODUCTION_URL}/healthz`, { headers: { accept: 'application/json' } });
+              if (res.status === 200) {
+                const body = await res.json();
+                if (typeof body.sha === 'string' && hex40.test(body.sha)) actual = body.sha;
+              }
+            } catch (err) {
+              core.warning(`/healthz read failed: ${err.message}`);
+            }
+
+            // The deployment record: newest production deployment per state.
+            const deployedShaOf = (d, statuses) => {
+              for (const s of statuses) {
+                const m = /deployed_sha=([0-9a-f]{40})/.exec(s.description || '');
+                if (m) return m[1];
+              }
+              return d.sha;
+            };
+            let expected = input;
+            let source = input ? 'input' : 'none';
+            let verdict = '';
+            const nonSuccess = new Map(); // deployedSha → latest state
+            if (!input) {
+              const { data: deployments } = await github.rest.repos.listDeployments({ owner, repo, environment: 'production', per_page: 20 });
+              for (const d of deployments) {
+                const { data: statuses } = await github.rest.repos.listDeploymentStatuses({ owner, repo, deployment_id: d.id, per_page: 20 });
+                const latest = statuses[0]; // newest first
+                const sha = deployedShaOf(d, statuses);
+                if (latest && latest.state === 'success' && !expected) {
+                  expected = sha;
+                  source = `deployment ${d.id}`;
+                } else if (latest && ['in_progress', 'error', 'failure', 'pending', 'queued'].includes(latest.state)) {
+                  nonSuccess.set(sha, latest.state);
+                }
+              }
+              if (!expected) {
+                core.warning('no successful production deployment found in the Deployments API; skipping the SHA assertion');
+              }
+            }
+            if (expected && actual !== 'unknown' && actual !== expected) {
+              if (nonSuccess.has(actual)) {
+                verdict = `UNRECORDED PIPELINE DEPLOY: /healthz serves ${actual}, which belongs to a production deployment whose latest status is "${nonSuccess.get(actual)}" (a release run died after wrangler deploy). Expected ${expected} (${source}).`;
+              } else {
+                verdict = `OUT-OF-BAND DEPLOY: /healthz serves ${actual}, which matches no recorded production deployment. Expected ${expected} (${source}). Freeze releases and reconcile (docs/ALERTS.md prod-sha-mismatch).`;
+              }
+              core.error(verdict);
+            } else if (expected && actual === expected) {
+              verdict = `deployed SHA matches the record (${source}).`;
+            } else if (actual === 'unknown') {
+              verdict = '/healthz did not report a SHA.';
+            }
+            core.setOutput('sha', expected);
+            core.setOutput('source', source);
+            core.setOutput('actual', actual);
+            core.setOutput('verdict', verdict);
+            core.info(`expected=${expected || '(none)'} source=${source} actual=${actual} ${verdict}`);
       # smoke.mjs is a standalone Node script (built-in fetch only), so no
-      # `npm ci` is needed. `expected_sha` is free-text workflow_dispatch
-      # input: passed through `env:` and appended as a discrete argument,
-      # never interpolated into the script text.
+      # `npm ci` is needed. The expected SHA is appended as a discrete
+      # argument, never interpolated into the script text.
       - name: Smoke test production
         env:
-          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_SHA: ${{ steps.expected.outputs.sha }}
         run: |
           set -o pipefail
           ARGS=(--json)
@@ -73,7 +155,10 @@ jobs:
       - name: Write verification summary
         if: always()
         env:
-          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_SHA: ${{ steps.expected.outputs.sha }}
+          EXPECTED_SOURCE: ${{ steps.expected.outputs.source }}
+          ACTUAL_SHA: ${{ steps.expected.outputs.actual }}
+          VERDICT: ${{ steps.expected.outputs.verdict }}
         run: |
           {
             echo "### Topology Dojo production verification"
@@ -81,7 +166,9 @@ jobs:
             echo "| Field | Value |"
             echo "| --- | --- |"
             echo "| Target | \`$PRODUCTION_URL\` |"
-            echo "| Expected SHA | \`${EXPECTED_SHA:-(not asserted)}\` |"
+            echo "| Expected SHA (source) | \`${EXPECTED_SHA:-(not asserted)}\` (${EXPECTED_SOURCE:-none}) |"
+            echo "| Served SHA | \`${ACTUAL_SHA:-unknown}\` |"
+            echo "| SHA verdict | ${VERDICT:-(not asserted)} |"
             echo "| Trigger | \`${GITHUB_EVENT_NAME}\` |"
             echo ""
             echo "#### Smoke result"
@@ -94,6 +181,10 @@ jobs:
       - name: File or update the failure issue
         if: failure()
         uses: actions/github-script@v7
+        env:
+          VERDICT: ${{ steps.expected.outputs.verdict }}
+          EXPECTED_SHA: ${{ steps.expected.outputs.sha }}
+          ACTUAL_SHA: ${{ steps.expected.outputs.actual }}
         with:
           script: |
             const fs = require('fs');
@@ -109,6 +200,8 @@ jobs:
               `- Run: ${runUrl}`,
               `- Target: ${process.env.PRODUCTION_URL}`,
               `- Trigger: ${context.eventName}`,
+              `- Expected SHA: \`${process.env.EXPECTED_SHA || '(not asserted)'}\` — served: \`${process.env.ACTUAL_SHA || 'unknown'}\``,
+              `- SHA verdict: ${process.env.VERDICT || '(not asserted)'}`,
               '',
               'Triage with docs/ALERTS.md (severity model) and',
               'docs/DEPLOYMENT_RUNBOOK.md / docs/ROLLBACK.md (recovery).',
