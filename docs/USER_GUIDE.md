@@ -304,8 +304,10 @@ never crosses at the node; parallel links between the same two nodes then no
 longer fan out on that side. Each link also gets **From side offset** / **To
 side offset** (Routing group, in `-1 … 1`): a fractional shift along the side
 it attaches to (0 = centre, ±1 = the ends) for side ports and auto endpoints;
-corner ports ignore it. These fields only take effect while the anchor box is
-active for that node. The feature is experimental: documents without it render
+corner ports ignore it. A corner port (top-left and friends) is an exact pin:
+a side port still moves along its side into a slot under Distribute, a corner
+port never does, and Problems says so for each such link end. These fields
+only take effect while the anchor box is active for that node. The feature is experimental: documents without it render
 exactly as before, and `inspect_render` / Problems measure the drawn geometry
 either way.
 
