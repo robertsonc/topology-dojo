@@ -31,21 +31,21 @@ not merely a successful chat session. Every completed unit ends with:
 
 ## Authority model
 
-| Action                                                     | Implementation agent              | Human approval required                                 |
-| ---------------------------------------------------------- | --------------------------------- | ------------------------------------------------------- |
-| Read repository/docs and run local diagnostics             | Yes                               | No                                                      |
-| Create a feature branch/worktree                           | Yes                               | No                                                      |
-| Edit scoped source/docs/tests                              | Yes                               | No, after task scope is accepted                        |
-| Install declared development dependencies                  | Yes                               | Only if policy/cost requires it                         |
-| Commit and push a scoped branch                            | Yes                               | No, when explicitly authorized by the task              |
-| Open/update a draft PR                                     | Yes                               | No, when explicitly authorized by the task              |
-| Resolve review feedback in scope                           | Yes                               | Human selects ambiguous/product-changing feedback       |
-| Merge a PR                                                 | No                                | Yes                                                     |
-| Deploy to stable staging                                   | No by default                     | Yes or protected workflow approval                      |
-| Deploy to production                                       | Only on a quoted chat instruction | Yes, by dispatching `deploy-production.yml` from `main` |
-| Create/rotate secrets, OAuth Apps, or production resources | No                                | Yes                                                     |
-| Add/change a Durable Object migration                      | Plan and implement                | Explicit architecture and release approval              |
-| Learn/broaden a user preference or MCP instruction         | Propose only                      | Yes, under proposal 0003                                |
+| Action                                                     | Implementation agent              | Human approval required                              |
+| ---------------------------------------------------------- | --------------------------------- | ---------------------------------------------------- |
+| Read repository/docs and run local diagnostics             | Yes                               | No                                                   |
+| Create a feature branch/worktree                           | Yes                               | No                                                   |
+| Edit scoped source/docs/tests                              | Yes                               | No, after task scope is accepted                     |
+| Install declared development dependencies                  | Yes                               | Only if policy/cost requires it                      |
+| Commit and push a scoped branch                            | Yes                               | No, when explicitly authorized by the task           |
+| Open/update a draft PR                                     | Yes                               | No, when explicitly authorized by the task           |
+| Resolve review feedback in scope                           | Yes                               | Human selects ambiguous/product-changing feedback    |
+| Merge a PR to `main` (= the production release, 0007)      | Only on a quoted chat instruction | Yes — the merge IS the release decision              |
+| Deploy to stable staging                                   | No by default                     | Yes (`deploy-staging.yml` dispatch, any ref)         |
+| Dispatch `release.yml` (recovery, rollback, migration ack) | Only on a quoted chat instruction | Yes, by dispatching from `main` with the named input |
+| Create/rotate secrets, OAuth Apps, or production resources | No                                | Yes                                                  |
+| Add/change a Durable Object migration                      | Plan and implement                | Explicit architecture and release approval           |
+| Learn/broaden a user preference or MCP instruction         | Propose only                      | Yes, under proposal 0003                             |
 
 Terminal conditions such as “finish” or “do not stop” increase persistence, not
 authority. An agent does not infer permission to deploy, merge, rotate secrets,
@@ -249,7 +249,9 @@ The remote branch and commit are the durable handoff. Chat history is not.
   staging deploy.
 - Auth, Worker routing, storage, concurrency, and migration changes require the
   staging runbook.
-- Only the release operator executes protected deployment workflows.
+- Only the release operator merges to `main` (which releases to production
+  through `release.yml`) or dispatches `release.yml` for recovery, rollback,
+  or a migration acknowledgement.
 - Production follows `DEPLOYMENT_RUNBOOK.md`; incidents follow `ROLLBACK.md`.
 
 ## Context and token discipline
@@ -329,7 +331,9 @@ For a broad UI initiative, prefer this sequence:
 - Requires a numbered proposal or explicit migration section in the packet.
 - Includes compatibility and forward-recovery behavior.
 - Cannot use a version preview as validation.
-- Requires isolated full staging deploy, smoke, and human release approval.
+- Requires isolated full staging deploy, smoke, and human release approval:
+  the merge alone does not release it — `release.yml` holds a migration
+  candidate until a human dispatches it with the typed `apply_migration_tag`.
 - Must not merge until the deployment runbook identifies the exact migration
   sequence.
 
