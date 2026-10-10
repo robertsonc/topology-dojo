@@ -828,6 +828,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         y: z.number(),
         label: displayString(TEXT_LIMITS.label).optional(),
         sublabel: displayString(TEXT_LIMITS.sublabel).optional(),
+        labelWidth: z
+          .number()
+          .optional()
+          .describe(
+            'Wrap width (px) of the label block: the label wraps to 2 lines instead of being cut at 24 characters, and the sublabel wraps to 2 lines at this width (absent: ~26 characters). Clamped to 40–600.',
+          ),
         color: z.string().optional(),
         nodeId: z.string().optional().describe('Explicit id (else generated).'),
         meta: metaShape,
@@ -845,6 +851,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
             ...(a.sublabel !== undefined
               ? { sublabel: String(a.sublabel) }
+              : {}),
+            ...(a.labelWidth !== undefined
+              ? { labelWidth: Number(a.labelWidth) }
               : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.meta !== undefined ? { meta: a.meta as MetaMap } : {}),

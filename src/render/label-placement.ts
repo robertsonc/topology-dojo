@@ -10,6 +10,14 @@
  * distances, so pre-placement documents render unchanged.
  */
 import type { NodeConfig } from '../vendor/topology-ds.js';
+import type { BoundsRect } from '../api/geometry.js';
+import {
+  NODE_LABEL,
+  hasClassicLabel,
+  nodeLabelBlockSize,
+  nodeLabelDescent,
+  nodeLabelLines,
+} from './node-labels.js';
 
 export type LabelPlacement = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 
@@ -79,7 +87,9 @@ export function nodeLabelPos(n: NodeConfig): NodeLabelPos {
     anchor = 'end';
   }
   let dy: number;
-  if (north) dy = -(hh + 6) - (n.sublabel ? 13 : 0);
+  // North: lift the block by its descent (the extra label lines and the
+  // sublabel lines) so its last baseline sits just above the glyph.
+  if (north) dy = -(hh + 6) - nodeLabelDescent(nodeLabelLines(n));
   else if (south) dy = image ? hh + 14 : 24;
   else dy = 4;
   const x = n.x + finiteOr(n.labelOffsetX, dx);
@@ -88,4 +98,24 @@ export function nodeLabelPos(n: NodeConfig): NodeLabelPos {
     ? labelY
     : n.y + finiteOr(n.labelOffset, dy);
   return { x, y, anchor };
+}
+
+/**
+ * The rect of the classic label block (label + sublabel lines at their real
+ * wrapped width and line count), or null for nodes that draw their own label
+ * or have none. Metrics come from `render/node-labels`; the baseline and
+ * anchor from `nodeLabelPos`. The box starts `NODE_LABEL.ascent` above the
+ * first baseline and extends from the anchor per text-anchor.
+ */
+export function nodeLabelRect(n: NodeConfig): BoundsRect | null {
+  if (!hasClassicLabel(n)) return null;
+  const { w, h } = nodeLabelBlockSize(nodeLabelLines(n));
+  const lp = nodeLabelPos(n);
+  const x =
+    lp.anchor === 'start'
+      ? lp.x
+      : lp.anchor === 'end'
+        ? lp.x - w
+        : lp.x - w / 2;
+  return { x, y: lp.y - NODE_LABEL.ascent, w, h };
 }

@@ -179,6 +179,10 @@ const NODE_COMMON: FieldSpec[] = [
   // default distance (the classic below-node label sits at y + 24).
   { key: 'labelOffsetX', label: 'Label X', kind: 'number' },
   { key: 'labelOffset', label: 'Label Y', kind: 'number' },
+  // Wrap width (px) of the label block; blank = 24-char cut label and a
+  // sublabel wrapped at ~26 chars. The renderer clamps to [40, 600] (see
+  // render/node-labels).
+  { key: 'labelWidth', label: 'Label width', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   {
     key: 'meta',

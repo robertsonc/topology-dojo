@@ -10,9 +10,14 @@
  * DOM-free, so it runs in the browser, in Node, and behind the MCP server.
  */
 import type { Page, TopologyDocument } from '../pages/model.js';
-import type { NodeConfig, ZoneConfig } from '../vendor/topology-ds.js';
-import { drawsOwnLabel, nodeBounds, type BoundsRect } from './geometry.js';
+import type { NodeConfig } from '../vendor/topology-ds.js';
+import { nodeBounds, type BoundsRect } from './geometry.js';
+import { nodeLabelRect } from '../render/label-placement.js';
+import { zoneBox } from '../render/zone-box.js';
 import type { Problem } from './validate.js';
+
+/** The padded box the engine draws around a zone's members (render/zone-box). */
+export { zoneBox };
 
 /** Quantitative layout rules — the numbers the checker enforces and the agent should target. */
 export const LAYOUT_RULES = {
@@ -142,43 +147,22 @@ export function isWellLaidOut(doc: TopologyDocument): boolean {
 
 /* ── geometry helpers ─────────────────────────────────────────────── */
 
-/** A node's footprint: its drawn glyph plus the label that renders below it.
- * Types that draw their label inside the glyph (text boxes, callouts, basic
- * shapes, …) already size it in `nodeBounds`; widening them by the raw label
- * length would ignore their wrap width and invent overlaps (#253). */
+/** A node's footprint: its drawn glyph plus the classic label block at the
+ * placement actually drawn (label + sublabel lines, wrapped width — see
+ * render/node-labels), keeping `labelHeight` of clear space under the glyph
+ * as a floor. Types that draw their label inside the glyph (text boxes,
+ * callouts, basic shapes, …) already size it in `nodeBounds`; widening them
+ * by the raw label length would ignore their wrap width and invent overlaps
+ * (#253). */
 export function nodeFootprint(n: NodeConfig): BoundsRect {
   const b = nodeBounds(n);
-  if (drawsOwnLabel(n)) return b;
-  const label = typeof n.label === 'string' ? n.label : '';
-  const labelW = label ? label.length * LAYOUT_RULES.labelCharWidth : 0;
-  const halfW = Math.max(b.w / 2, labelW / 2);
-  const extraH = label ? LAYOUT_RULES.labelHeight : 0;
-  return { x: n.x - halfW, y: b.y, w: halfW * 2, h: b.h + extraH };
-}
-
-/** The padded box the engine draws around a zone's (recursive) member nodes. */
-function zoneBox(page: Page, zone: ZoneConfig): BoundsRect | null {
-  const ids = allZoneNodeIds(page, zone.id);
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  for (const id of ids) {
-    const n = page.nodes.find((m) => m.id === id);
-    if (!n) continue;
-    minX = Math.min(minX, n.x - 40);
-    minY = Math.min(minY, n.y - 30);
-    maxX = Math.max(maxX, n.x + 40);
-    maxY = Math.max(maxY, n.y + 30);
-  }
-  if (!isFinite(minX)) return null;
-  const pad = zone.padding ?? LAYOUT_RULES.zonePadding;
-  return {
-    x: minX - pad,
-    y: minY - pad,
-    w: maxX - minX + pad * 2,
-    h: maxY - minY + pad * 2,
-  };
+  const lr = nodeLabelRect(n);
+  if (!lr) return b;
+  const x0 = Math.min(b.x, lr.x),
+    y0 = Math.min(b.y, lr.y);
+  const x1 = Math.max(b.x + b.w, lr.x + lr.w);
+  const y1 = Math.max(b.y + b.h + LAYOUT_RULES.labelHeight, lr.y + lr.h);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 /** All node ids belonging to a zone and its descendant zones. */

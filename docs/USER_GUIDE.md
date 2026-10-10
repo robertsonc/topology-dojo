@@ -460,6 +460,16 @@ exports and public share views render it as a real clickable link) and
 managed/agent state, SaaS logo, switch ports, or text-box typography, fill,
 border, alignment, padding, and width.
 
+A node's sublabel wraps to up to two lines at about 26 characters (longer text
+is cut with an ellipsis on the second line); the label itself is cut at 24
+characters unless you set **Label width** (`labelWidth` in the API, px,
+40–600), which wraps both the label (two lines) and the sublabel at that
+width instead. Zones grow around their members' labels: the zone box
+encloses each member's icon and its label block at the placement actually
+used (a west-placed label with a long sublabel pulls the zone's left edge out
+to cover it), so `validate_topology` and `inspect_render` agree with the
+drawn rectangle.
+
 With a link selected, Properties exposes the link-specific fields described in
 [Create links](#create-links), plus **Swap endpoints** and **straighten** where
 applicable.
