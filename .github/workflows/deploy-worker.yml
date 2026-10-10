@@ -1,0 +1,209 @@
+name: Deploy Worker
+
+# The ONE deploy implementation (proposal 0007). Called by release.yml (the
+# staging rehearsal and the production deploy of every release) and by
+# deploy-staging.yml (manual staging/UAT deploys). Nothing else runs
+# `wrangler deploy` for this project.
+#
+# The body is the pre-0007 deploy job, unchanged in substance: check out the
+# exact SHA, build, `check-wrangler-env.mjs`, read the migration tags,
+# `wrangler deploy`, capture Cloudflare's version id, then the credential-free
+# smoke with `--sha` so the deploy is failed if the origin does not serve the
+# commit we just published (DEPLOYMENT_RUNBOOK.md invariant 7).
+#
+# Secrets: this workflow reads CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID
+# from the GitHub Environment named by `environment_name` (staging and
+# production each hold their own scoped token — proposal 0004, decision 3).
+# Environment-scoped secrets resolve only inside a job that declares that
+# environment, which is this job, not the caller's; so callers must use
+# `secrets: inherit` — an explicit `secrets:` map would be evaluated in the
+# caller's environment-less job and come back empty. The call is intra-repo
+# at the same commit, so inheriting widens nothing the caller did not
+# already have.
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        description: GitHub Environment to deploy under (staging | production).
+        required: true
+        type: string
+      wrangler_env:
+        description: >-
+          Wrangler environment: 'staging' for env.staging, '' (empty) for the
+          top-level production config.
+        required: true
+        type: string
+      sha:
+        description: The exact, already-resolved commit SHA to deploy.
+        required: true
+        type: string
+      smoke_base_url:
+        description: Public origin of the deployed Worker, for the smoke run.
+        required: true
+        type: string
+      expect_workspace_disabled:
+        description: >-
+          Assert the workspace_disabled (503) contract in smoke instead of
+          the normal 401 (bootstrap deploys with WORKSPACE_ENABLED=false).
+        required: false
+        type: boolean
+        default: false
+      extra_vars:
+        description: >-
+          Optional space-separated KEY:VALUE tokens appended as discrete
+          `wrangler deploy --var` overrides (staging game-day drills only).
+          A `*_ENABLED:false` token also flips the matching smoke contract
+          to its disabled shape. Each token must match
+          ^[A-Z][A-Z0-9_]*:[A-Za-z0-9_.-]*$ or the deploy refuses.
+        required: false
+        type: string
+        default: ''
+    outputs:
+      deployed:
+        description: "'true' once `wrangler deploy` succeeded (smoke may still fail)."
+        value: ${{ jobs.deploy.outputs.deployed }}
+      version_id:
+        description: Cloudflare Worker version id captured from `wrangler deploy`.
+        value: ${{ jobs.deploy.outputs.version_id }}
+      migration_tags:
+        description: Migration tags in the deployed config, comma-separated.
+        value: ${{ jobs.deploy.outputs.migration_tags }}
+      smoke_json:
+        description: The one-line JSON summary from scripts/smoke.mjs.
+        value: ${{ jobs.deploy.outputs.smoke_json }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ inputs.smoke_base_url }}
+    outputs:
+      deployed: ${{ steps.collect.outputs.deployed }}
+      version_id: ${{ steps.collect.outputs.version_id }}
+      migration_tags: ${{ steps.migrations.outputs.tags }}
+      smoke_json: ${{ steps.collect.outputs.smoke_json }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Wrangler env isolation check
+        run: node scripts/check-wrangler-env.mjs
+      - name: Read migration tags
+        id: migrations
+        env:
+          WRANGLER_ENV: ${{ inputs.wrangler_env }}
+        run: |
+          TAGS=$(node --input-type=module -e '
+            import { parseWranglerJsonc } from "./scripts/check-wrangler-env.mjs";
+            import { readFileSync } from "node:fs";
+            const cfg = parseWranglerJsonc(readFileSync("wrangler.jsonc", "utf8"));
+            const env = process.env.WRANGLER_ENV;
+            const section = env ? cfg.env?.[env] : cfg;
+            console.log((section?.migrations ?? []).map((m) => m.tag).join(","));
+          ')
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+      # Every dynamic value is passed through `env:` and appended as a
+      # discrete argument — never interpolated into the script text — because
+      # `sha` and `extra_vars` ultimately originate from workflow_dispatch
+      # inputs. `--env=""` (not a bare `wrangler deploy`) is required for
+      # production: Wrangler warns that multiple environments are defined in
+      # wrangler.jsonc (env.staging exists alongside the top-level config)
+      # and refuses to guess which one a plain `wrangler deploy` means. An
+      # explicit empty-string environment targets the top-level (production)
+      # config (proposal 0004 packet D1's verified behavior).
+      - name: Deploy
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SHA: ${{ inputs.sha }}
+          WRANGLER_ENV: ${{ inputs.wrangler_env }}
+          EXTRA_VARS: ${{ inputs.extra_vars }}
+        run: |
+          set -o pipefail
+          ARGS=(--env="$WRANGLER_ENV" --var "GIT_SHA:$SHA")
+          for token in $EXTRA_VARS; do
+            if [[ ! "$token" =~ ^[A-Z][A-Z0-9_]*:[A-Za-z0-9_.-]*$ ]]; then
+              echo "::error::refusing extra_vars token '$token' (expected KEY:VALUE)"
+              exit 1
+            fi
+            ARGS+=(--var "$token")
+          done
+          npx wrangler deploy "${ARGS[@]}" | tee deploy-output.txt
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+      - name: Smoke test
+        id: smoke
+        env:
+          SHA: ${{ inputs.sha }}
+          BASE_URL: ${{ inputs.smoke_base_url }}
+          EXPECT_WORKSPACE_DISABLED: ${{ inputs.expect_workspace_disabled }}
+          EXTRA_VARS: ${{ inputs.extra_vars }}
+        run: |
+          set -o pipefail
+          ARGS=(--sha "$SHA" --wait-live 180 --json)
+          if [ "$EXPECT_WORKSPACE_DISABLED" = "true" ]; then
+            ARGS+=(--expect-workspace-disabled)
+          fi
+          # A drill that disabled a feature via extra_vars must assert the
+          # disabled contract (503) instead of the enabled one (401).
+          for token in $EXTRA_VARS; do
+            case "$token" in
+              WORKSPACE_ENABLED:false) ARGS+=(--expect-workspace-disabled) ;;
+              PROFILES_ENABLED:false) ARGS+=(--expect-profiles-disabled) ;;
+              ANALYTICS_ENABLED:false) ARGS+=(--expect-analytics-disabled) ;;
+            esac
+          done
+          node scripts/smoke.mjs "$BASE_URL" "${ARGS[@]}" | tee smoke-output.txt
+      - name: Collect outputs
+        id: collect
+        if: always()
+        env:
+          DEPLOYED: ${{ steps.deploy.outputs.deployed }}
+        run: |
+          VERSION_ID=$(grep -oE 'Current Version ID: [0-9a-f-]+' deploy-output.txt 2>/dev/null | tail -n 1 | awk '{print $4}' || true)
+          SMOKE_JSON=$(tail -n 1 smoke-output.txt 2>/dev/null || true)
+          {
+            echo "deployed=${DEPLOYED:-false}"
+            echo "version_id=${VERSION_ID}"
+            echo "smoke_json=${SMOKE_JSON}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Write deployment summary
+        if: always()
+        env:
+          SHA: ${{ inputs.sha }}
+          ENVIRONMENT_NAME: ${{ inputs.environment_name }}
+          BASE_URL: ${{ inputs.smoke_base_url }}
+          ACTOR: ${{ github.actor }}
+          MIGRATION_TAGS: ${{ steps.migrations.outputs.tags }}
+          VERSION_ID: ${{ steps.collect.outputs.version_id }}
+          EXPECT_WORKSPACE_DISABLED: ${{ inputs.expect_workspace_disabled }}
+          EXTRA_VARS: ${{ inputs.extra_vars }}
+        run: |
+          {
+            echo "### Topology Dojo deploy — \`$ENVIRONMENT_NAME\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Commit SHA | \`$SHA\` |"
+            echo "| Origin | \`$BASE_URL\` |"
+            echo "| Actor | \`$ACTOR\` |"
+            echo "| Cloudflare version id | \`${VERSION_ID:-(not captured)}\` |"
+            echo "| Migration tags | \`$MIGRATION_TAGS\` |"
+            echo "| expect_workspace_disabled | \`$EXPECT_WORKSPACE_DISABLED\` |"
+            echo "| extra_vars | \`${EXTRA_VARS:-(none)}\` |"
+            echo ""
+            echo "#### Smoke result"
+            echo ""
+            echo '```json'
+            tail -n 1 smoke-output.txt 2>/dev/null || echo "(smoke did not run)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -53,7 +53,12 @@ flowchart TD
 ## Immediate containment
 
 1. Declare the incident and assign an incident owner.
-2. Stop further deployments and staging promotions.
+2. Freeze releases: open an issue labelled `release-freeze` (authored by the
+   repository owner). `release.yml`'s `guard` then refuses every push to
+   `main` and every no-input dispatch until it is closed; only explicit
+   `recovery_sha` / `rollback_to_version` / `apply_migration_tag` dispatches
+   — the incident response itself — bypass it. Do not merge unrelated PRs
+   during the freeze.
 3. Record environment, source SHA, Cloudflare deployment/version id, migration
    tags, feature flags, first error time, and affected surfaces.
 4. Preserve logs and user reports before changing the active deployment.
@@ -76,12 +81,26 @@ Use this only when all of the following are true:
 
 Procedure:
 
-1. Identify the last known-good compatible deployment.
+1. Identify the last known-good compatible deployment: the `release.yml` run
+   that deployed it records both its **Cloudflare version id** and its
+   **source SHA** in the run summary (and stamps them on the GitHub
+   Deployment). The `production-smoke` issue filed by a failed release names
+   the previously served SHA as the recovery target.
 2. Compare its migration tag, bindings, variables, and RPC/storage contracts
    with the active release.
-3. Use the protected production recovery workflow or Cloudflare rollback
-   control to select that exact version.
-4. Record the actor, target version, reason, and source SHA.
+3. Dispatch `release.yml` from `main` with `rollback_to_version=<that version
+id>` and `recovery_sha=<that SHA>` (plus a `reason`). This is the routine
+   stateless rollback: `wrangler rollback <id>` in the `production`
+   environment, then smoke with `--sha <that SHA>`. The workflow refuses it
+   unless the guard classifies that build as `routine` against production
+   (its migrations array equals production's) — a rollback never crosses a
+   migration boundary; if it would, you are in the forward-recovery case
+   below. Nothing ever rolls back unattended.
+   Alternative when the version id is unknown: `recovery_sha=<that SHA>`
+   alone redeploys the same commit forward through CI and staging (slower,
+   same end state).
+4. Record the actor, target version, reason, and source SHA (the run summary
+   carries all four).
 5. Run the production smoke checklist.
 6. Observe error rate, OAuth failures, and storage errors.
 7. Open a follow-up issue for the original defect and the prevention action.
@@ -105,7 +124,11 @@ Procedure:
 1. Set `WORKSPACE_ENABLED=false` in a compatible candidate.
 2. Preserve the `TopologyDocument` export, `TOPOLOGY_DOCUMENT` binding, and all
    migration history through `v3`.
-3. Deploy the candidate forward using the protected production workflow.
+3. Deploy the candidate forward: merge its PR (a flag-only change is a
+   routine release and deploys on merge — the `release-freeze` issue must
+   be closed first, or dispatch `release.yml` with `recovery_sha=<the merge
+SHA>`, which bypasses the freeze). A compatible forward build never
+   appends a migration tag, so the guard classifies it `routine`.
 4. Verify existing editor, login, private-draft MCP, and share paths.
 5. Determine whether any users created or migrated workspaces while the feature
    was active.
@@ -114,7 +137,8 @@ Procedure:
 7. Build and validate the repair against a copy/fixture in staging.
 8. Deploy the repair forward with the feature disabled.
 9. Run targeted recovery verification.
-10. Re-enable only after staging replay and production approval.
+10. Re-enable only after staging replay and the owner's decision to merge the
+    re-enable PR (that merge is the release).
 
 Never remove `v3`, rename `TopologyDocument`, or point its binding at another
 script as an emergency shortcut.

@@ -12,10 +12,16 @@ the operational companion to
    intended environment.
 3. `wrangler versions upload` is not a preview mechanism for this Worker.
 4. Production deployment starts only after required CI and an explicit human
-   release decision: the dispatch of `deploy-production.yml` from `main`. The
-   `production` environment's required-reviewer gate was removed 2026-10-09
-   (a single owner was approving their own dispatch); its deployment-branch
-   rule (`main` only) remains.
+   release decision: **merging a pull request into `main`** (proposal 0007,
+   "merge is the release"). `release.yml` then runs CI on the merge SHA,
+   rehearses it on staging, and deploys it to production — unattended for a
+   routine release; **held** for a release that would apply a new Durable
+   Object migration until a human dispatches `release.yml` with the typed
+   `apply_migration_tag`. The `production` environment's required-reviewer
+   gate was removed 2026-10-09 (a single owner was approving their own
+   dispatch); its deployment-branch rule (`main` only) remains. No agent
+   merges to `main` or dispatches `release.yml` without an explicit, quoted
+   chat instruction (`HANDOFF.md`).
 5. Migration entries are append-only. Never delete, rename, reorder, or reuse a
    tag after deployment.
 6. The deployed commit SHA and smoke result are recorded for every environment.
@@ -180,7 +186,9 @@ Review the effective configuration before continuing:
 Dispatch [`deploy-staging.yml`](../.github/workflows/deploy-staging.yml)
 (`workflow_dispatch`, optional `ref` input — defaults to the ref the run was
 dispatched on). It re-runs the `ci.yml` `check` job against the resolved
-commit, then deploys. The underlying command is:
+commit, then deploys through the shared
+[`deploy-worker.yml`](../.github/workflows/deploy-worker.yml). The
+underlying command is:
 
 ```bash
 npx wrangler deploy --env staging
@@ -197,14 +205,20 @@ required checks pass.
 
 ## Routine staging deployment
 
+Staging is deployed two ways since proposal 0007: automatically by
+`release.yml` as the rehearsal step of every release (the exact merge SHA,
+before production), and manually for UAT of any ref:
+
 1. Dispatch `deploy-staging.yml` with the candidate `ref` (branch, tag, or
    SHA).
-2. Confirm no other UAT candidate currently owns staging.
+2. Confirm no other UAT candidate — or a release rehearsal — currently owns
+   staging (`GET <staging>/healthz` → `sha`).
 3. Require a green CI check for that SHA (the workflow re-runs `ci.yml`
    itself before deploying).
 4. Deploy with the `staging` GitHub Environment and the
-   `topology-dojo-staging` concurrency group (a newer dispatch cancels a
-   queued/running older one).
+   `topology-dojo-staging` concurrency group (runs **queue** behind each
+   other — a manual dispatch never cancels a release rehearsal; whichever
+   lands last owns staging).
 5. Record the active SHA in the workflow run summary.
 6. Run automated HTTP smoke tests.
 7. Run browser/MCP/workspace smoke when the change touches auth, Worker routes,
@@ -214,25 +228,55 @@ required checks pass.
 Staging is a mutable release-candidate environment. Test reports are invalid if
 their recorded SHA does not match the current deployment.
 
-## Production deployment without a new migration
+## Production deployment without a new migration (routine release)
 
-1. Confirm the exact SHA passed CI and staging smoke.
-2. Review the diff from the currently deployed production SHA.
-3. Confirm no new migration tag appears.
-4. Dispatch [`deploy-production.yml`](../.github/workflows/deploy-production.yml)
-   from `main` (its `guard` job rejects any other ref unless an explicit
-   `recovery_sha` is supplied). The dispatch is the release decision; no
-   environment approval follows. An agent may run the dispatch only on an
-   explicit human instruction quoted in the session.
-5. The workflow re-runs `ci.yml`, then deploys with
-   `wrangler deploy --env=""` (the explicit empty-string environment is
-   required once `env.staging` exists — a bare `wrangler deploy` only warns
-   and refuses to guess).
-6. Run production-safe smoke checks.
-7. Observe error rate and auth failures for the agreed window.
+1. Open a pull request; require green `CI / check` and `CI / e2e` (branch
+   protection enforces this, with no bypass).
+2. Review the diff from the currently deployed production SHA
+   (`GET https://topology-dojo.harnessed.cloud/healthz` → `sha`).
+3. Confirm no new migration tag appears (if one does, this is a migration
+   release — next section).
+4. **Merge the PR.** The merge is the release decision; nothing else is
+   clicked. An agent merges only on an explicit human instruction quoted in
+   the session.
+5. [`release.yml`](../.github/workflows/release.yml) runs on the push to
+   `main` (docs-only merges are ignored): `guard` (main-only, release
+   freeze) → `resolve` → `check` (`ci.yml`) ‖ `migration-guard`
+   (`scripts/migration-guard.mjs` classifies the candidate as `routine`) →
+   `stage` (staging deploy + smoke of the merge SHA) → `production`
+   (`wrangler deploy --env=""` — the explicit empty-string environment is
+   required once `env.staging` exists — then smoke with `--sha`) → `record`.
+6. Read the run summary (deployed SHA before/after, migration tags, release
+   class, both smoke results, Cloudflare version id) and the "Released to
+   production" comment on the PR.
+7. The hourly `production-verify` run asserts `/healthz` serves the recorded
+   SHA from then on; observe error rate and auth failures for the agreed
+   window.
 8. Record the result and update the deployment inventory.
 
-If smoke or monitoring fails, follow [`ROLLBACK.md`](ROLLBACK.md).
+If smoke or monitoring fails, follow [`ROLLBACK.md`](ROLLBACK.md): the run
+summary and the `production-smoke` issue name the previous SHA as the
+recovery target.
+
+### Recovery and rollback dispatches
+
+`release.yml` is also the only place recovery runs, always by explicit
+`workflow_dispatch` from `main` (the `guard` job rejects any other ref for
+every event):
+
+- **Forward recovery** — `recovery_sha=<main-history commit>`: deploys that
+  commit through the full CI → staging → production path. Bypasses an open
+  `release-freeze` issue (it _is_ the incident response).
+- **Stateless rollback** — `rollback_to_version=<Cloudflare version id>` +
+  `recovery_sha=<the SHA that version was built from>` (both are on the
+  summary of the run that deployed it): `wrangler rollback <id>` in the
+  `production` environment, then smoke with `--sha <that SHA>`. Refused
+  unless `migration-guard` classifies that build as `routine` against
+  production (same migrations array) — a rollback never crosses a migration
+  boundary. Skips CI and staging.
+- `assume_deployed_sha` — only when `/healthz` is unreadable; see the
+  migration section.
+- `reason` — free text, recorded in the summary (and the rollback message).
 
 ## Production deployment with a new migration
 
@@ -241,7 +285,44 @@ If smoke or monitoring fails, follow [`ROLLBACK.md`](ROLLBACK.md).
 > configuration. The `v3`–`v5` sections below are completed rollout examples,
 > retained because they show the required three-gate pattern. For a new tag,
 > copy the pattern with the new class/binding/flag; do not repeat a completed
-> bootstrap or treat these examples as pending work.
+> bootstrap or treat these examples as pending work. Where an example says
+> "dispatch `deploy-production.yml`", read the proposal-0007 equivalent below:
+> merge, then dispatch `release.yml` with `apply_migration_tag`.
+
+### How a migration release runs (proposal 0007)
+
+A merge whose `wrangler.jsonc` appends a migration tag is **never released
+unattended**. `release.yml`'s `migration-guard` job reads the SHA production
+serves from `/healthz`, diffs that commit's `migrations` array against the
+candidate's, and:
+
+- `migration` (production's array is a strict prefix) → the run goes red at
+  `migration-guard` ("HELD"), the merged PR gets a comment naming the exact
+  ack, and neither staging nor production is touched. **Release it** by
+  dispatching `release.yml` from `main` with `apply_migration_tag` set to
+  exactly the new tag(s), comma-joined in order (`v6`, or `v6,v7`). The
+  dispatch is the migration release decision; the typed value is the ack.
+- `forbidden` (anything but a strict extension — a tag removed, renamed,
+  reordered, re-classed, or reused) → refused with the first differing index
+  named. The only exits are a PR restoring the array, or a `recovery_sha` of
+  the last `main` commit whose array equals production's.
+- `unknown` (production `/healthz` was unreadable and the dispatch supplied
+  `assume_deployed_sha`) → the diff is advisory (`assumed_class` /
+  `assumed_new_tags` in the summary); release requires the same dispatch to
+  also carry `apply_migration_tag` equal to the assumed new tags, or `none`
+  when the assumed class is routine.
+
+Bootstrap deploys that ship `WORKSPACE_ENABLED=false` additionally pass
+`expect_workspace_disabled=true` so the production smoke asserts the 503
+contract. Because a push-triggered run cannot carry that input, release a
+workspace-disabled build as: open a `release-freeze` issue → merge (the push
+run stops at `guard`) → dispatch `release.yml` with `recovery_sha=<merge
+SHA>`, `expect_workspace_disabled=true` and, for a migration,
+`apply_migration_tag` → close the freeze. Flag activations (Gate C) are
+routine releases: a one-line `wrangler.jsonc` PR, merged. (`release.yml` has
+no `expect_profiles_disabled` / `expect_analytics_disabled` inputs; a
+production release that disables one of those flags lands but its own smoke
+goes red on the 503 — a known gap, see `GAME_DAY.md` P-7/P-9.)
 
 ### Gate A — staging proof
 
@@ -259,9 +340,10 @@ The completed `v3` rollout deployed workspace entry points disabled:
 WORKSPACE_ENABLED=false
 ```
 
-Dispatch `deploy-production.yml` with its `expect_workspace_disabled` input
-set to `true` so the workflow's smoke step asserts the 503
-`workspace_disabled` contract instead of the normal 401.
+Merge, then dispatch `release.yml` with `apply_migration_tag=v3` and
+`expect_workspace_disabled=true` so the workflow's smoke step asserts the 503
+`workspace_disabled` contract instead of the normal 401 (historically: a
+`deploy-production.yml` dispatch with `expect_workspace_disabled`).
 
 The bundle must still export `TopologyDocument`, bind `TOPOLOGY_DOCUMENT`, and
 include `v3`. After deployment:
@@ -377,10 +459,15 @@ is reachable, `503` naming the failing binding otherwise). It requires a
 session cookie, so it stays a manual/UAT check; the unauthenticated smoke
 covers only its auth gate (`readyz-unauth`).
 
-Production can be verified on demand — and is verified daily on a schedule —
-by [`production-verify.yml`](../.github/workflows/production-verify.yml)
-(optional `expected_sha` input for deployed-SHA-mismatch detection; failures
-file a deduplicated `production-smoke` issue that a later green run closes).
+Production can be verified on demand — and is verified hourly on a schedule —
+by [`production-verify.yml`](../.github/workflows/production-verify.yml).
+With no `expected_sha` input it asserts `/healthz` serves the SHA recorded on
+the newest successful `production` GitHub Deployment (stamped by
+`release.yml`'s `record` job with the SHA actually deployed, so recovery and
+rollback deploys verify correctly); a `/healthz` SHA belonging to a
+deployment whose run died after `wrangler deploy` is reported as an
+"unrecorded pipeline deploy", anything else as out-of-band. Failures file a
+deduplicated `production-smoke` issue that a later green run closes.
 Staging drills can temporarily override feature flags per deploy through
 `deploy-staging.yml`'s `workspace_enabled` / `profiles_enabled` /
 `analytics_enabled` inputs (staging-only; production flag changes are always

@@ -1,0 +1,722 @@
+name: Release
+
+# The single production authority (proposal 0007 — "merge is the release";
+# docs/proposals/0007-merge-is-the-release.md). Merging a PR to `main` IS the
+# human release decision: every push to `main` that touches anything but
+# docs runs CI on the merge SHA, rehearses the exact build on staging, and —
+# when the Durable Object migration guard classifies the candidate as
+# `routine` — deploys it to production and smoke-tests it. There is no
+# second approval click (the `production` environment's required-reviewer
+# gate was removed 2026-10-09: a single owner was approving their own
+# dispatch, and the agent acts under the owner's GitHub identity).
+#
+# A release that would APPLY a new migration tag is never unattended: the
+# guard holds it (`release_class: migration`) until a human dispatches this
+# workflow with `apply_migration_tag` equal to exactly the new tag(s). A
+# candidate whose migrations array is not a strict extension of
+# production's (`forbidden`) never deploys anywhere, staging included.
+#
+# Recovery stays explicit and named: `recovery_sha` (forward recovery of a
+# main-history commit — docs/ROLLBACK.md) and `rollback_to_version`
+# (stateless Cloudflare rollback to a version id recorded by an earlier run,
+# refused across a migration boundary). Neither runs unattended.
+#
+# `guard` enforces `refs/heads/main` for EVERY event, so no dispatch from
+# another ref can ever run that ref's copy of this file with production
+# secrets. Free-text inputs are only ever read through `env:`.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+    inputs:
+      recovery_sha:
+        description: >-
+          Full SHA of a commit on main's history to deploy instead of the
+          tip (forward recovery, docs/ROLLBACK.md). With
+          rollback_to_version, the SHA of the build that version was made
+          from (both are on that run's summary). Empty = tip of main.
+        required: false
+        type: string
+        default: ''
+      apply_migration_tag:
+        description: >-
+          Typed acknowledgement of a MIGRATION release: the exact new
+          migration tag(s) the candidate appends, comma-joined in order
+          (e.g. "v6" or "v6,v7"). "none" acknowledges a routine release
+          when the deployed config had to be assumed. Leave empty for a
+          routine release.
+        required: false
+        type: string
+        default: ''
+      expect_workspace_disabled:
+        description: >-
+          Assert the workspace_disabled (503) contract in the production
+          smoke instead of the normal 401 (a WORKSPACE_ENABLED=false
+          bootstrap deploy only).
+        required: false
+        type: boolean
+        default: false
+      assume_deployed_sha:
+        description: >-
+          ONLY when production /healthz is unreadable: the SHA production
+          is believed to serve. The guard then reports release_class
+          "unknown" and requires apply_migration_tag to match its assumed
+          diff ("none" when routine).
+        required: false
+        type: string
+        default: ''
+      rollback_to_version:
+        description: >-
+          Cloudflare Worker version id to `wrangler rollback` production to
+          (from the summary of the run that deployed the known-good build).
+          Requires recovery_sha = that build's SHA; refused when production's
+          migrations differ from that build's. Skips CI and staging.
+        required: false
+        type: string
+        default: ''
+      reason:
+        description: Free-text reason, recorded in the run summary.
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# No cancel-in-progress: a running release must finish (or be intervened on
+# by a human) rather than be silently superseded mid-flight. GitHub keeps at
+# most one PENDING run per group — a burst of merges leaves the newest one
+# queued (it contains the older ones' commits) and cancels older pending ones.
+concurrency:
+  group: topology-dojo-production
+  cancel-in-progress: false
+
+env:
+  # A private instance can point this at a reviewer-gated environment (e.g.
+  # `production-migration`) for migration releases without touching the job
+  # graph: every production deploy below reads the environment name from
+  # the `resolve` job, which copies this one constant. Today routine and
+  # migration releases use the same `production` environment (deployment
+  # branches `main` only, no reviewers); the typed `apply_migration_tag` ack
+  # is the migration gate.
+  PRODUCTION_ENVIRONMENT: production
+  PRODUCTION_URL: https://topology-dojo.harnessed.cloud
+  STAGING_URL: https://topology-dojo-staging.robertson-corey.workers.dev
+
+jobs:
+  # No secrets. Fails the run before anything is checked out unless the
+  # triggering ref is `main`, the inputs are well-formed, and no release
+  # freeze is in force.
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Enforce main-only for every event
+        env:
+          GH_REF: ${{ github.ref }}
+        run: |
+          if [ "$GH_REF" != "refs/heads/main" ]; then
+            echo "::error::release.yml only runs from refs/heads/main (got '$GH_REF'). A recovery deploy is a dispatch FROM main WITH recovery_sha (docs/ROLLBACK.md)."
+            exit 1
+          fi
+      - name: Validate dispatch inputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RECOVERY_SHA: ${{ inputs.recovery_sha }}
+          APPLY_MIGRATION_TAG: ${{ inputs.apply_migration_tag }}
+          ASSUME_DEPLOYED_SHA: ${{ inputs.assume_deployed_sha }}
+          ROLLBACK_TO_VERSION: ${{ inputs.rollback_to_version }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          if [ -n "$RECOVERY_SHA" ] && [[ ! "$RECOVERY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            fail "recovery_sha must be a full 40-hex commit SHA"
+          fi
+          if [ -n "$ASSUME_DEPLOYED_SHA" ] && [[ ! "$ASSUME_DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            fail "assume_deployed_sha must be a full 40-hex commit SHA"
+          fi
+          if [ -n "$APPLY_MIGRATION_TAG" ] && [[ ! "$APPLY_MIGRATION_TAG" =~ ^[A-Za-z0-9_.,[:space:]-]+$ ]]; then
+            fail "apply_migration_tag may only contain tag characters and commas"
+          fi
+          if [ -n "$ROLLBACK_TO_VERSION" ]; then
+            if [[ ! "$ROLLBACK_TO_VERSION" =~ ^[0-9a-f-]{8,64}$ ]]; then
+              fail "rollback_to_version must be a Cloudflare version id"
+            fi
+            if [ -z "$RECOVERY_SHA" ]; then
+              fail "rollback_to_version requires recovery_sha = the SHA that version was built from (both are on that run's summary)"
+            fi
+            if [ -n "$APPLY_MIGRATION_TAG" ] && [ "$APPLY_MIGRATION_TAG" != "none" ]; then
+              fail "a rollback never applies a migration: leave apply_migration_tag empty"
+            fi
+          fi
+          echo "inputs OK ($EVENT_NAME)"
+      # A freeze is an OPEN issue labelled `release-freeze` authored by the
+      # repository owner (docs/ROLLBACK.md "Immediate containment"). Pushes
+      # and no-input dispatches refuse while one exists; a dispatch that
+      # names a recovery_sha, apply_migration_tag, or rollback_to_version is
+      # itself the incident response and bypasses the freeze.
+      - name: Refuse during a release freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          EVENT_NAME: ${{ github.event_name }}
+          RECOVERY_SHA: ${{ inputs.recovery_sha }}
+          APPLY_MIGRATION_TAG: ${{ inputs.apply_migration_tag }}
+          ROLLBACK_TO_VERSION: ${{ inputs.rollback_to_version }}
+        run: |
+          bypass=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && { [ -n "$RECOVERY_SHA" ] || [ -n "$APPLY_MIGRATION_TAG" ] || [ -n "$ROLLBACK_TO_VERSION" ]; }; then
+            bypass=true
+          fi
+          freezes=$(gh api "repos/$REPO/issues?state=open&labels=release-freeze&creator=$OWNER&per_page=100" \
+            --jq '[.[] | select(.pull_request == null) | "#\(.number) \(.title)"] | join("; ")')
+          if [ -n "$freezes" ]; then
+            if [ "$bypass" = "true" ]; then
+              echo "::warning::release freeze in force ($freezes) — bypassed by an explicit recovery/migration dispatch"
+            else
+              echo "::error::release freeze in force: $freezes. Close the issue to resume releases, or dispatch with recovery_sha / apply_migration_tag / rollback_to_version for an explicit incident deploy."
+              exit 1
+            fi
+          else
+            echo "no release freeze"
+          fi
+
+  # Resolves the exact commit every later job checks out, builds, deploys
+  # and smoke-tests: github.sha on push; recovery_sha on a dispatch naming
+  # one; else the tip of main. The commit must be on main's history. Also
+  # copies the workflow-level constants into outputs, because reusable
+  # workflow calls (`with:`) cannot read the `env` context.
+  resolve:
+    needs: guard
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      production_environment: ${{ steps.constants.outputs.production_environment }}
+      production_url: ${{ steps.constants.outputs.production_url }}
+      staging_url: ${{ steps.constants.outputs.staging_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          RECOVERY_SHA: ${{ inputs.recovery_sha }}
+        run: |
+          git fetch --no-tags origin main
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$RECOVERY_SHA" ]; then
+            git cat-file -e "$RECOVERY_SHA^{commit}" 2>/dev/null || git fetch --no-tags origin "$RECOVERY_SHA"
+            SHA=$(git rev-parse --verify "$RECOVERY_SHA^{commit}")
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            SHA=$(git rev-parse --verify origin/main)
+          else
+            SHA="$EVENT_SHA"
+          fi
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$SHA is not on main's history; release.yml deploys main-history commits only"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "resolved $SHA"
+      - id: constants
+        run: |
+          {
+            echo "production_environment=$PRODUCTION_ENVIRONMENT"
+            echo "production_url=$PRODUCTION_URL"
+            echo "staging_url=$STAGING_URL"
+          } >> "$GITHUB_OUTPUT"
+
+  # Typecheck / test / lint / build / check-wrangler-env + the Playwright
+  # release gate, on the resolved SHA. Skipped for a rollback (the version
+  # being restored already passed these when it was released).
+  check:
+    needs: resolve
+    if: ${{ !inputs.rollback_to_version }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+
+  # No secrets; runs in parallel with `check`. Reads the SHA production
+  # serves from /healthz, fetches that commit's wrangler.jsonc, and classifies
+  # the candidate with scripts/migration-guard.mjs (routine | migration |
+  # forbidden | unknown). Fails (holding the release) unless `allowed`.
+  migration-guard:
+    needs: resolve
+    runs-on: ubuntu-latest
+    outputs:
+      deployed_sha: ${{ steps.healthz.outputs.deployed_sha }}
+      deployed_source: ${{ steps.healthz.outputs.deployed_source }}
+      release_class: ${{ steps.classify.outputs.release_class }}
+      new_tags: ${{ steps.classify.outputs.new_tags }}
+      assumed_class: ${{ steps.classify.outputs.assumed_class }}
+      assumed_new_tags: ${{ steps.classify.outputs.assumed_new_tags }}
+      deployed_tags: ${{ steps.classify.outputs.deployed_tags }}
+      candidate_tags: ${{ steps.classify.outputs.candidate_tags }}
+      allowed: ${{ steps.classify.outputs.allowed }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+      - name: Read the deployed SHA from production /healthz
+        id: healthz
+        env:
+          ASSUME_DEPLOYED_SHA: ${{ inputs.assume_deployed_sha }}
+        run: |
+          deployed=unknown
+          source=none
+          code=000
+          if response=$(curl -sS --max-time 20 -H 'accept: application/json' -w '\n%{http_code}' "$PRODUCTION_URL/healthz"); then
+            code=${response##*$'\n'}
+            body=${response%$'\n'*}
+            if [ "$code" = "200" ]; then
+              sha=$(printf '%s' "$body" | node -e '
+                let d = "";
+                process.stdin.on("data", (c) => (d += c)).on("end", () => {
+                  try { const j = JSON.parse(d); process.stdout.write(typeof j.sha === "string" ? j.sha : ""); } catch {}
+                });
+              ')
+              if [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+                deployed=$sha
+                source=healthz
+              fi
+            fi
+          fi
+          if [ "$source" = "healthz" ]; then
+            if [ -n "$ASSUME_DEPLOYED_SHA" ] && [ "$ASSUME_DEPLOYED_SHA" != "$deployed" ]; then
+              echo "::error::assume_deployed_sha ($ASSUME_DEPLOYED_SHA) conflicts with the live /healthz sha ($deployed); /healthz is readable, so do not assume"
+              exit 1
+            fi
+          elif [ -n "$ASSUME_DEPLOYED_SHA" ]; then
+            deployed=$ASSUME_DEPLOYED_SHA
+            source=assumed
+            echo "::warning::production /healthz unreadable (HTTP $code); using assume_deployed_sha=$deployed"
+          else
+            echo "::error::production /healthz did not return a 200 JSON body with a 40-hex sha (HTTP $code). Re-dispatch with assume_deployed_sha AND apply_migration_tag once you know what production serves."
+            exit 1
+          fi
+          {
+            echo "deployed_sha=$deployed"
+            echo "deployed_source=$source"
+          } >> "$GITHUB_OUTPUT"
+          echo "deployed=$deployed source=$source"
+      - name: Fetch the deployed commit's wrangler.jsonc
+        env:
+          DEPLOYED: ${{ steps.healthz.outputs.deployed_sha }}
+        run: |
+          git cat-file -e "$DEPLOYED^{commit}" 2>/dev/null || git fetch --no-tags origin "$DEPLOYED"
+          if ! git merge-base --is-ancestor "$DEPLOYED" origin/main; then
+            echo "::warning::deployed sha $DEPLOYED is not on origin/main's history"
+          fi
+          git show "$DEPLOYED:wrangler.jsonc" > deployed.jsonc
+      - name: Classify the release
+        id: classify
+        env:
+          DEPLOYED: ${{ steps.healthz.outputs.deployed_sha }}
+          SOURCE: ${{ steps.healthz.outputs.deployed_source }}
+          APPLY_MIGRATION_TAG: ${{ inputs.apply_migration_tag }}
+        run: |
+          set +e
+          node scripts/migration-guard.mjs \
+            --deployed deployed.jsonc --head wrangler.jsonc \
+            --ack "$APPLY_MIGRATION_TAG" \
+            --deployed-source "$SOURCE" --deployed-sha "$DEPLOYED"
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+      - name: Hold the release unless allowed
+        if: ${{ steps.classify.outputs.exit_code != '0' }}
+        env:
+          EXIT_CODE: ${{ steps.classify.outputs.exit_code }}
+          RELEASE_CLASS: ${{ steps.classify.outputs.release_class }}
+          REASON: ${{ steps.classify.outputs.reason }}
+        run: |
+          echo "::error::release ${RELEASE_CLASS}: $REASON"
+          exit "$EXIT_CODE"
+
+  # Staging rehearsal of the exact candidate on every release. A forbidden /
+  # unknown / held candidate never reaches staging either (the `if`). The
+  # job-level concurrency group serialises against manual deploy-staging.yml
+  # dispatches instead of racing them for the same Worker.
+  stage:
+    needs: [resolve, check, migration-guard]
+    if: ${{ !inputs.rollback_to_version && needs.migration-guard.outputs.allowed == 'true' }}
+    concurrency:
+      group: topology-dojo-staging
+      cancel-in-progress: false
+    uses: ./.github/workflows/deploy-worker.yml
+    with:
+      environment_name: staging
+      wrangler_env: staging
+      sha: ${{ needs.resolve.outputs.sha }}
+      smoke_base_url: ${{ needs.resolve.outputs.staging_url }}
+      expect_workspace_disabled: false
+    secrets: inherit
+
+  # Production. Routine and (typed-ack) migration releases both use the
+  # environment named by PRODUCTION_ENVIRONMENT above — see that comment for
+  # the one-line split a private instance can make.
+  production:
+    needs: [resolve, migration-guard, stage]
+    if: ${{ !inputs.rollback_to_version && needs.migration-guard.outputs.allowed == 'true' }}
+    uses: ./.github/workflows/deploy-worker.yml
+    with:
+      environment_name: ${{ needs.resolve.outputs.production_environment }}
+      wrangler_env: ''
+      sha: ${{ needs.resolve.outputs.sha }}
+      smoke_base_url: ${{ needs.resolve.outputs.production_url }}
+      expect_workspace_disabled: ${{ inputs.expect_workspace_disabled || false }}
+    secrets: inherit
+
+  # Stateless rollback (docs/ROLLBACK.md "Standard rollback"): only ever by
+  # explicit dispatch, only to a version whose build has the same migrations
+  # array as production (the guard classified recovery_sha as `routine`),
+  # then smoke-tested against that build's SHA. Never unattended.
+  rollback:
+    needs: [resolve, migration-guard]
+    if: ${{ inputs.rollback_to_version && needs.migration-guard.outputs.allowed == 'true' && needs.migration-guard.outputs.release_class == 'routine' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: ${{ needs.resolve.outputs.production_environment }}
+      url: ${{ needs.resolve.outputs.production_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Roll production back
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VERSION_ID: ${{ inputs.rollback_to_version }}
+          ACTOR: ${{ github.actor }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          set -o pipefail
+          npx wrangler rollback "$VERSION_ID" --env="" --yes \
+            --message "release.yml rollback by $ACTOR: ${REASON:-(no reason given)}" | tee rollback-output.txt
+      - name: Smoke test production
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          set -o pipefail
+          node scripts/smoke.mjs "$PRODUCTION_URL" --sha "$SHA" --wait-live 180 --json | tee smoke-output.txt
+      - name: Write rollback summary
+        if: always()
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+          VERSION_ID: ${{ inputs.rollback_to_version }}
+          ACTOR: ${{ github.actor }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          {
+            echo "### Topology Dojo production ROLLBACK"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Rolled back to version | \`$VERSION_ID\` |"
+            echo "| Build SHA | \`$SHA\` |"
+            echo "| Actor | \`$ACTOR\` |"
+            echo "| Reason | ${REASON:-(none)} |"
+            echo ""
+            echo "#### Smoke result"
+            echo ""
+            echo '```json'
+            tail -n 1 smoke-output.txt 2>/dev/null || echo "(smoke did not run)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Always runs. Writes the human-readable summary, tells every PR in the
+  # released range what happened, files/updates the deduplicated
+  # `production-smoke` issue when production serves a build whose smoke
+  # failed, and stamps the auto-created GitHub Deployment with the SHA that
+  # was actually deployed (a recovery/rollback deploy's SHA differs from the
+  # run's github.sha). The Deployments API is the machine-readable record;
+  # issue/PR comments are for humans only and are not trusted by anything.
+  record:
+    needs: [guard, resolve, check, migration-guard, stage, production, rollback]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha || github.sha }}
+          fetch-depth: 0
+      - name: Determine the outcome
+        id: outcome
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ROLLBACK_TO_VERSION: ${{ inputs.rollback_to_version }}
+          GUARD: ${{ needs.guard.result }}
+          RESOLVE: ${{ needs.resolve.result }}
+          CHECK: ${{ needs.check.result }}
+          MIGRATION_GUARD: ${{ needs.migration-guard.result }}
+          STAGE: ${{ needs.stage.result }}
+          PRODUCTION: ${{ needs.production.result }}
+          ROLLBACK: ${{ needs.rollback.result }}
+          RELEASE_CLASS: ${{ needs.migration-guard.outputs.release_class }}
+          ALLOWED: ${{ needs.migration-guard.outputs.allowed }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          DEPLOYED_BEFORE: ${{ needs.migration-guard.outputs.deployed_sha }}
+        run: |
+          status=failed
+          failed_job=""
+          if [ -n "$ROLLBACK_TO_VERSION" ]; then
+            if [ "$ROLLBACK" = "success" ]; then status=rolled-back; else failed_job=rollback; fi
+          elif [ "$PRODUCTION" = "success" ]; then
+            status=released
+          elif [ "$MIGRATION_GUARD" = "failure" ] && [ "$RELEASE_CLASS" = "forbidden" ]; then
+            status=forbidden; failed_job=migration-guard
+          elif [ "$MIGRATION_GUARD" = "failure" ] && [ "$ALLOWED" != "true" ] && [ -n "$RELEASE_CLASS" ]; then
+            status=held; failed_job=migration-guard
+          else
+            for job in guard resolve check migration-guard stage production; do
+              var=$(echo "$job" | tr '[:lower:]-' '[:upper:]_')
+              result=${!var}
+              if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then failed_job=$job; break; fi
+            done
+            [ -n "$failed_job" ] || failed_job=unknown
+          fi
+          # What production serves now (post-run), to tell "deploy landed,
+          # smoke failed" apart from "nothing changed".
+          after=unknown
+          if body=$(curl -sS --max-time 20 -H 'accept: application/json' "$PRODUCTION_URL/healthz"); then
+            sha=$(printf '%s' "$body" | node -e '
+              let d = "";
+              process.stdin.on("data", (c) => (d += c)).on("end", () => {
+                try { const j = JSON.parse(d); process.stdout.write(typeof j.sha === "string" ? j.sha : ""); } catch {}
+              });
+            ')
+            if [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then after=$sha; fi
+          fi
+          smoke_failed_after_deploy=false
+          if [ "$status" = "failed" ] && [ -n "$SHA" ] && [ "$after" = "$SHA" ] && [ "$after" != "$DEPLOYED_BEFORE" ]; then
+            smoke_failed_after_deploy=true
+          fi
+          {
+            echo "status=$status"
+            echo "failed_job=$failed_job"
+            echo "deployed_after=$after"
+            echo "smoke_failed_after_deploy=$smoke_failed_after_deploy"
+          } >> "$GITHUB_OUTPUT"
+          echo "status=$status failed_job=$failed_job deployed_after=$after"
+      - name: List commits in the released range
+        id: range
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+          DEPLOYED_BEFORE: ${{ needs.migration-guard.outputs.deployed_sha }}
+        run: |
+          commits=""
+          if [ -n "$SHA" ]; then
+            if [[ "$DEPLOYED_BEFORE" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$DEPLOYED_BEFORE^{commit}" 2>/dev/null \
+               && git merge-base --is-ancestor "$DEPLOYED_BEFORE" "$SHA" 2>/dev/null; then
+              commits=$(git log --format=%H "$DEPLOYED_BEFORE..$SHA" | head -n 100 | tr '\n' ' ')
+            else
+              commits="$SHA"
+            fi
+          fi
+          echo "commits=$commits" >> "$GITHUB_OUTPUT"
+      - name: Write release summary
+        env:
+          STATUS: ${{ steps.outcome.outputs.status }}
+          FAILED_JOB: ${{ steps.outcome.outputs.failed_job }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          RECOVERY_SHA: ${{ inputs.recovery_sha }}
+          APPLY_MIGRATION_TAG: ${{ inputs.apply_migration_tag }}
+          EXPECT_WORKSPACE_DISABLED: ${{ inputs.expect_workspace_disabled }}
+          ASSUME_DEPLOYED_SHA: ${{ inputs.assume_deployed_sha }}
+          ROLLBACK_TO_VERSION: ${{ inputs.rollback_to_version }}
+          REASON: ${{ inputs.reason }}
+          DEPLOYED_BEFORE: ${{ needs.migration-guard.outputs.deployed_sha }}
+          DEPLOYED_SOURCE: ${{ needs.migration-guard.outputs.deployed_source }}
+          DEPLOYED_AFTER: ${{ steps.outcome.outputs.deployed_after }}
+          TAGS_BEFORE: ${{ needs.migration-guard.outputs.deployed_tags }}
+          TAGS_AFTER: ${{ needs.migration-guard.outputs.candidate_tags }}
+          RELEASE_CLASS: ${{ needs.migration-guard.outputs.release_class }}
+          NEW_TAGS: ${{ needs.migration-guard.outputs.new_tags }}
+          ASSUMED_CLASS: ${{ needs.migration-guard.outputs.assumed_class }}
+          ASSUMED_NEW_TAGS: ${{ needs.migration-guard.outputs.assumed_new_tags }}
+          GUARD_REASON: ${{ needs.migration-guard.outputs.reason }}
+          STAGE_RESULT: ${{ needs.stage.result }}
+          STAGE_VERSION: ${{ needs.stage.outputs.version_id }}
+          STAGE_SMOKE: ${{ needs.stage.outputs.smoke_json }}
+          PROD_RESULT: ${{ needs.production.result }}
+          PROD_VERSION: ${{ needs.production.outputs.version_id }}
+          PROD_SMOKE: ${{ needs.production.outputs.smoke_json }}
+          ROLLBACK_RESULT: ${{ needs.rollback.result }}
+          CHECK_RESULT: ${{ needs.check.result }}
+        run: |
+          {
+            echo "### Topology Dojo release — **${STATUS}**${FAILED_JOB:+ (at \`$FAILED_JOB\`)}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Candidate SHA | \`${SHA:-(unresolved)}\` |"
+            echo "| Event / actor / triggering actor | \`$EVENT_NAME\` / \`$ACTOR\` / \`$TRIGGERING_ACTOR\` |"
+            echo "| recovery_sha | \`${RECOVERY_SHA:-(none)}\` |"
+            echo "| apply_migration_tag | \`${APPLY_MIGRATION_TAG:-(none)}\` |"
+            echo "| expect_workspace_disabled | \`${EXPECT_WORKSPACE_DISABLED:-false}\` |"
+            echo "| assume_deployed_sha | \`${ASSUME_DEPLOYED_SHA:-(none)}\` |"
+            echo "| rollback_to_version | \`${ROLLBACK_TO_VERSION:-(none)}\` |"
+            echo "| reason | ${REASON:-(none)} |"
+            echo "| Deployed SHA before (source) | \`${DEPLOYED_BEFORE:-unknown}\` (\`${DEPLOYED_SOURCE:-none}\`) |"
+            echo "| Deployed SHA after | \`${DEPLOYED_AFTER:-unknown}\` |"
+            echo "| Migration tags before → after | \`${TAGS_BEFORE:-?}\` → \`${TAGS_AFTER:-?}\` |"
+            echo "| Release class / new tags | \`${RELEASE_CLASS:-?}\` / \`${NEW_TAGS:-(none)}\` |"
+            if [ -n "$ASSUMED_CLASS" ]; then
+              echo "| Assumed class / assumed new tags | \`$ASSUMED_CLASS\` / \`${ASSUMED_NEW_TAGS:-(none)}\` |"
+            fi
+            echo "| Guard verdict | ${GUARD_REASON:-(guard did not run)} |"
+            echo "| CI check | \`${CHECK_RESULT:-skipped}\` |"
+            echo "| Staging | \`${STAGE_RESULT:-skipped}\` — version \`${STAGE_VERSION:-n/a}\` |"
+            echo "| Production | \`${PROD_RESULT:-skipped}\` — version \`${PROD_VERSION:-n/a}\` |"
+            echo "| Rollback | \`${ROLLBACK_RESULT:-skipped}\` |"
+            echo ""
+            echo "#### Staging smoke"
+            echo ""
+            echo '```json'
+            echo "${STAGE_SMOKE:-(did not run)}"
+            echo '```'
+            echo ""
+            echo "#### Production smoke"
+            echo ""
+            echo '```json'
+            echo "${PROD_SMOKE:-(did not run)}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment PRs, file the smoke issue, stamp the deployment
+        uses: actions/github-script@v7
+        env:
+          STATUS: ${{ steps.outcome.outputs.status }}
+          FAILED_JOB: ${{ steps.outcome.outputs.failed_job }}
+          SMOKE_FAILED_AFTER_DEPLOY: ${{ steps.outcome.outputs.smoke_failed_after_deploy }}
+          COMMITS: ${{ steps.range.outputs.commits }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          DEPLOYED_BEFORE: ${{ needs.migration-guard.outputs.deployed_sha }}
+          DEPLOYED_AFTER: ${{ steps.outcome.outputs.deployed_after }}
+          RELEASE_CLASS: ${{ needs.migration-guard.outputs.release_class }}
+          NEW_TAGS: ${{ needs.migration-guard.outputs.new_tags }}
+          GUARD_REASON: ${{ needs.migration-guard.outputs.reason }}
+          PROD_VERSION: ${{ needs.production.outputs.version_id }}
+          PROD_SMOKE: ${{ needs.production.outputs.smoke_json }}
+          ROLLBACK_TO_VERSION: ${{ inputs.rollback_to_version }}
+          PRODUCTION_ENVIRONMENT: ${{ needs.resolve.outputs.production_environment }}
+          EVENT_SHA: ${{ github.sha }}
+        with:
+          script: |
+            const env = process.env;
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const short = (s) => (s ? s.slice(0, 7) : '?');
+
+            // 1. One comment per PR in the released range (human-facing only).
+            let line;
+            switch (env.STATUS) {
+              case 'released':
+                line = `Released to production in run ${runUrl} (\`${short(env.SHA)}\`, version \`${env.PROD_VERSION || 'n/a'}\`).`;
+                break;
+              case 'rolled-back':
+                line = `Production was rolled back to version \`${env.ROLLBACK_TO_VERSION}\` (build \`${short(env.SHA)}\`) in run ${runUrl}.`;
+                break;
+              case 'held':
+                line = `Release HELD at migration-guard: ${runUrl}\n\n${env.GUARD_REASON}`;
+                break;
+              case 'forbidden':
+                line = `Release FORBIDDEN at migration-guard: ${runUrl}\n\n${env.GUARD_REASON}`;
+                break;
+              default:
+                line = `Release FAILED at ${env.FAILED_JOB || 'unknown'}: ${runUrl}`;
+            }
+            const commits = (env.COMMITS || '').split(/\s+/).filter(Boolean);
+            const prs = new Map();
+            for (const sha of commits) {
+              try {
+                const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
+                for (const pr of data) {
+                  if (pr.merged_at && pr.base && pr.base.ref === 'main') prs.set(pr.number, pr);
+                }
+              } catch (err) {
+                core.warning(`could not list PRs for ${sha}: ${err.message}`);
+              }
+            }
+            for (const number of [...prs.keys()].sort((a, b) => a - b)) {
+              try {
+                await github.rest.issues.createComment({ owner, repo, issue_number: number, body: line });
+              } catch (err) {
+                core.warning(`could not comment on #${number}: ${err.message}`);
+              }
+            }
+            core.info(`commented on ${prs.size} PR(s): ${[...prs.keys()].join(', ') || '(none)'}`);
+
+            // 2. Production serves a build whose smoke failed → deduplicated
+            //    `production-smoke` issue naming the recovery target.
+            if (env.SMOKE_FAILED_AFTER_DEPLOY === 'true') {
+              const label = 'production-smoke';
+              const body = [
+                'Production **smoke failed after a successful deploy** (release.yml).',
+                '',
+                `- Run: ${runUrl}`,
+                `- Production now serves: \`${env.DEPLOYED_AFTER}\``,
+                `- Previously served (recovery target): \`${env.DEPLOYED_BEFORE || 'unknown'}\``,
+                `- Cloudflare version deployed: \`${env.PROD_VERSION || 'n/a'}\``,
+                '',
+                'Recover per docs/ROLLBACK.md: open a `release-freeze` issue, then either',
+                `dispatch release.yml with \`recovery_sha=${env.DEPLOYED_BEFORE || '<last good sha>'}\` (forward),`,
+                'or `rollback_to_version=<version id from that SHA\'s release run>` + `recovery_sha=<that SHA>`',
+                '(stateless rollback; refused across a migration boundary).',
+                '',
+                '```json',
+                env.PROD_SMOKE || '(no smoke output captured)',
+                '```',
+              ].join('\n');
+              const { data: open } = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: label });
+              if (open.length) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: open[0].number, body });
+              } else {
+                await github.rest.issues.create({ owner, repo, title: 'Production verification failed', labels: [label], body });
+              }
+            }
+
+            // 3. Stamp this run's auto-created GitHub Deployment with the SHA
+            //    actually deployed (the record production-verify.yml reads).
+            if (env.STATUS === 'released' || env.STATUS === 'rolled-back') {
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner, repo, environment: env.PRODUCTION_ENVIRONMENT, sha: env.EVENT_SHA, per_page: 20,
+              });
+              let target = null;
+              for (const d of deployments) {
+                const { data: statuses } = await github.rest.repos.listDeploymentStatuses({ owner, repo, deployment_id: d.id, per_page: 20 });
+                if (statuses.some((s) => (s.log_url || s.target_url || '').includes(`/actions/runs/${context.runId}`))) { target = d; break; }
+              }
+              if (!target) {
+                core.warning('could not find this run\'s production deployment to stamp');
+              } else {
+                await github.rest.repos.createDeploymentStatus({
+                  owner, repo, deployment_id: target.id, state: 'success', auto_inactive: false,
+                  log_url: runUrl,
+                  description: `deployed_sha=${env.SHA} version=${env.STATUS === 'rolled-back' ? env.ROLLBACK_TO_VERSION : (env.PROD_VERSION || 'unknown')}`.slice(0, 140),
+                });
+                core.info(`stamped deployment ${target.id} with deployed_sha=${env.SHA}`);
+              }
+            }

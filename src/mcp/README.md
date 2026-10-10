@@ -130,10 +130,11 @@ npx wrangler deploy --env staging
 
 There is no `npm run deploy` script — a laptop cannot deploy production (finding
 L1). `npm run deploy:staging` runs the build, `check-wrangler-env.mjs`, and
-`wrangler deploy --env staging` for local staging preflight; the protected
-staging/production workflows are the only paths that actually publish a
-deployment. See the deployment runbook for production approval, migration
-bootstrap, and smoke requirements.
+`wrangler deploy --env staging` for local staging preflight; the GitHub
+Actions workflows (`release.yml` — merging to `main` is the production
+release, proposal 0007 — and `deploy-staging.yml`) are the only paths that
+actually publish a deployment. See the deployment runbook for the migration
+acknowledgement, bootstrap, and smoke requirements.
 
 ## Model
 

@@ -54,8 +54,9 @@ migration through `v5` is applied and active. Concretely, today a user can:
   their own GitHub identity, and a pre-login showcase filmstrip demonstrates
   the tool's output to visitors before they sign in.
 
-Every production deploy goes through a CI-gated, `main`-only dispatch
-GitHub Actions pipeline (`deploy-production.yml`); Durable Object migrations
+Every production deploy goes through a CI-gated, `main`-only GitHub Actions
+pipeline (`release.yml` — merge is the release since proposal 0007; migration
+releases are held for a typed acknowledgement); Durable Object migrations
 are append-only. Feature migrations `v3`–`v5` established the safer
 inert-bootstrap-then-activate pattern for future feature classes. Recovery from
 an activation is forward-only (a new deploy with the flag removed, never a
@@ -465,10 +466,12 @@ the top level as of this reset — see "Current production baseline" above).
   with its own KV namespaces, Durable Object namespaces, GitHub OAuth
   App/secret, and origin; a `check-wrangler-env.mjs` CI guard enforces that
   staging and production share no resource ids. Closed finding M14.
-- **CI-gated deployment pipeline**: `deploy-staging.yml` and
-  `deploy-production.yml` re-run the CI `check` before deploying (`ci.yml` is
-  reusable via `workflow_call`); production is restricted to `main`, requires a
-  protected environment approval, and the CI `check` is a required status. The
+- **CI-gated deployment pipeline**: `deploy-staging.yml` and (since proposal
+  0007, replacing the manual `deploy-production.yml` dispatch) `release.yml`
+  re-run the CI `check` before deploying (`ci.yml` is reusable via
+  `workflow_call`); production is restricted to `main`, released by the
+  merge itself, guarded against unacknowledged migrations, and the CI
+  `check` is a required status. The
   ungoverned `npm run deploy` laptop path was removed. Closed finding L1;
   closed finding H7 once Workers Builds was disconnected from production
   (operator O9, 2026-07-17) and the first gated production deploy ran

@@ -42,9 +42,10 @@ As of this review (`main` @ `4add174`, PR #219 merged 2026-08-09):
   half of `IMPLEMENTATION_PLAN.md` initiative
   O landed 2026-07-19: alert matrix + severity model (`docs/ALERTS.md`),
   Cloudflare human checklist (`docs/CLOUDFLARE_OPERATOR_RUNBOOK.md`),
-  game-day framework + evidence template (`docs/GAME_DAY.md`), daily +
-  on-demand production verification (`production-verify.yml`, deduplicated
-  `production-smoke` issues, `expected_sha` mismatch detection), a 14-check
+  game-day framework + evidence template (`docs/GAME_DAY.md`), hourly (since
+  proposal 0007; daily before) + on-demand production verification
+  (`production-verify.yml`, deduplicated `production-smoke` issues, deployed
+  SHA asserted against the GitHub Deployments record), a 14-check
   smoke with per-flag disabled-contract flags, staging flag-override deploy
   inputs, and a staging-only synthetic-fault route
   (`worker/staging-fault.ts`). Still human-only: the Cloudflare dashboard
@@ -129,21 +130,33 @@ production incident or a launch-blocking finding in this repo's history:
 
 ## Deployment rules
 
-- **Production deploys exclusively through `deploy-production.yml`** —
-  restricted to `main`, requires a protected `production` GitHub Environment
-  approval, re-runs the full CI check first. There is no other path;
-  `npm run deploy` was deleted (finding L1). Workers Builds' Git integration
-  is disconnected (operator O9) specifically because it once bypassed this
-  gate.
+- **Merge is the release** (proposal 0007, `docs/proposals/0007-merge-is-the-release.md`).
+  Production deploys exclusively through `release.yml`: every non-docs push
+  to `main` runs CI on the merge SHA, rehearses it on staging, and deploys
+  it to production — unattended for a routine release. A release that would
+  apply a new Durable Object migration is **held** (red run, PR comment)
+  until a human dispatches `release.yml` with the typed `apply_migration_tag`;
+  a candidate whose migrations array is not a strict extension of
+  production's is refused outright (`scripts/migration-guard.mjs`). The
+  `guard` job enforces `main` for every event and honours an open
+  `release-freeze` issue. There is no other path; `npm run deploy` was
+  deleted (finding L1), `deploy-production.yml` was deleted 2026-10-10, and
+  Workers Builds' Git integration is disconnected (operator O9) specifically
+  because it once bypassed the gate.
 - **Staging is isolated and safe to dispatch freely**
-  (`deploy-staging.yml`, optional `ref` input) — separate KV namespaces, DO
-  namespaces, GitHub OAuth App, and origin from production.
+  (`deploy-staging.yml`, optional `ref` input — any ref, for UAT) — separate
+  KV namespaces, DO namespaces, GitHub OAuth App, and origin from
+  production. It is also rehearsed automatically by every release, so a
+  manual dispatch queues behind (never cancels) a release in flight; check
+  `GET <staging>/healthz` before trusting a UAT result.
   `scripts/check-wrangler-env.mjs` (run in CI and locally via
   `npm run check:wrangler`) enforces the isolation invariants and fails loudly
-  on drift.
-- **Recovery is always forward-only.** Never roll back across a migration
-  boundary — redeploy with the offending flag turned off instead. See
-  `docs/ROLLBACK.md`.
+  on drift. Both paths deploy through the one shared `deploy-worker.yml`.
+- **Recovery is explicit and never unattended.** Forward recovery is a
+  `release.yml` dispatch with `recovery_sha`; a stateless rollback is
+  `rollback_to_version` + `recovery_sha` (refused across a migration
+  boundary). Never roll back across a migration boundary — redeploy with the
+  offending flag turned off instead. See `docs/ROLLBACK.md`.
 
 ## ⚠️ Durable Object migration warning
 
@@ -179,19 +192,19 @@ baselines are deliberately added. See `launch-readiness/QA_TEST_PLAN.md`.
 
 ## Key files
 
-| Area                             | Files                                                                                                                                   |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Document model + persistence     | `src/pages/model.ts`, `src/pages/persist.ts`                                                                                            |
-| Headless authoring API           | `src/api/{builder,edit,validate,layout,autolayout,catalog,tidy}.ts`                                                                     |
-| MCP tools (both transports)      | `src/mcp/tools.ts` (source of truth), `src/mcp/register.ts`, `src/mcp/server.ts` (stdio), `worker/mcp.ts` (remote)                      |
-| Connector/flow-compiler platform | `src/connect/{types,mock,edgeconnect,compile}.ts`                                                                                       |
-| Shared workspace coordinator     | `worker/document.ts` (revisions/proposals/leases/checkpoints/presence), `worker/registry.ts`, `worker/workspaces.ts`                    |
-| Workspace client                 | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                       |
-| Adaptive authoring profiles      | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`        |
-| Admin/analytics dashboard        | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`, `src/agent-activity/`                          |
-| Auth + login page + showcase     | `worker/auth.ts`, `public/showcase/*.webp`                                                                                              |
-| Deployment config                | `wrangler.jsonc`, `.github/workflows/{deploy-staging,deploy-production,ci,nightly-staging-smoke}.yml`, `scripts/check-wrangler-env.mjs` |
-| Flags                            | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `isAdmin`)                                                  |
+| Area                             | Files                                                                                                                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Document model + persistence     | `src/pages/model.ts`, `src/pages/persist.ts`                                                                                                                                    |
+| Headless authoring API           | `src/api/{builder,edit,validate,layout,autolayout,catalog,tidy}.ts`                                                                                                             |
+| MCP tools (both transports)      | `src/mcp/tools.ts` (source of truth), `src/mcp/register.ts`, `src/mcp/server.ts` (stdio), `worker/mcp.ts` (remote)                                                              |
+| Connector/flow-compiler platform | `src/connect/{types,mock,edgeconnect,compile}.ts`                                                                                                                               |
+| Shared workspace coordinator     | `worker/document.ts` (revisions/proposals/leases/checkpoints/presence), `worker/registry.ts`, `worker/workspaces.ts`                                                            |
+| Workspace client                 | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                                                               |
+| Adaptive authoring profiles      | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`                                                |
+| Admin/analytics dashboard        | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`, `src/agent-activity/`                                                                  |
+| Auth + login page + showcase     | `worker/auth.ts`, `public/showcase/*.webp`                                                                                                                                      |
+| Deployment config                | `wrangler.jsonc`, `.github/workflows/{release,deploy-worker,deploy-staging,ci,production-verify,nightly-staging-smoke}.yml`, `scripts/{check-wrangler-env,migration-guard}.mjs` |
+| Flags                            | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `isAdmin`)                                                                                          |
 
 ## Known risks (from the launch-readiness findings register)
 
@@ -208,18 +221,22 @@ Full register: `docs/launch-readiness/FINDINGS_REGISTER.md`.
 
 Things no agent in this repo can complete alone:
 
-1. **Decide a production release** — the dispatch of `deploy-production.yml`
-   from `main` is the human decision. An agent may perform the dispatch only
-   on an explicit chat instruction quoted in the session. (The `production`
-   environment's required-reviewer click was removed 2026-10-09: the sole
-   owner was approving their own dispatch, and the agent's GitHub identity is
-   the owner's, so it gated nothing.)
+1. **Decide a production release** — **merging a PR into `main` is the
+   human release decision** (proposal 0007): `release.yml` deploys it
+   unattended. An agent never merges to `main`, and never dispatches
+   `release.yml` (recovery, rollback, or a migration's `apply_migration_tag`
+   ack), except on an explicit chat instruction quoted in the session. This
+   is a procedural rule, not a technical one: the agent's GitHub identity is
+   the owner's, so no GitHub setting can tell them apart (the `production`
+   environment's required-reviewer click was removed 2026-10-09 for exactly
+   that reason). Branch protection with no bypass — PR required, `CI /
+check` + `CI / e2e` required — is the only gate that binds both equally.
 2. **Configure Cloudflare alerting** (`IMPLEMENTATION_PLAN.md` packet O1) —
    a Cloudflare dashboard action; the exact steps + evidence requirements
    are `docs/CLOUDFLARE_OPERATOR_RUNBOOK.md` (CF-1..CF-6 checklist).
 3. **Run the game day** (packet O2) — `docs/GAME_DAY.md`, a human operator
-   observing/confirming each step of a live drill; production steps each
-   require the environment-approval click. Verify the staging SHA at the start
+   observing/confirming each step of a live drill; production steps are each
+   a PR the owner merges. Verify the staging SHA at the start
    of every drill; the 2026-07-19 observation recorded in the historical
    findings is not evidence of the current deployment.
 4. **Provision the staging-only `DIAGNOSTICS_TOKEN` secret** (for game-day
@@ -257,6 +274,26 @@ staging` with a generated ≥16-char value kept only in the operator's
   size).
 - Independently verify the risky properties and run the full gate before
   committing — don't trust a sub-agent's self-report on correctness.
-- Staging deploys are safe to dispatch on request; a production dispatch
-  needs an explicit human instruction quoted in the session, no exceptions
-  (there is no second approval click since 2026-10-09).
+- Staging deploys are safe to dispatch on request. Merging to `main` is the
+  production release (since 2026-10-10) and any `release.yml` dispatch is a
+  recovery or migration action: an agent does either only on an explicit
+  human instruction quoted in the session, no exceptions (there is no second
+  approval click since 2026-10-09).
+
+## Operator checklist — proposal 0007 cut-over
+
+Owner actions that complete "merge is the release" (details and rationale
+in `proposals/0007-merge-is-the-release.md` §"GitHub settings checklist"):
+
+- [ ] Branch protection on `main`: PR required; required checks `CI / check`
+      and `CI / e2e`; no bypass, administrators included.
+- [ ] `production` environment: deployment branches `main` only, no
+      reviewers (both already true); `staging` environment: no reviewers.
+- [ ] Scope the `staging` environment's `CLOUDFLARE_API_TOKEN` to the
+      `topology-dojo-staging` script (it can otherwise address production).
+- [ ] Repository "Allow auto-merge" off (verified off 2026-10-10).
+- [ ] Actions workflow permissions read-only; "Require approval for all
+      external contributors".
+- [ ] Create the `release-freeze` label.
+- [ ] Watch the first unattended release end to end, then confirm the next
+      hourly `Production Verify` reports "deployed SHA matches the record".

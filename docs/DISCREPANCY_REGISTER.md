@@ -61,3 +61,23 @@ Severity guide: **Critical** = a reader would materially misjudge production ris
   discussion and, if adopted, lands as a new proposal. Historical records
   (`IMPLEMENTATION_PLAN`, `PACKET_ISSUES`) keep their original "approve the
   production deploy" wording as the record of what was done.
+
+## Follow-up — 2026-10-10
+
+- **Closed: the 0004 decision-3 drift.** Proposal 0007
+  (`proposals/0007-merge-is-the-release.md`) is adopted and implemented:
+  `release.yml` runs on every non-docs push to `main` (CI on the merge SHA →
+  staging rehearsal → Durable Object migration guard → production → record),
+  which is what 0004's table always said ("Push/merge to `main` →
+  Production") minus the approval click that gated nothing. The manual
+  `deploy-production.yml` is deleted; `deploy-staging.yml` and `release.yml`
+  share one deploy implementation (`deploy-worker.yml`). Docs updated in the
+  same change: `DEPLOYMENT_RUNBOOK`, `ROLLBACK`, `GAME_DAY`, `HANDOFF`,
+  `AGENTIC_IMPLEMENTATION_WORKFLOW`, `ALERTS`, `ROADMAP`, `wrangler.jsonc`
+  header, `src/mcp/README.md`. Not updated (historical or outside this
+  change's scope — still say "deploy-production"): `CAPABILITY_MATRIX.md`,
+  `CLOUDFLARE_OPERATOR_RUNBOOK.md`, `ARCHITECTURE.md`,
+  `launch-readiness/FINDINGS_REGISTER.md`, `archive/*`, and the completed
+  `v3`–`v5` rollout examples in `DEPLOYMENT_RUNBOOK.md` (which carry a note).
+  Proposal 0004's own text is left as the record of the original design;
+  0007 states what supersedes it.
