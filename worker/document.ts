@@ -16,13 +16,16 @@ import { parseDoc } from '../src/pages/persist.js';
 import { TEXT_LIMITS, normalizeText } from '../src/api/text.js';
 import {
   applyOperations,
+  conflictAttribution,
   conflictingTargets,
   diffDocuments,
   operationPageIds,
   operationTargets,
   subsetDependencyErrors,
   summarizeOperations,
+  supersededTargets,
   validateOperations,
+  type CommittedChange,
 } from '../src/workspace/operations.js';
 import {
   normalizeOperations,
@@ -36,6 +39,7 @@ import {
   type CheckpointSummary,
   type CommitRequest,
   type CommitResult,
+  type ConflictAttribution,
   type ElementKind,
   type ElementPageResult,
   type ProposalResult,
@@ -637,13 +641,32 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       }
       const document = await this.loadDocument(tx, meta);
       normalizeRequest(request, document);
-      const conflicts = await this.conflictsSince(
+      const { targets, conflicts } = await this.conflictsSince(
         tx,
         request.baseRevision,
         meta.revision,
         request.operations,
       );
-      if (!conflicts.length) applyOperations(document, request.operations);
+      // Same-author supersede (issue #269): a stale base whose every conflict
+      // was last written by this same agent's own accepted work is not a
+      // conflict when the agent asked to supersede it.
+      const superseded =
+        conflicts.length && request.supersede
+          ? supersededTargets(conflicts, actor)
+          : null;
+      const blocked = conflicts.length > 0 && !superseded;
+      if (!blocked) {
+        try {
+          applyOperations(document, request.operations);
+        } catch (error) {
+          if (!superseded) throw error;
+          throw new Error(
+            `cannot supersede own writes on revision ${meta.revision}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
       await this.makeProposalRoom(tx);
       const timestamp = nowIso();
       const proposal: WorkspaceProposal = {
@@ -656,10 +679,12 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
         createdAt: timestamp,
         updatedAt: timestamp,
         createdBy: actor,
-        status: conflicts.length ? 'conflicted' : 'pending',
+        status: blocked ? 'conflicted' : 'pending',
         operations: structuredClone(request.operations),
         summary: summarizeOperations(request.operations),
-        ...(conflicts.length ? { conflictingTargets: conflicts } : {}),
+        ...(blocked ? { conflictingTargets: targets, conflicts } : {}),
+        ...(request.supersede ? { supersede: true } : {}),
+        ...(superseded ? { superseded } : {}),
       };
       await tx.put(PROPOSAL_PREFIX + proposal.id, proposal);
       const result: ProposalResult = { ok: true, proposal };
@@ -709,6 +734,10 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     /** Accept only these operation indices (a coherent subset). Omit to accept
      * the whole proposal. Duplicates and order are normalized. */
     selectedOperationIndices?: number[],
+    /** Same-author supersede (issue #269): rebase over conflicts whose last
+     * writer is the proposal author's own accepted work. Also honoured when
+     * the proposal itself was submitted with `supersede`. */
+    supersede = false,
   ): Promise<CommitResult> {
     if (actor.kind !== 'user')
       throw new Error('only a browser user can accept proposals');
@@ -785,28 +814,6 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
           await this.rememberRequest(tx, meta, operationId, result);
           return result;
         }
-        const conflicts = await this.conflictsSince(
-          tx,
-          proposal.baseRevision,
-          meta.revision,
-          opsToApply,
-        );
-        if (conflicts.length) {
-          proposal.status = 'conflicted';
-          proposal.conflictingTargets = conflicts;
-          proposal.updatedAt = nowIso();
-          await tx.put(PROPOSAL_PREFIX + id, proposal);
-          const result: CommitResult = {
-            ok: false,
-            code: 'conflict',
-            revision: meta.revision,
-            message:
-              'proposal overlaps changes committed after its base revision',
-            conflictingTargets: conflicts,
-          };
-          await this.rememberRequest(tx, meta, operationId, result);
-          return result;
-        }
         const result = await this.commitWithin(
           tx,
           meta,
@@ -815,18 +822,33 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
             baseRevision: proposal.baseRevision,
             operationId,
             operations: opsToApply,
+            ...(supersede || proposal.supersede ? { supersede: true } : {}),
           },
           'proposal',
-          id,
           {
+            proposalId: id,
+            author: proposal.createdBy,
             sessionId: proposal.createdBy.sessionId,
             guidanceConsultedBefore: proposal.createdBy.guidanceConsultedBefore,
+            conflictMessage:
+              'proposal overlaps changes committed after its base revision',
           },
         );
+        if (!result.ok && result.code === 'conflict') {
+          proposal.status = 'conflicted';
+          proposal.conflictingTargets = result.conflictingTargets ?? [];
+          proposal.conflicts = result.conflicts ?? [];
+          delete proposal.superseded;
+          proposal.updatedAt = nowIso();
+          await tx.put(PROPOSAL_PREFIX + id, proposal);
+        }
         if (result.ok) {
           acceptedForWindow = { ops: opsToApply, revision: result.revision };
           proposal.updatedAt = nowIso();
           delete proposal.conflictingTargets;
+          delete proposal.conflicts;
+          if (result.superseded) proposal.superseded = result.superseded;
+          else delete proposal.superseded;
           if (residual.length) {
             // Partial acceptance: keep the remainder reviewable, rebased onto the
             // revision the accepted subset just produced (the residual ops were
@@ -1131,7 +1153,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
           return result;
         }
       }
-      return this.commitWithin(tx, meta, actor, request, source);
+      return this.commitWithin(tx, meta, actor, request, source, {});
     });
     // Broadcast only after the transaction commits, and only when a revision
     // was actually created — a conflict/lease rejection changes no state.
@@ -1155,12 +1177,18 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
     actor: WorkspaceActor,
     request: CommitRequest,
     source: WorkspaceChange['source'],
-    proposalId?: string,
-    inheritedActivity?: {
+    options: {
+      proposalId?: string;
+      /** The content author when it is not `actor` (an accepted proposal's
+       * creator). Recorded on the change and used for same-author supersede. */
+      author?: WorkspaceActor;
       sessionId?: string;
       guidanceConsultedBefore?: boolean;
+      conflictMessage?: string;
     },
   ): Promise<CommitResult> {
+    const { proposalId, conflictMessage } = options;
+    const author = options.author ?? actor;
     assertRequestShape(request);
     const current = await this.loadDocument(tx, meta);
     normalizeRequest(request, current);
@@ -1178,25 +1206,48 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       await this.rememberRequest(tx, meta, request.operationId, result);
       return result;
     }
-    const conflicts = await this.conflictsSince(
+    const { targets, conflicts } = await this.conflictsSince(
       tx,
       request.baseRevision,
       meta.revision,
       request.operations,
     );
-    if (conflicts.length) {
-      const result: CommitResult = {
-        ok: false,
-        code: 'conflict',
-        revision: meta.revision,
-        message:
+    const conflictResult = (message: string): CommitResult => ({
+      ok: false,
+      code: 'conflict',
+      revision: meta.revision,
+      message,
+      conflictingTargets: targets,
+      conflicts,
+    });
+    // Same-author supersede (issue #269): every conflicting target was last
+    // written by this author's own accepted proposal or direct commit, and
+    // none collides with a removal — the incoming values replace them.
+    const superseded =
+      conflicts.length && request.supersede
+        ? supersededTargets(conflicts, author)
+        : null;
+    if (conflicts.length && !superseded) {
+      const result = conflictResult(
+        conflictMessage ??
           'operations overlap changes committed after their base revision',
-        conflictingTargets: conflicts,
-      };
+      );
       await this.rememberRequest(tx, meta, request.operationId, result);
       return result;
     }
-    const next = applyOperations(current, request.operations);
+    let next: TopologyDocumentModel;
+    try {
+      next = applyOperations(current, request.operations);
+    } catch (error) {
+      if (!superseded) throw error;
+      const result = conflictResult(
+        `cannot supersede own writes on revision ${meta.revision}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      await this.rememberRequest(tx, meta, request.operationId, result);
+      return result;
+    }
     this.assertDocumentSizes(next);
     const revision = meta.revision + 1;
     const timestamp = nowIso();
@@ -1210,7 +1261,8 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       summary: summarizeOperations(request.operations),
       operations: structuredClone(request.operations),
       ...(proposalId ? { proposalId } : {}),
-      ...revisionActivity(actor, inheritedActivity),
+      ...(options.author ? { author: options.author } : {}),
+      ...revisionActivity(actor, options),
     };
     await this.saveDocument(tx, meta, current, next, revision, timestamp);
     await tx.put(this.changeKey(revision), change);
@@ -1220,6 +1272,7 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       revision,
       rebased: request.baseRevision < revision - 1,
       summary: change.summary,
+      ...(superseded ? { superseded } : {}),
     };
     await this.rememberRequest(tx, meta, request.operationId, result);
     return result;
@@ -1322,13 +1375,20 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       throw new Error('document metadata exceeds the 1.8 MiB workspace limit');
   }
 
+  /**
+   * Conflicts between `incoming` (authored against `baseRevision`) and every
+   * revision committed since. `targets` is the sorted conflicting-target list
+   * (the compatibility shape); `conflicts` attributes each target to the last
+   * committed write behind it (issue #269). Identical field writes commute
+   * and appear in neither.
+   */
   private async conflictsSince(
     storage: WorkspaceStorage,
     baseRevision: number,
     currentRevision: number,
     incoming: WorkspaceOperation[],
-  ): Promise<string[]> {
-    const committed: WorkspaceOperation[] = [];
+  ): Promise<{ targets: string[]; conflicts: ConflictAttribution[] }> {
+    const committed: CommittedChange[] = [];
     for (
       let revision = baseRevision + 1;
       revision <= currentRevision;
@@ -1337,9 +1397,38 @@ export class TopologyDocument extends DurableObject<WorkerEnv> {
       const change = await storage.get<WorkspaceChange>(
         this.changeKey(revision),
       );
-      if (change) committed.push(...change.operations);
+      if (!change) continue;
+      const author = await this.changeAuthor(storage, change);
+      committed.push({
+        revision: change.revision,
+        operationId: change.operationId,
+        ...(change.proposalId ? { proposalId: change.proposalId } : {}),
+        ...(author ? { author } : {}),
+        operations: change.operations,
+      });
     }
-    return conflictingTargets(incoming, committed);
+    const conflicts = conflictAttribution(incoming, committed);
+    return { targets: conflicts.map((conflict) => conflict.target), conflicts };
+  }
+
+  /**
+   * The content author of a committed change: the recorded `author` (accepted
+   * proposals since issue #269), else the proposal's creator for an older
+   * proposal-sourced record whose proposal is still retained, else the
+   * committing actor for a direct commit. Undefined when unrecoverable, which
+   * makes the change un-supersedable.
+   */
+  private async changeAuthor(
+    storage: WorkspaceStorage,
+    change: WorkspaceChange,
+  ): Promise<WorkspaceActor | undefined> {
+    if (change.author) return change.author;
+    if (change.source !== 'proposal') return change.actor;
+    if (!change.proposalId) return undefined;
+    const proposal = await storage.get<WorkspaceProposal>(
+      PROPOSAL_PREFIX + change.proposalId,
+    );
+    return proposal?.createdBy;
   }
 
   private async makeProposalRoom(storage: WorkspaceStorage): Promise<void> {

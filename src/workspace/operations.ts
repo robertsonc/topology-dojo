@@ -2,9 +2,11 @@ import { parseDoc } from '../pages/persist.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import {
   ELEMENT_KINDS,
+  type ConflictAttribution,
   type ElementKind,
   type FieldPatch,
   type OperationSummary,
+  type WorkspaceActor,
   type WorkspaceOperation,
 } from './model.js';
 
@@ -574,6 +576,153 @@ export function conflictingTargets(
   for (const left of a)
     for (const right of b) if (targetConflict(left, right)) conflicts.add(left);
   return [...conflicts].sort();
+}
+
+/**
+ * One committed revision as conflict attribution sees it (issue #269): its
+ * operations plus the identity of what wrote them. `author` is the content
+ * author — an accepted proposal's creator, or the committing actor for a
+ * direct commit — and is omitted when the coordinator cannot recover it.
+ */
+export interface CommittedChange {
+  revision: number;
+  operationId: string;
+  proposalId?: string;
+  author?: WorkspaceActor;
+  operations: WorkspaceOperation[];
+}
+
+/** Attributed `value`s larger than this are omitted from the result. */
+const MAX_ATTRIBUTED_VALUE_BYTES = 4096;
+
+const FIELD_MARKER = '/field/';
+
+/** The value a patch operation `set`s for a `.../field/<name>` target, if any. */
+function patchSetValue(
+  operation: WorkspaceOperation,
+  target: string,
+): { value: unknown } | null {
+  if (
+    operation.type !== 'document.patch' &&
+    operation.type !== 'page.patch' &&
+    operation.type !== 'element.patch'
+  )
+    return null;
+  const at = target.lastIndexOf(FIELD_MARKER);
+  if (at < 0) return null;
+  const field = target.slice(at + FIELD_MARKER.length);
+  const set = operation.patch.set;
+  if (!set || !Object.prototype.hasOwnProperty.call(set, field)) return null;
+  return { value: set[field] };
+}
+
+function compactActor(
+  actor: WorkspaceActor,
+): Pick<WorkspaceActor, 'kind' | 'id' | 'label'> {
+  return {
+    kind: actor.kind,
+    id: actor.id,
+    ...(actor.label ? { label: actor.label } : {}),
+  };
+}
+
+/**
+ * Per-target attribution of the conflicts between `incoming` and the
+ * `committed` changes (in revision order): for every incoming target that
+ * collides, the LAST committed write to touch it (issue #269).
+ *
+ * Identical writes commute: when the incoming operation is a patch that `set`s
+ * a field to a value deep-equal to what the last colliding commit set it to,
+ * the document already carries that value and the target is not a conflict.
+ * Removals, adds and reorders are never dropped this way.
+ */
+export function conflictAttribution(
+  incoming: WorkspaceOperation[],
+  committed: CommittedChange[],
+): ConflictAttribution[] {
+  const writes: Array<{
+    target: string;
+    change: CommittedChange;
+    operation: WorkspaceOperation;
+  }> = [];
+  for (const change of committed)
+    for (const operation of change.operations)
+      for (const target of operationTargets(operation))
+        writes.push({ target, change, operation });
+  const byTarget = new Map<string, ConflictAttribution>();
+  for (const operation of incoming) {
+    for (const target of operationTargets(operation)) {
+      let last: (typeof writes)[number] | null = null;
+      for (const write of writes)
+        if (targetConflict(target, write.target)) last = write;
+      if (!last) continue;
+      const committedValue =
+        last.target === target ? patchSetValue(last.operation, target) : null;
+      const incomingValue = committedValue
+        ? patchSetValue(operation, target)
+        : null;
+      if (
+        committedValue &&
+        incomingValue &&
+        equal(committedValue.value, incomingValue.value)
+      ) {
+        // A later incoming op on the same field decides; an earlier differing
+        // write is cancelled by this identical one.
+        byTarget.delete(target);
+        continue;
+      }
+      const { change } = last;
+      byTarget.set(target, {
+        target,
+        revision: change.revision,
+        operationId: change.operationId,
+        ...(change.proposalId ? { proposalId: change.proposalId } : {}),
+        ...(change.author ? { author: compactActor(change.author) } : {}),
+        operationType: last.operation.type,
+        ...(committedValue &&
+        JSON.stringify(committedValue.value) !== undefined &&
+        new TextEncoder().encode(JSON.stringify(committedValue.value))
+          .byteLength <= MAX_ATTRIBUTED_VALUE_BYTES
+          ? { value: structuredClone(committedValue.value) }
+          : {}),
+      });
+    }
+  }
+  return [...byTarget.values()].sort((a, b) =>
+    a.target < b.target ? -1 : a.target > b.target ? 1 : 0,
+  );
+}
+
+/** Same author identity: kind and id (a session is not an identity). */
+export function sameAuthor(
+  a: Pick<WorkspaceActor, 'kind' | 'id'>,
+  b: Pick<WorkspaceActor, 'kind' | 'id'>,
+): boolean {
+  return a.kind === b.kind && a.id === b.id;
+}
+
+/**
+ * Same-author supersede (issue #269): the conflicting targets that `author`
+ * may overwrite because every one of them was last written by that same
+ * author — through an accepted proposal of theirs or their own direct commit
+ * — and none collides with a removal. Returns null when any conflict was last
+ * written by someone else, by an unattributed change, or by a
+ * `page.remove` / `element.remove`.
+ */
+export function supersededTargets(
+  conflicts: ConflictAttribution[],
+  author: Pick<WorkspaceActor, 'kind' | 'id'>,
+): string[] | null {
+  if (!conflicts.length) return null;
+  for (const conflict of conflicts) {
+    if (
+      conflict.operationType === 'page.remove' ||
+      conflict.operationType === 'element.remove'
+    )
+      return null;
+    if (!conflict.author || !sameAuthor(conflict.author, author)) return null;
+  }
+  return conflicts.map((conflict) => conflict.target);
 }
 
 export function operationPageIds(operation: WorkspaceOperation): string[] {

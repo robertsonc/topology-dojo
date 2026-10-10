@@ -973,6 +973,27 @@ select the dependent operations together, or accept/reject the full proposal.
 Proposal acceptance creates a new forward revision. It does not rewrite past
 history.
 
+#### Conflicted proposals
+
+A proposal is checked field by field against every revision committed after
+its base revision. Work on other fields rebases automatically; a field that a
+later revision also wrote makes the proposal **conflicted**. The card then
+names what it collided with: each conflicting target is attributed to the
+last committed write behind it (its revision, operation id, the proposal it
+came from when it was an accepted proposal, its author, and the committed
+value for a field). A proposal that sets a field to the value the document
+already carries is not in conflict on that field — identical writes commute.
+
+When every conflicting field was last written by the **same agent's own
+earlier accepted proposal**, the card offers **Accept · supersede**: the
+proposal is rebased onto the current revision and its newer values replace
+the agent's earlier ones. The button never appears when any of the fields was
+last written by someone else (including your own direct edits) or when the
+collision is with a removed page or element; those proposals still need the
+agent to resubmit against the current revision. An agent can also submit a
+proposal with `supersede` already set, in which case it arrives as pending
+and **Accept all** applies it the same way.
+
 ### Grant direct-write authority
 
 Without a lease, agent changes must be proposals.
@@ -1044,7 +1065,9 @@ workspace synchronization pauses:
 
 Ordinary disjoint changes can rebase automatically. Same-field edits and
 delete/edit overlap become explicit conflicts; the system does not silently
-choose a winner.
+choose a winner. Every conflict is attributed to the committed write it
+collided with, and setting a field to the value already committed is not a
+conflict.
 
 ## 15. Authoring Preferences and Admin dashboard
 

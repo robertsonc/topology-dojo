@@ -16,7 +16,11 @@
  * (document-replacement confirmation, the autosave→sync hook, sign-in
  * activation, and the beforeunload recovery write).
  */
-import { applyOperations, diffDocuments } from '../workspace/operations.js';
+import {
+  applyOperations,
+  diffDocuments,
+  supersededTargets,
+} from '../workspace/operations.js';
 import {
   acceptWorkspaceProposal,
   commitWorkspaceOperations,
@@ -460,6 +464,46 @@ export function decideCanvasRefresh(input: {
   return 'none';
 }
 
+/**
+ * Pure: a conflicted proposal's attribution line and whether the owner may
+ * accept it with same-author supersede (issue #269). `supersedable` is true
+ * only when every conflicting target was last written by the proposal's own
+ * author (an earlier accepted proposal of theirs) and none is a removal.
+ */
+export function describeProposalConflicts(
+  proposal: Pick<
+    ProposalSummary,
+    'status' | 'conflictingTargets' | 'conflicts' | 'createdBy'
+  >,
+): { note: string; supersedable: boolean } | null {
+  if (proposal.status !== 'conflicted') return null;
+  const conflicts = proposal.conflicts ?? [];
+  const count = proposal.conflictingTargets?.length ?? conflicts.length;
+  const plural = count === 1 ? '' : 's';
+  if (!conflicts.length)
+    return {
+      note: `${count} conflicting target${plural} since its base revision.`,
+      supersedable: false,
+    };
+  const revisions = [...new Set(conflicts.map((c) => c.revision))].sort(
+    (a, b) => a - b,
+  );
+  const where =
+    revisions.length === 1
+      ? `r${revisions[0]}`
+      : `r${revisions[0]}–r${revisions[revisions.length - 1]}`;
+  const supersedable =
+    supersededTargets(conflicts, proposal.createdBy) !== null;
+  return {
+    note: supersedable
+      ? `${count} conflicting target${plural}, all last written at ${where} by this agent's own earlier accepted proposal${
+          new Set(conflicts.map((c) => c.proposalId)).size === 1 ? '' : 's'
+        } — “Accept · supersede” applies the newer values.`
+      : `${count} conflicting target${plural} last written at ${where}, including writes by others; the agent must resubmit against the current revision.`,
+    supersedable,
+  };
+}
+
 /** Pure: the panel body for an active workspace (revision/sync/lease/proposals). */
 export function renderActiveWorkspaceHtml(
   workspace: ActiveWorkspace,
@@ -477,6 +521,12 @@ export function renderActiveWorkspaceHtml(
             (proposal.rationale
               ? `<div class="ws-note">${esc(proposal.rationale)}</div>`
               : '') +
+            (() => {
+              const detail = describeProposalConflicts(proposal);
+              return detail
+                ? `<div class="ws-note ws-conflict-note">${esc(detail.note)}</div>`
+                : '';
+            })() +
             // The description is a button (interactive content inside the
             // label, so clicking it never toggles the checkbox): it opens the
             // preview and flashes the operation's changed geometry.
@@ -493,6 +543,9 @@ export function renderActiveWorkspaceHtml(
             }</ul>` +
             `<div class="ws-actions"><button class="tbtn ws-accept" data-pid="${esc(proposal.id)}">Accept all</button>` +
             `<button class="tbtn ws-accept-selected" data-pid="${esc(proposal.id)}">Accept selected</button>` +
+            (describeProposalConflicts(proposal)?.supersedable
+              ? `<button class="tbtn ws-accept-supersede" data-pid="${esc(proposal.id)}" title="Rebase over this agent's own earlier writes and apply the newer values">Accept · supersede</button>`
+              : '') +
             `<button class="tbtn ws-reject" data-pid="${esc(proposal.id)}">Reject</button>` +
             `<button class="tbtn ws-preview-toggle" data-pid="${esc(proposal.id)}">Preview</button></div>` +
             `<div class="ws-preview" data-pid="${esc(proposal.id)}" hidden></div></div>`,
@@ -1648,6 +1701,7 @@ export function mountWorkspacePanel(
     const runAccept = (
       proposalId: string,
       selectedOperationIndices?: number[],
+      supersede?: boolean,
     ): void => {
       void (async () => {
         if (workspaceHasLocalChanges(workspace) && !(await syncWorkspace()))
@@ -1657,6 +1711,7 @@ export function mountWorkspacePanel(
           proposalId,
           operationId('ui_accept'),
           selectedOperationIndices,
+          supersede,
         );
         if (!result.ok) {
           workspace.error = result.message;
@@ -1686,6 +1741,13 @@ export function mountWorkspacePanel(
     body.querySelectorAll<HTMLButtonElement>('.ws-accept').forEach((button) => {
       button.addEventListener('click', () => runAccept(button.dataset.pid!));
     });
+    body
+      .querySelectorAll<HTMLButtonElement>('.ws-accept-supersede')
+      .forEach((button) => {
+        button.addEventListener('click', () =>
+          runAccept(button.dataset.pid!, undefined, true),
+        );
+      });
     body
       .querySelectorAll<HTMLButtonElement>('.ws-accept-selected')
       .forEach((button) => {
