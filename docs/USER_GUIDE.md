@@ -285,6 +285,30 @@ order. Use **Straighten (clear bends)** to remove all manual waypoints.
 Either way, waypoints are kept and a pinned port on the moved end is cleared.
 Self-loops are refused.
 
+### Link anchor box (experimental)
+
+By default a link attaches to the edge of the node icon, so a link leaving the
+bottom of a node runs straight through its label. The **Link anchor box**
+option (page Properties, under Crossings; off unless you turn it on) makes
+links attach to a box around the node instead: the icon's hit box padded by
+**Box padding** (6 px unless set) on every side, with the side that carries
+the label extended past the label text. Ports pin to that box; auto endpoints
+leave through its faces (round icons keep a round outline, padded, except on
+the label side). Each node's Properties has the same switch under Advanced to
+override the page setting for that node only, and a selected node shows its
+anchor box as a faint dashed outline.
+
+**Distribute ends** spreads every link endpoint on a node side into evenly
+spaced slots, ordered by where the links go, so a stack of links into one side
+never crosses at the node; parallel links between the same two nodes then no
+longer fan out on that side. Each link also gets **From side offset** / **To
+side offset** (Routing group, in `-1 … 1`): a fractional shift along the side
+it attaches to (0 = centre, ±1 = the ends) for side ports and auto endpoints;
+corner ports ignore it. These fields only take effect while the anchor box is
+active for that node. The feature is experimental: documents without it render
+exactly as before, and `inspect_render` / Problems measure the drawn geometry
+either way.
+
 ### Anchors
 
 An anchor is a free-floating endpoint for a link when the route should end or

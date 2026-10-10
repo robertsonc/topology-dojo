@@ -2066,7 +2066,24 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         swatchRow(f.key, v as string | undefined),
       );
     case 'number':
-      return `<label class="${row}"><span>${f.label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"/></label>`;
+      return `<label class="${row}"><span>${f.label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${f.range ? ` min="${f.range[0]}" max="${f.range[1]}" step="any"` : ''}/></label>`;
+    case 'object': {
+      // An enable switch on the field itself (checked = the object present,
+      // at its defaults), then its nested fields as dotted keys
+      // ("linkAttach.pad") that fieldPatch merges back into the object.
+      const on = typeof v === 'object' && v !== null;
+      const sub = on ? (v as Record<string, unknown>) : {};
+      let html = `<label class="${row}"><span>${f.label}</span><input type="checkbox" data-key="${f.key}" data-kind="object" ${on ? 'checked' : ''}/></label>`;
+      if (on)
+        for (const s of f.fields ?? []) {
+          const key = `${f.key}.${s.key}`;
+          html += fieldControl(
+            { ...s, key, label: `↳ ${s.label}` },
+            { [key]: sub[s.key] },
+          );
+        }
+      return html;
+    }
     case 'point':
     case 'points':
       return `<div class="insp-row"><span>${f.label}</span><span class="insp-val">${Array.isArray(v) ? v.length : 0} pt</span></div>`;
@@ -2079,6 +2096,38 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         return `<label class="insp-row col"><span>${f.label}</span><textarea data-key="${f.key}" rows="4"${f.max ? ` maxlength="${f.max}"` : ''} spellcheck="true">${esc(String(v ?? ''))}</textarea></label>`;
       return `<label class="${row}"><span>${f.label}</span><input data-key="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
   }
+}
+
+/**
+ * The element patch for one inspector edit. A dotted key addresses a nested
+ * `object` field ("linkAttach.pad"): the current object is copied and the
+ * sub-field set (a blank / NaN number clears it). A boolean on an `object`
+ * field itself is its enable switch: true → `{}` (on, at the defaults),
+ * false → the field cleared. Plain keys patch as before.
+ */
+function fieldPatch(
+  info: { fields: FieldSpec[] } | undefined,
+  current: Record<string, unknown> | undefined,
+  key: string,
+  val: unknown,
+): Record<string, unknown> {
+  const dot = key.indexOf('.');
+  if (dot < 0) {
+    const spec = info?.fields.find((f) => f.key === key);
+    if (spec?.kind === 'object') return { [key]: val ? {} : undefined };
+    return { [key]: val };
+  }
+  const parent = key.slice(0, dot);
+  const child = key.slice(dot + 1);
+  const cur = current?.[parent];
+  const next: Record<string, unknown> =
+    typeof cur === 'object' && cur !== null
+      ? { ...(cur as Record<string, unknown>) }
+      : {};
+  if (val === '' || (typeof val === 'number' && Number.isNaN(val)))
+    delete next[child];
+  else next[child] = val;
+  return { [parent]: next };
 }
 
 /** Node metadata key/value editor (serials, versions, hostnames, sites…). */
@@ -2182,7 +2231,16 @@ const LINK_GROUPS: FieldGroup[] = [
   },
   {
     title: 'Routing',
-    keys: ['lineStyle', 'fromPort', 'toPort', 'cornerRadius', 'waypoints'],
+    keys: [
+      'lineStyle',
+      'fromPort',
+      'toPort',
+      'fromPortOffset',
+      'toPortOffset',
+      'cornerRadius',
+      'waypoints',
+    ],
+    fineTune: ['fromPortOffset', 'toPortOffset'],
     open: true,
   },
   {
@@ -2209,7 +2267,10 @@ const NODE_GROUPS: FieldGroup[] = [
   },
   { title: 'Appearance', keys: ['color', 'opacity', 'status'], open: true },
   { title: 'Position', keys: ['x', 'y'] },
-  { title: 'Advanced', keys: ['href', 'tooltip', 'locked', 'layer', 'source'] },
+  {
+    title: 'Advanced',
+    keys: ['href', 'tooltip', 'locked', 'linkAttach', 'layer', 'source'],
+  },
 ];
 
 /**
@@ -2306,6 +2367,12 @@ function propertiesHtml(): string {
     `<option value="arc"${page.lineJumps === 'arc' ? ' selected' : ''}>jump — arc</option>` +
     `<option value="gap"${page.lineJumps === 'gap' ? ' selected' : ''}>jump — gap</option>` +
     `</select></label>` +
+    // Experimental link anchor box — page-level; nodes may override it.
+    `<label class="insp-row" title="Experimental: links attach to a padded box that clears the node label instead of the icon edge. Nodes can override it in their Properties."><span>Link anchor box</span><input type="checkbox" id="p-attach"${page.linkAttach ? ' checked' : ''}/></label>` +
+    (page.linkAttach
+      ? `<label class="insp-row"><span>Box padding</span><input type="number" id="p-attach-pad" min="0" max="200" step="any" placeholder="6" value="${page.linkAttach.pad ?? ''}"/></label>` +
+        `<label class="insp-row" title="Spread every link endpoint on a node side into evenly spaced slots"><span>Distribute ends</span><input type="checkbox" id="p-attach-dist"${page.linkAttach.distribute ? ' checked' : ''}/></label>`
+      : '') +
     frameStoryHtml() +
     `<div class="insp-h">Legend</div>` +
     `<label class="insp-row"><span>Show key</span><input type="checkbox" id="p-legend"${doc.legend?.show ? ' checked' : ''}/></label>` +
@@ -2426,6 +2493,31 @@ function wireProperties(): void {
           ? jumps.value
           : undefined,
     });
+  });
+  // Link anchor box (experimental) — page-level; the art redraws on change.
+  const attachOn = inspector.querySelector<HTMLInputElement>('#p-attach');
+  attachOn?.addEventListener('change', () => {
+    editor.updatePageProps({
+      linkAttach: attachOn.checked ? { ...editor.page.linkAttach } : undefined,
+    });
+    renderInspector();
+  });
+  const attachPad = inspector.querySelector<HTMLInputElement>('#p-attach-pad');
+  attachPad?.addEventListener('input', () => {
+    const v = Number(attachPad.value);
+    const next = { ...editor.page.linkAttach };
+    if (attachPad.value === '' || !Number.isFinite(v)) delete next.pad;
+    else next.pad = Math.max(0, v);
+    editor.updatePageProps({ linkAttach: next }, !editing);
+    editing = true;
+  });
+  const attachDist =
+    inspector.querySelector<HTMLInputElement>('#p-attach-dist');
+  attachDist?.addEventListener('change', () => {
+    const next = { ...editor.page.linkAttach };
+    if (attachDist.checked) next.distribute = true;
+    else delete next.distribute;
+    editor.updatePageProps({ linkAttach: next });
   });
   // Legend (B.1) — a per-document setting; redraw the overlay so it shows live.
   const legendOn = inspector.querySelector<HTMLInputElement>('#p-legend');
@@ -2577,9 +2669,21 @@ function renderInspector(): void {
       editor.updateNode({ type: t });
       renderInspector();
     });
-    wireFields((key, val, commit) =>
-      editor.updateNode({ [key]: val } as Record<string, unknown>, commit),
-    );
+    wireFields((key, val, commit) => {
+      const info = getNodeType(node.type, doc.customNodes);
+      editor.updateNode(
+        fieldPatch(
+          info,
+          editor.getSelectedNode() as Record<string, unknown> | undefined,
+          key,
+          val,
+        ) as Record<string, unknown>,
+        commit,
+      );
+      // An `object` field's enable switch shows/hides its nested rows.
+      if (info?.fields.find((f) => f.key === key)?.kind === 'object')
+        renderInspector();
+    });
     wireMeta(node.meta);
   } else if (link) {
     wireType((t) => {
@@ -2587,7 +2691,15 @@ function renderInspector(): void {
       renderInspector();
     });
     wireFields((key, val, commit) =>
-      editor.updateLink({ [key]: val } as Record<string, unknown>, commit),
+      editor.updateLink(
+        fieldPatch(
+          getLinkType(link.type),
+          editor.getSelectedLink() as Record<string, unknown> | undefined,
+          key,
+          val,
+        ) as Record<string, unknown>,
+        commit,
+      ),
     );
     for (const end of ['from', 'to'] as const)
       inspector

@@ -196,6 +196,78 @@ describe('MCP tools', () => {
     expect(doc.pages[1]!.viewBox).toBe('0 0 1600 900');
   });
 
+  it('set_page_properties sets, round-trips and clears the experimental linkAttach', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    const on = call('set_page_properties', {
+      topologyId: id,
+      linkAttach: { pad: 8, distribute: true },
+    }) as { linkAttach?: { pad?: number; distribute?: boolean } };
+    expect(on.linkAttach).toEqual({ pad: 8, distribute: true });
+    let doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.pages[0]!.linkAttach).toEqual({ pad: 8, distribute: true });
+    // `{}` is "on with defaults" (the renderer pads by 6), not "off".
+    const bare = call('set_page_properties', {
+      topologyId: id,
+      linkAttach: {},
+    }) as { linkAttach?: unknown };
+    expect(bare.linkAttach).toEqual({});
+    // Link port offsets and node overrides ride the generic element paths.
+    call('add_node', {
+      topologyId: id,
+      nodeId: 'a',
+      type: 'ec',
+      x: 100,
+      y: 100,
+    });
+    call('add_node', {
+      topologyId: id,
+      nodeId: 'b',
+      type: 'ec',
+      x: 400,
+      y: 100,
+    });
+    call('add_link', {
+      topologyId: id,
+      linkId: 'ab',
+      type: 'line',
+      from: 'a',
+      to: 'b',
+    });
+    call('update_element', {
+      topologyId: id,
+      elementId: 'ab',
+      set: { fromPort: 'e', fromPortOffset: 0.5, toPortOffset: -0.25 },
+    });
+    call('update_element', {
+      topologyId: id,
+      elementId: 'b',
+      set: { linkAttach: { pad: 2, distribute: false } },
+    });
+    doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.pages[0]!.links[0]!.fromPortOffset).toBe(0.5);
+    expect(doc.pages[0]!.links[0]!.toPortOffset).toBe(-0.25);
+    expect(doc.pages[0]!.nodes[1]!.linkAttach).toEqual({
+      pad: 2,
+      distribute: false,
+    });
+    const v = call('validate_topology', { topologyId: id }) as {
+      valid: boolean;
+      problems: { message: string }[];
+    };
+    expect(v.valid).toBe(true);
+    expect(
+      v.problems.filter((p) => /linkAttach|PortOffset/.test(p.message)),
+    ).toEqual([]);
+    // "none" clears the page setting.
+    const off = call('set_page_properties', {
+      topologyId: id,
+      linkAttach: 'none',
+    }) as { linkAttach?: unknown };
+    expect(off.linkAttach).toBeUndefined();
+    doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.pages[0]!.linkAttach).toBeUndefined();
+  });
+
   it('node common fields include opacity + label controls (catalog-driven)', () => {
     const { id } = call('create_topology', {}) as { id: string };
     const node = call('add_node', {

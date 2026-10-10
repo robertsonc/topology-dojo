@@ -30,11 +30,16 @@
  * reported, and one it could not clear is.
  *
  * Routing checks measure the DRAWN link geometry, not the centre-to-centre
- * chord: each link is a polyline centre → `waypoints` → centre, with the
- * engine's `_buildLinkPath` elbows (`{x: p[i].x, y: p[i-1].y}` between
- * consecutive points) inserted for `lineStyle: 'orthogonal'`, and the control
- * polygon used for `lineStyle: 'curved'` (a 2-point curve bulges ≤20px, so the
- * chord is close enough). Link/link crossings are classified: a crossing whose
+ * chord: each link is a polyline from its drawn start → `waypoints` → drawn
+ * end, where the endpoints are the engine's trimmed attachment points
+ * (render/link-attach: ports, silhouette clip + gap, parallel fan-out, the
+ * experimental anchor box) rather than the node centres, with the engine's
+ * `_buildLinkPath` elbows (`{x: p[i].x, y: p[i-1].y}` between consecutive
+ * points) inserted for `lineStyle: 'orthogonal'`, and the control polygon
+ * used for `lineStyle: 'curved'` (a 2-point curve bulges ≤20px, so the chord
+ * is close enough). A link whose drawn polyline runs through the label of
+ * one of its own nodes is a text finding (the anchor box is the cure).
+ * Link/link crossings are classified: a crossing whose
  * four endpoints are closed into a 4-cycle by other links of the SAME kind
  * (type, layer, dashed) is an unavoidable dual-homed mesh (K2,2 / K2,4 drawn
  * as rows) and is reported as a `note`; every other crossing, including a
@@ -48,6 +53,7 @@ import { nodeLabelRect } from './label-placement.js';
 import { NODE_LABEL, nodeLabelLines } from './node-labels.js';
 import { zoneBox } from './zone-box.js';
 import type { Page } from '../pages/model.js';
+import type { CustomNodeSpec } from '../nodes/spec.js';
 import type {
   FlowPathConfig,
   LinkConfig,
@@ -55,6 +61,11 @@ import type {
   ZoneConfig,
 } from '../vendor/topology-ds.js';
 import { nodeBounds, type BoundsRect } from '../api/geometry.js';
+import {
+  createAttachContext,
+  engineHitBoxes,
+  type AttachContext,
+} from './link-attach.js';
 import { LAYOUT_RULES, parseViewBox, rectGap } from '../api/layout.js';
 import {
   MARKER_LABEL_GAP,
@@ -105,6 +116,12 @@ export interface InspectReport {
 export interface InspectOptions {
   /** Max findings reported per category (default 8); totals stay accurate. */
   maxPerCategory?: number;
+  /**
+   * The document's custom node types — their hit boxes decide where links
+   * attach to custom-typed nodes (as the renderer registers them). Absent =
+   * the stock pack only.
+   */
+  customNodes?: CustomNodeSpec[];
 }
 
 const DEFAULT_MAX_PER_CATEGORY = 8;
@@ -156,10 +173,15 @@ export function inspectPage(
     const box = zoneBox(page, z);
     if (box) zoneBoxes.set(z.id, box);
   }
+  // Drawn link endpoints (the engine's attachment, mirrored) — every link
+  // polyline below starts and ends where the stroke actually does.
+  const attach = createAttachContext(page, {
+    hitBoxes: engineHitBoxes(opts.customNodes),
+  });
 
   checkCrop(page, pageRect, glyphs, labels, zoneBoxes, add);
-  checkText(page, glyphs, hit, labels, pos, zones, zoneBoxes, add);
-  const crossings = checkRouting(page, pos, glyphs, add);
+  checkText(page, glyphs, hit, labels, pos, zones, zoneBoxes, attach, add);
+  const crossings = checkRouting(page, pos, glyphs, attach, add);
   checkDensity(page, glyphs, labels, add);
 
   // Content bounds + margins (also feeds the whitespace-balance check below).
@@ -293,8 +315,24 @@ function checkText(
   pos: Map<string, { x: number; y: number }>,
   zones: ZoneConfig[],
   zoneBoxes: Map<string, BoundsRect>,
+  attach: AttachContext,
   add: (s: InspectSeverity, c: InspectCategory, m: string) => void,
 ): void {
+  // A link drawn through the label of one of its own nodes: the classic
+  // attachment starts 3px under the icon, straight into a south label.
+  for (const l of page.links) {
+    const pts = drawnPolyline(attach, l);
+    if (!pts) continue;
+    for (const id of l.from === l.to ? [l.from] : [l.from, l.to]) {
+      const lr = labels.get(id);
+      if (lr && polylineIntersectsRect(pts, lr))
+        add(
+          'problem',
+          'text',
+          `link "${l.id}" runs through the label of its node "${id}" — enable the link anchor box (linkAttach) on the page or node, or route the link away from the label`,
+        );
+    }
+  }
   for (const n of page.nodes) {
     const label = typeof n.label === 'string' ? n.label : '';
     // Only the classic below-node label is truncated; text boxes, callouts
@@ -364,7 +402,7 @@ function checkText(
     const box = zoneBoxes.get(z.id);
     if (box) zoneTitles.set(z.id, zoneLabelRect(z, box));
   }
-  const pills = placePills(page, pos, hit, zoneTitles);
+  const pills = placePills(page, pos, hit, zoneTitles, attach);
   const describe = (p: Pill): string =>
     `label of ${p.kind === 'link' ? 'link' : p.kind === 'flow' ? 'flow path' : 'marker'} "${p.id}"`;
   for (let i = 0; i < pills.length; i++) {
@@ -442,10 +480,8 @@ function checkText(
         );
     }
     for (const l of page.links) {
-      const a = pos.get(l.from),
-        b = pos.get(l.to);
-      if (!a || !b) continue;
-      if (polylineIntersectsRect(linkPolyline(l, a, b), lr))
+      const pts = drawnPolyline(attach, l);
+      if (pts && polylineIntersectsRect(pts, lr))
         add(
           'problem',
           'text',
@@ -477,6 +513,7 @@ function placePills(
   pos: Map<string, { x: number; y: number }>,
   hit: Map<string, BoundsRect>,
   zoneTitles: Map<string, BoundsRect>,
+  attach: AttachContext,
 ): Pill[] {
   const fixed = [...hit.values(), ...zoneTitles.values()];
   const pills: Pill[] = [];
@@ -524,7 +561,7 @@ function placePills(
   for (const f of page.flowPaths ?? []) {
     const label = typeof f.label === 'string' ? f.label : '';
     if (!label) continue;
-    const seg = longestSegment(flowSegments(page, f, pos));
+    const seg = longestSegment(flowSegments(page, f, pos, attach));
     if (!seg) continue;
     const anchor = segmentLabelAnchor(seg);
     const size = pillSize('flow', labelLines('flow', label, f.labelWidth));
@@ -570,6 +607,7 @@ function flowSegments(
   page: Page,
   f: FlowPathConfig,
   pos: Map<string, { x: number; y: number }>,
+  attach: AttachContext,
 ): PathSegment[] {
   const wps = f.waypoints ?? [];
   const segs: PathSegment[] = [];
@@ -594,9 +632,7 @@ function flowSegments(
         if (!best) best = cand;
       }
       if (best) {
-        const from = pos.get(best.link.from)!,
-          to = pos.get(best.link.to)!;
-        pts = linkPolyline(best.link, from, to);
+        pts = drawnPolyline(attach, best.link) ?? pts;
         if (best.reversed) pts = [...pts].reverse();
       }
     }
@@ -611,18 +647,18 @@ function checkRouting(
   page: Page,
   pos: Map<string, { x: number; y: number }>,
   glyphs: Map<string, BoundsRect>,
+  attach: AttachContext,
   add: (s: InspectSeverity, c: InspectCategory, m: string) => void,
 ): InspectReport['crossings'] {
   interface Route {
     link: LinkConfig;
-    /** Centre → waypoints (+ orthogonal elbows) → centre, as drawn. */
+    /** Drawn start → waypoints (+ orthogonal elbows) → drawn end. */
     pts: Pt[];
   }
   const routes: Route[] = [];
   for (const l of page.links) {
-    const a = pos.get(l.from);
-    const b = pos.get(l.to);
-    if (a && b) routes.push({ link: l, pts: linkPolyline(l, a, b) });
+    const pts = drawnPolyline(attach, l);
+    if (pts) routes.push({ link: l, pts });
   }
 
   // Undirected adjacency keyed by link KIND (type + layer + dashed), for
@@ -752,9 +788,11 @@ function checkRouting(
           `link "${r.link.id}" passes through unrelated node "${n.id}" — route around it or move the node`,
         );
     }
-    // Degenerate geometry: endpoints so close the perimeter trims collapse.
-    const a = r.pts[0]!,
-      b = r.pts[r.pts.length - 1]!;
+    // Degenerate geometry: endpoints so close the perimeter trims collapse
+    // (measured centre to centre — the threshold is about the engine's
+    // trims, which the drawn endpoints have already absorbed).
+    const a = pos.get(r.link.from)!,
+      b = pos.get(r.link.to)!;
     const dist = Math.hypot(b.x - a.x, b.y - a.y);
     if (dist < 0.5)
       add(
@@ -959,7 +997,17 @@ function segmentIntersection(a: Pt, b: Pt, c: Pt, d: Pt): Pt | null {
 }
 
 /**
- * The polyline a link is drawn along: centre → waypoints → centre, with the
+ * The polyline a link is drawn along, from its drawn endpoints (the engine's
+ * attachment, mirrored by render/link-attach), or null when an endpoint id
+ * is unknown.
+ */
+function drawnPolyline(attach: AttachContext, l: LinkConfig): Pt[] | null {
+  const e = attach.endpoints(l);
+  return e ? linkPolyline(l, e.from, e.to) : null;
+}
+
+/**
+ * The polyline a link is drawn along: start → waypoints → end, with the
  * engine's `_buildLinkPath` orthogonal elbows inserted, or the control polygon
  * for a curved link (its 2-point bulge is ≤20px, so the chord stands in).
  */
