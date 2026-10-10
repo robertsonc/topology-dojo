@@ -24,6 +24,7 @@ import {
   computeWorkspaceChipState,
   computeWorkspacePanelState,
   decideCanvasRefresh,
+  describeProposalConflicts,
   renderActiveWorkspaceHtml,
   renderChangedElementOverlay,
   renderCheckpointsHtml,
@@ -1342,5 +1343,84 @@ describe('computeWorkspacePanelState (issue #212 groundwork)', () => {
     expect(state.error).toBe('Revision conflict: rebase required');
     expect(state.offline).toBe(true);
     expect(state.pendingOps).toBe(2);
+  });
+});
+
+describe('describeProposalConflicts (issue #269)', () => {
+  const own = (target: string, revision = 9) => ({
+    target,
+    revision,
+    operationId: 'ui_accept_1',
+    proposalId: 'prop_0',
+    author: { kind: 'agent' as const, id: 'agent-1' },
+    operationType: 'element.patch' as const,
+    value: 'x',
+  });
+
+  it('is null for anything but a conflicted proposal', () => {
+    expect(describeProposalConflicts(proposal())).toBeNull();
+  });
+
+  it('offers supersede when every target was last written by the same agent', () => {
+    const detail = describeProposalConflicts(
+      proposal({
+        status: 'conflicted',
+        conflictingTargets: ['t/a', 't/b'],
+        conflicts: [own('t/a'), own('t/b', 11)],
+      }),
+    );
+    expect(detail).toEqual({
+      note: "2 conflicting targets, all last written at r9–r11 by this agent's own earlier accepted proposal — “Accept · supersede” applies the newer values.",
+      supersedable: true,
+    });
+    const html = renderActiveWorkspaceHtml(
+      activeWorkspace({
+        proposals: [
+          proposal({
+            status: 'conflicted',
+            conflictingTargets: ['t/a'],
+            conflicts: [own('t/a')],
+          }),
+        ],
+      }),
+    );
+    expect(html).toContain('ws-conflict-note');
+    expect(html).toContain(
+      'class="tbtn ws-accept-supersede" data-pid="prop_1"',
+    );
+  });
+
+  it('does not offer supersede when someone else wrote a target, or without attribution', () => {
+    const detail = describeProposalConflicts(
+      proposal({
+        status: 'conflicted',
+        conflictingTargets: ['t/a', 't/b'],
+        conflicts: [
+          own('t/a'),
+          { ...own('t/b', 12), author: { kind: 'user', id: 'owner' } },
+        ],
+      }),
+    );
+    expect(detail).toEqual({
+      note: '2 conflicting targets last written at r9–r12, including writes by others; the agent must resubmit against the current revision.',
+      supersedable: false,
+    });
+    expect(
+      describeProposalConflicts(
+        proposal({ status: 'conflicted', conflictingTargets: ['t/a'] }),
+      ),
+    ).toEqual({
+      note: '1 conflicting target since its base revision.',
+      supersedable: false,
+    });
+    const html = renderActiveWorkspaceHtml(
+      activeWorkspace({
+        proposals: [
+          proposal({ status: 'conflicted', conflictingTargets: ['t/a'] }),
+        ],
+      }),
+    );
+    expect(html).toContain('ws-conflict-note');
+    expect(html).not.toContain('ws-accept-supersede');
   });
 });

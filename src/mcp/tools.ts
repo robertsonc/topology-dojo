@@ -325,6 +325,14 @@ const compactWorkspaceOperations = z
   .min(1)
   .max(250);
 
+/** Same-author supersede flag shared by the workspace write tools (issue #269). */
+const supersedeFlag = z
+  .boolean()
+  .optional()
+  .describe(
+    'Supersede your own earlier writes: when every conflicting target was last written by your own accepted proposal or leased commit, rebase onto the current revision and apply these values over them (result carries rebased:true and superseded:[targets]). A target last written by anyone else, or a collision with a removal, still returns the attributed conflict.',
+  );
+
 /** Build the full set of tools bound to a store and runtime deps. */
 export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
   const tools: ToolDef[] = [
@@ -1766,7 +1774,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       {
         name: 'describe_workspace_operations',
         description:
-          'Return the versioned semantic operation vocabulary and examples. Call only before a first workspace write or when operationSchemaRevision changes; do not repeat it every turn. Revision 2 adds element.upsert (source-keyed converge, the workspace twin of upsert_by_source): the coordinator resolves it into element.add or element.patch against the current document. A leased apply converges immediately. A proposal is resolved when submitted; if another revision binds the same source identity before it is accepted, acceptance reports a conflict on that source (page/<id>/source/...) instead of adding a second element — re-read get_workspace_changes, re-diff, and propose again.',
+          'Return the versioned semantic operation vocabulary and examples. Call only before a first workspace write or when operationSchemaRevision changes; do not repeat it every turn. Revision 2 adds element.upsert (source-keyed converge, the workspace twin of upsert_by_source): the coordinator resolves it into element.add or element.patch against the current document. A leased apply converges immediately. A proposal is resolved when submitted; if another revision binds the same source identity before it is accepted, acceptance reports a conflict on that source (page/<id>/source/...) instead of adding a second element — re-read get_workspace_changes, re-diff, and propose again. A conflict result also attributes every target to the last committed write behind it (conflicts[]), and a write whose conflicts are all your own earlier work can be resubmitted with supersede:true.',
         inputShape: {},
         handler: () => ({
           operationSchemaRevision: 2,
@@ -1803,6 +1811,13 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             kind: 'nodes',
             source: { system: 'netbox', kind: 'device', id: 'core1' },
             element: { type: 'router', x: 120, y: 80, label: 'core1' },
+          },
+          conflicts: {
+            rule: 'Field-granular: a batch conflicts only where a revision committed after its baseRevision touched the same target (same field, delete-versus-edit, same source identity, order wildcards). Disjoint work rebases automatically. A patch that sets a field to the value the last committed write already set is not a conflict (identical writes commute).',
+            result:
+              '{ ok:false, code:"conflict", revision, message, conflictingTargets: string[], conflicts: [{ target, revision, operationId, proposalId?, author?: { kind, id, label? }, operationType, value? }] } — one entry per target naming the LAST committed write behind it; value is the committed set value for a field target (omitted for removals/adds/reorders and large values). A conflicted proposal stores the same conflicts[] (get the proposal / list proposals).',
+            supersede:
+              'propose_workspace_changes and apply_workspace_changes accept supersede:true: when every conflict is attributed to your own earlier work (an accepted proposal of yours or your own leased commit) and none is a page.remove/element.remove, the batch is rebased onto the current revision and your values replace the earlier ones; the ok result carries rebased:true and superseded:[targets]. A proposal submitted with supersede keeps the flag for its browser accept. Anything last written by someone else still conflicts.',
           },
         }),
       },
@@ -1854,7 +1869,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       {
         name: 'propose_workspace_changes',
         description:
-          'Submit a named semantic change set for owner review. This is the default write path: it never mutates the canonical document until the browser user accepts it.',
+          'Submit a named semantic change set for owner review. This is the default write path: it never mutates the canonical document until the browser user accepts it. A stale base is checked field by field: the proposal is stamped conflicted with conflicts[] attributing each target to the last committed write (revision, operationId, proposalId, author, value). When those are all your own accepted writes, resubmit with supersede:true (or ask the owner to accept with supersede) instead of rebasing by hand.',
         inputShape: {
           workspaceId,
           baseRevision: z.number().int().min(0),
@@ -1868,6 +1883,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             multiline: true,
           }).optional(),
           operations: compactWorkspaceOperations,
+          supersede: supersedeFlag,
         },
         handler: (a) =>
           workspace.propose(
@@ -1876,6 +1892,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               baseRevision: Number(a.baseRevision),
               operationId: String(a.operationId),
               operations: a.operations as WorkspaceOperation[],
+              ...(a.supersede === true ? { supersede: true } : {}),
             },
             String(a.title),
             a.rationale === undefined ? undefined : String(a.rationale),
@@ -1884,18 +1901,20 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       {
         name: 'apply_workspace_changes',
         description:
-          'Commit semantic operations directly only while the browser has granted a live lease for that page. Suggest-only is the default; without a lease use propose_workspace_changes.',
+          'Commit semantic operations directly only while the browser has granted a live lease for that page. Suggest-only is the default; without a lease use propose_workspace_changes. A conflict result attributes each target to the last committed write (conflicts[]); pass supersede:true to rebase over conflicts that are all your own earlier writes.',
         inputShape: {
           workspaceId,
           baseRevision: z.number().int().min(0),
           operationId,
           operations: compactWorkspaceOperations,
+          supersede: supersedeFlag,
         },
         handler: (a) =>
           workspace.applyAgent(String(a.workspaceId), {
             baseRevision: Number(a.baseRevision),
             operationId: String(a.operationId),
             operations: a.operations as WorkspaceOperation[],
+            ...(a.supersede === true ? { supersede: true } : {}),
           }),
       },
       {

@@ -18,7 +18,7 @@ export default {
       const user = { kind: 'user', id: owner };
       const agent = {
         kind: 'agent',
-        id: owner,
+        id: input.agentId ? String(input.agentId) : owner,
         ...(input.sessionId ? { sessionId: String(input.sessionId) } : {}),
         ...(input.guidanceConsultedBefore
           ? { guidanceConsultedBefore: true }
@@ -32,7 +32,7 @@ export default {
         case 'user': result = await stub.applyUserOperations(owner, user, input.commit); break;
         case 'agent': result = await stub.applyAgentOperations(owner, agent, input.commit); break;
         case 'propose': result = await stub.propose(owner, agent, input.commit, String(input.title ?? 'Proposal')); break;
-        case 'accept': result = await stub.acceptProposal(owner, user, String(input.proposalId), String(input.operationId), input.selectedOperationIndices); break;
+        case 'accept': result = await stub.acceptProposal(owner, user, String(input.proposalId), String(input.operationId), input.selectedOperationIndices, Boolean(input.supersede)); break;
         case 'proposal': result = await stub.getProposal(owner, String(input.proposalId)); break;
         case 'checkpoint': result = await stub.createCheckpoint(owner, input.asAgent ? agent : user, String(input.name)); break;
         case 'checkpoints': result = await stub.listCheckpoints(owner); break;
@@ -1013,5 +1013,375 @@ describe('agent revision explainability (Initiative A)', () => {
       sessionId: 'sess-prop',
       guidanceConsultedBefore: true,
     });
+  }, 30_000);
+});
+
+describe('attributed conflicts and same-author supersede (issue #269)', () => {
+  interface Conflict {
+    target: string;
+    revision: number;
+    operationId: string;
+    proposalId?: string;
+    author?: { kind: string; id: string };
+    operationType: string;
+    value?: unknown;
+  }
+  interface Outcome {
+    ok: boolean;
+    code?: string;
+    revision: number;
+    rebased?: boolean;
+    message?: string;
+    conflictingTargets?: string[];
+    conflicts?: Conflict[];
+    superseded?: string[];
+  }
+  interface Stored {
+    id: string;
+    status: string;
+    conflictingTargets?: string[];
+    conflicts?: Conflict[];
+    supersede?: boolean;
+    superseded?: string[];
+  }
+  const fields = (label: string, sublabel: string) => ({
+    label,
+    sublabel,
+    meta: { role: label.toLowerCase() },
+  });
+  const sixTargets = [
+    'page/p1/element/nodes/a/field/label',
+    'page/p1/element/nodes/a/field/meta',
+    'page/p1/element/nodes/a/field/sublabel',
+    'page/p1/element/nodes/b/field/label',
+    'page/p1/element/nodes/b/field/meta',
+    'page/p1/element/nodes/b/field/sublabel',
+  ];
+
+  /** Proposal A by `agentId` rewrites a and b (base r0) and is accepted at
+   * r1; proposal B by agent "x" (base r0) rewrites the same fields. */
+  async function selfCollision(
+    W: string,
+    agentId: string,
+    bOps: unknown[] = [
+      patch('p1', 'a', fields('A2', 'edge-2')),
+      patch('p1', 'b', fields('B2', 'edge-2')),
+    ],
+    bExtra: Record<string, unknown> = {},
+  ) {
+    await call({
+      action: 'initialize',
+      workspace: W,
+      document: {
+        title: 'T',
+        customNodes: [],
+        pages: [
+          {
+            id: 'p1',
+            name: 'p1',
+            viewBox: '0 0 1050 700',
+            nodes: [
+              { id: 'a', type: 'ec', x: 10, y: 10, label: 'a' },
+              { id: 'b', type: 'ec', x: 20, y: 20, label: 'b' },
+            ],
+            links: [],
+            anchors: [],
+            zones: [],
+            flowPaths: [],
+            policyMarkers: [],
+          },
+        ],
+      },
+    });
+    const a = await call<{ proposal: { id: string } }>({
+      action: 'propose',
+      workspace: W,
+      agentId,
+      title: 'first pass',
+      commit: {
+        baseRevision: 0,
+        operationId: `${W}-prA`,
+        operations: [
+          patch('p1', 'a', fields('A1', 'edge-1')),
+          patch('p1', 'b', fields('B1', 'edge-1')),
+        ],
+      },
+    });
+    const acceptedA = await call<Outcome>({
+      action: 'accept',
+      workspace: W,
+      proposalId: a.proposal.id,
+      operationId: `ui_accept_${W}-A`,
+    });
+    expect(acceptedA).toMatchObject({ ok: true, revision: 1 });
+    const b = await call<{ proposal: Stored }>({
+      action: 'propose',
+      workspace: W,
+      agentId: 'x',
+      title: 'second pass',
+      commit: {
+        baseRevision: 0,
+        operationId: `${W}-prB`,
+        operations: bOps,
+        ...bExtra,
+      },
+    });
+    return { aId: a.proposal.id, b: b.proposal };
+  }
+
+  it('attributes every conflicting target to the accept of the earlier proposal', async () => {
+    const W = 'r269-attr';
+    const { aId, b } = await selfCollision(W, 'x');
+    // Stamped at submission with the same attribution the accept returns.
+    expect(b.status).toBe('conflicted');
+    expect(b.conflictingTargets).toEqual(sixTargets);
+    expect(b.conflicts).toHaveLength(6);
+    const accepted = await call<Outcome>({
+      action: 'accept',
+      workspace: W,
+      proposalId: b.id,
+      operationId: `ui_accept_${W}-B`,
+    });
+    expect(accepted).toMatchObject({
+      ok: false,
+      code: 'conflict',
+      revision: 1,
+      message: 'proposal overlaps changes committed after its base revision',
+    });
+    expect(accepted.conflictingTargets).toEqual(sixTargets);
+    expect(accepted.conflicts!.map((c) => c.target)).toEqual(sixTargets);
+    for (const conflict of accepted.conflicts!)
+      expect(conflict).toMatchObject({
+        revision: 1,
+        operationId: `ui_accept_${W}-A`,
+        proposalId: aId,
+        author: { kind: 'agent', id: 'x' },
+        operationType: 'element.patch',
+      });
+    const byTarget = Object.fromEntries(
+      accepted.conflicts!.map((c) => [c.target, c]),
+    );
+    expect(byTarget['page/p1/element/nodes/a/field/label']!.value).toBe('A1');
+    expect(byTarget['page/p1/element/nodes/b/field/meta']!.value).toEqual({
+      role: 'b1',
+    });
+    // The stored proposal carries the attribution for listings/get.
+    const stored = await call<Stored>({
+      action: 'proposal',
+      workspace: W,
+      proposalId: b.id,
+    });
+    expect(stored.status).toBe('conflicted');
+    expect(stored.conflicts).toEqual(accepted.conflicts);
+    // The accepted proposal's revision records its content author.
+    const log = await call<{
+      changes: Array<{
+        revision: number;
+        source: string;
+        proposalId?: string;
+        author?: { kind: string; id: string };
+        actor: { kind: string };
+      }>;
+    }>({ action: 'changes', workspace: W, since: 0 });
+    expect(log.changes[0]).toMatchObject({
+      revision: 1,
+      source: 'proposal',
+      proposalId: aId,
+      actor: { kind: 'user' },
+      author: { kind: 'agent', id: 'x' },
+    });
+  }, 30_000);
+
+  it("supersede on accept rebases over the same author's own accepted writes", async () => {
+    const W = 'r269-super';
+    const { b } = await selfCollision(W, 'x');
+    const accepted = await call<Outcome>({
+      action: 'accept',
+      workspace: W,
+      proposalId: b.id,
+      operationId: `ui_accept_${W}-B`,
+      supersede: true,
+    });
+    expect(accepted).toMatchObject({ ok: true, revision: 2, rebased: true });
+    expect(accepted.superseded).toEqual(sixTargets);
+    const snapshot = await call<{
+      revision: number;
+      document: {
+        pages: Array<{
+          nodes: Array<{
+            id: string;
+            label: string;
+            sublabel: string;
+            meta: { role: string };
+          }>;
+        }>;
+      };
+    }>({ action: 'snapshot', workspace: W });
+    expect(snapshot.revision).toBe(2);
+    expect(snapshot.document.pages[0]!.nodes).toMatchObject([
+      { id: 'a', label: 'A2', sublabel: 'edge-2', meta: { role: 'a2' } },
+      { id: 'b', label: 'B2', sublabel: 'edge-2', meta: { role: 'b2' } },
+    ]);
+    const stored = await call<Stored>({
+      action: 'proposal',
+      workspace: W,
+      proposalId: b.id,
+    });
+    expect(stored.status).toBe('accepted');
+    expect(stored.superseded).toEqual(sixTargets);
+    expect(stored.conflicts).toBeUndefined();
+    expect(stored.conflictingTargets).toBeUndefined();
+  }, 30_000);
+
+  it('refuses supersede when the earlier proposal was by another author', async () => {
+    const W = 'r269-other';
+    const { aId, b } = await selfCollision(W, 'y');
+    const accepted = await call<Outcome>({
+      action: 'accept',
+      workspace: W,
+      proposalId: b.id,
+      operationId: `ui_accept_${W}-B`,
+      supersede: true,
+    });
+    expect(accepted).toMatchObject({ ok: false, code: 'conflict' });
+    expect(accepted.conflictingTargets).toEqual(sixTargets);
+    for (const conflict of accepted.conflicts!)
+      expect(conflict).toMatchObject({
+        proposalId: aId,
+        author: { kind: 'agent', id: 'y' },
+      });
+    const snapshot = await call<{ revision: number }>({
+      action: 'snapshot',
+      workspace: W,
+    });
+    expect(snapshot.revision).toBe(1);
+  }, 30_000);
+
+  it('refuses supersede when the owner edited one of the fields directly', async () => {
+    const W = 'r269-user';
+    const { b } = await selfCollision(W, 'x');
+    await call({
+      action: 'user',
+      workspace: W,
+      commit: {
+        baseRevision: 1,
+        operationId: `${W}-u`,
+        operations: [patch('p1', 'a', { label: 'owner wrote this' })],
+      },
+    });
+    const accepted = await call<Outcome>({
+      action: 'accept',
+      workspace: W,
+      proposalId: b.id,
+      operationId: `ui_accept_${W}-B`,
+      supersede: true,
+    });
+    expect(accepted).toMatchObject({ ok: false, code: 'conflict' });
+    const byTarget = Object.fromEntries(
+      accepted.conflicts!.map((c) => [c.target, c]),
+    );
+    expect(byTarget['page/p1/element/nodes/a/field/label']).toMatchObject({
+      revision: 2,
+      operationId: `${W}-u`,
+      author: { kind: 'user' },
+      value: 'owner wrote this',
+    });
+    expect(
+      byTarget['page/p1/element/nodes/a/field/label']!.proposalId,
+    ).toBeUndefined();
+    expect(byTarget['page/p1/element/nodes/b/field/label']).toMatchObject({
+      revision: 1,
+      author: { kind: 'agent', id: 'x' },
+    });
+  }, 30_000);
+
+  it('does not list a field the later proposal sets to the already-committed value', async () => {
+    const W = 'r269-same';
+    const { b } = await selfCollision(W, 'x', [
+      // a.sublabel keeps A's value; everything else differs.
+      patch('p1', 'a', fields('A2', 'edge-1')),
+      patch('p1', 'b', fields('B2', 'edge-2')),
+    ]);
+    expect(b.status).toBe('conflicted');
+    const accepted = await call<Outcome>({
+      action: 'accept',
+      workspace: W,
+      proposalId: b.id,
+      operationId: `ui_accept_${W}-B`,
+    });
+    expect(accepted).toMatchObject({ ok: false, code: 'conflict' });
+    expect(accepted.conflictingTargets).toEqual(
+      sixTargets.filter((t) => t !== 'page/p1/element/nodes/a/field/sublabel'),
+    );
+    expect(accepted.conflicts!.map((c) => c.target)).toEqual(
+      accepted.conflictingTargets,
+    );
+  }, 30_000);
+
+  it('a proposal submitted with supersede is pending and its plain accept rebases', async () => {
+    const W = 'r269-propose';
+    const { b } = await selfCollision(W, 'x', undefined, { supersede: true });
+    expect(b.status).toBe('pending');
+    expect(b.supersede).toBe(true);
+    expect(b.superseded).toEqual(sixTargets);
+    expect(b.conflicts).toBeUndefined();
+    const accepted = await call<Outcome>({
+      action: 'accept',
+      workspace: W,
+      proposalId: b.id,
+      operationId: `ui_accept_${W}-B`,
+    });
+    expect(accepted).toMatchObject({ ok: true, revision: 2, rebased: true });
+    expect(accepted.superseded).toEqual(sixTargets);
+  }, 30_000);
+
+  it("never supersedes a collision with the author's own removal", async () => {
+    const W = 'r269-remove';
+    await call({
+      action: 'initialize',
+      workspace: W,
+      document: { title: 'T', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    await call({ action: 'lease', workspace: W, pageId: 'p1' });
+    const removed = await call<Outcome>({
+      action: 'agent',
+      workspace: W,
+      agentId: 'x',
+      commit: {
+        baseRevision: 0,
+        operationId: `${W}-rm`,
+        operations: [
+          {
+            type: 'element.remove',
+            pageId: 'p1',
+            kind: 'nodes',
+            elementId: 'a',
+          },
+        ],
+      },
+    });
+    expect(removed).toMatchObject({ ok: true, revision: 1 });
+    // The same agent's leased edit of the removed element, with supersede.
+    const edit = await call<Outcome>({
+      action: 'agent',
+      workspace: W,
+      agentId: 'x',
+      commit: {
+        baseRevision: 0,
+        operationId: `${W}-edit`,
+        operations: [patch('p1', 'a', { label: 'ghost' })],
+        supersede: true,
+      },
+    });
+    expect(edit).toMatchObject({ ok: false, code: 'conflict' });
+    expect(edit.conflicts).toEqual([
+      {
+        target: 'page/p1/element/nodes/a/field/label',
+        revision: 1,
+        operationId: `${W}-rm`,
+        author: { kind: 'agent', id: 'x' },
+        operationType: 'element.remove',
+      },
+    ]);
   }, 30_000);
 });

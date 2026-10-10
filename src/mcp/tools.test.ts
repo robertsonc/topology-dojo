@@ -1272,7 +1272,7 @@ describe('MCP tools', () => {
       expect(withProvider.some((t) => t.name === n)).toBe(true);
   });
 
-  it('registers the bounded shared-workspace tools only when wired', () => {
+  it('registers the bounded shared-workspace tools only when wired', async () => {
     const unavailable = async (): Promise<never> => {
       throw new Error('not called');
     };
@@ -1358,6 +1358,56 @@ describe('MCP tools', () => {
     };
     expect(described.operations['element.upsert']).toContain('source');
     expect(described.upsertExample.type).toBe('element.upsert');
+    // Issue #269: the attributed conflict result and supersede are documented.
+    const conflictDoc = (
+      describe.handler({}) as { conflicts: Record<string, string> }
+    ).conflicts;
+    expect(conflictDoc.result).toContain(
+      'conflicts: [{ target, revision, operationId, proposalId?, author?',
+    );
+    expect(conflictDoc.supersede).toContain('supersede:true');
+    // …and both write tools accept the flag and forward it on the request.
+    const requests: unknown[] = [];
+    const recording = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      workspace: {
+        ...workspace,
+        propose: async (_id, request) => {
+          requests.push(request);
+          throw new Error('stop');
+        },
+        applyAgent: async (_id, request) => {
+          requests.push(request);
+          throw new Error('stop');
+        },
+      },
+    });
+    const removeOp = { type: 'element.remove', pageId: 'p1', elementId: 'n1' };
+    for (const [name, extra] of [
+      ['propose_workspace_changes', { title: 'Supersede' }],
+      ['apply_workspace_changes', {}],
+    ] as const) {
+      const tool = recording.find((candidate) => candidate.name === name)!;
+      for (const supersede of [true, undefined]) {
+        await expect(
+          Promise.resolve(
+            tool.handler(
+              parseToolArgs(tool, {
+                workspaceId: 'w1',
+                baseRevision: 1,
+                operationId: 'op1',
+                operations: [removeOp],
+                ...extra,
+                ...(supersede ? { supersede } : {}),
+              }),
+            ),
+          ),
+        ).rejects.toThrow('stop');
+      }
+    }
+    expect(
+      requests.map((r) => (r as { supersede?: boolean }).supersede),
+    ).toEqual([true, undefined, true, undefined]);
 
     // get_workspace_elements forwards sourcedOnly to the service.
     let seen: unknown[] = [];

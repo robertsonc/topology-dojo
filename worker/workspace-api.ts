@@ -40,6 +40,7 @@ function commitRequest(value: Record<string, unknown>): CommitRequest {
     baseRevision: Number(value.baseRevision),
     operationId: String(value.operationId ?? ''),
     operations: value.operations as WorkspaceOperation[],
+    ...(value.supersede === true ? { supersede: true } : {}),
   };
 }
 
@@ -117,11 +118,13 @@ export async function handleWorkspaceApi(
         const selected = Array.isArray(input.selectedOperationIndices)
           ? input.selectedOperationIndices.map(Number)
           : undefined;
+        // Optional: same-author supersede (issue #269).
         const result = await service.accept(
           id,
           proposalId,
           operationId,
           selected,
+          input.supersede === true,
         );
         return json(result, result.ok ? 200 : 409);
       }

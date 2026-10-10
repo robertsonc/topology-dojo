@@ -143,6 +143,9 @@ export async function acceptWorkspaceProposal(
   operationId: string,
   /** Accept only these operation indices (a coherent subset). Omit to accept all. */
   selectedOperationIndices?: number[],
+  /** Same-author supersede (issue #269): rebase over conflicts whose last
+   * writer is the proposal author's own accepted work. */
+  supersede?: boolean,
 ): Promise<CommitResult> {
   const response = await fetch(
     `/api/workspaces/${encodeURIComponent(id)}/proposals/${encodeURIComponent(proposalId)}/accept`,
@@ -152,11 +155,11 @@ export async function acceptWorkspaceProposal(
         accept: 'application/json',
         'content-type': 'application/json',
       },
-      body: JSON.stringify(
-        selectedOperationIndices
-          ? { operationId, selectedOperationIndices }
-          : { operationId },
-      ),
+      body: JSON.stringify({
+        operationId,
+        ...(selectedOperationIndices ? { selectedOperationIndices } : {}),
+        ...(supersede ? { supersede: true } : {}),
+      }),
     },
   );
   if (response.status === 409) return (await response.json()) as CommitResult;

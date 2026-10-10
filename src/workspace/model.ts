@@ -103,6 +103,31 @@ export interface WorkspaceChange {
    * agent authored the change. Omitted rather than stored as false.
    */
   guidanceConsultedBefore?: boolean;
+  /**
+   * The content author when it differs from `actor`: an accepted proposal's
+   * `createdBy` (the actor is the user who accepted it). Additive (issue
+   * #269); older proposal-sourced records omit it and the coordinator falls
+   * back to the proposal record. Omitted for direct commits, whose actor is
+   * the author.
+   */
+  author?: WorkspaceActor;
+}
+
+/**
+ * Attribution of one conflicting target to the LAST committed write that
+ * collides with it (issue #269). `value` is the committed `set` value when the
+ * target is a field written by a patch and the value is small enough to
+ * return; it is omitted otherwise (removals, adds, reorders, large values).
+ */
+export interface ConflictAttribution {
+  target: string;
+  revision: number;
+  operationId: string;
+  proposalId?: string;
+  /** Compact content author of the committed write, when recorded. */
+  author?: Pick<WorkspaceActor, 'kind' | 'id' | 'label'>;
+  operationType: WorkspaceOperation['type'];
+  value?: unknown;
 }
 
 export interface WorkspaceLease {
@@ -132,6 +157,16 @@ export interface WorkspaceProposal {
   operations: WorkspaceOperation[];
   summary: OperationSummary;
   conflictingTargets?: string[];
+  /** Per-target attribution of `conflictingTargets` (issue #269). */
+  conflicts?: ConflictAttribution[];
+  /**
+   * The agent asked for its own earlier writes to be superseded (see
+   * `CommitRequest.supersede`). Honoured at submission and on accept.
+   */
+  supersede?: boolean;
+  /** Targets whose own-author writes were superseded when this proposal was
+   * submitted or accepted. */
+  superseded?: string[];
   acceptedRevision?: number;
 }
 
@@ -143,6 +178,7 @@ export type ProposalResult =
       revision: number;
       message: string;
       conflictingTargets?: string[];
+      conflicts?: ConflictAttribution[];
     };
 
 export type ProposalSummary = Omit<WorkspaceProposal, 'operations'>;
@@ -250,6 +286,16 @@ export interface CommitRequest {
   baseRevision: number;
   operationId: string;
   operations: WorkspaceOperation[];
+  /**
+   * Same-author supersede (issue #269). When set, conflicts whose last
+   * committed writer is the same author as this request (an accepted proposal
+   * of theirs, or their own direct commit) do not block: the batch is rebased
+   * onto the current revision and its values replace the earlier ones. A
+   * conflict last written by anyone else, or any collision with a
+   * `page.remove` / `element.remove`, still refuses with the attributed
+   * `conflict` result.
+   */
+  supersede?: boolean;
 }
 
 export type CommitResult =
@@ -258,6 +304,8 @@ export type CommitResult =
       revision: number;
       rebased: boolean;
       summary: OperationSummary;
+      /** Targets whose same-author writes were superseded (issue #269). */
+      superseded?: string[];
     }
   | {
       ok: false;
@@ -271,6 +319,8 @@ export type CommitResult =
       revision: number;
       message: string;
       conflictingTargets?: string[];
+      /** For 'conflict': the last committed write behind each target. */
+      conflicts?: ConflictAttribution[];
       /** For 'incoherent-subset': ids the selected operations depend on. */
       missingDependencies?: string[];
     };

@@ -185,8 +185,13 @@ For a document shared with the browser, use the bounded workspace loop instead:
    converges immediately; a proposal whose source was bound by another
    revision before acceptance is reported as a `conflict` on that source
    identity (never a second element) — re-read changes, re-diff, propose again.
+   A stale base is checked field by field: when a later revision wrote the
+   same field, the proposal is stamped `conflicted` and carries `conflicts[]`
+   (see below) naming the committed write behind every target. When those are
+   all your own earlier accepted writes, resubmit with `supersede: true`
+   instead of rebasing by hand.
 7. Use `apply_workspace_changes` only when the browser explicitly shows a live,
-   current-page lease.
+   current-page lease. It takes the same `supersede` flag.
 
 The browser's manifest/proposal polling is normal application JSON and is not
 automatically placed into model context. Token usage is therefore proportional
@@ -270,6 +275,50 @@ rejects same-field or delete/edit overlap as an explicit conflict. Agents are
 **Suggest only** by default. Only the browser can grant or revoke a ten-minute
 lease, and the first implementation scopes it to the current page; it is an
 authority grant, not a document-wide mutex.
+
+**Attributed conflicts.** A `conflict` result (and a `conflicted` proposal,
+as `get_workspace_manifest`'s count and the proposal record show it) carries
+`conflictingTargets: string[]` plus `conflicts[]`, one entry per target
+naming the **last** committed write behind it:
+
+```json
+{
+  "ok": false,
+  "code": "conflict",
+  "revision": 46,
+  "message": "proposal overlaps changes committed after its base revision",
+  "conflictingTargets": ["page/p1/element/nodes/dmarc/field/label"],
+  "conflicts": [
+    {
+      "target": "page/p1/element/nodes/dmarc/field/label",
+      "revision": 46,
+      "operationId": "ui_accept_ef46ee02-…",
+      "proposalId": "pr_d26e6a4a91364b4b",
+      "author": { "kind": "agent", "id": "…", "label": "octocat" },
+      "operationType": "element.patch",
+      "value": "DMARC"
+    }
+  ]
+}
+```
+
+`value` is the committed `set` value for a field target (omitted for
+removals, adds, reorders and values over 4 KiB). A patch that sets a field to
+the value the last committed write already set is not a conflict: identical
+writes commute and the target is not listed.
+
+**Same-author supersede.** `propose_workspace_changes` and
+`apply_workspace_changes` accept `supersede: true`. When every conflicting
+target was last written by your own earlier work — an accepted proposal of
+yours or your own leased commit — and none collides with a `page.remove` /
+`element.remove`, the batch is rebased onto the current revision and your
+values replace the earlier ones; the `ok` result carries `rebased: true` and
+`superseded: [targets]`. A proposal submitted with `supersede` is stored as
+pending (with `superseded` listing the targets) and the browser's accept
+honours the flag; the browser owner can also choose **Accept · supersede** on
+a conflicted proposal whose conflicts are all the agent's own. Anything last
+written by someone else, including the owner's direct edits, still conflicts
+and must be resubmitted against the current revision.
 
 ## Live fabric data (optional)
 

@@ -113,6 +113,7 @@ interface DocumentRpc {
     id: string,
     operationId: string,
     selectedOperationIndices?: number[],
+    supersede?: boolean,
   ): Promise<CommitResult>;
   rejectProposal(
     ownerId: string,
@@ -304,6 +305,8 @@ export class WorkspaceService {
     proposalId: string,
     operationId: string,
     selectedOperationIndices?: number[],
+    /** Same-author supersede (issue #269); see `CommitRequest.supersede`. */
+    supersede?: boolean,
   ): Promise<CommitResult> {
     const document = await this.ensure(id);
     const result = await document.acceptProposal(
@@ -312,6 +315,7 @@ export class WorkspaceService {
       proposalId,
       operationId,
       selectedOperationIndices,
+      supersede,
     );
     if (result.ok) await this.tryRefreshDirectory(id, document);
     return result;

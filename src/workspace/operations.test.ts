@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { TopologyDocument } from '../pages/model.js';
 import {
   applyOperations,
+  conflictAttribution,
   conflictingTargets,
   operationTargets,
   diffDocuments,
   subsetDependencyErrors,
   summarizeOperations,
+  supersededTargets,
+  type CommittedChange,
 } from './operations.js';
 import type { Page } from '../pages/model.js';
 import type { WorkspaceOperation } from './model.js';
@@ -412,5 +415,232 @@ describe('subsetDependencyErrors (selective acceptance coherence)', () => {
     expect(subsetDependencyErrors([{ type: 'page.add', page }], [0])).toEqual(
       [],
     );
+  });
+});
+
+describe('conflict attribution and same-author supersede (issue #269)', () => {
+  const relabel = (
+    elementId: string,
+    set: Record<string, unknown>,
+  ): WorkspaceOperation => ({
+    type: 'element.patch',
+    pageId: 'p1',
+    kind: 'nodes',
+    elementId,
+    patch: { set },
+  });
+  const agentX = { kind: 'agent' as const, id: 'x', label: 'x-bot' };
+  const agentY = { kind: 'agent' as const, id: 'y' };
+  const committed = (
+    overrides: Partial<CommittedChange> & { operations: WorkspaceOperation[] },
+  ): CommittedChange => ({
+    revision: 1,
+    operationId: 'op1',
+    ...overrides,
+  });
+
+  it('attributes each conflicting target to the LAST committed write', () => {
+    const incoming = [relabel('a', { label: 'A3', sublabel: 'edge' })];
+    const conflicts = conflictAttribution(incoming, [
+      committed({
+        revision: 1,
+        operationId: 'ui_accept_1',
+        proposalId: 'pr_first',
+        author: agentX,
+        operations: [relabel('a', { label: 'A1', sublabel: 'edge' })],
+      }),
+      committed({
+        revision: 2,
+        operationId: 'u2',
+        author: { kind: 'user', id: 'owner' },
+        operations: [relabel('a', { label: 'A2' })],
+      }),
+    ]);
+    expect(conflicts).toEqual([
+      {
+        target: 'page/p1/element/nodes/a/field/label',
+        revision: 2,
+        operationId: 'u2',
+        author: { kind: 'user', id: 'owner' },
+        operationType: 'element.patch',
+        value: 'A2',
+      },
+    ]);
+    // `sublabel` was set to the same value at r1 and never touched again:
+    // identical writes commute, so it is neither a conflict nor listed.
+    expect(conflicts.map((c) => c.target)).not.toContain(
+      'page/p1/element/nodes/a/field/sublabel',
+    );
+  });
+
+  it('keeps a differing value with the committed value, proposal and author', () => {
+    const conflicts = conflictAttribution(
+      [relabel('a', { meta: { role: 'spine' } })],
+      [
+        committed({
+          revision: 46,
+          operationId: 'ui_accept_ef46',
+          proposalId: 'pr_d26e',
+          author: agentX,
+          operations: [relabel('a', { meta: { role: 'leaf' } })],
+        }),
+      ],
+    );
+    expect(conflicts).toEqual([
+      {
+        target: 'page/p1/element/nodes/a/field/meta',
+        revision: 46,
+        operationId: 'ui_accept_ef46',
+        proposalId: 'pr_d26e',
+        author: { kind: 'agent', id: 'x', label: 'x-bot' },
+        operationType: 'element.patch',
+        value: { role: 'leaf' },
+      },
+    ]);
+    // Deep equality, not identity: the same object shape commutes.
+    expect(
+      conflictAttribution(
+        [relabel('a', { meta: { role: 'leaf' } })],
+        [
+          committed({
+            operations: [relabel('a', { meta: { role: 'leaf' } })],
+          }),
+        ],
+      ),
+    ).toEqual([]);
+  });
+
+  it('never drops removals, adds or unsets as identical writes', () => {
+    const remove: WorkspaceOperation = {
+      type: 'element.remove',
+      pageId: 'p1',
+      kind: 'nodes',
+      elementId: 'a',
+    };
+    const edit = relabel('a', { label: 'A' });
+    const unset: WorkspaceOperation = {
+      type: 'element.patch',
+      pageId: 'p1',
+      kind: 'nodes',
+      elementId: 'a',
+      patch: { unset: ['label'] },
+    };
+    // Edit after a removal: a wildcard collision carries no value.
+    expect(
+      conflictAttribution([edit], [committed({ operations: [remove] })]),
+    ).toEqual([
+      {
+        target: 'page/p1/element/nodes/a/field/label',
+        revision: 1,
+        operationId: 'op1',
+        operationType: 'element.remove',
+      },
+    ]);
+    // Removal after an edit: conflicts on the element subtree.
+    expect(
+      conflictAttribution([remove], [committed({ operations: [edit] })]).map(
+        (c) => c.target,
+      ),
+    ).toEqual(['page/p1/element/nodes/a/**']);
+    // An unset against a set of the same field is a conflict with the value.
+    expect(
+      conflictAttribution([unset], [committed({ operations: [edit] })]),
+    ).toMatchObject([{ operationType: 'element.patch', value: 'A' }]);
+    // A set against an unset is a conflict without a value.
+    expect(
+      conflictAttribution([edit], [committed({ operations: [unset] })]),
+    ).toEqual([
+      {
+        target: 'page/p1/element/nodes/a/field/label',
+        revision: 1,
+        operationId: 'op1',
+        operationType: 'element.patch',
+      },
+    ]);
+  });
+
+  it('the last incoming write to a field decides whether it commutes', () => {
+    const history = [committed({ operations: [relabel('a', { label: 'A' })] })];
+    expect(
+      conflictAttribution(
+        [relabel('a', { label: 'B' }), relabel('a', { label: 'A' })],
+        history,
+      ),
+    ).toEqual([]);
+    expect(
+      conflictAttribution(
+        [relabel('a', { label: 'A' }), relabel('a', { label: 'B' })],
+        history,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('supersedes only when every conflict is the same author and none is a removal', () => {
+    const own = conflictAttribution(
+      [relabel('a', { label: 'A2' }), relabel('b', { label: 'B2' })],
+      [
+        committed({
+          revision: 1,
+          proposalId: 'pr_1',
+          author: agentX,
+          operations: [relabel('a', { label: 'A1' })],
+        }),
+        committed({
+          revision: 2,
+          operationId: 'op2',
+          author: { ...agentX, sessionId: 'another-session' },
+          operations: [relabel('b', { label: 'B1' })],
+        }),
+      ],
+    );
+    expect(supersededTargets(own, agentX)).toEqual([
+      'page/p1/element/nodes/a/field/label',
+      'page/p1/element/nodes/b/field/label',
+    ]);
+    expect(supersededTargets(own, agentY)).toBeNull();
+    // The owner's own UI edit is a different author even with the same id.
+    expect(supersededTargets(own, { kind: 'user', id: 'x' })).toBeNull();
+    expect(supersededTargets([], agentX)).toBeNull();
+
+    const mixed = conflictAttribution(
+      [relabel('a', { label: 'A2' }), relabel('b', { label: 'B2' })],
+      [
+        committed({
+          revision: 1,
+          author: agentX,
+          operations: [relabel('a', { label: 'A1' })],
+        }),
+        committed({
+          revision: 2,
+          author: agentY,
+          operations: [relabel('b', { label: 'B1' })],
+        }),
+      ],
+    );
+    expect(supersededTargets(mixed, agentX)).toBeNull();
+
+    const unattributed = conflictAttribution(
+      [relabel('a', { label: 'A2' })],
+      [committed({ operations: [relabel('a', { label: 'A1' })] })],
+    );
+    expect(supersededTargets(unattributed, agentX)).toBeNull();
+
+    const removed = conflictAttribution(
+      [relabel('a', { label: 'A2' })],
+      [
+        committed({
+          author: agentX,
+          operations: [
+            {
+              type: 'element.remove',
+              pageId: 'p1',
+              kind: 'nodes',
+              elementId: 'a',
+            },
+          ],
+        }),
+      ],
+    );
+    expect(supersededTargets(removed, agentX)).toBeNull();
   });
 });
