@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { TopologyDocument } from '../pages/model.js';
+import { TEXT_LIMITS } from '../api/text.js';
+import { normalizeOperations } from './upsert.js';
 import {
   applyOperations,
+  assertDisplayTextLimits,
   conflictAttribution,
   conflictingTargets,
   operationTargets,
@@ -642,5 +645,235 @@ describe('conflict attribution and same-author supersede (issue #269)', () => {
       ],
     );
     expect(supersededTargets(removed, agentX)).toBeNull();
+  });
+});
+
+describe('display text limits at submit time (issue #277)', () => {
+  const label = (n: number) => 'L'.repeat(n);
+  const over = TEXT_LIMITS.label + 1;
+
+  it('refuses an element.add whose label is over the cap, naming op, element and field', () => {
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'element.add',
+          pageId: 'p1',
+          kind: 'nodes',
+          element: {
+            id: 'c1',
+            type: 'callout',
+            x: 1,
+            y: 1,
+            label: label(over),
+          },
+        },
+      ]),
+    ).toThrow('operations[0] element "c1" label exceeds 200 characters');
+  });
+
+  it('refuses an element.patch, a page.patch and a document.patch alike', () => {
+    expect(() =>
+      assertDisplayTextLimits([
+        { type: 'page.reorder', pageIds: ['p1'] },
+        {
+          type: 'element.patch',
+          pageId: 'p1',
+          kind: 'nodes',
+          elementId: 'a',
+          patch: { set: { label: label(over) } },
+        },
+      ]),
+    ).toThrow('operations[1] element "a" label exceeds 200 characters');
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'page.patch',
+          pageId: 'p1',
+          patch: { set: { name: 'N'.repeat(TEXT_LIMITS.name + 1) } },
+        },
+      ]),
+    ).toThrow('operations[0] page "p1" name exceeds 200 characters');
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'document.patch',
+          patch: { set: { title: 'T'.repeat(TEXT_LIMITS.title + 1) } },
+        },
+      ]),
+    ).toThrow('operations[0] document title exceeds 160 characters');
+  });
+
+  it('checks meta maps: values at the meta cap, keys at the label cap', () => {
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'element.patch',
+          pageId: 'p1',
+          kind: 'nodes',
+          elementId: 'a',
+          patch: {
+            set: { meta: { serial: 'M'.repeat(TEXT_LIMITS.metaValue + 1) } },
+          },
+        },
+      ]),
+    ).toThrow('operations[0] element "a" meta.serial exceeds 2000 characters');
+    const key = 'k'.repeat(TEXT_LIMITS.label + 1);
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'element.add',
+          pageId: 'p1',
+          kind: 'nodes',
+          element: { id: 'n', type: 'ec', x: 0, y: 0, meta: { [key]: 'v' } },
+        },
+      ]),
+    ).toThrow(
+      /^operations\[0\] element "n" meta\.k{47}… exceeds 200 characters$/,
+    );
+  });
+
+  it('reaches the nested text parseDoc would truncate: layers, stencils, page.add elements, flow-path hops', () => {
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'document.patch',
+          patch: {
+            set: {
+              layers: [{ id: 'ov', name: 'N'.repeat(TEXT_LIMITS.name + 1) }],
+            },
+          },
+        },
+      ]),
+    ).toThrow('operations[0] document layers[0].name exceeds 200 characters');
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'document.patch',
+          patch: {
+            set: {
+              stencils: [
+                {
+                  id: 's1',
+                  name: 'Rack',
+                  nodes: [
+                    { id: 'x', type: 'ec', x: 0, y: 0, label: label(over) },
+                  ],
+                  links: [],
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    ).toThrow(
+      'operations[0] document stencils[0].nodes[0].label exceeds 200 characters',
+    );
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'page.add',
+          page: {
+            ...fixture().pages[0]!,
+            id: 'p2',
+            nodes: [{ id: 'z', type: 'ec', x: 0, y: 0, label: label(over) }],
+          },
+        },
+      ]),
+    ).toThrow('operations[0] page "p2" nodes[0].label exceeds 200 characters');
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'page.add',
+          page: {
+            ...fixture().pages[0]!,
+            id: 'p3',
+            caption: 'C'.repeat(TEXT_LIMITS.caption + 1),
+          },
+        },
+      ]),
+    ).toThrow('operations[0] page "p3" caption exceeds 500 characters');
+    expect(() =>
+      assertDisplayTextLimits([
+        {
+          type: 'element.add',
+          pageId: 'p1',
+          kind: 'flowPaths',
+          element: {
+            id: 'f1',
+            waypoints: ['a', 'b'],
+            hops: [
+              {
+                ref: 'b',
+                meta: { tunnel: 'T'.repeat(TEXT_LIMITS.metaValue + 1) },
+              },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(
+      'operations[0] element "f1" hops[0].meta.tunnel exceeds 2000 characters',
+    );
+  });
+
+  it('checks an element.upsert as the add/patch it normalizes into, under its input index', () => {
+    const { operations } = normalizeOperations(fixture(), [
+      { type: 'page.reorder', pageIds: ['p1'] },
+      {
+        type: 'element.upsert',
+        pageId: 'p1',
+        kind: 'nodes',
+        source: { system: 'netbox', kind: 'device', id: 'core1' },
+        element: { type: 'router', x: 1, y: 1, label: label(over) },
+      },
+    ]);
+    expect(() => assertDisplayTextLimits(operations)).toThrow(
+      /^operations\[1\] element "node-[0-9a-f]{8}" label exceeds 200 characters$/,
+    );
+  });
+
+  it('accepts text exactly at the cap and leaves structural strings alone', () => {
+    const ok: WorkspaceOperation[] = [
+      {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'nodes',
+        element: {
+          id: 'c1',
+          type: 'callout',
+          x: 1,
+          y: 1,
+          label: label(TEXT_LIMITS.label),
+          body: 'B'.repeat(TEXT_LIMITS.body),
+          // Not a display field: ids / data URIs are never measured here.
+          imageHref: 'data:image/png;base64,' + 'A'.repeat(5000),
+          meta: { serial: 'M'.repeat(TEXT_LIMITS.metaValue) },
+        },
+      },
+      {
+        type: 'document.patch',
+        patch: { set: { title: 'T'.repeat(TEXT_LIMITS.title) } },
+      },
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'nodes',
+        elementId: 'a',
+        patch: { unset: ['label'] },
+      },
+    ];
+    expect(() => assertDisplayTextLimits(ok)).not.toThrow();
+  });
+
+  it('keeps parseDoc truncation as the last line of defence for stored batches', () => {
+    const next = applyOperations(fixture(), [
+      {
+        type: 'element.patch',
+        pageId: 'p1',
+        kind: 'nodes',
+        elementId: 'a',
+        patch: { set: { label: label(over) } },
+      },
+    ]);
+    expect(next.pages[0]!.nodes[0]!.label).toHaveLength(TEXT_LIMITS.label);
   });
 });

@@ -1825,7 +1825,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         inputShape: {},
         handler: () => ({
           operationSchemaRevision: 2,
-          limits: { maxOperations: 250, maxSerializedBytes: 524288 },
+          limits: {
+            maxOperations: 250,
+            maxSerializedBytes: 524288,
+            displayText:
+              'Display strings (label, name, caption, description, body, title, meta values…) are capped per field as describe_capabilities advertises; a batch carrying one over its cap is refused whole at submit time, naming operations[i], the element/page and the field (e.g. operations[3] element "c1" label exceeds 200 characters).',
+          },
           patch: {
             set: 'top-level fields to set or replace',
             unset: 'top-level optional field names to remove',

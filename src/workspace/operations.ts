@@ -1,4 +1,5 @@
 import { parseDoc } from '../pages/persist.js';
+import { findOverlongDisplayText, formatDisplayTextPath } from '../api/text.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import {
   ELEMENT_KINDS,
@@ -127,6 +128,65 @@ export function validateOperations(operations: WorkspaceOperation[]): void {
         );
     }
   }
+}
+
+function assertDisplayText(value: unknown, at: string): void {
+  const over = findOverlongDisplayText(value);
+  if (over)
+    throw new Error(
+      `${at} ${formatDisplayTextPath(over.path)} exceeds ${over.max} characters`,
+    );
+}
+
+/**
+ * Submit-time twin of `parseDoc`'s display-text truncation (issue #277).
+ * `sanitizeDisplayFields` silently cuts any display string over its catalog
+ * cap when an accepted batch is parsed back, so a batch carrying overlong
+ * text would preview something the stored document will never contain. The
+ * coordinator runs this on every incoming batch — proposal, leased apply,
+ * browser commit — before anything is stored, naming the operation index,
+ * the element / page and the field with the wording the direct authoring
+ * tools use (`<field> exceeds <max> characters`). Deliberately separate from
+ * `validateOperations` so previews and replays of already-stored batches
+ * keep the truncating last line of defence instead of throwing.
+ */
+export function assertDisplayTextLimits(
+  operations: WorkspaceOperation[],
+): void {
+  operations.forEach((operation, index) => {
+    const at = `operations[${index}]`;
+    switch (operation.type) {
+      case 'document.patch':
+        assertDisplayText(operation.patch?.set, `${at} document`);
+        return;
+      case 'page.add':
+        assertDisplayText(
+          operation.page,
+          `${at} page "${String(operation.page?.id)}"`,
+        );
+        return;
+      case 'page.patch':
+        assertDisplayText(
+          operation.patch?.set,
+          `${at} page "${operation.pageId}"`,
+        );
+        return;
+      case 'element.add':
+        assertDisplayText(
+          operation.element,
+          `${at} element "${String(operation.element?.id)}"`,
+        );
+        return;
+      case 'element.patch':
+        assertDisplayText(
+          operation.patch?.set,
+          `${at} element "${operation.elementId}"`,
+        );
+        return;
+      default:
+        return;
+    }
+  });
 }
 
 function applyPatch(target: Record<string, unknown>, patch: FieldPatch): void {

@@ -16,6 +16,7 @@ import { parseDoc } from '../src/pages/persist.js';
 import { TEXT_LIMITS, normalizeText } from '../src/api/text.js';
 import {
   applyOperations,
+  assertDisplayTextLimits,
   conflictAttribution,
   conflictingTargets,
   diffDocuments,
@@ -210,6 +211,11 @@ function normalizeRequest(
     request.operations as WorkspaceOperationInput[],
   );
   validateOperations(operations);
+  // Display text over the catalog caps is refused here, before anything is
+  // stored, so a proposal never previews text `parseDoc` would truncate on
+  // accept (#277). Runs on the normalized batch so an `element.upsert` is
+  // checked as the add/patch it becomes, under its input index.
+  assertDisplayTextLimits(operations);
   // An upsert expands into a larger add/patch (minted id, embedded source), so
   // the advertised 512 KiB limit is enforced again on what is actually stored.
   if (bytes(operations) > MAX_BATCH_BYTES)
