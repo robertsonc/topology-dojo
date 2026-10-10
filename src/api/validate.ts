@@ -18,6 +18,7 @@ import {
   type FieldSpec,
   LINK_ATTACH_FIELD,
 } from './catalog.js';
+import { effectiveLinkAttach } from '../render/link-attach.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -276,6 +277,28 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
             'unconnected node — no link, flow, zone, or marker references it',
           );
     }
+    // Link anchor box (experimental): under `distribute`, a SIDE port still
+    // moves along its side into a slot, but a CORNER port is an exact pin and
+    // is excluded from distribution. Say so, or the author sees one link stay
+    // put and wonders why distribute did nothing for it.
+    const nodeById = new Map(page.nodes.map((n) => [n.id, n]));
+    const checkCornerPortUnderDistribute = (
+      l: (typeof page.links)[number],
+      where: string,
+    ): void => {
+      for (const end of ['from', 'to'] as const) {
+        const port = l[`${end}Port`];
+        if (!port || port.length !== 2) continue; // only ne/nw/se/sw
+        const node = nodeById.get(l[end]);
+        if (!node) continue;
+        const opt = effectiveLinkAttach(page.linkAttach, node);
+        if (!opt?.distribute) continue;
+        warn(
+          where,
+          `${end}Port "${port}" is a corner pin, so node "${node.id}"'s distribute leaves this end exactly at the corner (side ports n/s/e/w take a slot; corners never do)`,
+        );
+      }
+    };
     for (const l of page.links) {
       claim(l.id, 'link');
       if (!isLinkType(l.type))
@@ -303,6 +326,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       checkLayer(l, `${at} link "${l.id}"`);
       checkSource(l, `${at} link "${l.id}"`);
       checkHrefTip(l as Record<string, unknown>, `${at} link "${l.id}"`);
+      checkCornerPortUnderDistribute(l, `${at} link "${l.id}"`);
     }
 
     // ── Annotation layer: zones, flow paths, policy markers ──

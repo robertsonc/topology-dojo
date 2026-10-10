@@ -69,6 +69,29 @@ describe('validateDocument', () => {
     expect(isValid(doc)).toBe(true);
   });
 
+  it('warns when distribute is on and a link end pins to a corner port', () => {
+    const doc = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 0, y: 0 })
+      .node({ id: 'b', type: 'ec', x: 300, y: 0 })
+      .node({ id: 'c', type: 'ec', x: 0, y: 300 })
+      .link({ id: 'corner', type: 'line', from: 'a', to: 'b', fromPort: 'ne' })
+      .link({ id: 'side', type: 'line', from: 'a', to: 'c', fromPort: 'e' })
+      .build();
+    // Off: nothing to say.
+    expect(validateDocument(doc)).toEqual([]);
+    // Page-level distribute: the corner end is flagged, the side end is not.
+    doc.pages[0]!.linkAttach = { distribute: true };
+    const probs = validateDocument(doc);
+    expect(probs).toHaveLength(1);
+    expect(probs[0]!.level).toBe('warning');
+    expect(probs[0]!.where).toMatch(/link "corner"/);
+    expect(probs[0]!.message).toMatch(/fromPort "ne" is a corner pin/);
+    // The node can opt itself out again; then the pin is unremarkable.
+    doc.pages[0]!.nodes[0]!.linkAttach = { distribute: false };
+    expect(validateDocument(doc)).toEqual([]);
+  });
+
   it('flags dangling link endpoints', () => {
     const doc = createDocument()
       .page()
