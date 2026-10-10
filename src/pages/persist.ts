@@ -56,7 +56,8 @@ function scrubColors(el: Record<string, unknown>): void {
   }
 }
 
-/** Clamp a wire label's `labelWidth` into the renderer's range; drop junk. */
+/** Clamp a label's `labelWidth` (nodes, links, zones, flows, markers) into
+ * the renderer's range; drop junk. */
 function boundLabelWidth(el: Record<string, unknown>): void {
   if (!('labelWidth' in el)) return;
   const w = clampLabelWidth(el.labelWidth);
@@ -69,6 +70,7 @@ function sanitizeElements(pg: Page): void {
   for (const n of pg.nodes as unknown as Record<string, unknown>[]) {
     n.type = safeType(n.type, 'host');
     scrubColors(n);
+    boundLabelWidth(n);
   }
   for (const l of pg.links as unknown as Record<string, unknown>[]) {
     l.type = safeType(l.type, 'line');

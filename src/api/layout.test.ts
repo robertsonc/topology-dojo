@@ -9,6 +9,7 @@ import {
 } from './layout.js';
 import { tidyPage } from './tidy.js';
 import { nodeBounds } from './geometry.js';
+import { nodeFootprint } from './layout.js';
 
 const has = (probs: { message: string }[], re: RegExp): boolean =>
   probs.some((p) => re.test(p.message));
@@ -279,5 +280,110 @@ describe('self-labelled node footprints (#253)', () => {
       .node({ id: 'b', type: 'ec', x: 400, y: 300, label: 'b' })
       .build();
     expect(has(analyzeLayout(doc), /"a" and "b"/)).toBe(true);
+  });
+});
+
+describe('node label lines in footprints and zone boxes (#271)', () => {
+  const SUB40 = 'QFX5120-32C 10.51.108.51 rack 12 slot 04';
+
+  it('grows a footprint by each extra sublabel line', () => {
+    const one = nodeFootprint({
+      id: 'a',
+      type: 'ec',
+      x: 300,
+      y: 300,
+      label: 'A',
+      sublabel: 'srx',
+    });
+    const two = nodeFootprint({
+      id: 'a',
+      type: 'ec',
+      x: 300,
+      y: 300,
+      label: 'A',
+      sublabel: SUB40,
+    });
+    expect(two.y).toBe(one.y);
+    expect(two.h - one.h).toBe(9); // one more 7.5px sublabel line
+    expect(two.w).toBeGreaterThan(one.w); // the wrapped line is wider than 'A'
+  });
+
+  it('flags a neighbour under the second sublabel line and not a clear one', () => {
+    // a's block ends at y=339 with one sublabel line and y=348 with two; b's
+    // glyph starts at y=345 (ec hh=18) — under the second line only.
+    const under = createDocument()
+      .page()
+      .node({
+        id: 'a',
+        type: 'ec',
+        x: 300,
+        y: 300,
+        label: 'A',
+        sublabel: SUB40,
+      })
+      .node({ id: 'b', type: 'ec', x: 300, y: 363, label: 'B' })
+      .build();
+    expect(has(analyzeLayout(under), /nodes "a" and "b" overlap/)).toBe(true);
+    const oneLine = createDocument()
+      .page()
+      .node({
+        id: 'a',
+        type: 'ec',
+        x: 300,
+        y: 300,
+        label: 'A',
+        sublabel: 'srx',
+      })
+      .node({ id: 'b', type: 'ec', x: 300, y: 363, label: 'B' })
+      .build();
+    expect(has(analyzeLayout(oneLine), /nodes "a" and "b" overlap/)).toBe(
+      false,
+    );
+    const clear = createDocument()
+      .page()
+      .node({
+        id: 'a',
+        type: 'ec',
+        x: 300,
+        y: 300,
+        label: 'A',
+        sublabel: SUB40,
+      })
+      .node({ id: 'b', type: 'ec', x: 300, y: 420, label: 'B' })
+      .build();
+    expect(has(analyzeLayout(clear), /"a" and "b"/)).toBe(false);
+  });
+
+  it('reports a non-member node inside the box a west-placed label grew', () => {
+    // The member's label block reaches x≈358; the zone now starts 40px left
+    // of it (≈318), swallowing a node at x=300 that the old ±40 box (420)
+    // never reached.
+    const doc = createDocument()
+      .page()
+      .node({
+        id: 'm',
+        type: 'ec',
+        x: 500,
+        y: 350,
+        label: 'sw-dc-01',
+        sublabel: SUB40,
+        labelPlacement: 'w',
+      })
+      .node({ id: 'other', type: 'ec', x: 300, y: 350, label: 'o' })
+      .zone({ id: 'z', nodes: ['m'], label: 'Z' })
+      .build();
+    expect(
+      has(
+        analyzeLayout(doc),
+        /zone "z" visually contains non-member node "other"/,
+      ),
+    ).toBe(true);
+    const plain = createDocument()
+      .page()
+      .node({ id: 'm', type: 'ec', x: 500, y: 350, label: 'sw-dc-01' })
+      .node({ id: 'other', type: 'ec', x: 300, y: 350, label: 'o' })
+      .zone({ id: 'z', nodes: ['m'], label: 'Z' })
+      .build();
+    expect(has(analyzeLayout(plain), /visually contains/)).toBe(false);
   });
 });
