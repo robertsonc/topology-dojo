@@ -102,7 +102,8 @@ jobs:
             let expected = input;
             let source = input ? 'input' : 'none';
             let verdict = '';
-            const nonSuccess = new Map(); // deployedSha → latest state
+            const nonSuccess = new Map(); // deployedSha → latest state (error / failure)
+            const inFlight = new Map(); // deployedSha → latest state (pending / queued / in_progress)
             if (!input) {
               const { data: deployments } = await github.rest.repos.listDeployments({ owner, repo, environment: 'production', per_page: 20 });
               for (const d of deployments) {
@@ -112,8 +113,10 @@ jobs:
                 if (latest && latest.state === 'success' && !expected) {
                   expected = sha;
                   source = `deployment ${d.id}`;
-                } else if (latest && ['in_progress', 'error', 'failure', 'pending', 'queued'].includes(latest.state)) {
+                } else if (latest && ['error', 'failure'].includes(latest.state)) {
                   nonSuccess.set(sha, latest.state);
+                } else if (latest && ['pending', 'queued', 'in_progress'].includes(latest.state)) {
+                  inFlight.set(sha, latest.state);
                 }
               }
               if (!expected) {
@@ -121,7 +124,15 @@ jobs:
               }
             }
             if (expected && actual !== 'unknown' && actual !== expected) {
-              if (nonSuccess.has(actual)) {
+              if (inFlight.has(actual)) {
+                // A release is mid-run: wrangler deploy has landed and the
+                // deployment's status has not flipped to success yet. Not an
+                // alert — the next hourly run (or the release's own smoke)
+                // settles it. Skip the SHA assertion for this run only.
+                verdict = `release in flight: /healthz serves ${actual}, whose production deployment is "${inFlight.get(actual)}"; SHA assertion skipped this run. Expected ${expected} (${source}).`;
+                core.warning(verdict);
+                expected = '';
+              } else if (nonSuccess.has(actual)) {
                 verdict = `UNRECORDED PIPELINE DEPLOY: /healthz serves ${actual}, which belongs to a production deployment whose latest status is "${nonSuccess.get(actual)}" (a release run died after wrangler deploy). Expected ${expected} (${source}).`;
               } else {
                 verdict = `OUT-OF-BAND DEPLOY: /healthz serves ${actual}, which matches no recorded production deployment. Expected ${expected} (${source}). Freeze releases and reconcile (docs/ALERTS.md prod-sha-mismatch).`;
