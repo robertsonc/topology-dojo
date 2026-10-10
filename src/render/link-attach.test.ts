@@ -563,15 +563,22 @@ describe('document contract', () => {
     expect(msgs).toContain('pad big should be a number between 0 and 200');
     expect(msgs).toContain('distribute yes should be true or false');
     expect(msgs).toContain('linkAttach must be an object');
-    // A well-formed document is quiet about these fields.
+    // A well-formed document is quiet about these fields — except that the
+    // fixture pins two link ends to corners, and under `distribute` a corner
+    // pin is deliberately left where it is (side ports take slots, corners
+    // never do), which validation calls out per link end.
     const ok = hubPage({ linkAttach: { pad: 4, distribute: true } });
     ok.links[0]!.fromPortOffset = -1;
     ok.nodes[0]!.linkAttach = {};
-    expect(
-      validateDocument({ title: 'T', customNodes: [], pages: [ok] })
-        .map((x) => x.message)
-        .filter((m) => /linkAttach|pad |PortOffset|distribute/.test(m)),
-    ).toEqual([]);
+    const quiet = validateDocument({ title: 'T', customNodes: [], pages: [ok] })
+      .map((x) => x.message)
+      .filter((m) => /linkAttach|pad |PortOffset|distribute/.test(m));
+    expect(quiet.every((m) => /is a corner pin/.test(m))).toBe(true);
+    const cornerEnds = ok.links.flatMap((l) =>
+      [l.fromPort, l.toPort].filter((p) => p?.length === 2),
+    );
+    expect(cornerEnds.length).toBeGreaterThan(0);
+    expect(quiet).toHaveLength(cornerEnds.length);
   });
 
   it('persistence keeps a well-formed page option (an empty object too) and drops junk', () => {

@@ -182,7 +182,9 @@ a node side into evenly spaced slots ordered by the far end (deterministic, no
 crossings at the node; the parallel-sibling fan-out is suppressed on that
 side). Links take `fromPortOffset` / `toPortOffset` in `[-1, 1]`, a fractional
 shift along the attached side (side ports and auto endpoints; corner ports
-ignore it). When two nodes sit too close for the padded box the renderer
+ignore it). A corner port (`ne`/`nw`/`se`/`sw`) is an exact pin and is never
+distributed — side ports are — and `validate_topology` warns on each such
+link end while the node distributes. When two nodes sit too close for the padded box the renderer
 shrinks it (pad 0, then the classic edge trim, then centre→centre) rather than
 drawing the link backwards. Documents without these fields render
 byte-identically to before; `inspect_render` measures the drawn endpoints in
