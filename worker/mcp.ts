@@ -7,9 +7,14 @@
  */
 import { McpAgent } from 'agents/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerTopologyTools } from '../src/mcp/register.js';
+import {
+  registerTopologyTools,
+  type ToolCallContext,
+} from '../src/mcp/register.js';
 import type { ToolDeps } from '../src/mcp/tools.js';
 import { TopologyStore } from '../src/mcp/store.js';
+import { serveWorkspaceRead } from '../src/mcp/workspace-reads.js';
+import { NO_LEGACY_PERSIST_TOOLS } from './legacy-persist.js';
 import {
   persistStore,
   rehydrateStore,
@@ -55,44 +60,6 @@ import {
   appendTrail,
   boundActivityString,
 } from '../src/agent-activity/trail.js';
-
-/**
- * Tools that do not mutate the legacy in-memory TopologyStore. Workspace write
- * tools are included because they persist atomically through their document
- * coordinator; they must not trigger a stale legacy-store write-back. Anything
- * else is treated as a legacy mutation and triggers persistence by default.
- */
-const NO_LEGACY_PERSIST_TOOLS = new Set<string>([
-  'describe_capabilities',
-  'list_topologies',
-  'list_templates',
-  'get_topology',
-  'validate_topology',
-  'layout_guidelines',
-  'render_svg',
-  'export_flipbook',
-  'share_topology',
-  'unpublish_topology',
-  'describe_data_source',
-  'list_appliances',
-  'list_tunnels',
-  'get_overlay_policies',
-  'list_flows',
-  'get_flow_details',
-  'create_workspace',
-  'list_workspaces',
-  'get_workspace_manifest',
-  'describe_workspace_operations',
-  'get_workspace_changes',
-  'get_workspace_elements',
-  'propose_workspace_changes',
-  'apply_workspace_changes',
-  'create_checkpoint',
-  'list_checkpoints',
-  'get_authoring_guidance',
-  'list_authoring_preferences',
-  'explain_authoring_preference',
-]);
 
 export class TopologyMcp extends McpAgent<WorkerEnv> {
   server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
@@ -264,12 +231,18 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     }
   }
 
-  /** Prevent an old session from reading or writing a stale legacy copy after
-   * that topology has been handed to the canonical document coordinator. */
+  /**
+   * Prevent an old session from reading or writing a stale legacy copy after
+   * that topology has been handed to the canonical document coordinator. A
+   * read-only document tool (`WORKSPACE_READ_TOOLS`) is instead served from
+   * the coordinator's current snapshot, loaded into the store for just this
+   * call and unloaded again by the returned context's `release` (issue #276);
+   * every other document tool keeps the hard refusal.
+   */
   private async beforeTool(
     toolName: string,
     args: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<ToolCallContext | undefined> {
     const bucket = rateLimitBucketForTool(toolName);
     if (bucket) {
       const registryWithQuota = (await this.registry()) as unknown as {
@@ -286,10 +259,13 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
     }
     if (args.topologyId === undefined) return;
     const id = String(args.topologyId);
-    if (await workspace.isMigrated(id))
-      throw new Error(
-        `topology "${id}" is now a shared workspace; use get_workspace_manifest and the workspace change tools`,
-      );
+    if (!(await workspace.isMigrated(id))) return;
+    // Refuses (throws) unless the tool is on the read allowlist. The loaded
+    // snapshot can never reach the legacy registry: every allowlisted tool is
+    // in NO_LEGACY_PERSIST_TOOLS (asserted by src/mcp/workspace-reads.test.ts),
+    // persistAfter unloads migrated ids before any write, and the context's
+    // release unloads it as soon as the handler settles.
+    return serveWorkspaceRead(toolName, id, this.store, workspace);
   }
 
   private workspaceService(): WorkspaceService | undefined {

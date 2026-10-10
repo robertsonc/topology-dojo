@@ -1344,6 +1344,113 @@ describe('MCP tools', () => {
       expect(withProvider.some((t) => t.name === n)).toBe(true);
   });
 
+  it('get_workspace_document returns the full document at its revision (issue #276)', async () => {
+    const unavailable = async (): Promise<never> => {
+      throw new Error('not called');
+    };
+    const document: TopologyDocument = {
+      title: 'Shared campus',
+      customNodes: [],
+      layers: [{ id: 'underlay', name: 'Underlay', kind: 'underlay' }],
+      legend: { show: true, position: 'br' },
+      pages: [
+        {
+          id: 'p1',
+          name: 'Frame 1',
+          viewBox: '0 0 1050 700',
+          nodes: [{ id: 'n1', type: 'router', label: 'R1', x: 100, y: 100 }],
+          links: [],
+          anchors: [],
+          zones: [],
+          flowPaths: [],
+          policyMarkers: [],
+        },
+        {
+          id: 'p2',
+          name: 'Frame 2',
+          viewBox: '0 0 1050 700',
+          nodes: [],
+          links: [],
+          anchors: [],
+          zones: [],
+          flowPaths: [],
+          policyMarkers: [],
+        },
+      ],
+    };
+    const asked: string[] = [];
+    const workspace: NonNullable<ToolDeps['workspace']> = {
+      createEmpty: unavailable,
+      list: async () => [],
+      manifest: unavailable,
+      snapshot: async (id) => {
+        asked.push(id);
+        return { id, revision: 11, document: structuredClone(document) };
+      },
+      changes: unavailable,
+      elements: unavailable,
+      propose: unavailable,
+      applyAgent: unavailable,
+      createCheckpoint: unavailable,
+      listCheckpoints: async () => [],
+    };
+    const withWorkspace = createTools(store, {
+      renderDocument: renderDocumentToSVG,
+      workspace,
+    });
+    const tool = withWorkspace.find(
+      (t) => t.name === 'get_workspace_document',
+    )!;
+    expect(tool.description).toContain('get_workspace_manifest');
+    expect(tool.description).toContain('summary:true');
+
+    const full = (await tool.handler(
+      parseToolArgs(tool, { workspaceId: 'w1' }),
+    )) as { id: string; revision: number; document: TopologyDocument };
+    expect(asked).toEqual(['w1']);
+    expect(full.id).toBe('w1');
+    expect(full.revision).toBe(11);
+    // Document-level state round-trips — the fields get_workspace_elements
+    // never returns.
+    expect(full.document.title).toBe('Shared campus');
+    expect(full.document.layers).toEqual(document.layers);
+    expect(full.document.legend).toEqual(document.legend);
+    expect(full.document.customNodes).toEqual(document.customNodes);
+    expect(full.document.pages.map((p) => p.id)).toEqual(['p1', 'p2']);
+    // The workspace snapshot is never loaded into the legacy store.
+    expect(store.list()).toEqual([]);
+
+    const summary = (await tool.handler(
+      parseToolArgs(tool, { workspaceId: 'w1', summary: true }),
+    )) as {
+      revision: number;
+      summary: { title: string; pages: { nodes: number }[]; layers: string[] };
+      document?: unknown;
+    };
+    expect(summary.revision).toBe(11);
+    expect(summary.document).toBeUndefined();
+    expect(summary.summary.title).toBe('Shared campus');
+    expect(summary.summary.pages.map((p) => p.nodes)).toEqual([1, 0]);
+    expect(summary.summary.layers).toEqual(['underlay']);
+
+    const page = (await tool.handler(
+      parseToolArgs(tool, { workspaceId: 'w1', pageIndex: 1 }),
+    )) as {
+      revision: number;
+      pageIndex: number;
+      pageCount: number;
+      page: { id: string };
+    };
+    expect(page.revision).toBe(11);
+    expect(page.pageIndex).toBe(1);
+    expect(page.pageCount).toBe(2);
+    expect(page.page.id).toBe('p2');
+
+    await expect(
+      tool.handler(parseToolArgs(tool, { workspaceId: 'w1', pageIndex: 5 })),
+    ).rejects.toThrow(/page index 5 out of range/);
+  });
+
   it('registers the bounded shared-workspace tools only when wired', async () => {
     const unavailable = async (): Promise<never> => {
       throw new Error('not called');
@@ -1352,6 +1459,7 @@ describe('MCP tools', () => {
       createEmpty: unavailable,
       list: async () => [],
       manifest: unavailable,
+      snapshot: unavailable,
       changes: unavailable,
       elements: unavailable,
       propose: unavailable,
@@ -1367,6 +1475,7 @@ describe('MCP tools', () => {
       'create_workspace',
       'list_workspaces',
       'get_workspace_manifest',
+      'get_workspace_document',
       'describe_workspace_operations',
       'get_workspace_changes',
       'get_workspace_elements',

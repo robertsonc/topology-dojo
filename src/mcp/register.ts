@@ -12,6 +12,32 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTools, type ToolDef, type ToolDeps } from './tools.js';
 import { TopologyStore } from './store.js';
+import { withWorkspaceRevision } from './workspace-reads.js';
+
+/**
+ * What `beforeToolCall` may hand back to shape the rest of the call. Returned
+ * rather than thrown so a guard can both admit a call and say how it was
+ * served — the remote agent uses it for a read served from a shared
+ * workspace's snapshot (issue #276).
+ */
+export interface ToolCallContext {
+  /**
+   * Revision of the shared workspace this read was served from. When set,
+   * the result is stamped with it (`workspaceRevision` on a JSON object, an
+   * XML/HTML comment on a rendered string — see `withWorkspaceRevision`).
+   */
+  workspaceRevision?: number;
+  /**
+   * Runs once the handler has settled, on success and on error — e.g. to
+   * unload a snapshot that was loaded into the store for this one call.
+   */
+  release?: () => void | Promise<void>;
+}
+
+export type BeforeToolCall = (
+  toolName: string,
+  args: Record<string, unknown>,
+) => void | ToolCallContext | Promise<void | ToolCallContext>;
 
 /**
  * Validate raw arguments against a tool's input shape. Returns the parsed
@@ -42,11 +68,12 @@ export function registerTopologyTools(
    * sees the result. No-op by default (the stdio server keeps state in memory).
    */
   afterToolCall?: (toolName: string) => void | Promise<void>,
-  /** Guard invoked after runtime argument parsing but before the handler. */
-  beforeToolCall?: (
-    toolName: string,
-    args: Record<string, unknown>,
-  ) => void | Promise<void>,
+  /**
+   * Guard invoked after runtime argument parsing but before the handler. It
+   * may throw to refuse the call, or return a `ToolCallContext` describing
+   * how the call is being served (see that type).
+   */
+  beforeToolCall?: BeforeToolCall,
   /**
    * Best-effort activity hook (Initiative A). Invoked after the handler
    * settles, on both success and error. Wrapped so a throw can never change
@@ -63,16 +90,22 @@ export function registerTopologyTools(
       tool.name,
       { description: tool.description, inputSchema: tool.inputShape },
       async (args: Record<string, unknown>) => {
+        let context: ToolCallContext | undefined;
         try {
           const parsed = parseToolArgs(tool, args);
-          await beforeToolCall?.(tool.name, parsed);
+          const guard = await beforeToolCall?.(tool.name, parsed);
+          if (guard) context = guard;
           const result = await tool.handler(parsed);
           await afterToolCall?.(tool.name);
+          const served =
+            context?.workspaceRevision === undefined
+              ? result
+              : withWorkspaceRevision(result, context.workspaceRevision);
           // Compact JSON (no pretty-printing): tool results feed an agent's
           // context window, where indentation is pure token overhead — on large
           // payloads (documents, catalogs) it roughly doubles the size.
           const text =
-            typeof result === 'string' ? result : JSON.stringify(result);
+            typeof served === 'string' ? served : JSON.stringify(served);
           await settleActivity(onToolSettled, tool.name, 'success');
           return { content: [{ type: 'text' as const, text }] };
         } catch (err) {
@@ -82,11 +115,30 @@ export function registerTopologyTools(
             isError: true,
             content: [{ type: 'text' as const, text: `Error: ${message}` }],
           };
+        } finally {
+          await releaseContext(context, tool.name);
         }
       },
     );
   }
   return store;
+}
+
+/**
+ * Run a call context's `release` once the handler has settled. A release
+ * failure is logged, never surfaced: the tool's own result (or error) has
+ * already been decided and must not be masked by cleanup.
+ */
+async function releaseContext(
+  context: ToolCallContext | undefined,
+  toolName: string,
+): Promise<void> {
+  if (!context?.release) return;
+  try {
+    await context.release();
+  } catch (err) {
+    console.error(`tool call context release failed after ${toolName}`, err);
+  }
 }
 
 async function settleActivity(
