@@ -36,6 +36,20 @@ import path from 'node:path';
 
 /** Per-request timeout: a hung deployment must fail the run, not hang CI. */
 const TIMEOUT_MS = 15_000;
+/**
+ * A redeploy is eventually consistent across Cloudflare's edge: for a few
+ * seconds after `wrangler deploy`, consecutive requests can land on isolates
+ * running different versions (release run #4: the live-poll saw the new sha
+ * once, the healthz check 700 ms later got the old one). So "serving sha X"
+ * means X on this many CONSECUTIVE polls, and a sha mismatch inside the
+ * settle window is retried rather than failed.
+ */
+const LIVE_CONSECUTIVE_MATCHES = 3;
+const LIVE_CONFIRM_INTERVAL_MS = 1_000;
+const LIVE_RETRY_INTERVAL_MS = 5_000;
+const SHA_SETTLE_RETRY_MS = 1_000;
+/** Longest the healthz check keeps retrying a sha mismatch (with --wait-live). */
+const SHA_SETTLE_MAX_SECONDS = 30;
 
 const WORKSPACE_DISABLED_BODY = { error: 'workspace_disabled' };
 const PROFILES_DISABLED_BODY = { error: 'profiles_disabled' };
@@ -109,7 +123,12 @@ function usage() {
     "                                Cloudflare's generic 404 before running",
     '                                the checks — a brand-new workers.dev',
     '                                subdomain takes a little while to become',
-    '                                routable after its first-ever deploy',
+    '                                routable after its first-ever deploy.',
+    '                                With --sha: wait until /healthz reports',
+    '                                that sha on several consecutive polls (a',
+    '                                redeploy serves mixed versions for a few',
+    '                                seconds), and let the healthz check retry',
+    '                                a mismatch for up to 30s more',
   ].join('\n');
 }
 
@@ -130,19 +149,25 @@ function usage() {
  * way, when the deadline passes the real checks run and judge for
  * themselves.
  */
-async function waitForLiveOrigin(baseUrl, seconds, expectedSha) {
+export async function waitForLiveOrigin(
+  baseUrl,
+  seconds,
+  expectedSha,
+  {
+    consecutive = LIVE_CONSECUTIVE_MATCHES,
+    confirmIntervalMs = LIVE_CONFIRM_INTERVAL_MS,
+    retryIntervalMs = LIVE_RETRY_INTERVAL_MS,
+  } = {},
+) {
   const deadline = Date.now() + seconds * 1000;
+  // With a sha: the edge is only "live on X" once X has answered
+  // `consecutive` polls in a row; any other answer resets the streak.
+  let streak = 0;
   for (;;) {
+    let matched = false;
     try {
       if (expectedSha) {
-        const res = await request(baseUrl + '/healthz');
-        if (
-          res.status === 200 &&
-          (res.headers.get('content-type') ?? '').includes('application/json')
-        ) {
-          const data = await res.json();
-          if (data && data.ok === true && data.sha === expectedSha) return true;
-        }
+        matched = await healthzReportsSha(baseUrl, expectedSha);
       } else {
         const res = await request(baseUrl + '/', {
           headers: { accept: 'text/html' },
@@ -152,9 +177,29 @@ async function waitForLiveOrigin(baseUrl, seconds, expectedSha) {
     } catch {
       // Unreachable/timeout — keep waiting until the deadline.
     }
+    if (expectedSha) {
+      streak = matched ? streak + 1 : 0;
+      if (streak >= consecutive) return true;
+    }
     if (Date.now() >= deadline) return false;
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await sleep(matched ? confirmIntervalMs : retryIntervalMs);
   }
+}
+
+/** True when GET /healthz is 200 JSON `{ ok: true, sha: <expected> }`. */
+async function healthzReportsSha(baseUrl, expectedSha) {
+  const res = await request(baseUrl + '/healthz');
+  if (
+    res.status !== 200 ||
+    !(res.headers.get('content-type') ?? '').includes('application/json')
+  )
+    return false;
+  const data = await res.json();
+  return Boolean(data && data.ok === true && data.sha === expectedSha);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +256,25 @@ function describeError(err) {
  * non-navigation route — recognized here by its non-JSON content-type
  * rather than by status code alone.
  */
-async function checkHealthz(base, sha) {
+async function checkHealthz(base, sha, shaSettleSeconds = 0) {
+  // A sha mismatch right after a deploy is usually a stale edge isolate, not
+  // a wrong deploy: with a settle window, keep re-asking until it agrees or
+  // the window closes, then judge the last answer.
+  const settleDeadline = Date.now() + shaSettleSeconds * 1000;
+  for (;;) {
+    const result = await checkHealthzOnce(base, sha);
+    if (
+      !sha ||
+      result.status !== 'fail' ||
+      !result.detail.startsWith('expected sha') ||
+      Date.now() >= settleDeadline
+    )
+      return result;
+    await sleep(SHA_SETTLE_RETRY_MS);
+  }
+}
+
+async function checkHealthzOnce(base, sha) {
   const name = 'healthz';
   let res;
   try {
@@ -775,10 +838,11 @@ export async function runSmoke(
     expectWorkspaceDisabled = false,
     expectProfilesDisabled = false,
     expectAnalyticsDisabled = false,
+    shaSettleSeconds = 0,
   },
 ) {
   const tasks = [
-    ['healthz', () => checkHealthz(baseUrl, sha)],
+    ['healthz', () => checkHealthz(baseUrl, sha, shaSettleSeconds)],
     ['readyz-unauth', () => checkReadyzUnauth(baseUrl)],
     ['app', () => checkApp(baseUrl)],
     ['login', () => checkLogin(baseUrl)],
@@ -872,6 +936,12 @@ async function main() {
 
   const results = await runSmoke(baseUrl, {
     sha: args.sha,
+    // The settle window is only meaningful right after a deploy, which is
+    // what --wait-live signals; a plain verification run judges immediately.
+    shaSettleSeconds:
+      args.waitLiveSeconds > 0
+        ? Math.min(SHA_SETTLE_MAX_SECONDS, args.waitLiveSeconds)
+        : 0,
     expectWorkspaceDisabled: args.expectWorkspaceDisabled,
     expectProfilesDisabled: args.expectProfilesDisabled,
     expectAnalyticsDisabled: args.expectAnalyticsDisabled,
