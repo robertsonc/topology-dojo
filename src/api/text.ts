@@ -175,3 +175,66 @@ export function overlongMetaMax(
     return { path: key, max: TEXT_LIMITS.metaValue };
   return null;
 }
+
+/** Where an overlong display string sits inside a walked value. */
+export interface OverlongDisplayText {
+  /** Object keys and array indices from the walked root to the string. */
+  path: (string | number)[];
+  max: number;
+}
+
+/**
+ * Report-instead-of-truncate twin of `sanitizeDisplayFields`: the first
+ * display string (or `meta` key / value) that `parseDoc` would cut, with its
+ * path, or null when the value round-trips with every string intact. Walks
+ * the same shapes the sanitizer walks (nested elements, flow-path hops,
+ * layer / stencil names, meta maps) and measures raw length like the Zod
+ * boundary does (`overlongDisplayMax`), so the coordinator can refuse at
+ * submit time exactly what would otherwise be silently shortened on accept.
+ */
+export function findOverlongDisplayText(
+  value: unknown,
+  path: (string | number)[] = [],
+): OverlongDisplayText | null {
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) {
+      const hit = findOverlongDisplayText(value[index], [...path, index]);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (key === 'meta' && v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const [mk, mv] of Object.entries(v as Record<string, unknown>)) {
+        const over = overlongMetaMax(mk, mv);
+        if (over) return { path: [...path, 'meta', over.path], max: over.max };
+      }
+      continue;
+    }
+    const max = overlongDisplayMax(key, v);
+    if (max !== null) return { path: [...path, key], max };
+    if (v && typeof v === 'object') {
+      const hit = findOverlongDisplayText(v, [...path, key]);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** Longest path segment (an overlong `meta` key) echoed before it is elided. */
+const MAX_PATH_SEGMENT = 48;
+
+/** `layers[0].name`, `meta.serial`, `hops[2].meta.site` — for error messages. */
+export function formatDisplayTextPath(path: (string | number)[]): string {
+  return path
+    .map((segment, index) => {
+      if (typeof segment === 'number') return `[${segment}]`;
+      const shown =
+        segment.length > MAX_PATH_SEGMENT
+          ? `${segment.slice(0, MAX_PATH_SEGMENT - 1)}…`
+          : segment;
+      return index === 0 ? shown : `.${shown}`;
+    })
+    .join('');
+}

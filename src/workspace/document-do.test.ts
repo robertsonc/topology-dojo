@@ -485,32 +485,50 @@ describe('TopologyDocument Durable Object', () => {
       workspace: 'w-big',
       document: { title: 'Big', customNodes: [], pages: [page('p1', 'a')] },
     });
-    const build = (labelLength: number) => [
+    // Bulk comes from many meta values, each at its 2000-character cap: one
+    // giant label would now be refused by the display-text check (#277)
+    // before the byte limit is ever measured.
+    const fill = (chars: number) => {
+      const meta: Record<string, string> = {};
+      for (let i = 0; chars > 0; i++) {
+        const n = Math.min(chars, 2000);
+        meta[`k${i}`] = 'x'.repeat(n);
+        chars -= n;
+      }
+      return meta;
+    };
+    const build = (metaChars: number, keyPad = 0) => [
       {
         type: 'element.upsert',
         pageId: 'p1',
         kind: 'nodes',
         source: { system: 'netbox', kind: 'device', id: 'huge' },
-        element: { type: 'router', x: 1, y: 1, label: 'x'.repeat(labelLength) },
+        element: {
+          type: 'router',
+          x: 1,
+          y: 1,
+          meta: { ...fill(metaChars), [`pad${'y'.repeat(keyPad)}`]: 'x' },
+        },
       },
     ];
     const limit = 512 * 1024;
     const size = (ops: unknown) =>
       new TextEncoder().encode(JSON.stringify(ops)).byteLength;
-    // Input sits just under the limit; the minted id pushes the stored
-    // element.add over it (normalization adds ~19 bytes).
-    const length = limit - size(build(0)) - 8;
-    expect(size(build(length))).toBeLessThanOrEqual(limit);
+    // Input sits exactly at the limit; the minted id pushes the stored
+    // element.add over it (normalization adds ~22 bytes). Each extra meta
+    // entry costs a few bytes of key syntax, so converge on the limit with
+    // values, then land on it precisely with the last key's length (a few
+    // characters, far under the 200-character key cap).
+    let length = limit - size(build(0));
+    while (size(build(length)) > limit) length -= size(build(length)) - limit;
+    const operations = build(length, limit - size(build(length)));
+    expect(size(operations)).toBe(limit);
     await expect(
       call({
         action: 'propose',
         workspace: 'w-big',
         title: 'huge',
-        commit: {
-          baseRevision: 0,
-          operationId: 'pr-big',
-          operations: build(length),
-        },
+        commit: { baseRevision: 0, operationId: 'pr-big', operations },
       }),
     ).rejects.toThrow(/512 KiB limit after element.upsert normalization/);
   }, 30_000);
@@ -1383,5 +1401,143 @@ describe('attributed conflicts and same-author supersede (issue #269)', () => {
         operationType: 'element.remove',
       },
     ]);
+  }, 30_000);
+});
+
+describe('display text limits are enforced at submit time (issue #277)', () => {
+  const W = 'w-text-limits';
+  const LABEL = 200;
+  let seq = 0;
+  const opId = () => `${W}-${++seq}`;
+
+  type WritePath = 'propose' | 'agent' | 'user';
+  const request = (path: WritePath, operations: unknown[]) => ({
+    action: path,
+    workspace: W,
+    title: 'Overlong text',
+    commit: { baseRevision: 0, operationId: opId(), operations },
+  });
+  /** Every write path the coordinator exposes, keyed by how a test names it. */
+  const submit = (path: WritePath, operations: unknown[]) =>
+    call(request(path, operations));
+  /** The coordinator's thrown message, decoded from the harness's 400 body. */
+  const refusal = async (path: WritePath, operations: unknown[]) => {
+    const response = await dispatch(request(path, operations));
+    expect(response.status).toBe(400);
+    return ((await response.json()) as { error: string }).error;
+  };
+
+  const cases: Array<{ name: string; op: unknown; message: string }> = [
+    {
+      name: 'element.add label',
+      op: {
+        type: 'element.add',
+        pageId: 'p1',
+        kind: 'nodes',
+        element: {
+          id: 'c1',
+          type: 'callout',
+          x: 1,
+          y: 1,
+          label: 'L'.repeat(LABEL + 1),
+        },
+      },
+      message: 'operations[0] element "c1" label exceeds 200 characters',
+    },
+    {
+      name: 'element.patch label',
+      op: patch('p1', 'a', { label: 'L'.repeat(LABEL + 1) }),
+      message: 'operations[0] element "a" label exceeds 200 characters',
+    },
+    {
+      name: 'element.upsert label',
+      op: {
+        type: 'element.upsert',
+        pageId: 'p1',
+        kind: 'nodes',
+        source: { system: 'netbox', kind: 'device', id: 'core1' },
+        element: {
+          id: 'core1',
+          type: 'router',
+          x: 1,
+          y: 1,
+          label: 'L'.repeat(LABEL + 1),
+        },
+      },
+      message: 'operations[0] element "core1" label exceeds 200 characters',
+    },
+    {
+      name: 'page.patch name',
+      op: {
+        type: 'page.patch',
+        pageId: 'p1',
+        patch: { set: { name: 'N'.repeat(201) } },
+      },
+      message: 'operations[0] page "p1" name exceeds 200 characters',
+    },
+    {
+      name: 'meta value',
+      op: patch('p1', 'a', { meta: { serial: 'M'.repeat(2001) } }),
+      message: 'operations[0] element "a" meta.serial exceeds 2000 characters',
+    },
+  ];
+  const documentCase = {
+    op: { type: 'document.patch', patch: { set: { title: 'T'.repeat(161) } } },
+    message: 'operations[0] document title exceeds 160 characters',
+  };
+
+  it('refuses the whole batch on propose, leased apply and the browser commit path, naming the field', async () => {
+    await call({
+      action: 'initialize',
+      workspace: W,
+      document: { title: 'Text', customNodes: [], pages: [page('p1', 'a')] },
+    });
+    await call({ action: 'lease', workspace: W, pageId: 'p1' });
+
+    for (const { op, message } of cases) {
+      // A valid sibling op first proves the batch is refused as a whole.
+      const batch = [op, patch('p1', 'a', { x: 99 })];
+      expect(await refusal('propose', batch)).toBe(message);
+      expect(await refusal('agent', batch)).toBe(message);
+      expect(await refusal('user', batch)).toBe(message);
+    }
+    // document.patch is outside a page lease's scope, so the leased path is
+    // not its route; the proposal and browser paths still refuse it.
+    expect(await refusal('propose', [documentCase.op])).toBe(
+      documentCase.message,
+    );
+    expect(await refusal('user', [documentCase.op])).toBe(documentCase.message);
+
+    // Nothing was stored: no revision advanced and no proposal exists.
+    const snapshot = await call<{
+      revision: number;
+      document: {
+        title: string;
+        pages: Array<{ nodes: Array<{ x: number }> }>;
+      };
+    }>({ action: 'snapshot', workspace: W });
+    expect(snapshot.revision).toBe(0);
+    expect(snapshot.document.pages[0]!.nodes[0]!.x).toBe(10);
+    const changes = await call<{ changes: unknown[] }>({
+      action: 'changes',
+      workspace: W,
+      since: 0,
+    });
+    expect(changes.changes).toHaveLength(0);
+  }, 30_000);
+
+  it('accepts text exactly at the cap on every path', async () => {
+    const atCap = patch('p1', 'a', { label: 'L'.repeat(LABEL) });
+    const proposed = await submit('propose', [atCap]);
+    expect(proposed).toMatchObject({
+      ok: true,
+      proposal: { status: 'pending' },
+    });
+    const leased = await submit('agent', [atCap]);
+    expect(leased).toMatchObject({ ok: true, revision: 1 });
+    const snapshot = await call<{
+      document: { pages: Array<{ nodes: Array<{ label: string }> }> };
+    }>({ action: 'snapshot', workspace: W });
+    expect(snapshot.document.pages[0]!.nodes[0]!.label).toHaveLength(LABEL);
   }, 30_000);
 });

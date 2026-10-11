@@ -214,8 +214,16 @@ For a document shared with the browser, use the bounded workspace loop instead:
    (see below) naming the committed write behind every target. When those are
    all your own earlier accepted writes, resubmit with `supersede: true`
    instead of rebasing by hand.
+   Display text over the catalog caps (`label`/`name` 200, `caption` 500,
+   `description` 1000, `body`/`meta` values 2000, `title` 160 — the same caps
+   `describe_capabilities` advertises) is refused at submit time for the whole
+   batch, naming the operation, element/page and field
+   (`operations[3] element "c1" label exceeds 200 characters`), exactly as the
+   direct tools reject it, so a proposal never previews text the stored
+   document would truncate.
 7. Use `apply_workspace_changes` only when the browser explicitly shows a live,
-   current-page lease. It takes the same `supersede` flag.
+   current-page lease. It takes the same `supersede` flag and the same
+   display-text refusal.
 
 The browser's manifest/proposal polling is normal application JSON and is not
 automatically placed into model context. Token usage is therefore proportional
