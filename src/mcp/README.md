@@ -105,6 +105,18 @@ Apps, secrets, or KV namespace ids across environments.
 > untouched. Once the browser hands a draft off, all further writes use
 > workspace tools. The old snapshot is retained as migration rollback material
 > but stale legacy mutation is refused.
+>
+> The read-only document tools keep working on a shared workspace:
+> `get_topology`, `validate_topology`, `inspect_render`, `render_svg`,
+> `export_flipbook` and `describe_capabilities` (with a `topologyId`) accept a
+> workspace id and are served from the workspace's **current revision**, which
+> they report — a JSON result carries `workspaceRevision`, a rendered SVG /
+> flipbook carries a `<!-- workspace revision N -->` comment after its opening
+> tag. Nothing is loaded into, or persisted from, the legacy registry. Writes
+> go through `propose_workspace_changes` (or `apply_workspace_changes` inside
+> a page lease); a mutating tool on a workspace id is refused with that
+> guidance. `get_workspace_document` returns the whole document (title,
+> layers, legend, custom nodes, stencils, palette, pages) with its revision.
 
 ### Share links (`share_topology` / `list_shares` / `unpublish_topology`)
 
@@ -201,7 +213,14 @@ For a document shared with the browser, use the bounded workspace loop instead:
 4. `get_workspace_changes` from the last-seen revision; summaries are the
    default and avoid reloading the document.
 5. `get_workspace_elements` only for pages/elements needed by the task
-   (`sourcedOnly:true` for just the elements an importer owns).
+   (`sourcedOnly:true` for just the elements an importer owns). When the
+   document-level state matters (layers, legend, custom node types, palette)
+   or the whole document is really needed, `get_workspace_document`
+   (`summary:true` / `pageIndex` narrow it) returns it with its revision.
+   To check or render the workspace, call `validate_topology`,
+   `inspect_render`, `render_svg` or `export_flipbook` with the workspace id
+   directly — they serve the current revision and report it; there is no
+   need to rebuild a scratch topology from element dumps.
 6. `propose_workspace_changes` → a named operation batch for owner review.
    An importer uses `element.upsert` operations (schema revision 2): the
    coordinator resolves each one by source identity into `element.add` or
@@ -269,6 +288,7 @@ to the task's affected region and change summaries, not total document size.
 | `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                                                           |
 | `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                                                  |
 | `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it                                            |
+| `get_workspace_document`                               | The whole document (title, layers, legend, custom nodes, stencils, palette, pages) at its current revision; `summary` / `pageIndex`    |
 | `describe_workspace_operations`                        | On-demand versioned operation vocabulary (revision 2 adds `element.upsert`); call only when its revision changes                       |
 | `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                                                                 |
 | `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                                                     |

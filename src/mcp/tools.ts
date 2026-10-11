@@ -167,6 +167,10 @@ export interface ToolDeps {
     }>;
     list(): Promise<WorkspaceListItem[]>;
     manifest(id: string): Promise<WorkspaceManifest>;
+    /** The full document at the current revision (`get_workspace_document`). */
+    snapshot(
+      id: string,
+    ): Promise<{ id: string; revision: number; document: TopologyDocument }>;
     changes(
       id: string,
       sinceRevision: number,
@@ -334,6 +338,89 @@ const supersedeFlag = z
     'Supersede your own earlier writes: when every conflicting target was last written by your own accepted proposal or leased commit, rebase onto the current revision and apply these values over them (result carries rebased:true and superseded:[targets]). A target last written by anyone else, or a collision with a removal, still returns the attributed conflict.',
   );
 
+/** Narrowing options shared by `get_topology` and `get_workspace_document`. */
+interface TopologyViewArgs {
+  summary?: unknown;
+  pageIndex?: unknown;
+  sources?: unknown;
+  system?: unknown;
+}
+
+/**
+ * The `get_topology` views over a document: the full document (the default),
+ * `summary:true` (page names + element counts + layer / custom-type ids),
+ * `pageIndex` (one page with the title / page count), or `sources:true`
+ * (just the source-carrying elements per page, optionally for one `system`).
+ * Pure over the document so a workspace snapshot can be viewed the same way.
+ */
+function topologyView(doc: TopologyDocument, a: TopologyViewArgs): unknown {
+  if (a.sources) {
+    const system = a.system === undefined ? undefined : String(a.system);
+    const pages = doc.pages.map((p, index) => ({
+      index,
+      id: p.id,
+      name: p.name,
+      elements: SOURCED_COLLECTIONS.flatMap((kind) =>
+        (p[kind] as unknown as SourcedElement[])
+          .filter(
+            (el) =>
+              el.source &&
+              (system === undefined || el.source.system === system),
+          )
+          .map((el) => ({
+            id: el.id,
+            kind,
+            source: el.source,
+            ...(typeof el.label === 'string' ? { label: el.label } : {}),
+          })),
+      ),
+    }));
+    if (a.pageIndex !== undefined) {
+      const page = pages[Number(a.pageIndex)];
+      if (!page)
+        throw new Error(`page index ${Number(a.pageIndex)} out of range`);
+      return {
+        title: doc.title,
+        pageCount: doc.pages.length,
+        pages: [page],
+      };
+    }
+    return { title: doc.title, pageCount: doc.pages.length, pages };
+  }
+  if (a.summary) {
+    return {
+      title: doc.title,
+      pages: doc.pages.map((p, index) => ({
+        index,
+        name: p.name,
+        viewBox: p.viewBox,
+        nodes: p.nodes.length,
+        links: p.links.length,
+        anchors: p.anchors.length,
+        zones: p.zones?.length ?? 0,
+        flowPaths: p.flowPaths?.length ?? 0,
+        policyMarkers: p.policyMarkers?.length ?? 0,
+      })),
+      ...(doc.layers?.length ? { layers: doc.layers.map((l) => l.id) } : {}),
+      ...(doc.customNodes?.length
+        ? { customNodeTypes: doc.customNodes.map((c) => c.typeName) }
+        : {}),
+    };
+  }
+  if (a.pageIndex !== undefined) {
+    const page = doc.pages[Number(a.pageIndex)];
+    if (!page)
+      throw new Error(`page index ${Number(a.pageIndex)} out of range`);
+    return {
+      title: doc.title,
+      pageCount: doc.pages.length,
+      pageIndex: Number(a.pageIndex),
+      page,
+    };
+  }
+  return doc;
+}
+
 /** Build the full set of tools bound to a store and runtime deps. */
 export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
   const tools: ToolDef[] = [
@@ -470,76 +557,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .optional()
           .describe('With sources:true, restrict to this source.system.'),
       },
-      handler: (a) => {
-        const doc = store.get(String(a.topologyId));
-        if (a.sources) {
-          const system = a.system === undefined ? undefined : String(a.system);
-          const pages = doc.pages.map((p, index) => ({
-            index,
-            id: p.id,
-            name: p.name,
-            elements: SOURCED_COLLECTIONS.flatMap((kind) =>
-              (p[kind] as unknown as SourcedElement[])
-                .filter(
-                  (el) =>
-                    el.source &&
-                    (system === undefined || el.source.system === system),
-                )
-                .map((el) => ({
-                  id: el.id,
-                  kind,
-                  source: el.source,
-                  ...(typeof el.label === 'string' ? { label: el.label } : {}),
-                })),
-            ),
-          }));
-          if (a.pageIndex !== undefined) {
-            const page = pages[Number(a.pageIndex)];
-            if (!page)
-              throw new Error(`page index ${Number(a.pageIndex)} out of range`);
-            return {
-              title: doc.title,
-              pageCount: doc.pages.length,
-              pages: [page],
-            };
-          }
-          return { title: doc.title, pageCount: doc.pages.length, pages };
-        }
-        if (a.summary) {
-          return {
-            title: doc.title,
-            pages: doc.pages.map((p, index) => ({
-              index,
-              name: p.name,
-              viewBox: p.viewBox,
-              nodes: p.nodes.length,
-              links: p.links.length,
-              anchors: p.anchors.length,
-              zones: p.zones?.length ?? 0,
-              flowPaths: p.flowPaths?.length ?? 0,
-              policyMarkers: p.policyMarkers?.length ?? 0,
-            })),
-            ...(doc.layers?.length
-              ? { layers: doc.layers.map((l) => l.id) }
-              : {}),
-            ...(doc.customNodes?.length
-              ? { customNodeTypes: doc.customNodes.map((c) => c.typeName) }
-              : {}),
-          };
-        }
-        if (a.pageIndex !== undefined) {
-          const page = doc.pages[Number(a.pageIndex)];
-          if (!page)
-            throw new Error(`page index ${Number(a.pageIndex)} out of range`);
-          return {
-            title: doc.title,
-            pageCount: doc.pages.length,
-            pageIndex: Number(a.pageIndex),
-            page,
-          };
-        }
-        return doc;
-      },
+      handler: (a) => topologyView(store.get(String(a.topologyId)), a),
     },
     {
       name: 'import_topology',
@@ -1817,6 +1835,38 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           'Get compact workspace status: revision, page ids/names, element counts, pending proposal count, and active lease. Only valid for ids already handed off as shared workspaces; a legacy topology id is rejected without being migrated.',
         inputShape: { workspaceId },
         handler: (a) => workspace.manifest(String(a.workspaceId)),
+      },
+      {
+        name: 'get_workspace_document',
+        description:
+          'Return a shared workspace’s full document JSON at its current revision ({ id, revision, document }) — title, layers, legend, customNodes, stencils, palette and every page: the document-level state get_workspace_elements never returns. The full document can be large: pass summary:true for a compact overview (page names + element counts) or pageIndex to fetch a single page, and prefer get_workspace_manifest / get_workspace_elements unless the whole document is really needed. The direct read tools (get_topology, validate_topology, inspect_render, render_svg, export_flipbook) also accept a workspace id and serve this same revision. Only valid for ids already handed off as shared workspaces; a legacy topology id is rejected without being migrated.',
+        inputShape: {
+          workspaceId,
+          summary: z
+            .boolean()
+            .optional()
+            .describe('Compact overview instead of the full document.'),
+          pageIndex: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe(
+              'Return only this page (with document title/page count).',
+            ),
+        },
+        handler: async (a) => {
+          const snapshot = await workspace.snapshot(String(a.workspaceId));
+          const base = { id: snapshot.id, revision: snapshot.revision };
+          const view = topologyView(snapshot.document, {
+            summary: a.summary,
+            pageIndex: a.pageIndex,
+          });
+          if (a.summary) return { ...base, summary: view };
+          if (a.pageIndex !== undefined)
+            return { ...base, ...(view as Record<string, unknown>) };
+          return { ...base, document: snapshot.document };
+        },
       },
       {
         name: 'describe_workspace_operations',

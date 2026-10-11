@@ -152,8 +152,24 @@ export default {
  */
 export const WORKSPACE_MIGRATION_FIXTURE = String.raw`
 import { WorkspaceService } from './worker/workspaces.ts';
+import { NO_LEGACY_PERSIST_TOOLS } from './worker/legacy-persist.ts';
+import { TopologyStore } from './src/mcp/store.ts';
+import { registerTopologyTools } from './src/mcp/register.ts';
+import { serveWorkspaceRead } from './src/mcp/workspace-reads.ts';
+import { persistStore, rehydrateStore } from './src/mcp/persist-store.ts';
+import { openOwnerRegistry } from './src/mcp/registry-address.ts';
 export { TopologyDocument } from './worker/document.ts';
 export { TopologyRegistry } from './worker/registry.ts';
+
+/** Stand-in renderer: the bundled engine is covered elsewhere; here only the
+ * "which document was rendered" question matters. */
+function stubRender(doc, pageIndex = 0) {
+  const page = doc.pages[pageIndex];
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + page.viewBox + '">' +
+    '<title>' + doc.title + '</title></svg>'
+  );
+}
 
 export default {
   async fetch(request, env) {
@@ -187,6 +203,58 @@ export default {
         return json(
           await service.elements(id, url.searchParams.get('pageId') ?? ''),
         );
+      // Owner-side commit (the browser's path) — bumps the revision so a
+      // later agent read can be checked against the coordinator, not the
+      // stale legacy copy.
+      if (url.pathname === '/apply' && request.method === 'POST')
+        return json(await service.applyUser(id, await request.json()));
+      // The raw legacy copies: the login-keyed v2 draft and the uid-keyed
+      // one the MCP persist path writes. Both must stay untouched by reads.
+      if (url.pathname === '/legacy-raw') {
+        const ns = env.TOPOLOGY_REGISTRY;
+        const read = async (name) =>
+          ns.get(ns.idFromName(name)).legacyDocument(id);
+        return json({
+          login: await read('user:' + login),
+          uid: await read('user-id:' + uid),
+        });
+      }
+      // Drive one registered MCP tool through the SAME dispatcher + hooks
+      // worker/mcp.ts wires (rehydrate, persistAfter, beforeTool), against
+      // the real registry + document coordinator Durable Objects.
+      if (url.pathname === '/tool' && request.method === 'POST') {
+        const { tool, args } = await request.json();
+        const registry = await openOwnerRegistry(env.TOPOLOGY_REGISTRY, {
+          uid,
+          login,
+        });
+        const store = new TopologyStore();
+        await rehydrateStore(store, registry);
+        for (const migratedId of await service.migratedIds())
+          store.unload(migratedId);
+        const handlers = new Map();
+        registerTopologyTools(
+          { registerTool: (name, _meta, handler) => handlers.set(name, handler) },
+          { renderDocument: stubRender, workspace: service },
+          store,
+          async (toolName) => {
+            if (NO_LEGACY_PERSIST_TOOLS.has(toolName)) return;
+            for (const migratedId of await service.migratedIds())
+              store.unload(migratedId);
+            await persistStore(store, registry);
+          },
+          async (toolName, parsed) => {
+            if (parsed.topologyId === undefined) return;
+            const topologyId = String(parsed.topologyId);
+            if (!(await service.isMigrated(topologyId))) return;
+            return serveWorkspaceRead(toolName, topologyId, store, service);
+          },
+        );
+        const handler = handlers.get(tool);
+        if (!handler) return json({ error: 'unknown tool ' + tool }, 404);
+        const result = await handler(args ?? {});
+        return json({ result, retained: store.list().map((d) => d.id) });
+      }
       return json({ error: 'not found' }, 404);
     } catch (error) {
       return json(

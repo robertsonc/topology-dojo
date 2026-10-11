@@ -23,6 +23,7 @@ export const WORKSPACE_TOOL_NAMES = [
   'create_workspace',
   'list_workspaces',
   'get_workspace_manifest',
+  'get_workspace_document',
   'describe_workspace_operations',
   'get_workspace_changes',
   'get_workspace_elements',

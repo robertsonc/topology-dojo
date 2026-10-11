@@ -1214,19 +1214,29 @@ Then:
 5. Hydrate only relevant pages/elements with
    **get_workspace_elements** (`sourcedOnly: true` lists just the elements an
    importer owns; for private drafts, `get_topology` with `sources: true` does
-   the same).
-6. Retrieve applicable **get_authoring_guidance** when available.
-7. Submit a named, explained **propose_workspace_changes** batch for owner
+   the same). When document-level state matters (layers, legend, custom node
+   types, palette) or the whole document is needed, **get_workspace_document**
+   returns it with its revision (`summary: true` / `pageIndex` narrow it).
+6. Check and render the workspace directly: **validate_topology**,
+   **inspect_render**, **render_svg**, **export_flipbook**, **get_topology**
+   and **describe_capabilities** accept a workspace id. They are served from
+   the workspace's current revision and report it (`workspaceRevision` on a
+   JSON result; a `<!-- workspace revision N -->` comment in an SVG or
+   flipbook). There is no need to rebuild a scratch topology from element
+   dumps to validate or render a workspace. Writes still go through
+   proposals — a mutating draft tool on a workspace id is refused.
+7. Retrieve applicable **get_authoring_guidance** when available.
+8. Submit a named, explained **propose_workspace_changes** batch for owner
    review. An importer converging external data uses `element.upsert`
    operations keyed by source identity; the coordinator turns each into an
    add or a patch, so repeating the import never duplicates elements. If
    someone else binds the same source while a proposal waits for review,
    accepting it reports a conflict on that source rather than adding a second
    element; the agent re-diffs and proposes again.
-8. Use **apply_workspace_changes** only inside a visible, current-page lease.
-9. Optionally call **create_checkpoint** before a major change; restore and fork
-   remain owner actions.
-10. Remember the returned revision and continue with bounded deltas.
+9. Use **apply_workspace_changes** only inside a visible, current-page lease.
+10. Optionally call **create_checkpoint** before a major change; restore and
+    fork remain owner actions.
+11. Remember the returned revision and continue with bounded deltas.
 
 Workspace limits include:
 
@@ -1244,17 +1254,17 @@ Workspace limits include:
 
 ### Tool groups
 
-| Task                         | Principal tools                                                                                                                                                                                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Discover                     | **describe_capabilities**, **layout_guidelines**, **list_templates**                                                                                                                                                                                                     |
-| Create/manage private drafts | **create_topology**, **list_topologies**, **get_topology**, **delete_topology**, **create_from_template**, **import_topology**                                                                                                                                           |
-| Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**, **set_legend**, **set_palette**                                                                                                                                                                           |
-| Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                |
-| Edit content                 | **edit_topology**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**                                                                                                                                                  |
-| Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **inspect_render**                                                                                                                                                                  |
-| Output                       | **render_svg**, **export_flipbook**, hosted **share_topology** / **list_shares** / **unpublish_topology**                                                                                                                                                                |
-| Workspace                    | **create_workspace**, **list_workspaces**, **get_workspace_manifest**, **describe_workspace_operations**, **get_workspace_changes**, **get_workspace_elements**, **propose_workspace_changes**, **apply_workspace_changes**, **create_checkpoint**, **list_checkpoints** |
-| Preferences                  | **get_authoring_guidance**, **list_authoring_preferences**, **explain_authoring_preference**                                                                                                                                                                             |
+| Task                         | Principal tools                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discover                     | **describe_capabilities**, **layout_guidelines**, **list_templates**                                                                                                                                                                                                                                 |
+| Create/manage private drafts | **create_topology**, **list_topologies**, **get_topology**, **delete_topology**, **create_from_template**, **import_topology**                                                                                                                                                                       |
+| Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**, **set_legend**, **set_palette**                                                                                                                                                                                                       |
+| Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                                            |
+| Edit content                 | **edit_topology**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**                                                                                                                                                                              |
+| Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **inspect_render**                                                                                                                                                                                              |
+| Output                       | **render_svg**, **export_flipbook**, hosted **share_topology** / **list_shares** / **unpublish_topology**                                                                                                                                                                                            |
+| Workspace                    | **create_workspace**, **list_workspaces**, **get_workspace_manifest**, **get_workspace_document**, **describe_workspace_operations**, **get_workspace_changes**, **get_workspace_elements**, **propose_workspace_changes**, **apply_workspace_changes**, **create_checkpoint**, **list_checkpoints** |
+| Preferences                  | **get_authoring_guidance**, **list_authoring_preferences**, **explain_authoring_preference**                                                                                                                                                                                                         |
 
 ### Conditional EdgeConnect live-data tools
 
