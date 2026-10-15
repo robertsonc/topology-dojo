@@ -1811,8 +1811,11 @@ class TopologyDesigner {
           if (this._segHitsBox(pts[i], pts[i + 1], ab, pad)) return false;
       return true;
     };
+    const r = linkCfg && Number(linkCfg.cornerRadius) > 0 ? Number(linkCfg.cornerRadius) : 0;
     const toPath = (pts) =>
-      'M' + pts.map((p) => `${p.x},${p.y}`).join(' L');
+      r > 0
+        ? TopologyDesigner._roundPolyline(pts, r)
+        : 'M' + pts.map((p) => `${p.x},${p.y}`).join(' L');
 
     const hv = [from, { x: to.x, y: from.y }, to]; // horizontal then vertical
     const vh = [from, { x: from.x, y: to.y }, to]; // vertical then horizontal
@@ -4569,7 +4572,16 @@ ${grid}`;
   _buildLinkPath(from, to, waypoints, lineStyle, cornerRadius) {
     const pts = [from, ...(waypoints || []), to];
     if (lineStyle === 'orthogonal') {
-      // Right-angle routing between consecutive points
+      // Right-angle routing between consecutive points. A positive
+      // cornerRadius rounds every elbow (W8: the wiring-sheet "rounded
+      // orthogonal" cable look); 0 / absent keeps the classic sharp path.
+      const poly = [pts[0]];
+      for (let i = 1; i < pts.length; i++) {
+        poly.push({ x: pts[i].x, y: pts[i - 1].y });
+        poly.push({ x: pts[i].x, y: pts[i].y });
+      }
+      const r = Number(cornerRadius) > 0 ? Number(cornerRadius) : 0;
+      if (r > 0) return TopologyDesigner._roundPolyline(poly, r);
       let d = `M${pts[0].x},${pts[0].y}`;
       for (let i = 1; i < pts.length; i++) {
         const mx = pts[i].x, my = pts[i-1].y;
@@ -4613,6 +4625,32 @@ ${grid}`;
     }
     // Default: straight segments through waypoints
     return pts.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join(' ');
+  }
+
+  /**
+   * A polyline as a path with every interior corner rounded by `r` (W8):
+   * each vertex becomes a line to `r` short of it and a quadratic curve
+   * through the vertex to `r` past it. `r` is clamped per corner to half
+   * the shorter adjacent segment, and zero-length segments are skipped, so
+   * a tight elbow never folds back on itself. Degenerate input (< 2 points)
+   * returns a plain move/line path.
+   */
+  static _roundPolyline(pts, r) {
+    const P = (p) => `${p.x},${p.y}`;
+    const clean = pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
+    if (clean.length < 2) return `M${P(pts[0])}`;
+    let d = `M${P(clean[0])}`;
+    for (let i = 1; i < clean.length - 1; i++) {
+      const a = clean[i - 1], v = clean[i], b = clean[i + 1];
+      const inLen = Math.hypot(v.x - a.x, v.y - a.y);
+      const outLen = Math.hypot(b.x - v.x, b.y - v.y);
+      const rr = Math.min(r, inLen / 2, outLen / 2);
+      if (rr <= 0.01) { d += ` L${P(v)}`; continue; }
+      const p1 = { x: v.x - ((v.x - a.x) / inLen) * rr, y: v.y - ((v.y - a.y) / inLen) * rr };
+      const p2 = { x: v.x + ((b.x - v.x) / outLen) * rr, y: v.y + ((b.y - v.y) / outLen) * rr };
+      d += ` L${P(p1)} Q${P(v)} ${P(p2)}`;
+    }
+    return d + ` L${P(clean[clean.length - 1])}`;
   }
 
   /**
