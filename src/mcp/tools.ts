@@ -24,6 +24,7 @@ import {
 } from '../api/builder.js';
 import {
   annotationCatalog,
+  bundleCatalog,
   filterNodeCatalog,
   layerCatalog,
   linkCatalog,
@@ -42,6 +43,7 @@ import {
 import type { LinkAttachOptions } from '../vendor/topology-ds.js';
 import { LAYER_KINDS } from '../api/layers.js';
 import { defineTier } from '../api/tiers.js';
+import { BUNDLE_KINDS, defineBundle } from '../api/bundles.js';
 import {
   LINK_STYLE_DASHES,
   LINK_STYLE_PRESETS,
@@ -490,6 +492,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             linkStyles: linkStyleCatalog(),
             sheet: sheetCatalog(),
             tiers: tierCatalog(),
+            bundles: bundleCatalog(),
           };
         }
         return {
@@ -508,6 +511,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           layerKinds: layerCatalog().kinds,
           linkStylePresets: linkStyleCatalog().presets,
           sheetSizes: sheetCatalog().sizes,
+          bundleKinds: bundleCatalog().kinds,
           note: 'Index view. For editable fields, call again with detail:"full" or narrow with types:[…] / query:"…".',
         };
       },
@@ -742,7 +746,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_page_properties',
       description:
-        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (EXPERIMENTAL link anchor box: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; {} = on with defaults, "none" clears; a node’s own linkAttach merges over it).',
+        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (EXPERIMENTAL link anchor box: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; {} = on with defaults, "none" clears; a node’s own linkAttach merges over it), and/or portLabels ("pill" draws each endpoint label as a dark pill ON the node edge at the attach point, rotated to the side — the wiring-sheet convention; pair it with linkAttach {distribute:true}; "chip" restores the classic glass chip beside the wire; a node’s own portLabels overrides it).',
       inputShape: {
         topologyId,
         pageIndex,
@@ -781,6 +785,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe(
             'EXPERIMENTAL link anchor box for the page ({} = on with defaults; "none" clears).',
           ),
+        portLabels: z
+          .enum(['chip', 'pill'])
+          .optional()
+          .describe(
+            'Endpoint label mode: "pill" (on the node edge, wiring-sheet style) or "chip" (classic, the default).',
+          ),
       },
       handler: (a) => {
         if (a.viewBox !== undefined && !isValidViewBox(String(a.viewBox)))
@@ -812,6 +822,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             };
           }
         }
+        if (a.portLabels !== undefined) {
+          if (a.portLabels === 'chip') delete page.portLabels;
+          else page.portLabels = 'pill';
+        }
         return {
           name: page.name,
           viewBox: page.viewBox,
@@ -824,6 +838,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             : {}),
           ...(page.linkAttach !== undefined
             ? { linkAttach: page.linkAttach }
+            : {}),
+          ...(page.portLabels !== undefined
+            ? { portLabels: page.portLabels }
             : {}),
         };
       },
@@ -1207,6 +1224,22 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe(
             'Wire class: the id of a document link style (define_link_style). An explicit color wins over it.',
           ),
+        fromLabel: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe(
+            'Port / interface name at the `from` end (e.g. "xe-0/0/8").',
+          ),
+        toLabel: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe('Port / interface name at the `to` end.'),
+        fromBundle: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe(
+            'LAG / ECMP bundle name at the `from` end (e.g. "ae0"; per end, since a LAG is a per-device object). Kinds via define_bundle; undeclared = LAG.',
+          ),
+        toBundle: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe('LAG / ECMP bundle name at the `to` end.'),
         labelScale: z
           .number()
           .optional()
@@ -1247,6 +1280,16 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.style !== undefined ? { style: String(a.style) } : {}),
+            ...(a.fromLabel !== undefined
+              ? { fromLabel: String(a.fromLabel) }
+              : {}),
+            ...(a.toLabel !== undefined ? { toLabel: String(a.toLabel) } : {}),
+            ...(a.fromBundle !== undefined
+              ? { fromBundle: String(a.fromBundle) }
+              : {}),
+            ...(a.toBundle !== undefined
+              ? { toBundle: String(a.toBundle) }
+              : {}),
             ...(a.labelScale !== undefined
               ? { labelScale: Number(a.labelScale) }
               : {}),
@@ -1533,6 +1576,47 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           a.source as SourceRef,
           (a.set as Record<string, unknown>) ?? {},
         ),
+    },
+    {
+      name: 'define_bundle',
+      description:
+        'Declare (or update, by name) a BUNDLE name’s kind — "lag" (LACP, the default for any undeclared name), "ecmp" or "icl". Links name a bundle PER END with fromBundle / toBundle (a LAG is a per-device object: "ae0" on each switch of an ESI-LAG). In port-pill mode (set_page_properties portLabels "pill") the pills of one (node, bundle) group get an outline — solid for a LAG, dashed for ECMP — and the legend keys the kinds in use; the derived port tables print the name in their LAG column. Pass remove:true to drop the declaration.',
+      inputShape: {
+        topologyId,
+        bundleId: z.string().max(64).describe('The bundle name (e.g. "ae0").'),
+        kind: z
+          .enum(BUNDLE_KINDS)
+          .optional()
+          .describe('lag (default) / ecmp / icl.'),
+        label: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Port-table text (defaults to the name).'),
+        remove: z.boolean().optional().describe('Remove the declaration.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        const id = String(a.bundleId);
+        if (a.remove) {
+          doc.bundles = (doc.bundles ?? []).filter((b) => b.id !== id);
+          if (!doc.bundles.length) delete doc.bundles;
+          return { bundles: doc.bundles ?? [] };
+        }
+        const prev = doc.bundles?.find((b) => b.id === id);
+        defineBundle(doc, {
+          id,
+          ...(a.kind !== undefined
+            ? { kind: a.kind as (typeof BUNDLE_KINDS)[number] }
+            : prev?.kind !== undefined
+              ? { kind: prev.kind }
+              : {}),
+          ...(a.label !== undefined
+            ? { label: String(a.label) }
+            : prev?.label !== undefined
+              ? { label: prev.label }
+              : {}),
+        });
+        return { bundles: doc.bundles };
+      },
     },
     {
       name: 'define_tier',

@@ -21,6 +21,7 @@ const DOCUMENT_FIELDS = [
   'linkStyles',
   'sheet',
   'tiers',
+  'bundles',
 ] as const;
 const PAGE_FIELDS = [
   'name',
@@ -29,6 +30,9 @@ const PAGE_FIELDS = [
   'transition',
   'caption',
   'emphasis',
+  'lineJumps',
+  'linkAttach',
+  'portLabels',
 ] as const;
 const BLOCKED_PATCH_FIELDS = new Set([
   'id',

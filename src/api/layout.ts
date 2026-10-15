@@ -15,6 +15,7 @@ import { nodeBounds, type BoundsRect } from './geometry.js';
 import { nodeLabelRect } from '../render/label-placement.js';
 import { zoneBox } from '../render/zone-box.js';
 import type { Problem } from './validate.js';
+import { PORT_PILL, portPills } from '../render/port-pills.js';
 
 /** The padded box the engine draws around a zone's members (render/zone-box). */
 export { zoneBox };
@@ -110,6 +111,30 @@ function analyzePage(page: Page, at: string, out: Problem[]): void {
       else if (gap < LAYOUT_RULES.minNodeGap)
         warn(
           `nodes "${a.id}" and "${b.id}" are too close (<${LAYOUT_RULES.minNodeGap}px apart)`,
+        );
+    }
+  }
+
+  // 2b. Port pills (W4): pills on one node side must not overlap each other
+  // (too many ports for the side, or no distribute), nor land on another
+  // node's footprint.
+  const pills = portPills(page);
+  for (let i = 0; i < pills.length; i++) {
+    const a = pills[i]!;
+    for (let j = i + 1; j < pills.length; j++) {
+      const b = pills[j]!;
+      if (rectGap(a.rect, b.rect) < PORT_PILL.gap)
+        warn(
+          a.nodeId === b.nodeId
+            ? `port pills "${a.label}" and "${b.label}" overlap on node "${a.nodeId}" (${a.side} side) — too many ports for that side, or linkAttach.distribute is off`
+            : `port pill "${a.label}" on "${a.nodeId}" overlaps pill "${b.label}" on "${b.nodeId}"`,
+        );
+    }
+    for (const n of page.nodes) {
+      if (n.id === a.nodeId) continue;
+      if (rectGap(a.rect, fps.get(n.id)!) < 0)
+        warn(
+          `port pill "${a.label}" on "${a.nodeId}" lands on node "${n.id}" — move the nodes apart or route the link from another side`,
         );
     }
   }

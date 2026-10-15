@@ -17,6 +17,7 @@ import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
+import { stripPillLabels } from './port-pills.js';
 import {
   applyPalette,
   flattenViewer,
@@ -164,8 +165,15 @@ function renderPageUnthemed(
     const { id, ...cfg } = n;
     topo.node(id, fadedEmph(id, cfg));
   }
+  // Port pills (W4): ends in pill mode are drawn by the overlay, so the
+  // engine must not draw its own chip for them.
+  const nodeById = new Map(page.nodes.map((n) => [n.id, n]));
   for (const l of links) {
-    const { id, ...cfg } = resolveLinkStyle(l, opts.linkStyles);
+    const { id, ...cfg } = stripPillLabels(
+      page,
+      resolveLinkStyle(l, opts.linkStyles),
+      nodeById,
+    );
     topo.link(id, fadedEmph(id, cfg));
   }
   for (const z of zones) {

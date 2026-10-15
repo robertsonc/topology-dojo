@@ -9,12 +9,14 @@
 import type { Page, TopologyDocument } from '../pages/model.js';
 import { legendSVG } from '../editor/legend.js';
 import { sheetSVG } from './sheet.js';
+import { portPillsSVG } from './port-pills.js';
 import { sheetInset } from '../api/sheet.js';
 
 /** The overlay `<g>`s for a page, bottom → top. '' when nothing is on. */
 export function documentOverlaySVG(doc: TopologyDocument, page: Page): string {
   return (
     sheetSVG(doc, page) +
+    portPillsSVG(doc, page) +
     legendSVG(doc, page, { margin: sheetInset(doc.sheet) })
   );
 }

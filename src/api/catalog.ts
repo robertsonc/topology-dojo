@@ -17,6 +17,7 @@ import {
   SHEET_SIZE_IDS,
   SHEET_SIZE_LABELS,
 } from './sheet.js';
+import { BUNDLE_KINDS } from './bundles.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import {
   STOCK_NODE_LABELS,
@@ -222,6 +223,18 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'labelWidth', label: 'Label width', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   LINK_ATTACH_FIELD,
+  // W4 endpoint-label mode override (the page's `portLabels` is the default).
+  {
+    key: 'portLabels',
+    label: 'Port labels',
+    kind: 'enum',
+    options: ['', 'chip', 'pill'],
+    optionLabels: {
+      '': 'Page default',
+      chip: 'Chip beside the wire',
+      pill: 'Pill on the node edge',
+    },
+  },
   {
     key: 'meta',
     label: 'Metadata',
@@ -507,6 +520,19 @@ const LINK_COMMON: FieldSpec[] = [
   {
     key: 'toLabel',
     label: 'Port (Z)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  // W3 bundle (LAG / ECMP) name of each end; kinds via define_bundle.
+  {
+    key: 'fromBundle',
+    label: 'Bundle (A)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  {
+    key: 'toBundle',
+    label: 'Bundle (Z)',
     kind: 'string',
     max: TEXT_LIMITS.label,
   },
@@ -905,6 +931,23 @@ export function getAnnotationType(
   kind: AnnotationKind,
 ): AnnotationTypeInfo | undefined {
   return ANNOTATION_CATALOG[kind];
+}
+
+/** The bundle vocabulary (W3): kinds + a BundleDef's fields. */
+export interface BundleCatalogInfo {
+  kinds: readonly string[];
+  fields: FieldSpec[];
+}
+
+export function bundleCatalog(): BundleCatalogInfo {
+  return {
+    kinds: BUNDLE_KINDS,
+    fields: [
+      { key: 'id', label: 'Name', kind: 'string', required: true, max: 64 },
+      { key: 'kind', label: 'Kind', kind: 'enum', options: BUNDLE_KINDS },
+      { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.name },
+    ],
+  };
 }
 
 /** The tier vocabulary (W2): a TierDef's fields. */

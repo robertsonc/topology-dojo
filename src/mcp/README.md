@@ -258,13 +258,14 @@ to the task's affected region and change summaries, not total document size.
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                  |
 | `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a Mermaid flowchart, or CSV data (`format` auto-detects)                       |
 | `set_document_title`                                   | Rename a document                                                                                                                      |
-| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox                                                                                 |
+| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox / lineJumps / linkAttach / `portLabels` ("pill" = wiring-sheet port pills)      |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                                          |
 | `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                                                       |
 | `edit_topology`                                        | **Batch**: many authoring operations in one call (atomic, ordered) — preferred for building diagrams; reports `created` for upsert ops |
 | `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                                                            |
 | `upsert_by_source`                                     | Converge an element onto external data by source identity                                                                              |
 | `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                                             |
+| `define_bundle`                                        | Declare a LAG / ECMP / ICL bundle name’s kind; links name bundles per end (`fromBundle` / `toBundle`), pills get outlines              |
 | `define_tier`                                          | Declare a wiring-sheet tier (role row, top → bottom); nodes opt in with `tier`, `layout_topology` "tiered" rows them                   |
 | `define_link_style`                                    | Declare a wire class (colour / width / dash) links name via `style`; `preset: "ethernet-media"` loads the 11 Ethernet media classes    |
 | `define_node_type`                                     | Add a custom node type (merged over defaults)                                                                                          |

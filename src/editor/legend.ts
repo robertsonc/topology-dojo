@@ -8,6 +8,7 @@
 import type { LegendConfig, Page, TopologyDocument } from '../pages/model.js';
 import { getNodeType } from '../api/catalog.js';
 import { linkStyleLabel, usedLinkStyles } from '../api/link-styles.js';
+import { BUNDLE_KIND_LABELS, usedBundleKinds } from '../api/bundles.js';
 
 /** Engine default node colour when a node sets none (see topology-ds render fns). */
 const DEFAULT_NODE_COLOR = '#01a982';
@@ -17,8 +18,9 @@ const DEFAULT_LAYER_COLOR = '#7d8a92';
 export interface LegendItem {
   color: string;
   label: string;
-  /** 'dot' for nodes/markers, 'bar' for layers, 'line' for link styles. */
-  shape: 'dot' | 'bar' | 'line';
+  /** 'dot' for nodes/markers, 'bar' for layers, 'line' for link styles,
+   * 'bundle' for a LAG / ECMP outline. */
+  shape: 'dot' | 'bar' | 'line' | 'bundle';
   /** For 'line': the sample stroke's dash. */
   dash?: 'solid' | 'dashed' | 'dotted';
   /** For 'line': the sample stroke's width (default 1.6). */
@@ -91,6 +93,15 @@ export function buildLegendItems(
       ...(st.dash ? { dash: st.dash } : {}),
       ...(st.width !== undefined ? { width: st.width } : {}),
     });
+  // Bundle kinds (W3) used by a link end → the LAG / ECMP outline samples.
+  for (const kind of usedBundleKinds(doc.bundles, page.links))
+    if (kind !== 'icl')
+      push(`bundle:${kind}`, {
+        color: '#7d8a92',
+        label: BUNDLE_KIND_LABELS[kind],
+        shape: 'bundle',
+        ...(kind === 'ecmp' ? { dash: 'dashed' as const } : {}),
+      });
   // Declared layers actually used by an element on this page.
   const usedLayers = new Set<string>();
   for (const coll of [
@@ -148,7 +159,11 @@ function legendLayout(
   title?: string,
 ): LegendLayout {
   const longest = items.reduce((m, it) => Math.max(m, it.label.length), 0);
-  const swatch = items.some((it) => it.shape === 'line') ? LINE_SWATCH : SWATCH;
+  const swatch = items.some(
+    (it) => it.shape === 'line' || it.shape === 'bundle',
+  )
+    ? LINE_SWATCH
+    : SWATCH;
   const colW = swatch + 6 + Math.ceil(longest * 6.6) + 4;
   const cols = Math.max(1, Math.min(columns, items.length || 1));
   const rows = Math.ceil(items.length / cols);
@@ -189,7 +204,9 @@ export function legendBodySVG(
             ? ' stroke-dasharray="2 3"'
             : '';
       s += `<line x1="${sx}" y1="${cy}" x2="${sx + LINE_SWATCH}" y2="${cy}" stroke="${it.color}" stroke-width="${it.width ?? 1.6}"${dash}/>`;
-    } else
+    } else if (it.shape === 'bundle')
+      s += `<rect x="${sx + 6}" y="${cy - 6}" width="12" height="12" rx="6" fill="none" stroke="${it.color}" stroke-width="1"${it.dash === 'dashed' ? ' stroke-dasharray="3 2"' : ''}/>`;
+    else
       s += `<circle cx="${sx + SWATCH / 2}" cy="${cy}" r="5" fill="${it.color}"/>`;
     s +=
       `<text x="${sx + L.swatch + 6}" y="${cy + 3.5}" font-size="11" ` +

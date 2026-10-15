@@ -123,6 +123,13 @@ export interface LinkConfig {
   fromLabel?: string;
   toLabel?: string;
   /**
+   * Bundle (LAG / ECMP) name of each END (proposal 0008, W3) — per end,
+   * because a LAG is a per-device object (`ae0` on each switch of an
+   * ESI-LAG). Kinds are declared in `doc.bundles`; undeclared = LAG.
+   */
+  fromBundle?: string;
+  toBundle?: string;
+  /**
    * Moveable label offsets, doc-space {x,y}, set by dragging the chip in the
    * editor. `labelOffset` shifts the centre label (honoured by every link type);
    * `from`/`toLabelOffset` shift the endpoint (port) labels. All optional and
@@ -287,6 +294,8 @@ export type { PolicyMarkerType } from '../api/markers.js';
 import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
+import { stripPillLabels } from '../render/port-pills.js';
+import type { Page } from '../pages/model.js';
 import type { SourceRef } from '../api/source.js';
 import {
   applyRenderTheme,
@@ -561,6 +570,8 @@ export interface RenderablePage {
    * absent = the classic silhouette attachment, unchanged.
    */
   linkAttach?: LinkAttachOptions;
+  /** Endpoint label mode (W4): 'pill' draws port pills via the overlay. */
+  portLabels?: 'chip' | 'pill';
 }
 
 /**
@@ -633,8 +644,15 @@ export function renderPageSVG(
     const { id, ...cfg } = n;
     topo.node(id, fadedEmph(id, cfg));
   }
+  // Port pills (W4): ends in pill mode are drawn by the overlay, so the
+  // engine must not draw its own chip for them.
+  const nodeById = new Map(page.nodes.map((n) => [n.id, n]));
   for (const l of links) {
-    const { id, ...cfg } = resolveLinkStyle(l, opts.linkStyles);
+    const { id, ...cfg } = stripPillLabels(
+      page as Page,
+      resolveLinkStyle(l, opts.linkStyles),
+      nodeById,
+    );
     topo.link(id, fadedEmph(id, cfg));
   }
   for (const z of zones) {

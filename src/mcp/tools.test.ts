@@ -34,6 +34,7 @@ describe('MCP tools', () => {
         'balance_topology',
         'create_from_template',
         'create_topology',
+        'define_bundle',
         'define_layer',
         'define_link_style',
         'define_node_type',

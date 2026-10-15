@@ -27,6 +27,8 @@ import {
   sheetViewBox,
 } from './sheet.js';
 import { nonAdjacentTierLinks, tierRank } from './tiers.js';
+import { BUNDLE_KINDS } from './bundles.js';
+import { PORT_LABEL_MODES } from '../render/port-pills.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -115,6 +117,19 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           );
       });
   }
+  // Bundles (W3): unique names, a known kind.
+  const bundleIds = new Set<string>();
+  (doc.bundles ?? []).forEach((b, i) => {
+    const at = `bundles[${i}]`;
+    if (!b.id) err(at, 'bundle has no id');
+    else if (bundleIds.has(b.id)) err(at, `duplicate bundle id "${b.id}"`);
+    bundleIds.add(b.id);
+    if (
+      b.kind !== undefined &&
+      !(BUNDLE_KINDS as readonly string[]).includes(b.kind)
+    )
+      warn(at, `kind "${String(b.kind)}" not in [${BUNDLE_KINDS.join(', ')}]`);
+  });
   // Tiers (W2): unique non-empty ids.
   const tierIds = new Set<string>();
   (doc.tiers ?? []).forEach((t, i) => {
@@ -262,6 +277,21 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     // Experimental link anchor box: the page-level object has the node
     // field's shape (pad ≥ 0, distribute boolean).
     checkEnums({ linkAttach: page.linkAttach }, [LINK_ATTACH_FIELD], at, warn);
+    // Port pills (W4): the page mode is one of the known modes, and pills
+    // without distribute stack on top of each other on a busy side.
+    if (
+      page.portLabels !== undefined &&
+      !PORT_LABEL_MODES.includes(page.portLabels)
+    )
+      warn(
+        at,
+        `portLabels "${String(page.portLabels)}" not in [${PORT_LABEL_MODES.join(', ')}]`,
+      );
+    if (page.portLabels === 'pill' && !page.linkAttach?.distribute)
+      warn(
+        at,
+        'portLabels "pill" without linkAttach.distribute — pills on a node side land on top of each other; set linkAttach {distribute:true}',
+      );
 
     // Element ids unique within the page; collect endpoints (nodes + anchors).
     const ids = new Set<string>();

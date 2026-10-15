@@ -21,6 +21,7 @@ import {
   type SheetConfig,
 } from '../api/sheet.js';
 import type { TierDef } from '../api/tiers.js';
+import { BUNDLE_KINDS, type BundleDef } from '../api/bundles.js';
 
 /** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
 function hexColor(v: unknown): string | undefined {
@@ -239,6 +240,7 @@ export function serializeDoc(doc: TopologyDocument): string {
       ...(doc.linkStyles?.length ? { linkStyles: doc.linkStyles } : {}),
       ...(doc.sheet ? { sheet: doc.sheet } : {}),
       ...(doc.tiers?.length ? { tiers: doc.tiers } : {}),
+      ...(doc.bundles?.length ? { bundles: doc.bundles } : {}),
     },
     null,
     2,
@@ -283,6 +285,9 @@ export function parseDoc(input: unknown): TopologyDocument | null {
         : {}),
       ...(parseLinkAttach(p.linkAttach)
         ? { linkAttach: parseLinkAttach(p.linkAttach)! }
+        : {}),
+      ...(p.portLabels === 'pill' || p.portLabels === 'chip'
+        ? { portLabels: p.portLabels }
         : {}),
       ...(Array.isArray(p.emphasis)
         ? {
@@ -407,6 +412,30 @@ export function parseDoc(input: unknown): TopologyDocument | null {
         ];
       })
     : [];
+  // Bundles (W3): well-formed names only, a known kind, unique.
+  const bundleIds = new Set<string>();
+  const bundles: BundleDef[] = Array.isArray(d.bundles)
+    ? (d.bundles as unknown[]).flatMap((b) => {
+        if (typeof b !== 'object' || b === null) return [];
+        const r = b as Record<string, unknown>;
+        const id = safeType(r.id, '');
+        if (!id || bundleIds.has(id)) return [];
+        bundleIds.add(id);
+        return [
+          {
+            id,
+            ...(typeof r.kind === 'string' &&
+            (BUNDLE_KINDS as readonly string[]).includes(r.kind) &&
+            r.kind !== 'lag'
+              ? { kind: r.kind as BundleDef['kind'] }
+              : {}),
+            ...(typeof r.label === 'string' && r.label.trim()
+              ? { label: r.label }
+              : {}),
+          },
+        ];
+      })
+    : [];
   const doc: TopologyDocument = {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
@@ -418,6 +447,7 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     ...(linkStyles.length ? { linkStyles } : {}),
     ...(sheet ? { sheet } : {}),
     ...(tiers.length ? { tiers } : {}),
+    ...(bundles.length ? { bundles } : {}),
   };
   // Bound and normalize free-text so overlong / control-character strings
   // cannot enter the document (import, share, workspace apply, autosave).

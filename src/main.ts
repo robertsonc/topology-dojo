@@ -809,6 +809,7 @@ function loadDoc(
     'linkStyles',
     'sheet',
     'tiers',
+    'bundles',
   ] as const) {
     if (next[key] === undefined) delete doc[key];
     else (doc[key] as unknown) = structuredClone(next[key]);
@@ -2398,6 +2399,10 @@ function propertiesHtml(): string {
     `<option value="arc"${page.lineJumps === 'arc' ? ' selected' : ''}>jump — arc</option>` +
     `<option value="gap"${page.lineJumps === 'gap' ? ' selected' : ''}>jump — gap</option>` +
     `</select></label>` +
+    `<label class="insp-row" title="How endpoint (port) labels draw: a glass chip beside the wire, or a dark pill on the node edge at the attach point (wiring-sheet style — pair with the anchor box's Distribute ends)"><span>Port labels</span><select id="p-portlabels">` +
+    `<option value="chip"${page.portLabels !== 'pill' ? ' selected' : ''}>chip beside the wire</option>` +
+    `<option value="pill"${page.portLabels === 'pill' ? ' selected' : ''}>pill on the node edge</option>` +
+    `</select></label>` +
     // Experimental link anchor box — page-level; nodes may override it.
     `<label class="insp-row" title="Experimental: links attach to a padded box that clears the node label instead of the icon edge. Nodes can override it in their Properties."><span>Link anchor box</span><input type="checkbox" id="p-attach"${page.linkAttach ? ' checked' : ''}/></label>` +
     (page.linkAttach
@@ -2564,6 +2569,13 @@ function wireProperties(): void {
         jumps.value === 'arc' || jumps.value === 'gap'
           ? jumps.value
           : undefined,
+    });
+  });
+  const portLabels =
+    inspector.querySelector<HTMLSelectElement>('#p-portlabels');
+  portLabels?.addEventListener('change', () => {
+    editor.updatePageProps({
+      portLabels: portLabels.value === 'pill' ? 'pill' : undefined,
     });
   });
   // Link anchor box (experimental) — page-level; the art redraws on change.
