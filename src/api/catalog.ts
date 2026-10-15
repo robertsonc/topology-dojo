@@ -175,6 +175,8 @@ const POSITION: FieldSpec[] = [
 ];
 /** Every element kind can opt into a declared document layer. */
 const LAYER_FIELD: FieldSpec = { key: 'layer', label: 'Layer', kind: 'ref' };
+/** Nodes may sit in a declared document tier (W2; declare with define_tier). */
+const TIER_FIELD: FieldSpec = { key: 'tier', label: 'Tier', kind: 'ref' };
 /** Every element kind (except anchors) can carry an external source identity. */
 const SOURCE_FIELD: FieldSpec = {
   key: 'source',
@@ -243,6 +245,7 @@ const NODE_COMMON: FieldSpec[] = [
   HREF_FIELD,
   TOOLTIP_FIELD,
   LAYER_FIELD,
+  TIER_FIELD,
   SOURCE_FIELD,
 ];
 
@@ -453,6 +456,7 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           HREF_FIELD,
           TOOLTIP_FIELD,
           LAYER_FIELD,
+          TIER_FIELD,
           SOURCE_FIELD,
         ]
       : [...POSITION, ...NODE_COMMON, ...(NODE_EXTRAS[type] ?? [])];
@@ -694,6 +698,12 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
         kind: 'enum',
         options: ['left', 'center', 'right'],
       },
+      {
+        key: 'labelPosition',
+        label: 'Label edge',
+        kind: 'enum',
+        options: ['top', 'bottom'],
+      },
       { key: 'parentZone', label: 'Parent zone', kind: 'ref' },
       HREF_FIELD,
       TOOLTIP_FIELD,
@@ -895,6 +905,20 @@ export function getAnnotationType(
   kind: AnnotationKind,
 ): AnnotationTypeInfo | undefined {
   return ANNOTATION_CATALOG[kind];
+}
+
+/** The tier vocabulary (W2): a TierDef's fields. */
+export interface TierCatalogInfo {
+  fields: FieldSpec[];
+}
+
+export function tierCatalog(): TierCatalogInfo {
+  return {
+    fields: [
+      { key: 'id', label: 'Id', kind: 'string', required: true, max: 64 },
+      { key: 'name', label: 'Name', kind: 'string', max: TEXT_LIMITS.name },
+    ],
+  };
 }
 
 /** The sheet-frame vocabulary (W6): SheetConfig's fields. */

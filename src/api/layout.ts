@@ -35,6 +35,8 @@ export const LAYOUT_RULES = {
   labelHeight: 16,
   /** Approx. width per label character (monospace ~ this many px). */
   labelCharWidth: 6,
+  /** Clear vertical space between two tier rows (room for the cable fan + pills). */
+  tierGap: 140,
 } as const;
 
 export interface LayoutGuidelines {
@@ -57,6 +59,7 @@ export function layoutGuidelines(): LayoutGuidelines {
       `Give every node a short label and leave vertical room beneath it; long labels widen the footprint.`,
       `Lay flows out left→right or top→bottom and order waypoints so routes do not cross over nodes.`,
       `Prefer even spacing: align rows/columns and distribute nodes uniformly rather than clustering.`,
+      `For a wiring sheet, declare tiers (define_tier: gateways / distribution / core, top → bottom), tag each node with its tier, and run layout_topology algorithm "tiered": rows are ${r.tierGap}px apart, each row is ordered to keep the cable fan from crossing itself, and mirror:true pairs -01/-02 devices about the page centre. Link only adjacent tiers; validate_topology warns on a link that skips one.`,
     ],
   };
 }

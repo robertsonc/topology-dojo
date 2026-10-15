@@ -211,6 +211,8 @@ export interface ZoneConfig {
   borderStyle?: 'dashed' | 'solid' | 'dotted';
   padding?: number;
   labelAlign?: 'left' | 'center' | 'right';
+  /** Caption at the top edge (default) or the bottom edge (a tier band). */
+  labelPosition?: 'top' | 'bottom';
   /** Id of an enclosing zone (zones may nest). */
   parentZone?: string;
   /** Hyperlink: rendered as a clickable <a> (http(s) only) in SVG/viewer. */

@@ -26,6 +26,7 @@ import {
   SHEET_SIZES,
   sheetViewBox,
 } from './sheet.js';
+import { nonAdjacentTierLinks, tierRank } from './tiers.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -114,6 +115,23 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           );
       });
   }
+  // Tiers (W2): unique non-empty ids.
+  const tierIds = new Set<string>();
+  (doc.tiers ?? []).forEach((t, i) => {
+    const at = `tiers[${i}]`;
+    if (!t.id) err(at, 'tier has no id');
+    else if (tierIds.has(t.id)) err(at, `duplicate tier id "${t.id}"`);
+    tierIds.add(t.id);
+  });
+  const checkTier = (cfg: { tier?: unknown }, where: string): void => {
+    const t = cfg.tier;
+    if (t === undefined || t === '') return;
+    if (tierRank(doc.tiers, t) < 0)
+      warn(
+        where,
+        `tier "${String(t)}" is not declared in document tiers (declare it with define_tier)`,
+      );
+  };
   // Link styles (W1): unique ids, a colour, a sane width and dash.
   const styleIds = new Set<string>();
   (doc.linkStyles ?? []).forEach((s, i) => {
@@ -283,6 +301,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `opacity ${String(op)} should be between 0 and 1`,
         );
       checkLayer(n, `${at} node "${n.id}"`);
+      checkTier(n as { tier?: unknown }, `${at} node "${n.id}"`);
       checkSource(n, `${at} node "${n.id}"`);
       checkHrefTip(n as Record<string, unknown>, `${at} node "${n.id}"`);
       // Image nodes: the source must be https or an inline data:image/*, and
@@ -422,6 +441,18 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       checkHrefTip(l as Record<string, unknown>, `${at} link "${l.id}"`);
       checkCornerPortUnderDistribute(l, `${at} link "${l.id}"`);
     }
+
+    // A wiring sheet links adjacent tiers only; a link that skips a tier is
+    // almost always a mis-tagged node (and draws through the band between).
+    for (const { link, fromTier, toTier } of nonAdjacentTierLinks(
+      doc.tiers,
+      page.nodes,
+      page.links,
+    ))
+      warn(
+        `${at} link "${link.id}"`,
+        `joins non-adjacent tiers "${fromTier}" and "${toTier}" — a wiring sheet links adjacent tiers only`,
+      );
 
     // ── Annotation layer: zones, flow paths, policy markers ──
     const nodeIds = new Set(page.nodes.map((n) => n.id));

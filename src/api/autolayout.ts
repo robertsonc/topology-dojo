@@ -13,8 +13,14 @@ import type { Page, TopologyDocument } from '../pages/model.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
 import { LAYOUT_RULES, nodeFootprint, parseViewBox } from './layout.js';
 import { carryAttachments, tidyPage } from './tidy.js';
+import { mirrorPairKey, tierRank, tierZoneId, type TierDef } from './tiers.js';
 
-export type LayoutAlgorithm = 'grid' | 'hierarchical' | 'circular' | 'force';
+export type LayoutAlgorithm =
+  | 'grid'
+  | 'hierarchical'
+  | 'circular'
+  | 'force'
+  | 'tiered';
 
 export interface AutoLayoutOptions {
   algorithm: LayoutAlgorithm;
@@ -24,6 +30,23 @@ export interface AutoLayoutOptions {
   spacing?: number;
   /** Run the tidy finisher (de-overlap + keep-in-bounds) after (default true). */
   tidy?: boolean;
+  /**
+   * Tiered layout (W2): the declared tiers, top → bottom. `layoutDocument`
+   * fills this from `doc.tiers`; `layoutPage` callers pass it explicitly.
+   */
+  tiers?: TierDef[];
+  /** Tiered: clear space between rows (default LAYOUT_RULES.tierGap). */
+  tierGap?: number;
+  /** Tiered: place -01 / -02 (a / b) pairs symmetric about the centre line. */
+  mirror?: boolean;
+  /** Tiered: emit / refresh one zone per tier, captioned at its bottom edge. */
+  tierZones?: boolean;
+  /**
+   * Tiered: horizontal space (px) to keep free at the left / right page
+   * edge, e.g. for derived port tables. Default 0.
+   */
+  reserveLeft?: number;
+  reserveRight?: number;
 }
 
 export interface AutoLayoutResult {
@@ -200,13 +223,156 @@ function forceLayout(page: Page, vb: number[], spacing: number): void {
   }
 }
 
+/* ── tiered layout (W2) ────────────────────────────────────────────────
+ * Rows by declared tier order; within a row, nodes are ordered by the
+ * barycentre of their neighbours in the row above (one sweep down) and then
+ * the row below (one sweep up), so a dual-homed fan-in does not cross
+ * itself. Untiered nodes are left where they are. Optionally mirrors
+ * -01/-02 pairs about the page centre and emits one zone per tier.
+ */
+function tieredLayout(page: Page, vb: number[], opts: AutoLayoutOptions): void {
+  const [vx, vy, vw, vh] = vb as [number, number, number, number];
+  const tiers = opts.tiers ?? [];
+  if (!tiers.length) return;
+  const m = LAYOUT_RULES.edgeMargin;
+  const spacing = opts.spacing ?? LAYOUT_RULES.minNodeGap * 1.5;
+  const tierGap = opts.tierGap ?? LAYOUT_RULES.tierGap;
+  const left = vx + m + Math.max(0, opts.reserveLeft ?? 0);
+  const right = vx + vw - m - Math.max(0, opts.reserveRight ?? 0);
+
+  // Rows in tier order, members in page order (the stable fallback).
+  const rows: NodeConfig[][] = tiers.map(() => []);
+  for (const n of page.nodes) {
+    const r = tierRank(tiers, n.tier);
+    if (r >= 0) rows[r]!.push(n);
+  }
+  const nonEmpty = rows.map((r, i) => ({ r, i })).filter((x) => x.r.length);
+  if (!nonEmpty.length) return;
+
+  // Neighbour map over the page's links (either direction).
+  const nbrs = new Map<string, string[]>();
+  const add = (a: string, b: string): void => {
+    (nbrs.get(a) ?? nbrs.set(a, []).get(a)!).push(b);
+  };
+  for (const l of page.links) {
+    add(l.from, l.to);
+    add(l.to, l.from);
+  }
+  const order = new Map<string, number>();
+  const index = (row: NodeConfig[]): void =>
+    row.forEach((n, i) => order.set(n.id, i));
+  for (const { r } of nonEmpty) index(r);
+  const sweep = (row: NodeConfig[], ref: NodeConfig[]): void => {
+    const refIds = new Set(ref.map((n) => n.id));
+    const key = (n: NodeConfig): number => {
+      const ks = (nbrs.get(n.id) ?? [])
+        .filter((id) => refIds.has(id))
+        .map((id) => order.get(id)!);
+      return ks.length
+        ? ks.reduce((a, b) => a + b, 0) / ks.length
+        : order.get(n.id)!;
+    };
+    const keyed = row.map((n) => ({ n, k: key(n), i: order.get(n.id)! }));
+    keyed.sort((a, b) => a.k - b.k || a.i - b.i);
+    row.splice(0, row.length, ...keyed.map((x) => x.n));
+    index(row);
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 1; i < nonEmpty.length; i++)
+      sweep(nonEmpty[i]!.r, nonEmpty[i - 1]!.r);
+    for (let i = nonEmpty.length - 2; i >= 0; i--)
+      sweep(nonEmpty[i]!.r, nonEmpty[i + 1]!.r);
+  }
+
+  // Mirror: -01 to the left, -02 to the right of the centre line, unpaired
+  // nodes in the middle, in their swept order.
+  if (opts.mirror) {
+    for (const { r } of nonEmpty) {
+      const leftL: NodeConfig[] = [];
+      const mid: NodeConfig[] = [];
+      const rightL: NodeConfig[] = [];
+      const seen = new Set<string>();
+      for (const n of r) {
+        if (seen.has(n.id)) continue;
+        const k = mirrorPairKey(String(n.label ?? n.id)) ?? mirrorPairKey(n.id);
+        const mate =
+          k &&
+          r.find((o) => {
+            if (o.id === n.id || seen.has(o.id)) return false;
+            const ok =
+              mirrorPairKey(String(o.label ?? o.id)) ?? mirrorPairKey(o.id);
+            return !!ok && ok.prefix === k.prefix && ok.side !== k.side;
+          });
+        if (k && mate) {
+          seen.add(n.id);
+          seen.add(mate.id);
+          const [a, b] = k.side === 0 ? [n, mate] : [mate, n];
+          leftL.push(a);
+          rightL.unshift(b);
+        } else {
+          seen.add(n.id);
+          mid.push(n);
+        }
+      }
+      r.splice(0, r.length, ...leftL, ...mid, ...rightL);
+    }
+  }
+
+  // Row heights / widths from footprints; rows stacked from the top margin
+  // (centred vertically when the stack fits), each row centred horizontally
+  // in the usable span (or started at its left edge when wider).
+  const rowH = nonEmpty.map(({ r }) =>
+    r.reduce((h, n) => Math.max(h, nodeFootprint(n).h), 0),
+  );
+  const totalH =
+    rowH.reduce((a, b) => a + b, 0) + (nonEmpty.length - 1) * tierGap;
+  let y = vy + Math.max(m, (vh - totalH) / 2);
+  nonEmpty.forEach(({ r }, ri) => {
+    const widths = r.map((n) => nodeFootprint(n).w);
+    const totalW = widths.reduce((a, b) => a + b, 0) + (r.length - 1) * spacing;
+    const span = right - left;
+    let x = left + Math.max(0, (span - totalW) / 2);
+    const cy = y + rowH[ri]! / 2;
+    r.forEach((n, i) => {
+      const f = nodeFootprint(n);
+      n.x = x + (n.x - f.x); // keep the footprint's left edge at x
+      n.y = cy + (n.y - f.y) - f.h / 2;
+      x += widths[i]! + spacing;
+    });
+    y += rowH[ri]! + tierGap;
+  });
+
+  // One zone per tier with members, captioned at the bottom edge; an
+  // existing tier zone keeps its styling and just refreshes membership.
+  if (opts.tierZones) {
+    page.zones ??= [];
+    for (const { r, i } of nonEmpty) {
+      const t = tiers[i]!;
+      const id = tierZoneId(t.id);
+      const ids = r.map((n) => n.id);
+      const z = page.zones.find((zz) => zz.id === id);
+      if (z) z.nodes = ids;
+      else
+        page.zones.push({
+          id,
+          label: t.name ?? t.id,
+          nodes: ids,
+          borderStyle: 'dashed',
+          labelAlign: 'center',
+          labelPosition: 'bottom',
+        });
+    }
+  }
+}
+
 function applyAlgorithm(
   page: Page,
   vb: number[],
   spacing: number,
   opts: AutoLayoutOptions,
 ): void {
-  if (opts.algorithm === 'grid') gridLayout(page, vb, spacing);
+  if (opts.algorithm === 'tiered') tieredLayout(page, vb, { ...opts, spacing });
+  else if (opts.algorithm === 'grid') gridLayout(page, vb, spacing);
   else if (opts.algorithm === 'circular') circularLayout(page, vb, spacing);
   else if (opts.algorithm === 'force') forceLayout(page, vb, spacing);
   else hierarchicalLayout(page, vb, spacing, opts.direction ?? 'TB');
@@ -347,7 +513,10 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
   const spacing = opts.spacing ?? LAYOUT_RULES.minNodeGap * 1.5;
   const orig = page.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y }));
 
-  if ((page.zones?.length ?? 0) > 0) zoneAwareLayout(page, vb, spacing);
+  // Tiered rows are the structure a wiring sheet's zones follow (tier
+  // bands), so the zone-aware packer must not override them.
+  if (opts.algorithm !== 'tiered' && (page.zones?.length ?? 0) > 0)
+    zoneAwareLayout(page, vb, spacing);
   else applyAlgorithm(page, vb, spacing, opts);
 
   // Anchors and manual waypoints must follow the algorithm's wholesale node
@@ -377,7 +546,11 @@ export function layoutDocument(
   opts: AutoLayoutOptions,
 ): AutoLayoutResult {
   let movedNodes = 0;
-  for (const page of doc.pages) movedNodes += layoutPage(page, opts);
+  const o: AutoLayoutOptions =
+    opts.algorithm === 'tiered' && !opts.tiers
+      ? { ...opts, tiers: doc.tiers ?? [] }
+      : opts;
+  for (const page of doc.pages) movedNodes += layoutPage(page, o);
   return { movedNodes };
 }
 

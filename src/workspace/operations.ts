@@ -20,6 +20,7 @@ const DOCUMENT_FIELDS = [
   'palette',
   'linkStyles',
   'sheet',
+  'tiers',
 ] as const;
 const PAGE_FIELDS = [
   'name',

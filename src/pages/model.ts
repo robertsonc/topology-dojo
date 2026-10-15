@@ -22,6 +22,7 @@ import type { CustomNodeSpec } from '../nodes/spec.js';
 import type { LayerDef } from '../api/layers.js';
 import type { LinkStyleDef } from '../api/link-styles.js';
 import type { SheetConfig } from '../api/sheet.js';
+import type { TierDef } from '../api/tiers.js';
 import { createDocument } from '../api/builder.js';
 
 export interface Page extends RenderablePage {
@@ -88,6 +89,11 @@ export interface TopologyDocument {
    * carry their own colours as before.
    */
   linkStyles?: LinkStyleDef[];
+  /**
+   * Declared tiers, top → bottom (proposal 0008, W2): the role axis the
+   * `tiered` layout rows nodes by. Nodes opt in with `tier`. Optional.
+   */
+  tiers?: TierDef[];
   /**
    * Drawing-sheet frame (proposal 0008, W6): paper size, border, top title
    * and the bottom-right title block. Optional — absent means no frame.

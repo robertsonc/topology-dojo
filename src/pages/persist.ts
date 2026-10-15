@@ -20,6 +20,7 @@ import {
   SHEET_SIZES,
   type SheetConfig,
 } from '../api/sheet.js';
+import type { TierDef } from '../api/tiers.js';
 
 /** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
 function hexColor(v: unknown): string | undefined {
@@ -237,6 +238,7 @@ export function serializeDoc(doc: TopologyDocument): string {
       ...(doc.palette ? { palette: doc.palette } : {}),
       ...(doc.linkStyles?.length ? { linkStyles: doc.linkStyles } : {}),
       ...(doc.sheet ? { sheet: doc.sheet } : {}),
+      ...(doc.tiers?.length ? { tiers: doc.tiers } : {}),
     },
     null,
     2,
@@ -386,6 +388,25 @@ export function parseDoc(input: unknown): TopologyDocument | null {
   const palette = parsePalette(d.palette);
   const linkStyles = parseLinkStyles(d.linkStyles);
   const sheet = parseSheet(d.sheet);
+  // Tiers (W2): well-formed entries only (a markup-safe id), unique.
+  const tierIds = new Set<string>();
+  const tiers: TierDef[] = Array.isArray(d.tiers)
+    ? (d.tiers as unknown[]).flatMap((t) => {
+        if (typeof t !== 'object' || t === null) return [];
+        const r = t as Record<string, unknown>;
+        const id = safeType(r.id, '');
+        if (!id || tierIds.has(id)) return [];
+        tierIds.add(id);
+        return [
+          {
+            id,
+            ...(typeof r.name === 'string' && r.name.trim()
+              ? { name: r.name }
+              : {}),
+          },
+        ];
+      })
+    : [];
   const doc: TopologyDocument = {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
@@ -396,6 +417,7 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     ...(palette ? { palette } : {}),
     ...(linkStyles.length ? { linkStyles } : {}),
     ...(sheet ? { sheet } : {}),
+    ...(tiers.length ? { tiers } : {}),
   };
   // Bound and normalize free-text so overlong / control-character strings
   // cannot enter the document (import, share, workspace apply, autosave).

@@ -37,6 +37,7 @@ describe('MCP tools', () => {
         'define_layer',
         'define_link_style',
         'define_node_type',
+        'define_tier',
         'delete_topology',
         'describe_capabilities',
         'edit_topology',

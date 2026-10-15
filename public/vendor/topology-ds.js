@@ -4235,12 +4235,18 @@ ${grid}`;
     const align = zone.labelAlign || 'left';
     const labelX = align === 'center' ? minX + w / 2 : align === 'right' ? maxX - 8 : minX + 8;
     const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
+    // Caption edge (W2): 'bottom' puts the title just inside the bottom edge
+    // (a tier band reads "Distribution" under its devices) with the sublabel
+    // stacked above it; the default top edge is unchanged.
+    const bottom = zone.labelPosition === 'bottom';
+    const labelY = bottom ? minY + h - 8 : minY + 14;
+    const subY = bottom ? minY + h - 20 : minY + 26;
     let s = '';
     s += `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" rx="8" fill="${c}" fill-opacity=".04" stroke="${c}" stroke-width="1" stroke-opacity=".35"${dash !== 'none' ? ` stroke-dasharray="${dash}"` : ''}/>`;
-    s += `<text x="${labelX}" y="${minY + 14}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity=".7">${_esc(zone.label || zone.id)}</text>`;
+    s += `<text x="${labelX}" y="${labelY}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity=".7">${_esc(zone.label || zone.id)}</text>`;
     const sublabelText = zone.sublabel || zone.description;
     if (sublabelText) {
-      s += `<text x="${labelX}" y="${minY + 26}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity=".5">${_esc(sublabelText)}</text>`;
+      s += `<text x="${labelX}" y="${subY}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity=".5">${_esc(sublabelText)}</text>`;
     }
     return _hrefTipWrap(zone, `<g class="tds-zone" data-zone-id="${zone.id}">`, s, '</g>');
   }
@@ -4421,7 +4427,8 @@ ${grid}`;
     const w = String(zone.label || zone.id).length * 5.4;
     const align = zone.labelAlign || 'left';
     const x = align === 'center' ? box.x + box.w / 2 - w / 2 : align === 'right' ? box.x + box.w - 8 - w : box.x + 8;
-    return { x, y: box.y + 5, w, h: 14 };
+    const y = zone.labelPosition === 'bottom' ? box.y + box.h - 19 : box.y + 5;
+    return { x, y, w, h: 14 };
   }
 
   /** Per-render obstacle registry for pill placement: node hit boxes + zone

@@ -110,12 +110,34 @@ export const STOCK_NODE_SPECS: CustomNodeSpec[] = [
   device('ids', 'diamond', 'eye', RED, { badge: true, badgeText: 'IDS' }),
   device('vpnconc', 'diamond', 'lock', RED),
   device('usergroup', 'circle', 'users', GOLD),
+  // ── Wiring-sheet chassis (proposal 0008, W7): a generic rack-unit front
+  // panel with a port row and status LEDs, sized so pills / anchor-box
+  // slots land along its long bottom edge. Name + model go in the node's
+  // label / sublabel (labelPlacement 'n' reads like a drawing sheet).
+  spec({
+    typeName: 'chassis',
+    shape: 'chassis',
+    icon: null,
+    colorStroke: SLATE,
+    colorFill: '#22252e',
+    size: 30,
+    radius: 2,
+    badge: false,
+    highlight: true,
+    leds: true,
+    ledCount: 2,
+    ledPos: 'left',
+    ports: true,
+    portCount: 24,
+    portPos: 'bottom',
+  }),
 ];
 
 const STOCK_TYPES = new Set(STOCK_NODE_SPECS.map((s) => s.typeName));
 
 /** Friendly palette / catalog labels (typeName → human name). */
 export const STOCK_NODE_LABELS: Record<string, string> = {
+  chassis: 'Chassis (1RU)',
   tgw: 'Transit Gateway',
   igw: 'Internet Gateway',
   natgw: 'NAT Gateway',
@@ -150,6 +172,21 @@ export const STOCK_NODE_META: Record<
   string,
   { category: string; keywords?: string[] }
 > = {
+  chassis: {
+    category: 'Network',
+    keywords: [
+      'rack',
+      '1ru',
+      'front panel',
+      'switch',
+      'router',
+      'qfx',
+      'mx',
+      'leaf',
+      'spine',
+      'wiring',
+    ],
+  },
   tgw: { category: 'Cloud', keywords: ['aws', 'transit'] },
   igw: { category: 'Cloud', keywords: ['aws', 'internet gateway'] },
   natgw: { category: 'Cloud', keywords: ['aws', 'nat'] },

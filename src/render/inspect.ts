@@ -922,7 +922,11 @@ function zoneLabelRect(zone: ZoneConfig, box: BoundsRect): BoundsRect {
       : align === 'right'
         ? box.x + box.w - 8 - w
         : box.x + 8;
-  return { x, y: box.y + 5, w, h: ZONE_LABEL_H };
+  const y =
+    zone.labelPosition === 'bottom'
+      ? box.y + box.h - 5 - ZONE_LABEL_H
+      : box.y + 5;
+  return { x, y, w, h: ZONE_LABEL_H };
 }
 
 /* ── geometry primitives ──────────────────────────────────────────── */

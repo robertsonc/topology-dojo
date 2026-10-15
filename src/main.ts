@@ -808,6 +808,7 @@ function loadDoc(
     'palette',
     'linkStyles',
     'sheet',
+    'tiers',
   ] as const) {
     if (next[key] === undefined) delete doc[key];
     else (doc[key] as unknown) = structuredClone(next[key]);

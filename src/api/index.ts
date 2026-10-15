@@ -18,3 +18,4 @@ export * from './geometry.js';
 export * from './text.js';
 export * from './link-styles.js';
 export * from './sheet.js';
+export * from './tiers.js';

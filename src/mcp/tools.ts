@@ -30,6 +30,7 @@ import {
   linkStyleCatalog,
   nodeCatalog,
   sheetCatalog,
+  tierCatalog,
 } from '../api/catalog.js';
 import {
   SHEET_MAX_FIELDS,
@@ -40,6 +41,7 @@ import {
 } from '../api/sheet.js';
 import type { LinkAttachOptions } from '../vendor/topology-ds.js';
 import { LAYER_KINDS } from '../api/layers.js';
+import { defineTier } from '../api/tiers.js';
 import {
   LINK_STYLE_DASHES,
   LINK_STYLE_PRESETS,
@@ -487,6 +489,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             layers: layerCatalog(),
             linkStyles: linkStyleCatalog(),
             sheet: sheetCatalog(),
+            tiers: tierCatalog(),
           };
         }
         return {
@@ -1125,6 +1128,13 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         nodeId: z.string().optional().describe('Explicit id (else generated).'),
         meta: metaShape,
         layer: layerArg,
+        tier: z
+          .string()
+          .max(64)
+          .optional()
+          .describe(
+            'Tier id this node sits in (declare tiers with define_tier; the "tiered" layout rows nodes by it).',
+          ),
         extra,
       },
       handler: (a) =>
@@ -1145,6 +1155,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.meta !== undefined ? { meta: a.meta as MetaMap } : {}),
             ...(a.layer !== undefined ? { layer: String(a.layer) } : {}),
+            ...(a.tier !== undefined ? { tier: String(a.tier) } : {}),
             ...((a.extra as Record<string, unknown>) ?? {}),
           },
         ),
@@ -1524,6 +1535,47 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         ),
     },
     {
+      name: 'define_tier',
+      description:
+        'Declare (or update, by id) a document TIER — a role row of a wiring sheet (gateways / distribution / core). Declaration order is vertical order, top → bottom; pass `before` to insert above an existing tier. Nodes opt in with `tier` (add_node / edit_topology); then layout_topology algorithm "tiered" rows them, orders each row to keep the cable fan from crossing itself, and with mirror:true places -01/-02 pairs symmetric about the page centre. Pass remove:true to drop a tier (nodes keep their tag; validate warns).',
+      inputShape: {
+        topologyId,
+        tierId: z.string().max(64).describe('Tier id (re-use to update).'),
+        name: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Display name / band caption (falls back to the id).'),
+        before: z
+          .string()
+          .max(64)
+          .optional()
+          .describe('Insert above this existing tier id.'),
+        remove: z.boolean().optional().describe('Remove the tier instead.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        const id = String(a.tierId);
+        if (a.remove) {
+          doc.tiers = (doc.tiers ?? []).filter((t) => t.id !== id);
+          if (!doc.tiers.length) delete doc.tiers;
+          return { tiers: doc.tiers ?? [] };
+        }
+        const prev = doc.tiers?.find((t) => t.id === id);
+        defineTier(
+          doc,
+          {
+            id,
+            ...(a.name !== undefined
+              ? { name: String(a.name) }
+              : prev?.name !== undefined
+                ? { name: prev.name }
+                : {}),
+          },
+          a.before !== undefined ? String(a.before) : undefined,
+        );
+        return { tiers: doc.tiers };
+      },
+    },
+    {
       name: 'define_layer',
       description:
         'Declare (or update, by id) a document layer — a named plane such as underlay / overlay / policy. Declaration order is z-order (bottom → top); untagged elements form the implicit base layer beneath all declared layers. Elements opt in by passing `layer` to the add_* tools; render_svg can filter with visibleLayers.',
@@ -1645,15 +1697,31 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       inputShape: {
         topologyId,
         algorithm: z
-          .enum(['grid', 'hierarchical', 'circular', 'force'])
+          .enum(['grid', 'hierarchical', 'circular', 'force', 'tiered'])
           .describe(
-            'hierarchical = layered by link direction; grid; circular; force = force-directed.',
+            'hierarchical = layered by link direction; grid; circular; force = force-directed; tiered = rows by the document’s declared tiers (define_tier + node.tier), each row ordered to keep the cable fan uncrossed — the wiring-sheet layout.',
           ),
         direction: z
           .enum(['TB', 'LR'])
           .optional()
           .describe('Hierarchical flow direction (default TB).'),
         spacing: z.number().optional().describe('Gap between nodes in px.'),
+        tierGap: z
+          .number()
+          .optional()
+          .describe('tiered: clear space between rows (default 140).'),
+        mirror: z
+          .boolean()
+          .optional()
+          .describe(
+            'tiered: place -01/-02 (a/b) pairs symmetric about the page centre line.',
+          ),
+        tierZones: z
+          .boolean()
+          .optional()
+          .describe(
+            'tiered: emit (or refresh) one zone per tier, captioned at its bottom edge.',
+          ),
       },
       handler: (a) =>
         layoutDocument(store.get(String(a.topologyId)), {
@@ -1662,6 +1730,11 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ? { direction: a.direction as 'TB' | 'LR' }
             : {}),
           ...(a.spacing !== undefined ? { spacing: Number(a.spacing) } : {}),
+          ...(a.tierGap !== undefined ? { tierGap: Number(a.tierGap) } : {}),
+          ...(a.mirror !== undefined ? { mirror: Boolean(a.mirror) } : {}),
+          ...(a.tierZones !== undefined
+            ? { tierZones: Boolean(a.tierZones) }
+            : {}),
         }),
     },
     {

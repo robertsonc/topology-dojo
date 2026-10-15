@@ -265,6 +265,7 @@ to the task's affected region and change summaries, not total document size.
 | `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                                                            |
 | `upsert_by_source`                                     | Converge an element onto external data by source identity                                                                              |
 | `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                                             |
+| `define_tier`                                          | Declare a wiring-sheet tier (role row, top → bottom); nodes opt in with `tier`, `layout_topology` "tiered" rows them                   |
 | `define_link_style`                                    | Declare a wire class (colour / width / dash) links name via `style`; `preset: "ethernet-media"` loads the 11 Ethernet media classes    |
 | `define_node_type`                                     | Add a custom node type (merged over defaults)                                                                                          |
 | `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                                                       |
@@ -275,7 +276,7 @@ to the task's affected region and change summaries, not total document size.
 | `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)                                                                          |
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                                                  |
 | `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                       |
-| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force)                                                                          |
+| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force / tiered — rows by declared tiers, `mirror`, `tierZones`)                 |
 | `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                       |
 | `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"` for a light page)                                  |
 | `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations (`theme: "light"` optional)                                               |
