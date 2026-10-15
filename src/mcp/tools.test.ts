@@ -52,6 +52,7 @@ describe('MCP tools', () => {
         'set_document_title',
         'set_legend',
         'set_palette',
+        'set_sheet',
         'remove_element',
         'set_node_metadata',
         'set_page_properties',

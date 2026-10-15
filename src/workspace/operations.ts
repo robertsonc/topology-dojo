@@ -19,6 +19,7 @@ const DOCUMENT_FIELDS = [
   'stencils',
   'palette',
   'linkStyles',
+  'sheet',
 ] as const;
 const PAGE_FIELDS = [
   'name',

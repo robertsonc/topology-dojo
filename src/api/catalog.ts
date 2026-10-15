@@ -11,6 +11,12 @@ import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import { POLICY_MARKER_TYPES } from './markers.js';
 import { LAYER_KINDS } from './layers.js';
 import { LINK_STYLE_DASHES, LINK_STYLE_WIDTH_RANGE } from './link-styles.js';
+import {
+  SHEET_MAX_FIELDS,
+  SHEET_ORIENTATIONS,
+  SHEET_SIZE_IDS,
+  SHEET_SIZE_LABELS,
+} from './sheet.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import {
   STOCK_NODE_LABELS,
@@ -889,6 +895,61 @@ export function getAnnotationType(
   kind: AnnotationKind,
 ): AnnotationTypeInfo | undefined {
   return ANNOTATION_CATALOG[kind];
+}
+
+/** The sheet-frame vocabulary (W6): SheetConfig's fields. */
+export interface SheetCatalogInfo {
+  sizes: readonly string[];
+  fields: FieldSpec[];
+}
+
+export function sheetCatalog(): SheetCatalogInfo {
+  return {
+    sizes: SHEET_SIZE_IDS,
+    fields: [
+      {
+        key: 'size',
+        label: 'Sheet size',
+        kind: 'enum',
+        options: [...SHEET_SIZE_IDS, 'custom'],
+        optionLabels: { ...SHEET_SIZE_LABELS, custom: 'Custom (keep viewBox)' },
+      },
+      {
+        key: 'orientation',
+        label: 'Orientation',
+        kind: 'enum',
+        options: SHEET_ORIENTATIONS,
+      },
+      { key: 'border', label: 'Border', kind: 'boolean' },
+      { key: 'title', label: 'Title at top', kind: 'boolean' },
+      {
+        key: 'titleBlock',
+        label: 'Title block',
+        kind: 'object',
+        fields: [
+          { key: 'show', label: 'Show', kind: 'boolean' },
+          {
+            key: 'subtitle',
+            label: 'Subtitle',
+            kind: 'string',
+            max: TEXT_LIMITS.name,
+          },
+          {
+            key: 'fields',
+            label: `Fields (label/value, up to ${SHEET_MAX_FIELDS})`,
+            kind: 'record',
+            max: TEXT_LIMITS.name,
+          },
+          {
+            key: 'logoHref',
+            label: 'Logo URL (https)',
+            kind: 'string',
+            max: TEXT_LIMITS.url,
+          },
+        ],
+      },
+    ],
+  };
 }
 
 /** The link-style vocabulary (W1): a LinkStyleDef's fields + starter presets. */

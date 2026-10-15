@@ -21,6 +21,7 @@ import type {
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type { LayerDef } from '../api/layers.js';
 import type { LinkStyleDef } from '../api/link-styles.js';
+import type { SheetConfig } from '../api/sheet.js';
 import { createDocument } from '../api/builder.js';
 
 export interface Page extends RenderablePage {
@@ -87,6 +88,11 @@ export interface TopologyDocument {
    * carry their own colours as before.
    */
   linkStyles?: LinkStyleDef[];
+  /**
+   * Drawing-sheet frame (proposal 0008, W6): paper size, border, top title
+   * and the bottom-right title block. Optional — absent means no frame.
+   */
+  sheet?: SheetConfig;
   /**
    * Brand palette (#7) — remaps the engine's accent colours on the canvas and
    * drives the chrome accent, so each document can carry its own branding.

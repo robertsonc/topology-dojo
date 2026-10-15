@@ -270,6 +270,7 @@ to the task's affected region and change summaries, not total document size.
 | `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                                                       |
 | `set_legend`                                           | Toggle + position the auto-generated symbol legend / key; `columns` / `title` lay it out as a drawing-sheet Key strip                  |
 | `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                                                 |
+| `set_sheet`                                            | Drawing-sheet frame: paper size (sets page viewBoxes), border, top title, bottom-right title block (`clear` removes)                   |
 | `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                                                          |
 | `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)                                                                          |
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                                                  |

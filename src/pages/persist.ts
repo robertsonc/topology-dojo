@@ -15,6 +15,11 @@ import {
   LINK_STYLE_WIDTH_RANGE,
   type LinkStyleDef,
 } from '../api/link-styles.js';
+import {
+  SHEET_MAX_FIELDS,
+  SHEET_SIZES,
+  type SheetConfig,
+} from '../api/sheet.js';
 
 /** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
 function hexColor(v: unknown): string | undefined {
@@ -140,6 +145,50 @@ function parseLinkStyles(raw: unknown): LinkStyleDef[] {
   return out;
 }
 
+/** Parse the sheet frame (W6): recognised keys only, strings bounded. */
+function parseSheet(raw: unknown): SheetConfig | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+    return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: SheetConfig = {};
+  if (
+    typeof r.size === 'string' &&
+    (r.size === 'custom' || r.size in SHEET_SIZES)
+  )
+    out.size = r.size as SheetConfig['size'];
+  if (r.orientation === 'landscape' || r.orientation === 'portrait')
+    out.orientation = r.orientation;
+  if (r.border === false) out.border = false;
+  if (r.title === false) out.title = false;
+  if (typeof r.titleBlock === 'object' && r.titleBlock !== null) {
+    const t = r.titleBlock as Record<string, unknown>;
+    const tb: SheetConfig['titleBlock'] = {};
+    if (t.show === false) tb.show = false;
+    if (typeof t.subtitle === 'string' && t.subtitle.trim())
+      tb.subtitle = t.subtitle;
+    if (Array.isArray(t.fields)) {
+      const fields = (t.fields as unknown[])
+        .filter(
+          (f): f is { label: string; value: string } =>
+            typeof f === 'object' &&
+            f !== null &&
+            typeof (f as { label?: unknown }).label === 'string' &&
+            typeof (f as { value?: unknown }).value === 'string',
+        )
+        .map((f) => ({ label: f.label, value: f.value }))
+        .slice(0, SHEET_MAX_FIELDS);
+      if (fields.length) tb.fields = fields;
+    }
+    if (
+      typeof t.logoHref === 'string' &&
+      /^https:\/\//i.test(t.logoHref.trim())
+    )
+      tb.logoHref = t.logoHref.trim();
+    out.titleBlock = tb;
+  }
+  return out;
+}
+
 /** Parse a brand palette, keeping only valid hex colours; undefined if no accent. */
 function parsePalette(raw: unknown): BrandPalette | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
@@ -187,6 +236,7 @@ export function serializeDoc(doc: TopologyDocument): string {
       ...(doc.stencils?.length ? { stencils: doc.stencils } : {}),
       ...(doc.palette ? { palette: doc.palette } : {}),
       ...(doc.linkStyles?.length ? { linkStyles: doc.linkStyles } : {}),
+      ...(doc.sheet ? { sheet: doc.sheet } : {}),
     },
     null,
     2,
@@ -335,6 +385,7 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     : [];
   const palette = parsePalette(d.palette);
   const linkStyles = parseLinkStyles(d.linkStyles);
+  const sheet = parseSheet(d.sheet);
   const doc: TopologyDocument = {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
@@ -344,6 +395,7 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     ...(stencils.length ? { stencils } : {}),
     ...(palette ? { palette } : {}),
     ...(linkStyles.length ? { linkStyles } : {}),
+    ...(sheet ? { sheet } : {}),
   };
   // Bound and normalize free-text so overlong / control-character strings
   // cannot enter the document (import, share, workspace apply, autosave).

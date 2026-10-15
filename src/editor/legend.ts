@@ -215,7 +215,11 @@ export function legendBox(
  * A positioned legend `<g>` for a page, in page coordinates (so it exports and
  * pans with the canvas). Returns '' when the legend is off or empty.
  */
-export function legendSVG(doc: TopologyDocument, page: Page): string {
+export function legendSVG(
+  doc: TopologyDocument,
+  page: Page,
+  opts: { margin?: number } = {},
+): string {
   const cfg: LegendConfig = doc.legend ?? {};
   if (!cfg.show) return '';
   const items = buildLegendItems(doc, page);
@@ -228,7 +232,7 @@ export function legendSVG(doc: TopologyDocument, page: Page): string {
     number,
     number,
   ];
-  const m = 16; // margin from the page edge
+  const m = opts.margin ?? 16; // margin from the page edge
   const pos = cfg.position ?? 'tl';
   const x = pos === 'tr' || pos === 'br' ? vx + vw - w - m : vx + m;
   const y = pos === 'bl' || pos === 'br' ? vy + vh - h - m : vy + m;

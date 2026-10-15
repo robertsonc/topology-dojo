@@ -183,6 +183,12 @@ export interface PdfPageSpec {
   page: Page;
   opts?: RenderOptions;
   extra?: string;
+  /**
+   * Physical paper size in PDF points (W6 sheet sizes). Absent = one point
+   * per viewBox pixel, as before. The frame is scaled to fit the paper,
+   * keeping its aspect.
+   */
+  paper?: { w: number; h: number };
 }
 
 /**
@@ -209,9 +215,15 @@ export async function pagesToPDFBlob(specs: PdfPageSpec[]): Promise<Blob> {
     const canvas = await svgToCanvas(svg, 2);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
     const orientation = vw >= vh ? 'landscape' : 'portrait';
-    if (!pdf) pdf = new jsPDF({ orientation, unit: 'pt', format: [vw, vh] });
-    else pdf.addPage([vw, vh], orientation);
-    pdf.addImage(dataUrl, 'JPEG', 0, 0, vw, vh);
+    const pw = spec.paper?.w ?? vw;
+    const ph = spec.paper?.h ?? vh;
+    if (!pdf) pdf = new jsPDF({ orientation, unit: 'pt', format: [pw, ph] });
+    else pdf.addPage([pw, ph], orientation);
+    // Fit the frame on the paper, centred, aspect preserved.
+    const k = Math.min(pw / vw, ph / vh);
+    const dw = vw * k;
+    const dh = vh * k;
+    pdf.addImage(dataUrl, 'JPEG', (pw - dw) / 2, (ph - dh) / 2, dw, dh);
   }
   return (pdf as InstanceType<typeof jsPDF>).output('blob');
 }

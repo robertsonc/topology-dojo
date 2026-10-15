@@ -29,7 +29,15 @@ import {
   linkCatalog,
   linkStyleCatalog,
   nodeCatalog,
+  sheetCatalog,
 } from '../api/catalog.js';
+import {
+  SHEET_MAX_FIELDS,
+  SHEET_ORIENTATIONS,
+  SHEET_SIZE_IDS,
+  sheetViewBox,
+  type SheetConfig,
+} from '../api/sheet.js';
 import type { LinkAttachOptions } from '../vendor/topology-ds.js';
 import { LAYER_KINDS } from '../api/layers.js';
 import {
@@ -478,6 +486,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             annotations: annotationCatalog(),
             layers: layerCatalog(),
             linkStyles: linkStyleCatalog(),
+            sheet: sheetCatalog(),
           };
         }
         return {
@@ -495,6 +504,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           annotationKinds: annotationCatalog().map((x) => x.kind),
           layerKinds: layerCatalog().kinds,
           linkStylePresets: linkStyleCatalog().presets,
+          sheetSizes: sheetCatalog().sizes,
           note: 'Index view. For editable fields, call again with detail:"full" or narrow with types:[…] / query:"…".',
         };
       },
@@ -857,6 +867,111 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           ...(title ? { title } : {}),
         };
         return { legend: doc.legend };
+      },
+    },
+    {
+      name: 'set_sheet',
+      description:
+        'Turn the document into a DRAWING SHEET: a standard paper size (sets every page’s viewBox at 96 dpi unless size is "custom"), a border, the document title centred at the top, and a bottom-right title block (subtitle, label/value fields such as Drawn by / Revision / Date / Size, an https logo). Drawn on the canvas and in every export, like the legend; the legend keeps inside the border (set_legend position "bl" + columns reads as the sheet’s Key). Pass clear:true to remove the sheet.',
+      inputShape: {
+        topologyId,
+        size: z
+          .enum(['custom', ...SHEET_SIZE_IDS])
+          .optional()
+          .describe(
+            'Paper size (ansi-a … ansi-e, a4 … a1) or "custom" to keep page viewBoxes.',
+          ),
+        orientation: z.enum(SHEET_ORIENTATIONS).optional(),
+        border: z
+          .boolean()
+          .optional()
+          .describe('Draw the border (default true).'),
+        title: z
+          .boolean()
+          .optional()
+          .describe('Draw the document title at the top (default true).'),
+        subtitle: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Title-block second line (e.g. the sheet name).'),
+        fields: z
+          .array(
+            z.object({
+              label: displayString(TEXT_LIMITS.name),
+              value: displayString(TEXT_LIMITS.name),
+            }),
+          )
+          .max(SHEET_MAX_FIELDS)
+          .optional()
+          .describe(
+            'Title-block fields, e.g. [{label:"Drawn by",value:"K. Marshall"},{label:"Revision",value:"1"}]. Replaces the list.',
+          ),
+        logoHref: z
+          .string()
+          .max(TEXT_LIMITS.url)
+          .optional()
+          .describe(
+            'https image drawn at the title block’s right end. Empty string clears it.',
+          ),
+        titleBlock: z
+          .boolean()
+          .optional()
+          .describe(
+            'Draw the title block at all (default true once any block field is set).',
+          ),
+        clear: z.boolean().optional().describe('Remove the sheet frame.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        if (a.clear) {
+          delete doc.sheet;
+          return { sheet: null };
+        }
+        const prev: SheetConfig = doc.sheet ?? {};
+        const next: SheetConfig = { ...prev };
+        if (a.size !== undefined) next.size = a.size as SheetConfig['size'];
+        if (a.orientation !== undefined)
+          next.orientation = a.orientation as SheetConfig['orientation'];
+        if (a.border !== undefined) {
+          if (a.border) delete next.border;
+          else next.border = false;
+        }
+        if (a.title !== undefined) {
+          if (a.title) delete next.title;
+          else next.title = false;
+        }
+        const tb = { ...(prev.titleBlock ?? {}) };
+        let touched = false;
+        if (a.subtitle !== undefined) {
+          touched = true;
+          if (String(a.subtitle).trim()) tb.subtitle = String(a.subtitle);
+          else delete tb.subtitle;
+        }
+        if (a.fields !== undefined) {
+          touched = true;
+          const fields = (a.fields as { label: string; value: string }[]).map(
+            (f) => ({ label: String(f.label), value: String(f.value) }),
+          );
+          if (fields.length) tb.fields = fields;
+          else delete tb.fields;
+        }
+        if (a.logoHref !== undefined) {
+          touched = true;
+          const href = String(a.logoHref).trim();
+          if (!href) delete tb.logoHref;
+          else if (!/^https:\/\//i.test(href))
+            throw new Error('logoHref must be an https:// URL');
+          else tb.logoHref = href;
+        }
+        if (a.titleBlock !== undefined) {
+          touched = true;
+          if (a.titleBlock) delete tb.show;
+          else tb.show = false;
+        }
+        if (touched || prev.titleBlock) next.titleBlock = tb;
+        doc.sheet = next;
+        const vb = sheetViewBox(next.size, next.orientation);
+        if (vb) for (const p of doc.pages) p.viewBox = vb;
+        return { sheet: doc.sheet, ...(vb ? { viewBox: vb } : {}) };
       },
     },
     {

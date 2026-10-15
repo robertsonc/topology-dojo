@@ -22,7 +22,7 @@ import {
   flattenViewer,
   type LinkAttachOptions,
 } from '../vendor/topology-ds.js';
-import { legendSVG } from '../editor/legend.js';
+import { documentOverlaySVG } from './overlays.js';
 import {
   applyRenderTheme,
   themeBackground,
@@ -252,8 +252,8 @@ export function renderDocumentWithEngine(
   // the theme remap LAST — the palette consumes the engine's source accents,
   // so a document's brand colour is never darkened by the light theme.
   // Mirrors what the editor composites, so MCP/headless output matches the GUI.
-  const legend = legendSVG(doc, page);
-  if (legend) svg = svg.replace('</svg>', `${legend}</svg>`);
+  const overlay = documentOverlaySVG(doc, page);
+  if (overlay) svg = svg.replace('</svg>', `${overlay}</svg>`);
   if (doc.palette) svg = applyPalette(svg, doc.palette);
   return applyRenderTheme(svg, opts.theme ?? 'dark');
 }

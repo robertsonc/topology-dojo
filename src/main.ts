@@ -53,7 +53,14 @@ import { exportFlipbookHTML } from './render/flipbook.js';
 import { documentToDrawioXML } from './editor/drawio.js';
 import { userToClient } from './editor/coords.js';
 import { nodeBounds } from './api/geometry.js';
-import { legendSVG } from './editor/legend.js';
+import { documentOverlaySVG } from './render/overlays.js';
+import {
+  SHEET_SIZE_IDS,
+  SHEET_SIZE_LABELS,
+  sheetPaperPt,
+  sheetViewBox,
+  type SheetConfig,
+} from './api/sheet.js';
 import { captionSVG } from './editor/caption.js';
 import { applyRenderTheme, type RenderTheme } from './render/theme.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
@@ -395,7 +402,7 @@ const editor = new Editor(
 // Themed like the art (#264) so the on-canvas legend/caption read in light mode.
 editor.setOverlayExtra(() =>
   applyRenderTheme(
-    legendSVG(doc, editor.page) + captionSVG(editor.page),
+    documentOverlaySVG(doc, editor.page) + captionSVG(editor.page),
     currentTheme(),
   ),
 );
@@ -800,6 +807,7 @@ function loadDoc(
     'stencils',
     'palette',
     'linkStyles',
+    'sheet',
   ] as const) {
     if (next[key] === undefined) delete doc[key];
     else (doc[key] as unknown) = structuredClone(next[key]);
@@ -1000,7 +1008,7 @@ function exportBase(): string {
   return `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
 }
 function exportExtra(page: Page): string {
-  return legendSVG(doc, page) + captionSVG(page);
+  return documentOverlaySVG(doc, page) + captionSVG(page);
 }
 app.querySelector('#fSvg')?.addEventListener('click', () => {
   const page = doc.pages[current]!;
@@ -1050,7 +1058,7 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
  * as the MCP tool — no fork), clipboard PNG, and selection-only crops. */
 const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
 function pageExtra(page: Page): string {
-  return legendSVG(doc, page) + captionSVG(page);
+  return documentOverlaySVG(doc, page) + captionSVG(page);
 }
 /* Exports follow the editor's current light/dark toggle (#264): a light
  * canvas exports light, a dark canvas exports dark. */
@@ -1067,6 +1075,11 @@ function pageOpts(page: Page): {
     theme: currentTheme(),
   };
 }
+/** PDF paper size from the sheet frame (W6), when a standard size is set. */
+function paperSpec(): { paper?: { w: number; h: number } } {
+  const paper = sheetPaperPt(doc.sheet?.size, doc.sheet?.orientation);
+  return paper ? { paper } : {};
+}
 /** The selection as a cropped standalone page, or null when nothing usable. */
 function selectionAsPage(): Page | null {
   const sel = editor.selectionElements();
@@ -1078,7 +1091,7 @@ async function runExport(kind: string): Promise<void> {
   switch (kind) {
     case 'pdf-page': {
       const blob = await pagesToPDFBlob([
-        { page, opts: pageOpts(page), extra: pageExtra(page) },
+        { page, opts: pageOpts(page), extra: pageExtra(page), ...paperSpec() },
       ]);
       downloadBlob(`${exportBase()}.pdf`, blob);
       return;
@@ -1089,6 +1102,7 @@ async function runExport(kind: string): Promise<void> {
           page: p,
           opts: pageOpts(p),
           extra: pageExtra(p),
+          ...paperSpec(),
         })),
       );
       downloadBlob(
@@ -2407,7 +2421,48 @@ function propertiesHtml(): string {
       )
       .join('') +
     `</select></label>` +
+    (doc.legend?.show
+      ? `<label class="insp-row" title="Lay the key out across columns, like a drawing sheet's Key strip"><span>Columns</span><input type="number" id="p-legend-cols" min="1" max="8" value="${doc.legend.columns ?? 1}"/></label>` +
+        `<label class="insp-row"><span>Key title</span><input id="p-legend-title" value="${esc(doc.legend.title ?? '')}" placeholder="Key"/></label>`
+      : '') +
+    sheetHtml() +
     layersHtml()
+  );
+}
+
+/** The Sheet section of the Document panel (W6): paper size, border, title block. */
+function sheetHtml(): string {
+  const sh = doc.sheet;
+  const tb = sh?.titleBlock;
+  const field = (label: string): string =>
+    tb?.fields?.find((f) => f.label.toLowerCase() === label.toLowerCase())
+      ?.value ?? '';
+  return (
+    `<div class="insp-h">Sheet</div>` +
+    `<label class="insp-row" title="Draw the document as a drawing sheet: border, top title, bottom-right title block"><span>Sheet frame</span><input type="checkbox" id="p-sheet"${sh ? ' checked' : ''}/></label>` +
+    (sh
+      ? `<label class="insp-row"><span>Size</span><select id="p-sheet-size">` +
+        `<option value="custom"${!sh.size || sh.size === 'custom' ? ' selected' : ''}>custom (keep canvas)</option>` +
+        SHEET_SIZE_IDS.map(
+          (id) =>
+            `<option value="${id}"${sh.size === id ? ' selected' : ''}>${esc(SHEET_SIZE_LABELS[id])}</option>`,
+        ).join('') +
+        `</select></label>` +
+        `<label class="insp-row"><span>Orientation</span><select id="p-sheet-orient">` +
+        `<option value="landscape"${sh.orientation !== 'portrait' ? ' selected' : ''}>landscape</option>` +
+        `<option value="portrait"${sh.orientation === 'portrait' ? ' selected' : ''}>portrait</option>` +
+        `</select></label>` +
+        `<label class="insp-row"><span>Border</span><input type="checkbox" id="p-sheet-border"${sh.border !== false ? ' checked' : ''}/></label>` +
+        `<label class="insp-row"><span>Top title</span><input type="checkbox" id="p-sheet-title"${sh.title !== false ? ' checked' : ''}/></label>` +
+        `<label class="insp-row"><span>Title block</span><input type="checkbox" id="p-sheet-tb"${tb && tb.show !== false ? ' checked' : ''}/></label>` +
+        (tb && tb.show !== false
+          ? `<label class="insp-row"><span>Subtitle</span><input id="p-sheet-sub" value="${esc(tb.subtitle ?? '')}" placeholder="sheet name"/></label>` +
+            `<label class="insp-row"><span>Drawn by</span><input class="p-sheet-field" data-label="Drawn by" value="${esc(field('Drawn by'))}"/></label>` +
+            `<label class="insp-row"><span>Revision</span><input class="p-sheet-field" data-label="Revision" value="${esc(field('Revision'))}"/></label>` +
+            `<label class="insp-row"><span>Date</span><input class="p-sheet-field" data-label="Date" value="${esc(field('Date'))}"/></label>` +
+            `<label class="insp-row"><span>Logo URL</span><input id="p-sheet-logo" value="${esc(tb.logoHref ?? '')}" placeholder="https://…"/></label>`
+          : '')
+      : '')
   );
 }
 
@@ -2551,8 +2606,133 @@ function wireProperties(): void {
     editor.redrawOverlay();
     markDirty();
   });
+  const legendCols =
+    inspector.querySelector<HTMLInputElement>('#p-legend-cols');
+  legendCols?.addEventListener('change', () => {
+    const n = Math.max(1, Math.min(8, Math.round(Number(legendCols.value))));
+    const next = { ...doc.legend };
+    if (n > 1) next.columns = n;
+    else delete next.columns;
+    doc.legend = next;
+    editor.redrawOverlay();
+    markDirty();
+  });
+  const legendTitle =
+    inspector.querySelector<HTMLInputElement>('#p-legend-title');
+  legendTitle?.addEventListener('input', () => {
+    const next = { ...doc.legend };
+    if (legendTitle.value.trim()) next.title = legendTitle.value;
+    else delete next.title;
+    doc.legend = next;
+    editor.redrawOverlay();
+    markDirty();
+  });
+  wireSheet();
   wireLayers();
   wireFrameStory();
+}
+
+/** Wire the Sheet section (W6): every control writes `doc.sheet` and redraws. */
+function wireSheet(): void {
+  const on = inspector.querySelector<HTMLInputElement>('#p-sheet');
+  const commit = (rerender = false): void => {
+    editor.redrawOverlay();
+    markDirty();
+    if (rerender) renderInspector();
+  };
+  on?.addEventListener('change', () => {
+    if (on.checked) doc.sheet = doc.sheet ?? {};
+    else delete doc.sheet;
+    commit(true);
+  });
+  const sh = (): SheetConfig => (doc.sheet ??= {});
+  const applySize = (): void => {
+    const vb = sheetViewBox(sh().size, sh().orientation);
+    if (!vb) return;
+    for (const p of doc.pages) p.viewBox = vb;
+    editor.setPage(doc.pages[current]!);
+  };
+  inspector
+    .querySelector<HTMLSelectElement>('#p-sheet-size')
+    ?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLSelectElement).value;
+      if (v === 'custom') delete sh().size;
+      else sh().size = v as SheetConfig['size'];
+      applySize();
+      commit();
+    });
+  inspector
+    .querySelector<HTMLSelectElement>('#p-sheet-orient')
+    ?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLSelectElement).value;
+      if (v === 'portrait') sh().orientation = 'portrait';
+      else delete sh().orientation;
+      applySize();
+      commit();
+    });
+  const bool = (id: string, key: 'border' | 'title'): void => {
+    inspector
+      .querySelector<HTMLInputElement>(id)
+      ?.addEventListener('change', (e) => {
+        if ((e.target as HTMLInputElement).checked) delete sh()[key];
+        else sh()[key] = false;
+        commit();
+      });
+  };
+  bool('#p-sheet-border', 'border');
+  bool('#p-sheet-title', 'title');
+  inspector
+    .querySelector<HTMLInputElement>('#p-sheet-tb')
+    ?.addEventListener('change', (e) => {
+      const tb = { ...(sh().titleBlock ?? {}) };
+      if ((e.target as HTMLInputElement).checked) delete tb.show;
+      else tb.show = false;
+      sh().titleBlock = tb;
+      commit(true);
+    });
+  inspector
+    .querySelector<HTMLInputElement>('#p-sheet-sub')
+    ?.addEventListener('input', (e) => {
+      const tb = { ...(sh().titleBlock ?? {}) };
+      const v = (e.target as HTMLInputElement).value;
+      if (v.trim()) tb.subtitle = v;
+      else delete tb.subtitle;
+      sh().titleBlock = tb;
+      commit();
+    });
+  inspector
+    .querySelectorAll<HTMLInputElement>('.p-sheet-field')
+    .forEach((inp) =>
+      inp.addEventListener('input', () => {
+        const tb = { ...(sh().titleBlock ?? {}) };
+        const label = inp.dataset.label!;
+        const fields = (tb.fields ?? []).filter(
+          (f) => f.label.toLowerCase() !== label.toLowerCase(),
+        );
+        if (inp.value.trim()) fields.push({ label, value: inp.value });
+        // Keep the canonical order so the block reads Drawn by / Revision / Date.
+        const order = ['drawn by', 'revision', 'date'];
+        fields.sort(
+          (a, b) =>
+            (order.indexOf(a.label.toLowerCase()) + 1 || 99) -
+            (order.indexOf(b.label.toLowerCase()) + 1 || 99),
+        );
+        if (fields.length) tb.fields = fields;
+        else delete tb.fields;
+        sh().titleBlock = tb;
+        commit();
+      }),
+    );
+  inspector
+    .querySelector<HTMLInputElement>('#p-sheet-logo')
+    ?.addEventListener('change', (e) => {
+      const tb = { ...(sh().titleBlock ?? {}) };
+      const v = (e.target as HTMLInputElement).value.trim();
+      if (/^https:\/\//i.test(v)) tb.logoHref = v;
+      else delete tb.logoHref;
+      sh().titleBlock = tb;
+      commit();
+    });
 }
 
 /** Wire the Frame section: caption + emphasis picker/actions (Phase 2). */

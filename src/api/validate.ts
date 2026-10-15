@@ -20,6 +20,12 @@ import {
 } from './catalog.js';
 import { effectiveLinkAttach } from '../render/link-attach.js';
 import { LINK_STYLE_DASHES, LINK_STYLE_WIDTH_RANGE } from './link-styles.js';
+import {
+  SHEET_MAX_FIELDS,
+  SHEET_ORIENTATIONS,
+  SHEET_SIZES,
+  sheetViewBox,
+} from './sheet.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -63,6 +69,51 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     )
       warn(at, `kind "${String(l.kind)}" not in [${LAYER_KINDS.join(', ')}]`);
   });
+  // Sheet frame (W6): a known size / orientation, bounded title-block
+  // fields, an https logo; a sized sheet whose pages were resized by hand
+  // is worth a note (the border and title block still draw to the viewBox).
+  const sheet = doc.sheet;
+  if (sheet) {
+    if (
+      sheet.size !== undefined &&
+      sheet.size !== 'custom' &&
+      !(sheet.size in SHEET_SIZES)
+    )
+      warn(
+        'sheet',
+        `size "${String(sheet.size)}" not in [${[...Object.keys(SHEET_SIZES), 'custom'].join(', ')}]`,
+      );
+    if (
+      sheet.orientation !== undefined &&
+      !(SHEET_ORIENTATIONS as readonly string[]).includes(sheet.orientation)
+    )
+      warn(
+        'sheet',
+        `orientation "${String(sheet.orientation)}" not in [${SHEET_ORIENTATIONS.join(', ')}]`,
+      );
+    const tb = sheet.titleBlock;
+    if (tb) {
+      if (tb.fields && tb.fields.length > SHEET_MAX_FIELDS)
+        warn(
+          'sheet.titleBlock',
+          `${tb.fields.length} fields — only the first ${SHEET_MAX_FIELDS} are drawn`,
+        );
+      if (tb.logoHref !== undefined && !/^https:\/\//i.test(tb.logoHref))
+        warn(
+          'sheet.titleBlock',
+          'logoHref must be an https:// URL — anything else is not drawn',
+        );
+    }
+    const want = sheetViewBox(sheet.size, sheet.orientation);
+    if (want)
+      doc.pages.forEach((p, i) => {
+        if (p.viewBox !== want)
+          warn(
+            `page[${i}] "${p.name}"`,
+            `viewBox "${p.viewBox}" differs from the sheet size (${sheet.size} ${sheet.orientation ?? 'landscape'} = "${want}"); set_sheet resizes pages`,
+          );
+      });
+  }
   // Link styles (W1): unique ids, a colour, a sane width and dash.
   const styleIds = new Set<string>();
   (doc.linkStyles ?? []).forEach((s, i) => {
