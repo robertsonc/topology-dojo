@@ -164,6 +164,12 @@ sourcedOnly:true` list what an importer owns; there's no surface yet for
 - **More node/link art** — port additional renderers from the legacy
   monolith as needed; richer per-type inspector controls (ports, D2 waypoint
   UI).
+- **Wiring-diagram conventions** — tiers, edge-mounted port pills, LAG/ECMP
+  bundles, a media/speed link key, derived per-device port tables, and a
+  sheet frame with title block, so a document can render as a print-grade
+  physical wiring sheet. Captured as
+  [proposal 0008](proposals/0008-wiring-diagram-conventions.md) (packets
+  W1–W8); builds on the experimental link anchor box (PR #274).
 - **In-canvas `labelScale` drag handle** — the numeric inspector control
   ships today (validated `[0.25, 4]`); a drag gesture beside the existing
   `labelOffset` label-drag is the next increment.
