@@ -2262,6 +2262,10 @@ const LINK_GROUPS: FieldGroup[] = [
     open: true,
   },
   {
+    title: 'Wiring sheet',
+    keys: ['style', 'fromBundle', 'toBundle', 'bandwidth', 'transport'],
+  },
+  {
     title: 'Routing',
     keys: [
       'lineStyle',
@@ -2299,6 +2303,10 @@ const NODE_GROUPS: FieldGroup[] = [
   },
   { title: 'Appearance', keys: ['color', 'opacity', 'status'], open: true },
   { title: 'Position', keys: ['x', 'y'] },
+  {
+    title: 'Wiring sheet',
+    keys: ['tier', 'portLabels', 'portTable'],
+  },
   {
     title: 'Advanced',
     keys: ['href', 'tooltip', 'locked', 'linkAttach', 'layer', 'source'],

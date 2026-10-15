@@ -14,6 +14,7 @@ import type { NodeConfig } from '../vendor/topology-ds.js';
 import { LAYOUT_RULES, nodeFootprint, parseViewBox } from './layout.js';
 import { carryAttachments, tidyPage } from './tidy.js';
 import { mirrorPairKey, tierRank, tierZoneId, type TierDef } from './tiers.js';
+import { portTableReserve } from '../render/port-table.js';
 
 export type LayoutAlgorithm =
   | 'grid'
@@ -546,11 +547,21 @@ export function layoutDocument(
   opts: AutoLayoutOptions,
 ): AutoLayoutResult {
   let movedNodes = 0;
-  const o: AutoLayoutOptions =
-    opts.algorithm === 'tiered' && !opts.tiers
-      ? { ...opts, tiers: doc.tiers ?? [] }
-      : opts;
-  for (const page of doc.pages) movedNodes += layoutPage(page, o);
+  for (const page of doc.pages) {
+    let o = opts;
+    if (opts.algorithm === 'tiered') {
+      // Fill in the document's tiers and keep the margins the page's
+      // derived port tables need clear.
+      const reserve = portTableReserve(doc, page);
+      o = {
+        ...opts,
+        tiers: opts.tiers ?? doc.tiers ?? [],
+        reserveLeft: opts.reserveLeft ?? reserve.left,
+        reserveRight: opts.reserveRight ?? reserve.right,
+      };
+    }
+    movedNodes += layoutPage(page, o);
+  }
   return { movedNodes };
 }
 

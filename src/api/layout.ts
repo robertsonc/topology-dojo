@@ -16,6 +16,7 @@ import { nodeLabelRect } from '../render/label-placement.js';
 import { zoneBox } from '../render/zone-box.js';
 import type { Problem } from './validate.js';
 import { PORT_PILL, portPills } from '../render/port-pills.js';
+import { portTables } from '../render/port-table.js';
 
 /** The padded box the engine draws around a zone's members (render/zone-box). */
 export { zoneBox };
@@ -71,10 +72,39 @@ export function layoutGuidelines(): LayoutGuidelines {
  */
 export function analyzeLayout(doc: TopologyDocument): Problem[] {
   const problems: Problem[] = [];
-  doc.pages.forEach((page, pi) =>
-    analyzePage(page, `page[${pi}] "${page.name}"`, problems),
-  );
+  doc.pages.forEach((page, pi) => {
+    const at = `page[${pi}] "${page.name}"`;
+    analyzePage(page, at, problems);
+    analyzePortTables(doc, page, at, problems);
+  });
   return problems;
+}
+
+/** Port tables (W5): a table must stay on the page and off the diagram. */
+function analyzePortTables(
+  doc: TopologyDocument,
+  page: Page,
+  at: string,
+  out: Problem[],
+): void {
+  const tables = portTables(doc, page);
+  if (!tables.length) return;
+  const [vx, vy, vw, vh] = parseViewBox(page.viewBox);
+  const warn = (message: string): void => {
+    out.push({ level: 'warning', message, where: at });
+  };
+  for (const t of tables) {
+    const r = t.rect;
+    if (r.x < vx || r.x + r.w > vx + vw || r.y < vy || r.y + r.h > vy + vh)
+      warn(
+        `port table of "${t.nodeId}" (${Math.round(r.w)}×${Math.round(r.h)}px) runs past the page edge — widen the page (set_sheet) or move the table to the other margin`,
+      );
+    for (const n of page.nodes)
+      if (rectGap(r, nodeFootprint(n)) < 0)
+        warn(
+          `port table of "${t.nodeId}" overlaps node "${n.id}" — leave a ${Math.round(r.w)}px margin on its ${t.side === 'w' ? 'left' : 'right'} (layout_topology "tiered" reserves it)`,
+        );
+  }
 }
 
 function analyzePage(page: Page, at: string, out: Problem[]): void {

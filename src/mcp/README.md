@@ -269,6 +269,7 @@ to the task's affected region and change summaries, not total document size.
 | `define_tier`                                          | Declare a wiring-sheet tier (role row, top → bottom); nodes opt in with `tier`, `layout_topology` "tiered" rows them                   |
 | `define_link_style`                                    | Declare a wire class (colour / width / dash) links name via `style`; `preset: "ethernet-media"` loads the 11 Ethernet media classes    |
 | `define_node_type`                                     | Add a custom node type (merged over defaults)                                                                                          |
+| `set_port_table`                                       | Draw a derived port table (Port / LAG / PHY / Peer\|Port) in the page margin beside nodes, built from their links                      |
 | `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                                                       |
 | `set_legend`                                           | Toggle + position the auto-generated symbol legend / key; `columns` / `title` lay it out as a drawing-sheet Key strip                  |
 | `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                                                 |

@@ -58,6 +58,7 @@ describe('MCP tools', () => {
         'remove_element',
         'set_node_metadata',
         'set_page_properties',
+        'set_port_table',
         'tidy_topology',
         'update_element',
         'upsert_by_source',

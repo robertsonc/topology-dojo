@@ -1178,6 +1178,40 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         ),
     },
     {
+      name: 'set_port_table',
+      description:
+        'Draw (or remove) a DERIVED PORT TABLE beside one or more nodes — the cabling work order `Port | LAG | PHY | Peer|Port`, built live from the links touching each node (endpoint labels, fromBundle/toBundle, the link style’s Key label or bandwidth, the far node + port), sorted naturally. Tables sit in the page margin (`side` "w" / "e", default the nearer side), stacked so they never overlap, inside the sheet border and clear of the legend / title block. layout_topology "tiered" reserves the margin they need; validate_topology warns when one runs off the page.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        nodeIds: z.array(z.string()).min(1).max(200),
+        show: z.boolean().optional().describe('Default true; false removes.'),
+        side: z
+          .enum(['w', 'e'])
+          .optional()
+          .describe('Margin the table sits in (default: the nearer side).'),
+      },
+      handler: (a) => {
+        const page = store.page(
+          String(a.topologyId),
+          a.pageIndex as number | undefined,
+        );
+        const ids = a.nodeIds as string[];
+        const out: string[] = [];
+        for (const id of ids) {
+          const node = page.nodes.find((n) => n.id === id);
+          if (!node) throw new Error(`unknown node "${id}"`);
+          if (a.show === false) delete node.portTable;
+          else
+            node.portTable = {
+              ...(a.side !== undefined ? { side: a.side as 'w' | 'e' } : {}),
+            };
+          out.push(id);
+        }
+        return { nodeIds: out, show: a.show !== false };
+      },
+    },
+    {
       name: 'set_node_metadata',
       description:
         'Attach free-form key/value metadata to a node — serials, software versions, hostnames, site/cluster names, etc. (string/number/boolean values). By default replaces the node’s metadata; pass merge:true to merge into the existing map.',

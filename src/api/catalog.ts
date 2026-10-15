@@ -178,6 +178,24 @@ const POSITION: FieldSpec[] = [
 const LAYER_FIELD: FieldSpec = { key: 'layer', label: 'Layer', kind: 'ref' };
 /** Nodes may sit in a declared document tier (W2; declare with define_tier). */
 const TIER_FIELD: FieldSpec = { key: 'tier', label: 'Tier', kind: 'ref' };
+/**
+ * Derived port table (W5): present = drawn in the page margin beside the
+ * node, built from the links that touch it (Port | LAG | PHY | Peer|Port).
+ */
+export const PORT_TABLE_FIELD: FieldSpec = {
+  key: 'portTable',
+  label: 'Port table',
+  kind: 'object',
+  fields: [
+    {
+      key: 'side',
+      label: 'Margin',
+      kind: 'enum',
+      options: ['', 'w', 'e'],
+      optionLabels: { '': 'Nearer side', w: 'Left margin', e: 'Right margin' },
+    },
+  ],
+};
 /** Every element kind (except anchors) can carry an external source identity. */
 const SOURCE_FIELD: FieldSpec = {
   key: 'source',
@@ -259,6 +277,7 @@ const NODE_COMMON: FieldSpec[] = [
   TOOLTIP_FIELD,
   LAYER_FIELD,
   TIER_FIELD,
+  PORT_TABLE_FIELD,
   SOURCE_FIELD,
 ];
 
@@ -470,6 +489,7 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           TOOLTIP_FIELD,
           LAYER_FIELD,
           TIER_FIELD,
+          PORT_TABLE_FIELD,
           SOURCE_FIELD,
         ]
       : [...POSITION, ...NODE_COMMON, ...(NODE_EXTRAS[type] ?? [])];
