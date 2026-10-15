@@ -29,6 +29,7 @@ import {
 import { nonAdjacentTierLinks, tierRank } from './tiers.js';
 import { BUNDLE_KINDS } from './bundles.js';
 import { PORT_LABEL_MODES } from '../render/port-pills.js';
+import { registerHitBoxes } from '../render/hit-boxes.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -38,6 +39,7 @@ export interface Problem {
 }
 
 export function validateDocument(doc: TopologyDocument): Problem[] {
+  registerHitBoxes(doc.customNodes);
   const problems: Problem[] = [];
   const err = (where: string, message: string): void => {
     problems.push({ level: 'error', message, where });

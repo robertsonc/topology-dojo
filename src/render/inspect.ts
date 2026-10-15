@@ -53,6 +53,7 @@ import { nodeLabelRect } from './label-placement.js';
 import { NODE_LABEL, nodeLabelLines } from './node-labels.js';
 import { zoneBox } from './zone-box.js';
 import { portPills } from './port-pills.js';
+import { registerHitBoxes } from './hit-boxes.js';
 import type { Page } from '../pages/model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type {
@@ -141,6 +142,7 @@ export function inspectPage(
   page: Page,
   opts: InspectOptions = {},
 ): InspectReport {
+  registerHitBoxes(opts.customNodes);
   const cap = Math.max(1, opts.maxPerCategory ?? DEFAULT_MAX_PER_CATEGORY);
   const all: InspectFinding[] = [];
   const add = (

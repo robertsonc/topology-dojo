@@ -17,7 +17,8 @@ import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
-import { stripPillLabels } from './port-pills.js';
+import { pageHasPills, pillBands, stripPillLabels } from './port-pills.js';
+import { registerHitBoxes } from './hit-boxes.js';
 import {
   applyPalette,
   flattenViewer,
@@ -116,6 +117,7 @@ function renderPageUnthemed(
   // Stock cloud types ship with the app; the document's own custom types layer
   // on top (and override by name if a user redefines one).
   registerCustomTypes(E, [...STOCK_NODE_SPECS, ...customNodes]);
+  registerHitBoxes(customNodes);
 
   const topo = new E({ viewBox: page.viewBox });
   if (opts.calm) topo.reducedMotion = true;
@@ -161,9 +163,13 @@ function renderPageUnthemed(
   };
 
   for (const a of page.anchors) topo.anchor(a.id, { x: a.x, y: a.y });
+  // Port pills (W4) are overlay art the engine never sees; hand it each
+  // node's pill band so zone boxes grow around the pills.
+  const bands = pageHasPills(page) ? pillBands(page, customNodes) : null;
   for (const n of nodes) {
     const { id, ...cfg } = n;
-    topo.node(id, fadedEmph(id, cfg));
+    const band = bands?.get(id);
+    topo.node(id, fadedEmph(id, band ? { ...cfg, pillBand: band } : cfg));
   }
   // Port pills (W4): ends in pill mode are drawn by the overlay, so the
   // engine must not draw its own chip for them.

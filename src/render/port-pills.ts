@@ -127,7 +127,7 @@ export function pillRect(
 /** Every port pill on a page (ends in pill mode with a label), in link order. */
 export function portPills(
   page: Page,
-  customNodes: CustomNodeSpec[] = [],
+  customNodes?: CustomNodeSpec[],
 ): PortPill[] {
   if (!pageHasPills(page)) return [];
   const hitBoxes = engineHitBoxes(customNodes);
@@ -169,7 +169,46 @@ export function portPills(
   return out;
 }
 
-/** The outline around each (node, bundle) group of pills. */
+/** Per-side pill band depth (px past the engine's hit box) per node. */
+export interface PillBand {
+  n: number;
+  s: number;
+  e: number;
+  w: number;
+}
+
+/**
+ * How far the pills (and bundle outlines) reach past each node's hit AABB
+ * on each side — what the engine's `_zoneBox` grows a member by (passed as
+ * the node's transient `pillBand`) and what the TypeScript zone-box mirror
+ * adds, so a tier band's caption clears the pills.
+ */
+export function pillBands(
+  page: Page,
+  customNodes?: CustomNodeSpec[],
+): Map<string, PillBand> {
+  const out = new Map<string, PillBand>();
+  const hitBoxes = engineHitBoxes(customNodes);
+  const nodes = new Map(page.nodes.map((n) => [n.id, n]));
+  for (const p of portPills(page, customNodes)) {
+    const n = nodes.get(p.nodeId);
+    if (!n) continue;
+    const ab = engineAABB(n, hitBoxes);
+    const band = out.get(p.nodeId) ?? { n: 0, s: 0, e: 0, w: 0 };
+    const i = PORT_PILL.bundleInset;
+    const r = p.rect;
+    band.n = Math.max(band.n, ab.y - r.y + i);
+    band.s = Math.max(band.s, r.y + r.h - (ab.y + ab.h) + i);
+    band.w = Math.max(band.w, ab.x - r.x + i);
+    band.e = Math.max(band.e, r.x + r.w - (ab.x + ab.w) + i);
+    out.set(p.nodeId, band);
+  }
+  for (const b of out.values())
+    for (const k of ['n', 's', 'e', 'w'] as const) b[k] = Math.max(0, b[k]);
+  return out;
+}
+
+/** The outline around each (node, bundle) group of two or more pills. */
 export function bundleOutlines(
   pills: readonly PortPill[],
   bundles: TopologyDocument['bundles'],
@@ -182,6 +221,9 @@ export function bundleOutlines(
   }
   const out: BundleOutline[] = [];
   for (const [, members] of groups) {
+    // A single-member group (one leg of an ESI-LAG on this switch) carries
+    // its LAG in the port table; a ring around one pill is only noise.
+    if (members.length < 2) continue;
     const first = members[0]!;
     const kind = bundleKind(bundles, first.bundle!);
     if (kind === 'icl') continue;

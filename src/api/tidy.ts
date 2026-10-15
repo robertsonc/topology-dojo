@@ -20,6 +20,7 @@ import {
   LAYOUT_RULES,
 } from './layout.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
+import { registerHitBoxes } from '../render/hit-boxes.js';
 
 export interface TidyOptions {
   /** Snap node coordinates onto the grid first (default true). */
@@ -304,6 +305,7 @@ export function balanceLayout(
   opts: BalanceOptions = {},
 ): TopologyDocument {
   const next = structuredClone(doc);
+  registerHitBoxes(next.customNodes);
   for (const page of next.pages) {
     tidyPage(page);
     balancePage(page, opts);
@@ -316,6 +318,7 @@ export function tidyDocument(
   doc: TopologyDocument,
   opts: TidyOptions = {},
 ): TidyResult {
+  registerHitBoxes(doc.customNodes);
   const before = analyzeLayout(doc).length;
   let movedNodes = 0;
   for (const page of doc.pages) movedNodes += tidyPage(page, opts);
@@ -343,6 +346,7 @@ export function balanceDocument(
   doc: TopologyDocument,
   opts: BalanceOptions = {},
 ): TidyResult {
+  registerHitBoxes(doc.customNodes);
   const before = analyzeLayout(doc).length;
   let movedNodes = 0;
   for (const page of doc.pages) {

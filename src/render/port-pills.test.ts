@@ -174,7 +174,7 @@ describe('bundles (W3)', () => {
     const outlines = bundleOutlines(pills, doc.bundles);
     expect(
       outlines.map((o) => `${o.nodeId}:${o.bundle}:${o.kind}`).sort(),
-    ).toEqual(['gw:ae0:lag', 'sw1:ae0:lag', 'sw2:ae0:lag']);
+    ).toEqual(['gw:ae0:lag']); // single-member groups draw no ring
     const gw = outlines.find((o) => o.nodeId === 'gw')!;
     const members = pills.filter((p) => p.nodeId === 'gw');
     for (const m of members) {

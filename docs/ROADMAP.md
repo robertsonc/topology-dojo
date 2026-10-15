@@ -27,7 +27,7 @@ migration through `v5` is applied and active. Concretely, today a user can:
 - Connect an AI agent through the same catalog-driven API the GUI uses. Local
   stdio is process-local and has no hosted account, OAuth, or Durable Object;
   remote `/mcp` uses OAuth 2.1 with GitHub and owner-isolated Durable Object
-  storage. There are 55 possible tool registrations; actual discovery varies
+  storage. There are 60 possible tool registrations; actual discovery varies
   by runtime, flags, and provider.
 - **Collaborate with that agent in a shared workspace**: the agent proposes
   changes as one attributed revision (review/accept/reject, including a
@@ -164,12 +164,12 @@ sourcedOnly:true` list what an importer owns; there's no surface yet for
 - **More node/link art** — port additional renderers from the legacy
   monolith as needed; richer per-type inspector controls (ports, D2 waypoint
   UI).
-- **Wiring-diagram conventions** — tiers, edge-mounted port pills, LAG/ECMP
-  bundles, a media/speed link key, derived per-device port tables, and a
-  sheet frame with title block, so a document can render as a print-grade
-  physical wiring sheet. Captured as
-  [proposal 0008](proposals/0008-wiring-diagram-conventions.md) (packets
-  W1–W8); builds on the experimental link anchor box (PR #274).
+- **Harness (bundled) cable routing** — the last packet of
+  [proposal 0008](proposals/0008-wiring-diagram-conventions.md) (W8, second
+  half): links sharing a side, class and target tier routed along a shared
+  trunk with fan-in at each end, behind a page-level opt-in. The rest of the
+  proposal (W1–W7 and rounded orthogonal corners) shipped; see the user
+  guide's "Wiring sheets" section.
 - **In-canvas `labelScale` drag handle** — the numeric inspector control
   ships today (validated `[0.25, 4]`); a drag gesture beside the existing
   `labelOffset` label-drag is the next increment.
@@ -526,6 +526,27 @@ an SD-WAN/SASE path, a three-tier app with a DMZ) as looping animated WebP
 stills, served ungated (image sub-resources aren't document navigations, so
 they're never behind the sign-in gate) and self-contained (no dependency on
 any ephemeral `/v/:id` share snapshot, so the landing page never rots).
+
+### Wiring-sheet conventions (proposal 0008, 2026-10-15)
+
+- **Link styles** (`doc.linkStyles`, link `style`, the `ethernet-media`
+  starter set) with legend line rows, columns and a Key title.
+- **Tiers** (`doc.tiers`, node `tier`) and the `tiered` layout: zone-group
+  units, barycentre ordering, `-01`/`-02` mirroring, tier-based port pinning,
+  port-table margin reservation, optional tier zones; zones gain
+  `labelPosition: 'bottom'`.
+- **Port pills** (`page.portLabels: 'pill'`, node override) drawn on the
+  node edge at the engine's attach point; a hit-box registry
+  (`src/render/hit-boxes.ts`) sizes stock / custom types the same way in
+  every headless mirror.
+- **Bundles** (`fromBundle` / `toBundle`, `doc.bundles`) with LAG / ECMP
+  rings and legend rows.
+- **Derived port tables** (`node.portTable`) in the page margins.
+- **Sheet frame** (`doc.sheet`: paper size, border, title, title block) and
+  PDF paper sizing; **chassis** stock shape; rounded orthogonal corners.
+- Fixture `fixtures/venue-distribution-leaf.json` built by
+  `scripts/build-wiring-sheet-fixture.ts`; acceptance in
+  `src/render/wiring-sheet.test.ts`.
 
 ### Competitive gap-closing batch (2026-08-17)
 

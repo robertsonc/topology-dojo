@@ -17,6 +17,7 @@ import { zoneBox } from '../render/zone-box.js';
 import type { Problem } from './validate.js';
 import { PORT_PILL, portPills } from '../render/port-pills.js';
 import { portTables } from '../render/port-table.js';
+import { registerHitBoxes } from '../render/hit-boxes.js';
 
 /** The padded box the engine draws around a zone's members (render/zone-box). */
 export { zoneBox };
@@ -71,6 +72,7 @@ export function layoutGuidelines(): LayoutGuidelines {
  * problems (all warnings — layout is advisory and never blocks rendering).
  */
 export function analyzeLayout(doc: TopologyDocument): Problem[] {
+  registerHitBoxes(doc.customNodes);
   const problems: Problem[] = [];
   doc.pages.forEach((page, pi) => {
     const at = `page[${pi}] "${page.name}"`;

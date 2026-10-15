@@ -1,0 +1,632 @@
+{
+  "title": "HPE Discover 2026 – Venue Distribution Leaf Details",
+  "pages": [
+    {
+      "id": "pmva3m0e10",
+      "name": "Venue Distribution Leaf",
+      "viewBox": "0 0 2112 1632",
+      "nodes": [
+        {
+          "id": "gw-wlan-01",
+          "type": "chassis",
+          "x": 484,
+          "y": 375,
+          "label": "GW-WLAN-01",
+          "sublabel": "(HPE Aruba 9114)",
+          "labelPlacement": "n",
+          "tier": "gw"
+        },
+        {
+          "id": "gw-wlan-02",
+          "type": "chassis",
+          "x": 730,
+          "y": 375,
+          "label": "GW-WLAN-02",
+          "sublabel": "(HPE Aruba 9114)",
+          "labelPlacement": "n",
+          "tier": "gw"
+        },
+        {
+          "id": "gw-ubt-01",
+          "type": "chassis",
+          "x": 982,
+          "y": 375,
+          "label": "GW-UBT-01",
+          "sublabel": "(HPE Aruba 9114)",
+          "labelPlacement": "n",
+          "tier": "gw"
+        },
+        {
+          "id": "gw-ubt-02",
+          "type": "chassis",
+          "x": 1228,
+          "y": 375,
+          "label": "GW-UBT-02",
+          "sublabel": "(HPE Aruba 9114)",
+          "labelPlacement": "n",
+          "tier": "gw"
+        },
+        {
+          "id": "me-wlan-01",
+          "type": "chassis",
+          "x": 1480,
+          "y": 375,
+          "label": "ME-WLAN-01",
+          "sublabel": "(HPE Juniper ME-MX-6)",
+          "labelPlacement": "n",
+          "tier": "gw"
+        },
+        {
+          "id": "me-wlan-02",
+          "type": "chassis",
+          "x": 1726,
+          "y": 375,
+          "label": "ME-WLAN-02",
+          "sublabel": "(HPE Juniper ME-MX-6)",
+          "labelPlacement": "n",
+          "tier": "gw"
+        },
+        {
+          "id": "sw-venue-01",
+          "type": "chassis48",
+          "x": 801,
+          "y": 795,
+          "label": "SW-VENUE-01",
+          "sublabel": "(HPE Juniper QFX5120-48Y)",
+          "labelPlacement": "n",
+          "tier": "dist",
+          "portTable": {
+            "side": "w"
+          }
+        },
+        {
+          "id": "sw-venue-02",
+          "type": "chassis48",
+          "x": 1312,
+          "y": 795,
+          "label": "SW-VENUE-02",
+          "sublabel": "(HPE Juniper QFX5120-48Y)",
+          "labelPlacement": "n",
+          "tier": "dist",
+          "portTable": {
+            "side": "e"
+          }
+        },
+        {
+          "id": "rt-core-01",
+          "type": "chassis48",
+          "x": 805,
+          "y": 1244,
+          "label": "RT-CORE-01",
+          "sublabel": "(HPE Juniper MX-304)",
+          "labelPlacement": "n",
+          "tier": "core",
+          "portTable": {
+            "side": "w"
+          }
+        },
+        {
+          "id": "rt-core-02",
+          "type": "chassis48",
+          "x": 1308,
+          "y": 1244,
+          "label": "RT-CORE-02",
+          "sublabel": "(HPE Juniper MX-304)",
+          "labelPlacement": "n",
+          "tier": "core",
+          "portTable": {
+            "side": "e"
+          }
+        }
+      ],
+      "links": [
+        {
+          "id": "l0",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "gw-wlan-01",
+          "fromLabel": "xe-0/0/8",
+          "toLabel": "0/0/4",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae8",
+          "toBundle": "lacp0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l1",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "gw-wlan-02",
+          "fromLabel": "xe-0/0/10",
+          "toLabel": "0/0/4",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae10",
+          "toBundle": "lacp0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l2",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "gw-ubt-01",
+          "fromLabel": "xe-0/0/12",
+          "toLabel": "0/0/4",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae12",
+          "toBundle": "lacp0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l3",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "gw-ubt-02",
+          "fromLabel": "xe-0/0/14",
+          "toLabel": "0/0/4",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae14",
+          "toBundle": "lacp0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l4",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "me-wlan-01",
+          "fromLabel": "xe-0/0/28",
+          "toLabel": "xe0",
+          "style": "25g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae28",
+          "toBundle": "ae0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l5",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "me-wlan-01",
+          "fromLabel": "xe-0/0/29",
+          "toLabel": "xe2",
+          "style": "25g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae29",
+          "toBundle": "ae1",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l6",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "me-wlan-02",
+          "fromLabel": "xe-0/0/30",
+          "toLabel": "xe0",
+          "style": "25g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae30",
+          "toBundle": "ae0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l7",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "me-wlan-02",
+          "fromLabel": "xe-0/0/31",
+          "toLabel": "xe2",
+          "style": "25g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae31",
+          "toBundle": "ae1",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l8",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "gw-wlan-01",
+          "fromLabel": "xe-0/0/8",
+          "toLabel": "0/0/5",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae8",
+          "toBundle": "lacp0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l9",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "gw-wlan-02",
+          "fromLabel": "xe-0/0/10",
+          "toLabel": "0/0/5",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae10",
+          "toBundle": "lacp0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l10",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "gw-ubt-01",
+          "fromLabel": "xe-0/0/12",
+          "toLabel": "0/0/5",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae12",
+          "toBundle": "lacp0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l11",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "gw-ubt-02",
+          "fromLabel": "xe-0/0/14",
+          "toLabel": "0/0/5",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae14",
+          "toBundle": "lacp0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l12",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "me-wlan-01",
+          "fromLabel": "xe-0/0/28",
+          "toLabel": "xe1",
+          "style": "25g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae28",
+          "toBundle": "ae0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l13",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "me-wlan-01",
+          "fromLabel": "xe-0/0/29",
+          "toLabel": "xe3",
+          "style": "25g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae29",
+          "toBundle": "ae1",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l14",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "me-wlan-02",
+          "fromLabel": "xe-0/0/30",
+          "toLabel": "xe1",
+          "style": "25g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae30",
+          "toBundle": "ae0",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l15",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "me-wlan-02",
+          "fromLabel": "xe-0/0/31",
+          "toLabel": "xe3",
+          "style": "25g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "ae31",
+          "toBundle": "ae1",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l16",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "me-wlan-01",
+          "fromLabel": "xe-0/0/0",
+          "toLabel": "OOBM",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l17",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "me-wlan-02",
+          "fromLabel": "xe-0/0/0",
+          "toLabel": "OOBM",
+          "style": "10g-dac",
+          "lineStyle": "curved",
+          "fromPort": "n",
+          "toPort": "s"
+        },
+        {
+          "id": "l18",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "rt-core-01",
+          "fromLabel": "et-0/0/48",
+          "toLabel": "et-0/0/8",
+          "style": "100g-dac",
+          "lineStyle": "curved",
+          "fromPort": "s",
+          "toPort": "n"
+        },
+        {
+          "id": "l19",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "rt-core-02",
+          "fromLabel": "et-0/0/49",
+          "toLabel": "et-0/0/9",
+          "style": "100g-dac",
+          "lineStyle": "curved",
+          "fromPort": "s",
+          "toPort": "n"
+        },
+        {
+          "id": "l20",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "rt-core-02",
+          "fromLabel": "et-0/0/48",
+          "toLabel": "et-0/0/8",
+          "style": "100g-dac",
+          "lineStyle": "curved",
+          "fromPort": "s",
+          "toPort": "n"
+        },
+        {
+          "id": "l21",
+          "type": "line",
+          "from": "sw-venue-02",
+          "to": "rt-core-01",
+          "fromLabel": "et-0/0/49",
+          "toLabel": "et-0/0/9",
+          "style": "100g-dac",
+          "lineStyle": "curved",
+          "fromPort": "s",
+          "toPort": "n"
+        },
+        {
+          "id": "l22",
+          "type": "line",
+          "from": "sw-venue-01",
+          "to": "sw-venue-02",
+          "fromLabel": "et-0/0/55",
+          "toLabel": "et-0/0/55",
+          "style": "100g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "icl",
+          "toBundle": "icl",
+          "fromPort": "e",
+          "toPort": "w"
+        },
+        {
+          "id": "l23",
+          "type": "line",
+          "from": "rt-core-01",
+          "to": "rt-core-02",
+          "fromLabel": "et-0/0/0",
+          "toLabel": "et-0/0/0",
+          "style": "100g-dac",
+          "lineStyle": "curved",
+          "fromBundle": "icl",
+          "toBundle": "icl",
+          "fromPort": "e",
+          "toPort": "w"
+        }
+      ],
+      "anchors": [],
+      "zones": [
+        {
+          "id": "z-aos",
+          "nodes": ["gw-wlan-01", "gw-wlan-02"],
+          "label": "AOS-10 Mobility",
+          "labelAlign": "center",
+          "borderStyle": "dashed"
+        },
+        {
+          "id": "z-ubt",
+          "nodes": ["gw-ubt-01", "gw-ubt-02"],
+          "label": "AOS-10 User Based Tunneling",
+          "labelAlign": "center",
+          "borderStyle": "dashed"
+        },
+        {
+          "id": "z-mist",
+          "nodes": ["me-wlan-01", "me-wlan-02"],
+          "label": "Mist Mobility",
+          "labelAlign": "center",
+          "borderStyle": "dashed"
+        },
+        {
+          "id": "tier:dist",
+          "nodes": ["sw-venue-01", "sw-venue-02"],
+          "label": "Distribution",
+          "labelAlign": "center",
+          "labelPosition": "bottom",
+          "borderStyle": "dashed"
+        },
+        {
+          "id": "tier:core",
+          "nodes": ["rt-core-01", "rt-core-02"],
+          "label": "Core",
+          "labelAlign": "center",
+          "labelPosition": "bottom",
+          "borderStyle": "dashed"
+        }
+      ],
+      "flowPaths": [],
+      "policyMarkers": [],
+      "linkAttach": {
+        "pad": 4,
+        "distribute": true
+      },
+      "portLabels": "pill"
+    }
+  ],
+  "customNodes": [
+    {
+      "typeName": "chassis48",
+      "shape": "chassis",
+      "icon": null,
+      "colorStroke": "#7d8a92",
+      "colorFill": "#22252e",
+      "size": 60,
+      "strokeW": 1.2,
+      "radius": 3,
+      "glow": true,
+      "highlight": true,
+      "innerRing": false,
+      "pattern": false,
+      "patternType": "none",
+      "leds": true,
+      "ledCount": 2,
+      "ledColor": "#05cc93",
+      "ledPos": "left",
+      "badge": false,
+      "badgeText": "EDGE",
+      "badgeColor": "#7d8a92",
+      "antenna": false,
+      "ports": true,
+      "portCount": 48,
+      "portPos": "bottom"
+    }
+  ],
+  "legend": {
+    "show": true,
+    "position": "bl",
+    "columns": 4,
+    "title": "Key"
+  },
+  "linkStyles": [
+    {
+      "id": "10g-dac",
+      "color": "#1a9e5c",
+      "label": "10GBASE-DA (DAC)"
+    },
+    {
+      "id": "10g-sr",
+      "color": "#e8862a",
+      "label": "10GBASE-SR (MMF)"
+    },
+    {
+      "id": "10g-lr",
+      "color": "#2f9fd8",
+      "label": "10GBASE-LR (SMF)"
+    },
+    {
+      "id": "nbase-t",
+      "color": "#5b4b8a",
+      "label": "NBASE-T"
+    },
+    {
+      "id": "25g-dac",
+      "color": "#1f5fbf",
+      "label": "25GBASE-DA (DAC)"
+    },
+    {
+      "id": "40g-dac",
+      "color": "#e6c02a",
+      "label": "40GBASE-DA (DAC)"
+    },
+    {
+      "id": "40g-lr",
+      "color": "#b89a00",
+      "label": "40GBASE-LR (SMF)"
+    },
+    {
+      "id": "50g-dac",
+      "color": "#5c3d99",
+      "label": "50GBASE-DA (DAC)"
+    },
+    {
+      "id": "50g-lr",
+      "color": "#8f7ab8",
+      "label": "50GBASE-LR (SMF)"
+    },
+    {
+      "id": "100g-dac",
+      "color": "#e01b24",
+      "label": "100GBASE-DA (DAC)"
+    },
+    {
+      "id": "100g-lr",
+      "color": "#8c1a1a",
+      "label": "100GBASE-LR (SMF)"
+    }
+  ],
+  "sheet": {
+    "size": "ansi-c",
+    "titleBlock": {
+      "subtitle": "Venue Distribution Leaf Details",
+      "fields": [
+        {
+          "label": "Drawn by",
+          "value": "Topology Dojo"
+        },
+        {
+          "label": "Revision",
+          "value": "1"
+        },
+        {
+          "label": "Date",
+          "value": "2026-10-15"
+        },
+        {
+          "label": "Size",
+          "value": "ANSI C"
+        }
+      ]
+    }
+  },
+  "tiers": [
+    {
+      "id": "gw",
+      "name": "Gateways"
+    },
+    {
+      "id": "dist",
+      "name": "Distribution"
+    },
+    {
+      "id": "core",
+      "name": "Core"
+    }
+  ],
+  "bundles": [
+    {
+      "id": "icl",
+      "kind": "icl"
+    }
+  ]
+}

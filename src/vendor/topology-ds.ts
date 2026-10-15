@@ -294,7 +294,11 @@ export type { PolicyMarkerType } from '../api/markers.js';
 import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
-import { stripPillLabels } from '../render/port-pills.js';
+import {
+  pageHasPills,
+  pillBands,
+  stripPillLabels,
+} from '../render/port-pills.js';
 import type { Page } from '../pages/model.js';
 import type { SourceRef } from '../api/source.js';
 import {
@@ -640,9 +644,13 @@ export function renderPageSVG(
   };
 
   for (const a of page.anchors ?? []) topo.anchor(a.id, { x: a.x, y: a.y });
+  // Port pills (W4) are overlay art the engine never sees; hand it each
+  // node's pill band so zone boxes grow around the pills.
+  const bands = pageHasPills(page as Page) ? pillBands(page as Page) : null;
   for (const n of nodes) {
     const { id, ...cfg } = n;
-    topo.node(id, fadedEmph(id, cfg));
+    const band = bands?.get(id);
+    topo.node(id, fadedEmph(id, band ? { ...cfg, pillBand: band } : cfg));
   }
   // Port pills (W4): ends in pill mode are drawn by the overlay, so the
   // engine must not draw its own chip for them.

@@ -71,6 +71,55 @@ export function mirrorPairKey(
   return { prefix: m[1].toLowerCase(), side };
 }
 
+/**
+ * Pin each tiered link end to the face that looks at the other tier: the
+ * end on the upper tier leaves through its SOUTH face, the lower one through
+ * its NORTH face; two ends on the same tier use EAST / WEST by relative x.
+ * Only ends with no explicit port are set, so hand-pinned ports survive.
+ * Returns how many ends were pinned.
+ */
+export function pinPortsByTier(
+  tiers: readonly TierDef[] | undefined,
+  nodes: readonly NodeConfig[],
+  links: LinkConfig[],
+): number {
+  if (!tiers?.length) return 0;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  let pinned = 0;
+  for (const l of links) {
+    const a = byId.get(l.from);
+    const b = byId.get(l.to);
+    if (!a || !b) continue;
+    const ra = tierRank(tiers, a.tier);
+    const rb = tierRank(tiers, b.tier);
+    if (ra < 0 || rb < 0) continue;
+    let fromPort: 'n' | 's' | 'e' | 'w';
+    let toPort: 'n' | 's' | 'e' | 'w';
+    if (ra < rb) {
+      fromPort = 's';
+      toPort = 'n';
+    } else if (ra > rb) {
+      fromPort = 'n';
+      toPort = 's';
+    } else if (a.x <= b.x) {
+      fromPort = 'e';
+      toPort = 'w';
+    } else {
+      fromPort = 'w';
+      toPort = 'e';
+    }
+    if (!l.fromPort) {
+      l.fromPort = fromPort;
+      pinned++;
+    }
+    if (!l.toPort) {
+      l.toPort = toPort;
+      pinned++;
+    }
+  }
+  return pinned;
+}
+
 /** Links joining two tiered nodes whose tiers are not adjacent. */
 export function nonAdjacentTierLinks(
   tiers: readonly TierDef[] | undefined,

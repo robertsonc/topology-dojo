@@ -4415,9 +4415,14 @@ ${grid}`;
       grow({ x: pos.x - 40, y: pos.y - 30, w: 80, h: 60 });
       const cfg = this._nodes.get(nId);
       if (!cfg) continue;
-      grow(this._getNodeAABB(cfg));
+      const ab = this._getNodeAABB(cfg);
+      grow(ab);
       const lr = this._nodeLabelRect(cfg);
       if (lr) grow(lr);
+      // Port pills (overlay art, W4): the render path passes how far they
+      // reach past the hit box per side, so a band caption clears them.
+      const pb = cfg.pillBand;
+      if (pb) grow({ x: ab.x - (pb.w || 0), y: ab.y - (pb.n || 0), w: ab.w + (pb.w || 0) + (pb.e || 0), h: ab.h + (pb.n || 0) + (pb.s || 0) });
     }
     if (!isFinite(minX)) return null;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;

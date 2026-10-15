@@ -24,6 +24,16 @@ const BLOCK_W = 340;
 /** Logo cell width when a logo is set. */
 const LOGO_W = 90;
 
+/** Text-column width: the fixed minimum, grown for a long title / subtitle. */
+function blockTextW(
+  doc: TopologyDocument,
+  tb: NonNullable<TopologyDocument['sheet']>['titleBlock'],
+): number {
+  const titleW = doc.title.length * 7.4 + PAD * 2;
+  const subW = (tb?.subtitle?.length ?? 0) * 6.6 + PAD * 2;
+  return Math.ceil(Math.max(BLOCK_W, titleW, subW));
+}
+
 /** The title block's box (for other overlays to avoid), or null when off. */
 export function titleBlockBox(
   doc: TopologyDocument,
@@ -39,7 +49,7 @@ export function titleBlockBox(
   ];
   const fields = (tb.fields ?? []).slice(0, SHEET_MAX_FIELDS);
   const rows = 1 + (tb.subtitle ? 1 : 0) + Math.ceil(fields.length / 2);
-  const w = BLOCK_W + (tb.logoHref ? LOGO_W : 0);
+  const w = blockTextW(doc, tb) + (tb.logoHref ? LOGO_W : 0);
   const h = PAD * 2 + rows * ROW_H;
   const m = SHEET_MARGIN;
   return { x: vx + vw - m - w, y: vy + vh - m - h, w, h };
@@ -69,7 +79,7 @@ export function sheetSVG(doc: TopologyDocument, page: Page): string {
   const tb = sheet.titleBlock;
   if (box && tb) {
     const fields: SheetField[] = (tb.fields ?? []).slice(0, SHEET_MAX_FIELDS);
-    const textW = BLOCK_W;
+    const textW = blockTextW(doc, tb);
     s +=
       `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="6" ` +
       `fill="rgba(20,24,32,0.86)" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>`;

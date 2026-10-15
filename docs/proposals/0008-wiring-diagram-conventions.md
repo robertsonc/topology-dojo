@@ -1,8 +1,15 @@
 # Proposal 0008 — Wiring-diagram conventions: tiers, port pills, bundles, link key, port tables, sheet frame
 
-**Status:** Draft — for review. Everything proposed is additive document
-vocabulary plus renderer/layout work; no Durable Object migration, no flag
-unless a packet says otherwise.
+**Status:** Implemented (W1–W7 and the rounded-orthogonal half of W8,
+2026-10-15). Harness routing (the second half of W8) remains deferred and is
+tracked on the roadmap. Everything shipped is additive document vocabulary
+plus renderer/layout work; no Durable Object migration, no flag. Two
+decisions diverged from the draft below: port pills, bundle rings, port
+tables and the sheet frame are drawn as TypeScript document overlays
+(`src/render/overlays.ts`) rather than inside the engine — the engine only
+receives each node's pill band so zone boxes grow around the pills — and a
+bundle ring is drawn only around two or more pills (a single ESI-LAG leg is
+carried by the port table instead).
 
 **Captured:** 2026-10-15
 

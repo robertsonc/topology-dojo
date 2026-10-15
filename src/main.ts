@@ -54,6 +54,7 @@ import { documentToDrawioXML } from './editor/drawio.js';
 import { userToClient } from './editor/coords.js';
 import { nodeBounds } from './api/geometry.js';
 import { documentOverlaySVG } from './render/overlays.js';
+import { registerHitBoxes } from './render/hit-boxes.js';
 import {
   SHEET_SIZE_IDS,
   SHEET_SIZE_LABELS,
@@ -104,6 +105,7 @@ const doc: TopologyDocument = loadLocal() ?? sampleDocument();
 // with the engine before any render.
 registerCustomNodes(STOCK_NODE_SPECS);
 registerCustomNodes(doc.customNodes);
+registerHitBoxes(doc.customNodes);
 let current = 0;
 
 const app = document.getElementById('app')!;
@@ -815,6 +817,7 @@ function loadDoc(
     else (doc[key] as unknown) = structuredClone(next[key]);
   }
   registerCustomNodes(doc.customNodes);
+  registerHitBoxes(doc.customNodes);
   invalidatePreview(); // custom types replaced — clear cached previews
   finalizeFrameDelete(); // a pending frame restore can't outlive its document
   current = 0;
