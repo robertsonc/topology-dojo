@@ -10,6 +10,7 @@
 import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import { POLICY_MARKER_TYPES } from './markers.js';
 import { LAYER_KINDS } from './layers.js';
+import { LINK_STYLE_DASHES, LINK_STYLE_WIDTH_RANGE } from './link-styles.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import {
   STOCK_NODE_LABELS,
@@ -483,6 +484,9 @@ const PORT_LABELS: Readonly<Record<string, string>> = {
 
 const LINK_COMMON: FieldSpec[] = [
   { key: 'color', label: 'Color', kind: 'color' },
+  // W1 wire class: the id of a document link style (declare with
+  // define_link_style). An explicit color / strokeWidth / dashed wins over it.
+  { key: 'style', label: 'Wire class (style)', kind: 'ref' },
   { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
   {
     key: 'fromLabel',
@@ -885,4 +889,33 @@ export function getAnnotationType(
   kind: AnnotationKind,
 ): AnnotationTypeInfo | undefined {
   return ANNOTATION_CATALOG[kind];
+}
+
+/** The link-style vocabulary (W1): a LinkStyleDef's fields + starter presets. */
+export interface LinkStyleCatalogInfo {
+  fields: FieldSpec[];
+  presets: readonly string[];
+}
+
+export function linkStyleCatalog(): LinkStyleCatalogInfo {
+  return {
+    fields: [
+      { key: 'id', label: 'Id', kind: 'string', required: true, max: 64 },
+      {
+        key: 'label',
+        label: 'Key label',
+        kind: 'string',
+        max: TEXT_LIMITS.name,
+      },
+      { key: 'color', label: 'Color', kind: 'color', required: true },
+      {
+        key: 'width',
+        label: 'Stroke width',
+        kind: 'number',
+        range: LINK_STYLE_WIDTH_RANGE,
+      },
+      { key: 'dash', label: 'Dash', kind: 'enum', options: LINK_STYLE_DASHES },
+    ],
+    presets: ['ethernet-media'],
+  };
 }

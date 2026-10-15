@@ -20,6 +20,7 @@ import type {
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type { LayerDef } from '../api/layers.js';
+import type { LinkStyleDef } from '../api/link-styles.js';
 import { createDocument } from '../api/builder.js';
 
 export interface Page extends RenderablePage {
@@ -81,6 +82,12 @@ export interface TopologyDocument {
    */
   stencils?: Stencil[];
   /**
+   * Declared wire classes (proposal 0008, W1): each link may name one by
+   * `style`; the legend keys the ones in use. Optional — absent means links
+   * carry their own colours as before.
+   */
+  linkStyles?: LinkStyleDef[];
+  /**
    * Brand palette (#7) — remaps the engine's accent colours on the canvas and
    * drives the chrome accent, so each document can carry its own branding.
    * Optional and backward-compatible (absent → the default green palette).
@@ -107,6 +114,13 @@ export interface LegendConfig {
   show?: boolean;
   /** Which corner of the page it sits in. Default 'tl'. */
   position?: 'tl' | 'tr' | 'bl' | 'br';
+  /**
+   * Lay the rows out across this many columns (row-major, like a drawing
+   * sheet's Key strip). Default 1 (a single column). Clamped to [1, 8].
+   */
+  columns?: number;
+  /** Optional header strip text (e.g. "Key"). */
+  title?: string;
 }
 
 let _seq = 0;

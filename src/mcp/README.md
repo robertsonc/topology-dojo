@@ -265,9 +265,10 @@ to the task's affected region and change summaries, not total document size.
 | `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                                                            |
 | `upsert_by_source`                                     | Converge an element onto external data by source identity                                                                              |
 | `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                                             |
+| `define_link_style`                                    | Declare a wire class (colour / width / dash) links name via `style`; `preset: "ethernet-media"` loads the 11 Ethernet media classes    |
 | `define_node_type`                                     | Add a custom node type (merged over defaults)                                                                                          |
 | `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                                                       |
-| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key                                                                               |
+| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key; `columns` / `title` lay it out as a drawing-sheet Key strip                  |
 | `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                                                 |
 | `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                                                          |
 | `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)                                                                          |

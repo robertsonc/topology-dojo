@@ -19,6 +19,7 @@ import {
   LINK_ATTACH_FIELD,
 } from './catalog.js';
 import { effectiveLinkAttach } from '../render/link-attach.js';
+import { LINK_STYLE_DASHES, LINK_STYLE_WIDTH_RANGE } from './link-styles.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -62,6 +63,47 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     )
       warn(at, `kind "${String(l.kind)}" not in [${LAYER_KINDS.join(', ')}]`);
   });
+  // Link styles (W1): unique ids, a colour, a sane width and dash.
+  const styleIds = new Set<string>();
+  (doc.linkStyles ?? []).forEach((s, i) => {
+    const at = `linkStyles[${i}]`;
+    if (!s.id) err(at, 'link style has no id');
+    else if (styleIds.has(s.id)) err(at, `duplicate link style id "${s.id}"`);
+    styleIds.add(s.id);
+    if (typeof s.color !== 'string' || !s.color)
+      err(at, 'link style needs a color');
+    if (
+      s.width !== undefined &&
+      (typeof s.width !== 'number' ||
+        !(
+          s.width >= LINK_STYLE_WIDTH_RANGE[0] &&
+          s.width <= LINK_STYLE_WIDTH_RANGE[1]
+        ))
+    )
+      warn(
+        at,
+        `width ${String(s.width)} should be between ${LINK_STYLE_WIDTH_RANGE[0]} and ${LINK_STYLE_WIDTH_RANGE[1]}`,
+      );
+    if (
+      s.dash !== undefined &&
+      !(LINK_STYLE_DASHES as readonly string[]).includes(s.dash)
+    )
+      warn(
+        at,
+        `dash "${String(s.dash)}" not in [${LINK_STYLE_DASHES.join(', ')}]`,
+      );
+  });
+  // A link's `style` must name a declared style (warning: it renders with
+  // the type default colour otherwise).
+  const checkStyle = (cfg: { style?: unknown }, where: string): void => {
+    const st = cfg.style;
+    if (st === undefined || st === '') return;
+    if (typeof st !== 'string' || !styleIds.has(st))
+      warn(
+        where,
+        `style "${String(st)}" is not declared in document linkStyles (declare it with define_link_style)`,
+      );
+  };
   // An element's `layer` must reference a declared layer (warning: it still
   // renders, on the base layer).
   const checkLayer = (cfg: { layer?: unknown }, where: string): void => {
@@ -324,6 +366,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `labelScale ${String(scale)} should be between 0.25 and 4`,
         );
       checkLayer(l, `${at} link "${l.id}"`);
+      checkStyle(l, `${at} link "${l.id}"`);
       checkSource(l, `${at} link "${l.id}"`);
       checkHrefTip(l as Record<string, unknown>, `${at} link "${l.id}"`);
       checkCornerPortUnderDistribute(l, `${at} link "${l.id}"`);

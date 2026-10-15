@@ -16,6 +16,7 @@ import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
+import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
 import {
   applyPalette,
   flattenViewer,
@@ -62,6 +63,11 @@ export interface RenderOptions {
   visibleLayers?: string[];
   /** Per-frame emphasis (2.2): node/link ids to spotlight; others dim to 25%. */
   emphasis?: string[];
+  /**
+   * Declared link styles (`doc.linkStyles`) — resolves each link's `style`
+   * into colour / width / dash. The document render path fills this in.
+   */
+  linkStyles?: LinkStyleDef[];
   /**
    * Render theme (#264). Default `'dark'` — the engine's native, byte-identical
    * output. `'light'` renders a light backdrop/grid and remaps every
@@ -159,7 +165,7 @@ function renderPageUnthemed(
     topo.node(id, fadedEmph(id, cfg));
   }
   for (const l of links) {
-    const { id, ...cfg } = l;
+    const { id, ...cfg } = resolveLinkStyle(l, opts.linkStyles);
     topo.link(id, fadedEmph(id, cfg));
   }
   for (const z of zones) {
@@ -238,6 +244,7 @@ export function renderDocumentWithEngine(
     ...opts,
     layers: opts.layers ?? doc.layers ?? [],
     emphasis: opts.emphasis ?? page.emphasis,
+    linkStyles: opts.linkStyles ?? doc.linkStyles,
   });
   // Document-level overlays the per-page engine render doesn't know about:
   // the auto-legend (drawn into the page), then the brand palette remap over

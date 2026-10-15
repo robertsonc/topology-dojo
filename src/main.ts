@@ -402,8 +402,12 @@ editor.setOverlayExtra(() =>
 
 // Feed declared layers (with their visibility/opacity, B.3) into every render so
 // hiding/fading a layer takes effect on canvas. Exports pass the same `layers`.
-const renderLayerOpts = (): { layers: typeof doc.layers } => ({
+const renderLayerOpts = (): {
+  layers: typeof doc.layers;
+  linkStyles: typeof doc.linkStyles;
+} => ({
   layers: doc.layers,
+  linkStyles: doc.linkStyles,
 });
 editor.setRenderOpts(renderLayerOpts);
 
@@ -790,7 +794,13 @@ function loadDoc(
   doc.title = next.title;
   doc.pages = structuredClone(next.pages);
   doc.customNodes = structuredClone(next.customNodes);
-  for (const key of ['layers', 'legend', 'stencils', 'palette'] as const) {
+  for (const key of [
+    'layers',
+    'legend',
+    'stencils',
+    'palette',
+    'linkStyles',
+  ] as const) {
     if (next[key] === undefined) delete doc[key];
     else (doc[key] as unknown) = structuredClone(next[key]);
   }
@@ -1002,6 +1012,7 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
       {
         calm: editor.calm,
         layers: doc.layers,
+        linkStyles: doc.linkStyles,
         emphasis: page.emphasis,
         theme: currentTheme(),
       },
@@ -1021,6 +1032,7 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
   reportExport('pending', '… exporting png', filename);
   void exportPagePNG(filename, page, 2, exportExtra(page), {
     layers: doc.layers,
+    linkStyles: doc.linkStyles,
     emphasis: page.emphasis,
     theme: currentTheme(),
   })
@@ -1044,11 +1056,13 @@ function pageExtra(page: Page): string {
  * canvas exports light, a dark canvas exports dark. */
 function pageOpts(page: Page): {
   layers: typeof doc.layers;
+  linkStyles: typeof doc.linkStyles;
   emphasis?: string[];
   theme: RenderTheme;
 } {
   return {
     layers: doc.layers,
+    linkStyles: doc.linkStyles,
     ...(page.emphasis ? { emphasis: page.emphasis } : {}),
     theme: currentTheme(),
   };
@@ -1118,6 +1132,7 @@ async function runExport(kind: string): Promise<void> {
       exportPageSVG(`${exportBase()}_selection.svg`, sp, {
         calm: true,
         layers: doc.layers,
+        linkStyles: doc.linkStyles,
         theme: currentTheme(),
       });
       return;
@@ -1127,6 +1142,7 @@ async function runExport(kind: string): Promise<void> {
       if (!sp) throw new Error('select one or more nodes first');
       await exportPagePNG(`${exportBase()}_selection.png`, sp, 2, '', {
         layers: doc.layers,
+        linkStyles: doc.linkStyles,
         theme: currentTheme(),
       });
       return;
@@ -4738,7 +4754,10 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
         run: () => {
           const sp = selectionAsPage();
           if (!sp) return;
-          void copyPagePNG(sp, '', { layers: doc.layers }).catch((err) =>
+          void copyPagePNG(sp, '', {
+            layers: doc.layers,
+            linkStyles: doc.linkStyles,
+          }).catch((err) =>
             alert(
               `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
             ),

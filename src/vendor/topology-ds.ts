@@ -112,6 +112,12 @@ export interface LinkConfig {
   from: string;
   to: string;
   color?: string;
+  /**
+   * Id of a declared document link style (`doc.linkStyles`, proposal 0008):
+   * the wire class whose colour / width / dash this link draws with unless
+   * it sets its own. Resolved at render time; unknown ids are ignored.
+   */
+  style?: string;
   label?: string;
   /** Endpoint (interface/port) labels near the link's source and destination. */
   fromLabel?: string;
@@ -278,6 +284,7 @@ export interface FlowPathConfig {
 export type { PolicyMarkerType } from '../api/markers.js';
 import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
+import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
 import type { SourceRef } from '../api/source.js';
 import {
   applyRenderTheme,
@@ -488,6 +495,8 @@ export interface RenderOptions {
   visibleLayers?: string[];
   /** Per-frame emphasis (2.2): node/link ids to spotlight; others dim to 25%. */
   emphasis?: string[];
+  /** Declared link styles (`doc.linkStyles`) — resolves each link's `style`. */
+  linkStyles?: LinkStyleDef[];
 }
 
 /** Plugin shape accepted by the engine's static registerNodeType. */
@@ -623,7 +632,7 @@ export function renderPageSVG(
     topo.node(id, fadedEmph(id, cfg));
   }
   for (const l of links) {
-    const { id, ...cfg } = l;
+    const { id, ...cfg } = resolveLinkStyle(l, opts.linkStyles);
     topo.link(id, fadedEmph(id, cfg));
   }
   for (const z of zones) {

@@ -18,6 +18,7 @@ const DOCUMENT_FIELDS = [
   'legend',
   'stencils',
   'palette',
+  'linkStyles',
 ] as const;
 const PAGE_FIELDS = [
   'name',

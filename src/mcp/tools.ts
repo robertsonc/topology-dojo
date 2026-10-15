@@ -27,10 +27,17 @@ import {
   filterNodeCatalog,
   layerCatalog,
   linkCatalog,
+  linkStyleCatalog,
   nodeCatalog,
 } from '../api/catalog.js';
 import type { LinkAttachOptions } from '../vendor/topology-ds.js';
 import { LAYER_KINDS } from '../api/layers.js';
+import {
+  LINK_STYLE_DASHES,
+  LINK_STYLE_PRESETS,
+  LINK_STYLE_WIDTH_RANGE,
+  defineLinkStyle,
+} from '../api/link-styles.js';
 import {
   removeElement,
   updateElement,
@@ -470,6 +477,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             linkTypes: links,
             annotations: annotationCatalog(),
             layers: layerCatalog(),
+            linkStyles: linkStyleCatalog(),
           };
         }
         return {
@@ -486,6 +494,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           })),
           annotationKinds: annotationCatalog().map((x) => x.kind),
           layerKinds: layerCatalog().kinds,
+          linkStylePresets: linkStyleCatalog().presets,
           note: 'Index view. For editable fields, call again with detail:"full" or narrow with types:[…] / query:"…".',
         };
       },
@@ -817,18 +826,117 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .enum(['tl', 'tr', 'bl', 'br'])
           .optional()
           .describe('Corner: tl / tr / bl / br (default tl).'),
+        columns: z
+          .number()
+          .int()
+          .min(1)
+          .max(8)
+          .optional()
+          .describe(
+            'Lay the rows out across this many columns (row-major, like a sheet’s Key strip). Default 1.',
+          ),
+        title: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Header strip text (e.g. "Key"). Empty string clears it.'),
       },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
+        const prev = doc.legend ?? {};
+        const columns =
+          a.columns !== undefined ? Number(a.columns) : prev.columns;
+        const title =
+          a.title !== undefined ? String(a.title).trim() : prev.title;
         doc.legend = {
           show: Boolean(a.show),
           ...(a.position !== undefined
             ? { position: a.position as 'tl' | 'tr' | 'bl' | 'br' }
-            : doc.legend?.position
-              ? { position: doc.legend.position }
+            : prev.position
+              ? { position: prev.position }
               : {}),
+          ...(columns !== undefined && columns > 1 ? { columns } : {}),
+          ...(title ? { title } : {}),
         };
         return { legend: doc.legend };
+      },
+    },
+    {
+      name: 'define_link_style',
+      description:
+        'Declare (or update, by id) a document LINK STYLE — a wire class such as "100GBASE-DA (DAC)" with a colour (and optional stroke width / dash). Links opt in with `style: <id>` (add_link / edit_topology); an explicit link color wins over its style. The legend (set_legend) draws one line sample per style in use — the drawing sheet’s Key. Pass `preset: "ethernet-media"` to load the eleven Ethernet media classes (10G/25G/40G/50G/100G × DAC/SR/LR, NBASE-T) at once instead of inventing colours.',
+      inputShape: {
+        topologyId,
+        styleId: z
+          .string()
+          .max(64)
+          .optional()
+          .describe(
+            'Style id (re-use an id to update). Required unless preset is set.',
+          ),
+        label: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Key row text (falls back to the id).'),
+        color: z
+          .string()
+          .regex(HEX)
+          .optional()
+          .describe('#rgb / #rrggbb colour. Required unless preset is set.'),
+        width: z
+          .number()
+          .min(LINK_STYLE_WIDTH_RANGE[0])
+          .max(LINK_STYLE_WIDTH_RANGE[1])
+          .optional()
+          .describe('Stroke width in px (default: the link type’s own).'),
+        dash: z
+          .enum(LINK_STYLE_DASHES)
+          .optional()
+          .describe('solid (default) / dashed / dotted.'),
+        preset: z
+          .enum(['ethernet-media'])
+          .optional()
+          .describe('Load a named starter set of styles (all entries, by id).'),
+        remove: z
+          .boolean()
+          .optional()
+          .describe('Remove the style named by styleId instead.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        if (a.preset) {
+          for (const def of LINK_STYLE_PRESETS[String(a.preset)] ?? [])
+            defineLinkStyle(doc, def);
+          return { linkStyles: doc.linkStyles };
+        }
+        const id = a.styleId !== undefined ? String(a.styleId) : '';
+        if (!id) throw new Error('styleId is required (or pass preset)');
+        if (a.remove) {
+          doc.linkStyles = (doc.linkStyles ?? []).filter((s) => s.id !== id);
+          if (!doc.linkStyles.length) delete doc.linkStyles;
+          return { linkStyles: doc.linkStyles ?? [] };
+        }
+        const prev = doc.linkStyles?.find((s) => s.id === id);
+        const color =
+          a.color !== undefined ? String(a.color).toLowerCase() : prev?.color;
+        if (!color) throw new Error('color is required for a new style');
+        defineLinkStyle(doc, {
+          id,
+          color,
+          ...(a.label !== undefined
+            ? { label: String(a.label) }
+            : prev?.label !== undefined
+              ? { label: prev.label }
+              : {}),
+          ...(a.width !== undefined
+            ? { width: Number(a.width) }
+            : prev?.width !== undefined
+              ? { width: prev.width }
+              : {}),
+          ...(a.dash !== undefined
+            ? { dash: a.dash as (typeof LINK_STYLE_DASHES)[number] }
+            : prev?.dash !== undefined
+              ? { dash: prev.dash }
+              : {}),
+        });
+        return { linkStyles: doc.linkStyles };
       },
     },
     {
@@ -966,6 +1074,13 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         to: z.string(),
         label: displayString(TEXT_LIMITS.label).optional(),
         color: z.string().optional(),
+        style: z
+          .string()
+          .max(64)
+          .optional()
+          .describe(
+            'Wire class: the id of a document link style (define_link_style). An explicit color wins over it.',
+          ),
         labelScale: z
           .number()
           .optional()
@@ -1005,6 +1120,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             to: String(a.to),
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.style !== undefined ? { style: String(a.style) } : {}),
             ...(a.labelScale !== undefined
               ? { labelScale: Number(a.labelScale) }
               : {}),
