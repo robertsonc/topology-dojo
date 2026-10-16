@@ -10,6 +10,18 @@ import { newPageId } from './model.js';
 import { sanitizeDisplayFields } from '../api/text.js';
 import { clampLabelWidth } from '../render/wire-labels.js';
 import type { LinkAttachOptions } from '../vendor/topology-ds.js';
+import {
+  LINK_STYLE_DASHES,
+  LINK_STYLE_WIDTH_RANGE,
+  type LinkStyleDef,
+} from '../api/link-styles.js';
+import {
+  SHEET_MAX_FIELDS,
+  SHEET_SIZES,
+  type SheetConfig,
+} from '../api/sheet.js';
+import type { TierDef } from '../api/tiers.js';
+import { BUNDLE_KINDS, type BundleDef } from '../api/bundles.js';
 
 /** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
 function hexColor(v: unknown): string | undefined {
@@ -102,6 +114,83 @@ function sanitizeCustomNode(raw: unknown): CustomNodeSpec | null {
   };
 }
 
+/**
+ * Parse declared link styles (W1): keep entries with a markup-safe id and a
+ * safe colour; clamp width into the renderer's range; drop unknown dashes.
+ */
+function parseLinkStyles(raw: unknown): LinkStyleDef[] {
+  if (!Array.isArray(raw)) return [];
+  const out: LinkStyleDef[] = [];
+  const seen = new Set<string>();
+  for (const v of raw) {
+    if (typeof v !== 'object' || v === null) continue;
+    const r = v as Record<string, unknown>;
+    const id = safeType(r.id, '');
+    const color = safeColor(r.color);
+    if (!id || !color || seen.has(id)) continue;
+    seen.add(id);
+    const def: LinkStyleDef = { id, color };
+    if (typeof r.label === 'string' && r.label.trim()) def.label = r.label;
+    if (typeof r.width === 'number' && Number.isFinite(r.width))
+      def.width = Math.min(
+        LINK_STYLE_WIDTH_RANGE[1],
+        Math.max(LINK_STYLE_WIDTH_RANGE[0], r.width),
+      );
+    if (
+      typeof r.dash === 'string' &&
+      (LINK_STYLE_DASHES as readonly string[]).includes(r.dash) &&
+      r.dash !== 'solid'
+    )
+      def.dash = r.dash as LinkStyleDef['dash'];
+    out.push(def);
+  }
+  return out;
+}
+
+/** Parse the sheet frame (W6): recognised keys only, strings bounded. */
+function parseSheet(raw: unknown): SheetConfig | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+    return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: SheetConfig = {};
+  if (
+    typeof r.size === 'string' &&
+    (r.size === 'custom' || r.size in SHEET_SIZES)
+  )
+    out.size = r.size as SheetConfig['size'];
+  if (r.orientation === 'landscape' || r.orientation === 'portrait')
+    out.orientation = r.orientation;
+  if (r.border === false) out.border = false;
+  if (r.title === false) out.title = false;
+  if (typeof r.titleBlock === 'object' && r.titleBlock !== null) {
+    const t = r.titleBlock as Record<string, unknown>;
+    const tb: SheetConfig['titleBlock'] = {};
+    if (t.show === false) tb.show = false;
+    if (typeof t.subtitle === 'string' && t.subtitle.trim())
+      tb.subtitle = t.subtitle;
+    if (Array.isArray(t.fields)) {
+      const fields = (t.fields as unknown[])
+        .filter(
+          (f): f is { label: string; value: string } =>
+            typeof f === 'object' &&
+            f !== null &&
+            typeof (f as { label?: unknown }).label === 'string' &&
+            typeof (f as { value?: unknown }).value === 'string',
+        )
+        .map((f) => ({ label: f.label, value: f.value }))
+        .slice(0, SHEET_MAX_FIELDS);
+      if (fields.length) tb.fields = fields;
+    }
+    if (
+      typeof t.logoHref === 'string' &&
+      /^https:\/\//i.test(t.logoHref.trim())
+    )
+      tb.logoHref = t.logoHref.trim();
+    out.titleBlock = tb;
+  }
+  return out;
+}
+
 /** Parse a brand palette, keeping only valid hex colours; undefined if no accent. */
 function parsePalette(raw: unknown): BrandPalette | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
@@ -148,6 +237,10 @@ export function serializeDoc(doc: TopologyDocument): string {
       ...(doc.legend ? { legend: doc.legend } : {}),
       ...(doc.stencils?.length ? { stencils: doc.stencils } : {}),
       ...(doc.palette ? { palette: doc.palette } : {}),
+      ...(doc.linkStyles?.length ? { linkStyles: doc.linkStyles } : {}),
+      ...(doc.sheet ? { sheet: doc.sheet } : {}),
+      ...(doc.tiers?.length ? { tiers: doc.tiers } : {}),
+      ...(doc.bundles?.length ? { bundles: doc.bundles } : {}),
     },
     null,
     2,
@@ -192,6 +285,9 @@ export function parseDoc(input: unknown): TopologyDocument | null {
         : {}),
       ...(parseLinkAttach(p.linkAttach)
         ? { linkAttach: parseLinkAttach(p.linkAttach)! }
+        : {}),
+      ...(p.portLabels === 'pill' || p.portLabels === 'chip'
+        ? { portLabels: p.portLabels }
         : {}),
       ...(Array.isArray(p.emphasis)
         ? {
@@ -251,6 +347,14 @@ export function parseDoc(input: unknown): TopologyDocument | null {
           ...(['tl', 'tr', 'bl', 'br'].includes(String(rawLegend.position))
             ? { position: rawLegend.position as 'tl' | 'tr' | 'bl' | 'br' }
             : {}),
+          ...(typeof rawLegend.columns === 'number' &&
+          Number.isFinite(rawLegend.columns) &&
+          rawLegend.columns > 1
+            ? { columns: Math.min(8, Math.round(rawLegend.columns)) }
+            : {}),
+          ...(typeof rawLegend.title === 'string' && rawLegend.title.trim()
+            ? { title: rawLegend.title }
+            : {}),
         }
       : undefined;
   // Stencils (C.3): keep only well-formed entries — an id + name + a non-empty
@@ -287,6 +391,51 @@ export function parseDoc(input: unknown): TopologyDocument | null {
         })
     : [];
   const palette = parsePalette(d.palette);
+  const linkStyles = parseLinkStyles(d.linkStyles);
+  const sheet = parseSheet(d.sheet);
+  // Tiers (W2): well-formed entries only (a markup-safe id), unique.
+  const tierIds = new Set<string>();
+  const tiers: TierDef[] = Array.isArray(d.tiers)
+    ? (d.tiers as unknown[]).flatMap((t) => {
+        if (typeof t !== 'object' || t === null) return [];
+        const r = t as Record<string, unknown>;
+        const id = safeType(r.id, '');
+        if (!id || tierIds.has(id)) return [];
+        tierIds.add(id);
+        return [
+          {
+            id,
+            ...(typeof r.name === 'string' && r.name.trim()
+              ? { name: r.name }
+              : {}),
+          },
+        ];
+      })
+    : [];
+  // Bundles (W3): well-formed names only, a known kind, unique.
+  const bundleIds = new Set<string>();
+  const bundles: BundleDef[] = Array.isArray(d.bundles)
+    ? (d.bundles as unknown[]).flatMap((b) => {
+        if (typeof b !== 'object' || b === null) return [];
+        const r = b as Record<string, unknown>;
+        const id = safeType(r.id, '');
+        if (!id || bundleIds.has(id)) return [];
+        bundleIds.add(id);
+        return [
+          {
+            id,
+            ...(typeof r.kind === 'string' &&
+            (BUNDLE_KINDS as readonly string[]).includes(r.kind) &&
+            r.kind !== 'lag'
+              ? { kind: r.kind as BundleDef['kind'] }
+              : {}),
+            ...(typeof r.label === 'string' && r.label.trim()
+              ? { label: r.label }
+              : {}),
+          },
+        ];
+      })
+    : [];
   const doc: TopologyDocument = {
     title: typeof d.title === 'string' ? d.title : 'Untitled',
     pages,
@@ -295,6 +444,10 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     ...(legend && Object.keys(legend).length ? { legend } : {}),
     ...(stencils.length ? { stencils } : {}),
     ...(palette ? { palette } : {}),
+    ...(linkStyles.length ? { linkStyles } : {}),
+    ...(sheet ? { sheet } : {}),
+    ...(tiers.length ? { tiers } : {}),
+    ...(bundles.length ? { bundles } : {}),
   };
   // Bound and normalize free-text so overlong / control-character strings
   // cannot enter the document (import, share, workspace apply, autosave).

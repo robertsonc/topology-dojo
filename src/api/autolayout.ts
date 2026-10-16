@@ -13,8 +13,23 @@ import type { Page, TopologyDocument } from '../pages/model.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
 import { LAYOUT_RULES, nodeFootprint, parseViewBox } from './layout.js';
 import { carryAttachments, tidyPage } from './tidy.js';
+import {
+  mirrorPairKey,
+  pinPortsByTier,
+  tierRank,
+  tierZoneId,
+  type TierDef,
+} from './tiers.js';
+import { portTableReserve } from '../render/port-table.js';
+import { registerHitBoxes } from '../render/hit-boxes.js';
+import { pillBands, type PillBand } from '../render/port-pills.js';
 
-export type LayoutAlgorithm = 'grid' | 'hierarchical' | 'circular' | 'force';
+export type LayoutAlgorithm =
+  | 'grid'
+  | 'hierarchical'
+  | 'circular'
+  | 'force'
+  | 'tiered';
 
 export interface AutoLayoutOptions {
   algorithm: LayoutAlgorithm;
@@ -24,6 +39,29 @@ export interface AutoLayoutOptions {
   spacing?: number;
   /** Run the tidy finisher (de-overlap + keep-in-bounds) after (default true). */
   tidy?: boolean;
+  /**
+   * Tiered layout (W2): the declared tiers, top → bottom. `layoutDocument`
+   * fills this from `doc.tiers`; `layoutPage` callers pass it explicitly.
+   */
+  tiers?: TierDef[];
+  /** Tiered: clear space between rows (default LAYOUT_RULES.tierGap). */
+  tierGap?: number;
+  /** Tiered: place -01 / -02 (a / b) pairs symmetric about the centre line. */
+  mirror?: boolean;
+  /** Tiered: emit / refresh one zone per tier, captioned at its bottom edge. */
+  tierZones?: boolean;
+  /**
+   * Tiered: pin each tiered link end to the face that looks at the other
+   * tier (south / north; east / west within a tier), leaving explicit ports
+   * alone — so pills and slots sit on the long edges (default true).
+   */
+  pinPorts?: boolean;
+  /**
+   * Tiered: horizontal space (px) to keep free at the left / right page
+   * edge, e.g. for derived port tables. Default 0.
+   */
+  reserveLeft?: number;
+  reserveRight?: number;
 }
 
 export interface AutoLayoutResult {
@@ -200,13 +238,236 @@ function forceLayout(page: Page, vb: number[], spacing: number): void {
   }
 }
 
+/* ── tiered layout (W2) ────────────────────────────────────────────────
+ * Rows by declared tier order; within a row, nodes are ordered by the
+ * barycentre of their neighbours in the row above (one sweep down) and then
+ * the row below (one sweep up), so a dual-homed fan-in does not cross
+ * itself. Untiered nodes are left where they are. Optionally mirrors
+ * -01/-02 pairs about the page centre and emits one zone per tier.
+ */
+function tieredLayout(page: Page, vb: number[], opts: AutoLayoutOptions): void {
+  const [vx, vy, vw, vh] = vb as [number, number, number, number];
+  const tiers = opts.tiers ?? [];
+  if (!tiers.length) return;
+  const m = LAYOUT_RULES.edgeMargin;
+  const spacing = opts.spacing ?? LAYOUT_RULES.minNodeGap * 1.5;
+  const tierGap = opts.tierGap ?? LAYOUT_RULES.tierGap;
+  const left = vx + m + Math.max(0, opts.reserveLeft ?? 0);
+  const right = vx + vw - m - Math.max(0, opts.reserveRight ?? 0);
+
+  // Rows in tier order, members in page order (the stable fallback).
+  const rows: NodeConfig[][] = tiers.map(() => []);
+  for (const n of page.nodes) {
+    const r = tierRank(tiers, n.tier);
+    if (r >= 0) rows[r]!.push(n);
+  }
+  const nonEmpty = rows.map((r, i) => ({ r, i })).filter((x) => x.r.length);
+  if (!nonEmpty.length) return;
+
+  // Neighbour map over the page's links (either direction).
+  const nbrs = new Map<string, string[]>();
+  const add = (a: string, b: string): void => {
+    (nbrs.get(a) ?? nbrs.set(a, []).get(a)!).push(b);
+  };
+  for (const l of page.links) {
+    add(l.from, l.to);
+    add(l.to, l.from);
+  }
+
+  // A row is ordered in UNITS: the nodes sharing a (non-tier) zone stay
+  // together as one unit (a gateway group), everything else is a unit of
+  // one. Units are ordered by the barycentre of their neighbours in the
+  // adjacent rows; within a unit a -01 sits left of its -02.
+  const zoneOf = new Map<string, string>();
+  for (const z of page.zones ?? []) {
+    if (z.id.startsWith('tier:')) continue;
+    for (const id of z.nodes ?? []) if (!zoneOf.has(id)) zoneOf.set(id, z.id);
+  }
+  type Unit = { nodes: NodeConfig[]; zone?: string };
+  const unitsOf = (row: NodeConfig[]): Unit[] => {
+    const units: Unit[] = [];
+    const byZone = new Map<string, Unit>();
+    for (const n of row) {
+      const z = zoneOf.get(n.id);
+      if (!z) {
+        units.push({ nodes: [n] });
+        continue;
+      }
+      let u = byZone.get(z);
+      if (!u) {
+        u = { nodes: [], zone: z };
+        byZone.set(z, u);
+        units.push(u);
+      }
+      u.nodes.push(n);
+    }
+    for (const u of units)
+      if (u.nodes.length > 1)
+        u.nodes.sort(
+          (a, b) =>
+            (mirrorPairKey(String(a.label ?? a.id))?.side ?? 0) -
+            (mirrorPairKey(String(b.label ?? b.id))?.side ?? 0),
+        );
+    return units;
+  };
+  const rowUnits = nonEmpty.map(({ r }) => unitsOf(r));
+  const order = new Map<string, number>();
+  const index = (units: Unit[]): void => {
+    let i = 0;
+    for (const u of units) for (const n of u.nodes) order.set(n.id, i++);
+  };
+  for (const units of rowUnits) index(units);
+  const sweep = (units: Unit[], ref: Unit[]): void => {
+    const refIds = new Set(ref.flatMap((u) => u.nodes.map((n) => n.id)));
+    const nodeKey = (n: NodeConfig): number => {
+      const ks = (nbrs.get(n.id) ?? [])
+        .filter((id) => refIds.has(id))
+        .map((id) => order.get(id)!);
+      return ks.length
+        ? ks.reduce((a, b) => a + b, 0) / ks.length
+        : order.get(n.id)!;
+    };
+    const keyed = units.map((u, i) => ({
+      u,
+      k: u.nodes.reduce((a, n) => a + nodeKey(n), 0) / u.nodes.length,
+      i,
+    }));
+    keyed.sort((a, b) => a.k - b.k || a.i - b.i);
+    units.splice(0, units.length, ...keyed.map((x) => x.u));
+    index(units);
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 1; i < rowUnits.length; i++)
+      sweep(rowUnits[i]!, rowUnits[i - 1]!);
+    for (let i = rowUnits.length - 2; i >= 0; i--)
+      sweep(rowUnits[i]!, rowUnits[i + 1]!);
+  }
+
+  // Mirror: single-node -01 / -02 pairs go left / right of the centre line;
+  // grouped units and unpaired nodes keep their swept order in the middle.
+  if (opts.mirror) {
+    for (const units of rowUnits) {
+      const leftL: Unit[] = [];
+      const mid: Unit[] = [];
+      const rightL: Unit[] = [];
+      const seen = new Set<Unit>();
+      const keyOf = (u: Unit): ReturnType<typeof mirrorPairKey> =>
+        u.nodes.length === 1
+          ? (mirrorPairKey(String(u.nodes[0]!.label ?? u.nodes[0]!.id)) ??
+            mirrorPairKey(u.nodes[0]!.id))
+          : null;
+      for (const u of units) {
+        if (seen.has(u)) continue;
+        const k = keyOf(u);
+        const mate =
+          k &&
+          units.find((o) => {
+            if (o === u || seen.has(o)) return false;
+            const ok = keyOf(o);
+            return !!ok && ok.prefix === k.prefix && ok.side !== k.side;
+          });
+        seen.add(u);
+        if (k && mate) {
+          seen.add(mate);
+          const [a, b] = k.side === 0 ? [u, mate] : [mate, u];
+          leftL.push(a);
+          rightL.unshift(b);
+        } else mid.push(u);
+      }
+      units.splice(0, units.length, ...leftL, ...mid, ...rightL);
+    }
+  }
+  // Write the unit order back into the rows.
+  nonEmpty.forEach(({ r }, ri) => {
+    r.splice(0, r.length, ...rowUnits[ri]!.flatMap((u) => u.nodes));
+  });
+
+  // Row heights / widths from footprints; rows stacked from the top margin
+  // (centred vertically when the stack fits), each row centred horizontally
+  // in the usable span (or started at its left edge when wider). Two
+  // neighbours in different zones keep room for both zone boxes between
+  // them, so grouped rows never overlap. Placement runs twice: once to pin
+  // ports (which fixes the side every pill sits on), then again with each
+  // node's pill bands added to the gaps and row heights, so east / west
+  // pills of neighbours and north / south pills between rows never touch.
+  const zoneGap = LAYOUT_RULES.zonePadding * 2 + LAYOUT_RULES.minZoneGap;
+  const place = (bands: Map<string, PillBand> | null): void => {
+    const band = (n: NodeConfig): PillBand =>
+      bands?.get(n.id) ?? { n: 0, s: 0, e: 0, w: 0 };
+    const gapAfter = (a: NodeConfig, b: NodeConfig | undefined): number => {
+      if (!b) return 0;
+      const za = zoneOf.get(a.id);
+      const zb = zoneOf.get(b.id);
+      const base =
+        (za || zb) && za !== zb ? Math.max(spacing, zoneGap) : spacing;
+      return base + band(a).e + band(b).w;
+    };
+    const rowH = nonEmpty.map(({ r }) =>
+      r.reduce(
+        (h, n) => Math.max(h, nodeFootprint(n).h + band(n).n + band(n).s),
+        0,
+      ),
+    );
+    const totalH =
+      rowH.reduce((a, b) => a + b, 0) + (nonEmpty.length - 1) * tierGap;
+    let y = vy + Math.max(m, (vh - totalH) / 2);
+    nonEmpty.forEach(({ r }, ri) => {
+      const widths = r.map((n) => nodeFootprint(n).w);
+      let totalW = 0;
+      r.forEach((n, i) => {
+        totalW += widths[i]! + gapAfter(n, r[i + 1]);
+      });
+      const span = right - left;
+      let x = left + Math.max(0, (span - totalW) / 2);
+      const cy = y + rowH[ri]! / 2;
+      r.forEach((n, i) => {
+        const f = nodeFootprint(n);
+        n.x = x + (n.x - f.x); // keep the footprint's left edge at x
+        n.y = cy + (n.y - f.y) - f.h / 2;
+        x += widths[i]! + gapAfter(n, r[i + 1]);
+      });
+      y += rowH[ri]! + tierGap;
+    });
+  };
+  place(null);
+
+  // Pin link ends to the faces that look at the other tier (default on),
+  // then re-place with the pill bands those sides carry.
+  if (opts.pinPorts !== false) pinPortsByTier(tiers, page.nodes, page.links);
+  const bands = pillBands(page);
+  if (bands.size) place(bands);
+
+  // One zone per tier with members, captioned at the bottom edge; an
+  // existing tier zone keeps its styling and just refreshes membership.
+  if (opts.tierZones) {
+    page.zones ??= [];
+    for (const { r, i } of nonEmpty) {
+      const t = tiers[i]!;
+      const id = tierZoneId(t.id);
+      const ids = r.map((n) => n.id);
+      const z = page.zones.find((zz) => zz.id === id);
+      if (z) z.nodes = ids;
+      else
+        page.zones.push({
+          id,
+          label: t.name ?? t.id,
+          nodes: ids,
+          borderStyle: 'dashed',
+          labelAlign: 'center',
+          labelPosition: 'bottom',
+        });
+    }
+  }
+}
+
 function applyAlgorithm(
   page: Page,
   vb: number[],
   spacing: number,
   opts: AutoLayoutOptions,
 ): void {
-  if (opts.algorithm === 'grid') gridLayout(page, vb, spacing);
+  if (opts.algorithm === 'tiered') tieredLayout(page, vb, { ...opts, spacing });
+  else if (opts.algorithm === 'grid') gridLayout(page, vb, spacing);
   else if (opts.algorithm === 'circular') circularLayout(page, vb, spacing);
   else if (opts.algorithm === 'force') forceLayout(page, vb, spacing);
   else hierarchicalLayout(page, vb, spacing, opts.direction ?? 'TB');
@@ -347,7 +608,10 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
   const spacing = opts.spacing ?? LAYOUT_RULES.minNodeGap * 1.5;
   const orig = page.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y }));
 
-  if ((page.zones?.length ?? 0) > 0) zoneAwareLayout(page, vb, spacing);
+  // Tiered rows are the structure a wiring sheet's zones follow (tier
+  // bands), so the zone-aware packer must not override them.
+  if (opts.algorithm !== 'tiered' && (page.zones?.length ?? 0) > 0)
+    zoneAwareLayout(page, vb, spacing);
   else applyAlgorithm(page, vb, spacing, opts);
 
   // Anchors and manual waypoints must follow the algorithm's wholesale node
@@ -377,7 +641,22 @@ export function layoutDocument(
   opts: AutoLayoutOptions,
 ): AutoLayoutResult {
   let movedNodes = 0;
-  for (const page of doc.pages) movedNodes += layoutPage(page, opts);
+  registerHitBoxes(doc.customNodes);
+  for (const page of doc.pages) {
+    let o = opts;
+    if (opts.algorithm === 'tiered') {
+      // Fill in the document's tiers and keep the margins the page's
+      // derived port tables need clear.
+      const reserve = portTableReserve(doc, page);
+      o = {
+        ...opts,
+        tiers: opts.tiers ?? doc.tiers ?? [],
+        reserveLeft: opts.reserveLeft ?? reserve.left,
+        reserveRight: opts.reserveRight ?? reserve.right,
+      };
+    }
+    movedNodes += layoutPage(page, o);
+  }
   return { movedNodes };
 }
 

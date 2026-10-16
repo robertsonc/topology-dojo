@@ -19,6 +19,17 @@ import {
   LINK_ATTACH_FIELD,
 } from './catalog.js';
 import { effectiveLinkAttach } from '../render/link-attach.js';
+import { LINK_STYLE_DASHES, LINK_STYLE_WIDTH_RANGE } from './link-styles.js';
+import {
+  SHEET_MAX_FIELDS,
+  SHEET_ORIENTATIONS,
+  SHEET_SIZES,
+  sheetViewBox,
+} from './sheet.js';
+import { nonAdjacentTierLinks, tierRank } from './tiers.js';
+import { BUNDLE_KINDS } from './bundles.js';
+import { PORT_LABEL_MODES } from '../render/port-pills.js';
+import { registerHitBoxes } from '../render/hit-boxes.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -28,6 +39,7 @@ export interface Problem {
 }
 
 export function validateDocument(doc: TopologyDocument): Problem[] {
+  registerHitBoxes(doc.customNodes);
   const problems: Problem[] = [];
   const err = (where: string, message: string): void => {
     problems.push({ level: 'error', message, where });
@@ -62,6 +74,122 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     )
       warn(at, `kind "${String(l.kind)}" not in [${LAYER_KINDS.join(', ')}]`);
   });
+  // Sheet frame (W6): a known size / orientation, bounded title-block
+  // fields, an https logo; a sized sheet whose pages were resized by hand
+  // is worth a note (the border and title block still draw to the viewBox).
+  const sheet = doc.sheet;
+  if (sheet) {
+    if (
+      sheet.size !== undefined &&
+      sheet.size !== 'custom' &&
+      !(sheet.size in SHEET_SIZES)
+    )
+      warn(
+        'sheet',
+        `size "${String(sheet.size)}" not in [${[...Object.keys(SHEET_SIZES), 'custom'].join(', ')}]`,
+      );
+    if (
+      sheet.orientation !== undefined &&
+      !(SHEET_ORIENTATIONS as readonly string[]).includes(sheet.orientation)
+    )
+      warn(
+        'sheet',
+        `orientation "${String(sheet.orientation)}" not in [${SHEET_ORIENTATIONS.join(', ')}]`,
+      );
+    const tb = sheet.titleBlock;
+    if (tb) {
+      if (tb.fields && tb.fields.length > SHEET_MAX_FIELDS)
+        warn(
+          'sheet.titleBlock',
+          `${tb.fields.length} fields — only the first ${SHEET_MAX_FIELDS} are drawn`,
+        );
+      if (tb.logoHref !== undefined && !/^https:\/\//i.test(tb.logoHref))
+        warn(
+          'sheet.titleBlock',
+          'logoHref must be an https:// URL — anything else is not drawn',
+        );
+    }
+    const want = sheetViewBox(sheet.size, sheet.orientation);
+    if (want)
+      doc.pages.forEach((p, i) => {
+        if (p.viewBox !== want)
+          warn(
+            `page[${i}] "${p.name}"`,
+            `viewBox "${p.viewBox}" differs from the sheet size (${sheet.size} ${sheet.orientation ?? 'landscape'} = "${want}"); set_sheet resizes pages`,
+          );
+      });
+  }
+  // Bundles (W3): unique names, a known kind.
+  const bundleIds = new Set<string>();
+  (doc.bundles ?? []).forEach((b, i) => {
+    const at = `bundles[${i}]`;
+    if (!b.id) err(at, 'bundle has no id');
+    else if (bundleIds.has(b.id)) err(at, `duplicate bundle id "${b.id}"`);
+    bundleIds.add(b.id);
+    if (
+      b.kind !== undefined &&
+      !(BUNDLE_KINDS as readonly string[]).includes(b.kind)
+    )
+      warn(at, `kind "${String(b.kind)}" not in [${BUNDLE_KINDS.join(', ')}]`);
+  });
+  // Tiers (W2): unique non-empty ids.
+  const tierIds = new Set<string>();
+  (doc.tiers ?? []).forEach((t, i) => {
+    const at = `tiers[${i}]`;
+    if (!t.id) err(at, 'tier has no id');
+    else if (tierIds.has(t.id)) err(at, `duplicate tier id "${t.id}"`);
+    tierIds.add(t.id);
+  });
+  const checkTier = (cfg: { tier?: unknown }, where: string): void => {
+    const t = cfg.tier;
+    if (t === undefined || t === '') return;
+    if (tierRank(doc.tiers, t) < 0)
+      warn(
+        where,
+        `tier "${String(t)}" is not declared in document tiers (declare it with define_tier)`,
+      );
+  };
+  // Link styles (W1): unique ids, a colour, a sane width and dash.
+  const styleIds = new Set<string>();
+  (doc.linkStyles ?? []).forEach((s, i) => {
+    const at = `linkStyles[${i}]`;
+    if (!s.id) err(at, 'link style has no id');
+    else if (styleIds.has(s.id)) err(at, `duplicate link style id "${s.id}"`);
+    styleIds.add(s.id);
+    if (typeof s.color !== 'string' || !s.color)
+      err(at, 'link style needs a color');
+    if (
+      s.width !== undefined &&
+      (typeof s.width !== 'number' ||
+        !(
+          s.width >= LINK_STYLE_WIDTH_RANGE[0] &&
+          s.width <= LINK_STYLE_WIDTH_RANGE[1]
+        ))
+    )
+      warn(
+        at,
+        `width ${String(s.width)} should be between ${LINK_STYLE_WIDTH_RANGE[0]} and ${LINK_STYLE_WIDTH_RANGE[1]}`,
+      );
+    if (
+      s.dash !== undefined &&
+      !(LINK_STYLE_DASHES as readonly string[]).includes(s.dash)
+    )
+      warn(
+        at,
+        `dash "${String(s.dash)}" not in [${LINK_STYLE_DASHES.join(', ')}]`,
+      );
+  });
+  // A link's `style` must name a declared style (warning: it renders with
+  // the type default colour otherwise).
+  const checkStyle = (cfg: { style?: unknown }, where: string): void => {
+    const st = cfg.style;
+    if (st === undefined || st === '') return;
+    if (typeof st !== 'string' || !styleIds.has(st))
+      warn(
+        where,
+        `style "${String(st)}" is not declared in document linkStyles (declare it with define_link_style)`,
+      );
+  };
   // An element's `layer` must reference a declared layer (warning: it still
   // renders, on the base layer).
   const checkLayer = (cfg: { layer?: unknown }, where: string): void => {
@@ -151,6 +279,21 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     // Experimental link anchor box: the page-level object has the node
     // field's shape (pad ≥ 0, distribute boolean).
     checkEnums({ linkAttach: page.linkAttach }, [LINK_ATTACH_FIELD], at, warn);
+    // Port pills (W4): the page mode is one of the known modes, and pills
+    // without distribute stack on top of each other on a busy side.
+    if (
+      page.portLabels !== undefined &&
+      !PORT_LABEL_MODES.includes(page.portLabels)
+    )
+      warn(
+        at,
+        `portLabels "${String(page.portLabels)}" not in [${PORT_LABEL_MODES.join(', ')}]`,
+      );
+    if (page.portLabels === 'pill' && !page.linkAttach?.distribute)
+      warn(
+        at,
+        'portLabels "pill" without linkAttach.distribute — pills on a node side land on top of each other; set linkAttach {distribute:true}',
+      );
 
     // Element ids unique within the page; collect endpoints (nodes + anchors).
     const ids = new Set<string>();
@@ -190,6 +333,7 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `opacity ${String(op)} should be between 0 and 1`,
         );
       checkLayer(n, `${at} node "${n.id}"`);
+      checkTier(n as { tier?: unknown }, `${at} node "${n.id}"`);
       checkSource(n, `${at} node "${n.id}"`);
       checkHrefTip(n as Record<string, unknown>, `${at} node "${n.id}"`);
       // Image nodes: the source must be https or an inline data:image/*, and
@@ -324,10 +468,23 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
           `labelScale ${String(scale)} should be between 0.25 and 4`,
         );
       checkLayer(l, `${at} link "${l.id}"`);
+      checkStyle(l, `${at} link "${l.id}"`);
       checkSource(l, `${at} link "${l.id}"`);
       checkHrefTip(l as Record<string, unknown>, `${at} link "${l.id}"`);
       checkCornerPortUnderDistribute(l, `${at} link "${l.id}"`);
     }
+
+    // A wiring sheet links adjacent tiers only; a link that skips a tier is
+    // almost always a mis-tagged node (and draws through the band between).
+    for (const { link, fromTier, toTier } of nonAdjacentTierLinks(
+      doc.tiers,
+      page.nodes,
+      page.links,
+    ))
+      warn(
+        `${at} link "${link.id}"`,
+        `joins non-adjacent tiers "${fromTier}" and "${toTier}" — a wiring sheet links adjacent tiers only`,
+      );
 
     // ── Annotation layer: zones, flow paths, policy markers ──
     const nodeIds = new Set(page.nodes.map((n) => n.id));

@@ -16,6 +16,8 @@ export const SHAPE_KEYS = [
   'star',
   'cross',
   'arrow',
+  /** A wide, low rack-unit front panel (W7): ~5.2 : 0.9 of `size`. */
+  'chassis',
 ] as const;
 export type ShapeKey = (typeof SHAPE_KEYS)[number];
 
@@ -181,6 +183,18 @@ export function shapeGeom(
     case 'rectangle': {
       const w = hs * 1.6;
       const h = hs;
+      return {
+        tag: 'rect',
+        attrs: `x="${x - w}" y="${y - h}" width="${w * 2}" height="${h * 2}" rx="${rx}"`,
+        bx: w,
+        by: h,
+      };
+    }
+    case 'chassis': {
+      // A 1RU front panel: wide and low, so a port row reads along its
+      // bottom edge and links fan in along a long side (W7).
+      const w = hs * 2.6;
+      const h = hs * 0.45;
       return {
         tag: 'rect',
         attrs: `x="${x - w}" y="${y - h}" width="${w * 2}" height="${h * 2}" rx="${rx}"`,

@@ -16,12 +16,15 @@ import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
+import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
+import { pageHasPills, pillBands, stripPillLabels } from './port-pills.js';
+import { registerHitBoxes } from './hit-boxes.js';
 import {
   applyPalette,
   flattenViewer,
   type LinkAttachOptions,
 } from '../vendor/topology-ds.js';
-import { legendSVG } from '../editor/legend.js';
+import { documentOverlaySVG } from './overlays.js';
 import {
   applyRenderTheme,
   themeBackground,
@@ -62,6 +65,11 @@ export interface RenderOptions {
   visibleLayers?: string[];
   /** Per-frame emphasis (2.2): node/link ids to spotlight; others dim to 25%. */
   emphasis?: string[];
+  /**
+   * Declared link styles (`doc.linkStyles`) — resolves each link's `style`
+   * into colour / width / dash. The document render path fills this in.
+   */
+  linkStyles?: LinkStyleDef[];
   /**
    * Render theme (#264). Default `'dark'` — the engine's native, byte-identical
    * output. `'light'` renders a light backdrop/grid and remaps every
@@ -109,6 +117,7 @@ function renderPageUnthemed(
   // Stock cloud types ship with the app; the document's own custom types layer
   // on top (and override by name if a user redefines one).
   registerCustomTypes(E, [...STOCK_NODE_SPECS, ...customNodes]);
+  registerHitBoxes(customNodes);
 
   const topo = new E({ viewBox: page.viewBox });
   if (opts.calm) topo.reducedMotion = true;
@@ -154,12 +163,23 @@ function renderPageUnthemed(
   };
 
   for (const a of page.anchors) topo.anchor(a.id, { x: a.x, y: a.y });
+  // Port pills (W4) are overlay art the engine never sees; hand it each
+  // node's pill band so zone boxes grow around the pills.
+  const bands = pageHasPills(page) ? pillBands(page, customNodes) : null;
   for (const n of nodes) {
     const { id, ...cfg } = n;
-    topo.node(id, fadedEmph(id, cfg));
+    const band = bands?.get(id);
+    topo.node(id, fadedEmph(id, band ? { ...cfg, pillBand: band } : cfg));
   }
+  // Port pills (W4): ends in pill mode are drawn by the overlay, so the
+  // engine must not draw its own chip for them.
+  const nodeById = new Map(page.nodes.map((n) => [n.id, n]));
   for (const l of links) {
-    const { id, ...cfg } = l;
+    const { id, ...cfg } = stripPillLabels(
+      page,
+      resolveLinkStyle(l, opts.linkStyles),
+      nodeById,
+    );
     topo.link(id, fadedEmph(id, cfg));
   }
   for (const z of zones) {
@@ -238,6 +258,7 @@ export function renderDocumentWithEngine(
     ...opts,
     layers: opts.layers ?? doc.layers ?? [],
     emphasis: opts.emphasis ?? page.emphasis,
+    linkStyles: opts.linkStyles ?? doc.linkStyles,
   });
   // Document-level overlays the per-page engine render doesn't know about:
   // the auto-legend (drawn into the page), then the brand palette remap over
@@ -245,8 +266,8 @@ export function renderDocumentWithEngine(
   // the theme remap LAST — the palette consumes the engine's source accents,
   // so a document's brand colour is never darkened by the light theme.
   // Mirrors what the editor composites, so MCP/headless output matches the GUI.
-  const legend = legendSVG(doc, page);
-  if (legend) svg = svg.replace('</svg>', `${legend}</svg>`);
+  const overlay = documentOverlaySVG(doc, page);
+  if (overlay) svg = svg.replace('</svg>', `${overlay}</svg>`);
   if (doc.palette) svg = applyPalette(svg, doc.palette);
   return applyRenderTheme(svg, opts.theme ?? 'dark');
 }

@@ -24,13 +24,32 @@ import {
 } from '../api/builder.js';
 import {
   annotationCatalog,
+  bundleCatalog,
   filterNodeCatalog,
   layerCatalog,
   linkCatalog,
+  linkStyleCatalog,
   nodeCatalog,
+  sheetCatalog,
+  tierCatalog,
 } from '../api/catalog.js';
+import {
+  SHEET_MAX_FIELDS,
+  SHEET_ORIENTATIONS,
+  SHEET_SIZE_IDS,
+  sheetViewBox,
+  type SheetConfig,
+} from '../api/sheet.js';
 import type { LinkAttachOptions } from '../vendor/topology-ds.js';
 import { LAYER_KINDS } from '../api/layers.js';
+import { defineTier } from '../api/tiers.js';
+import { BUNDLE_KINDS, defineBundle } from '../api/bundles.js';
+import {
+  LINK_STYLE_DASHES,
+  LINK_STYLE_PRESETS,
+  LINK_STYLE_WIDTH_RANGE,
+  defineLinkStyle,
+} from '../api/link-styles.js';
 import {
   removeElement,
   updateElement,
@@ -470,6 +489,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             linkTypes: links,
             annotations: annotationCatalog(),
             layers: layerCatalog(),
+            linkStyles: linkStyleCatalog(),
+            sheet: sheetCatalog(),
+            tiers: tierCatalog(),
+            bundles: bundleCatalog(),
           };
         }
         return {
@@ -486,6 +509,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           })),
           annotationKinds: annotationCatalog().map((x) => x.kind),
           layerKinds: layerCatalog().kinds,
+          linkStylePresets: linkStyleCatalog().presets,
+          sheetSizes: sheetCatalog().sizes,
+          bundleKinds: bundleCatalog().kinds,
           note: 'Index view. For editable fields, call again with detail:"full" or narrow with types:[…] / query:"…".',
         };
       },
@@ -720,7 +746,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_page_properties',
       description:
-        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (EXPERIMENTAL link anchor box: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; {} = on with defaults, "none" clears; a node’s own linkAttach merges over it).',
+        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (EXPERIMENTAL link anchor box: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; {} = on with defaults, "none" clears; a node’s own linkAttach merges over it), and/or portLabels ("pill" draws each endpoint label as a dark pill ON the node edge at the attach point, rotated to the side — the wiring-sheet convention; pair it with linkAttach {distribute:true}; "chip" restores the classic glass chip beside the wire; a node’s own portLabels overrides it).',
       inputShape: {
         topologyId,
         pageIndex,
@@ -759,6 +785,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe(
             'EXPERIMENTAL link anchor box for the page ({} = on with defaults; "none" clears).',
           ),
+        portLabels: z
+          .enum(['chip', 'pill'])
+          .optional()
+          .describe(
+            'Endpoint label mode: "pill" (on the node edge, wiring-sheet style) or "chip" (classic, the default).',
+          ),
       },
       handler: (a) => {
         if (a.viewBox !== undefined && !isValidViewBox(String(a.viewBox)))
@@ -790,6 +822,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             };
           }
         }
+        if (a.portLabels !== undefined) {
+          if (a.portLabels === 'chip') delete page.portLabels;
+          else page.portLabels = 'pill';
+        }
         return {
           name: page.name,
           viewBox: page.viewBox,
@@ -802,6 +838,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             : {}),
           ...(page.linkAttach !== undefined
             ? { linkAttach: page.linkAttach }
+            : {}),
+          ...(page.portLabels !== undefined
+            ? { portLabels: page.portLabels }
             : {}),
         };
       },
@@ -817,18 +856,222 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .enum(['tl', 'tr', 'bl', 'br'])
           .optional()
           .describe('Corner: tl / tr / bl / br (default tl).'),
+        columns: z
+          .number()
+          .int()
+          .min(1)
+          .max(8)
+          .optional()
+          .describe(
+            'Lay the rows out across this many columns (row-major, like a sheet’s Key strip). Default 1.',
+          ),
+        title: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Header strip text (e.g. "Key"). Empty string clears it.'),
       },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
+        const prev = doc.legend ?? {};
+        const columns =
+          a.columns !== undefined ? Number(a.columns) : prev.columns;
+        const title =
+          a.title !== undefined ? String(a.title).trim() : prev.title;
         doc.legend = {
           show: Boolean(a.show),
           ...(a.position !== undefined
             ? { position: a.position as 'tl' | 'tr' | 'bl' | 'br' }
-            : doc.legend?.position
-              ? { position: doc.legend.position }
+            : prev.position
+              ? { position: prev.position }
               : {}),
+          ...(columns !== undefined && columns > 1 ? { columns } : {}),
+          ...(title ? { title } : {}),
         };
         return { legend: doc.legend };
+      },
+    },
+    {
+      name: 'set_sheet',
+      description:
+        'Turn the document into a DRAWING SHEET: a standard paper size (sets every page’s viewBox at 96 dpi unless size is "custom"), a border, the document title centred at the top, and a bottom-right title block (subtitle, label/value fields such as Drawn by / Revision / Date / Size, an https logo). Drawn on the canvas and in every export, like the legend; the legend keeps inside the border (set_legend position "bl" + columns reads as the sheet’s Key). Pass clear:true to remove the sheet.',
+      inputShape: {
+        topologyId,
+        size: z
+          .enum(['custom', ...SHEET_SIZE_IDS])
+          .optional()
+          .describe(
+            'Paper size (ansi-a … ansi-e, a4 … a1) or "custom" to keep page viewBoxes.',
+          ),
+        orientation: z.enum(SHEET_ORIENTATIONS).optional(),
+        border: z
+          .boolean()
+          .optional()
+          .describe('Draw the border (default true).'),
+        title: z
+          .boolean()
+          .optional()
+          .describe('Draw the document title at the top (default true).'),
+        subtitle: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Title-block second line (e.g. the sheet name).'),
+        fields: z
+          .array(
+            z.object({
+              label: displayString(TEXT_LIMITS.name),
+              value: displayString(TEXT_LIMITS.name),
+            }),
+          )
+          .max(SHEET_MAX_FIELDS)
+          .optional()
+          .describe(
+            'Title-block fields, e.g. [{label:"Drawn by",value:"K. Marshall"},{label:"Revision",value:"1"}]. Replaces the list.',
+          ),
+        logoHref: z
+          .string()
+          .max(TEXT_LIMITS.url)
+          .optional()
+          .describe(
+            'https image drawn at the title block’s right end. Empty string clears it.',
+          ),
+        titleBlock: z
+          .boolean()
+          .optional()
+          .describe(
+            'Draw the title block at all (default true once any block field is set).',
+          ),
+        clear: z.boolean().optional().describe('Remove the sheet frame.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        if (a.clear) {
+          delete doc.sheet;
+          return { sheet: null };
+        }
+        const prev: SheetConfig = doc.sheet ?? {};
+        const next: SheetConfig = { ...prev };
+        if (a.size !== undefined) next.size = a.size as SheetConfig['size'];
+        if (a.orientation !== undefined)
+          next.orientation = a.orientation as SheetConfig['orientation'];
+        if (a.border !== undefined) {
+          if (a.border) delete next.border;
+          else next.border = false;
+        }
+        if (a.title !== undefined) {
+          if (a.title) delete next.title;
+          else next.title = false;
+        }
+        const tb = { ...(prev.titleBlock ?? {}) };
+        let touched = false;
+        if (a.subtitle !== undefined) {
+          touched = true;
+          if (String(a.subtitle).trim()) tb.subtitle = String(a.subtitle);
+          else delete tb.subtitle;
+        }
+        if (a.fields !== undefined) {
+          touched = true;
+          const fields = (a.fields as { label: string; value: string }[]).map(
+            (f) => ({ label: String(f.label), value: String(f.value) }),
+          );
+          if (fields.length) tb.fields = fields;
+          else delete tb.fields;
+        }
+        if (a.logoHref !== undefined) {
+          touched = true;
+          const href = String(a.logoHref).trim();
+          if (!href) delete tb.logoHref;
+          else if (!/^https:\/\//i.test(href))
+            throw new Error('logoHref must be an https:// URL');
+          else tb.logoHref = href;
+        }
+        if (a.titleBlock !== undefined) {
+          touched = true;
+          if (a.titleBlock) delete tb.show;
+          else tb.show = false;
+        }
+        if (touched || prev.titleBlock) next.titleBlock = tb;
+        doc.sheet = next;
+        const vb = sheetViewBox(next.size, next.orientation);
+        if (vb) for (const p of doc.pages) p.viewBox = vb;
+        return { sheet: doc.sheet, ...(vb ? { viewBox: vb } : {}) };
+      },
+    },
+    {
+      name: 'define_link_style',
+      description:
+        'Declare (or update, by id) a document LINK STYLE — a wire class such as "100GBASE-DA (DAC)" with a colour (and optional stroke width / dash). Links opt in with `style: <id>` (add_link / edit_topology); an explicit link color wins over its style. The legend (set_legend) draws one line sample per style in use — the drawing sheet’s Key. Pass `preset: "ethernet-media"` to load the eleven Ethernet media classes (10G/25G/40G/50G/100G × DAC/SR/LR, NBASE-T) at once instead of inventing colours.',
+      inputShape: {
+        topologyId,
+        styleId: z
+          .string()
+          .max(64)
+          .optional()
+          .describe(
+            'Style id (re-use an id to update). Required unless preset is set.',
+          ),
+        label: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Key row text (falls back to the id).'),
+        color: z
+          .string()
+          .regex(HEX)
+          .optional()
+          .describe('#rgb / #rrggbb colour. Required unless preset is set.'),
+        width: z
+          .number()
+          .min(LINK_STYLE_WIDTH_RANGE[0])
+          .max(LINK_STYLE_WIDTH_RANGE[1])
+          .optional()
+          .describe('Stroke width in px (default: the link type’s own).'),
+        dash: z
+          .enum(LINK_STYLE_DASHES)
+          .optional()
+          .describe('solid (default) / dashed / dotted.'),
+        preset: z
+          .enum(['ethernet-media'])
+          .optional()
+          .describe('Load a named starter set of styles (all entries, by id).'),
+        remove: z
+          .boolean()
+          .optional()
+          .describe('Remove the style named by styleId instead.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        if (a.preset) {
+          for (const def of LINK_STYLE_PRESETS[String(a.preset)] ?? [])
+            defineLinkStyle(doc, def);
+          return { linkStyles: doc.linkStyles };
+        }
+        const id = a.styleId !== undefined ? String(a.styleId) : '';
+        if (!id) throw new Error('styleId is required (or pass preset)');
+        if (a.remove) {
+          doc.linkStyles = (doc.linkStyles ?? []).filter((s) => s.id !== id);
+          if (!doc.linkStyles.length) delete doc.linkStyles;
+          return { linkStyles: doc.linkStyles ?? [] };
+        }
+        const prev = doc.linkStyles?.find((s) => s.id === id);
+        const color =
+          a.color !== undefined ? String(a.color).toLowerCase() : prev?.color;
+        if (!color) throw new Error('color is required for a new style');
+        defineLinkStyle(doc, {
+          id,
+          color,
+          ...(a.label !== undefined
+            ? { label: String(a.label) }
+            : prev?.label !== undefined
+              ? { label: prev.label }
+              : {}),
+          ...(a.width !== undefined
+            ? { width: Number(a.width) }
+            : prev?.width !== undefined
+              ? { width: prev.width }
+              : {}),
+          ...(a.dash !== undefined
+            ? { dash: a.dash as (typeof LINK_STYLE_DASHES)[number] }
+            : prev?.dash !== undefined
+              ? { dash: prev.dash }
+              : {}),
+        });
+        return { linkStyles: doc.linkStyles };
       },
     },
     {
@@ -902,6 +1145,13 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         nodeId: z.string().optional().describe('Explicit id (else generated).'),
         meta: metaShape,
         layer: layerArg,
+        tier: z
+          .string()
+          .max(64)
+          .optional()
+          .describe(
+            'Tier id this node sits in (declare tiers with define_tier; the "tiered" layout rows nodes by it).',
+          ),
         extra,
       },
       handler: (a) =>
@@ -922,9 +1172,44 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
             ...(a.meta !== undefined ? { meta: a.meta as MetaMap } : {}),
             ...(a.layer !== undefined ? { layer: String(a.layer) } : {}),
+            ...(a.tier !== undefined ? { tier: String(a.tier) } : {}),
             ...((a.extra as Record<string, unknown>) ?? {}),
           },
         ),
+    },
+    {
+      name: 'set_port_table',
+      description:
+        'Draw (or remove) a DERIVED PORT TABLE beside one or more nodes — the cabling work order `Port | LAG | PHY | Peer|Port`, built live from the links touching each node (endpoint labels, fromBundle/toBundle, the link style’s Key label or bandwidth, the far node + port), sorted naturally. Tables sit in the page margin (`side` "w" / "e", default the nearer side), stacked so they never overlap, inside the sheet border and clear of the legend / title block. layout_topology "tiered" reserves the margin they need; validate_topology warns when one runs off the page.',
+      inputShape: {
+        topologyId,
+        pageIndex,
+        nodeIds: z.array(z.string()).min(1).max(200),
+        show: z.boolean().optional().describe('Default true; false removes.'),
+        side: z
+          .enum(['w', 'e'])
+          .optional()
+          .describe('Margin the table sits in (default: the nearer side).'),
+      },
+      handler: (a) => {
+        const page = store.page(
+          String(a.topologyId),
+          a.pageIndex as number | undefined,
+        );
+        const ids = a.nodeIds as string[];
+        const out: string[] = [];
+        for (const id of ids) {
+          const node = page.nodes.find((n) => n.id === id);
+          if (!node) throw new Error(`unknown node "${id}"`);
+          if (a.show === false) delete node.portTable;
+          else
+            node.portTable = {
+              ...(a.side !== undefined ? { side: a.side as 'w' | 'e' } : {}),
+            };
+          out.push(id);
+        }
+        return { nodeIds: out, show: a.show !== false };
+      },
     },
     {
       name: 'set_node_metadata',
@@ -966,6 +1251,29 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         to: z.string(),
         label: displayString(TEXT_LIMITS.label).optional(),
         color: z.string().optional(),
+        style: z
+          .string()
+          .max(64)
+          .optional()
+          .describe(
+            'Wire class: the id of a document link style (define_link_style). An explicit color wins over it.',
+          ),
+        fromLabel: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe(
+            'Port / interface name at the `from` end (e.g. "xe-0/0/8").',
+          ),
+        toLabel: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe('Port / interface name at the `to` end.'),
+        fromBundle: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe(
+            'LAG / ECMP bundle name at the `from` end (e.g. "ae0"; per end, since a LAG is a per-device object). Kinds via define_bundle; undeclared = LAG.',
+          ),
+        toBundle: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe('LAG / ECMP bundle name at the `to` end.'),
         labelScale: z
           .number()
           .optional()
@@ -1005,6 +1313,17 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             to: String(a.to),
             ...(a.label !== undefined ? { label: String(a.label) } : {}),
             ...(a.color !== undefined ? { color: String(a.color) } : {}),
+            ...(a.style !== undefined ? { style: String(a.style) } : {}),
+            ...(a.fromLabel !== undefined
+              ? { fromLabel: String(a.fromLabel) }
+              : {}),
+            ...(a.toLabel !== undefined ? { toLabel: String(a.toLabel) } : {}),
+            ...(a.fromBundle !== undefined
+              ? { fromBundle: String(a.fromBundle) }
+              : {}),
+            ...(a.toBundle !== undefined
+              ? { toBundle: String(a.toBundle) }
+              : {}),
             ...(a.labelScale !== undefined
               ? { labelScale: Number(a.labelScale) }
               : {}),
@@ -1293,6 +1612,88 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         ),
     },
     {
+      name: 'define_bundle',
+      description:
+        'Declare (or update, by name) a BUNDLE name’s kind — "lag" (LACP, the default for any undeclared name), "ecmp" or "icl". Links name a bundle PER END with fromBundle / toBundle (a LAG is a per-device object: "ae0" on each switch of an ESI-LAG). In port-pill mode (set_page_properties portLabels "pill") the pills of one (node, bundle) group get an outline — solid for a LAG, dashed for ECMP — and the legend keys the kinds in use; the derived port tables print the name in their LAG column. Pass remove:true to drop the declaration.',
+      inputShape: {
+        topologyId,
+        bundleId: z.string().max(64).describe('The bundle name (e.g. "ae0").'),
+        kind: z
+          .enum(BUNDLE_KINDS)
+          .optional()
+          .describe('lag (default) / ecmp / icl.'),
+        label: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Port-table text (defaults to the name).'),
+        remove: z.boolean().optional().describe('Remove the declaration.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        const id = String(a.bundleId);
+        if (a.remove) {
+          doc.bundles = (doc.bundles ?? []).filter((b) => b.id !== id);
+          if (!doc.bundles.length) delete doc.bundles;
+          return { bundles: doc.bundles ?? [] };
+        }
+        const prev = doc.bundles?.find((b) => b.id === id);
+        defineBundle(doc, {
+          id,
+          ...(a.kind !== undefined
+            ? { kind: a.kind as (typeof BUNDLE_KINDS)[number] }
+            : prev?.kind !== undefined
+              ? { kind: prev.kind }
+              : {}),
+          ...(a.label !== undefined
+            ? { label: String(a.label) }
+            : prev?.label !== undefined
+              ? { label: prev.label }
+              : {}),
+        });
+        return { bundles: doc.bundles };
+      },
+    },
+    {
+      name: 'define_tier',
+      description:
+        'Declare (or update, by id) a document TIER — a role row of a wiring sheet (gateways / distribution / core). Declaration order is vertical order, top → bottom; pass `before` to insert above an existing tier. Nodes opt in with `tier` (add_node / edit_topology); then layout_topology algorithm "tiered" rows them, orders each row to keep the cable fan from crossing itself, and with mirror:true places -01/-02 pairs symmetric about the page centre. Pass remove:true to drop a tier (nodes keep their tag; validate warns).',
+      inputShape: {
+        topologyId,
+        tierId: z.string().max(64).describe('Tier id (re-use to update).'),
+        name: displayString(TEXT_LIMITS.name)
+          .optional()
+          .describe('Display name / band caption (falls back to the id).'),
+        before: z
+          .string()
+          .max(64)
+          .optional()
+          .describe('Insert above this existing tier id.'),
+        remove: z.boolean().optional().describe('Remove the tier instead.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        const id = String(a.tierId);
+        if (a.remove) {
+          doc.tiers = (doc.tiers ?? []).filter((t) => t.id !== id);
+          if (!doc.tiers.length) delete doc.tiers;
+          return { tiers: doc.tiers ?? [] };
+        }
+        const prev = doc.tiers?.find((t) => t.id === id);
+        defineTier(
+          doc,
+          {
+            id,
+            ...(a.name !== undefined
+              ? { name: String(a.name) }
+              : prev?.name !== undefined
+                ? { name: prev.name }
+                : {}),
+          },
+          a.before !== undefined ? String(a.before) : undefined,
+        );
+        return { tiers: doc.tiers };
+      },
+    },
+    {
       name: 'define_layer',
       description:
         'Declare (or update, by id) a document layer — a named plane such as underlay / overlay / policy. Declaration order is z-order (bottom → top); untagged elements form the implicit base layer beneath all declared layers. Elements opt in by passing `layer` to the add_* tools; render_svg can filter with visibleLayers.',
@@ -1414,15 +1815,31 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       inputShape: {
         topologyId,
         algorithm: z
-          .enum(['grid', 'hierarchical', 'circular', 'force'])
+          .enum(['grid', 'hierarchical', 'circular', 'force', 'tiered'])
           .describe(
-            'hierarchical = layered by link direction; grid; circular; force = force-directed.',
+            'hierarchical = layered by link direction; grid; circular; force = force-directed; tiered = rows by the document’s declared tiers (define_tier + node.tier), each row ordered to keep the cable fan uncrossed — the wiring-sheet layout.',
           ),
         direction: z
           .enum(['TB', 'LR'])
           .optional()
           .describe('Hierarchical flow direction (default TB).'),
         spacing: z.number().optional().describe('Gap between nodes in px.'),
+        tierGap: z
+          .number()
+          .optional()
+          .describe('tiered: clear space between rows (default 140).'),
+        mirror: z
+          .boolean()
+          .optional()
+          .describe(
+            'tiered: place -01/-02 (a/b) pairs symmetric about the page centre line.',
+          ),
+        tierZones: z
+          .boolean()
+          .optional()
+          .describe(
+            'tiered: emit (or refresh) one zone per tier, captioned at its bottom edge.',
+          ),
       },
       handler: (a) =>
         layoutDocument(store.get(String(a.topologyId)), {
@@ -1431,6 +1848,11 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ? { direction: a.direction as 'TB' | 'LR' }
             : {}),
           ...(a.spacing !== undefined ? { spacing: Number(a.spacing) } : {}),
+          ...(a.tierGap !== undefined ? { tierGap: Number(a.tierGap) } : {}),
+          ...(a.mirror !== undefined ? { mirror: Boolean(a.mirror) } : {}),
+          ...(a.tierZones !== undefined
+            ? { tierZones: Boolean(a.tierZones) }
+            : {}),
         }),
     },
     {

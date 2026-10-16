@@ -22,8 +22,7 @@
  * Pure and DOM-free.
  */
 import type { CustomNodeSpec } from '../nodes/spec.js';
-import { customHitBox } from '../nodes/render.js';
-import { STOCK_NODE_SPECS } from '../nodes/stock.js';
+import { hitBoxesFor, type HitBox as RegistryHitBox } from './hit-boxes.js';
 import type {
   AnchorConfig,
   LinkAttachOptions,
@@ -56,24 +55,18 @@ const PORT_DIRS: Readonly<Record<string, readonly [number, number]>> = {
 };
 const SIDES: readonly Side[] = ['n', 's', 'e', 'w'];
 
-export interface HitBox {
-  rx: number;
-  ry: number;
-}
+export type HitBox = RegistryHitBox;
 /** Plugin hit boxes by node type — what the engine's `_getNodeAABB` consults first. */
 export type HitBoxes = ReadonlyMap<string, HitBox>;
 
 /**
  * The hit boxes the render path registers with the engine: the stock cloud
- * pack plus a document's own custom node types (`registerCustomTypes` in
- * render/core). Pass the result as `hitBoxes` so custom-typed nodes attach
- * where the engine attaches them.
+ * pack plus every custom node type registered so far (render/hit-boxes),
+ * with `customNodes` registered first when given. Pass the result as
+ * `hitBoxes` so custom-typed nodes attach where the engine attaches them.
  */
-export function engineHitBoxes(customNodes: CustomNodeSpec[] = []): HitBoxes {
-  const m = new Map<string, HitBox>();
-  for (const spec of [...STOCK_NODE_SPECS, ...customNodes])
-    m.set(spec.typeName, customHitBox(spec));
-  return m;
+export function engineHitBoxes(customNodes?: CustomNodeSpec[]): HitBoxes {
+  return hitBoxesFor(customNodes);
 }
 
 /** The engine's hit AABB for a node (`_getNodeAABB`: plugin hit box, else the type table). */

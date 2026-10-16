@@ -112,10 +112,23 @@ export interface LinkConfig {
   from: string;
   to: string;
   color?: string;
+  /**
+   * Id of a declared document link style (`doc.linkStyles`, proposal 0008):
+   * the wire class whose colour / width / dash this link draws with unless
+   * it sets its own. Resolved at render time; unknown ids are ignored.
+   */
+  style?: string;
   label?: string;
   /** Endpoint (interface/port) labels near the link's source and destination. */
   fromLabel?: string;
   toLabel?: string;
+  /**
+   * Bundle (LAG / ECMP) name of each END (proposal 0008, W3) — per end,
+   * because a LAG is a per-device object (`ae0` on each switch of an
+   * ESI-LAG). Kinds are declared in `doc.bundles`; undeclared = LAG.
+   */
+  fromBundle?: string;
+  toBundle?: string;
   /**
    * Moveable label offsets, doc-space {x,y}, set by dragging the chip in the
    * editor. `labelOffset` shifts the centre label (honoured by every link type);
@@ -205,6 +218,8 @@ export interface ZoneConfig {
   borderStyle?: 'dashed' | 'solid' | 'dotted';
   padding?: number;
   labelAlign?: 'left' | 'center' | 'right';
+  /** Caption at the top edge (default) or the bottom edge (a tier band). */
+  labelPosition?: 'top' | 'bottom';
   /** Id of an enclosing zone (zones may nest). */
   parentZone?: string;
   /** Hyperlink: rendered as a clickable <a> (http(s) only) in SVG/viewer. */
@@ -278,6 +293,13 @@ export interface FlowPathConfig {
 export type { PolicyMarkerType } from '../api/markers.js';
 import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
+import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
+import {
+  pageHasPills,
+  pillBands,
+  stripPillLabels,
+} from '../render/port-pills.js';
+import type { Page } from '../pages/model.js';
 import type { SourceRef } from '../api/source.js';
 import {
   applyRenderTheme,
@@ -488,6 +510,8 @@ export interface RenderOptions {
   visibleLayers?: string[];
   /** Per-frame emphasis (2.2): node/link ids to spotlight; others dim to 25%. */
   emphasis?: string[];
+  /** Declared link styles (`doc.linkStyles`) — resolves each link's `style`. */
+  linkStyles?: LinkStyleDef[];
 }
 
 /** Plugin shape accepted by the engine's static registerNodeType. */
@@ -550,6 +574,8 @@ export interface RenderablePage {
    * absent = the classic silhouette attachment, unchanged.
    */
   linkAttach?: LinkAttachOptions;
+  /** Endpoint label mode (W4): 'pill' draws port pills via the overlay. */
+  portLabels?: 'chip' | 'pill';
 }
 
 /**
@@ -618,12 +644,23 @@ export function renderPageSVG(
   };
 
   for (const a of page.anchors ?? []) topo.anchor(a.id, { x: a.x, y: a.y });
+  // Port pills (W4) are overlay art the engine never sees; hand it each
+  // node's pill band so zone boxes grow around the pills.
+  const bands = pageHasPills(page as Page) ? pillBands(page as Page) : null;
   for (const n of nodes) {
     const { id, ...cfg } = n;
-    topo.node(id, fadedEmph(id, cfg));
+    const band = bands?.get(id);
+    topo.node(id, fadedEmph(id, band ? { ...cfg, pillBand: band } : cfg));
   }
+  // Port pills (W4): ends in pill mode are drawn by the overlay, so the
+  // engine must not draw its own chip for them.
+  const nodeById = new Map(page.nodes.map((n) => [n.id, n]));
   for (const l of links) {
-    const { id, ...cfg } = l;
+    const { id, ...cfg } = stripPillLabels(
+      page as Page,
+      resolveLinkStyle(l, opts.linkStyles),
+      nodeById,
+    );
     topo.link(id, fadedEmph(id, cfg));
   }
   for (const z of zones) {

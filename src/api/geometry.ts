@@ -8,6 +8,7 @@
  * separately by the layout analyzer's footprint.
  */
 import type { NodeConfig } from '../vendor/topology-ds.js';
+import { registeredHitBoxes } from '../render/hit-boxes.js';
 
 /** Half-width / half-height per node type (extent from the node's center). */
 const HALF: Record<string, { w: number; h: number }> = {
@@ -167,7 +168,12 @@ export function nodeHalf(node: NodeConfig): { w: number; h: number } {
       h: h !== undefined ? h / 2 : base.h,
     };
   }
-  return HALF[node.type] ?? HALF.custom!;
+  if (HALF[node.type]) return HALF[node.type]!;
+  // Stock pack + registered custom types size like the engine's plugin hit
+  // box (render/hit-boxes); an unregistered custom type keeps the default.
+  const hb = registeredHitBoxes().get(node.type);
+  if (hb) return { w: hb.rx, h: hb.ry };
+  return HALF.custom!;
 }
 
 /**

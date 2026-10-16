@@ -601,7 +601,76 @@ Layer visibility and opacity are document settings and affect rendering.
 ### Legend
 
 Enable **Show key** and choose top-left, top-right, bottom-left, or bottom-right.
-The generated legend travels with supported exports.
+The generated legend travels with supported exports. **Columns** lays the
+rows out across the page like a drawing sheet's Key strip, and **Key title**
+adds a header. Besides node types, statuses, markers and layers, the key
+lists one line sample per link style in use and one ring per LAG / ECMP
+bundle kind in use (see the next section).
+
+### Wiring sheets
+
+A print-grade physical wiring diagram (the kind a cabling crew works from)
+uses conventions a plain topology does not: devices in role tiers, port
+names on the device edge, LAG rings, cables coloured by media and speed with
+a Key, a port table beside each device, and a title block. Every one of
+them is a document field an agent can set over MCP and a human can set in
+Properties; nothing is drawn that the document does not say.
+
+1. **Sheet frame** (Document panel → _Sheet_). Turn on **Sheet frame**, pick a
+   paper size (ANSI A–E or A4–A1; every page's canvas becomes that size at
+   96 dpi, or keep _custom_), and choose border, top title and the title
+   block (subtitle, Drawn by, Revision, Date, an https logo URL). PDF export
+   uses the paper size. MCP: `set_sheet`.
+2. **Wire classes** (link Properties → _Wiring sheet_ → **Wire class**). A
+   document declares its classes once — colour, optional width and dash —
+   and each link names one; an explicit link colour still wins. The legend
+   keys the classes in use. MCP: `define_link_style`, with
+   `preset: "ethernet-media"` for the eleven Ethernet media classes
+   (10G/25G/40G/50G/100G × DAC/SR/LR, NBASE-T).
+3. **Tiers** (node Properties → _Wiring sheet_ → **Tier**). Declare the role
+   rows top → bottom (gateways / distribution / core) and tag each node.
+   **Layout → tiered** (MCP `layout_topology` algorithm `tiered`) rows nodes
+   by tier, keeps nodes that share a zone together as a group, orders each
+   row so the cable fan does not cross itself, places `-01` / `-02` pairs
+   symmetric about the page centre (`mirror`), pins every tiered link end to
+   the face that looks at the other tier, reserves the margins the port
+   tables need, and can emit one zone per tier captioned at its bottom edge
+   (`tierZones`; zones gain **Label edge** top / bottom). Problems warns on
+   an undeclared tier and on a link that skips a tier.
+4. **Port pills** (Page panel → **Port labels → pill on the node edge**).
+   Each endpoint label (the link's Port A / Port Z) draws as a dark pill on
+   the node edge at the attach point, rotated to the side, instead of a
+   glass chip beside the wire. Pair it with the link anchor box's
+   **Distribute ends** so pills take even slots; a node's own **Port
+   labels** overrides the page. Problems warns on pills that overlap or land
+   on another node. MCP: `set_page_properties` `portLabels`.
+5. **Bundles** (link Properties → _Wiring sheet_ → **Bundle (A) / (Z)**). A
+   LAG is a per-device object, so each END of a link names its bundle
+   (`ae0` on each switch of an ESI-LAG; `lacp0` for both legs on a
+   gateway). Two or more pills of one bundle on one node get a ring (solid
+   LAG, dashed ECMP); an ICL draws no ring. MCP: `define_bundle` declares a
+   name's kind (undeclared = LAG).
+6. **Port tables** (node Properties → _Wiring sheet_ → **Port table**). A
+   derived `Port | LAG | PHY | Peer|Port` table beside the node, built from
+   the links that touch it (port names, bundle names, the wire class's Key
+   label or bandwidth, the far device and port), sorted naturally and
+   stacked in the left or right margin inside the sheet border and clear of
+   the legend / title block. MCP: `set_port_table`.
+7. **Chassis** (node library → _Network_ → **Chassis (1RU)**): a wide, low
+   rack-unit front panel whose long edges carry the pills. Put the device
+   name in **Label**, the model in **Sublabel**, and set label **Placement**
+   above. The Node Designer can derive a wider one (the reference fixture
+   defines a 48-port variant from it).
+8. **Rounded cable corners**: an orthogonal link with a **Corner radius**
+   now rounds every elbow.
+
+`fixtures/venue-distribution-leaf.json` is a complete example built through
+the authoring API by `scripts/build-wiring-sheet-fixture.ts`; open it with
+**Open** to see every convention on one ANSI C sheet. Known limits: the
+engine's own wire-centre labels do not avoid pills, a chip's drag handle in
+the editor still sits at the classic chip position in pill mode, line jumps
+skip rounded paths, and bundled ("harness") cable routing is not yet
+implemented.
 
 ## 8. Validation, Problems, and layout
 
@@ -1258,9 +1327,9 @@ Workspace limits include:
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Discover                     | **describe_capabilities**, **layout_guidelines**, **list_templates**                                                                                                                                                                                                                                 |
 | Create/manage private drafts | **create_topology**, **list_topologies**, **get_topology**, **delete_topology**, **create_from_template**, **import_topology**                                                                                                                                                                       |
-| Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**, **set_legend**, **set_palette**                                                                                                                                                                                                       |
+| Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**, **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                                        |
 | Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                                            |
-| Edit content                 | **edit_topology**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**                                                                                                                                                                              |
+| Edit content                 | **edit_topology**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**, **define_link_style**, **define_tier**, **define_bundle**, **set_port_table**                                                                                               |
 | Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **inspect_render**                                                                                                                                                                                              |
 | Output                       | **render_svg**, **export_flipbook**, hosted **share_topology** / **list_shares** / **unpublish_topology**                                                                                                                                                                                            |
 | Workspace                    | **create_workspace**, **list_workspaces**, **get_workspace_manifest**, **get_workspace_document**, **describe_workspace_operations**, **get_workspace_changes**, **get_workspace_elements**, **propose_workspace_changes**, **apply_workspace_changes**, **create_checkpoint**, **list_checkpoints** |

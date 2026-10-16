@@ -20,8 +20,10 @@
 import type { Page } from '../pages/model.js';
 import type { ZoneConfig } from '../vendor/topology-ds.js';
 import type { BoundsRect } from '../api/geometry.js';
-import { engineNodeAABB } from './wire-labels.js';
 import { nodeLabelRect } from './label-placement.js';
+import { engineAABB } from './link-attach.js';
+import { registeredHitBoxes } from './hit-boxes.js';
+import { pageHasPills, pillBands } from './port-pills.js';
 
 /** Fixed half-extents every member centre is padded by (the floor). */
 export const ZONE_MEMBER_PAD_X = 40;
@@ -50,6 +52,7 @@ export function zoneMemberIds(
 /** The padded box the engine draws around a zone's members, or null when no
  * member resolves (the engine draws nothing then). */
 export function zoneBox(page: Page, zone: ZoneConfig): BoundsRect | null {
+  const bands = pageHasPills(page) ? pillBands(page) : null;
   let minX = Infinity,
     minY = Infinity,
     maxX = -Infinity,
@@ -71,9 +74,19 @@ export function zoneBox(page: Page, zone: ZoneConfig): BoundsRect | null {
       h: ZONE_MEMBER_PAD_Y * 2,
     });
     if (!n) continue;
-    grow(engineNodeAABB(n));
+    const ab = engineAABB(n, registeredHitBoxes());
+    grow(ab);
     const lr = nodeLabelRect(n);
     if (lr) grow(lr);
+    // Port pills (W4) hang off the box the engine sizes from `pillBand`.
+    const pb = bands?.get(n.id);
+    if (pb)
+      grow({
+        x: ab.x - pb.w,
+        y: ab.y - pb.n,
+        w: ab.w + pb.w + pb.e,
+        h: ab.h + pb.n + pb.s,
+      });
   }
   if (!Number.isFinite(minX)) return null;
   const pad = zone.padding || ZONE_PADDING;

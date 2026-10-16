@@ -10,6 +10,14 @@
 import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import { POLICY_MARKER_TYPES } from './markers.js';
 import { LAYER_KINDS } from './layers.js';
+import { LINK_STYLE_DASHES, LINK_STYLE_WIDTH_RANGE } from './link-styles.js';
+import {
+  SHEET_MAX_FIELDS,
+  SHEET_ORIENTATIONS,
+  SHEET_SIZE_IDS,
+  SHEET_SIZE_LABELS,
+} from './sheet.js';
+import { BUNDLE_KINDS } from './bundles.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import {
   STOCK_NODE_LABELS,
@@ -168,6 +176,26 @@ const POSITION: FieldSpec[] = [
 ];
 /** Every element kind can opt into a declared document layer. */
 const LAYER_FIELD: FieldSpec = { key: 'layer', label: 'Layer', kind: 'ref' };
+/** Nodes may sit in a declared document tier (W2; declare with define_tier). */
+const TIER_FIELD: FieldSpec = { key: 'tier', label: 'Tier', kind: 'ref' };
+/**
+ * Derived port table (W5): present = drawn in the page margin beside the
+ * node, built from the links that touch it (Port | LAG | PHY | Peer|Port).
+ */
+export const PORT_TABLE_FIELD: FieldSpec = {
+  key: 'portTable',
+  label: 'Port table',
+  kind: 'object',
+  fields: [
+    {
+      key: 'side',
+      label: 'Margin',
+      kind: 'enum',
+      options: ['', 'w', 'e'],
+      optionLabels: { '': 'Nearer side', w: 'Left margin', e: 'Right margin' },
+    },
+  ],
+};
 /** Every element kind (except anchors) can carry an external source identity. */
 const SOURCE_FIELD: FieldSpec = {
   key: 'source',
@@ -213,6 +241,18 @@ const NODE_COMMON: FieldSpec[] = [
   { key: 'labelWidth', label: 'Label width', kind: 'number' },
   { key: 'locked', label: 'Locked', kind: 'boolean' },
   LINK_ATTACH_FIELD,
+  // W4 endpoint-label mode override (the page's `portLabels` is the default).
+  {
+    key: 'portLabels',
+    label: 'Port labels',
+    kind: 'enum',
+    options: ['', 'chip', 'pill'],
+    optionLabels: {
+      '': 'Page default',
+      chip: 'Chip beside the wire',
+      pill: 'Pill on the node edge',
+    },
+  },
   {
     key: 'meta',
     label: 'Metadata',
@@ -236,6 +276,8 @@ const NODE_COMMON: FieldSpec[] = [
   HREF_FIELD,
   TOOLTIP_FIELD,
   LAYER_FIELD,
+  TIER_FIELD,
+  PORT_TABLE_FIELD,
   SOURCE_FIELD,
 ];
 
@@ -446,6 +488,8 @@ const NODE_CATALOG: Record<string, NodeTypeInfo> = Object.fromEntries(
           HREF_FIELD,
           TOOLTIP_FIELD,
           LAYER_FIELD,
+          TIER_FIELD,
+          PORT_TABLE_FIELD,
           SOURCE_FIELD,
         ]
       : [...POSITION, ...NODE_COMMON, ...(NODE_EXTRAS[type] ?? [])];
@@ -483,6 +527,9 @@ const PORT_LABELS: Readonly<Record<string, string>> = {
 
 const LINK_COMMON: FieldSpec[] = [
   { key: 'color', label: 'Color', kind: 'color' },
+  // W1 wire class: the id of a document link style (declare with
+  // define_link_style). An explicit color / strokeWidth / dashed wins over it.
+  { key: 'style', label: 'Wire class (style)', kind: 'ref' },
   { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.label },
   {
     key: 'fromLabel',
@@ -493,6 +540,19 @@ const LINK_COMMON: FieldSpec[] = [
   {
     key: 'toLabel',
     label: 'Port (Z)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  // W3 bundle (LAG / ECMP) name of each end; kinds via define_bundle.
+  {
+    key: 'fromBundle',
+    label: 'Bundle (A)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  {
+    key: 'toBundle',
+    label: 'Bundle (Z)',
     kind: 'string',
     max: TEXT_LIMITS.label,
   },
@@ -683,6 +743,12 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
         label: 'Label align',
         kind: 'enum',
         options: ['left', 'center', 'right'],
+      },
+      {
+        key: 'labelPosition',
+        label: 'Label edge',
+        kind: 'enum',
+        options: ['top', 'bottom'],
       },
       { key: 'parentZone', label: 'Parent zone', kind: 'ref' },
       HREF_FIELD,
@@ -885,4 +951,119 @@ export function getAnnotationType(
   kind: AnnotationKind,
 ): AnnotationTypeInfo | undefined {
   return ANNOTATION_CATALOG[kind];
+}
+
+/** The bundle vocabulary (W3): kinds + a BundleDef's fields. */
+export interface BundleCatalogInfo {
+  kinds: readonly string[];
+  fields: FieldSpec[];
+}
+
+export function bundleCatalog(): BundleCatalogInfo {
+  return {
+    kinds: BUNDLE_KINDS,
+    fields: [
+      { key: 'id', label: 'Name', kind: 'string', required: true, max: 64 },
+      { key: 'kind', label: 'Kind', kind: 'enum', options: BUNDLE_KINDS },
+      { key: 'label', label: 'Label', kind: 'string', max: TEXT_LIMITS.name },
+    ],
+  };
+}
+
+/** The tier vocabulary (W2): a TierDef's fields. */
+export interface TierCatalogInfo {
+  fields: FieldSpec[];
+}
+
+export function tierCatalog(): TierCatalogInfo {
+  return {
+    fields: [
+      { key: 'id', label: 'Id', kind: 'string', required: true, max: 64 },
+      { key: 'name', label: 'Name', kind: 'string', max: TEXT_LIMITS.name },
+    ],
+  };
+}
+
+/** The sheet-frame vocabulary (W6): SheetConfig's fields. */
+export interface SheetCatalogInfo {
+  sizes: readonly string[];
+  fields: FieldSpec[];
+}
+
+export function sheetCatalog(): SheetCatalogInfo {
+  return {
+    sizes: SHEET_SIZE_IDS,
+    fields: [
+      {
+        key: 'size',
+        label: 'Sheet size',
+        kind: 'enum',
+        options: [...SHEET_SIZE_IDS, 'custom'],
+        optionLabels: { ...SHEET_SIZE_LABELS, custom: 'Custom (keep viewBox)' },
+      },
+      {
+        key: 'orientation',
+        label: 'Orientation',
+        kind: 'enum',
+        options: SHEET_ORIENTATIONS,
+      },
+      { key: 'border', label: 'Border', kind: 'boolean' },
+      { key: 'title', label: 'Title at top', kind: 'boolean' },
+      {
+        key: 'titleBlock',
+        label: 'Title block',
+        kind: 'object',
+        fields: [
+          { key: 'show', label: 'Show', kind: 'boolean' },
+          {
+            key: 'subtitle',
+            label: 'Subtitle',
+            kind: 'string',
+            max: TEXT_LIMITS.name,
+          },
+          {
+            key: 'fields',
+            label: `Fields (label/value, up to ${SHEET_MAX_FIELDS})`,
+            kind: 'record',
+            max: TEXT_LIMITS.name,
+          },
+          {
+            key: 'logoHref',
+            label: 'Logo URL (https)',
+            kind: 'string',
+            max: TEXT_LIMITS.url,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** The link-style vocabulary (W1): a LinkStyleDef's fields + starter presets. */
+export interface LinkStyleCatalogInfo {
+  fields: FieldSpec[];
+  presets: readonly string[];
+}
+
+export function linkStyleCatalog(): LinkStyleCatalogInfo {
+  return {
+    fields: [
+      { key: 'id', label: 'Id', kind: 'string', required: true, max: 64 },
+      {
+        key: 'label',
+        label: 'Key label',
+        kind: 'string',
+        max: TEXT_LIMITS.name,
+      },
+      { key: 'color', label: 'Color', kind: 'color', required: true },
+      {
+        key: 'width',
+        label: 'Stroke width',
+        kind: 'number',
+        range: LINK_STYLE_WIDTH_RANGE,
+      },
+      { key: 'dash', label: 'Dash', kind: 'enum', options: LINK_STYLE_DASHES },
+    ],
+    presets: ['ethernet-media'],
+  };
 }

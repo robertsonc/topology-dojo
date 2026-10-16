@@ -52,6 +52,8 @@
 import { nodeLabelRect } from './label-placement.js';
 import { NODE_LABEL, nodeLabelLines } from './node-labels.js';
 import { zoneBox } from './zone-box.js';
+import { portPills } from './port-pills.js';
+import { registerHitBoxes } from './hit-boxes.js';
 import type { Page } from '../pages/model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type {
@@ -140,6 +142,7 @@ export function inspectPage(
   page: Page,
   opts: InspectOptions = {},
 ): InspectReport {
+  registerHitBoxes(opts.customNodes);
   const cap = Math.max(1, opts.maxPerCategory ?? DEFAULT_MAX_PER_CATEGORY);
   const all: InspectFinding[] = [];
   const add = (
@@ -180,7 +183,18 @@ export function inspectPage(
   });
 
   checkCrop(page, pageRect, glyphs, labels, zoneBoxes, add);
-  checkText(page, glyphs, hit, labels, pos, zones, zoneBoxes, attach, add);
+  checkText(
+    page,
+    glyphs,
+    hit,
+    labels,
+    pos,
+    zones,
+    zoneBoxes,
+    attach,
+    add,
+    portPills(page, opts.customNodes).map((p) => p.rect),
+  );
   const crossings = checkRouting(page, pos, glyphs, attach, add);
   checkDensity(page, glyphs, labels, add);
 
@@ -317,6 +331,7 @@ function checkText(
   zoneBoxes: Map<string, BoundsRect>,
   attach: AttachContext,
   add: (s: InspectSeverity, c: InspectCategory, m: string) => void,
+  portPillRects: readonly BoundsRect[] = [],
 ): void {
   // A link drawn through the label of one of its own nodes: the classic
   // attachment starts 3px under the icon, straight into a south label.
@@ -402,7 +417,8 @@ function checkText(
     const box = zoneBoxes.get(z.id);
     if (box) zoneTitles.set(z.id, zoneLabelRect(z, box));
   }
-  const pills = placePills(page, pos, hit, zoneTitles, attach);
+  // Port pills (W4) are opaque overlay art: wire labels must keep clear.
+  const pills = placePills(page, pos, hit, zoneTitles, attach, portPillRects);
   const describe = (p: Pill): string =>
     `label of ${p.kind === 'link' ? 'link' : p.kind === 'flow' ? 'flow path' : 'marker'} "${p.id}"`;
   for (let i = 0; i < pills.length; i++) {
@@ -514,8 +530,9 @@ function placePills(
   hit: Map<string, BoundsRect>,
   zoneTitles: Map<string, BoundsRect>,
   attach: AttachContext,
+  extraObstacles: readonly BoundsRect[] = [],
 ): Pill[] {
-  const fixed = [...hit.values(), ...zoneTitles.values()];
+  const fixed = [...hit.values(), ...zoneTitles.values(), ...extraObstacles];
   const pills: Pill[] = [];
   const place = (
     kind: Pill['kind'],
@@ -922,7 +939,11 @@ function zoneLabelRect(zone: ZoneConfig, box: BoundsRect): BoundsRect {
       : align === 'right'
         ? box.x + box.w - 8 - w
         : box.x + 8;
-  return { x, y: box.y + 5, w, h: ZONE_LABEL_H };
+  const y =
+    zone.labelPosition === 'bottom'
+      ? box.y + box.h - 5 - ZONE_LABEL_H
+      : box.y + 5;
+  return { x, y, w, h: ZONE_LABEL_H };
 }
 
 /* ── geometry primitives ──────────────────────────────────────────── */

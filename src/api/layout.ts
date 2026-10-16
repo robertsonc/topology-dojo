@@ -15,6 +15,9 @@ import { nodeBounds, type BoundsRect } from './geometry.js';
 import { nodeLabelRect } from '../render/label-placement.js';
 import { zoneBox } from '../render/zone-box.js';
 import type { Problem } from './validate.js';
+import { PORT_PILL, portPills } from '../render/port-pills.js';
+import { portTables } from '../render/port-table.js';
+import { registerHitBoxes } from '../render/hit-boxes.js';
 
 /** The padded box the engine draws around a zone's members (render/zone-box). */
 export { zoneBox };
@@ -35,6 +38,8 @@ export const LAYOUT_RULES = {
   labelHeight: 16,
   /** Approx. width per label character (monospace ~ this many px). */
   labelCharWidth: 6,
+  /** Clear vertical space between two tier rows (room for the cable fan + pills). */
+  tierGap: 140,
 } as const;
 
 export interface LayoutGuidelines {
@@ -57,6 +62,7 @@ export function layoutGuidelines(): LayoutGuidelines {
       `Give every node a short label and leave vertical room beneath it; long labels widen the footprint.`,
       `Lay flows out left→right or top→bottom and order waypoints so routes do not cross over nodes.`,
       `Prefer even spacing: align rows/columns and distribute nodes uniformly rather than clustering.`,
+      `For a wiring sheet, declare tiers (define_tier: gateways / distribution / core, top → bottom), tag each node with its tier, and run layout_topology algorithm "tiered": rows are ${r.tierGap}px apart, each row is ordered to keep the cable fan from crossing itself, and mirror:true pairs -01/-02 devices about the page centre. Link only adjacent tiers; validate_topology warns on a link that skips one.`,
     ],
   };
 }
@@ -66,11 +72,41 @@ export function layoutGuidelines(): LayoutGuidelines {
  * problems (all warnings — layout is advisory and never blocks rendering).
  */
 export function analyzeLayout(doc: TopologyDocument): Problem[] {
+  registerHitBoxes(doc.customNodes);
   const problems: Problem[] = [];
-  doc.pages.forEach((page, pi) =>
-    analyzePage(page, `page[${pi}] "${page.name}"`, problems),
-  );
+  doc.pages.forEach((page, pi) => {
+    const at = `page[${pi}] "${page.name}"`;
+    analyzePage(page, at, problems);
+    analyzePortTables(doc, page, at, problems);
+  });
   return problems;
+}
+
+/** Port tables (W5): a table must stay on the page and off the diagram. */
+function analyzePortTables(
+  doc: TopologyDocument,
+  page: Page,
+  at: string,
+  out: Problem[],
+): void {
+  const tables = portTables(doc, page);
+  if (!tables.length) return;
+  const [vx, vy, vw, vh] = parseViewBox(page.viewBox);
+  const warn = (message: string): void => {
+    out.push({ level: 'warning', message, where: at });
+  };
+  for (const t of tables) {
+    const r = t.rect;
+    if (r.x < vx || r.x + r.w > vx + vw || r.y < vy || r.y + r.h > vy + vh)
+      warn(
+        `port table of "${t.nodeId}" (${Math.round(r.w)}×${Math.round(r.h)}px) runs past the page edge — widen the page (set_sheet) or move the table to the other margin`,
+      );
+    for (const n of page.nodes)
+      if (rectGap(r, nodeFootprint(n)) < 0)
+        warn(
+          `port table of "${t.nodeId}" overlaps node "${n.id}" — leave a ${Math.round(r.w)}px margin on its ${t.side === 'w' ? 'left' : 'right'} (layout_topology "tiered" reserves it)`,
+        );
+  }
 }
 
 function analyzePage(page: Page, at: string, out: Problem[]): void {
@@ -107,6 +143,30 @@ function analyzePage(page: Page, at: string, out: Problem[]): void {
       else if (gap < LAYOUT_RULES.minNodeGap)
         warn(
           `nodes "${a.id}" and "${b.id}" are too close (<${LAYOUT_RULES.minNodeGap}px apart)`,
+        );
+    }
+  }
+
+  // 2b. Port pills (W4): pills on one node side must not overlap each other
+  // (too many ports for the side, or no distribute), nor land on another
+  // node's footprint.
+  const pills = portPills(page);
+  for (let i = 0; i < pills.length; i++) {
+    const a = pills[i]!;
+    for (let j = i + 1; j < pills.length; j++) {
+      const b = pills[j]!;
+      if (rectGap(a.rect, b.rect) < PORT_PILL.gap)
+        warn(
+          a.nodeId === b.nodeId
+            ? `port pills "${a.label}" and "${b.label}" overlap on node "${a.nodeId}" (${a.side} side) — too many ports for that side, or linkAttach.distribute is off`
+            : `port pill "${a.label}" on "${a.nodeId}" overlaps pill "${b.label}" on "${b.nodeId}"`,
+        );
+    }
+    for (const n of page.nodes) {
+      if (n.id === a.nodeId) continue;
+      if (rectGap(a.rect, fps.get(n.id)!) < 0)
+        warn(
+          `port pill "${a.label}" on "${a.nodeId}" lands on node "${n.id}" — move the nodes apart or route the link from another side`,
         );
     }
   }

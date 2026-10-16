@@ -1811,8 +1811,11 @@ class TopologyDesigner {
           if (this._segHitsBox(pts[i], pts[i + 1], ab, pad)) return false;
       return true;
     };
+    const r = linkCfg && Number(linkCfg.cornerRadius) > 0 ? Number(linkCfg.cornerRadius) : 0;
     const toPath = (pts) =>
-      'M' + pts.map((p) => `${p.x},${p.y}`).join(' L');
+      r > 0
+        ? TopologyDesigner._roundPolyline(pts, r)
+        : 'M' + pts.map((p) => `${p.x},${p.y}`).join(' L');
 
     const hv = [from, { x: to.x, y: from.y }, to]; // horizontal then vertical
     const vh = [from, { x: from.x, y: to.y }, to]; // vertical then horizontal
@@ -4235,12 +4238,18 @@ ${grid}`;
     const align = zone.labelAlign || 'left';
     const labelX = align === 'center' ? minX + w / 2 : align === 'right' ? maxX - 8 : minX + 8;
     const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
+    // Caption edge (W2): 'bottom' puts the title just inside the bottom edge
+    // (a tier band reads "Distribution" under its devices) with the sublabel
+    // stacked above it; the default top edge is unchanged.
+    const bottom = zone.labelPosition === 'bottom';
+    const labelY = bottom ? minY + h - 8 : minY + 14;
+    const subY = bottom ? minY + h - 20 : minY + 26;
     let s = '';
     s += `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" rx="8" fill="${c}" fill-opacity=".04" stroke="${c}" stroke-width="1" stroke-opacity=".35"${dash !== 'none' ? ` stroke-dasharray="${dash}"` : ''}/>`;
-    s += `<text x="${labelX}" y="${minY + 14}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity=".7">${_esc(zone.label || zone.id)}</text>`;
+    s += `<text x="${labelX}" y="${labelY}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity=".7">${_esc(zone.label || zone.id)}</text>`;
     const sublabelText = zone.sublabel || zone.description;
     if (sublabelText) {
-      s += `<text x="${labelX}" y="${minY + 26}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity=".5">${_esc(sublabelText)}</text>`;
+      s += `<text x="${labelX}" y="${subY}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity=".5">${_esc(sublabelText)}</text>`;
     }
     return _hrefTipWrap(zone, `<g class="tds-zone" data-zone-id="${zone.id}">`, s, '</g>');
   }
@@ -4406,9 +4415,14 @@ ${grid}`;
       grow({ x: pos.x - 40, y: pos.y - 30, w: 80, h: 60 });
       const cfg = this._nodes.get(nId);
       if (!cfg) continue;
-      grow(this._getNodeAABB(cfg));
+      const ab = this._getNodeAABB(cfg);
+      grow(ab);
       const lr = this._nodeLabelRect(cfg);
       if (lr) grow(lr);
+      // Port pills (overlay art, W4): the render path passes how far they
+      // reach past the hit box per side, so a band caption clears them.
+      const pb = cfg.pillBand;
+      if (pb) grow({ x: ab.x - (pb.w || 0), y: ab.y - (pb.n || 0), w: ab.w + (pb.w || 0) + (pb.e || 0), h: ab.h + (pb.n || 0) + (pb.s || 0) });
     }
     if (!isFinite(minX)) return null;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
@@ -4421,7 +4435,8 @@ ${grid}`;
     const w = String(zone.label || zone.id).length * 5.4;
     const align = zone.labelAlign || 'left';
     const x = align === 'center' ? box.x + box.w / 2 - w / 2 : align === 'right' ? box.x + box.w - 8 - w : box.x + 8;
-    return { x, y: box.y + 5, w, h: 14 };
+    const y = zone.labelPosition === 'bottom' ? box.y + box.h - 19 : box.y + 5;
+    return { x, y, w, h: 14 };
   }
 
   /** Per-render obstacle registry for pill placement: node hit boxes + zone
@@ -4562,7 +4577,16 @@ ${grid}`;
   _buildLinkPath(from, to, waypoints, lineStyle, cornerRadius) {
     const pts = [from, ...(waypoints || []), to];
     if (lineStyle === 'orthogonal') {
-      // Right-angle routing between consecutive points
+      // Right-angle routing between consecutive points. A positive
+      // cornerRadius rounds every elbow (W8: the wiring-sheet "rounded
+      // orthogonal" cable look); 0 / absent keeps the classic sharp path.
+      const poly = [pts[0]];
+      for (let i = 1; i < pts.length; i++) {
+        poly.push({ x: pts[i].x, y: pts[i - 1].y });
+        poly.push({ x: pts[i].x, y: pts[i].y });
+      }
+      const r = Number(cornerRadius) > 0 ? Number(cornerRadius) : 0;
+      if (r > 0) return TopologyDesigner._roundPolyline(poly, r);
       let d = `M${pts[0].x},${pts[0].y}`;
       for (let i = 1; i < pts.length; i++) {
         const mx = pts[i].x, my = pts[i-1].y;
@@ -4606,6 +4630,32 @@ ${grid}`;
     }
     // Default: straight segments through waypoints
     return pts.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join(' ');
+  }
+
+  /**
+   * A polyline as a path with every interior corner rounded by `r` (W8):
+   * each vertex becomes a line to `r` short of it and a quadratic curve
+   * through the vertex to `r` past it. `r` is clamped per corner to half
+   * the shorter adjacent segment, and zero-length segments are skipped, so
+   * a tight elbow never folds back on itself. Degenerate input (< 2 points)
+   * returns a plain move/line path.
+   */
+  static _roundPolyline(pts, r) {
+    const P = (p) => `${p.x},${p.y}`;
+    const clean = pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
+    if (clean.length < 2) return `M${P(pts[0])}`;
+    let d = `M${P(clean[0])}`;
+    for (let i = 1; i < clean.length - 1; i++) {
+      const a = clean[i - 1], v = clean[i], b = clean[i + 1];
+      const inLen = Math.hypot(v.x - a.x, v.y - a.y);
+      const outLen = Math.hypot(b.x - v.x, b.y - v.y);
+      const rr = Math.min(r, inLen / 2, outLen / 2);
+      if (rr <= 0.01) { d += ` L${P(v)}`; continue; }
+      const p1 = { x: v.x - ((v.x - a.x) / inLen) * rr, y: v.y - ((v.y - a.y) / inLen) * rr };
+      const p2 = { x: v.x + ((b.x - v.x) / outLen) * rr, y: v.y + ((b.y - v.y) / outLen) * rr };
+      d += ` L${P(p1)} Q${P(v)} ${P(p2)}`;
+    }
+    return d + ` L${P(clean[clean.length - 1])}`;
   }
 
   /**

@@ -660,7 +660,12 @@ export class Editor {
     patch: Partial<
       Pick<
         Page,
-        'caption' | 'duration' | 'transition' | 'lineJumps' | 'linkAttach'
+        | 'caption'
+        | 'duration'
+        | 'transition'
+        | 'lineJumps'
+        | 'linkAttach'
+        | 'portLabels'
       >
     >,
     commit = true,
@@ -676,8 +681,13 @@ export class Editor {
       else (this.page as unknown as Record<string, unknown>)[key] = patch[key];
     }
     this.emitPagePatch(fp);
-    // lineJumps / linkAttach change the drawn art itself, not just the overlay.
-    if (keys.includes('lineJumps') || keys.includes('linkAttach'))
+    // lineJumps / linkAttach / portLabels change the drawn art itself (the
+    // engine's chips come off in pill mode), not just the overlay.
+    if (
+      keys.includes('lineJumps') ||
+      keys.includes('linkAttach') ||
+      keys.includes('portLabels')
+    )
       this.renderArt();
     this.renderOverlay(); // caption renders via the overlayExtra hook
     this.onChange();
@@ -4450,6 +4460,7 @@ function serialize(page: Page): PageSnapshot {
     emphasis: page.emphasis,
     lineJumps: page.lineJumps,
     linkAttach: page.linkAttach,
+    portLabels: page.portLabels,
     nodes: page.nodes,
     links: page.links,
     anchors: page.anchors,

@@ -20,6 +20,10 @@ import type {
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type { LayerDef } from '../api/layers.js';
+import type { LinkStyleDef } from '../api/link-styles.js';
+import type { SheetConfig } from '../api/sheet.js';
+import type { TierDef } from '../api/tiers.js';
+import type { BundleDef } from '../api/bundles.js';
 import { createDocument } from '../api/builder.js';
 
 export interface Page extends RenderablePage {
@@ -47,6 +51,13 @@ export interface Page extends RenderablePage {
    * wherever their straight segments cross. Optional — absent means no jumps.
    */
   lineJumps?: 'arc' | 'gap';
+  /**
+   * Endpoint (port) label rendering (proposal 0008, W4): 'chip' (the classic
+   * glass chip beside the wire, default) or 'pill' (a dark pill on the
+   * node's edge at the attach point, rotated to the side; pairs with
+   * `linkAttach.distribute`). A node's own `portLabels` overrides it.
+   */
+  portLabels?: 'chip' | 'pill';
   nodes: NodeConfig[];
   links: LinkConfig[];
   anchors: AnchorConfig[];
@@ -81,6 +92,27 @@ export interface TopologyDocument {
    */
   stencils?: Stencil[];
   /**
+   * Declared wire classes (proposal 0008, W1): each link may name one by
+   * `style`; the legend keys the ones in use. Optional — absent means links
+   * carry their own colours as before.
+   */
+  linkStyles?: LinkStyleDef[];
+  /**
+   * Declared tiers, top → bottom (proposal 0008, W2): the role axis the
+   * `tiered` layout rows nodes by. Nodes opt in with `tier`. Optional.
+   */
+  tiers?: TierDef[];
+  /**
+   * Declared bundle names (proposal 0008, W3): the kind (lag / ecmp / icl)
+   * of a name links use in `fromBundle` / `toBundle`. Undeclared = lag.
+   */
+  bundles?: BundleDef[];
+  /**
+   * Drawing-sheet frame (proposal 0008, W6): paper size, border, top title
+   * and the bottom-right title block. Optional — absent means no frame.
+   */
+  sheet?: SheetConfig;
+  /**
    * Brand palette (#7) — remaps the engine's accent colours on the canvas and
    * drives the chrome accent, so each document can carry its own branding.
    * Optional and backward-compatible (absent → the default green palette).
@@ -107,6 +139,13 @@ export interface LegendConfig {
   show?: boolean;
   /** Which corner of the page it sits in. Default 'tl'. */
   position?: 'tl' | 'tr' | 'bl' | 'br';
+  /**
+   * Lay the rows out across this many columns (row-major, like a drawing
+   * sheet's Key strip). Default 1 (a single column). Clamped to [1, 8].
+   */
+  columns?: number;
+  /** Optional header strip text (e.g. "Key"). */
+  title?: string;
 }
 
 let _seq = 0;

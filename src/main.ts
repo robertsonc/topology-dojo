@@ -53,7 +53,15 @@ import { exportFlipbookHTML } from './render/flipbook.js';
 import { documentToDrawioXML } from './editor/drawio.js';
 import { userToClient } from './editor/coords.js';
 import { nodeBounds } from './api/geometry.js';
-import { legendSVG } from './editor/legend.js';
+import { documentOverlaySVG } from './render/overlays.js';
+import { registerHitBoxes } from './render/hit-boxes.js';
+import {
+  SHEET_SIZE_IDS,
+  SHEET_SIZE_LABELS,
+  sheetPaperPt,
+  sheetViewBox,
+  type SheetConfig,
+} from './api/sheet.js';
 import { captionSVG } from './editor/caption.js';
 import { applyRenderTheme, type RenderTheme } from './render/theme.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
@@ -97,6 +105,7 @@ const doc: TopologyDocument = loadLocal() ?? sampleDocument();
 // with the engine before any render.
 registerCustomNodes(STOCK_NODE_SPECS);
 registerCustomNodes(doc.customNodes);
+registerHitBoxes(doc.customNodes);
 let current = 0;
 
 const app = document.getElementById('app')!;
@@ -395,15 +404,19 @@ const editor = new Editor(
 // Themed like the art (#264) so the on-canvas legend/caption read in light mode.
 editor.setOverlayExtra(() =>
   applyRenderTheme(
-    legendSVG(doc, editor.page) + captionSVG(editor.page),
+    documentOverlaySVG(doc, editor.page) + captionSVG(editor.page),
     currentTheme(),
   ),
 );
 
 // Feed declared layers (with their visibility/opacity, B.3) into every render so
 // hiding/fading a layer takes effect on canvas. Exports pass the same `layers`.
-const renderLayerOpts = (): { layers: typeof doc.layers } => ({
+const renderLayerOpts = (): {
+  layers: typeof doc.layers;
+  linkStyles: typeof doc.linkStyles;
+} => ({
   layers: doc.layers,
+  linkStyles: doc.linkStyles,
 });
 editor.setRenderOpts(renderLayerOpts);
 
@@ -790,11 +803,21 @@ function loadDoc(
   doc.title = next.title;
   doc.pages = structuredClone(next.pages);
   doc.customNodes = structuredClone(next.customNodes);
-  for (const key of ['layers', 'legend', 'stencils', 'palette'] as const) {
+  for (const key of [
+    'layers',
+    'legend',
+    'stencils',
+    'palette',
+    'linkStyles',
+    'sheet',
+    'tiers',
+    'bundles',
+  ] as const) {
     if (next[key] === undefined) delete doc[key];
     else (doc[key] as unknown) = structuredClone(next[key]);
   }
   registerCustomNodes(doc.customNodes);
+  registerHitBoxes(doc.customNodes);
   invalidatePreview(); // custom types replaced — clear cached previews
   finalizeFrameDelete(); // a pending frame restore can't outlive its document
   current = 0;
@@ -990,7 +1013,7 @@ function exportBase(): string {
   return `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
 }
 function exportExtra(page: Page): string {
-  return legendSVG(doc, page) + captionSVG(page);
+  return documentOverlaySVG(doc, page) + captionSVG(page);
 }
 app.querySelector('#fSvg')?.addEventListener('click', () => {
   const page = doc.pages[current]!;
@@ -1002,6 +1025,7 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
       {
         calm: editor.calm,
         layers: doc.layers,
+        linkStyles: doc.linkStyles,
         emphasis: page.emphasis,
         theme: currentTheme(),
       },
@@ -1021,6 +1045,7 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
   reportExport('pending', '… exporting png', filename);
   void exportPagePNG(filename, page, 2, exportExtra(page), {
     layers: doc.layers,
+    linkStyles: doc.linkStyles,
     emphasis: page.emphasis,
     theme: currentTheme(),
   })
@@ -1038,20 +1063,27 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
  * as the MCP tool — no fork), clipboard PNG, and selection-only crops. */
 const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
 function pageExtra(page: Page): string {
-  return legendSVG(doc, page) + captionSVG(page);
+  return documentOverlaySVG(doc, page) + captionSVG(page);
 }
 /* Exports follow the editor's current light/dark toggle (#264): a light
  * canvas exports light, a dark canvas exports dark. */
 function pageOpts(page: Page): {
   layers: typeof doc.layers;
+  linkStyles: typeof doc.linkStyles;
   emphasis?: string[];
   theme: RenderTheme;
 } {
   return {
     layers: doc.layers,
+    linkStyles: doc.linkStyles,
     ...(page.emphasis ? { emphasis: page.emphasis } : {}),
     theme: currentTheme(),
   };
+}
+/** PDF paper size from the sheet frame (W6), when a standard size is set. */
+function paperSpec(): { paper?: { w: number; h: number } } {
+  const paper = sheetPaperPt(doc.sheet?.size, doc.sheet?.orientation);
+  return paper ? { paper } : {};
 }
 /** The selection as a cropped standalone page, or null when nothing usable. */
 function selectionAsPage(): Page | null {
@@ -1064,7 +1096,7 @@ async function runExport(kind: string): Promise<void> {
   switch (kind) {
     case 'pdf-page': {
       const blob = await pagesToPDFBlob([
-        { page, opts: pageOpts(page), extra: pageExtra(page) },
+        { page, opts: pageOpts(page), extra: pageExtra(page), ...paperSpec() },
       ]);
       downloadBlob(`${exportBase()}.pdf`, blob);
       return;
@@ -1075,6 +1107,7 @@ async function runExport(kind: string): Promise<void> {
           page: p,
           opts: pageOpts(p),
           extra: pageExtra(p),
+          ...paperSpec(),
         })),
       );
       downloadBlob(
@@ -1118,6 +1151,7 @@ async function runExport(kind: string): Promise<void> {
       exportPageSVG(`${exportBase()}_selection.svg`, sp, {
         calm: true,
         layers: doc.layers,
+        linkStyles: doc.linkStyles,
         theme: currentTheme(),
       });
       return;
@@ -1127,6 +1161,7 @@ async function runExport(kind: string): Promise<void> {
       if (!sp) throw new Error('select one or more nodes first');
       await exportPagePNG(`${exportBase()}_selection.png`, sp, 2, '', {
         layers: doc.layers,
+        linkStyles: doc.linkStyles,
         theme: currentTheme(),
       });
       return;
@@ -2230,6 +2265,10 @@ const LINK_GROUPS: FieldGroup[] = [
     open: true,
   },
   {
+    title: 'Wiring sheet',
+    keys: ['style', 'fromBundle', 'toBundle', 'bandwidth', 'transport'],
+  },
+  {
     title: 'Routing',
     keys: [
       'lineStyle',
@@ -2267,6 +2306,10 @@ const NODE_GROUPS: FieldGroup[] = [
   },
   { title: 'Appearance', keys: ['color', 'opacity', 'status'], open: true },
   { title: 'Position', keys: ['x', 'y'] },
+  {
+    title: 'Wiring sheet',
+    keys: ['tier', 'portLabels', 'portTable'],
+  },
   {
     title: 'Advanced',
     keys: ['href', 'tooltip', 'locked', 'linkAttach', 'layer', 'source'],
@@ -2367,6 +2410,10 @@ function propertiesHtml(): string {
     `<option value="arc"${page.lineJumps === 'arc' ? ' selected' : ''}>jump — arc</option>` +
     `<option value="gap"${page.lineJumps === 'gap' ? ' selected' : ''}>jump — gap</option>` +
     `</select></label>` +
+    `<label class="insp-row" title="How endpoint (port) labels draw: a glass chip beside the wire, or a dark pill on the node edge at the attach point (wiring-sheet style — pair with the anchor box's Distribute ends)"><span>Port labels</span><select id="p-portlabels">` +
+    `<option value="chip"${page.portLabels !== 'pill' ? ' selected' : ''}>chip beside the wire</option>` +
+    `<option value="pill"${page.portLabels === 'pill' ? ' selected' : ''}>pill on the node edge</option>` +
+    `</select></label>` +
     // Experimental link anchor box — page-level; nodes may override it.
     `<label class="insp-row" title="Experimental: links attach to a padded box that clears the node label instead of the icon edge. Nodes can override it in their Properties."><span>Link anchor box</span><input type="checkbox" id="p-attach"${page.linkAttach ? ' checked' : ''}/></label>` +
     (page.linkAttach
@@ -2391,7 +2438,48 @@ function propertiesHtml(): string {
       )
       .join('') +
     `</select></label>` +
+    (doc.legend?.show
+      ? `<label class="insp-row" title="Lay the key out across columns, like a drawing sheet's Key strip"><span>Columns</span><input type="number" id="p-legend-cols" min="1" max="8" value="${doc.legend.columns ?? 1}"/></label>` +
+        `<label class="insp-row"><span>Key title</span><input id="p-legend-title" value="${esc(doc.legend.title ?? '')}" placeholder="Key"/></label>`
+      : '') +
+    sheetHtml() +
     layersHtml()
+  );
+}
+
+/** The Sheet section of the Document panel (W6): paper size, border, title block. */
+function sheetHtml(): string {
+  const sh = doc.sheet;
+  const tb = sh?.titleBlock;
+  const field = (label: string): string =>
+    tb?.fields?.find((f) => f.label.toLowerCase() === label.toLowerCase())
+      ?.value ?? '';
+  return (
+    `<div class="insp-h">Sheet</div>` +
+    `<label class="insp-row" title="Draw the document as a drawing sheet: border, top title, bottom-right title block"><span>Sheet frame</span><input type="checkbox" id="p-sheet"${sh ? ' checked' : ''}/></label>` +
+    (sh
+      ? `<label class="insp-row"><span>Size</span><select id="p-sheet-size">` +
+        `<option value="custom"${!sh.size || sh.size === 'custom' ? ' selected' : ''}>custom (keep canvas)</option>` +
+        SHEET_SIZE_IDS.map(
+          (id) =>
+            `<option value="${id}"${sh.size === id ? ' selected' : ''}>${esc(SHEET_SIZE_LABELS[id])}</option>`,
+        ).join('') +
+        `</select></label>` +
+        `<label class="insp-row"><span>Orientation</span><select id="p-sheet-orient">` +
+        `<option value="landscape"${sh.orientation !== 'portrait' ? ' selected' : ''}>landscape</option>` +
+        `<option value="portrait"${sh.orientation === 'portrait' ? ' selected' : ''}>portrait</option>` +
+        `</select></label>` +
+        `<label class="insp-row"><span>Border</span><input type="checkbox" id="p-sheet-border"${sh.border !== false ? ' checked' : ''}/></label>` +
+        `<label class="insp-row"><span>Top title</span><input type="checkbox" id="p-sheet-title"${sh.title !== false ? ' checked' : ''}/></label>` +
+        `<label class="insp-row"><span>Title block</span><input type="checkbox" id="p-sheet-tb"${tb && tb.show !== false ? ' checked' : ''}/></label>` +
+        (tb && tb.show !== false
+          ? `<label class="insp-row"><span>Subtitle</span><input id="p-sheet-sub" value="${esc(tb.subtitle ?? '')}" placeholder="sheet name"/></label>` +
+            `<label class="insp-row"><span>Drawn by</span><input class="p-sheet-field" data-label="Drawn by" value="${esc(field('Drawn by'))}"/></label>` +
+            `<label class="insp-row"><span>Revision</span><input class="p-sheet-field" data-label="Revision" value="${esc(field('Revision'))}"/></label>` +
+            `<label class="insp-row"><span>Date</span><input class="p-sheet-field" data-label="Date" value="${esc(field('Date'))}"/></label>` +
+            `<label class="insp-row"><span>Logo URL</span><input id="p-sheet-logo" value="${esc(tb.logoHref ?? '')}" placeholder="https://…"/></label>`
+          : '')
+      : '')
   );
 }
 
@@ -2494,6 +2582,13 @@ function wireProperties(): void {
           : undefined,
     });
   });
+  const portLabels =
+    inspector.querySelector<HTMLSelectElement>('#p-portlabels');
+  portLabels?.addEventListener('change', () => {
+    editor.updatePageProps({
+      portLabels: portLabels.value === 'pill' ? 'pill' : undefined,
+    });
+  });
   // Link anchor box (experimental) — page-level; the art redraws on change.
   const attachOn = inspector.querySelector<HTMLInputElement>('#p-attach');
   attachOn?.addEventListener('change', () => {
@@ -2535,8 +2630,133 @@ function wireProperties(): void {
     editor.redrawOverlay();
     markDirty();
   });
+  const legendCols =
+    inspector.querySelector<HTMLInputElement>('#p-legend-cols');
+  legendCols?.addEventListener('change', () => {
+    const n = Math.max(1, Math.min(8, Math.round(Number(legendCols.value))));
+    const next = { ...doc.legend };
+    if (n > 1) next.columns = n;
+    else delete next.columns;
+    doc.legend = next;
+    editor.redrawOverlay();
+    markDirty();
+  });
+  const legendTitle =
+    inspector.querySelector<HTMLInputElement>('#p-legend-title');
+  legendTitle?.addEventListener('input', () => {
+    const next = { ...doc.legend };
+    if (legendTitle.value.trim()) next.title = legendTitle.value;
+    else delete next.title;
+    doc.legend = next;
+    editor.redrawOverlay();
+    markDirty();
+  });
+  wireSheet();
   wireLayers();
   wireFrameStory();
+}
+
+/** Wire the Sheet section (W6): every control writes `doc.sheet` and redraws. */
+function wireSheet(): void {
+  const on = inspector.querySelector<HTMLInputElement>('#p-sheet');
+  const commit = (rerender = false): void => {
+    editor.redrawOverlay();
+    markDirty();
+    if (rerender) renderInspector();
+  };
+  on?.addEventListener('change', () => {
+    if (on.checked) doc.sheet = doc.sheet ?? {};
+    else delete doc.sheet;
+    commit(true);
+  });
+  const sh = (): SheetConfig => (doc.sheet ??= {});
+  const applySize = (): void => {
+    const vb = sheetViewBox(sh().size, sh().orientation);
+    if (!vb) return;
+    for (const p of doc.pages) p.viewBox = vb;
+    editor.setPage(doc.pages[current]!);
+  };
+  inspector
+    .querySelector<HTMLSelectElement>('#p-sheet-size')
+    ?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLSelectElement).value;
+      if (v === 'custom') delete sh().size;
+      else sh().size = v as SheetConfig['size'];
+      applySize();
+      commit();
+    });
+  inspector
+    .querySelector<HTMLSelectElement>('#p-sheet-orient')
+    ?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLSelectElement).value;
+      if (v === 'portrait') sh().orientation = 'portrait';
+      else delete sh().orientation;
+      applySize();
+      commit();
+    });
+  const bool = (id: string, key: 'border' | 'title'): void => {
+    inspector
+      .querySelector<HTMLInputElement>(id)
+      ?.addEventListener('change', (e) => {
+        if ((e.target as HTMLInputElement).checked) delete sh()[key];
+        else sh()[key] = false;
+        commit();
+      });
+  };
+  bool('#p-sheet-border', 'border');
+  bool('#p-sheet-title', 'title');
+  inspector
+    .querySelector<HTMLInputElement>('#p-sheet-tb')
+    ?.addEventListener('change', (e) => {
+      const tb = { ...(sh().titleBlock ?? {}) };
+      if ((e.target as HTMLInputElement).checked) delete tb.show;
+      else tb.show = false;
+      sh().titleBlock = tb;
+      commit(true);
+    });
+  inspector
+    .querySelector<HTMLInputElement>('#p-sheet-sub')
+    ?.addEventListener('input', (e) => {
+      const tb = { ...(sh().titleBlock ?? {}) };
+      const v = (e.target as HTMLInputElement).value;
+      if (v.trim()) tb.subtitle = v;
+      else delete tb.subtitle;
+      sh().titleBlock = tb;
+      commit();
+    });
+  inspector
+    .querySelectorAll<HTMLInputElement>('.p-sheet-field')
+    .forEach((inp) =>
+      inp.addEventListener('input', () => {
+        const tb = { ...(sh().titleBlock ?? {}) };
+        const label = inp.dataset.label!;
+        const fields = (tb.fields ?? []).filter(
+          (f) => f.label.toLowerCase() !== label.toLowerCase(),
+        );
+        if (inp.value.trim()) fields.push({ label, value: inp.value });
+        // Keep the canonical order so the block reads Drawn by / Revision / Date.
+        const order = ['drawn by', 'revision', 'date'];
+        fields.sort(
+          (a, b) =>
+            (order.indexOf(a.label.toLowerCase()) + 1 || 99) -
+            (order.indexOf(b.label.toLowerCase()) + 1 || 99),
+        );
+        if (fields.length) tb.fields = fields;
+        else delete tb.fields;
+        sh().titleBlock = tb;
+        commit();
+      }),
+    );
+  inspector
+    .querySelector<HTMLInputElement>('#p-sheet-logo')
+    ?.addEventListener('change', (e) => {
+      const tb = { ...(sh().titleBlock ?? {}) };
+      const v = (e.target as HTMLInputElement).value.trim();
+      if (/^https:\/\//i.test(v)) tb.logoHref = v;
+      else delete tb.logoHref;
+      sh().titleBlock = tb;
+      commit();
+    });
 }
 
 /** Wire the Frame section: caption + emphasis picker/actions (Phase 2). */
@@ -4738,7 +4958,10 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
         run: () => {
           const sp = selectionAsPage();
           if (!sp) return;
-          void copyPagePNG(sp, '', { layers: doc.layers }).catch((err) =>
+          void copyPagePNG(sp, '', {
+            layers: doc.layers,
+            linkStyles: doc.linkStyles,
+          }).catch((err) =>
             alert(
               `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
             ),
