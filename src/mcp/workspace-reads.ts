@@ -33,7 +33,9 @@ import type { TopologyStore } from './store.js';
  * - `export_topology` renders / converts the document to a file (PNG, PDF,
  *   draw.io, Visio, PowerPoint, Mermaid) — it reads the store synchronously
  *   before its first await (rasterizer start-up);
- * - `view_topology` renders one page for the MCP Apps inline view.
+ * - `view_topology` renders one page for the MCP Apps inline view;
+ * - `catalog_diff` clones the document before awaiting the catalog and
+ *   compares its cabling under two catalog versions.
  *
  * Deliberately absent: `share_topology` reads the document but PUBLISHES a
  * public KV snapshot (a side effect with its own quota), and every other
@@ -49,6 +51,7 @@ export const WORKSPACE_READ_TOOLS = [
   'export_flipbook',
   'export_topology',
   'view_topology',
+  'catalog_diff',
 ] as const;
 
 export type WorkspaceReadTool = (typeof WORKSPACE_READ_TOOLS)[number];

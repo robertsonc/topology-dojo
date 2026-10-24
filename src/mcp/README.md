@@ -251,62 +251,67 @@ to the task's affected region and change summaries, not total document size.
 
 ## Tools
 
-| Tool                                                   | Purpose                                                                                                                                |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                                                   |
-| `create_topology`                                      | New document (one empty page)                                                                                                          |
-| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                                              |
-| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                  |
-| `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a draw.io file, a Mermaid flowchart, or CSV data (`format` auto-detects)       |
-| `set_document_title`                                   | Rename a document                                                                                                                      |
-| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox / timing / lineJumps / linkAttach / `portLabels` / `caption` / `emphasis`       |
-| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                                          |
-| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                                                       |
-| `edit_topology`                                        | **Batch**: many authoring operations in one call (atomic, ordered) — preferred for building diagrams; reports `created` for upsert ops |
-| `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                                                            |
-| `upsert_by_source`                                     | Converge an element onto external data by source identity                                                                              |
-| `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                                             |
-| `define_bundle`                                        | Declare a LAG / ECMP / ICL bundle name’s kind; links name bundles per end (`fromBundle` / `toBundle`), pills get outlines              |
-| `define_tier`                                          | Declare a wiring-sheet tier (role row, top → bottom); nodes opt in with `tier`, `layout_topology` "tiered" rows them                   |
-| `define_link_style`                                    | Declare a wire class (colour / width / dash) links name via `style`; `preset: "ethernet-media"` loads the 11 Ethernet media classes    |
-| `define_node_type`                                     | Add a custom node type (merged over defaults)                                                                                          |
-| `set_port_table`                                       | Draw a derived port table (Port / LAG / PHY / Peer\|Port) in the page margin beside nodes, built from their links                      |
-| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                                                       |
-| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key; `columns` / `title` lay it out as a drawing-sheet Key strip                  |
-| `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                                                 |
-| `set_sheet`                                            | Drawing-sheet frame: paper size (sets page viewBoxes), border, top title, bottom-right title block (`clear` removes)                   |
-| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                                                          |
-| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page); hardware-catalog cabling rules on bound nodes                           |
-| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                                                  |
-| `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                       |
-| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force / tiered — rows by declared tiers, `mirror`, `tierZones`)                 |
-| `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                       |
-| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"` for a light page)                                  |
-| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations (`theme: "light"` optional)                                               |
-| `export_topology`                                      | Files: PNG / PDF (print-true, ANSI + A-series), draw.io, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid — see [Exports](#exports)          |
-| `view_topology`                                        | Interactive inline view in MCP Apps hosts (pan / zoom / pages / layers / downloads) — see [Inline view](#inline-view-mcp-apps)         |
-| `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                                              |
-| `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                                                                                      |
-| `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                                                           |
-| `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                                                             |
-| `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                                                            |
-| `share_topology`                                       | Publish a **public** durable snapshot; returns a browser link (remote-only)                                                            |
-| `list_shares`                                          | The owner's live published share links, newest first (remote-only)                                                                     |
-| `unpublish_topology`                                   | Owner-only revoke of a public share (deletes the KV snapshot; remote-only)                                                             |
-| `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                                                           |
-| `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                                                  |
-| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it                                            |
-| `get_workspace_document`                               | The whole document (title, layers, legend, custom nodes, stencils, palette, pages) at its current revision; `summary` / `pageIndex`    |
-| `describe_workspace_operations`                        | On-demand versioned operation vocabulary (revision 2 adds `element.upsert`); call only when its revision changes                       |
-| `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                                                                 |
-| `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                                                     |
-| `propose_workspace_changes`                            | Submit a semantic change set for browser-owner review (default write path)                                                             |
-| `apply_workspace_changes`                              | Direct semantic commit only inside a live UI-granted page lease                                                                        |
-| `create_checkpoint`                                    | Snapshot the workspace as a named checkpoint (restore/fork stay browser-owner)                                                         |
-| `list_checkpoints`                                     | List named checkpoints (id, name, revision, page count, author)                                                                        |
-| `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`)                              |
-| `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                                                         |
-| `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                                                      |
+| Tool                                                   | Purpose                                                                                                                                       |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                                                          |
+| `create_topology`                                      | New document (one empty page)                                                                                                                 |
+| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                                                     |
+| `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                         |
+| `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a draw.io file, a Mermaid flowchart, or CSV data (`format` auto-detects)              |
+| `set_document_title`                                   | Rename a document                                                                                                                             |
+| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox / timing / lineJumps / linkAttach / `portLabels` / `caption` / `emphasis`              |
+| `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                                                 |
+| `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                                                              |
+| `edit_topology`                                        | **Batch**: many authoring operations in one call (atomic, ordered) — preferred for building diagrams; reports `created` for upsert ops        |
+| `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                                                                   |
+| `upsert_by_source`                                     | Converge an element onto external data by source identity                                                                                     |
+| `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                                                    |
+| `define_bundle`                                        | Declare a LAG / ECMP / ICL bundle name’s kind; links name bundles per end (`fromBundle` / `toBundle`), pills get outlines                     |
+| `define_tier`                                          | Declare a wiring-sheet tier (role row, top → bottom); nodes opt in with `tier`, `layout_topology` "tiered" rows them                          |
+| `define_link_style`                                    | Declare a wire class (colour / width / dash) links name via `style`; `preset: "ethernet-media"` loads the 11 Ethernet media classes           |
+| `define_node_type`                                     | Add a custom node type (merged over defaults)                                                                                                 |
+| `set_port_table`                                       | Draw a derived port table (Port / LAG / PHY / Peer\|Port) in the page margin beside nodes, built from their links                             |
+| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                                                              |
+| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key; `columns` / `title` lay it out as a drawing-sheet Key strip                         |
+| `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                                                        |
+| `set_sheet`                                            | Drawing-sheet frame: paper size (sets page viewBoxes), border, top title, bottom-right title block (`clear` removes)                          |
+| `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                                                                 |
+| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page); hardware-catalog cabling rules on bound nodes                                  |
+| `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                                                         |
+| `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                              |
+| `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force / tiered — rows by declared tiers, `mirror`, `tierZones`)                        |
+| `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                              |
+| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"` for a light page)                                         |
+| `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations (`theme: "light"` optional)                                                      |
+| `export_topology`                                      | Files: PNG / PDF (print-true, ANSI + A-series), draw.io, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid, cable schedule — see [Exports](#exports) |
+| `list_hardware` _(catalog)_                            | Search real hardware models: port summary, SKUs, panel confidence, GA eligibility                                                             |
+| `describe_hardware` _(catalog)_                        | One model: interfaces by role / kind / speed (ranges collapsed), bond groups, provenance tiers, todo                                          |
+| `bind_hardware` _(catalog)_                            | Bind a node to a model (`sku`, `stackMembers`, `face`); pins the document's catalog version                                                   |
+| `assign_interfaces` _(catalog)_                        | Plan free, compatible interfaces for bound link ends (`by-role` / `first-free` / `keep`); `apply` writes                                      |
+| `catalog_diff` _(catalog)_                             | What a catalog upgrade changes for the document's models and which links would newly fail                                                     |
+| `view_topology`                                        | Interactive inline view in MCP Apps hosts (pan / zoom / pages / layers / downloads) — see [Inline view](#inline-view-mcp-apps)                |
+| `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                                                     |
+| `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                                                                                             |
+| `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                                                                  |
+| `list_flows` / `get_flow_details` _(live-data)_        | Query fabric flow tables (active + ended); per-flow detail                                                                                    |
+| `build_flow_topology` _(live-data)_                    | One shot: fabric + flows → layered, animated, tidy document                                                                                   |
+| `share_topology`                                       | Publish a **public** durable snapshot; returns a browser link (remote-only)                                                                   |
+| `list_shares`                                          | The owner's live published share links, newest first (remote-only)                                                                            |
+| `unpublish_topology`                                   | Owner-only revoke of a public share (deletes the KV snapshot; remote-only)                                                                    |
+| `create_workspace`                                     | Create a canonical shared document directly, bypassing the legacy draft path                                                                  |
+| `list_workspaces`                                      | List canonical workspaces and legacy drafts without document contents                                                                         |
+| `get_workspace_manifest`                               | Compact revision/page/count/proposal/lease status; rejects a legacy id without migrating it                                                   |
+| `get_workspace_document`                               | The whole document (title, layers, legend, custom nodes, stencils, palette, pages) at its current revision; `summary` / `pageIndex`           |
+| `describe_workspace_operations`                        | On-demand versioned operation vocabulary (revision 2 adds `element.upsert`); call only when its revision changes                              |
+| `get_workspace_changes`                                | Bounded summaries or exact operations since a revision                                                                                        |
+| `get_workspace_elements`                               | Targeted, paginated element hydration for one page                                                                                            |
+| `propose_workspace_changes`                            | Submit a semantic change set for browser-owner review (default write path)                                                                    |
+| `apply_workspace_changes`                              | Direct semantic commit only inside a live UI-granted page lease                                                                               |
+| `create_checkpoint`                                    | Snapshot the workspace as a named checkpoint (restore/fork stay browser-owner)                                                                |
+| `list_checkpoints`                                     | List named checkpoints (id, name, revision, page count, author)                                                                               |
+| `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`)                                     |
+| `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                                                                |
+| `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                                                             |
 
 ### Exports
 
@@ -314,14 +319,15 @@ to the task's affected region and change summaries, not total document size.
 with. Fidelity per format (what survives, what drops) is documented in
 [`docs/EXPORTS.md`](../../docs/EXPORTS.md).
 
-| `format`  | Returns                             | Notes                                                                                                   |
-| --------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `png`     | MCP image + JSON summary            | One page (`pageIndex`). Print DPI stamped; `dpi` / `paper` / `visibleLayers` / `theme`.                 |
-| `pdf`     | Embedded `application/pdf` resource | All pages (or `pageIndex`) on the document sheet size or `paper` (ANSI A–E, A4–A1, `fit`); raster.      |
-| `drawio`  | Embedded XML resource               | Layers → draw.io layers, zones → containers, metadata as shape data; re-imports with `import_topology`. |
-| `vsdx`    | Embedded Visio resource             | Shapes, glued dynamic connectors, page layers, metadata as Shape Data.                                  |
-| `pptx`    | Embedded PowerPoint resource        | 16:9 slide per page or per layer (`slides`); editable shapes or `pptxMode: "image"`.                    |
-| `mermaid` | Plain text                          | Flowchart with subgraphs; one page or all pages.                                                        |
+| `format`         | Returns                                 | Notes                                                                                                                              |
+| ---------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `png`            | MCP image + JSON summary                | One page (`pageIndex`). Print DPI stamped; `dpi` / `paper` / `visibleLayers` / `theme`.                                            |
+| `pdf`            | Embedded `application/pdf` resource     | All pages (or `pageIndex`) on the document sheet size or `paper` (ANSI A–E, A4–A1, `fit`); raster.                                 |
+| `drawio`         | Embedded XML resource                   | Layers → draw.io layers, zones → containers, metadata as shape data; re-imports with `import_topology`.                            |
+| `vsdx`           | Embedded Visio resource                 | Shapes, glued dynamic connectors, page layers, metadata as Shape Data.                                                             |
+| `pptx`           | Embedded PowerPoint resource            | 16:9 slide per page or per layer (`slides`); editable shapes or `pptxMode: "image"`.                                               |
+| `mermaid`        | Plain text                              | Flowchart with subgraphs; one page or all pages.                                                                                   |
+| `cable-schedule` | Embedded CSV (default) or XLSX resource | One row per link: both ends' device / model / interface / optic, media, negotiated speed, bundle, layer, notes (`scheduleFormat`). |
 
 PNG and PDF are rendered server-side by resvg (WebAssembly) from the same
 engine SVG the canvas shows, with JetBrains Mono embedded (a Worker has no
@@ -493,14 +499,37 @@ members). A typical agent loop is generate → `validate_topology` →
 `tidy_topology` / `balance_topology` → `inspect_render` → `render_svg`. In the
 editor, the **Tidy** button (`T`) runs the same pass on the current frame.
 
-### Hardware-bound documents (hw-catalog)
+### Hardware catalog (bind, assign, validate)
 
-When nodes carry a hardware binding (`hw: { model, sku?, stackMembers?, face? }`,
-set with `update_element` until the Phase 3 `bind_hardware` tool lands) and
-links name interfaces and optics (`fromInterface` / `toInterface` /
-`fromOptic` / `toOptic` on `add_link`), `validate_topology` also checks the
-cabling against the hardware catalog, page by page, for endpoints on bound
-nodes only:
+Where the server has the hardware catalog (the stdio server and the Worker
+both do), five tools work with real hardware models and `validate_topology`
+checks cabling against them. A typical wire-sheet loop is `list_hardware` →
+`bind_hardware` per node → `add_link` → `assign_interfaces` (review the
+plan) → `assign_interfaces apply:true` → `validate_topology` →
+`export_topology format:"cable-schedule"`.
+
+| Tool                | Input                                                                                       | Returns                                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list_hardware`     | `query?` (id / name / family / SKU), `vendor?`, `family?`, `category?`, `limit?` (20, ≤100) | `catalogVersion`, `total`, `models[]`: `model`, `name`, `category`, `skus`, `portSummary` ("24x RJ45 1G + 4x SFP56 1-50G"), `confidence`, `gaEligible`                                                             |
+| `describe_hardware` | `model`                                                                                     | Summary fields plus `interfaces[]` (`role`, `kind`, `cage`, `speeds`, `count`, `names` like `{member}/1/1-24`, `tiers`), `stackable`, `bondGroups`, `provenanceTiers`, `todo`. No geometry, no provenance sources. |
+| `bind_hardware`     | `topologyId`, `nodeId`, `pageIndex?`, `model`, `sku?`, `stackMembers?`, `face?`             | `hw`, `type` (+ `previousType`), `catalogVersion`, `pinned`, and `problems` on that node's cables                                                                                                                  |
+| `assign_interfaces` | `topologyId`, `linkIds?`, `strategy?` (`by-role` default / `first-free` / `keep`), `apply?` | `assignments[]` (`page`, `linkId`, `end`, `node`, `interface`, `why`, `replaced?`), `unassigned[]`, `remainingErrors[]`, `applied`                                                                                 |
+| `catalog_diff`      | `topologyId`, `toVersion?` (default latest)                                                 | `models[]` (`unchanged` / `changed` with `fields`, `interfacesAdded` / `Removed` / `removed`), `newFindings`, `clearedFindings`, `linksNowFailing`                                                                 |
+
+`gaEligible: false` means the model's data is reseller-only or inferred:
+do not present it as confirmed. `confidence: "schematic"` panels are
+badged wherever they are drawn. `assign_interfaces` never picks optics (what
+is in a cage is a site fact); a cage pick says "declare the optic". Its
+`by-role` heuristics: wan toward clouds / ISPs / modems (and unbound routers
+or labels like "ISP", "MPLS", "LTE"), lan toward the inside, ha toward a
+same-category peer, members of a bond group for a bundle named like the
+group, cage uplinks on switches toward network gear, copper access ports
+toward endpoints, and copper facing a fixed copper port.
+
+Bound nodes carry `hw: { model, sku?, stackMembers?, face? }`; links name
+interfaces and optics (`fromInterface` / `toInterface` / `fromOptic` /
+`toOptic`, also on `add_link`). `validate_topology` then checks cabling
+page by page, for endpoints on bound nodes only:
 
 - `E_*` rule codes (unknown port, member range, non-data port, port reused,
   optic / cage / media / fiber / speed mismatches, bond pairs, LACP, mixed

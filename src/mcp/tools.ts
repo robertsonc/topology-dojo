@@ -119,6 +119,7 @@ import {
 import { SHARE_PUBLIC_WARNING } from '../share/copy.js';
 import type { Rasterizer } from '../export/raster.js';
 import { exportTools } from './export-tools.js';
+import { hardwareTools } from './hardware-tools.js';
 import { convertDrawio, detectDrawio } from '../import/drawio.js';
 
 export interface ToolDef {
@@ -542,6 +543,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           linkStylePresets: linkStyleCatalog().presets,
           sheetSizes: sheetCatalog().sizes,
           bundleKinds: bundleCatalog().kinds,
+          ...(deps.catalog
+            ? {
+                hardware:
+                  'Real hardware models + catalog-checked cabling: list_hardware, describe_hardware, bind_hardware, assign_interfaces, catalog_diff; export_topology cable-schedule.',
+              }
+            : {}),
           note: 'Index view. For editable fields, call again with detail:"full" or narrow with types:[…] / query:"…".',
         };
       },
@@ -2696,6 +2703,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
   // File exports (PNG / PDF / draw.io / Visio / PowerPoint / Mermaid) and the
   // MCP Apps inline view.
   tools.push(...exportTools(store, deps));
+  if (deps.catalog) tools.push(...hardwareTools(store, deps.catalog));
 
   // Sharing is only available where a durable store + public origin are wired in
   // (the Worker). When present, expose a tool that snapshots the topology and

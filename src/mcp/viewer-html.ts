@@ -92,7 +92,7 @@ export const VIEWER_HTML = String.raw`<!doctype html>
 <script>
 (function () {
   'use strict';
-  var FORMAT_LABELS = { png: 'PNG image', pdf: 'PDF (print size)', drawio: 'draw.io', vsdx: 'Visio (.vsdx)', pptx: 'PowerPoint (.pptx)', mermaid: 'Mermaid' };
+  var FORMAT_LABELS = { png: 'PNG image', pdf: 'PDF (print size)', drawio: 'draw.io', vsdx: 'Visio (.vsdx)', pptx: 'PowerPoint (.pptx)', mermaid: 'Mermaid', 'cable-schedule': 'Cable schedule (.xlsx)' };
   var state = { id: null, title: '', pageIndex: 0, pages: [], layers: [], visible: null, theme: 'dark', formats: [] };
   var view = { x: 0, y: 0, k: 1, w: 0, h: 0 };
   var nextId = 1, pending = {}, hostCaps = {}, canCall = true;
@@ -270,6 +270,7 @@ export const VIEWER_HTML = String.raw`<!doctype html>
     var args = { topologyId: state.id, format: format };
     if (format === 'png') { args.pageIndex = state.pageIndex; args.theme = state.theme; if (state.visible) args.visibleLayers = state.visible; }
     if (format === 'pdf') { args.theme = 'light'; if (state.visible) args.visibleLayers = state.visible; }
+    if (format === 'cable-schedule') args.scheduleFormat = 'xlsx';
     callTool('export_topology', args).then(function (r) {
       var info = r.structuredContent || {};
       var name = info.filename || ('topology.' + format), mime = info.mimeType || 'application/octet-stream';

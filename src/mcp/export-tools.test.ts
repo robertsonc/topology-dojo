@@ -209,7 +209,7 @@ describe('view_topology', () => {
       topologyId: id,
       pageIndex: 0,
       pages: [{ index: 0, name: 'Frame 1' }],
-      formats: ['drawio', 'vsdx', 'pptx', 'mermaid'],
+      formats: ['drawio', 'vsdx', 'pptx', 'mermaid', 'cable-schedule'],
     });
     expect(String(r.meta!['topology-dojo/svg'])).toMatch(/^<svg/);
   });

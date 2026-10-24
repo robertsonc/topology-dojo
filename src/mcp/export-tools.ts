@@ -27,6 +27,13 @@ import { buildScene, droppedSummary } from '../export/scene.js';
 import { exportPdf, exportPng } from '../export/print.js';
 import { bytesToBase64 } from '../export/base64.js';
 import type { Rasterizer } from '../export/raster.js';
+import {
+  cableSchedule,
+  cableScheduleCsv,
+  cableScheduleXlsx,
+} from '../export/cable-schedule.js';
+import { docHasBindings } from '../api/hardware.js';
+import type { Catalog } from '../catalog/catalog.js';
 import { ContentResult } from './content.js';
 import type { TopologyStore } from './store.js';
 import type { ToolDef, ToolDeps } from './tools.js';
@@ -46,6 +53,7 @@ export const EXPORT_FORMATS = [
   'vsdx',
   'pptx',
   'mermaid',
+  'cable-schedule',
 ] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
@@ -56,7 +64,10 @@ const MIME: Record<ExportFormat, string> = {
   vsdx: 'application/vnd.ms-visio.drawing',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   mermaid: 'text/vnd.mermaid',
+  'cable-schedule': 'text/csv',
 };
+const XLSX_MIME =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const EXT: Record<ExportFormat, string> = {
   png: 'png',
   pdf: 'pdf',
@@ -64,6 +75,7 @@ const EXT: Record<ExportFormat, string> = {
   vsdx: 'vsdx',
   pptx: 'pptx',
   mermaid: 'mmd',
+  'cable-schedule': 'csv',
 };
 
 /** A filesystem-safe base name from a title. */
@@ -121,7 +133,8 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           'drawio: editable draw.io file — layers → draw.io layers, zones → containers, metadata as shape data; re-importable with import_topology. ' +
           'vsdx: editable Visio — shapes, glued connectors, page layers, metadata as Shape Data. ' +
           'pptx: one 16:9 slide per page (or per layer) with editable shapes, or the rendered image. ' +
-          'mermaid: flowchart text (subgraphs from zones; no coordinates).',
+          'mermaid: flowchart text (subgraphs from zones; no coordinates). ' +
+          'cable-schedule: one row per link — both ends’ device, model, interface and optic, media, negotiated speed, bundle, layer, notes (catalog rule codes) — as CSV (default) or XLSX (`scheduleFormat`).',
       ),
     pageIndex: z
       .number()
@@ -173,6 +186,10 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       .describe(
         'pptx: editable native shapes (default) or the pixel-faithful render as a picture.',
       ),
+    scheduleFormat: z
+      .enum(['csv', 'xlsx'])
+      .optional()
+      .describe('cable-schedule: csv (default) or xlsx.'),
   };
   if (deps.writeExport)
     exportShape.outputPath = z
@@ -199,12 +216,21 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         const format = a.format as ExportFormat;
         const pageIndex = a.pageIndex as number | undefined;
         const base = exportBaseName(doc.title);
-        const filename = `${base}.${EXT[format]}`;
+        const xlsx = format === 'cable-schedule' && a.scheduleFormat === 'xlsx';
+        const mimeType = xlsx ? XLSX_MIME : MIME[format];
+        const filename = xlsx
+          ? `${base}_cables.xlsx`
+          : format === 'cable-schedule'
+            ? `${base}_cables.csv`
+            : `${base}.${EXT[format]}`;
         const summary: Record<string, unknown> = {
           format,
           filename,
-          mimeType: MIME[format],
+          mimeType,
         };
+        // The catalog read awaits: snapshot first (see the module header).
+        const scheduleDoc =
+          format === 'cable-schedule' ? structuredClone(doc) : null;
         let bytes: Uint8Array | null = null;
         let text: string | null = null;
 
@@ -268,6 +294,27 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             bytes = documentToVsdx(doc);
             summary.pages = doc.pages.length;
             break;
+          case 'cable-schedule': {
+            let catalog: Catalog | null = null;
+            if (docHasBindings(scheduleDoc!)) {
+              try {
+                catalog = deps.catalog
+                  ? await deps.catalog.get(scheduleDoc!.catalogVersion)
+                  : null;
+              } catch {
+                catalog = null;
+              }
+              if (catalog) summary.catalogVersion = catalog.version;
+              else
+                summary.note =
+                  'hardware catalog unavailable: model names are ids, media and speed are blank';
+            }
+            const sched = cableSchedule(scheduleDoc!, catalog, pageIndex);
+            summary.rows = sched.rows.length;
+            if (xlsx) bytes = cableScheduleXlsx(sched, scheduleDoc!.title);
+            else text = cableScheduleCsv(sched);
+            break;
+          }
           case 'pptx': {
             const slides =
               (a.slides as 'pages' | 'layers' | undefined) ?? 'pages';
@@ -346,8 +393,8 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             {
               type: 'resource',
               resource: bytes
-                ? { uri, mimeType: MIME[format], blob: bytesToBase64(bytes) }
-                : { uri, mimeType: MIME[format], text: text! },
+                ? { uri, mimeType, blob: bytesToBase64(bytes) }
+                : { uri, mimeType, text: text! },
             },
           ],
           summary,

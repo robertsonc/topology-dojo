@@ -88,6 +88,29 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\/-]/g, '\\$&');
 }
 
+/** GA-eligible: at least one official_doc or internal_doc provenance row. */
+export function gaEligible(m: Model): boolean {
+  return m.provenance.some(
+    (p) => p.tier === 'official_doc' || p.tier === 'internal_doc',
+  );
+}
+
+/** JSON with object keys sorted at every level and no whitespace. */
+export function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value as Record<string, unknown>).sort();
+    return `{${keys
+      .filter((k) => (value as Record<string, unknown>)[k] !== undefined)
+      .map(
+        (k) =>
+          `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`,
+      )
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 /** A catalog bundle indexed for lookups. Immutable once built. */
 export class Catalog {
   readonly version: string;

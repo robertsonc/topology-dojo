@@ -122,6 +122,8 @@ export const MUTATING_MCP_TOOLS: ReadonlySet<string> = new Set([
   'set_node_metadata',
   'set_legend',
   'set_palette',
+  'bind_hardware',
+  'assign_interfaces',
   'tidy_topology',
   'balance_topology',
   'layout_topology',

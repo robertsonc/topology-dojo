@@ -107,6 +107,25 @@ Import reads those classes back as node types, splits `<br/>` labels into
 label + sublabel, nests subgraphs as `parentZone`, then auto-lays the graph
 out. Mermaid has no coordinates, layers, port labels or metadata — those drop.
 
+## Cable schedule (CSV / XLSX) — the sheet installers work from
+
+`format: "cable-schedule"`, `scheduleFormat: "csv"` (default) or `"xlsx"`.
+One row per link with the columns `cable id`, `A device`, `A model`,
+`A interface`, `A optic`, `Z device`, `Z model`, `Z interface`, `Z optic`,
+`media`, `negotiated speed`, `bundle`, `layer`, `notes` (a leading `page`
+column when a multi-page document is exported whole). Devices are node
+labels; models are catalog names (with the SKU when bound with one);
+interfaces fall back to the author's port label on unbound ends. Media and
+negotiated speed come from the hardware catalog's wiring checks and stay
+blank where the catalog cannot know (unbound ends, a cage with no declared
+optic on both sides). `notes` is the link label plus the catalog rule codes
+on that cable (e.g. `W_OPTIC_UNDECLARED`).
+
+CSV is RFC 4180 with CRLF line ends; a cell starting with `=`, `+`, `-`,
+`@`, tab or CR is prefixed with `'` so spreadsheet apps do not run it as a
+formula. XLSX is one sheet of inline strings (never formulas), bold frozen
+header row, autofilter, sized columns.
+
 ## draw.io import — migrate existing diagrams in
 
 `import_topology` and the editor's **open** accept `.drawio` / `.xml`
@@ -143,3 +162,7 @@ Structure is unit-tested (`src/export/*.test.ts`, `src/import/drawio.test.ts`,
 checked by opening the files in LibreOffice (Draw / Impress) — **not yet in
 Microsoft Visio or PowerPoint**; do that before claiming Office fidelity to a
 customer.
+
+The cable-schedule XLSX was read back with openpyxl 3.1.5 (no warnings) and
+converted with LibreOffice headless; both see the same strings, and a
+formula-looking label stays a string cell.
