@@ -20,6 +20,7 @@ import {
 } from './workspace-reads.js';
 import { NO_LEGACY_PERSIST_TOOLS } from '../../worker/legacy-persist.js';
 import { renderDocumentToSVG } from '../server/render.js';
+import { nodeCatalogLoader } from '../server/catalog.js';
 import { exportFlipbookHTML } from '../render/flipbook.js';
 import type { TopologyDocument } from '../pages/model.js';
 
@@ -49,6 +50,7 @@ describe('WORKSPACE_READ_TOOLS — the allowlist', () => {
   const toolNames = new Set(
     createTools(new TopologyStore(), {
       renderDocument: renderDocumentToSVG,
+      catalog: nodeCatalogLoader(),
     }).map((t) => t.name),
   );
 

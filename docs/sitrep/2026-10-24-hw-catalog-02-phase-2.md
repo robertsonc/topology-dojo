@@ -1,7 +1,7 @@
 # Sitrep 02 — hw-catalog Phase 2: bind hardware + validate
 
-Status: **done**, in review. Next: Phase 3 (MCP tools). Phase 1 merged as
-PR #285.
+Status: **done**, merged (PR #286). Next: Phase 3 (MCP tools). Phase 1
+merged as PR #285.
 
 ## What landed
 

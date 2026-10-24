@@ -80,11 +80,29 @@ const intersect = (
 const sorted = (s: ReadonlySet<number>): number[] =>
   [...s].sort((x, y) => x - y);
 
+/** What validation learned about one cable (for the cable schedule). */
+export interface LinkWiring {
+  page: number;
+  linkId: string;
+  /** Media both ends agree on, else the one known end's, else null. */
+  media: string | null;
+  /** Both ends' media when they disagree. */
+  mediaConflict?: [string, string];
+  /** Highest common speed in Mb/s, or null when unknown / none. */
+  speedMbps: number | null;
+}
+
+export interface WiringReport {
+  findings: WiringFinding[];
+  links: LinkWiring[];
+}
+
 function validatePage(
   catalog: Catalog,
   doc: TopologyDocument,
   page: Page,
   pi: number,
+  links: LinkWiring[],
 ): WiringFinding[] {
   const findings: WiringFinding[] = [];
   const add = (code: RuleCode, where: string, message: string): void => {
@@ -233,6 +251,16 @@ function validatePage(
     const negotiated = common && common.size ? Math.max(...common) : null;
     for (const ep of [a, z])
       if (ep.iface) linkSpeed.set(key(ep.node, ep.iface.name), negotiated);
+    links.push({
+      page: pi,
+      linkId: l.id,
+      media:
+        a.media && z.media && a.media !== z.media ? null : (a.media ?? z.media),
+      ...(a.media && z.media && a.media !== z.media
+        ? { mediaConflict: [a.media, z.media] as [string, string] }
+        : {}),
+      speedMbps: negotiated,
+    });
   }
 
   for (const [k, count] of cabled)
@@ -325,5 +353,17 @@ export function validateWiring(
   doc: TopologyDocument,
   catalog: Catalog,
 ): WiringFinding[] {
-  return doc.pages.flatMap((page, pi) => validatePage(catalog, doc, page, pi));
+  return wiringReport(doc, catalog).findings;
+}
+
+/** Findings plus, per cable, the media and negotiated speed. */
+export function wiringReport(
+  doc: TopologyDocument,
+  catalog: Catalog,
+): WiringReport {
+  const links: LinkWiring[] = [];
+  const findings = doc.pages.flatMap((page, pi) =>
+    validatePage(catalog, doc, page, pi, links),
+  );
+  return { findings, links };
 }

@@ -55,6 +55,13 @@ regenerate the parity golden with
   `src/server/catalog.ts` (disk) and `worker/catalog.ts` (ASSETS binding).
 - The Worker refuses public HTTP requests for `/catalog/*`: provenance rows
   name internal documents.
+- `src/catalog/validate.ts` — the `ref_validate.py` port behind
+  `validate_topology`; `src/catalog/describe.ts`, `assign.ts`, `diff.ts` —
+  the `list_hardware` / `describe_hardware`, `assign_interfaces` and
+  `catalog_diff` MCP tools (`src/mcp/hardware-tools.ts`). Agent-facing views
+  return provenance **tiers** only, never sources.
+- `src/export/cable-schedule.ts` — `export_topology` `cable-schedule`
+  (CSV / XLSX).
 
 ## Seed provenance at a glance
 

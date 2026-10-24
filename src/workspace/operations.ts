@@ -22,6 +22,7 @@ export const DOCUMENT_FIELDS = [
   'sheet',
   'tiers',
   'bundles',
+  'catalogVersion',
 ] as const;
 export const PAGE_FIELDS = [
   'name',

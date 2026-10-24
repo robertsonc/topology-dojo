@@ -6,6 +6,7 @@ import { createTools, type ToolDef, type ToolDeps } from './tools.js';
 import { parseToolArgs } from './register.js';
 import { renderDocumentToSVG } from '../server/render.js';
 import { MockProvider } from '../connect/mock.js';
+import { nodeCatalogLoader } from '../server/catalog.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { TEXT_LIMITS } from '../api/text.js';
 import { DOCUMENT_FIELDS, PAGE_FIELDS } from '../workspace/operations.js';
@@ -75,7 +76,10 @@ describe('MCP tools', () => {
       fileURLToPath(new URL('./README.md', import.meta.url)),
       'utf8',
     );
-    const undocumented = tools
+    const undocumented = createTools(new TopologyStore(), {
+      renderDocument: renderDocumentToSVG,
+      catalog: nodeCatalogLoader(),
+    })
       .map((t) => t.name)
       .filter((n) => !readme.includes(`\`${n}\``));
     expect(undocumented).toEqual([]);
@@ -1975,6 +1979,7 @@ describe('MCP tools', () => {
 describe('MCP ⇄ document-contract parity', () => {
   const tools = createTools(new TopologyStore(), {
     renderDocument: renderDocumentToSVG,
+    catalog: nodeCatalogLoader(),
   });
   const tool = (n: string) => tools.find((t) => t.name === n)!;
 
@@ -1994,6 +1999,7 @@ describe('MCP ⇄ document-contract parity', () => {
       sheet: 'set_sheet',
       tiers: 'define_tier',
       bundles: 'define_bundle',
+      catalogVersion: 'bind_hardware',
     };
     const KNOWN_GAPS = ['stencils'];
     for (const f of DOCUMENT_FIELDS) {

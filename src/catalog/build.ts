@@ -15,11 +15,15 @@ import { parseXml, type XmlElement } from '../import/xml.js';
 import {
   BUNDLE_FORMAT,
   DATA_ROLES,
+  canonicalJson,
+  gaEligible,
   type CatalogBundle,
   type Model,
   type Optics,
   type Platform,
 } from './catalog.js';
+
+export { canonicalJson, gaEligible };
 
 /** check_seed.py ANCHOR_TOLERANCE: SVG anchor vs catalog centre. */
 export const ANCHOR_TOLERANCE = 0.05;
@@ -304,29 +308,6 @@ export function checkCatalog(cat: LoadedCatalog, schemaFile: string): string[] {
       );
   }
   return findings;
-}
-
-/** GA-eligible: at least one official_doc or internal_doc provenance row. */
-export function gaEligible(m: Model): boolean {
-  return m.provenance.some(
-    (p) => p.tier === 'official_doc' || p.tier === 'internal_doc',
-  );
-}
-
-/** JSON with object keys sorted at every level and no whitespace. */
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const keys = Object.keys(value as Record<string, unknown>).sort();
-    return `{${keys
-      .filter((k) => (value as Record<string, unknown>)[k] !== undefined)
-      .map(
-        (k) =>
-          `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`,
-      )
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 /**
