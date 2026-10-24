@@ -5,6 +5,9 @@
  * validate, and render topologies the same way the GUI does. Run with:
  *   npm run mcp        (tsx src/mcp/server.ts)
  *
+ * File exports (`export_topology`) can be written to disk with `outputPath`,
+ * confined to TOPOLOGY_DOJO_EXPORT_DIR (default: the working directory).
+ *
  * Live fabric data (optional): set LIVE_DATA_ENABLED=true plus ORCH_BASE_URL +
  * ORCH_API_KEY to connect the EdgeConnect Orchestrator provider, or
  * TOPOLOGY_PROVIDER=mock for the fixture fabric — either registers the
@@ -18,6 +21,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { renderDocumentToSVG } from '../server/render.js';
+import { NODE_MAX_PIXELS, nodeRasterizer } from '../server/raster.js';
+import { exportRoot, writeExportFile } from '../server/export-file.js';
 import { EdgeConnectProvider } from '../connect/edgeconnect.js';
 import { MockProvider } from '../connect/mock.js';
 import type { TopologyProvider } from '../connect/types.js';
@@ -37,8 +42,12 @@ function providerFromEnv(): TopologyProvider | undefined {
 
 const provider = providerFromEnv();
 const server = new McpServer({ name: 'topology-dojo', version: '0.1.0' });
+const root = exportRoot();
 registerTopologyTools(server, {
   renderDocument: renderDocumentToSVG,
+  rasterizer: nodeRasterizer,
+  maxRasterPixels: NODE_MAX_PIXELS,
+  writeExport: (requested, bytes) => writeExportFile(root, requested, bytes),
   ...(provider ? { provider } : {}),
 });
 

@@ -13,6 +13,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTools, type ToolDef, type ToolDeps } from './tools.js';
 import { TopologyStore } from './store.js';
 import { withWorkspaceRevision } from './workspace-reads.js';
+import { ContentResult } from './content.js';
+import { MCP_APP_MIME, VIEWER_URI } from './export-tools.js';
+import { VIEWER_HTML } from './viewer-html.js';
 
 /**
  * What `beforeToolCall` may hand back to shape the rest of the call. Returned
@@ -85,10 +88,15 @@ export function registerTopologyTools(
     outcome: 'success' | 'error',
   ) => void | Promise<void>,
 ): TopologyStore {
+  registerViewerResource(server);
   for (const tool of createTools(store, deps)) {
     server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema: tool.inputShape },
+      {
+        description: tool.description,
+        inputSchema: tool.inputShape,
+        ...(tool.meta ? { _meta: tool.meta } : {}),
+      },
       async (args: Record<string, unknown>) => {
         let context: ToolCallContext | undefined;
         try {
@@ -97,6 +105,19 @@ export function registerTopologyTools(
           if (guard) context = guard;
           const result = await tool.handler(parsed);
           await afterToolCall?.(tool.name);
+          if (result instanceof ContentResult) {
+            await settleActivity(onToolSettled, tool.name, 'success');
+            const out = result.toResult();
+            if (context?.workspaceRevision !== undefined)
+              out.content = [
+                ...out.content,
+                {
+                  type: 'text' as const,
+                  text: `served from shared workspace revision ${context.workspaceRevision}`,
+                },
+              ];
+            return out;
+          }
           const served =
             context?.workspaceRevision === undefined
               ? result
@@ -122,6 +143,33 @@ export function registerTopologyTools(
     );
   }
   return store;
+}
+
+/**
+ * The MCP Apps view `view_topology` opens (SEP-1865): one self-contained HTML
+ * page, no external origins, so it declares an empty CSP allow-list.
+ */
+export function registerViewerResource(server: McpServer): void {
+  server.registerResource(
+    'topology-dojo-viewer',
+    VIEWER_URI,
+    {
+      title: 'Topology Dojo viewer',
+      description:
+        'Interactive inline view of a topology (pan, zoom, pages, layers, downloads).',
+      mimeType: MCP_APP_MIME,
+    },
+    () => ({
+      contents: [
+        {
+          uri: VIEWER_URI,
+          mimeType: MCP_APP_MIME,
+          text: VIEWER_HTML,
+          _meta: { ui: { prefersBorder: true, csp: {} } },
+        },
+      ],
+    }),
+  );
 }
 
 /**

@@ -72,6 +72,22 @@ npm run mcp         # run the MCP server over stdio
    OAuth for interactive clients, user-minted API keys for unattended agents).
    See [`src/mcp/README.md`](src/mcp/README.md).
 
+## Hand it to your team
+
+Diagrams leave Topology Dojo in the formats network teams already use —
+**PNG / PDF** (print-true on ANSI and A-series sheets), **draw.io** (layers and
+containers kept, re-importable), **Visio `.vsdx`** (shapes, glued connectors,
+layers, Shape Data), **PowerPoint `.pptx`** (a slide per page or per layer)
+and **Mermaid** — from the editor's export menu or the `export_topology` MCP
+tool. Existing **draw.io** and Mermaid diagrams import. In chat hosts that
+support MCP Apps, `view_topology` shows the diagram inline (pan, zoom, layers,
+downloads). What each format keeps and drops: [`docs/EXPORTS.md`](docs/EXPORTS.md).
+
+**Install the hosted MCP server:** add `https://topology-dojo.harnessed.cloud/mcp`
+as a remote (Streamable HTTP) MCP server — sign-in is GitHub OAuth, no key to
+paste. It is described for MCP directories in [`server.json`](server.json)
+(MCP Registry format).
+
 ## Layout that holds up for AI
 
 Agent-generated diagrams tend to overlap. The API ships a layout **ground

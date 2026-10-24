@@ -29,7 +29,11 @@ import type { TopologyStore } from './store.js';
  * - `validate_topology` runs semantic + layout checks over the document;
  * - `inspect_render` measures one page's rendered geometry;
  * - `render_svg` renders one page to an SVG string;
- * - `export_flipbook` renders every page into a standalone HTML flipbook.
+ * - `export_flipbook` renders every page into a standalone HTML flipbook;
+ * - `export_topology` renders / converts the document to a file (PNG, PDF,
+ *   draw.io, Visio, PowerPoint, Mermaid) — it reads the store synchronously
+ *   before its first await (rasterizer start-up);
+ * - `view_topology` renders one page for the MCP Apps inline view.
  *
  * Deliberately absent: `share_topology` reads the document but PUBLISHES a
  * public KV snapshot (a side effect with its own quota), and every other
@@ -43,6 +47,8 @@ export const WORKSPACE_READ_TOOLS = [
   'inspect_render',
   'render_svg',
   'export_flipbook',
+  'export_topology',
+  'view_topology',
 ] as const;
 
 export type WorkspaceReadTool = (typeof WORKSPACE_READ_TOOLS)[number];
@@ -92,9 +98,10 @@ export interface WorkspaceReadSource {
  * unloading migrated ids before any persist, the coordinator's document can
  * never be written back to the legacy per-user registry.
  *
- * Between `store.load` and the handler there is no I/O — the read handlers are
- * synchronous — so a concurrent `list_topologies` (which also unloads migrated
- * ids) cannot interleave and pull the document out from under the call.
+ * Between `store.load` and the handler there is no I/O — the read handlers
+ * read the store synchronously (`export_topology` before its first await) —
+ * so a concurrent `list_topologies` (which also unloads migrated ids) cannot
+ * interleave and pull the document out from under the call.
  */
 export async function serveWorkspaceRead(
   toolName: string,

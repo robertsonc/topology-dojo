@@ -1,0 +1,145 @@
+# Exports, imports and the inline view
+
+Phase 1 ("remove adoption blockers") makes a Topology Dojo diagram usable
+where network teams already work. This page is the fidelity contract: what
+each format keeps, what it drops, and why. Every export is reachable from the
+editor's **⤓ export…** menu and from MCP (`export_topology`); imports go
+through **open** and `import_topology`.
+
+| Format             | Direction | Editable in the target tool | Fidelity                                      | Where it runs                    |
+| ------------------ | --------- | --------------------------- | --------------------------------------------- | -------------------------------- |
+| SVG                | export    | (vector art)                | Pixel-identical to the canvas                 | browser, MCP `render_svg`        |
+| PNG                | export    | no                          | Pixel-identical; print DPI stamped            | browser, MCP (server-side resvg) |
+| PDF                | export    | no                          | Pixel-identical raster on real paper sizes    | browser, MCP (server-side resvg) |
+| draw.io            | both      | yes                         | Structure + geometry; generic outlines        | browser, MCP                     |
+| Visio `.vsdx`      | export    | yes                         | Structure + geometry; generic outlines        | browser, MCP                     |
+| PowerPoint `.pptx` | export    | yes (shapes) / no (image)   | Shapes mode: structure; image mode: identical | browser (shapes), MCP (both)     |
+| Mermaid            | both      | yes                         | Graph only (no coordinates)                   | browser, MCP                     |
+
+The three editable office formats (draw.io, Visio, PowerPoint shapes) are built
+from one shared, format-neutral scene (`src/export/scene.ts`), so they agree
+on where a node sits, which zone holds it, which layer it is on and which way
+a wire runs.
+
+## PNG and PDF — print-true raster
+
+Rendered from the same engine SVG as the canvas (`calm`: animation frozen).
+In the browser the canvas rasterizes; on the MCP servers resvg (WebAssembly)
+does, with JetBrains Mono embedded because a Worker has no system fonts.
+
+- **Sheet sizes print true.** When the document has a standard sheet
+  (`set_sheet`: ANSI A–E, A4–A1) the page viewBox is the paper at 96 px/in.
+  PDF pages are that paper size in points and the image is placed at true
+  scale; PNGs carry a `pHYs` chunk with the DPI, so `dpi: 150` on ANSI C gives
+  a 3300 × 2550 image that prints at 22 × 17 in.
+- Any frame can be fitted onto a chosen `paper` (`fit` = its true CSS size).
+- Default resolution: 150 DPI on paper; PNG without a sheet renders at 2×.
+- **Pixel budget:** 40 MP per page on the stdio server, 16 MP in the Worker
+  (memory). A larger request renders at a lower DPI and the result says so.
+- **Not drawn server-side:** `https:` images inside a page (image nodes, a
+  sheet logo) — a render never makes outbound requests. `data:` images work.
+  The browser export draws whatever the browser can load.
+- PDF is raster by design (like the browser exporter): the engine's SVG uses
+  filters a vector converter would drop, so the PDF always matches the canvas.
+
+## draw.io (`.drawio`) — "my team can still edit it"
+
+| Topology Dojo                                                   | draw.io                                                                                                            |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| page                                                            | one `<diagram>` (page) in one `<mxfile>`                                                                           |
+| declared layer                                                  | draw.io layer (hidden when the layer's `defaultVisible` is false); untagged → the base layer                       |
+| zone                                                            | container (`container=1`); same-layer members are children with relative geometry; zones nest                      |
+| node                                                            | vertex wrapped in `<object>`: `dojoType`, label, sublabel, metadata as **Edit Data** properties, `link`, `tooltip` |
+| router / firewall / server / load balancer / proxy / mail / NAS | draw.io network stencils (`mxgraph.networks.*`)                                                                    |
+| cloud / database                                                | built-in cloud / `cylinder3`                                                                                       |
+| basic shapes                                                    | matching built-in shapes                                                                                           |
+| link                                                            | edge glued to both ends; waypoints, orthogonal / curved routing, colour, width, dash                               |
+| port labels                                                     | edge-end labels                                                                                                    |
+| anchor                                                          | 6 px endpoint stub                                                                                                 |
+
+A zone member on a different layer than its zone stays a top-level cell of
+its own layer (draw.io children always share their container's layer).
+
+## Visio (`.vsdx`) — the enterprise must-have
+
+| Topology Dojo  | Visio                                                                                                                                                                       |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| page           | page (names de-duplicated — Visio rejects duplicates)                                                                                                                       |
+| declared layer | page layer (with visibility); every shape's `LayerMember` set                                                                                                               |
+| node           | 2D shape with real geometry (rect / rounded / ellipse / diamond / triangle / hexagon / pentagon / star / cross / arrow / cylinder; clouds as ellipses), 4 connection points |
+| node data      | **Shape Data**: `DojoType`, `DojoId`, sublabel, every metadata key, tooltip; `href` → hyperlink                                                                             |
+| label          | shape text — inside shapes, under device outlines                                                                                                                           |
+| link           | 1D dynamic connector glued to both shapes (`Connects` + `_WALKGLUE` / `_XFTRIGGER`), colour / weight / dash, waypoints as the drawn path, label as connector text           |
+| port labels    | small text shapes near each end, plus `FromPort` / `ToPort` Shape Data                                                                                                      |
+| zone           | background rectangle in the zone colour and dash, label top-left (bottom for tier bands)                                                                                    |
+| image node     | foreign (bitmap) shape for embedded PNG / JPEG / GIF                                                                                                                        |
+
+**Drops:** device glyph art (a generic outline stands in), glow and
+animation, flow paths, policy markers, port pills and port tables, the sheet
+frame and the legend, `https:` images. Zones are plain rectangles, not Visio
+containers (no membership), and Visio may re-route a dynamic connector the
+first time a glued shape moves. The export summary lists the flow paths and
+policy markers each page dropped.
+
+## PowerPoint (`.pptx`) — one slide per page or per layer
+
+- `slides: "pages"` (default) — one 16:9 slide per page, titled with the page
+  name, caption at the bottom, the diagram framed to its content.
+- `slides: "layers"` — per page, the full page, then the base plus one
+  declared layer at a time: an underlay → overlay → policy walk-through.
+- **Shapes mode** (default): preset outlines (rounded rect, ellipse, diamond,
+  hexagon, cloud, can, …); straight links are connectors glued to their
+  shapes (they follow when a shape moves); orthogonal or waypointed links are
+  freeform polylines; link and port labels are text boxes. Each layer's shapes
+  are a group named `Layer: …`, so the Selection Pane hides and shows planes
+  like layers (hidden on open when the layer is). Node type and metadata go in
+  the shape's alt text. Drops the same as Visio; a link to a cloud is glued at
+  the other end only (clouds have no simple side connection sites).
+- **Image mode** (`pptxMode: "image"`, MCP): the pixel-faithful render as one
+  picture per slide — exactly the canvas look, not editable.
+
+## Mermaid — round-trip as text
+
+Export: a `flowchart` per page (direction inferred from the layout), zones as
+nested `subgraph`s, links as `---` / `-.-` / `===` with labels, node types as
+Mermaid classes (`class r1 router` + a `classDef` for the accent colour).
+Import reads those classes back as node types, splits `<br/>` labels into
+label + sublabel, nests subgraphs as `parentZone`, then auto-lays the graph
+out. Mermaid has no coordinates, layers, port labels or metadata — those drop.
+
+## draw.io import — migrate existing diagrams in
+
+`import_topology` and the editor's **open** accept `.drawio` / `.xml`
+(`<mxfile>` or a bare `<mxGraphModel>`, plain or compressed):
+
+- pages → pages; extra layers → declared layers (visibility kept);
+- containers, swimlanes and groups → zones (nested → `parentZone`);
+- vertices → nodes centred where the shapes were; the type is the exported
+  `dojoType` when present, else inferred from the stencil or style (router,
+  switch, firewall, server, AP, load balancer, cloud, database, host, …), else
+  the matching basic shape; text cells → text nodes; images → image nodes;
+- edges → links with routing, dash, colour, width and waypoints; edge-end
+  labels → port labels; an end not attached to a shape → an anchor;
+- `<object>` / `<UserObject>` data → node metadata; `link` / `tooltip` kept.
+
+Dropped with a warning: custom (Node Designer) types the file names but the
+document does not declare, unresolvable edges. draw.io-only styling,
+rotation and rich HTML formatting drop silently. The parser does no DTD or
+entity expansion and bounds size, depth, pages and cells.
+
+## Inline view in chat (MCP Apps)
+
+`view_topology` opens an interactive view in hosts that support MCP Apps:
+pan, zoom, pinch, page switching, layer toggles, light / dark, full screen,
+and downloads in every format above (handed to the host with
+`ui/download-file`, so files never pass through the model). See
+[`src/mcp/README.md`](../src/mcp/README.md#inline-view-mcp-apps).
+
+## Verification
+
+Structure is unit-tested (`src/export/*.test.ts`, `src/import/drawio.test.ts`,
+`src/mcp/export-tools.test.ts`; Worker rasterization in
+`src/testing/worker-raster.test.ts`). Rendering of `.vsdx` and `.pptx` was
+checked by opening the files in LibreOffice (Draw / Impress) — **not yet in
+Microsoft Visio or PowerPoint**; do that before claiming Office fidelity to a
+customer.

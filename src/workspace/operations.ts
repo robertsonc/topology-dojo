@@ -11,7 +11,7 @@ import {
   type WorkspaceOperation,
 } from './model.js';
 
-const DOCUMENT_FIELDS = [
+export const DOCUMENT_FIELDS = [
   'title',
   'customNodes',
   'layers',
@@ -23,7 +23,7 @@ const DOCUMENT_FIELDS = [
   'tiers',
   'bundles',
 ] as const;
-const PAGE_FIELDS = [
+export const PAGE_FIELDS = [
   'name',
   'viewBox',
   'duration',
