@@ -259,7 +259,7 @@ to the task's affected region and change summaries, not total document size.
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                  |
 | `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a draw.io file, a Mermaid flowchart, or CSV data (`format` auto-detects)       |
 | `set_document_title`                                   | Rename a document                                                                                                                      |
-| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox / lineJumps / linkAttach / `portLabels` ("pill" = wiring-sheet port pills)      |
+| `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox / timing / lineJumps / linkAttach / `portLabels` / `caption` / `emphasis`       |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                                          |
 | `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                                                       |
 | `edit_topology`                                        | **Batch**: many authoring operations in one call (atomic, ordered) — preferred for building diagrams; reports `created` for upsert ops |

@@ -8,6 +8,7 @@ import { renderDocumentToSVG } from '../server/render.js';
 import { MockProvider } from '../connect/mock.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { TEXT_LIMITS } from '../api/text.js';
+import { DOCUMENT_FIELDS, PAGE_FIELDS } from '../workspace/operations.js';
 
 describe('MCP tools', () => {
   let store: TopologyStore;
@@ -1961,5 +1962,90 @@ describe('MCP tools', () => {
     const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
     expect(doc.pages[1]!.nodes.map((n) => n.id)).toEqual(['n2']);
     expect(doc.pages[0]!.nodes.map((n) => n.id)).toEqual(['n1']);
+  });
+});
+
+/**
+ * Parity guard: every page field a shared-workspace `page.patch` can write
+ * (the GUI's page inspector writes the same set) is settable through the
+ * direct `set_page_properties` tool, and every document field has a direct
+ * tool — so the stdio / private-draft MCP surface cannot silently fall
+ * behind the GUI again.
+ */
+describe('MCP ⇄ document-contract parity', () => {
+  const tools = createTools(new TopologyStore(), {
+    renderDocument: renderDocumentToSVG,
+  });
+  const tool = (n: string) => tools.find((t) => t.name === n)!;
+
+  it('set_page_properties covers every page field', () => {
+    const shape = Object.keys(tool('set_page_properties').inputShape);
+    expect(PAGE_FIELDS.filter((f) => !shape.includes(f))).toEqual([]);
+  });
+
+  it('every document field has a direct tool (stencils are a GUI palette convenience)', () => {
+    const DIRECT: Record<string, string> = {
+      title: 'set_document_title',
+      customNodes: 'define_node_type',
+      layers: 'define_layer',
+      legend: 'set_legend',
+      palette: 'set_palette',
+      linkStyles: 'define_link_style',
+      sheet: 'set_sheet',
+      tiers: 'define_tier',
+      bundles: 'define_bundle',
+    };
+    const KNOWN_GAPS = ['stencils'];
+    for (const f of DOCUMENT_FIELDS) {
+      if (KNOWN_GAPS.includes(f)) continue;
+      expect(
+        DIRECT[f],
+        `document field ${f} has no direct MCP tool`,
+      ).toBeDefined();
+      expect(
+        tools.some((t) => t.name === DIRECT[f]),
+        DIRECT[f],
+      ).toBe(true);
+    }
+  });
+
+  it('sets and clears caption + emphasis, rejecting unknown ids', () => {
+    const store = new TopologyStore();
+    const t = createTools(store, { renderDocument: renderDocumentToSVG });
+    const call = (n: string, a: Record<string, unknown>) =>
+      t
+        .find((x) => x.name === n)!
+        .handler(parseToolArgs(t.find((x) => x.name === n)!, a));
+    const { id } = call('create_from_template', { template: 'three-tier' }) as {
+      id: string;
+    };
+    const page = store.get(id).pages[0]!;
+    const nodeId = page.nodes[0]!.id;
+    call('set_page_properties', {
+      topologyId: id,
+      pageIndex: 0,
+      caption: 'Steady state',
+      emphasis: [nodeId, nodeId],
+    });
+    expect(store.get(id).pages[0]).toMatchObject({
+      caption: 'Steady state',
+      emphasis: [nodeId],
+    });
+    expect(() =>
+      call('set_page_properties', {
+        topologyId: id,
+        pageIndex: 0,
+        emphasis: ['nope'],
+      }),
+    ).toThrow(/not nodes or links/);
+    call('set_page_properties', {
+      topologyId: id,
+      pageIndex: 0,
+      caption: '',
+      emphasis: [],
+    });
+    const p = store.get(id).pages[0]!;
+    expect(p.caption).toBeUndefined();
+    expect(p.emphasis).toBeUndefined();
   });
 });
