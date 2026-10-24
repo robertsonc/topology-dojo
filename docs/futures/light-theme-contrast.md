@@ -1,9 +1,7 @@
 # Fix: light-theme renders look muted / washed out vs draw.io
 
-Status: **planned** — scheduled after hw-catalog Phase 4 (PR #288) merges,
-before hw-catalog Phase 5. Its own branch and PR, small commits, no Worker
-deploy. The brief below is kept as received; re-check the line numbers
-before editing (they were verified at commit 7e951f3).
+Status: **done**, in review — the plan below is kept as received. What
+landed, and what differed from the plan, is under "Outcome" at the end.
 
 Related: the "Clean render profile" roadmap item also edits
 `flattenViewer`; whichever lands second rebases onto the other.
@@ -123,3 +121,38 @@ leave it for a follow-up issue.
   (`src/render/wiresheet.ts`: pills, headers, badges, notes) that go through
   the same light remap; include a wire-sheet page in the composited probe so
   they are held to the same bar.
+
+## Outcome
+
+- **Test first.** `src/render/light-contrast.test.ts` renders the probe
+  (`src/testing/light-probe.ts`: every node type, every link type, the
+  engine accents, zones, a flow path, legend, caption) and the hw-catalog
+  wire sheet in light, and composites every stroke and text paint over its
+  real backdrop (`src/testing/contrast.ts`: nested opacity, chip /
+  panel backdrops under text). It failed on main (no primary strokes; 26
+  probe labels and 78 wire-sheet labels under 4.5:1) and passes now.
+- **Engine knobs** as planned (`lineAlpha`, `textAlpha`, plus
+  `minLineWidth` and `detailOverlays`), applied to the primary stroke of
+  every wire renderer and of page-level flow paths, and to zone stroke and
+  labels. Primary strokes are tagged `data-tds-role="primary"`, icon art text
+  `wash`; the tags are stripped from dark output.
+- **Glow underlays** dropped in `flattenViewer` on "tds filter AND opacity ≤
+  .05". Dark output for every fixture page and the probe differs from main
+  only by those removed elements (element diff); the link-attach byte pins
+  were re-pinned on that evidence.
+- **White light exports** via `LIGHT_EXPORT_BACKGROUND`; the editor canvas
+  keeps `#f0f1f3`. The flipbook player chrome around the frames is unchanged.
+- **Deviations.** The suggested card border `#9aa5b1` is 2.5:1 on white, below
+  the 3:1 the plan asks for; it is `#7f8d9c` (3.39:1 on white, 3.0:1 on the
+  canvas), under a new `border` role. Four light accents were also darkened
+  so a wire label in the link colour reaches 4.5:1 (`#037b5a`, `#8b6800`,
+  `#956309`, `#a15d0c`); the plan did not list them, the test found them.
+  Vendor icon badges (white on AWS orange / Azure blue, ~2:1 in both themes)
+  are tagged `wash`: they predate this and are not a light-theme issue.
+- **Before / after** (Playwright, light, calm):
+  [`venue-distribution-leaf` before](light-theme-contrast/venue-distribution-leaf.light.before.png)
+  · [after](light-theme-contrast/venue-distribution-leaf.light.after.png) ·
+  [`EdgeHA_after` before](light-theme-contrast/EdgeHA_after.light.before.png)
+  · [after](light-theme-contrast/EdgeHA_after.light.after.png).
+- **Still out of scope:** text is 7-9px in ~2000-unit viewBoxes (3-4pt on a
+  fitted PDF page) — a font-floor vs export-scale decision for a follow-up.

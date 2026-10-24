@@ -412,6 +412,15 @@ class TopologyDesigner {
     // When true, the string-render path (_svgDefs/_svgAmbient) emits a
     // light-canvas grid + vignette instead of the dark defaults (#8).
     this.light = false;
+    // Theme knobs for primary strokes and labels (light-theme contrast).
+    // null = the engine's tuned-for-dark per-element value; a light render
+    // sets 1 so lines and labels draw solid without the glow they relied on.
+    this.lineAlpha = null;
+    this.textAlpha = null;
+    // Thinnest primary link stroke (0 = as drawn).
+    this.minLineWidth = 0;
+    // The thin secondary detail overlays on wires (dashes, cladding).
+    this.detailOverlays = true;
 
     // ── Zone Annotations (#140) ──
     // Visual region rectangles grouping nodes into named zones
@@ -2428,6 +2437,18 @@ class TopologyDesigner {
    * Get phase state for a step/phase pair.
    * Supports per-phase timing overrides via phase.delayMs.
    */
+  /** Primary-stroke opacity: the element's own value unless the theme sets one. */
+  _la(v) { return this.lineAlpha == null ? v : this.lineAlpha; }
+  /** Label opacity: the element's own value unless the theme sets one. */
+  _ta(v) { return this.textAlpha == null ? v : this.textAlpha; }
+  /** Primary stroke width, raised to the theme's minimum. */
+  _lw(w) { return this.minLineWidth ? Math.max(Number(w), this.minLineWidth) : w; }
+  /**
+   * Paint-role tag for contrast checks: "primary" (a link's main stroke) or
+   * "wash" (decoration). Render paths strip it from dark output.
+   */
+  _role(r) { return ` data-tds-role="${r}"`; }
+
   _ph(stepId, phaseNum) {
     const idx = this._stepIndex[stepId];
     if (idx == null) return { show: false, anim: false, delay: 0, effect: 'appear' };
@@ -3091,7 +3112,7 @@ ${grid}`;
 
     // Console port (small, right side)
     s += `<rect x="${x+34}" y="${y+2}" width="6" height="5" rx="1" fill="#1d1f27" stroke="#65aef9" stroke-width=".4" opacity=".6"/>`;
-    s += `<text x="${x+37}" y="${y+6}" text-anchor="middle" fill="#65aef9" font-size="3" opacity=".5">C</text>`;
+    s += `<text data-tds-role="wash" x="${x+37}" y="${y+6}" text-anchor="middle" fill="#65aef9" font-size="3" opacity=".5">C</text>`;
 
     return s;
   }
@@ -3747,11 +3768,12 @@ ${grid}`;
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const blur = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
-    const sw = strokeWidth;
+    const sw = this._lw(strokeWidth);
+    const a = this._la(0.7);
     if (anim) {
-      return `<g${blur}><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : 'stroke-dasharray="2000" stroke-dashoffset="0"'} class="${dashed ? 'tds-phase-in' : 'tds-draw-phase'}" style="opacity:${0.7*op};animation-delay:${delay}s"/></g>`;
+      return `<g${blur}><line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : 'stroke-dasharray="2000" stroke-dashoffset="0"'} class="${dashed ? 'tds-phase-in' : 'tds-draw-phase'}" style="opacity:${a*op};animation-delay:${delay}s"/></g>`;
     }
-    return `<g${blur}><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${0.7*op}"/></g>`;
+    return `<g${blur}><line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${a*op}"/></g>`;
   }
 
   /** A `line` link with crossing hops — same styling as _renderLine, path art. */
@@ -3759,11 +3781,12 @@ ${grid}`;
     const { show, anim, delay } = this._ph(stepId, phaseNum);
     if (!show) return '';
     const blur = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
-    const sw = strokeWidth;
+    const sw = this._lw(strokeWidth);
+    const a = this._la(0.7);
     if (anim) {
-      return `<g${blur}><path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : 'stroke-dasharray="2000" stroke-dashoffset="0"'} class="${dashed ? 'tds-phase-in' : 'tds-draw-phase'}" style="opacity:${0.7 * op};animation-delay:${delay}s"/></g>`;
+      return `<g${blur}><path${this._role('primary')} d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : 'stroke-dasharray="2000" stroke-dashoffset="0"'} class="${dashed ? 'tds-phase-in' : 'tds-draw-phase'}" style="opacity:${a * op};animation-delay:${delay}s"/></g>`;
     }
-    return `<g${blur}><path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${0.7 * op}"/></g>`;
+    return `<g${blur}><path${this._role('primary')} d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dashed ? 'stroke-dasharray="6 4"' : ''} opacity="${a * op}"/></g>`;
   }
 
   /** Animated flow particles along a path, controllable by per-link flow cfg. */
@@ -3812,12 +3835,12 @@ ${grid}`;
       `<path d="${path}" fill="none" stroke="${color}" stroke-width="7" ${lj} opacity=".16"/>` +
       `<path d="${path}" fill="none" stroke="${color}" stroke-width="4.5" ${lj} opacity=".28"/>` +
       // Tube body + bright fiber-optic core (the core draws in when animating).
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="3" ${lj} opacity=".5"/>` +
+      `<path${this._role('primary')} d="${path}" fill="none" stroke="${color}" stroke-width="3" ${lj} opacity="${this._la('.5')}"/>` +
       `<path d="${path}" fill="none" stroke="#dffff4" stroke-width="2.4" ${lj} stroke-dasharray="2000" stroke-dashoffset="0" opacity=".9"${ad}/>` +
       // Faint white highlight, nudged up a hair for a hint of cylindrical volume.
       `<path d="${path}" fill="none" stroke="#ffffff" stroke-width="1" ${lj} opacity=".4" transform="translate(0,-1.1)"/>` +
       // Dashed encrypted overlay.
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="1" ${lj} stroke-dasharray="6 5" opacity=".3"/>` +
+      (this.detailOverlays ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="1" ${lj} stroke-dasharray="6 5" opacity=".3"/>` : '') +
       // Animated flow particles — filter-free (a bright core dot + a faint halo dot).
       (dots && !this.reducedMotion && !mobile ?
         (this._hasFlowCfg(flow) ? this._flowParticles(path, color, flow) :
@@ -3843,7 +3866,7 @@ ${grid}`;
     const lx = mx + Math.sin(a)*14 + Math.cos(a)*loX + Math.sin(a)*loY, ly = my - Math.cos(a)*14 + Math.sin(a)*loX - Math.cos(a)*loY;
     return `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="6" opacity=".03" filter="url(#tds-glow-blue)"/>` +
-      `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="1.2" stroke-dasharray="5 3" opacity=".5"/>` +
+      `<line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="${this._lw(1.2)}" stroke-dasharray="5 3" opacity="${this._la('.5')}"/>` +
       (dots && !this.reducedMotion ? (this._hasFlowCfg(flow) ? this._flowParticles(`M${x1},${y1} L${x2},${y2}`, '#65aef9', flow) : `<circle r="2.5" fill="#65aef9" opacity=".8" filter="url(#tds-bloom)"><animateMotion dur="2.5s" repeatCount="indefinite" path="M${x1},${y1} L${x2},${y2}"/></circle>`) : '') +
       (label ? this._scaleLabel(`<rect x="${lx-47}" y="${ly-9}" width="94" height="18" rx="4" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
         `<rect x="${lx-46}" y="${ly-8}" width="92" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
@@ -3858,8 +3881,8 @@ ${grid}`;
     const dofF = op < 0.9 && this.step > 0 ? ' filter="url(#tds-dof-blur)"' : '';
     return `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
       `<path d="${path}" fill="none" stroke="${color}" stroke-width="8" opacity=".03" filter="url(#tds-glow)"/>` +
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="1.8" stroke-dasharray="2000" stroke-dashoffset="0" opacity=".4" ${anim ? `class="tds-draw-phase" style="animation-delay:${delay}s"` : ''}/>` +
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width=".8" stroke-dasharray="5 4" opacity=".2"/>` +
+      `<path${this._role('primary')} d="${path}" fill="none" stroke="${color}" stroke-width="1.8" stroke-dasharray="2000" stroke-dashoffset="0" opacity="${this._la('.4')}" ${anim ? `class="tds-draw-phase" style="animation-delay:${delay}s"` : ''}/>` +
+      (this.detailOverlays ? `<path d="${path}" fill="none" stroke="${color}" stroke-width=".8" stroke-dasharray="5 4" opacity=".2"/>` : '') +
       (dots && !this.reducedMotion ? (this._hasFlowCfg(flow) ? this._flowParticles(path, color, flow) :
         `<circle r="3.5" fill="${color}" opacity=".9" filter="url(#tds-bloom)"><animateMotion dur="3s" repeatCount="indefinite" path="${path}"/></circle>` +
         `<circle r="2" fill="${color}" opacity=".5"><animateMotion dur="3s" repeatCount="indefinite" begin="1s" path="${path}"/></circle>`) : '') +
@@ -3881,12 +3904,12 @@ ${grid}`;
     const h = sub ? 32 : 22;
     return `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade-fast" style="opacity:${op}"`}>` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="4" opacity=".03" filter="url(#tds-glow)"/>` +
-      `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 7" opacity=".35"/>` +
+      `<line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 7" opacity="${this._la('.35')}"/>` +
       (!this.reducedMotion ? `<circle r="4.5" fill="${color}" filter="url(#tds-bloom)"><animateMotion dur="1.5s" repeatCount="indefinite" path="M${x1},${y1} L${x2},${y2}"/></circle>` : '') +
       (label ? this._scaleLabel(`<rect x="${mx+ox-69}" y="${my+oy-(sub?19:13)}" width="138" height="${h}" rx="6" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>` +
         `<rect x="${mx+ox-68}" y="${my+oy-(sub?18:12)}" width="136" height="1" rx=".5" fill="rgba(255,255,255,.04)"/>` +
         `<text x="${mx+ox}" y="${my+oy-(sub?4:0)}" text-anchor="middle" fill="${color}" font-size="9" font-weight="600">${_esc(label)}</text>` +
-        (sub ? `<text x="${mx+ox}" y="${my+oy+9}" text-anchor="middle" fill="${color}" font-size="7.5" opacity=".8">${_esc(sub)}</text>` : ''), mx+ox, my+oy, scale) : '') +
+        (sub ? `<text x="${mx+ox}" y="${my+oy+9}" text-anchor="middle" fill="${color}" font-size="7.5" opacity="${this._ta('.8')}">${_esc(sub)}</text>` : ''), mx+ox, my+oy, scale) : '') +
       '</g>';
   }
 
@@ -3896,7 +3919,7 @@ ${grid}`;
     if (!show) return '';
     const mx = (x1+x2)/2, my = (y1+y2)/2;
     return `<g ${anim ? `class="tds-phase-in" style="opacity:1;animation-delay:${delay}s"` : 'class="tds-fade-fast" style="opacity:1"'}>` +
-      `<line x1="${x1}" y1="${y1}" x2="${mx}" y2="${my}" stroke="#fc6161" stroke-width="2" stroke-dasharray="8 4" opacity=".6"/>` +
+      `<line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${mx}" y2="${my}" stroke="#fc6161" stroke-width="2" stroke-dasharray="8 4" opacity="${this._la('.6')}"/>` +
       `<ellipse cx="${mx}" cy="${my}" rx="22" ry="22" fill="#fc6161" opacity=".06" filter="url(#tds-glow-red)"><animate attributeName="opacity" values=".04;.1;.04" dur="1.5s" repeatCount="indefinite"/></ellipse>` +
       `<circle cx="${mx}" cy="${my}" r="14" fill="#1d1f27" stroke="#fc6161" stroke-width="1.5" filter="url(#tds-glow)"/>` +
       `<line x1="${mx-6}" y1="${my-6}" x2="${mx+6}" y2="${my+6}" stroke="#fc6161" stroke-width="2.5" filter="url(#tds-bloom)"/>` +
@@ -3904,7 +3927,7 @@ ${grid}`;
       `<rect x="${mx-38}" y="${my+18}" width="76" height="16" rx="4" fill="#fc6161" opacity=".12" stroke="#fc6161" stroke-width=".5"/>` +
       `<text x="${mx}" y="${my+29}" text-anchor="middle" fill="#fc6161" font-size="8" font-weight="700" filter="url(#tds-glow)">BLOCKED</text>` +
       (reason ? `<rect x="${mx-108}" y="${my+38}" width="216" height="20" rx="6" fill="url(#tds-labelGlass)" opacity=".94" stroke="#fc6161" stroke-width=".4"/>` +
-        `<text x="${mx}" y="${my+52}" text-anchor="middle" fill="#fc6161" font-size="7.5" opacity=".9">${_esc(reason)}</text>` : '') +
+        `<text x="${mx}" y="${my+52}" text-anchor="middle" fill="#fc6161" font-size="7.5" opacity="${this._ta('.9')}">${_esc(reason)}</text>` : '') +
       '</g>';
   }
 
@@ -3924,7 +3947,7 @@ ${grid}`;
     let s = `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>`;
     // Dashed wireless link line (not solid — visually distinct from wired)
     s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="10" opacity=".03" filter="url(#${gf})"/>`;
-    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 6" opacity=".35" ${anim ? `class="tds-phase-in" style="animation-delay:${delay}s"` : ''}/>`;
+    s += `<line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 6" opacity="${this._la('.35')}" ${anim ? `class="tds-phase-in" style="animation-delay:${delay}s"` : ''}/>`;
     // Signal wave arcs radiating from BOTH endpoints (not just midpoint)
     // Source-side arcs (radiating toward destination)
     const srcA = a; // angle toward destination
@@ -3994,9 +4017,9 @@ ${grid}`;
     // Background glow
     s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="8" opacity=".04" filter="url(#${gf})"/>`;
     // Main line (solid)
-    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="2" stroke-dasharray="2000" stroke-dashoffset="0" opacity=".5" ${anim ? `class="tds-draw-phase" style="animation-delay:${delay}s"` : ''}/>`;
+    s += `<line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="2" stroke-dasharray="2000" stroke-dashoffset="0" opacity="${this._la('.5')}" ${anim ? `class="tds-draw-phase" style="animation-delay:${delay}s"` : ''}/>`;
     // Secondary detail dashes
-    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width=".8" stroke-dasharray="3 6" opacity=".3"/>`;
+    if (this.detailOverlays) s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width=".8" stroke-dasharray="3 6" opacity=".3"/>`;
     // Voltage/Lightning bolt icon at midpoint
     s += `<circle cx="${mx}" cy="${my}" r="10" fill="#1d1f27" stroke="${c}" stroke-width=".8" opacity=".9"/>`;
     s += `<path d="M${mx-3},${my-7} L${mx+1},${my-1} L${mx-1},${my-1} L${mx+3},${my+7} L${mx-1},${my+1} L${mx+1},${my+1}Z" fill="${c}" opacity=".9" filter="url(#tds-bloom)"/>`;
@@ -4028,11 +4051,13 @@ ${grid}`;
     let s = `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>`;
     // Bright core line (thin, intense — like a laser)
     s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="12" opacity=".03" filter="url(#${gf})"/>`;
-    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1" opacity=".7" ${anim ? `stroke-dasharray="2000" stroke-dashoffset="0" class="tds-draw-phase" style="animation-delay:${delay}s"` : ''}/>`;
+    s += `<line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${this._lw(1)}" opacity="${this._la('.7')}" ${anim ? `stroke-dasharray="2000" stroke-dashoffset="0" class="tds-draw-phase" style="animation-delay:${delay}s"` : ''}/>`;
     // Outer cladding (thin parallel lines)
     const px = Math.sin(a) * 3, py = -Math.cos(a) * 3;
-    s += `<line x1="${x1+px}" y1="${y1+py}" x2="${x2+px}" y2="${y2+py}" stroke="${c}" stroke-width=".3" opacity=".2"/>`;
-    s += `<line x1="${x1-px}" y1="${y1-py}" x2="${x2-px}" y2="${y2-py}" stroke="${c}" stroke-width=".3" opacity=".2"/>`;
+    if (this.detailOverlays) {
+      s += `<line x1="${x1+px}" y1="${y1+py}" x2="${x2+px}" y2="${y2+py}" stroke="${c}" stroke-width=".3" opacity=".2"/>`;
+      s += `<line x1="${x1-px}" y1="${y1-py}" x2="${x2-px}" y2="${y2-py}" stroke="${c}" stroke-width=".3" opacity=".2"/>`;
+    }
     // Laser warning triangle icon at midpoint
     s += `<circle cx="${mx}" cy="${my}" r="10" fill="#1d1f27" stroke="${c}" stroke-width=".8" opacity=".9"/>`;
     // Triangle
@@ -4245,11 +4270,11 @@ ${grid}`;
     const labelY = bottom ? minY + h - 8 : minY + 14;
     const subY = bottom ? minY + h - 20 : minY + 26;
     let s = '';
-    s += `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" rx="8" fill="${c}" fill-opacity=".04" stroke="${c}" stroke-width="1" stroke-opacity=".35"${dash !== 'none' ? ` stroke-dasharray="${dash}"` : ''}/>`;
-    s += `<text x="${labelX}" y="${labelY}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity=".7">${_esc(zone.label || zone.id)}</text>`;
+    s += `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" rx="8" fill="${c}" fill-opacity=".04" stroke="${c}" stroke-width="1" stroke-opacity="${this._la('.35')}"${dash !== 'none' ? ` stroke-dasharray="${dash}"` : ''}/>`;
+    s += `<text x="${labelX}" y="${labelY}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity="${this._ta('.7')}">${_esc(zone.label || zone.id)}</text>`;
     const sublabelText = zone.sublabel || zone.description;
     if (sublabelText) {
-      s += `<text x="${labelX}" y="${subY}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity=".5">${_esc(sublabelText)}</text>`;
+      s += `<text x="${labelX}" y="${subY}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity="${this._ta('.5')}">${_esc(sublabelText)}</text>`;
     }
     return _hrefTipWrap(zone, `<g class="tds-zone" data-zone-id="${zone.id}">`, s, '</g>');
   }
@@ -5450,8 +5475,8 @@ ${grid}`;
         }
 
         const color = fp.color || '#01a982';
-        const width = fp.width || 2;
-        const fpOpacity = (fp.opacity != null ? fp.opacity : 0.8) * layerOp;
+        const width = this._lw(fp.width || 2);
+        const fpOpacity = (fp.opacity != null ? fp.opacity : this._la(0.8)) * layerOp;
         const _speedMap = { slow: 4, medium: 2.5, fast: 1.2 };
         const speed = (typeof fp.speed === 'string' ? _speedMap[fp.speed] : fp.speed) || 2.5;
         const animation = fp.animation || 'particles';
@@ -5465,14 +5490,14 @@ ${grid}`;
 
         // Main stroke
         if (animation === 'dashed') {
-          fpSvg += `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="8 5" opacity="${fpOpacity}"/>`;
+          fpSvg += `<path${this._role('primary')} d="${pathD}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="8 5" opacity="${this._la(fpOpacity)}"/>`;
         } else if (animation === 'pulse') {
-          fpSvg += `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="${width}" opacity="${fpOpacity}">` +
+          fpSvg += `<path${this._role('primary')} d="${pathD}" fill="none" stroke="${color}" stroke-width="${width}" opacity="${this._la(fpOpacity)}">` +
             `<animate attributeName="opacity" values="${fpOpacity};${fpOpacity * 0.3};${fpOpacity}" dur="${speed}s" repeatCount="indefinite"/>` +
             `</path>`;
         } else {
           // particles (default)
-          fpSvg += `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="5 4" opacity="${fpOpacity * 0.4}"/>`;
+          fpSvg += `<path${this._role('primary')} d="${pathD}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="5 4" opacity="${this._la(fpOpacity * 0.4)}"/>`;
           if (!this.reducedMotion) {
             const particleCount = 3;
             for (let pi = 0; pi < particleCount; pi++) {

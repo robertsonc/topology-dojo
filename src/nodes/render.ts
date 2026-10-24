@@ -98,7 +98,7 @@ export function renderCustomNode(
   if (spec.badge && spec.badgeText) {
     const tw = spec.badgeText.length * 3 + 6;
     s += `<rect x="${x + round1(b.bx - tw / 2 + 2)}" y="${y - round1(b.by + 4)}" width="${tw}" height="10" rx="5" fill="${esc(spec.badgeColor)}" opacity=".9"/>`;
-    s += `<text x="${x + round1(b.bx + 2)}" y="${y - round1(b.by - 3)}" text-anchor="middle" fill="#fff" font-size="6" font-family="'JetBrains Mono',monospace" font-weight="600">${esc(spec.badgeText)}</text>`;
+    s += `<text data-tds-role="wash" x="${x + round1(b.bx + 2)}" y="${y - round1(b.by - 3)}" text-anchor="middle" fill="#fff" font-size="6" font-family="'JetBrains Mono',monospace" font-weight="600">${esc(spec.badgeText)}</text>`;
   }
 
   // 8. Antenna waves

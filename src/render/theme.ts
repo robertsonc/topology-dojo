@@ -18,6 +18,8 @@ export type RenderTheme = 'dark' | 'light';
 export type ThemeRole =
   | 'background'
   | 'surface'
+  /** Card border / divider grey: ≥ 3:1 against the light surfaces. */
+  | 'border'
   | 'text'
   | 'overlay'
   | 'accent';
@@ -39,6 +41,12 @@ export interface ThemeRemap {
 export const DARK_BACKGROUND = '#0e1613';
 /** Matches the engine's own light canvas (`setTheme('light')` / `--tds-canvas-bg`). */
 export const LIGHT_BACKGROUND = '#f0f1f3';
+/**
+ * Light exports (SVG, PNG, PDF, flipbook, inline view) sit on white, like a
+ * printed page and a draw.io export; the live editor canvas keeps
+ * `LIGHT_BACKGROUND`.
+ */
+export const LIGHT_EXPORT_BACKGROUND = '#ffffff';
 
 /**
  * The light remap table — every engine-sourced constant found in a rendered
@@ -62,13 +70,14 @@ export const LIGHT_BACKGROUND = '#f0f1f3';
  */
 export const LIGHT_THEME_MAP: readonly ThemeRemap[] = [
   // Page background (the export wrapper backdrop; the editor canvas is CSS).
-  { from: '#0e1613', to: LIGHT_BACKGROUND, role: 'background' },
+  { from: '#0e1613', to: LIGHT_EXPORT_BACKGROUND, role: 'background' },
 
   // Card / shape surfaces (dark → light). The first four are the #8 remap.
   { from: '#292d3a', to: '#ffffff', role: 'surface', card: true },
   { from: '#22252e', to: '#f2f5f8', role: 'surface', card: true },
   { from: '#1d1f27', to: '#e9edf2', role: 'surface', card: true },
-  { from: '#3e4550', to: '#ccd4dc', role: 'surface', card: true },
+  // Card border: ≥ 3:1 on the white card and on both light backgrounds.
+  { from: '#3e4550', to: '#7f8d9c', role: 'border', card: true },
   // Status-LED ring (separates the dot from the card).
   { from: '#0b0e14', to: '#ffffff', role: 'surface' },
   // Managed-switch screen / fibre-port wells (tinted dark fills on cards).
@@ -94,16 +103,18 @@ export const LIGHT_THEME_MAP: readonly ThemeRemap[] = [
   // Policy-marker badge disc (dark disc under the icon → light disc).
   { from: 'rgba(0,0,0,.6)', to: 'rgba(255,255,255,.6)', role: 'overlay' },
 
-  // Accents, darkened for ≥ 3:1 on the light page.
+  // Accents, darkened for ≥ 3:1 on the light page as strokes and ≥ 4.5:1 as
+  // label text on the white export page (wire labels draw in the link
+  // colour at full opacity).
   { from: '#01a982', to: '#00875a', role: 'accent' }, // brand green
-  { from: '#05cc93', to: '#048f68', role: 'accent' }, // bright green (LEDs, flows)
+  { from: '#05cc93', to: '#037b5a', role: 'accent' }, // bright green (LEDs, flows)
   { from: '#65aef9', to: '#2563eb', role: 'accent' }, // blue
-  { from: '#deb146', to: '#9a7400', role: 'accent' }, // gold
-  { from: '#e0a44a', to: '#a8700a', role: 'accent' }, // legend "warn" gold
+  { from: '#deb146', to: '#8b6800', role: 'accent' }, // gold
+  { from: '#e0a44a', to: '#956309', role: 'accent' }, // legend "warn" gold
   { from: '#fc6161', to: '#dc2626', role: 'accent' }, // red / alert
   { from: '#00a4b3', to: '#0e7490', role: 'accent' }, // teal
   { from: '#7764fc', to: '#6d4dd0', role: 'accent' }, // purple
-  { from: '#ec8c25', to: '#c2700e', role: 'accent' }, // orange LEDs
+  { from: '#ec8c25', to: '#a15d0c', role: 'accent' }, // orange LEDs
   { from: '#d25f4b', to: '#b8432f', role: 'accent' }, // coral
 ];
 
@@ -126,7 +137,7 @@ export const LIGHT_CANVAS: {
 
 /** The backdrop fill the export wrappers paint for a theme. */
 export function themeBackground(theme: RenderTheme | undefined): string {
-  return theme === 'light' ? LIGHT_BACKGROUND : DARK_BACKGROUND;
+  return theme === 'light' ? LIGHT_EXPORT_BACKGROUND : DARK_BACKGROUND;
 }
 
 /** Resolve the public option (plus the older `light` boolean alias). */

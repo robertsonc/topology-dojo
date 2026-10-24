@@ -293,15 +293,18 @@ describe('byte-identical output when the options are absent', () => {
   // SHA-256 of the headless render on origin/main at 5b82648 (PR #272, the
   // merge base of this feature) with no linkAttach anywhere. Any legitimate
   // render change in a later PR must update these alongside its own snapshot.
+  // Re-pinned by the light-theme contrast fix: flattenViewer now drops the
+  // glow-underlay strokes (opacity ≤ .05, tds filter). An element diff
+  // against origin/main 9813d8b showed those removals and nothing else.
   const EXPECTED: Record<string, string> = {
     sampleDocument:
-      '7c1a47f161b10e708b27ca9406740089f2864437c3b51f391795b5b74d5fc56e',
+      '2ac48fcc492afd5de7f18933c10f11dc6dd0086e430b9f0e0a3a7506bbd3c966',
     'fixtures/EdgeHA_after.json':
-      'b13355e102606d559c248cb7f17c9618fb83dee29b5d407000767e21102ed57f',
+      'd121142a71f600b674c4fa613b08f8663237034f537f08136f0837160afc5a80',
     'fixtures/EdgeHA_before.json':
-      'ffa5ca461d5d3f29f1a7839dd4eef9549aa50f358f73d095b6f4357bb80ee1c3',
+      '65aec72c46819bef0bf6e3c2b22d4860e2d47f17b829e2cfc36d9e62373107e5',
     'src/render/__fixtures__/anchor-routing.json':
-      '1cf10ecf22c1114f135cab1eb2253b63cc5e09b7eee99b536d9c66faa74e2764',
+      '9f4a8cdea27750efcc5166a5b2c489d99254dadf035535df50df30ff051c4426',
   };
 
   it('sample document renders to the pre-feature bytes', () => {

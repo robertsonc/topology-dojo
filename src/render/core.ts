@@ -21,8 +21,10 @@ import { withInterfaceLabels } from '../api/hardware.js';
 import { pageHasPills, pillBands, stripPillLabels } from './port-pills.js';
 import { registerHitBoxes } from './hit-boxes.js';
 import {
+  applyEngineTheme,
   applyPalette,
   flattenViewer,
+  stripRoleTags,
   type LinkAttachOptions,
 } from '../vendor/topology-ds.js';
 import { documentOverlaySVG } from './overlays.js';
@@ -131,6 +133,7 @@ function renderPageUnthemed(
   if (opts.calm) topo.reducedMotion = true;
   // Only set for a light theme so the dark output stays byte-identical.
   if (opts.theme === 'light') topo.light = true;
+  applyEngineTheme(topo as never, opts.theme ?? 'dark');
   // Line jumps at link crossings — the page-level setting, applied at render
   // time (same as the browser facade, so exports match the canvas).
   (topo as unknown as { lineJumps?: string }).lineJumps = page.lineJumps;
@@ -231,7 +234,8 @@ function renderPageUnthemed(
   // Flatten the cinematic FX so the headless SVG/PNG/flipbook match the live
   // canvas: glow survives only as the emphasis channel; ambient sheen/vignette
   // gone; a single flat backdrop fill.
-  const art = flattenViewer(topo._renderSVG(), opts.emphasis ?? []);
+  const flat = flattenViewer(topo._renderSVG(), opts.emphasis ?? []);
+  const art = opts.theme === 'light' ? flat : stripRoleTags(flat);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
     `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${themeBackground(opts.theme)}"/>` +
