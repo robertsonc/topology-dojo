@@ -19,6 +19,8 @@ function escXml(s: string): string {
 }
 
 const ROW_H = 18;
+/** Note line height (wire-sheet notes, render-time). */
+const NOTE_H = 13;
 const PAD = 10;
 const BLOCK_W = 340;
 /** Logo cell width when a logo is set. */
@@ -31,7 +33,9 @@ function blockTextW(
 ): number {
   const titleW = doc.title.length * 7.4 + PAD * 2;
   const subW = (tb?.subtitle?.length ?? 0) * 6.6 + PAD * 2;
-  return Math.ceil(Math.max(BLOCK_W, titleW, subW));
+  const noteW =
+    Math.max(0, ...(tb?.notes ?? []).map((n) => n.length * 5.2)) + PAD * 2;
+  return Math.ceil(Math.max(BLOCK_W, titleW, subW, noteW));
 }
 
 /** The title block's box (for other overlays to avoid), or null when off. */
@@ -48,9 +52,10 @@ export function titleBlockBox(
     number,
   ];
   const fields = (tb.fields ?? []).slice(0, SHEET_MAX_FIELDS);
+  const notes = tb.notes ?? [];
   const rows = 1 + (tb.subtitle ? 1 : 0) + Math.ceil(fields.length / 2);
   const w = blockTextW(doc, tb) + (tb.logoHref ? LOGO_W : 0);
-  const h = PAD * 2 + rows * ROW_H;
+  const h = PAD * 2 + rows * ROW_H + notes.length * NOTE_H;
   const m = SHEET_MARGIN;
   return { x: vx + vw - m - w, y: vy + vh - m - h, w, h };
 }
@@ -101,6 +106,12 @@ export function sheetSVG(doc: TopologyDocument, page: Page): string {
         `<text x="${x}" y="${y}" font-size="9.5" font-family="ui-monospace,monospace" fill="#e6e8e9">` +
         `<tspan font-weight="700">${escXml(f.label)}:</tspan> ${escXml(f.value)}</text>`;
     });
+    for (const note of tb.notes ?? []) {
+      y += NOTE_H;
+      s +=
+        `<text x="${box.x + PAD}" y="${y}" font-size="8.5" font-family="ui-monospace,monospace" fill="#deb146">` +
+        `${escXml(note)}</text>`;
+    }
     if (tb.logoHref && /^https:\/\//i.test(tb.logoHref))
       s +=
         `<image x="${box.x + textW}" y="${box.y + PAD}" width="${LOGO_W - PAD}" height="${box.h - PAD * 2}" ` +

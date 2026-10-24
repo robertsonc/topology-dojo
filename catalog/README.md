@@ -62,6 +62,9 @@ regenerate the parity golden with
   return provenance **tiers** only, never sources.
 - `src/export/cable-schedule.ts` — `export_topology` `cable-schedule`
   (CSV / XLSX).
+- `src/catalog/sanitize-svg.ts` — panel glyphs are untrusted: the build
+  sanitizes each one into the bundle (`glyphs`), and the wire-sheet renderer
+  (`src/render/wiresheet.ts`) sanitizes again before drawing.
 
 ## Seed provenance at a glance
 

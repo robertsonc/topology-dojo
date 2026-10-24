@@ -27,8 +27,8 @@ export { canonicalJson, gaEligible };
 
 /** check_seed.py ANCHOR_TOLERANCE: SVG anchor vs catalog centre. */
 export const ANCHOR_TOLERANCE = 0.05;
-/** Largest glyph file the build will read (bytes). */
-export const MAX_GLYPH_BYTES = 512 * 1024;
+import { MAX_GLYPH_BYTES, sanitizeSvgText } from './sanitize-svg.js';
+export { MAX_GLYPH_BYTES };
 
 export interface LoadedCatalog {
   root: string;
@@ -162,7 +162,13 @@ export function checkSvg(
       return [
         `SVG ${file}: cannot parse (larger than ${MAX_GLYPH_BYTES} bytes)`,
       ];
-    root = parseXml(readFileSync(file, 'utf8'));
+    const text = readFileSync(file, 'utf8');
+    root = parseXml(text);
+    const { removed } = sanitizeSvgText(text);
+    if (removed.length)
+      out.push(
+        `WARN SVG ${file}: sanitizer removes ${removed.length} item(s): ${removed.slice(0, 5).join(', ')}`,
+      );
   } catch (err) {
     return [
       `SVG ${file}: cannot parse (${err instanceof Error ? err.message : String(err)})`,
@@ -316,13 +322,27 @@ export function checkCatalog(cat: LoadedCatalog, schemaFile: string): string[] {
  * hex chars of the SHA-256 of the canonical bundle without its version.
  */
 export function buildBundle(cat: LoadedCatalog): CatalogBundle {
+  const platforms = [...cat.platforms.values()].sort((a, b) =>
+    a.id < b.id ? -1 : 1,
+  );
+  // Panel glyphs, sanitized on ingest: the bundle never holds raw SVG.
+  const glyphs: Record<string, string> = {};
+  for (const pl of platforms)
+    for (const rel of Object.values(pl.glyphs ?? {})) {
+      if (typeof rel !== 'string' || rel in glyphs) continue;
+      const file = path.join(cat.root, rel);
+      if (statSync(file).size > MAX_GLYPH_BYTES)
+        throw new CatalogLoadError(
+          `glyph ${rel} is larger than ${MAX_GLYPH_BYTES} bytes`,
+        );
+      glyphs[rel] = sanitizeSvgText(readFileSync(file, 'utf8')).svg;
+    }
   const body = {
     format: BUNDLE_FORMAT,
-    platforms: [...cat.platforms.values()].sort((a, b) =>
-      a.id < b.id ? -1 : 1,
-    ),
+    platforms,
     models: [...cat.models.values()].sort((a, b) => (a.id < b.id ? -1 : 1)),
     optics: cat.optics,
+    glyphs,
   };
   const version = createHash('sha256')
     .update(canonicalJson(body))

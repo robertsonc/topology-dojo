@@ -5,6 +5,7 @@
  * defensive normalization on the way in (a corrupt or hand-edited file must
  * never crash the editor — it falls back to a valid shape or null).
  */
+import { PANEL_SCALE_MAX, PANEL_SCALE_MIN } from '../render/wiresheet-scale.js';
 import type { TopologyDocument, Page, Stencil, BrandPalette } from './model.js';
 import { newPageId } from './model.js';
 import { sanitizeDisplayFields } from '../api/text.js';
@@ -299,6 +300,13 @@ export function parseDoc(input: unknown): TopologyDocument | null {
         : {}),
       ...(parseLinkAttach(p.linkAttach)
         ? { linkAttach: parseLinkAttach(p.linkAttach)! }
+        : {}),
+      ...(p.view === 'wiresheet' ? { view: 'wiresheet' as const } : {}),
+      ...(typeof p.panelScale === 'number' &&
+      Number.isFinite(p.panelScale) &&
+      p.panelScale >= PANEL_SCALE_MIN &&
+      p.panelScale <= PANEL_SCALE_MAX
+        ? { panelScale: p.panelScale }
         : {}),
       ...(p.portLabels === 'pill' || p.portLabels === 'chip'
         ? { portLabels: p.portLabels }

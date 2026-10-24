@@ -58,6 +58,20 @@ export interface Page extends RenderablePage {
    * `linkAttach.distribute`). A node's own `portLabels` overrides it.
    */
   portLabels?: 'chip' | 'pill';
+  /**
+   * Page view (hw-catalog Phase 4): 'logical' (default) draws topology
+   * symbols; 'wiresheet' draws each hardware-bound node as its real panel
+   * (front / rear per `hw.face`) with cables at the true port positions.
+   * Needs the hardware catalog, so it renders on the server (MCP / exports);
+   * where the catalog is unavailable the page draws logical.
+   */
+  view?: 'logical' | 'wiresheet';
+  /**
+   * Wire-sheet scale as the denominator of 1:k — panel millimetres drawn
+   * at 1/k of their size on the sheet (viewBox px at SHEET_DPI). Absent =
+   * chosen per page from the widest panel. Ignored on logical pages.
+   */
+  panelScale?: number;
   nodes: NodeConfig[];
   links: LinkConfig[];
   anchors: AnchorConfig[];

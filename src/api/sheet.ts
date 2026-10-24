@@ -59,6 +59,11 @@ export interface SheetTitleBlock {
   fields?: SheetField[];
   /** https image drawn at the block's right end (a logo). */
   logoHref?: string;
+  /**
+   * Render-time only, never stored: note lines the wire-sheet renderer adds
+   * under the fields (scale, schematic models). parseDoc drops it.
+   */
+  notes?: string[];
 }
 
 export interface SheetConfig {

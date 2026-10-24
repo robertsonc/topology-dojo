@@ -67,6 +67,7 @@ import {
   type CatalogValidation,
 } from './hardware-validate.js';
 import { docHasBindings } from '../api/hardware.js';
+import { PANEL_SCALE_MAX, PANEL_SCALE_MIN } from '../render/wiresheet-scale.js';
 import {
   analyzeLayout,
   isValidViewBox,
@@ -120,6 +121,9 @@ import { SHARE_PUBLIC_WARNING } from '../share/copy.js';
 import type { Rasterizer } from '../export/raster.js';
 import { exportTools } from './export-tools.js';
 import { hardwareTools } from './hardware-tools.js';
+import { withHardware } from './hardware-render.js';
+import { wiresheetLayout } from '../render/wiresheet.js';
+import { scaleLabel } from '../render/wiresheet-scale.js';
 import { convertDrawio, detectDrawio } from '../import/drawio.js';
 
 export interface ToolDef {
@@ -841,6 +845,21 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe(
             'Endpoint label mode: "pill" (on the node edge, wiring-sheet style) or "chip" (classic, the default).',
           ),
+        view: z
+          .enum(['logical', 'wiresheet'])
+          .optional()
+          .describe(
+            '"wiresheet" draws hardware-bound nodes as their real panels with cables at the true ports (server renders: render_svg, exports, view_topology); "logical" (default) draws symbols.',
+          ),
+        panelScale: z
+          .number()
+          .min(PANEL_SCALE_MIN)
+          .max(PANEL_SCALE_MAX)
+          .nullable()
+          .optional()
+          .describe(
+            'Wire-sheet scale 1:k (k = 2 draws panels at half size on the sheet); null = auto.',
+          ),
         caption: displayString(TEXT_LIMITS.caption, { multiline: true })
           .optional()
           .describe(
@@ -888,6 +907,14 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           if (a.portLabels === 'chip') delete page.portLabels;
           else page.portLabels = 'pill';
         }
+        if (a.view !== undefined) {
+          if (a.view === 'logical') delete page.view;
+          else page.view = 'wiresheet';
+        }
+        if (a.panelScale !== undefined) {
+          if (a.panelScale === null) delete page.panelScale;
+          else page.panelScale = Number(a.panelScale);
+        }
         if (a.caption !== undefined) {
           const caption = String(a.caption);
           if (caption) page.caption = caption;
@@ -922,6 +949,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             : {}),
           ...(page.portLabels !== undefined
             ? { portLabels: page.portLabels }
+            : {}),
+          ...(page.view !== undefined ? { view: page.view } : {}),
+          ...(page.panelScale !== undefined
+            ? { panelScale: page.panelScale }
             : {}),
           ...(page.caption !== undefined ? { caption: page.caption } : {}),
           ...(page.emphasis !== undefined ? { emphasis: page.emphasis } : {}),
@@ -2047,20 +2078,41 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe('Cap reported findings per category (default 8).'),
       },
       handler: (a) => {
-        const doc = store.get(String(a.topologyId));
+        const stored = store.get(String(a.topologyId));
         const index = (a.pageIndex as number | undefined) ?? 0;
-        const page = doc.pages[index];
-        if (!page) throw new Error(`page index ${index} out of range`);
-        return {
-          pageIndex: index,
-          pageName: page.name,
-          ...inspectPage(page, {
-            customNodes: doc.customNodes,
-            ...(a.maxFindingsPerCategory !== undefined
-              ? { maxPerCategory: Number(a.maxFindingsPerCategory) }
+        if (!stored.pages[index])
+          throw new Error(`page index ${index} out of range`);
+        return withHardware(stored, deps.catalog, (doc, hw) => {
+          const page = doc.pages[index]!;
+          // A wire sheet is inspected as drawn: panels, pinned ports.
+          const ws = hw.hardware
+            ? wiresheetLayout(doc, page, hw.hardware)
+            : null;
+          return {
+            pageIndex: index,
+            pageName: page.name,
+            ...inspectPage(ws ? ws.page : page, {
+              customNodes: doc.customNodes,
+              ...(ws ? { wiresheet: ws } : {}),
+              ...(a.maxFindingsPerCategory !== undefined
+                ? { maxPerCategory: Number(a.maxFindingsPerCategory) }
+                : {}),
+            }),
+            ...(ws
+              ? {
+                  wiresheet: {
+                    scale: scaleLabel(ws.scale),
+                    panels: ws.panels.length,
+                    cables: ws.ends.length,
+                    notes: ws.notes,
+                  },
+                }
               : {}),
-          }),
-        };
+            ...(hw.unavailable && page.view === 'wiresheet'
+              ? { note: `wire sheet inspected as logical: ${hw.unavailable}` }
+              : {}),
+          };
+        });
       },
     },
     {
@@ -2081,19 +2133,18 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         theme: renderTheme,
       },
       handler: (a) =>
-        assertExportWithinLimit(
-          deps.renderDocument(
-            store.get(String(a.topologyId)),
-            (a.pageIndex as number | undefined) ?? 0,
-            {
+        withHardware(store.get(String(a.topologyId)), deps.catalog, (doc, hw) =>
+          assertExportWithinLimit(
+            deps.renderDocument(doc, (a.pageIndex as number | undefined) ?? 0, {
               ...(a.visibleLayers !== undefined
                 ? { visibleLayers: a.visibleLayers as string[] }
                 : {}),
               ...themeOpt(a),
-            },
+              ...(hw.hardware ? { hardware: hw.hardware } : {}),
+            }),
+            MAX_SVG_EXPORT_BYTES,
+            'SVG',
           ),
-          MAX_SVG_EXPORT_BYTES,
-          'SVG',
         ),
     },
     {
@@ -2102,14 +2153,20 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         'Export the whole document as one standalone, self-playing HTML flipbook: every page rendered to SVG, played in order on each page’s duration (default 2000ms) with cut/fade transitions, loop, play/pause, and frame dots. No external assets — save it as an .html file and open in any browser. `theme: "light"` renders every frame and the player chrome for a light page (default "dark"). Rejected above 6 MiB — for a long story, render_svg pages individually. This is how an animated multi-frame story (e.g. a flow’s setup → steady state → teardown) is delivered end to end.',
       inputShape: { topologyId, theme: renderTheme },
       handler: (a) =>
-        assertExportWithinLimit(
-          exportFlipbookHTML(
-            store.get(String(a.topologyId)),
-            (doc, i) => deps.renderDocument(doc, i, themeOpt(a)),
-            themeOpt(a),
+        withHardware(store.get(String(a.topologyId)), deps.catalog, (doc, hw) =>
+          assertExportWithinLimit(
+            exportFlipbookHTML(
+              doc,
+              (d, i) =>
+                deps.renderDocument(d, i, {
+                  ...themeOpt(a),
+                  ...(hw.hardware ? { hardware: hw.hardware } : {}),
+                }),
+              themeOpt(a),
+            ),
+            MAX_HTML_EXPORT_BYTES,
+            'HTML',
           ),
-          MAX_HTML_EXPORT_BYTES,
-          'HTML',
         ),
     },
   ];
