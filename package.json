@@ -23,7 +23,8 @@
     "build:export-fonts": "tsx scripts/build-export-fonts.ts",
     "catalog:types": "tsx scripts/catalog-types.ts",
     "catalog:build": "tsx scripts/catalog-build.ts",
-    "catalog:check": "tsx scripts/catalog-build.ts --check && tsx scripts/catalog-types.ts --check"
+    "catalog:check": "tsx scripts/catalog-build.ts --check && tsx scripts/catalog-types.ts --check",
+    "catalog:stencil": "tsx scripts/catalog-export-stencil.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260607.1",
