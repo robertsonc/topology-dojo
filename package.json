@@ -19,7 +19,8 @@
     "export:icons": "tsx scripts/export-icons.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:export-fonts": "tsx scripts/build-export-fonts.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260607.1",
@@ -42,7 +43,9 @@
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.7.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@resvg/resvg-wasm": "2.6.2",
     "agents": "^0.14.5",
+    "fflate": "^0.8.3",
     "jspdf": "^4.2.1"
   }
 }
