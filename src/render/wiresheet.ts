@@ -480,7 +480,9 @@ export function wiresheetLayout(
       const glyph = catalog.glyph(p.platform.id, p.face);
       const ux = p.rect.w / p.platform.panel.width;
       const uy = p.memberH / p.platform.panel.height;
-      let art = `<g class="tds-panel" data-node="${esc(n.id)}">`;
+      // Device art (silkscreen, port numbers) is decoration on its own
+      // dark panel, not page text: tagged a wash for the contrast check.
+      let art = `<g class="tds-panel" data-node="${esc(n.id)}" data-tds-role="wash">`;
       for (let m = 1; m <= p.members; m++) {
         const used = new Set(
           [...usedAll]

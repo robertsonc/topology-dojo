@@ -475,9 +475,20 @@ export function lightenCanvas(svg: string): string {
  *     each spotlighted node/link group — the ONLY glow anywhere on screen.
  */
 export function flattenViewer(svg: string, emphasisIds: string[] = []): string {
+  // 0. Drop glow underlays: the wide, near-transparent strokes (opacity
+  //    ≤ .05) that only exist to feed a tds glow / bloom filter. Without the
+  //    filter they are an unblurred translucent band — haze. Matched on
+  //    "had a tds filter AND opacity ≤ .05", before step 1 strips filters.
+  let out = svg.replace(
+    /<(?:line|path|circle|ellipse|rect|polyline|polygon)\b[^>]*\bfilter="url\(#tds-[^"]*\)"[^>]*\/>/g,
+    (el) => {
+      const op = /\sopacity="([^"]*)"/.exec(el);
+      return op && Number(op[1]) <= 0.05 ? '' : el;
+    },
+  );
   // 1. Strip all decorative engine filters. Runs first so the emphasis filter
   //    injected in step 3 is never caught by this pass.
-  let out = svg.replace(/\s*filter="url\(#tds-[^"]*"/g, '');
+  out = out.replace(/\s*filter="url\(#tds-[^"]*"/g, '');
 
   // 2. Drop the ambient sheen + vignette backdrop rects — both the static
   //    (`… opacity=".4"/>`) and animated (`…><animate…/></rect>`) forms — while
@@ -511,6 +522,35 @@ export function flattenViewer(svg: string, emphasisIds: string[] = []): string {
       out;
   }
   return out;
+}
+
+/**
+ * Theme the engine's line and label knobs (light-theme contrast). Dark keeps
+ * the engine's tuned-for-glow values; light draws primary strokes and labels
+ * solid, at least 1.5px, without the thin detail overlays.
+ */
+export function applyEngineTheme(
+  topo: {
+    lineAlpha?: number | null;
+    textAlpha?: number | null;
+    minLineWidth?: number;
+    detailOverlays?: boolean;
+  },
+  theme: RenderTheme,
+): void {
+  if (theme !== 'light') return;
+  topo.lineAlpha = 1;
+  topo.textAlpha = 1;
+  topo.minLineWidth = 1.5;
+  topo.detailOverlays = false;
+}
+
+/**
+ * The paint-role tags (`data-tds-role`) the engine and overlays emit for
+ * contrast checks. Removed from dark output, which stays byte-identical.
+ */
+export function stripRoleTags(svg: string): string {
+  return svg.replace(/ data-tds-role="[^"]*"/g, '');
 }
 
 /** Render options shared by the page renderers. */
@@ -628,6 +668,7 @@ export function renderPageSVG(
   if (opts.ambient) topo.ambient = opts.ambient;
   const theme = resolveTheme(opts);
   topo.light = theme === 'light';
+  applyEngineTheme(topo as never, theme);
   // Line jumps at link crossings — a page-level setting (persisted; part of
   // the document contract via set_page_properties), applied at render time.
   (topo as unknown as { lineJumps?: string }).lineJumps = page.lineJumps;
@@ -740,6 +781,7 @@ export function renderPageSVG(
   // the emphasis channel. Applied to both the live canvas and the export path
   // (which shares this function), so exported SVG/PNG/flipbook match.
   svg = flattenViewer(svg, opts.emphasis ?? []);
+  if (theme !== 'light') svg = stripRoleTags(svg);
   return svg;
 }
 
