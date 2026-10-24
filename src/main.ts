@@ -50,7 +50,10 @@ import {
   selectionPage,
 } from './editor/export.js';
 import { exportFlipbookHTML } from './render/flipbook.js';
-import { documentToDrawioXML } from './editor/drawio.js';
+import { documentToDrawioXML } from './export/drawio.js';
+import { documentToVsdx } from './export/vsdx.js';
+import { documentToPptx } from './export/pptx.js';
+import { documentToMermaid } from './export/mermaid.js';
 import { userToClient } from './editor/coords.js';
 import { nodeBounds } from './api/geometry.js';
 import { documentOverlaySVG } from './render/overlays.js';
@@ -153,7 +156,11 @@ app.innerHTML = `
           <option value="pdf-page">PDF — current frame</option>
           <option value="pdf-all">PDF — all frames</option>
           <option value="flipbook">Flipbook HTML — all frames</option>
-          <option value="drawio">draw.io XML — all frames (lossy)</option>
+          <option value="drawio">draw.io — all frames (editable, lossy)</option>
+          <option value="vsdx">Visio .vsdx — all frames (editable, lossy)</option>
+          <option value="pptx">PowerPoint .pptx — slide per frame</option>
+          <option value="pptx-layers">PowerPoint .pptx — slide per layer</option>
+          <option value="mermaid">Mermaid — current frame</option>
           <option value="copy-png">Copy PNG to clipboard</option>
           <option value="svg-selection">SVG — selection only</option>
           <option value="png-selection">PNG — selection only</option>
@@ -161,7 +168,7 @@ app.innerHTML = `
         <span class="export-status" id="exportStatus" role="status" aria-live="polite"></span>
         <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
       </div>
-      <input type="file" id="fInput" accept="application/json,.json,.mmd,.mermaid,.csv,.txt" hidden />
+      <input type="file" id="fInput" accept="application/json,.json,.drawio,.xml,.mmd,.mermaid,.csv,.txt" hidden />
       <span class="saved" id="saved"></span>
     </div>
     <div class="bar-right">
@@ -1142,6 +1149,39 @@ async function runExport(kind: string): Promise<void> {
       );
       return;
     }
+    case 'vsdx': {
+      downloadBlob(
+        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.vsdx`,
+        new Blob([documentToVsdx(doc)], {
+          type: 'application/vnd.ms-visio.drawing',
+        }),
+      );
+      return;
+    }
+    case 'pptx':
+    case 'pptx-layers': {
+      downloadBlob(
+        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.pptx`,
+        new Blob(
+          [
+            documentToPptx(doc, {
+              slides: kind === 'pptx-layers' ? 'layers' : 'pages',
+            }),
+          ],
+          {
+            type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          },
+        ),
+      );
+      return;
+    }
+    case 'mermaid': {
+      downloadBlob(
+        `${exportBase()}.mmd`,
+        new Blob([documentToMermaid(doc, current)], { type: 'text/plain' }),
+      );
+      return;
+    }
     case 'copy-png':
       await copyPagePNG(page, pageExtra(page), pageOpts(page));
       return;
@@ -1204,9 +1244,17 @@ fileInput.addEventListener('change', async () => {
   const text = await file.text();
 
   const classified = classifyOpenedFile(text);
-  if (classified.kind === 'mermaid' || classified.kind === 'csv') {
+  if (
+    classified.kind === 'mermaid' ||
+    classified.kind === 'csv' ||
+    classified.kind === 'drawio'
+  ) {
     const what =
-      classified.kind === 'mermaid' ? 'Mermaid flowchart' : 'CSV data';
+      classified.kind === 'mermaid'
+        ? 'Mermaid flowchart'
+        : classified.kind === 'drawio'
+          ? 'draw.io diagram'
+          : 'CSV data';
     if (!classified.result.ok) {
       alert(`Could not import this ${what}: ${classified.result.error}`);
       return;
