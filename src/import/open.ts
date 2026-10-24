@@ -12,6 +12,8 @@ import { convertMermaid, detectMermaid } from './mermaid.js';
 import type { MermaidConvertResult } from './mermaid.js';
 import { convertCsv, detectCsv } from './csv.js';
 import type { CsvConvertResult } from './csv.js';
+import { convertDrawio, detectDrawio } from './drawio.js';
+import type { DrawioConvertResult } from './drawio.js';
 
 export type OpenFileClassification =
   | { kind: 'legacy'; result: LegacyConvertResult }
@@ -19,6 +21,8 @@ export type OpenFileClassification =
   | { kind: 'mermaid'; result: MermaidConvertResult }
   /** Tabular data (sectioned nodes/links CSV or a bare edge list). */
   | { kind: 'csv'; result: CsvConvertResult }
+  /** A draw.io / diagrams.net file (`<mxfile>` or bare `<mxGraphModel>`). */
+  | { kind: 'drawio'; result: DrawioConvertResult }
   /** Not a legacy-shaped document (or not parseable JSON at all) — the
    * caller's existing `parseDoc(text)` path handles it unchanged, including
    * its own "not valid JSON" failure mode. */
@@ -36,6 +40,8 @@ export function classifyOpenedFile(text: string): OpenFileClassification {
   try {
     json = JSON.parse(text);
   } catch {
+    if (detectDrawio(text))
+      return { kind: 'drawio', result: convertDrawio(text) };
     if (detectMermaid(text))
       return { kind: 'mermaid', result: convertMermaid(text) };
     if (detectCsv(text)) return { kind: 'csv', result: convertCsv(text) };

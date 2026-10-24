@@ -18,6 +18,7 @@ import type {
   ZoneConfig,
 } from '../vendor/topology-ds.js';
 import { layoutPage } from '../api/autolayout.js';
+import { getNodeType } from '../api/catalog.js';
 
 export interface MermaidConvertResult {
   ok: boolean;
@@ -76,10 +77,18 @@ function parseNodeToken(token: string): ParsedNode | null {
       // Strip one layer of quoting (Mermaid allows "..." for special chars).
       if (label.startsWith('"') && label.endsWith('"'))
         label = label.slice(1, -1);
-      return { id, label, type: s.type };
+      return { id, label: unescapeLabel(label), type: s.type };
     }
   }
   return null; // trailing junk we don't understand — caller warns
+}
+
+/** Mermaid entity codes / line breaks the exporter writes, back to text. */
+function unescapeLabel(label: string): string {
+  return label
+    .replace(/#quot;/g, '"')
+    .replace(/#35;/g, '#')
+    .replace(/<br\s*\/?>/gi, '\n');
 }
 
 interface ParsedEdge {
@@ -96,7 +105,7 @@ interface ParsedEdge {
  * 5 = pipe label after a bare operator.
  */
 const EDGE_RE =
-  /^\s*(?:--\s+([^->][^]*?)\s+-->|==\s+([^=>][^]*?)\s+==>|-\.\s+([^.][^]*?)\s+\.->|(-{2,3}>|={2,3}>|-\.{1,3}->|-{2,3}|={2,3})(?:\|([^|]*)\|)?)\s*/;
+  /^\s*(?:--\s+([^->][^]*?)\s+-->|==\s+([^=>][^]*?)\s+==>|-\.\s+([^.][^]*?)\s+\.->|(-{2,3}>|={2,3}>|-\.{1,3}->?|-{2,3}|={2,3})(?:\|([^|]*)\|)?)\s*/;
 
 function edgeInfo(m: RegExpExecArray): ParsedEdge {
   const label = m[5] ?? m[1] ?? m[2] ?? m[3];
@@ -131,20 +140,28 @@ export function convertMermaid(
   let direction: 'TB' | 'LR' = 'TB';
   let linkSeq = 0;
 
+  /** A multi-line label is the label plus a sublabel (the exporter's shape). */
+  const setLabel = (node: NodeConfig, text: string): void => {
+    const [first = '', ...rest] = text.split('\n');
+    node.label = first;
+    if (rest.length) node.sublabel = rest.join(' ');
+    else delete node.sublabel;
+  };
   const ensureNode = (p: ParsedNode): void => {
     const existing = nodes.get(p.id);
     if (existing) {
       // A later definition can add the label/shape a bare reference lacked.
-      if (p.label !== undefined) existing.label = p.label;
+      if (p.label !== undefined) setLabel(existing, p.label);
       if (p.type !== undefined) existing.type = p.type;
     } else {
-      nodes.set(p.id, {
+      const node: NodeConfig = {
         id: p.id,
         type: p.type ?? 'shape:rectangle',
         x: 0,
         y: 0,
-        label: p.label ?? p.id,
-      });
+      };
+      setLabel(node, p.label ?? p.id);
+      nodes.set(p.id, node);
     }
     const zone = zoneStack[zoneStack.length - 1];
     if (zone && !zone.nodes.includes(p.id)) zone.nodes.push(p.id);
@@ -189,7 +206,13 @@ export function convertMermaid(
       let label = sub[2] ?? sub[1] ?? `Group ${zones.length + 1}`;
       if (label.startsWith('"') && label.endsWith('"'))
         label = label.slice(1, -1);
-      const zone: ZoneConfig = { id: `zone_${id}`, label, nodes: [] };
+      const zone: ZoneConfig = {
+        id: id.startsWith('zone_') ? id : `zone_${id}`,
+        label: unescapeLabel(label),
+        nodes: [],
+      };
+      const parent = zoneStack[zoneStack.length - 1];
+      if (parent) zone.parentZone = parent.id;
       zones.push(zone);
       zoneStack.push(zone);
       continue;
@@ -200,6 +223,19 @@ export function convertMermaid(
       else zoneStack.pop();
       continue;
     }
+    // `class a,b type`: a node-type class (what the Mermaid exporter writes)
+    // sets the node type; other classes are styling and are skipped.
+    const cls = /^class\s+([\w.,\s-]+?)\s+([A-Za-z][\w-]*)$/.exec(line);
+    if (cls && getNodeType(cls[2]!)) {
+      for (const id of cls[1]!.split(',').map((t) => t.trim())) {
+        const node = nodes.get(id);
+        if (node) node.type = cls[2]!;
+      }
+      continue;
+    }
+    // A node-type classDef (the exporter's accent colour) needs no warning.
+    const def = /^classDef\s+([A-Za-z][\w-]*)\s/.exec(line);
+    if (def && getNodeType(def[1]!)) continue;
     // Directives we deliberately skip.
     if (
       /^(classDef|class|style|linkStyle|click|direction|accTitle|accDescr)\b/i.test(
@@ -281,7 +317,7 @@ export function convertMermaid(
 
 /** Index of the next edge operator in a statement, or null. */
 function findEdge(s: string): { index: number } | null {
-  const m = /-{2,3}>?|={2,3}>?|-\.{1,3}->/.exec(s);
+  const m = /-{2,3}>?|={2,3}>?|-\.{1,3}->?/.exec(s);
   return m ? { index: m.index } : null;
 }
 
