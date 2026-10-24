@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.robertsonc/topology-dojo",
+  "title": "Topology Dojo",
+  "description": "Network topology diagrams for agents: build, render inline, export to Visio, draw.io, PPTX, PDF.",
+  "version": "0.1.0",
+  "websiteUrl": "https://topology-dojo.harnessed.cloud",
+  "repository": {
+    "url": "https://github.com/robertsonc/topology-dojo",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://topology-dojo.harnessed.cloud/mcp"
+    }
+  ]
+}

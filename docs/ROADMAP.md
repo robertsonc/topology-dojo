@@ -23,11 +23,12 @@ migration through `v5` is applied and active. Concretely, today a user can:
 - Sign in with GitHub and author multi-page flipbook topology diagrams by
   hand, with full editing (selection, alignment guides, waypoint-edited
   links, custom node types), validation (semantic + layout), and export (SVG,
-  self-playing HTML flipbook; PNG is browser-only).
+  self-playing HTML flipbook, PNG / PDF, draw.io, Visio, PowerPoint, Mermaid —
+  see `docs/EXPORTS.md`).
 - Connect an AI agent through the same catalog-driven API the GUI uses. Local
   stdio is process-local and has no hosted account, OAuth, or Durable Object;
   remote `/mcp` uses OAuth 2.1 with GitHub and owner-isolated Durable Object
-  storage. There are 60 possible tool registrations; actual discovery varies
+  storage. There are 62 possible tool registrations; actual discovery varies
   by runtime, flags, and provider.
 - **Collaborate with that agent in a shared workspace**: the agent proposes
   changes as one attributed revision (review/accept/reject, including a
@@ -179,9 +180,8 @@ sourcedOnly:true` list what an importer owns; there's no surface yet for
   `src/vendor/topology-ds.ts`); per `DESIGN.md` #2 this stays a presentation
   preference (no document-schema/agent surface), living with pan/zoom as a
   human-only view control.
-- **Server-side / MCP PNG export** — PNG export is currently browser-only
-  (canvas rasterization, `src/editor/export.ts`); an MCP-callable equivalent
-  would need a server-side rasterizer.
+- ~~**Server-side / MCP PNG export**~~ — **shipped** in Phase 1 (resvg
+  WebAssembly rasterizer, `export_topology` png / pdf; see `docs/EXPORTS.md`).
 - **Path analysis between elements ("visual traceroute")** — select two
   nodes (e.g. two hosts), right-click → "Analyze path": compute the
   traversal across the page's drawn link graph and present it as a focused
@@ -526,6 +526,29 @@ an SD-WAN/SASE path, a three-tier app with a DMZ) as looping animated WebP
 stills, served ungated (image sub-resources aren't document navigations, so
 they're never behind the sign-in gate) and self-contained (no dependency on
 any ephemeral `/v/:id` share snapshot, so the landing page never rots).
+
+### Phase 1 — adoption blockers (2026-10-24)
+
+Dojo output usable where network teams already work, and findable where
+agents look (fidelity contract: `docs/EXPORTS.md`):
+
+- **Exports** from the editor and `export_topology`: server-side PNG / PDF
+  (resvg wasm, embedded JetBrains Mono, print-true ANSI / A-series sizing,
+  `pHYs` DPI), draw.io v2 (layers → draw.io layers, zones → containers,
+  metadata as shape data), Visio `.vsdx` (shapes, glued dynamic connectors,
+  page layers, Shape Data), PowerPoint `.pptx` (slide per page or per layer;
+  editable shapes with layer groups, or image mode), Mermaid. One shared
+  export scene (`src/export/scene.ts`) feeds the editable formats.
+- **Imports:** draw.io (plain / compressed; layers, containers → zones,
+  stencil type inference, round-trips the export); Mermaid round-trip (type
+  classes, nested subgraphs).
+- **Inline render in chat:** `view_topology` + the `ui://topology-dojo/viewer.html`
+  MCP Apps view (pan / zoom / pages / layers / theme / downloads).
+- **Discoverability:** `server.json` (MCP Registry format) and README
+  install instructions.
+- Not yet done: verifying `.vsdx` / `.pptx` in Microsoft Visio / PowerPoint
+  (checked in LibreOffice only); publishing `server.json` to the registry
+  (`mcp-publisher`, needs the repo owner's GitHub login).
 
 ### Wiring-sheet conventions (proposal 0008, 2026-10-15)
 
