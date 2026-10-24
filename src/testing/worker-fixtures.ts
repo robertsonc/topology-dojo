@@ -234,7 +234,10 @@ export default {
           store.unload(migratedId);
         const handlers = new Map();
         registerTopologyTools(
-          { registerTool: (name, _meta, handler) => handlers.set(name, handler) },
+          {
+            registerTool: (name, _meta, handler) => handlers.set(name, handler),
+            registerResource: () => {},
+          },
           { renderDocument: stubRender, workspace: service },
           store,
           async (toolName) => {

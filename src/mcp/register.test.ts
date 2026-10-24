@@ -27,6 +27,7 @@ function registeredHandler(
     (args: Record<string, unknown>) => Promise<ToolResult>
   >();
   const server = {
+    registerResource() {},
     registerTool(
       name: string,
       _meta: unknown,
@@ -76,6 +77,7 @@ describe('registerTopologyTools onToolSettled', () => {
       (args: Record<string, unknown>) => Promise<ToolResult>
     >();
     const server = {
+      registerResource() {},
       registerTool(
         name: string,
         _meta: unknown,
@@ -138,6 +140,7 @@ describe('registerTopologyTools ToolCallContext (workspace reads)', () => {
       (args: Record<string, unknown>) => Promise<ToolResult>
     >();
     const server = {
+      registerResource() {},
       registerTool(
         name: string,
         _meta: unknown,

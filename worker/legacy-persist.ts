@@ -27,6 +27,8 @@ export const NO_LEGACY_PERSIST_TOOLS: ReadonlySet<string> = new Set<string>([
   'inspect_render',
   'render_svg',
   'export_flipbook',
+  'export_topology',
+  'view_topology',
   'share_topology',
   'list_shares',
   'unpublish_topology',

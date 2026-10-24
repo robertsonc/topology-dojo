@@ -43,6 +43,7 @@ describe('MCP tools', () => {
         'describe_capabilities',
         'edit_topology',
         'export_flipbook',
+        'export_topology',
         'get_topology',
         'import_topology',
         'inspect_render',
@@ -63,6 +64,7 @@ describe('MCP tools', () => {
         'update_element',
         'upsert_by_source',
         'validate_topology',
+        'view_topology',
       ].sort(),
     );
   });

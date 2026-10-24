@@ -111,12 +111,17 @@ import {
   type WorkspaceOperation,
 } from '../workspace/model.js';
 import { SHARE_PUBLIC_WARNING } from '../share/copy.js';
+import type { Rasterizer } from '../export/raster.js';
+import { exportTools } from './export-tools.js';
+import { convertDrawio, detectDrawio } from '../import/drawio.js';
 
 export interface ToolDef {
   name: string;
   description: string;
   inputShape: z.ZodRawShape;
   handler: (args: Record<string, unknown>) => unknown;
+  /** Tool `_meta` (e.g. the MCP Apps view a tool opens). */
+  meta?: Record<string, unknown>;
 }
 
 /**
@@ -131,6 +136,19 @@ export interface ToolDeps {
     pageIndex?: number,
     opts?: RenderOptions,
   ) => string;
+  /**
+   * Server-side rasterizer (resvg) for PNG / PDF exports. Loaded lazily by
+   * the runtime that owns the wasm (Node reads it, the Worker imports it);
+   * absent → the raster formats report that they are unavailable.
+   */
+  rasterizer?: () => Promise<Rasterizer>;
+  /** Pixel budget per rasterized page (memory bound; Worker < Node). */
+  maxRasterPixels?: number;
+  /**
+   * Local stdio server only: write an export to disk and return the absolute
+   * path. Present → `export_topology` gains `outputPath`.
+   */
+  writeExport?: (path: string, bytes: Uint8Array) => Promise<string>;
   /**
    * Snapshot a document to durable storage and return a shareable link that
    * opens it in the browser editor. Only wired up where a backing store + public
@@ -590,23 +608,32 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       description:
         'Load a topology from document JSON (a string or object). Returns the new id. ' +
         "Also accepts a legacy Topology Studio save (the older sibling app's format), " +
-        'a Mermaid flowchart (flowchart/graph text — nodes, edges, labels, subgraphs→zones, ' +
-        'auto-laid-out), or CSV data ([nodes]/[links] sections or a bare from,to edge ' +
-        'list), reporting any lossy-conversion warnings.',
+        'a draw.io / diagrams.net file (.drawio XML, plain or compressed — pages, layers, ' +
+        'containers→zones, shapes→typed nodes, edges with waypoints, shape data→metadata; ' +
+        'geometry kept), a Mermaid flowchart (flowchart/graph text — nodes, edges, labels, ' +
+        'subgraphs→zones, auto-laid-out), or CSV data ([nodes]/[links] sections or a bare ' +
+        'from,to edge list), reporting any lossy-conversion warnings.',
       inputShape: {
         json: z
           .union([z.string(), z.record(z.string(), z.unknown())])
           .describe(
-            'Document JSON as a string or object; or Mermaid/CSV text (string).',
+            'Document JSON as a string or object; or draw.io XML / Mermaid / CSV text (string).',
           ),
         title: displayString(TEXT_LIMITS.title).optional(),
         format: z
-          .enum(['auto', 'topology-dojo', 'legacy-studio', 'mermaid', 'csv'])
+          .enum([
+            'auto',
+            'topology-dojo',
+            'legacy-studio',
+            'drawio',
+            'mermaid',
+            'csv',
+          ])
           .optional()
           .describe(
             '"auto" (default) sniffs the input: legacy Topology Studio saves, Mermaid ' +
-              'flowcharts, and CSV are detected and converted, otherwise imports natively; ' +
-              '"topology-dojo" requires the native document shape; "legacy-studio", ' +
+              'flowcharts, draw.io files and CSV are detected and converted, otherwise imports natively; ' +
+              '"topology-dojo" requires the native document shape; "legacy-studio", "drawio", ' +
               '"mermaid", and "csv" force that converter, failing with a typed error ' +
               'when the input does not match.',
           ),
@@ -624,14 +651,16 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         // when the string isn't JSON.
         const asText = typeof a.json === 'string' ? a.json : null;
         const textFormat =
-          format === 'mermaid' || format === 'csv'
+          format === 'mermaid' || format === 'csv' || format === 'drawio'
             ? format
             : format === 'auto' && asText !== null
-              ? detectMermaid(asText)
-                ? 'mermaid'
-                : detectCsv(asText)
-                  ? 'csv'
-                  : null
+              ? detectDrawio(asText)
+                ? 'drawio'
+                : detectMermaid(asText)
+                  ? 'mermaid'
+                  : detectCsv(asText)
+                    ? 'csv'
+                    : null
               : null;
         if (textFormat) {
           if (asText === null)
@@ -639,7 +668,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           const result =
             textFormat === 'mermaid'
               ? convertMermaid(asText, title)
-              : convertCsv(asText, title);
+              : textFormat === 'drawio'
+                ? convertDrawio(asText, title)
+                : convertCsv(asText, title);
           if (!result.ok || !result.document)
             throw new Error(`${textFormat} import failed: ${result.error}`);
           const { id, document } = store.import(
@@ -2561,6 +2592,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       },
     );
   }
+
+  // File exports (PNG / PDF / draw.io / Visio / PowerPoint / Mermaid) and the
+  // MCP Apps inline view.
+  tools.push(...exportTools(store, deps));
 
   // Sharing is only available where a durable store + public origin are wired in
   // (the Worker). When present, expose a tool that snapshots the topology and

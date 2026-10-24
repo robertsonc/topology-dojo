@@ -108,7 +108,8 @@ Apps, secrets, or KV namespace ids across environments.
 >
 > The read-only document tools keep working on a shared workspace:
 > `get_topology`, `validate_topology`, `inspect_render`, `render_svg`,
-> `export_flipbook` and `describe_capabilities` (with a `topologyId`) accept a
+> `export_flipbook`, `export_topology`, `view_topology` and
+> `describe_capabilities` (with a `topologyId`) accept a
 > workspace id and are served from the workspace's **current revision**, which
 > they report — a JSON result carries `workspaceRevision`, a rendered SVG /
 > flipbook carries a `<!-- workspace revision N -->` comment after its opening
@@ -256,7 +257,7 @@ to the task's affected region and change summaries, not total document size.
 | `create_topology`                                      | New document (one empty page)                                                                                                          |
 | `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                                              |
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                  |
-| `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a Mermaid flowchart, or CSV data (`format` auto-detects)                       |
+| `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a draw.io file, a Mermaid flowchart, or CSV data (`format` auto-detects)       |
 | `set_document_title`                                   | Rename a document                                                                                                                      |
 | `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox / lineJumps / linkAttach / `portLabels` ("pill" = wiring-sheet port pills)      |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                                          |
@@ -282,6 +283,8 @@ to the task's affected region and change summaries, not total document size.
 | `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                       |
 | `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"` for a light page)                                  |
 | `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations (`theme: "light"` optional)                                               |
+| `export_topology`                                      | Files: PNG / PDF (print-true, ANSI + A-series), draw.io, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid — see [Exports](#exports)          |
+| `view_topology`                                        | Interactive inline view in MCP Apps hosts (pan / zoom / pages / layers / downloads) — see [Inline view](#inline-view-mcp-apps)         |
 | `describe_data_source` _(live-data)_                   | Identify the connected fabric data source                                                                                              |
 | `list_appliances` / `list_tunnels` _(live-data)_       | Inventory: appliances; underlay / overlay tunnels                                                                                      |
 | `get_overlay_policies` _(live-data)_                   | Overlay / business-intent policy definitions                                                                                           |
@@ -304,6 +307,51 @@ to the task's affected region and change summaries, not total document size.
 | `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`)                              |
 | `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                                                         |
 | `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                                                      |
+
+### Exports
+
+`export_topology` turns a topology into the files network teams already work
+with. Fidelity per format (what survives, what drops) is documented in
+[`docs/EXPORTS.md`](../../docs/EXPORTS.md).
+
+| `format`  | Returns                             | Notes                                                                                                   |
+| --------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `png`     | MCP image + JSON summary            | One page (`pageIndex`). Print DPI stamped; `dpi` / `paper` / `visibleLayers` / `theme`.                 |
+| `pdf`     | Embedded `application/pdf` resource | All pages (or `pageIndex`) on the document sheet size or `paper` (ANSI A–E, A4–A1, `fit`); raster.      |
+| `drawio`  | Embedded XML resource               | Layers → draw.io layers, zones → containers, metadata as shape data; re-imports with `import_topology`. |
+| `vsdx`    | Embedded Visio resource             | Shapes, glued dynamic connectors, page layers, metadata as Shape Data.                                  |
+| `pptx`    | Embedded PowerPoint resource        | 16:9 slide per page or per layer (`slides`); editable shapes or `pptxMode: "image"`.                    |
+| `mermaid` | Plain text                          | Flowchart with subgraphs; one page or all pages.                                                        |
+
+PNG and PDF are rendered server-side by resvg (WebAssembly) from the same
+engine SVG the canvas shows, with JetBrains Mono embedded (a Worker has no
+system fonts). External `https:` images inside a page are not fetched during
+a render. A page larger than the pixel budget (40 MP on the stdio server,
+16 MP on the Worker) is rendered at a lower DPI and the summary says so.
+
+**Local server:** `export_topology` also takes `outputPath` and writes the
+file instead of returning it inline — preferred for large Visio / PowerPoint /
+PDF files so they don't pass through the conversation. Writes are confined to
+`TOPOLOGY_DOJO_EXPORT_DIR` (default: the server's working directory).
+
+**Hosted server:** files come back as embedded resources. In a host with MCP
+Apps support, prefer `view_topology` and its download menu: the view calls
+`export_topology` itself and hands the file to the host (`ui/download-file`),
+so the bytes never enter the model's context.
+
+### Inline view (MCP Apps)
+
+`view_topology` declares an MCP Apps view (`_meta.ui.resourceUri =
+"ui://topology-dojo/viewer.html"`, MIME `text/html;profile=mcp-app`). Hosts
+that support MCP Apps render it in the conversation: pan (drag), zoom (wheel,
+pinch, `+`/`-`/`0`), page switching (arrow keys), layer toggles, light/dark,
+full screen, and downloads in every export format. The tool result keeps the
+SVG in `_meta` (for the view, not the model) and gives the model a one-line
+summary, so showing a diagram costs almost no context. The view is one
+self-contained HTML page with no external origins (empty CSP allow-list); it
+re-renders through `render_svg` and downloads through `export_topology` via
+the host's `tools/call` proxy. In hosts without MCP Apps the call returns the
+summary only — use `render_svg`, `export_topology` or `share_topology`.
 
 ### Authoring preferences (adaptive guidance)
 
