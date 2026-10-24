@@ -27,6 +27,11 @@ export function registerHitBoxes(specs: readonly CustomNodeSpec[] = []): void {
   for (const spec of specs) registry.set(spec.typeName, customHitBox(spec));
 }
 
+/** Register one type's hit box (wire-sheet panel types, hw-catalog Phase 4). */
+export function registerHitBox(type: string, box: HitBox): void {
+  registry.set(type, box);
+}
+
 /** The live registry: stock pack + every custom type registered so far. */
 export function registeredHitBoxes(): ReadonlyMap<string, HitBox> {
   return registry;

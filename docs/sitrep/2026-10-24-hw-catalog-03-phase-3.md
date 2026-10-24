@@ -1,7 +1,7 @@
 # Sitrep 03 — hw-catalog Phase 3: MCP tools for agents
 
-Status: **done**, in review. Next: Phase 4 (wire-sheet rendering). Phase 2
-merged as PR #286.
+Status: **done**, merged (PR #287). Next: Phase 4 (wire-sheet rendering).
+Phase 2 merged as PR #286.
 
 ## What landed
 

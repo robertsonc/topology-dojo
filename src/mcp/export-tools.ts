@@ -34,6 +34,8 @@ import {
 } from '../export/cable-schedule.js';
 import { docHasBindings } from '../api/hardware.js';
 import type { Catalog } from '../catalog/catalog.js';
+import { withHardware } from './hardware-render.js';
+import type { WiresheetHardware } from '../render/wiresheet.js';
 import { ContentResult } from './content.js';
 import type { TopologyStore } from './store.js';
 import type { ToolDef, ToolDeps } from './tools.js';
@@ -118,11 +120,13 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       );
     return deps.rasterizer();
   };
-  const render = (
-    doc: TopologyDocument,
-    i: number,
-    opts: RenderOptions,
-  ): string => deps.renderDocument(doc, i, opts);
+  const renderWith =
+    (hardware: WiresheetHardware | undefined) =>
+    (doc: TopologyDocument, i: number, opts: RenderOptions): string =>
+      deps.renderDocument(doc, i, {
+        ...opts,
+        ...(hardware ? { hardware } : {}),
+      });
 
   const exportShape: Record<string, z.ZodType> = {
     topologyId,
@@ -212,7 +216,15 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         'In hosts that support MCP Apps, view_topology shows the diagram inline with download buttons, which keeps large files out of the conversation.',
       inputShape: exportShape,
       handler: async (a) => {
-        const doc = store.get(String(a.topologyId)); // read before any await
+        // Read before any await; a wire-sheet document is snapshotted
+        // while its catalog loads (withHardware).
+        const loaded = await withHardware(
+          store.get(String(a.topologyId)),
+          deps.catalog,
+          (d, hw) => ({ d, hw }),
+        );
+        const doc = loaded.d;
+        const render = renderWith(loaded.hw.hardware);
         const format = a.format as ExportFormat;
         const pageIndex = a.pageIndex as number | undefined;
         const base = exportBaseName(doc.title);
@@ -423,42 +435,44 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       meta: { ui: { resourceUri: VIEWER_URI }, 'ui/resourceUri': VIEWER_URI },
       handler: (a) => {
         const id = String(a.topologyId);
-        const doc = store.get(id);
+        const stored = store.get(id);
         const index = (a.pageIndex as number | undefined) ?? 0;
-        if (!doc.pages[index])
+        if (!stored.pages[index])
           throw new Error(`page index ${index} out of range`);
-        const theme = (a.theme as 'dark' | 'light' | undefined) ?? 'dark';
-        const svg = deps.renderDocument(doc, index, { theme });
-        const data = {
-          topologyId: id,
-          title: doc.title,
-          pageIndex: index,
-          theme,
-          pages: doc.pages.map((p, i) => ({ index: i, name: p.name })),
-          layers: (doc.layers ?? []).map((l) => ({
-            id: l.id,
-            name: l.name || l.id,
-            visible: l.defaultVisible !== false,
-          })),
-          formats: EXPORT_FORMATS.filter(
-            (f) => deps.rasterizer || (f !== 'png' && f !== 'pdf'),
-          ),
-        };
-        return new ContentResult(
-          [
-            {
-              type: 'text',
-              text:
-                `Showing "${doc.title}" inline — page ${index + 1} of ${doc.pages.length}` +
-                (data.layers.length
-                  ? `, layers: ${data.layers.map((l) => l.name).join(', ')}`
-                  : '') +
-                '. The user can pan, zoom, switch pages / layers and download files from the view.',
-            },
-          ],
-          data,
-          { 'topology-dojo/svg': svg },
-        );
+        return withHardware(stored, deps.catalog, (doc, hw) => {
+          const theme = (a.theme as 'dark' | 'light' | undefined) ?? 'dark';
+          const svg = renderWith(hw.hardware)(doc, index, { theme });
+          const data = {
+            topologyId: id,
+            title: doc.title,
+            pageIndex: index,
+            theme,
+            pages: doc.pages.map((p, i) => ({ index: i, name: p.name })),
+            layers: (doc.layers ?? []).map((l) => ({
+              id: l.id,
+              name: l.name || l.id,
+              visible: l.defaultVisible !== false,
+            })),
+            formats: EXPORT_FORMATS.filter(
+              (f) => deps.rasterizer || (f !== 'png' && f !== 'pdf'),
+            ),
+          };
+          return new ContentResult(
+            [
+              {
+                type: 'text',
+                text:
+                  `Showing "${doc.title}" inline — page ${index + 1} of ${doc.pages.length}` +
+                  (data.layers.length
+                    ? `, layers: ${data.layers.map((l) => l.name).join(', ')}`
+                    : '') +
+                  '. The user can pan, zoom, switch pages / layers and download files from the view.',
+              },
+            ],
+            data,
+            { 'topology-dojo/svg': svg },
+          );
+        });
       },
     },
   ];

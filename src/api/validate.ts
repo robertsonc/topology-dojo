@@ -6,6 +6,7 @@
  *
  * `parseDoc` (persist) guarantees structural shape; this checks meaning.
  */
+import { PANEL_SCALE_MAX, PANEL_SCALE_MIN } from '../render/wiresheet-scale.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { isBuiltinNodeType, isLinkType } from './builtins.js';
 import { isStockNodeType } from '../nodes/stock.js';
@@ -291,6 +292,30 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       warn(
         at,
         `portLabels "${String(page.portLabels)}" not in [${PORT_LABEL_MODES.join(', ')}]`,
+      );
+    // Wire sheets (hw-catalog Phase 4).
+    if (
+      page.view !== undefined &&
+      page.view !== 'logical' &&
+      page.view !== 'wiresheet'
+    )
+      warn(at, `view "${String(page.view)}" not in [logical, wiresheet]`);
+    if (
+      page.panelScale !== undefined &&
+      !(
+        typeof page.panelScale === 'number' &&
+        page.panelScale >= PANEL_SCALE_MIN &&
+        page.panelScale <= PANEL_SCALE_MAX
+      )
+    )
+      warn(
+        at,
+        `panelScale ${String(page.panelScale)} out of range [${PANEL_SCALE_MIN}, ${PANEL_SCALE_MAX}] (1:k)`,
+      );
+    if (page.view === 'wiresheet' && !page.nodes.some((n) => n.hw))
+      warn(
+        at,
+        'view "wiresheet" but no node on the page is bound to hardware — it draws as a logical page (bind_hardware)',
       );
     if (page.portLabels === 'pill' && !page.linkAttach?.distribute)
       warn(

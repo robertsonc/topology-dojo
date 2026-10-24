@@ -4461,6 +4461,8 @@ function serialize(page: Page): PageSnapshot {
     lineJumps: page.lineJumps,
     linkAttach: page.linkAttach,
     portLabels: page.portLabels,
+    view: page.view,
+    panelScale: page.panelScale,
     nodes: page.nodes,
     links: page.links,
     anchors: page.anchors,

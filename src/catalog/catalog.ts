@@ -70,6 +70,11 @@ export interface CatalogBundle {
   platforms: Platform[];
   models: Model[];
   optics: Optics;
+  /**
+   * Sanitized panel glyph SVG by platform glyph path (`glyphs/platforms/…`).
+   * Absent in bundles built before wire-sheet rendering (Phase 4).
+   */
+  glyphs?: Record<string, string>;
 }
 
 /** An OS-native interface name resolved to its catalog row. */
@@ -117,6 +122,7 @@ export class Catalog {
   readonly platforms: ReadonlyMap<string, Platform>;
   readonly models: ReadonlyMap<string, Model>;
   readonly optics: Optics;
+  readonly glyphs: Readonly<Record<string, string>>;
   /** Compiled `{member}` templates, per model, in interface-row order. */
   private readonly templates = new Map<string, (RegExp | null)[]>();
 
@@ -125,6 +131,13 @@ export class Catalog {
     this.platforms = new Map(bundle.platforms.map((p) => [p.id, p]));
     this.models = new Map(bundle.models.map((m) => [m.id, m]));
     this.optics = bundle.optics;
+    this.glyphs = bundle.glyphs ?? {};
+  }
+
+  /** A platform's sanitized glyph for one face, if the bundle has it. */
+  glyph(platformId: string, face: 'front' | 'rear'): string | undefined {
+    const rel = this.platforms.get(platformId)?.glyphs?.[face];
+    return typeof rel === 'string' ? this.glyphs[rel] : undefined;
   }
 
   /** The model, or throws (Python raises KeyError the same way). */

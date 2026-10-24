@@ -547,6 +547,42 @@ every node it spans or per node. The rule codes are a contract shared with
 Documents with no bindings return exactly `valid`, `problems` and
 `layoutClean`, as before.
 
+### Wire sheets (`view: "wiresheet"`)
+
+`set_page_properties view:"wiresheet"` turns a page into a wire sheet: every
+hardware-bound node draws as its real panel (`hw.face`, front by default;
+the other face when the catalog only has art for it), cables plug into the
+true port positions, and unbound nodes draw exactly as on a logical page.
+Server renders only — `render_svg`, `export_topology` (PNG, PDF, PPTX image
+mode), `view_topology`, `export_flipbook`, `inspect_render`; the browser
+editor (no catalog) and the editable-shape exports (draw.io, `.vsdx`, PPTX
+shapes) draw the page logical for now.
+
+- **Scale.** Panels draw at 1:k of their millimetres on a sheet at 96 px/in
+  — true to scale when the PDF prints on its sheet size. `panelScale: k`
+  sets it; absent, the largest standard scale (1:1, 1:2, 1:2.5, 1:4, 1:5,
+  1:10, …) at which the widest panel fits 45 % of the page width.
+- **Cables.** Each end on a bound node with a resolvable `fromInterface` /
+  `toInterface` leaves the panel's nearest top / bottom edge straight above
+  / below its port, with a port pill naming the interface; a lead that has
+  to leave away from its far end detours around the panel. Stack members
+  (`stackMembers`) draw as one chassis each; member 1 cables leave the top,
+  the last member's the bottom. Unused ports are muted.
+- **Honesty marks.** A `SCHEMATIC` badge on every schematic panel, `NOT TO
+SCALE` on relative-unit panels, `GEOMETRY ONLY` where the pinned catalog
+  has no panel art; the same facts (plus the scale and any face fallback)
+  go into the sheet's title block notes, or a notes box when there is none.
+- **`inspect_render`** on a wire sheet inspects it as drawn and adds
+  `wiresheet: { scale, panels, cables, notes }` plus checks: a cable over a
+  panel, port pills overlapping each other or a panel (problems), a cable
+  on a port the platform does not have (an assertion — impossible once
+  validation passes), and ends drawn at the panel edge (no interface,
+  off-face: notes).
+
+Panel art comes from the catalog bundle, sanitized at build and again before
+drawing (no scripts, event handlers, `foreignObject`, external references or
+CSS `url()`).
+
 ## Visual QA (`inspect_render`)
 
 `validate_topology` checks semantics and layout rules; it cannot tell you

@@ -49,6 +49,7 @@
  *
  * Pure and DOM-free: takes a Page, returns a typed report, moves nothing.
  */
+import type { WiresheetLayout } from './wiresheet.js';
 import { nodeLabelRect } from './label-placement.js';
 import { NODE_LABEL, nodeLabelLines } from './node-labels.js';
 import { zoneBox } from './zone-box.js';
@@ -124,6 +125,11 @@ export interface InspectOptions {
    * the stock pack only.
    */
   customNodes?: CustomNodeSpec[];
+  /**
+   * The page's wire-sheet layout (hw-catalog Phase 4). When given, `page`
+   * must be its engine page (`layout.page`), and the wire-sheet checks run.
+   */
+  wiresheet?: WiresheetLayout;
 }
 
 const DEFAULT_MAX_PER_CATEGORY = 8;
@@ -197,6 +203,7 @@ export function inspectPage(
   );
   const crossings = checkRouting(page, pos, glyphs, attach, add);
   checkDensity(page, glyphs, labels, add);
+  if (opts.wiresheet) checkWiresheet(opts.wiresheet, add);
 
   // Content bounds + margins (also feeds the whitespace-balance check below).
   const content = contentBounds(glyphs, labels, zoneBoxes);
@@ -240,6 +247,61 @@ export function inspectPage(
     omitted: all.length - findings.length,
     clean: !all.some((f) => f.severity === 'problem'),
   };
+}
+
+/* ── wire sheets ──────────────────────────────────────────────────── */
+
+/**
+ * Wire-sheet checks: a cable over a panel (its own panel's plug excepted),
+ * port pills overlapping each other or a panel, and a cable on a port the
+ * platform does not have — impossible once validation passes, so it is an
+ * assertion reported as a problem. Ends drawn at the panel edge (no
+ * interface, off-face) are notes.
+ */
+function checkWiresheet(
+  ws: WiresheetLayout,
+  add: (s: InspectSeverity, c: InspectCategory, m: string) => void,
+): void {
+  const shrink = (r: BoundsRect, d: number): BoundsRect => ({
+    x: r.x + d,
+    y: r.y + d,
+    w: r.w - 2 * d,
+    h: r.h - 2 * d,
+  });
+  for (const [linkId, route] of ws.routes)
+    for (const p of ws.panels) {
+      if (polylineIntersectsRect(route, shrink(p.rect, 1.5)))
+        add(
+          'problem',
+          'routing',
+          `wire sheet: cable "${linkId}" crosses the ${p.model.name} panel "${p.nodeId}" — move the far end or re-pick the port`,
+        );
+    }
+  const pills = ws.ends.map((e) => ({ e, r: e.pill }));
+  const overlap = (a: BoundsRect, b: BoundsRect): boolean =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  for (let i = 0; i < pills.length; i++)
+    for (let j = i + 1; j < pills.length; j++)
+      if (overlap(pills[i]!.r, pills[j]!.r))
+        add(
+          'problem',
+          'text',
+          `wire sheet: port pills ${pills[i]!.e.interface} (${pills[i]!.e.nodeId}) and ${pills[j]!.e.interface} (${pills[j]!.e.nodeId}) overlap`,
+        );
+  for (const { e, r } of pills)
+    for (const p of ws.panels)
+      if (overlap(r, shrink(p.rect, 0.5)))
+        add(
+          'problem',
+          'text',
+          `wire sheet: port pill ${e.interface} (${e.nodeId}) sits on the panel "${p.nodeId}"`,
+        );
+  for (const f of ws.findings)
+    add(
+      f.kind === 'port-missing' ? 'problem' : 'note',
+      'routing',
+      `wire sheet: ${f.where}: ${f.message}`,
+    );
 }
 
 /* ── crop / overflow ──────────────────────────────────────────────── */

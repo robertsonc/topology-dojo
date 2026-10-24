@@ -134,8 +134,16 @@ packets:
 - **Hardware catalog + trustworthy wire sheets** — nodes bound to real
   models, catalog-aware wiring validation, real front panels on wire sheets,
   native Visio masters. Six phases; plan and status in
-  [`futures/hw-catalog.md`](futures/hw-catalog.md) (Phase 1, catalog core,
-  in review).
+  [`futures/hw-catalog.md`](futures/hw-catalog.md) (Phases 1-3 merged,
+  Phase 4 wire-sheet rendering in review).
+
+- **Light-theme contrast fix** — light renders (`theme: "light"`) composite
+  primary links and labels at 1.5-2.8:1 because the engine's low-opacity,
+  glow-dependent strokes survive `flattenViewer` without their glow. Fix at
+  the source (role-aware engine alphas, drop glow underlays, white export
+  background, light minimums) with a composited-contrast test. Scheduled
+  after hw-catalog Phase 4 merges, before Phase 5. Brief:
+  [`futures/light-theme-contrast.md`](futures/light-theme-contrast.md).
 
 - **Clean render profile for exports and the inline view** — measured on a
   7-node / 6-link template: the SVG defines 29 filters but references 3

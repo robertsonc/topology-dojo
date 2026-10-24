@@ -19,10 +19,14 @@ built as a working interface over fixtures, so real data is a data task.
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | 1. Catalog core             | `catalog/` layout, generated TS types, TS checker + content-hashed bundle published to the Worker, loader with LRU, `resolveInterface` parity with Python                                   | **Done** — merged, PR #285 ([sitrep 01](../sitrep/2026-10-24-hw-catalog-01-phase-1.md))   |
 | 2. Bind hardware + validate | node `hw`, link `from/toInterface` + `from/toOptic`, LAG bundles as bonds, every `ref_validate.py` rule in `validate_topology`, 15 golden fixtures in TS + Python, `catalogVersion` pinning | **Done** — merged, PR #286 ([sitrep 02](../sitrep/2026-10-24-hw-catalog-02-phase-2.md))   |
-| 3. MCP tools                | `list_hardware`, `describe_hardware`, `bind_hardware`, `assign_interfaces`, `catalog_diff`, `export_topology` `cable-schedule` (CSV / XLSX)                                                 | **Done** — PR pending review ([sitrep 03](../sitrep/2026-10-24-hw-catalog-03-phase-3.md)) |
-| 4. Wire-sheet rendering     | page `view: "wiresheet"`, panel glyphs at page scale, cables anchored at port positions, port pills, schematic badge, `inspect_render` checks, golden images                                | Not started                                                                               |
+| 3. MCP tools                | `list_hardware`, `describe_hardware`, `bind_hardware`, `assign_interfaces`, `catalog_diff`, `export_topology` `cable-schedule` (CSV / XLSX)                                                 | **Done** — merged, PR #287 ([sitrep 03](../sitrep/2026-10-24-hw-catalog-03-phase-3.md))   |
+| 4. Wire-sheet rendering     | page `view: "wiresheet"`, panel glyphs at page scale, cables anchored at port positions, port pills, schematic badge, `inspect_render` checks, golden images                                | **Done** — PR pending review ([sitrep 04](../sitrep/2026-10-24-hw-catalog-04-phase-4.md)) |
 | 5. Native Visio masters     | per-model masters with named connection points + Shape Data, glued connectors on wire-sheet pages, `.vssx` stencil export, LibreOffice + real-Visio verification                            | Not started                                                                               |
 | 6. Feed importers           | drafts + `catalog promote`, SVG master / anchor mapper / VSSX / QuickSpecs / Juniper guide / product API sources, glyph contract doc, OWNERS                                                | Not started                                                                               |
+
+Interleaved work: the light-theme contrast fix
+([`light-theme-contrast.md`](light-theme-contrast.md)) runs after Phase 4
+merges and before Phase 5 starts.
 
 ## Non-negotiables (from the brief)
 

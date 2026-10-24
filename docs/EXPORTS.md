@@ -107,6 +107,15 @@ Import reads those classes back as node types, splits `<br/>` labels into
 label + sublabel, nests subgraphs as `parentZone`, then auto-lays the graph
 out. Mermaid has no coordinates, layers, port labels or metadata — those drop.
 
+## Wire-sheet pages
+
+A page with `view: "wiresheet"` (hw-catalog) draws hardware-bound nodes as
+their real panels with cables at the true ports. PNG, PDF, PPTX image mode,
+SVG, the flipbook and the inline view render it (true to scale on the
+sheet's paper — see the MCP README). draw.io, `.vsdx` and PPTX shapes export
+the page logical for now; native Visio masters with named connection points
+are the next phase.
+
 ## Cable schedule (CSV / XLSX) — the sheet installers work from
 
 `format: "cable-schedule"`, `scheduleFormat: "csv"` (default) or `"xlsx"`.

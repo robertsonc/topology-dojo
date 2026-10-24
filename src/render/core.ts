@@ -26,6 +26,7 @@ import {
   type LinkAttachOptions,
 } from '../vendor/topology-ds.js';
 import { documentOverlaySVG } from './overlays.js';
+import { wiresheetLayout, type WiresheetHardware } from './wiresheet.js';
 import {
   applyRenderTheme,
   themeBackground,
@@ -78,6 +79,12 @@ export interface RenderOptions {
    * reads on a light page: dark text, light cards/glass, darkened accents.
    */
   theme?: RenderTheme;
+  /**
+   * Hardware catalog for wire-sheet pages (hw-catalog Phase 4). Absent →
+   * `view: "wiresheet"` pages render logical (the browser path, or a server
+   * without a catalog).
+   */
+  hardware?: WiresheetHardware;
 }
 
 /** Provide the minimal browser globals the engine constructor sniffs (idempotent). */
@@ -253,8 +260,20 @@ export function renderDocumentWithEngine(
   pageIndex = 0,
   opts: RenderOptions = {},
 ): string {
-  const page = doc.pages[pageIndex];
-  if (!page) throw new Error(`page index ${pageIndex} out of range`);
+  const stored = doc.pages[pageIndex];
+  if (!stored) throw new Error(`page index ${pageIndex} out of range`);
+  // Wire sheet: render the transformed page (panels, pinned ports), then
+  // its overlay under the document overlays.
+  const ws = opts.hardware ? wiresheetLayout(doc, stored, opts.hardware) : null;
+  if (ws)
+    for (const [type, box] of ws.types) {
+      E.registerNodeType(type, {
+        render: (x: number, y: number, cfg: { __wsArt?: string }) =>
+          `<g transform="translate(${x} ${y})">${cfg.__wsArt ?? ''}</g>`,
+        hitBox: box,
+      });
+    }
+  const page = ws ? ws.page : stored;
   let svg = renderPageUnthemed(E, page, doc.customNodes, {
     ...opts,
     layers: opts.layers ?? doc.layers ?? [],
@@ -267,7 +286,9 @@ export function renderDocumentWithEngine(
   // the theme remap LAST — the palette consumes the engine's source accents,
   // so a document's brand colour is never darkened by the light theme.
   // Mirrors what the editor composites, so MCP/headless output matches the GUI.
-  const overlay = documentOverlaySVG(doc, page);
+  const overlay =
+    (ws ? ws.overlay : '') +
+    documentOverlaySVG(ws ? ws.doc : doc, ws ? ws.overlayPage : page);
   if (overlay) svg = svg.replace('</svg>', `${overlay}</svg>`);
   if (doc.palette) svg = applyPalette(svg, doc.palette);
   return applyRenderTheme(svg, opts.theme ?? 'dark');

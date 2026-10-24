@@ -34,6 +34,8 @@ export const PAGE_FIELDS = [
   'lineJumps',
   'linkAttach',
   'portLabels',
+  'view',
+  'panelScale',
 ] as const;
 const BLOCKED_PATCH_FIELDS = new Set([
   'id',
