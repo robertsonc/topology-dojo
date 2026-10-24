@@ -24,6 +24,10 @@ built as a working interface over fixtures, so real data is a data task.
 | 5. Native Visio masters     | per-model masters with named connection points + Shape Data, glued connectors on wire-sheet pages, `.vssx` stencil export, LibreOffice + real-Visio verification                            | Not started                                                                               |
 | 6. Feed importers           | drafts + `catalog promote`, SVG master / anchor mapper / VSSX / QuickSpecs / Juniper guide / product API sources, glyph contract doc, OWNERS                                                | Not started                                                                               |
 
+Interleaved work: the light-theme contrast fix
+([`light-theme-contrast.md`](light-theme-contrast.md)) runs after Phase 4
+merges and before Phase 5 starts.
+
 ## Non-negotiables (from the brief)
 
 - No invented specs: every port, speed, SKU and position traces to a provenance row; gaps go in `todo`. Reseller-only / inferred models are not GA-eligible.
