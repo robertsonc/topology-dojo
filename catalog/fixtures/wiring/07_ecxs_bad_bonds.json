@@ -1,0 +1,100 @@
+{
+  "description": "EC-XS: LACP on static-only blan0; wan0+mgmt0 is not a bondable pair",
+  "nodes": [
+    {
+      "id": "xs",
+      "model": "edgeconnect-ec-xs"
+    },
+    {
+      "id": "peer1"
+    },
+    {
+      "id": "peer2"
+    },
+    {
+      "id": "peer3"
+    },
+    {
+      "id": "peer4"
+    },
+    {
+      "id": "peer5"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "xs",
+        "if": "lan0"
+      },
+      "z": {
+        "node": "peer1"
+      }
+    },
+    {
+      "id": "l2",
+      "a": {
+        "node": "xs",
+        "if": "lan1"
+      },
+      "z": {
+        "node": "peer2"
+      }
+    },
+    {
+      "id": "l3",
+      "a": {
+        "node": "xs",
+        "if": "wan0"
+      },
+      "z": {
+        "node": "peer3"
+      }
+    },
+    {
+      "id": "l4",
+      "a": {
+        "node": "xs",
+        "if": "mgmt0"
+      },
+      "z": {
+        "node": "peer4"
+      }
+    },
+    {
+      "id": "l5",
+      "a": {
+        "node": "xs",
+        "if": "wan1"
+      },
+      "z": {
+        "node": "peer5"
+      }
+    }
+  ],
+  "bonds": [
+    {
+      "node": "xs",
+      "name": "blan0",
+      "members": [
+        "lan0",
+        "lan1"
+      ],
+      "lacp": true
+    },
+    {
+      "node": "xs",
+      "name": "bx",
+      "members": [
+        "wan0",
+        "mgmt0"
+      ],
+      "lacp": false
+    }
+  ],
+  "expect": [
+    "E_BOND_LACP",
+    "E_BOND_PAIR"
+  ]
+}

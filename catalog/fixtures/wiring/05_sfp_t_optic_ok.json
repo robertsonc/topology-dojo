@@ -1,0 +1,32 @@
+{
+  "description": "1000BASE-T SFP in SFP56 to RJ45: valid",
+  "nodes": [
+    {
+      "id": "acc-sw",
+      "model": "aruba-cx-6300m-jl664a",
+      "stack_members": 2
+    },
+    {
+      "id": "br-ec",
+      "model": "edgeconnect-ec-10104"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "acc-sw",
+        "if": "1/1/26",
+        "optic": "1000BASE-T"
+      },
+      "z": {
+        "node": "br-ec",
+        "if": "wan1"
+      }
+    }
+  ],
+  "expect": [
+    "I_SCHEMATIC_PANEL"
+  ],
+  "bonds": []
+}

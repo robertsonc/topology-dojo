@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topology-dojo/schema/catalog/v1",
+  "title": "Topology Dojo hardware catalog entry (v1)",
+  "description": "One file per entry. kind=platform holds physical geometry shared across SKUs; kind=model binds a sellable model to a platform and gives OS-native interface names and constraints.",
+  "oneOf": [
+    { "$ref": "#/$defs/platform" },
+    { "$ref": "#/$defs/model" }
+  ],
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+    "speedMbps": { "type": "integer", "enum": [10, 100, 1000, 2500, 5000, 10000, 25000, 40000, 50000, 100000, 200000, 400000, 800000] },
+    "provenance": {
+      "type": "object",
+      "required": ["tier", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "tier": {
+          "description": "official_doc = vendor-published spec or guide; internal_doc = HPE-internal material; reseller = channel listing (never sufficient alone for GA); inferred = derived by convention, must be confirmed",
+          "enum": ["official_doc", "internal_doc", "reseller", "inferred"]
+        },
+        "source": { "type": "string", "minLength": 3 },
+        "retrieved": { "type": "string", "format": "date" },
+        "note": { "type": "string" }
+      }
+    },
+    "physicalPort": {
+      "type": "object",
+      "required": ["id", "kind", "x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/slug", "description": "Platform-local physical id, e.g. p0, sfp1, console. Stable across SKUs on this platform." },
+        "kind": { "enum": ["rj45", "sfp", "sfp_plus", "sfp28", "sfp56", "qsfp_plus", "qsfp28", "qsfp56", "qsfp_dd", "osfp", "usb_a", "usb_c", "usb_micro", "usb_mini", "console_rj45", "power_dc", "power_ac", "button", "lock", "led", "label"] },
+        "x": { "type": "number", "description": "Center X in panel units (mm when platform.dims_mm is set)" },
+        "y": { "type": "number", "description": "Center Y in panel units" },
+        "w": { "type": "number" },
+        "h": { "type": "number" },
+        "face": { "enum": ["front", "rear"], "default": "front" },
+        "label": { "type": "string", "description": "Silkscreen text, if any" }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "required": ["kind", "id", "name", "form_factor", "panel", "ports", "position_confidence", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "platform" },
+        "id": { "$ref": "#/$defs/slug" },
+        "name": { "type": "string" },
+        "form_factor": { "enum": ["desktop", "rack_1u", "rack_2u", "rack_4u_plus", "chassis_modular", "wall_ceiling_ap", "virtual"] },
+        "dims_mm": {
+          "type": ["object", "null"],
+          "required": ["w", "h", "d"],
+          "properties": { "w": { "type": "number" }, "h": { "type": "number" }, "d": { "type": "number" } }
+        },
+        "panel": {
+          "type": "object",
+          "required": ["units", "width", "height"],
+          "additionalProperties": false,
+          "properties": {
+            "units": { "enum": ["mm", "relative"] },
+            "width": { "type": "number" },
+            "height": { "type": "number" }
+          }
+        },
+        "ports": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/physicalPort" } },
+        "slots": {
+          "type": "array",
+          "description": "Module bays (mini-PIM, line cards, uplink modules). Ports on a module come from the module's own catalog entry.",
+          "items": {
+            "type": "object",
+            "required": ["id", "accepts"],
+            "properties": {
+              "id": { "$ref": "#/$defs/slug" },
+              "accepts": { "type": "array", "items": { "type": "string" } },
+              "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" }
+            }
+          }
+        },
+        "position_confidence": { "enum": ["traced", "schematic"], "description": "traced = measured from a vendor figure or photo; schematic = plausible layout, NOT physically accurate. Wire sheets must badge schematic panels." },
+        "glyphs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "front": { "type": "string" },
+            "rear": { "type": "string" }
+          }
+        },
+        "provenance": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/provenance" } }
+      }
+    },
+    "interface": {
+      "type": "object",
+      "required": ["name", "physical", "role"],
+      "description": "speeds_mbps is required for roles data/wan/lan/mgmt/stack/ha (enforced by the checker); console and usb carry none.",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "OS-native name exactly as the CLI/API shows it, e.g. lan0, 1/1/25, ge-0/0/6. Use {member} for stack/VSF member substitution." },
+        "physical": { "$ref": "#/$defs/slug", "description": "platform.ports[].id this interface lives on" },
+        "speeds_mbps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/speedMbps" } },
+        "role": { "enum": ["data", "wan", "lan", "mgmt", "console", "usb", "stack", "ha"] },
+        "poe": {
+          "type": ["object", "null"],
+          "properties": {
+            "standard": { "enum": ["802.3af", "802.3at", "802.3bt-t3", "802.3bt-t4", "passive"] },
+            "class_max": { "type": "integer" }
+          }
+        },
+        "breakout": { "type": "array", "items": { "type": "string" }, "description": "Child interface names when broken out, e.g. 1/1/49:1..4" },
+        "provenance_ref": { "type": "integer", "minimum": 0, "description": "Index into model.provenance supporting this row" }
+      }
+    },
+    "bondGroup": {
+      "type": "object",
+      "required": ["name", "members", "lacp"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "members": { "type": "array", "minItems": 2, "items": { "type": "string" } },
+        "lacp": { "enum": ["required", "optional", "unsupported", "unknown"] },
+        "min_os": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["kind", "id", "vendor", "family", "name", "os", "platform", "category", "symbol", "interfaces", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "model" },
+        "id": { "$ref": "#/$defs/slug" },
+        "vendor": { "enum": ["hpe-aruba", "juniper", "hpe"] },
+        "family": { "type": "string", "examples": ["edgeconnect", "aos-cx", "aruba-gateway", "srx", "ex", "qfx", "mx", "ptx", "acx", "mist-ap", "aruba-ap", "clearpass"] },
+        "name": { "type": "string" },
+        "skus": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sku", "provenance_ref"],
+            "additionalProperties": false,
+            "properties": {
+              "sku": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9#-]{2,31}$" },
+              "variant": { "type": "string", "examples": ["base", "TAA", "region-NA"] },
+              "provenance_ref": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "os": { "enum": ["ecos", "aos-cx", "aos-8", "aos-10", "junos", "junos-evo", "mist-ap", "clearpass", "other"] },
+        "platform": { "$ref": "#/$defs/slug", "description": "Platform id; several models may share one platform (e.g. aruba-9004 and EC-10104)." },
+        "category": { "enum": ["sdwan-gateway", "wlan-gateway", "switch", "router", "firewall", "access-point", "nac-appliance", "virtual-appliance"] },
+        "symbol": { "type": "string", "description": "Topology symbol id for logical views" },
+        "lifecycle": { "enum": ["current", "end-of-sale", "end-of-support", "unknown"], "default": "unknown" },
+        "stackable": {
+          "type": ["object", "null"],
+          "properties": { "tech": { "enum": ["vsf", "vc", "none"] }, "max_members": { "type": "integer" } }
+        },
+        "interfaces": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/interface" } },
+        "bond_groups": { "type": "array", "items": { "$ref": "#/$defs/bondGroup" }, "description": "Fixed bond pairings. Absent = any same-speed members may bond (OS rules apply)." },
+        "provenance": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/provenance" } },
+        "todo": { "type": "array", "items": { "type": "string" }, "description": "Known gaps a data owner must close before this entry is GA" }
+      }
+    }
+  }
+}

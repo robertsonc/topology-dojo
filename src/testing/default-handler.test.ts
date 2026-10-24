@@ -67,6 +67,22 @@ describe('GET /login', () => {
   });
 });
 
+describe('hardware catalog bundles', () => {
+  it('are never served over public HTTP, however the path is spelled', async () => {
+    // The ASSETS stub answers "Not Found" (no newline); the handler's own
+    // refusal is "Not Found\n", so the body proves ASSETS was never asked.
+    for (const p of [
+      '/catalog/manifest.json',
+      '/Catalog/manifest.json',
+      '/%63atalog/manifest.json',
+    ]) {
+      const res = await handle.fetch(p);
+      expect(res.status, p).toBe(404);
+      expect(await res.text(), p).toBe('Not Found\n');
+    }
+  });
+});
+
 describe('GET /auth/github', () => {
   it('redirects to GitHub and sets a state cookie', async () => {
     const res = await handle.fetch('/auth/github', { redirect: 'manual' });

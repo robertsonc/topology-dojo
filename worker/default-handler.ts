@@ -11,6 +11,7 @@
  * GitHub is the upstream identity provider. We deliberately skip our own consent
  * screen (GitHub already shows one) so connecting is a single authorize click.
  */
+import { isCatalogAssetPath } from '../src/catalog/loader.js';
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
 import {
   analyticsEnabled,
@@ -650,6 +651,12 @@ async function route(
     if (request.method === 'DELETE') return revokeSnapshot(id, request, env);
     return new Response('Method Not Allowed\n', { status: 405 });
   }
+
+  // Hardware catalog bundles are Worker-internal (read through ASSETS by
+  // worker/catalog.ts): provenance rows name internal documents, so the
+  // static files are never served over public HTTP.
+  if (isCatalogAssetPath(pathname))
+    return new Response('Not Found\n', { status: 404 });
 
   // Gate the editor: a top-level navigation to the app needs a signed-in
   // session. Read-only shared views (/v/:id) stay public; sub-resource

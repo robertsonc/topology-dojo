@@ -3,3 +3,11 @@ node_modules/
 package-lock.json
 reference/
 public/vendor/
+# Hardware catalog data: written by catalog/tools (Python json.dumps) and the
+# catalog build; formatting is owned by those generators, not Prettier.
+catalog/schema/
+catalog/data/
+catalog/fixtures/
+public/catalog/
+# Verbatim brief (kept as delivered).
+docs/futures/hw-catalog-build-prompt.md

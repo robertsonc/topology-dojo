@@ -1,0 +1,29 @@
+{
+  "description": "SRX300 has no ge-0/0/9",
+  "nodes": [
+    {
+      "id": "fw",
+      "model": "juniper-srx300"
+    },
+    {
+      "id": "peer1"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "fw",
+        "if": "ge-0/0/9"
+      },
+      "z": {
+        "node": "peer1"
+      }
+    }
+  ],
+  "expect": [
+    "E_PORT_UNKNOWN",
+    "I_SCHEMATIC_PANEL"
+  ],
+  "bonds": []
+}

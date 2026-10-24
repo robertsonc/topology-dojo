@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 442.0 43.9" data-platform="cx-6300m-24g-4sfp56" data-units="mm" data-confidence="schematic" data-face="front">
+<title>CX 6300M 24-port 1GbE + 4-port SFP56 chassis (front panel)</title>
+<g id="chassis"><rect x="0.4" y="0.4" width="441.2" height="43.1" rx="2.00" fill="#23272e" stroke="#59626e" stroke-width="0.5"/></g>
+<g id="silkscreen" font-family="Helvetica, Arial, sans-serif" fill="#9aa4af" text-anchor="middle" font-size="2.41">
+<text x="70.00" y="7.00">1</text>
+<text x="84.60" y="7.00">3</text>
+<text x="99.20" y="7.00">5</text>
+<text x="113.80" y="7.00">7</text>
+<text x="128.40" y="7.00">9</text>
+<text x="143.00" y="7.00">11</text>
+<text x="161.60" y="7.00">13</text>
+<text x="176.20" y="7.00">15</text>
+<text x="190.80" y="7.00">17</text>
+<text x="205.40" y="7.00">19</text>
+<text x="220.00" y="7.00">21</text>
+<text x="234.60" y="7.00">23</text>
+<text x="70.00" y="39.00">2</text>
+<text x="84.60" y="39.00">4</text>
+<text x="99.20" y="39.00">6</text>
+<text x="113.80" y="39.00">8</text>
+<text x="128.40" y="39.00">10</text>
+<text x="143.00" y="39.00">12</text>
+<text x="161.60" y="39.00">14</text>
+<text x="176.20" y="39.00">16</text>
+<text x="190.80" y="39.00">18</text>
+<text x="205.40" y="39.00">20</text>
+<text x="220.00" y="39.00">22</text>
+<text x="234.60" y="39.00">24</text>
+<text x="380.00" y="7.00">25</text>
+<text x="398.00" y="7.00">27</text>
+<text x="380.00" y="39.00">26</text>
+<text x="398.00" y="39.00">28</text>
+</g>
+<g id="ports">
+<g id="port-console" data-port="console" data-kind="usb_c" data-cx="12.00" data-cy="12.50"><rect x="7.55" y="10.90" width="8.9" height="3.2" rx="1.60" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/></g>
+<g id="port-usb" data-port="usb" data-kind="usb_a" data-cx="12.00" data-cy="22.00"><rect x="5.75" y="19.50" width="12.5" height="5.0" rx="0.3" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/><rect x="7.25" y="20.40" width="9.50" height="1.50" fill="#c9d1d9" opacity="0.5"/></g>
+<g id="port-oobm" data-port="oobm" data-kind="rj45" data-cx="32.00" data-cy="22.00"><rect x="25.20" y="16.30" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="29.14" y="24.96" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p1" data-port="p1" data-kind="rj45" data-cx="70.00" data-cy="14.50"><rect x="63.20" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="67.14" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p2" data-port="p2" data-kind="rj45" data-cx="70.00" data-cy="29.50"><rect x="63.20" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="67.14" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p3" data-port="p3" data-kind="rj45" data-cx="84.60" data-cy="14.50"><rect x="77.80" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="81.74" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p4" data-port="p4" data-kind="rj45" data-cx="84.60" data-cy="29.50"><rect x="77.80" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="81.74" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p5" data-port="p5" data-kind="rj45" data-cx="99.20" data-cy="14.50"><rect x="92.40" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="96.34" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p6" data-port="p6" data-kind="rj45" data-cx="99.20" data-cy="29.50"><rect x="92.40" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="96.34" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p7" data-port="p7" data-kind="rj45" data-cx="113.80" data-cy="14.50"><rect x="107.00" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="110.94" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p8" data-port="p8" data-kind="rj45" data-cx="113.80" data-cy="29.50"><rect x="107.00" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="110.94" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p9" data-port="p9" data-kind="rj45" data-cx="128.40" data-cy="14.50"><rect x="121.60" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="125.54" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p10" data-port="p10" data-kind="rj45" data-cx="128.40" data-cy="29.50"><rect x="121.60" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="125.54" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p11" data-port="p11" data-kind="rj45" data-cx="143.00" data-cy="14.50"><rect x="136.20" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="140.14" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p12" data-port="p12" data-kind="rj45" data-cx="143.00" data-cy="29.50"><rect x="136.20" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="140.14" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p13" data-port="p13" data-kind="rj45" data-cx="161.60" data-cy="14.50"><rect x="154.80" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="158.74" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p14" data-port="p14" data-kind="rj45" data-cx="161.60" data-cy="29.50"><rect x="154.80" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="158.74" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p15" data-port="p15" data-kind="rj45" data-cx="176.20" data-cy="14.50"><rect x="169.40" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="173.34" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p16" data-port="p16" data-kind="rj45" data-cx="176.20" data-cy="29.50"><rect x="169.40" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="173.34" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p17" data-port="p17" data-kind="rj45" data-cx="190.80" data-cy="14.50"><rect x="184.00" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="187.94" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p18" data-port="p18" data-kind="rj45" data-cx="190.80" data-cy="29.50"><rect x="184.00" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="187.94" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p19" data-port="p19" data-kind="rj45" data-cx="205.40" data-cy="14.50"><rect x="198.60" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="202.54" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p20" data-port="p20" data-kind="rj45" data-cx="205.40" data-cy="29.50"><rect x="198.60" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="202.54" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p21" data-port="p21" data-kind="rj45" data-cx="220.00" data-cy="14.50"><rect x="213.20" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="217.14" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p22" data-port="p22" data-kind="rj45" data-cx="220.00" data-cy="29.50"><rect x="213.20" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="217.14" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p23" data-port="p23" data-kind="rj45" data-cx="234.60" data-cy="14.50"><rect x="227.80" y="8.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="231.74" y="17.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p24" data-port="p24" data-kind="rj45" data-cx="234.60" data-cy="29.50"><rect x="227.80" y="23.80" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="231.74" y="32.46" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p25" data-port="p25" data-kind="sfp56" data-cx="380.00" data-cy="14.50"><rect x="373.00" y="9.80" width="14.0" height="9.4" rx="0.4" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.38"/><rect x="374.69" y="11.49" width="10.62" height="6.02" fill="none" stroke="#c9d1d9" stroke-width="0.23" opacity="0.6"/></g>
+<g id="port-p26" data-port="p26" data-kind="sfp56" data-cx="380.00" data-cy="29.50"><rect x="373.00" y="24.80" width="14.0" height="9.4" rx="0.4" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.38"/><rect x="374.69" y="26.49" width="10.62" height="6.02" fill="none" stroke="#c9d1d9" stroke-width="0.23" opacity="0.6"/></g>
+<g id="port-p27" data-port="p27" data-kind="sfp56" data-cx="398.00" data-cy="14.50"><rect x="391.00" y="9.80" width="14.0" height="9.4" rx="0.4" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.38"/><rect x="392.69" y="11.49" width="10.62" height="6.02" fill="none" stroke="#c9d1d9" stroke-width="0.23" opacity="0.6"/></g>
+<g id="port-p28" data-port="p28" data-kind="sfp56" data-cx="398.00" data-cy="29.50"><rect x="391.00" y="24.80" width="14.0" height="9.4" rx="0.4" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.38"/><rect x="392.69" y="26.49" width="10.62" height="6.02" fill="none" stroke="#c9d1d9" stroke-width="0.23" opacity="0.6"/></g>
+</g>
+<text x="440.00" y="42.30" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="2.17" fill="#e0a43a">SCHEMATIC - port positions not physically accurate</text>
+</svg>

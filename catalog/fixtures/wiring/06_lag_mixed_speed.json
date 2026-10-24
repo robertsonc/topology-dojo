@@ -1,0 +1,66 @@
+{
+  "description": "LAG mixing a 1G copper member and a 10G SR member, both ends",
+  "nodes": [
+    {
+      "id": "acc-sw",
+      "model": "aruba-cx-6300m-jl664a",
+      "stack_members": 2
+    },
+    {
+      "id": "core-sw",
+      "model": "aruba-cx-6300m-jl664a"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "acc-sw",
+        "if": "1/1/5"
+      },
+      "z": {
+        "node": "core-sw",
+        "if": "1/1/5"
+      }
+    },
+    {
+      "id": "l2",
+      "a": {
+        "node": "acc-sw",
+        "if": "1/1/27",
+        "optic": "10GBASE-SR"
+      },
+      "z": {
+        "node": "core-sw",
+        "if": "1/1/27",
+        "optic": "10GBASE-SR"
+      }
+    }
+  ],
+  "bonds": [
+    {
+      "node": "acc-sw",
+      "name": "lag2",
+      "members": [
+        "1/1/5",
+        "1/1/27"
+      ],
+      "lacp": true
+    },
+    {
+      "node": "core-sw",
+      "name": "lag2",
+      "members": [
+        "1/1/5",
+        "1/1/27"
+      ],
+      "lacp": true
+    }
+  ],
+  "expect": [
+    "E_BOND_SPEED",
+    "E_BOND_SPEED",
+    "I_SCHEMATIC_PANEL",
+    "I_SCHEMATIC_PANEL"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "description": "Two cables on wan0",
+  "nodes": [
+    {
+      "id": "br-ec",
+      "model": "edgeconnect-ec-10104"
+    },
+    {
+      "id": "peer1"
+    },
+    {
+      "id": "peer2"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "br-ec",
+        "if": "wan0"
+      },
+      "z": {
+        "node": "peer1"
+      }
+    },
+    {
+      "id": "l2",
+      "a": {
+        "node": "br-ec",
+        "if": "wan0"
+      },
+      "z": {
+        "node": "peer2"
+      }
+    }
+  ],
+  "expect": [
+    "E_PORT_REUSED"
+  ],
+  "bonds": []
+}

@@ -1,0 +1,133 @@
+{
+  "kind": "platform",
+  "id": "ec-xs",
+  "name": "EdgeConnect EC-XS chassis",
+  "form_factor": "desktop",
+  "dims_mm": null,
+  "panel": {
+    "units": "relative",
+    "width": 300.0,
+    "height": 56.8
+  },
+  "ports": [
+    {
+      "id": "reset",
+      "kind": "button",
+      "x": 38.8,
+      "y": 34.9,
+      "w": 4.2,
+      "h": 4.2,
+      "label": "RESET"
+    },
+    {
+      "id": "dc",
+      "kind": "power_dc",
+      "x": 55.8,
+      "y": 30.2,
+      "w": 11.0,
+      "h": 11.0,
+      "label": "DC+12V"
+    },
+    {
+      "id": "power",
+      "kind": "button",
+      "x": 67.5,
+      "y": 34.9,
+      "w": 5.0,
+      "h": 5.0,
+      "label": "POWER"
+    },
+    {
+      "id": "console",
+      "kind": "console_rj45",
+      "x": 87.4,
+      "y": 38.8,
+      "w": 19.4,
+      "h": 14.6,
+      "label": "Console"
+    },
+    {
+      "id": "aux-usb1",
+      "kind": "usb_a",
+      "x": 114.6,
+      "y": 33.0,
+      "w": 13.0,
+      "h": 6.2,
+      "label": "aux"
+    },
+    {
+      "id": "aux-usb2",
+      "kind": "usb_a",
+      "x": 114.6,
+      "y": 43.0,
+      "w": 13.0,
+      "h": 6.2
+    },
+    {
+      "id": "mgmt0",
+      "kind": "rj45",
+      "x": 138.4,
+      "y": 38.8,
+      "w": 19.4,
+      "h": 14.6,
+      "label": "mgmt0"
+    },
+    {
+      "id": "mgmt1",
+      "kind": "rj45",
+      "x": 165.1,
+      "y": 38.8,
+      "w": 19.4,
+      "h": 14.6,
+      "label": "mgmt1"
+    },
+    {
+      "id": "lan0",
+      "kind": "rj45",
+      "x": 191.8,
+      "y": 38.8,
+      "w": 19.4,
+      "h": 14.6,
+      "label": "lan0"
+    },
+    {
+      "id": "wan0",
+      "kind": "rj45",
+      "x": 218.0,
+      "y": 38.8,
+      "w": 19.4,
+      "h": 14.6,
+      "label": "wan0"
+    },
+    {
+      "id": "lan1",
+      "kind": "rj45",
+      "x": 244.7,
+      "y": 38.8,
+      "w": 19.4,
+      "h": 14.6,
+      "label": "lan1"
+    },
+    {
+      "id": "wan1",
+      "kind": "rj45",
+      "x": 271.4,
+      "y": 38.8,
+      "w": 19.4,
+      "h": 14.6,
+      "label": "wan1"
+    }
+  ],
+  "position_confidence": "traced",
+  "glyphs": {
+    "front": "glyphs/platforms/ec-xs.front.svg"
+  },
+  "provenance": [
+    {
+      "tier": "internal_doc",
+      "source": "EdgeConnect - Port Layout - EC-XS Bonding.pdf (Silver Peak internal port-layout sheet)",
+      "retrieved": "2026-10-24",
+      "note": "Traced from standalone-panel photo; relative units, face not stated."
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320.8 34.8" data-platform="srx300" data-units="mm" data-confidence="schematic" data-face="front">
+<title>Juniper SRX300 chassis (front panel)</title>
+<g id="chassis"><rect x="0.4" y="0.4" width="320.0" height="34.0" rx="2.00" fill="#23272e" stroke="#59626e" stroke-width="0.5"/></g>
+<g id="silkscreen" font-family="Helvetica, Arial, sans-serif" fill="#9aa4af" text-anchor="middle" font-size="1.91">
+<text x="52.00" y="27.60">0/0</text>
+<text x="67.20" y="27.60">0/1</text>
+<text x="82.40" y="27.60">0/2</text>
+<text x="97.60" y="27.60">0/3</text>
+<text x="112.80" y="27.60">0/4</text>
+<text x="128.00" y="27.60">0/5</text>
+<text x="150.00" y="27.60">0/6</text>
+<text x="167.00" y="27.60">0/7</text>
+<text x="30.00" y="27.60">CONSOLE</text>
+</g>
+<g id="ports">
+<g id="port-reset" data-port="reset" data-kind="button" data-cx="12.00" data-cy="17.00"><circle cx="12.0" cy="17.0" r="1.60" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/></g>
+<g id="port-console" data-port="console" data-kind="console_rj45" data-cx="30.00" data-cy="17.00"><rect x="23.20" y="11.30" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="27.14" y="19.96" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p0" data-port="p0" data-kind="rj45" data-cx="52.00" data-cy="17.00"><rect x="45.20" y="11.30" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="49.14" y="19.96" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p1" data-port="p1" data-kind="rj45" data-cx="67.20" data-cy="17.00"><rect x="60.40" y="11.30" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="64.34" y="19.96" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p2" data-port="p2" data-kind="rj45" data-cx="82.40" data-cy="17.00"><rect x="75.60" y="11.30" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="79.54" y="19.96" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p3" data-port="p3" data-kind="rj45" data-cx="97.60" data-cy="17.00"><rect x="90.80" y="11.30" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="94.74" y="19.96" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p4" data-port="p4" data-kind="rj45" data-cx="112.80" data-cy="17.00"><rect x="106.00" y="11.30" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="109.94" y="19.96" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p5" data-port="p5" data-kind="rj45" data-cx="128.00" data-cy="17.00"><rect x="121.20" y="11.30" width="13.6" height="11.4" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.46"/><rect x="125.14" y="19.96" width="5.71" height="2.74" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-p6" data-port="p6" data-kind="sfp" data-cx="150.00" data-cy="17.00"><rect x="143.00" y="12.30" width="14.0" height="9.4" rx="0.4" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.38"/><rect x="144.69" y="13.99" width="10.62" height="6.02" fill="none" stroke="#c9d1d9" stroke-width="0.23" opacity="0.6"/></g>
+<g id="port-p7" data-port="p7" data-kind="sfp" data-cx="167.00" data-cy="17.00"><rect x="160.00" y="12.30" width="14.0" height="9.4" rx="0.4" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.38"/><rect x="161.69" y="13.99" width="10.62" height="6.02" fill="none" stroke="#c9d1d9" stroke-width="0.23" opacity="0.6"/></g>
+<g id="port-console-usb" data-port="console-usb" data-kind="usb_mini" data-cx="192.00" data-cy="11.50"><rect x="188.15" y="9.80" width="7.7" height="3.4" rx="1.70" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/></g>
+<g id="port-usb" data-port="usb" data-kind="usb_a" data-cx="192.00" data-cy="23.50"><rect x="185.75" y="21.00" width="12.5" height="5.0" rx="0.3" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/><rect x="187.25" y="21.90" width="9.50" height="1.50" fill="#c9d1d9" opacity="0.5"/></g>
+<g id="port-power" data-port="power" data-kind="button" data-cx="305.00" data-cy="17.00"><circle cx="305.0" cy="17.0" r="2.00" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/></g>
+</g>
+<text x="318.80" y="33.20" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="1.72" fill="#e0a43a">SCHEMATIC - port positions not physically accurate</text>
+</svg>

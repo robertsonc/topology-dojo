@@ -20,7 +20,10 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test:e2e": "playwright test",
-    "build:export-fonts": "tsx scripts/build-export-fonts.ts"
+    "build:export-fonts": "tsx scripts/build-export-fonts.ts",
+    "catalog:types": "tsx scripts/catalog-types.ts",
+    "catalog:build": "tsx scripts/catalog-build.ts",
+    "catalog:check": "tsx scripts/catalog-build.ts --check && tsx scripts/catalog-types.ts --check"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260607.1",
@@ -28,9 +31,12 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.10.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "esbuild": "^0.25.12",
     "eslint": "^9.17.0",
     "fake-indexeddb": "^6.2.5",
+    "json-schema-to-typescript": "15.0.4",
     "miniflare": "^4.20260603.0",
     "prettier": "^3.4.2",
     "tsx": "^4.22.4",

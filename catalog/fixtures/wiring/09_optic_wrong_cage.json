@@ -1,0 +1,35 @@
+{
+  "description": "SFP+ optic in the SRX300's 1G-only SFP cage",
+  "nodes": [
+    {
+      "id": "fw",
+      "model": "juniper-srx300"
+    },
+    {
+      "id": "acc-sw",
+      "model": "aruba-cx-6300m-jl664a",
+      "stack_members": 2
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "fw",
+        "if": "ge-0/0/6",
+        "optic": "10GBASE-SR"
+      },
+      "z": {
+        "node": "acc-sw",
+        "if": "1/1/25",
+        "optic": "10GBASE-SR"
+      }
+    }
+  ],
+  "expect": [
+    "E_OPTIC_CAGE",
+    "I_SCHEMATIC_PANEL",
+    "I_SCHEMATIC_PANEL"
+  ],
+  "bonds": []
+}

@@ -1,0 +1,30 @@
+{
+  "description": "VSF member 3 on a 2-member stack",
+  "nodes": [
+    {
+      "id": "acc-sw",
+      "model": "aruba-cx-6300m-jl664a",
+      "stack_members": 2
+    },
+    {
+      "id": "peer1"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "acc-sw",
+        "if": "3/1/1"
+      },
+      "z": {
+        "node": "peer1"
+      }
+    }
+  ],
+  "expect": [
+    "E_MEMBER_RANGE",
+    "I_SCHEMATIC_PANEL"
+  ],
+  "bonds": []
+}
