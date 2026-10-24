@@ -83,3 +83,28 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  # Visio export through a real reader (hw-catalog Phase 5): LibreOffice
+  # headless (libvisio) converts the wire-sheet .vsdx to PDF; page count,
+  # size and a low-DPI golden are checked. REQUIRE_LIBREOFFICE makes a
+  # missing reader fail instead of skip. ubuntu-latest (24.04) ships the
+  # same LibreOffice 24.2 the golden was made with.
+  visio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install LibreOffice Draw + poppler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-draw poppler-utils
+      - name: Visio export in LibreOffice
+        env:
+          REQUIRE_LIBREOFFICE: '1'
+        run: npx vitest run src/export/visio-render.test.ts
