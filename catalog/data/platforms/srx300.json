@@ -1,0 +1,151 @@
+{
+  "kind": "platform",
+  "id": "srx300",
+  "name": "Juniper SRX300 chassis",
+  "form_factor": "desktop",
+  "dims_mm": {
+    "w": 320.8,
+    "h": 34.8,
+    "d": 191.0
+  },
+  "panel": {
+    "units": "mm",
+    "width": 320.8,
+    "height": 34.8
+  },
+  "ports": [
+    {
+      "id": "reset",
+      "kind": "button",
+      "x": 12.0,
+      "y": 17.0,
+      "w": 3.2,
+      "h": 3.2,
+      "label": "RESET CONFIG"
+    },
+    {
+      "id": "console",
+      "kind": "console_rj45",
+      "x": 30.0,
+      "y": 17.0,
+      "w": 13.6,
+      "h": 11.4,
+      "label": "CONSOLE"
+    },
+    {
+      "id": "p0",
+      "kind": "rj45",
+      "x": 52.0,
+      "y": 17.0,
+      "w": 13.6,
+      "h": 11.4,
+      "label": "0/0"
+    },
+    {
+      "id": "p1",
+      "kind": "rj45",
+      "x": 67.2,
+      "y": 17.0,
+      "w": 13.6,
+      "h": 11.4,
+      "label": "0/1"
+    },
+    {
+      "id": "p2",
+      "kind": "rj45",
+      "x": 82.4,
+      "y": 17.0,
+      "w": 13.6,
+      "h": 11.4,
+      "label": "0/2"
+    },
+    {
+      "id": "p3",
+      "kind": "rj45",
+      "x": 97.6,
+      "y": 17.0,
+      "w": 13.6,
+      "h": 11.4,
+      "label": "0/3"
+    },
+    {
+      "id": "p4",
+      "kind": "rj45",
+      "x": 112.8,
+      "y": 17.0,
+      "w": 13.6,
+      "h": 11.4,
+      "label": "0/4"
+    },
+    {
+      "id": "p5",
+      "kind": "rj45",
+      "x": 128.0,
+      "y": 17.0,
+      "w": 13.6,
+      "h": 11.4,
+      "label": "0/5"
+    },
+    {
+      "id": "p6",
+      "kind": "sfp",
+      "x": 150.0,
+      "y": 17.0,
+      "w": 14.0,
+      "h": 9.4,
+      "label": "0/6"
+    },
+    {
+      "id": "p7",
+      "kind": "sfp",
+      "x": 167.0,
+      "y": 17.0,
+      "w": 14.0,
+      "h": 9.4,
+      "label": "0/7"
+    },
+    {
+      "id": "console-usb",
+      "kind": "usb_mini",
+      "x": 192.0,
+      "y": 11.5,
+      "w": 7.7,
+      "h": 3.4
+    },
+    {
+      "id": "usb",
+      "kind": "usb_a",
+      "x": 192.0,
+      "y": 23.5,
+      "w": 12.5,
+      "h": 5.0
+    },
+    {
+      "id": "power",
+      "kind": "button",
+      "x": 305.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.0,
+      "label": "POWER"
+    }
+  ],
+  "position_confidence": "schematic",
+  "glyphs": {
+    "front": "glyphs/platforms/srx300.front.svg"
+  },
+  "provenance": [
+    {
+      "tier": "official_doc",
+      "source": "https://www.juniper.net/documentation/us/en/hardware/srx300/topics/topic-map/srx300-chassis.html",
+      "retrieved": "2026-10-24",
+      "note": "Component list and 12.63 x 1.37 x 7.52 in dimensions."
+    },
+    {
+      "tier": "inferred",
+      "source": "Left-to-right order assumed from the component table numbering",
+      "retrieved": "2026-10-24",
+      "note": "Positions SCHEMATIC."
+    }
+  ]
+}

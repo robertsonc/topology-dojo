@@ -1,0 +1,33 @@
+{
+  "description": "Console port cabled as a data link",
+  "nodes": [
+    {
+      "id": "fw",
+      "model": "juniper-srx300"
+    },
+    {
+      "id": "acc-sw",
+      "model": "aruba-cx-6300m-jl664a",
+      "stack_members": 2
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "fw",
+        "if": "console"
+      },
+      "z": {
+        "node": "acc-sw",
+        "if": "1/1/4"
+      }
+    }
+  ],
+  "expect": [
+    "E_ROLE_NOT_DATA",
+    "I_SCHEMATIC_PANEL",
+    "I_SCHEMATIC_PANEL"
+  ],
+  "bonds": []
+}

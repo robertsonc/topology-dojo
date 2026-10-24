@@ -131,6 +131,12 @@ packet specs, risk, and acceptance criteria for all six initiatives.
 Capabilities that logically follow the active program, not yet scoped into
 packets:
 
+- **Hardware catalog + trustworthy wire sheets** — nodes bound to real
+  models, catalog-aware wiring validation, real front panels on wire sheets,
+  native Visio masters. Six phases; plan and status in
+  [`futures/hw-catalog.md`](futures/hw-catalog.md) (Phase 1, catalog core,
+  in review).
+
 - **Clean render profile for exports and the inline view** — measured on a
   7-node / 6-link template: the SVG defines 29 filters but references 3
   (`tds-glow`, `tds-dof-blur`, `tds-depth-lift`); `<defs>` is ~41% of a

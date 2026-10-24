@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300.0 56.8" data-platform="ec-xs" data-units="relative" data-confidence="traced" data-face="front">
+<title>EdgeConnect EC-XS chassis (front panel)</title>
+<g id="chassis"><rect x="0.4" y="0.4" width="299.2" height="56.0" rx="2.00" fill="#23272e" stroke="#59626e" stroke-width="0.5"/></g>
+<g id="silkscreen" font-family="Helvetica, Arial, sans-serif" fill="#9aa4af" text-anchor="middle" font-size="3.12">
+<text x="87.40" y="26.50">Console</text>
+<text x="114.60" y="26.00">aux</text>
+<text x="138.40" y="26.50">mgmt0</text>
+<text x="165.10" y="26.50">mgmt1</text>
+<text x="191.80" y="26.50">lan0</text>
+<text x="218.00" y="26.50">wan0</text>
+<text x="244.70" y="26.50">lan1</text>
+<text x="271.40" y="26.50">wan1</text>
+</g>
+<g id="ports">
+<g id="port-reset" data-port="reset" data-kind="button" data-cx="38.80" data-cy="34.90"><circle cx="38.8" cy="34.9" r="2.10" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/></g>
+<g id="port-dc" data-port="dc" data-kind="power_dc" data-cx="55.80" data-cy="30.20"><circle cx="55.8" cy="30.2" r="5.50" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.44"/><circle cx="55.8" cy="30.2" r="1.92" fill="#c9d1d9" opacity="0.7"/></g>
+<g id="port-power" data-port="power" data-kind="button" data-cx="67.50" data-cy="34.90"><circle cx="67.5" cy="34.9" r="2.50" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/></g>
+<g id="port-console" data-port="console" data-kind="console_rj45" data-cx="87.40" data-cy="38.80"><rect x="77.70" y="31.50" width="19.4" height="14.6" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.58"/><rect x="83.33" y="42.60" width="8.15" height="3.50" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-aux-usb1" data-port="aux-usb1" data-kind="usb_a" data-cx="114.60" data-cy="33.00"><rect x="108.10" y="29.90" width="13.0" height="6.2" rx="0.3" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/><rect x="109.66" y="31.02" width="9.88" height="1.86" fill="#c9d1d9" opacity="0.5"/></g>
+<g id="port-aux-usb2" data-port="aux-usb2" data-kind="usb_a" data-cx="114.60" data-cy="43.00"><rect x="108.10" y="39.90" width="13.0" height="6.2" rx="0.3" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.25"/><rect x="109.66" y="41.02" width="9.88" height="1.86" fill="#c9d1d9" opacity="0.5"/></g>
+<g id="port-mgmt0" data-port="mgmt0" data-kind="rj45" data-cx="138.40" data-cy="38.80"><rect x="128.70" y="31.50" width="19.4" height="14.6" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.58"/><rect x="134.33" y="42.60" width="8.15" height="3.50" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-mgmt1" data-port="mgmt1" data-kind="rj45" data-cx="165.10" data-cy="38.80"><rect x="155.40" y="31.50" width="19.4" height="14.6" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.58"/><rect x="161.03" y="42.60" width="8.15" height="3.50" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-lan0" data-port="lan0" data-kind="rj45" data-cx="191.80" data-cy="38.80"><rect x="182.10" y="31.50" width="19.4" height="14.6" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.58"/><rect x="187.73" y="42.60" width="8.15" height="3.50" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-wan0" data-port="wan0" data-kind="rj45" data-cx="218.00" data-cy="38.80"><rect x="208.30" y="31.50" width="19.4" height="14.6" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.58"/><rect x="213.93" y="42.60" width="8.15" height="3.50" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-lan1" data-port="lan1" data-kind="rj45" data-cx="244.70" data-cy="38.80"><rect x="235.00" y="31.50" width="19.4" height="14.6" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.58"/><rect x="240.63" y="42.60" width="8.15" height="3.50" fill="#c9d1d9" opacity="0.55"/></g>
+<g id="port-wan1" data-port="wan1" data-kind="rj45" data-cx="271.40" data-cy="38.80"><rect x="261.70" y="31.50" width="19.4" height="14.6" rx="0.6" fill="#0f1115" stroke="#c9d1d9" stroke-width="0.58"/><rect x="267.33" y="42.60" width="8.15" height="3.50" fill="#c9d1d9" opacity="0.55"/></g>
+</g>
+</svg>

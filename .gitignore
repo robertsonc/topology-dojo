@@ -8,3 +8,7 @@ coverage/
 .workspace-do-test-*.mjs
 test-results/
 playwright-report/
+
+# Python bytecode (catalog/tools)
+__pycache__/
+*.pyc

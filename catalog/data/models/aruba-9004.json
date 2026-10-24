@@ -1,0 +1,92 @@
+{
+  "kind": "model",
+  "id": "aruba-9004",
+  "vendor": "hpe-aruba",
+  "family": "aruba-gateway",
+  "name": "Aruba 9004 Gateway",
+  "skus": [],
+  "os": "aos-8",
+  "platform": "aruba-9004-class",
+  "category": "wlan-gateway",
+  "symbol": "wlan-gateway",
+  "lifecycle": "unknown",
+  "interfaces": [
+    {
+      "name": "GE0/0/0",
+      "physical": "p0",
+      "role": "data",
+      "speeds_mbps": [
+        100,
+        1000
+      ],
+      "provenance_ref": 0
+    },
+    {
+      "name": "GE0/0/1",
+      "physical": "p1",
+      "role": "data",
+      "speeds_mbps": [
+        100,
+        1000
+      ],
+      "provenance_ref": 0
+    },
+    {
+      "name": "GE0/0/2",
+      "physical": "p2",
+      "role": "data",
+      "speeds_mbps": [
+        100,
+        1000
+      ],
+      "provenance_ref": 0
+    },
+    {
+      "name": "GE0/0/3",
+      "physical": "p3",
+      "role": "data",
+      "speeds_mbps": [
+        100,
+        1000
+      ],
+      "provenance_ref": 0
+    },
+    {
+      "name": "console",
+      "physical": "console",
+      "role": "console",
+      "provenance_ref": 0
+    },
+    {
+      "name": "console-usb",
+      "physical": "console-usb",
+      "role": "console",
+      "provenance_ref": 0
+    },
+    {
+      "name": "usb",
+      "physical": "usb",
+      "role": "usb",
+      "provenance_ref": 0
+    }
+  ],
+  "provenance": [
+    {
+      "tier": "internal_doc",
+      "source": "Aruba 9004 Gateway Installation Guide (Table 2 port configuration; Figure 2 back panel; device dimensions)",
+      "retrieved": "2026-10-24",
+      "note": "4x 100/1000BASE-T ports numbered 0-3; RJ45 + micro-USB console; USB 3.0."
+    },
+    {
+      "tier": "inferred",
+      "source": "ArubaOS interface naming GE0/0/N",
+      "retrieved": "2026-10-24",
+      "note": "Guide numbers ports 0-3 only; confirm CLI names on AOS 8 and AOS 10."
+    }
+  ],
+  "todo": [
+    "Add SKU(s)",
+    "Confirm interface names on AOS 10",
+    "Lifecycle status"
+  ]
+}

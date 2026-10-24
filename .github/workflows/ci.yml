@@ -36,6 +36,20 @@ jobs:
         run: node scripts/check-wrangler-env.mjs
       - name: Type-check
         run: npm run typecheck
+      # Hardware catalog (hw-catalog): the Python tools are the executable
+      # spec. Run them on the same data and fixtures as the TypeScript port,
+      # and fail if the shared parity golden or the published bundle drifts.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Catalog reference tools (Python)
+        run: |
+          python3 -m pip install --disable-pip-version-check jsonschema==4.23.0
+          python3 -I -B catalog/tools/check_seed.py --catalog catalog/data --schema catalog/schema/catalog.schema.json
+          python3 -I -B catalog/tools/ref_validate.py --catalog catalog/data --fixtures catalog/fixtures/wiring
+          python3 -I -B catalog/tools/resolve_probe.py --catalog catalog/data --check catalog/fixtures/resolve/golden.json
+      - name: Catalog bundle + generated types are current
+        run: npm run catalog:check
       - name: Test
         run: npm test
       - name: Lint

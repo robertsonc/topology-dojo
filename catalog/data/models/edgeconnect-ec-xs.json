@@ -1,0 +1,127 @@
+{
+  "kind": "model",
+  "id": "edgeconnect-ec-xs",
+  "vendor": "hpe-aruba",
+  "family": "edgeconnect",
+  "name": "EdgeConnect EC-XS",
+  "skus": [],
+  "os": "ecos",
+  "platform": "ec-xs",
+  "category": "sdwan-gateway",
+  "symbol": "sdwan-gateway",
+  "lifecycle": "unknown",
+  "interfaces": [
+    {
+      "name": "mgmt0",
+      "physical": "mgmt0",
+      "role": "mgmt",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 1
+    },
+    {
+      "name": "mgmt1",
+      "physical": "mgmt1",
+      "role": "mgmt",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 1
+    },
+    {
+      "name": "lan0",
+      "physical": "lan0",
+      "role": "lan",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 1
+    },
+    {
+      "name": "wan0",
+      "physical": "wan0",
+      "role": "wan",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 1
+    },
+    {
+      "name": "lan1",
+      "physical": "lan1",
+      "role": "lan",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 1
+    },
+    {
+      "name": "wan1",
+      "physical": "wan1",
+      "role": "wan",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 1
+    },
+    {
+      "name": "console",
+      "physical": "console",
+      "role": "console",
+      "provenance_ref": 0
+    }
+  ],
+  "bond_groups": [
+    {
+      "name": "blan0",
+      "members": [
+        "lan0",
+        "lan1"
+      ],
+      "lacp": "unsupported",
+      "note": "Static only; peer must be static. Max 2 members; pairs not configurable."
+    },
+    {
+      "name": "bwan0",
+      "members": [
+        "wan0",
+        "wan1"
+      ],
+      "lacp": "unsupported",
+      "note": "Before ECOS 9.0.3, bonding LAN also bonds WAN (coupled). From 9.0.3, independent."
+    }
+  ],
+  "provenance": [
+    {
+      "tier": "internal_doc",
+      "source": "EdgeConnect - Port Layout - EC-XS Bonding.pdf (Silver Peak internal port-layout sheet)",
+      "retrieved": "2026-10-24",
+      "note": "Port names, physical order, bond pairs, LACP and 9.0.3 rule."
+    },
+    {
+      "tier": "inferred",
+      "source": "EC-XS ports assumed 10/100/1000 copper",
+      "retrieved": "2026-10-24",
+      "note": "Confirm speeds from the EC-XS spec sheet."
+    }
+  ],
+  "todo": [
+    "Confirm port speeds",
+    "Add SKU(s)",
+    "Real chassis dimensions",
+    "Lifecycle status"
+  ]
+}

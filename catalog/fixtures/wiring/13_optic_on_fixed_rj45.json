@@ -1,0 +1,29 @@
+{
+  "description": "Optic declared on a fixed RJ45 port",
+  "nodes": [
+    {
+      "id": "br-ec",
+      "model": "edgeconnect-ec-10104"
+    },
+    {
+      "id": "peer1"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "br-ec",
+        "if": "wan0",
+        "optic": "1000BASE-SX"
+      },
+      "z": {
+        "node": "peer1"
+      }
+    }
+  ],
+  "expect": [
+    "E_OPTIC_ON_FIXED"
+  ],
+  "bonds": []
+}

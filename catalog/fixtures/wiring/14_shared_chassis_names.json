@@ -1,0 +1,42 @@
+{
+  "description": "9004 and EC-10104 share a chassis but not interface names",
+  "nodes": [
+    {
+      "id": "gw",
+      "model": "aruba-9004"
+    },
+    {
+      "id": "br-ec",
+      "model": "edgeconnect-ec-10104"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "gw",
+        "if": "GE0/0/0"
+      },
+      "z": {
+        "node": "br-ec",
+        "if": "lan0"
+      }
+    },
+    {
+      "id": "l2",
+      "a": {
+        "node": "gw",
+        "if": "lan0"
+      },
+      "z": {
+        "node": "br-ec",
+        "if": "GE0/0/1"
+      }
+    }
+  ],
+  "expect": [
+    "E_PORT_UNKNOWN",
+    "E_PORT_UNKNOWN"
+  ],
+  "bonds": []
+}

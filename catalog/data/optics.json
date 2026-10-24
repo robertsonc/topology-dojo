@@ -1,0 +1,113 @@
+{
+  "cage_accepts": {
+    "sfp": [
+      "sfp"
+    ],
+    "sfp_plus": [
+      "sfp_plus",
+      "sfp"
+    ],
+    "sfp28": [
+      "sfp28",
+      "sfp_plus"
+    ],
+    "sfp56": [
+      "sfp56",
+      "sfp28",
+      "sfp_plus",
+      "sfp"
+    ],
+    "qsfp28": [
+      "qsfp28",
+      "qsfp_plus"
+    ]
+  },
+  "cage_accepts_note": "Per-platform overrides belong on the model; e.g. some SFP28 cages also take 1G SFP.",
+  "types": {
+    "1000BASE-T": {
+      "form": "sfp",
+      "media": "copper",
+      "speeds_mbps": [
+        1000
+      ]
+    },
+    "1000BASE-SX": {
+      "form": "sfp",
+      "media": "mmf",
+      "speeds_mbps": [
+        1000
+      ]
+    },
+    "1000BASE-LX": {
+      "form": "sfp",
+      "media": "smf",
+      "speeds_mbps": [
+        1000
+      ]
+    },
+    "10GBASE-T": {
+      "form": "sfp_plus",
+      "media": "copper",
+      "speeds_mbps": [
+        10000,
+        1000
+      ]
+    },
+    "10GBASE-SR": {
+      "form": "sfp_plus",
+      "media": "mmf",
+      "speeds_mbps": [
+        10000
+      ]
+    },
+    "10GBASE-LR": {
+      "form": "sfp_plus",
+      "media": "smf",
+      "speeds_mbps": [
+        10000
+      ]
+    },
+    "10G-DAC": {
+      "form": "sfp_plus",
+      "media": "dac",
+      "speeds_mbps": [
+        10000
+      ]
+    },
+    "25GBASE-SR": {
+      "form": "sfp28",
+      "media": "mmf",
+      "speeds_mbps": [
+        25000
+      ]
+    },
+    "25GBASE-LR": {
+      "form": "sfp28",
+      "media": "smf",
+      "speeds_mbps": [
+        25000
+      ]
+    },
+    "50GBASE-SR": {
+      "form": "sfp56",
+      "media": "mmf",
+      "speeds_mbps": [
+        50000
+      ]
+    },
+    "100GBASE-SR4": {
+      "form": "qsfp28",
+      "media": "mmf",
+      "speeds_mbps": [
+        100000
+      ]
+    },
+    "100GBASE-LR4": {
+      "form": "qsfp28",
+      "media": "smf",
+      "speeds_mbps": [
+        100000
+      ]
+    }
+  }
+}

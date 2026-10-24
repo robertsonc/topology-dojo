@@ -1,0 +1,129 @@
+{
+  "kind": "model",
+  "id": "edgeconnect-ec-10104",
+  "vendor": "hpe-aruba",
+  "family": "edgeconnect",
+  "name": "EdgeConnect 10104",
+  "os": "ecos",
+  "platform": "aruba-9004-class",
+  "category": "sdwan-gateway",
+  "symbol": "sdwan-gateway",
+  "lifecycle": "current",
+  "skus": [
+    {
+      "sku": "S3N69A",
+      "variant": "unknown",
+      "provenance_ref": 2
+    },
+    {
+      "sku": "S3N78A",
+      "variant": "TAA",
+      "provenance_ref": 3
+    }
+  ],
+  "interfaces": [
+    {
+      "name": "lan0",
+      "physical": "p0",
+      "role": "lan",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 0
+    },
+    {
+      "name": "lan1",
+      "physical": "p1",
+      "role": "lan",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 0
+    },
+    {
+      "name": "wan0",
+      "physical": "p2",
+      "role": "wan",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 0
+    },
+    {
+      "name": "wan1",
+      "physical": "p3",
+      "role": "wan",
+      "speeds_mbps": [
+        10,
+        100,
+        1000
+      ],
+      "provenance_ref": 0
+    },
+    {
+      "name": "console",
+      "physical": "console",
+      "role": "console",
+      "provenance_ref": 0
+    },
+    {
+      "name": "console-usb",
+      "physical": "console-usb",
+      "role": "console",
+      "provenance_ref": 0
+    },
+    {
+      "name": "usb",
+      "physical": "usb",
+      "role": "usb",
+      "provenance_ref": 0
+    }
+  ],
+  "bond_groups": [
+    {
+      "name": "blan0",
+      "members": [
+        "lan0",
+        "lan1"
+      ],
+      "lacp": "unknown",
+      "note": "blan0 shown in internal EdgeHA design; LACP behavior not documented in hand."
+    }
+  ],
+  "provenance": [
+    {
+      "tier": "official_doc",
+      "source": "https://arubanetworking.hpe.com/techdocs/sdwan-PDFs/hardware/appliance/EC-10104_Install_Guide.pdf",
+      "retrieved": "2026-10-24",
+      "note": "Table 2: 4x 10/100/1000BASE-T LAN0, LAN1, WAN0, WAN1; RJ-45 + micro-USB console; USB 3.0."
+    },
+    {
+      "tier": "internal_doc",
+      "source": "EC-10104 - blan0.png (internal design diagram: EdgeHA pair, blan0 to VSF LAG)",
+      "retrieved": "2026-10-24",
+      "note": "Physical order lan0, lan1, wan0, wan1; blan0 bond."
+    },
+    {
+      "tier": "reseller",
+      "source": "https://fleetnetwork.ca/aruba-s3n69a-edgeconnect-sd-wan-10104-gateway-2-wan-2-lan-ports-gigabit-ethernet-1u-rack-desktop/",
+      "retrieved": "2026-10-24",
+      "note": "S3N69A listed as EdgeConnect SD-WAN 10104."
+    },
+    {
+      "tier": "reseller",
+      "source": "https://www.lambda-tek.com/HPE-S3N78A-shUS/B50114347?viewSpec=y",
+      "retrieved": "2026-10-24",
+      "note": "S3N78A listed as EdgeConnect 10104 4x RJ45 TAA."
+    }
+  ],
+  "todo": [
+    "Confirm SKUs and variants from the HPE product catalog",
+    "Confirm bwan0 support and LACP on blan0"
+  ]
+}

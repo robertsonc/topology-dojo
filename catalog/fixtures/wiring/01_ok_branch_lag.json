@@ -1,0 +1,74 @@
+{
+  "description": "EC-10104 blan0 to a 2-member VSF LAG; clean",
+  "nodes": [
+    {
+      "id": "br-ec",
+      "model": "edgeconnect-ec-10104"
+    },
+    {
+      "id": "acc-sw",
+      "model": "aruba-cx-6300m-jl664a",
+      "stack_members": 2
+    },
+    {
+      "id": "peer1"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "br-ec",
+        "if": "lan0"
+      },
+      "z": {
+        "node": "acc-sw",
+        "if": "1/1/1"
+      }
+    },
+    {
+      "id": "l2",
+      "a": {
+        "node": "br-ec",
+        "if": "lan1"
+      },
+      "z": {
+        "node": "acc-sw",
+        "if": "2/1/1"
+      }
+    },
+    {
+      "id": "l3",
+      "a": {
+        "node": "br-ec",
+        "if": "wan0"
+      },
+      "z": {
+        "node": "peer1"
+      }
+    }
+  ],
+  "bonds": [
+    {
+      "node": "br-ec",
+      "name": "blan0",
+      "members": [
+        "lan0",
+        "lan1"
+      ],
+      "lacp": false
+    },
+    {
+      "node": "acc-sw",
+      "name": "lag1",
+      "members": [
+        "1/1/1",
+        "2/1/1"
+      ],
+      "lacp": true
+    }
+  ],
+  "expect": [
+    "I_SCHEMATIC_PANEL"
+  ]
+}
