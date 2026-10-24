@@ -61,6 +61,12 @@ import type { FlowQuery, TopologyProvider } from '../connect/types.js';
 import { compileFlowTopology } from '../connect/compile.js';
 import { exportFlipbookHTML } from '../render/flipbook.js';
 import { validateDocument } from '../api/validate.js';
+import type { CatalogLoader } from '../catalog/loader.js';
+import {
+  catalogValidation,
+  type CatalogValidation,
+} from './hardware-validate.js';
+import { docHasBindings } from '../api/hardware.js';
 import {
   analyzeLayout,
   isValidViewBox,
@@ -144,6 +150,12 @@ export interface ToolDeps {
   rasterizer?: () => Promise<Rasterizer>;
   /** Pixel budget per rasterized page (memory bound; Worker < Node). */
   maxRasterPixels?: number;
+  /**
+   * Hardware catalog (hw-catalog): bundles from disk (stdio) or the ASSETS
+   * binding (Worker). Absent → bound documents validate without catalog
+   * rules and say so in `warnings`.
+   */
+  catalog?: CatalogLoader;
   /**
    * Local stdio server only: write an export to disk and return the absolute
    * path. Present → `export_topology` gains `outputPath`.
@@ -1338,6 +1350,22 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         toBundle: displayString(TEXT_LIMITS.label)
           .optional()
           .describe('LAG / ECMP bundle name at the `to` end.'),
+        fromInterface: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe(
+            'Hardware interface at the `from` end, in the bound model’s OS naming (e.g. "1/1/49"); checked against the hardware catalog when the node has `hw`. Drawn as the port label when fromLabel is empty.',
+          ),
+        toInterface: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe('Hardware interface at the `to` end.'),
+        fromOptic: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe(
+            'Optic in a cage port at the `from` end (an optics-table type, e.g. "10GBASE-SR").',
+          ),
+        toOptic: displayString(TEXT_LIMITS.label)
+          .optional()
+          .describe('Optic at the `to` end.'),
         labelScale: z
           .number()
           .optional()
@@ -1388,6 +1416,16 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ...(a.toBundle !== undefined
               ? { toBundle: String(a.toBundle) }
               : {}),
+            ...(a.fromInterface !== undefined
+              ? { fromInterface: String(a.fromInterface) }
+              : {}),
+            ...(a.toInterface !== undefined
+              ? { toInterface: String(a.toInterface) }
+              : {}),
+            ...(a.fromOptic !== undefined
+              ? { fromOptic: String(a.fromOptic) }
+              : {}),
+            ...(a.toOptic !== undefined ? { toOptic: String(a.toOptic) } : {}),
             ...(a.labelScale !== undefined
               ? { labelScale: Number(a.labelScale) }
               : {}),
@@ -1689,6 +1727,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         label: displayString(TEXT_LIMITS.name)
           .optional()
           .describe('Port-table text (defaults to the name).'),
+        lacp: z
+          .union([z.boolean(), z.record(z.string().max(64), z.boolean())])
+          .optional()
+          .describe(
+            'LACP on a lag bundle: true / false for every node it spans, or { nodeId: boolean } when one name spans nodes that differ. Checked against the bound model’s bond groups.',
+          ),
         remove: z.boolean().optional().describe('Remove the declaration.'),
       },
       handler: (a) => {
@@ -1711,6 +1755,11 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ? { label: String(a.label) }
             : prev?.label !== undefined
               ? { label: prev.label }
+              : {}),
+          ...(a.lacp !== undefined
+            ? { lacp: a.lacp as boolean | Record<string, boolean> }
+            : prev?.lacp !== undefined
+              ? { lacp: prev.lacp }
               : {}),
         });
         return { bundles: doc.bundles };
@@ -1828,18 +1877,36 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'validate_topology',
       description:
-        'Validate a topology: semantic problems (dangling refs, duplicate ids, unknown types) AND layout problems (overlapping/crowded nodes, labels, zones; off-page elements). Errors block meaning; warnings — including all layout issues — are advisory. An empty problems list means the document is clean. See layout_guidelines for the rules.',
+        'Validate a topology: semantic problems (dangling refs, duplicate ids, unknown types) AND layout problems (overlapping/crowded nodes, labels, zones; off-page elements). Errors block meaning; warnings — including all layout issues — are advisory. An empty problems list means the document is clean. See layout_guidelines for the rules. When nodes are bound to hardware (`hw`), cabling is also checked against the hardware catalog per page: E_* rule codes join problems as errors (with `code`), W_* come back in `warnings`, I_* in `notes`, plus the `catalogVersion` used; unbound documents return exactly the fields above.',
       inputShape: { topologyId },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
         const semantic = validateDocument(doc);
         const layout = analyzeLayout(doc);
-        const problems = [...semantic, ...layout];
-        return {
-          valid: !problems.some((p) => p.level === 'error'),
-          problems,
-          layoutClean: layout.length === 0,
+        const result = (hw: CatalogValidation | null) => {
+          const problems = [...semantic, ...(hw?.errors ?? []), ...layout];
+          return {
+            valid: !problems.some((p) => p.level === 'error'),
+            problems,
+            layoutClean: layout.length === 0,
+            ...(hw
+              ? {
+                  warnings: hw.warnings,
+                  notes: hw.notes,
+                  ...(hw.catalogVersion
+                    ? { catalogVersion: hw.catalogVersion }
+                    : {}),
+                }
+              : {}),
+          };
         };
+        // Unbound documents: synchronous, and exactly the fields as before.
+        if (!docHasBindings(doc)) return result(null);
+        // Snapshot before awaiting the catalog, so a concurrent edit cannot
+        // change the document mid-check.
+        return catalogValidation(structuredClone(doc), deps.catalog).then(
+          result,
+        );
       },
     },
     {

@@ -241,10 +241,24 @@ export function serializeDoc(doc: TopologyDocument): string {
       ...(doc.sheet ? { sheet: doc.sheet } : {}),
       ...(doc.tiers?.length ? { tiers: doc.tiers } : {}),
       ...(doc.bundles?.length ? { bundles: doc.bundles } : {}),
+      ...(doc.catalogVersion ? { catalogVersion: doc.catalogVersion } : {}),
     },
     null,
     2,
   );
+}
+
+/** A catalog bundle hash (hw-catalog): 12 lowercase hex chars. */
+const CATALOG_VERSION_RE = /^[0-9a-f]{12}$/;
+
+/** A bundle's `lacp`: a boolean, or booleans per node id; else dropped. */
+function parseLacp(v: unknown): boolean | Record<string, boolean> | undefined {
+  if (typeof v === 'boolean') return v;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const out: Record<string, boolean> = {};
+  for (const [k, b] of Object.entries(v as Record<string, unknown>))
+    if (typeof b === 'boolean') out[k] = b;
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Parse + normalize an unknown value into a valid document, or null if hopeless. */
@@ -432,6 +446,9 @@ export function parseDoc(input: unknown): TopologyDocument | null {
             ...(typeof r.label === 'string' && r.label.trim()
               ? { label: r.label }
               : {}),
+            ...(parseLacp(r.lacp) !== undefined
+              ? { lacp: parseLacp(r.lacp)! }
+              : {}),
           },
         ];
       })
@@ -448,6 +465,10 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     ...(sheet ? { sheet } : {}),
     ...(tiers.length ? { tiers } : {}),
     ...(bundles.length ? { bundles } : {}),
+    ...(typeof d.catalogVersion === 'string' &&
+    CATALOG_VERSION_RE.test(d.catalogVersion)
+      ? { catalogVersion: d.catalogVersion }
+      : {}),
   };
   // Bound and normalize free-text so overlong / control-character strings
   // cannot enter the document (import, share, workspace apply, autosave).

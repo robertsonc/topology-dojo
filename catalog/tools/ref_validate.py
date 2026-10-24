@@ -22,6 +22,7 @@ Rule codes
   E_BOND_LACP          LACP requested on a bond group that does not support it
   E_BOND_SPEED         bond members negotiate different speeds
   W_OPTIC_UNDECLARED   cage port cabled without an optic, so media cannot be checked
+  W_INTERFACE_UNASSIGNED endpoint on a bound node names no interface yet (unchecked, not an error)
   I_SCHEMATIC_PANEL    node's platform panel is schematic; wire sheet must badge it
 
 Usage:
@@ -73,7 +74,13 @@ def _resolve_endpoint(cat: Catalog, nodes: dict[str, dict[str, Any]], end: dict[
     if model_id not in cat.models:
         findings.append(Finding("E_MODEL_UNKNOWN", where, model_id))
         return Endpoint(node_id, None, None, None)
-    iface = cat.resolve_interface(model_id, end.get("if", ""))
+    if not end.get("if"):
+        # Bound but not yet assigned: the normal state between binding a node
+        # and assigning its interfaces, so a warning, and the end stays
+        # unconstrained (no media / speed opinion).
+        findings.append(Finding("W_INTERFACE_UNASSIGNED", where, "no interface"))
+        return Endpoint(node_id, None, None, None)
+    iface = cat.resolve_interface(model_id, end["if"])
     if iface is None:
         findings.append(Finding("E_PORT_UNKNOWN", where, f"{end.get('if')!r} not on {model_id}"))
         return Endpoint(node_id, None, None, None)

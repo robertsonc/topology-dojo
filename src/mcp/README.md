@@ -276,7 +276,7 @@ to the task's affected region and change summaries, not total document size.
 | `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                                                 |
 | `set_sheet`                                            | Drawing-sheet frame: paper size (sets page viewBoxes), border, top title, bottom-right title block (`clear` removes)                   |
 | `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                                                          |
-| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page)                                                                          |
+| `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page); hardware-catalog cabling rules on bound nodes                           |
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                                                  |
 | `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                       |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force / tiered — rows by declared tiers, `mirror`, `tierZones`)                 |
@@ -492,6 +492,31 @@ nodes, and keeps them inside the page (zones auto-resize around their tidied
 members). A typical agent loop is generate → `validate_topology` →
 `tidy_topology` / `balance_topology` → `inspect_render` → `render_svg`. In the
 editor, the **Tidy** button (`T`) runs the same pass on the current frame.
+
+### Hardware-bound documents (hw-catalog)
+
+When nodes carry a hardware binding (`hw: { model, sku?, stackMembers?, face? }`,
+set with `update_element` until the Phase 3 `bind_hardware` tool lands) and
+links name interfaces and optics (`fromInterface` / `toInterface` /
+`fromOptic` / `toOptic` on `add_link`), `validate_topology` also checks the
+cabling against the hardware catalog, page by page, for endpoints on bound
+nodes only:
+
+- `E_*` rule codes (unknown port, member range, non-data port, port reused,
+  optic / cage / media / fiber / speed mismatches, bond pairs, LACP, mixed
+  bond speeds) join `problems` as errors with a `code`, so `valid` is false.
+- `W_*` (`W_OPTIC_UNDECLARED`, `W_INTERFACE_UNASSIGNED`,
+  `W_CATALOG_UNAVAILABLE`) come back in a new `warnings` array, `I_*`
+  (`I_SCHEMATIC_PANEL`) in `notes`; neither affects `valid`.
+- `catalogVersion` is the catalog bundle judged against: the document's
+  pinned `catalogVersion`, else the latest.
+
+A bond is a lag bundle: the link ends on one bound node that name the same
+lag bundle (`fromBundle` / `toBundle`); `define_bundle` `lacp` sets LACP for
+every node it spans or per node. The rule codes are a contract shared with
+`catalog/tools/ref_validate.py` and pinned by `catalog/fixtures/wiring/`.
+Documents with no bindings return exactly `valid`, `problems` and
+`layoutClean`, as before.
 
 ## Visual QA (`inspect_render`)
 

@@ -102,7 +102,25 @@ export interface NodeConfig {
    * even when the page has no setting.
    */
   linkAttach?: LinkAttachOptions;
+  /**
+   * Hardware binding (hw-catalog): the catalog model this node is, so its
+   * links can be checked against real interfaces. Optional — an unbound
+   * node behaves exactly as before. See `src/api/hardware.ts`.
+   */
+  hw?: NodeHardware;
   [key: string]: unknown;
+}
+
+/** A node's binding to a hardware catalog model (hw-catalog). */
+export interface NodeHardware {
+  /** Catalog model id, e.g. "edgeconnect-ec-10104". */
+  model: string;
+  /** Orderable SKU, when known. */
+  sku?: string;
+  /** Stack / VSF members; caps `{member}` in interface names. */
+  stackMembers?: number;
+  /** Panel face a wire sheet draws (default front). */
+  face?: 'front' | 'rear';
 }
 
 /** A link on a page — the legacy link config shape. */
@@ -122,6 +140,17 @@ export interface LinkConfig {
   /** Endpoint (interface/port) labels near the link's source and destination. */
   fromLabel?: string;
   toLabel?: string;
+  /**
+   * OS-native interface at each end on a hardware-bound node (hw-catalog),
+   * e.g. "lan0", "1/1/25", "ge-0/0/6". Checked against the node's catalog
+   * model by validate_topology; drawn as the port label when `fromLabel` /
+   * `toLabel` is empty. Unrelated to `fromPort` / `toPort` (node sides).
+   */
+  fromInterface?: string;
+  toInterface?: string;
+  /** Transceiver at each end, an optics-table type (e.g. "10GBASE-SR"). */
+  fromOptic?: string;
+  toOptic?: string;
   /**
    * Bundle (LAG / ECMP) name of each END (proposal 0008, W3) — per end,
    * because a LAG is a per-device object (`ae0` on each switch of an
@@ -294,6 +323,7 @@ export type { PolicyMarkerType } from '../api/markers.js';
 import { withMarkerIcon, type PolicyMarkerType } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
+import { withInterfaceLabels } from '../api/hardware.js';
 import {
   pageHasPills,
   pillBands,
@@ -658,7 +688,7 @@ export function renderPageSVG(
   for (const l of links) {
     const { id, ...cfg } = stripPillLabels(
       page as Page,
-      resolveLinkStyle(l, opts.linkStyles),
+      resolveLinkStyle(withInterfaceLabels(l), opts.linkStyles),
       nodeById,
     );
     topo.link(id, fadedEmph(id, cfg));

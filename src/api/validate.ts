@@ -28,12 +28,15 @@ import {
 } from './sheet.js';
 import { nonAdjacentTierLinks, tierRank } from './tiers.js';
 import { BUNDLE_KINDS } from './bundles.js';
+import { hardwareShapeProblems } from './hardware.js';
 import { PORT_LABEL_MODES } from '../render/port-pills.js';
 import { registerHitBoxes } from '../render/hit-boxes.js';
 
 export interface Problem {
   level: 'error' | 'warning';
   message: string;
+  /** Stable rule code (hardware catalog rules, e.g. "E_PORT_UNKNOWN"). */
+  code?: string;
   /** Location hint, e.g. "page[1].link 'lan'". */
   where: string;
 }
@@ -594,6 +597,9 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       }
   });
 
+  // Hardware binding fields (hw-catalog): shape only. Wiring rules need the
+  // catalog and run in validate_topology (src/catalog/validate.ts).
+  for (const p of hardwareShapeProblems(doc)) err(p.where, p.message);
   return problems;
 }
 

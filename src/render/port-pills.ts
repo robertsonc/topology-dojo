@@ -16,6 +16,7 @@
  * mode (render/core + the browser facade). Pure and DOM-free; the layout
  * analyzer and the inspector read the same rects.
  */
+import { endPortLabel } from '../api/hardware.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import type { LinkConfig, NodeConfig } from '../vendor/topology-ds.js';
@@ -144,8 +145,7 @@ export function portPills(
       to: { x: number; y: number };
     } | null = null;
     for (const end of ['from', 'to'] as const) {
-      const raw = end === 'from' ? l.fromLabel : l.toLabel;
-      const label = typeof raw === 'string' ? raw.trim() : '';
+      const label = endPortLabel(l, end);
       if (!label) continue;
       const node = nodes.get(l[end]);
       if (!node || portLabelMode(page, node) !== 'pill') continue;

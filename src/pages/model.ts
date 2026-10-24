@@ -108,6 +108,12 @@ export interface TopologyDocument {
    */
   bundles?: BundleDef[];
   /**
+   * Hardware catalog version (hw-catalog) this document's bindings were
+   * made against — the bundle hash, pinned when the first node is bound so
+   * later catalog changes never silently re-judge an existing wire sheet.
+   */
+  catalogVersion?: string;
+  /**
    * Drawing-sheet frame (proposal 0008, W6): paper size, border, top title
    * and the bottom-right title block. Optional — absent means no frame.
    */
