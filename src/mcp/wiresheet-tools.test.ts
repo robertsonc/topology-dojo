@@ -1,9 +1,11 @@
 /**
  * hw-catalog Phase 4: wire-sheet pages through the MCP render tools —
  * render_svg, inspect_render, export_topology (PNG / PDF), view_topology,
- * export_flipbook — and set_page_properties view / panelScale.
+ * export_flipbook — and set_page_properties view / panelScale; Phase 5:
+ * export_topology vsdx with model masters.
  */
 import { describe, expect, it } from 'vitest';
+import { strFromU8, unzipSync } from 'fflate';
 import { TopologyStore } from './store.js';
 import { createTools, type ToolDeps } from './tools.js';
 import { ContentResult } from './content.js';
@@ -88,6 +90,25 @@ describe('wire sheets through the MCP render tools', () => {
     const blob = (pdf.content[1] as { resource: { blob: string } }).resource
       .blob;
     expect(Buffer.from(blob, 'base64').subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('export_topology vsdx uses model masters (logical without a catalog)', async () => {
+    const parts = async (catalog?: null) => {
+      const { call, id } = catalog === null ? setup(null) : setup();
+      const r = (await call('export_topology', {
+        topologyId: id,
+        format: 'vsdx',
+      })) as ContentResult;
+      const blob = (r.content[1] as { resource: { blob: string } }).resource
+        .blob;
+      return unzipSync(Buffer.from(blob, 'base64'));
+    };
+    const withMasters = await parts();
+    expect(withMasters['visio/masters/masters.xml']).toBeDefined();
+    expect(strFromU8(withMasters['visio/pages/page1.xml']!)).toContain(
+      'ToCell="Connections.X',
+    );
+    expect((await parts(null))['visio/masters/masters.xml']).toBeUndefined();
   });
 
   it('view_topology hands the inline view the wire sheet', async () => {
