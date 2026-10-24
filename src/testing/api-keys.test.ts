@@ -249,7 +249,10 @@ describe('api-keys store (pure, in-memory KV)', () => {
 
   it('gives expiring keys a matching KV TTL and drops them from listings once expired', async () => {
     const kv = memoryKv();
-    const index = memoryIndex();
+    // The index prunes expired slots by its own clock; pin it to the test's
+    // fixed NOW, or the key (expiring NOW + 30 days) reads as already expired
+    // once the wall clock passes that date.
+    const index = memoryIndex(() => NOW);
     const { key } = await createApiKey(
       kv,
       index,
