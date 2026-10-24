@@ -131,6 +131,28 @@ packet specs, risk, and acceptance criteria for all six initiatives.
 Capabilities that logically follow the active program, not yet scoped into
 packets:
 
+- **Clean render profile for exports and the inline view** — measured on a
+  7-node / 6-link template: the SVG defines 29 filters but references 3
+  (`tds-glow`, `tds-dof-blur`, `tds-depth-lift`); `<defs>` is ~41% of a
+  `calm` render (14 KB of 34 KB), and the default render carries 50
+  `<animate>` elements (2 under `calm`). `render_svg` and `view_topology` do
+  not expose `calm`, so agents pay for the animated build in context and
+  transfer. Scope: emit only referenced defs, add a `profile: "clean"`
+  render option (flat per `flattenViewer`, no background animation, no
+  unused defs), and make it the default for `render_svg`, `view_topology`,
+  PNG and PDF. The editable exports (draw.io / Visio / PowerPoint shapes)
+  are built from the export scene, not the SVG, so they are unaffected.
+- **Link anchor box on by default for new documents** — on a dual-homed
+  hub-and-spoke page (the most common SD-WAN shape), `inspect_render` flags
+  spoke tunnels running through the hub labels until `linkAttach:
+{distribute: true}` is set, which clears them; the fix is gated behind an
+  EXPERIMENTAL flag. Make it the default for documents created by
+  `create_topology`, templates and `build_flow_topology` (opt out with
+  `linkAttach: "none"`). Stored documents keep rendering as they do today —
+  flipping the engine default would move every existing diagram's wires,
+  which the byte-identical-render promise rules out. Graduate the flag
+  out of EXPERIMENTAL once it is the default.
+
 - **Second fabric provider: Juniper Mist** — the `TopologyProvider`
   abstraction is vendor-neutral by design (`src/connect/types.ts`), and the
   second real implementation that will prove it (rather than just assert it)
