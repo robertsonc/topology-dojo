@@ -1912,7 +1912,7 @@ describe('MCP tools', () => {
       expect(explicitDark).toBe(dark);
       expect(light).not.toBe(dark);
       expect(dark).toContain('fill="#0e1613"');
-      expect(light).toContain('fill="#f0f1f3"');
+      expect(light).toContain('fill="#ffffff"');
       expect(light).not.toContain('#e6e8e9'); // no light-on-light label text
       expect(light).toContain('ipsec'); // content intact
     });
@@ -1925,7 +1925,11 @@ describe('MCP tools', () => {
         theme: 'light',
       }) as string;
       expect(light).not.toBe(dark);
-      expect(light.match(/fill="#f0f1f3"/g)?.length).toBe(2); // both frames
+      expect(
+        light.match(
+          /<rect x="0" y="0" width="\d+" height="\d+" fill="#ffffff"\/>/g,
+        )?.length,
+      ).toBe(2); // both frames
       expect(light).toContain('background: #f0f1f3'); // player chrome
       expect(light).not.toContain('#e6e8e9');
       expect(dark).not.toContain('#f0f1f3');

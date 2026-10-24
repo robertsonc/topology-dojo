@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   LIGHT_BACKGROUND,
+  LIGHT_EXPORT_BACKGROUND,
   LIGHT_CANVAS,
   LIGHT_THEME_MAP,
   applyRenderTheme,
@@ -122,6 +123,29 @@ describe('LIGHT_THEME_MAP contrast (WCAG relative luminance)', () => {
     }
   });
 
+  it('every accent reads at ≥ 4.5:1 as label text on the white export page', () => {
+    for (const a of accents) {
+      const ratio = contrastRatio(a.to, LIGHT_EXPORT_BACKGROUND);
+      expect(
+        ratio,
+        `${a.from} → ${a.to}: ${ratio.toFixed(2)}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('the card border reads at ≥ 3:1 on the white card and both light backgrounds', () => {
+    const borders = LIGHT_THEME_MAP.filter((e) => e.role === 'border');
+    expect(borders.map((b) => b.from)).toEqual(['#3e4550']);
+    for (const b of borders)
+      for (const surface of [chip, bg, LIGHT_EXPORT_BACKGROUND]) {
+        const ratio = contrastRatio(b.to, surface);
+        expect(
+          ratio,
+          `${b.to} on ${surface}: ${ratio.toFixed(2)}`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+  });
+
   it('the page background and every light surface are light, every text dark', () => {
     expect(relativeLuminance(bg)).toBeGreaterThan(0.7);
     for (const s of LIGHT_THEME_MAP.filter((e) => e.role === 'surface'))
@@ -135,7 +159,7 @@ describe('LIGHT_THEME_MAP contrast (WCAG relative luminance)', () => {
       { from: '292d3a', rgb: '41,45,58', to: '#ffffff', toRgb: '255,255,255' },
       { from: '22252e', rgb: '34,37,46', to: '#f2f5f8', toRgb: '242,245,248' },
       { from: '1d1f27', rgb: '29,31,39', to: '#e9edf2', toRgb: '233,237,242' },
-      { from: '3e4550', rgb: '62,69,80', to: '#ccd4dc', toRgb: '204,212,220' },
+      { from: '3e4550', rgb: '62,69,80', to: '#7f8d9c', toRgb: '127,141,156' },
       { from: 'e6e8e9', rgb: '230,232,233', to: '#1d1f27', toRgb: '29,31,39' },
     ]);
   });
@@ -198,7 +222,7 @@ describe('applyRenderTheme (colour pass)', () => {
   it('themeBackground picks the wrapper backdrop', () => {
     expect(themeBackground(undefined)).toBe('#0e1613');
     expect(themeBackground('dark')).toBe('#0e1613');
-    expect(themeBackground('light')).toBe(LIGHT_BACKGROUND);
+    expect(themeBackground('light')).toBe(LIGHT_EXPORT_BACKGROUND);
   });
 });
 
@@ -221,7 +245,7 @@ describe('headless render with theme', () => {
   it('light renders the light backdrop, dark text and no dark-tuned constants', () => {
     const svg = renderDocumentToSVG(doc, 0, { theme: 'light' });
     expect(svg).not.toBe(renderDocumentToSVG(doc));
-    expect(svg).toContain(`fill="${LIGHT_BACKGROUND}"`);
+    expect(svg).toContain(`fill="${LIGHT_EXPORT_BACKGROUND}"`);
     expect(svg).not.toContain('#0e1613');
     expect(svg).not.toContain('#e6e8e9');
     expect(svg).toContain('fill="#1d1f27"'); // label text
@@ -256,7 +280,7 @@ describe('headless render with theme', () => {
     const svg = renderPageToSVG(doc.pages[0]!, doc.customNodes, {
       theme: 'light',
     });
-    expect(svg).toContain(`fill="${LIGHT_BACKGROUND}"`);
+    expect(svg).toContain(`fill="${LIGHT_EXPORT_BACKGROUND}"`);
     expect(svg).not.toContain('#e6e8e9');
   });
 
@@ -271,7 +295,13 @@ describe('headless render with theme', () => {
     expect(light).toContain(`background: ${LIGHT_BACKGROUND}`);
     expect(light).not.toContain('#14161c');
     expect(
-      light.match(new RegExp(`fill="${LIGHT_BACKGROUND}"`, 'g'))?.length,
+      // One page backdrop per frame (white chips also use #ffffff).
+      light.match(
+        new RegExp(
+          `<rect x="0" y="0" width="\\d+" height="\\d+" fill="${LIGHT_EXPORT_BACKGROUND}"/>`,
+          'g',
+        ),
+      )?.length,
     ).toBe(2);
     expect(light).not.toContain('#e6e8e9');
   });
