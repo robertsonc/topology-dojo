@@ -324,7 +324,7 @@ with. Fidelity per format (what survives, what drops) is documented in
 | `png`            | MCP image + JSON summary                | One page (`pageIndex`). Print DPI stamped; `dpi` / `paper` / `visibleLayers` / `theme`.                                            |
 | `pdf`            | Embedded `application/pdf` resource     | All pages (or `pageIndex`) on the document sheet size or `paper` (ANSI A–E, A4–A1, `fit`); raster.                                 |
 | `drawio`         | Embedded XML resource                   | Layers → draw.io layers, zones → containers, metadata as shape data; re-imports with `import_topology`.                            |
-| `vsdx`           | Embedded Visio resource                 | Shapes, glued dynamic connectors, page layers, metadata as Shape Data.                                                             |
+| `vsdx`           | Embedded Visio resource                 | Shapes, glued dynamic connectors, page layers, metadata as Shape Data; wire sheets use model masters glued at named ports.         |
 | `pptx`           | Embedded PowerPoint resource            | 16:9 slide per page or per layer (`slides`); editable shapes or `pptxMode: "image"`.                                               |
 | `mermaid`        | Plain text                              | Flowchart with subgraphs; one page or all pages.                                                                                   |
 | `cable-schedule` | Embedded CSV (default) or XLSX resource | One row per link: both ends' device / model / interface / optic, media, negotiated speed, bundle, layer, notes (`scheduleFormat`). |
@@ -555,8 +555,10 @@ the other face when the catalog only has art for it), cables plug into the
 true port positions, and unbound nodes draw exactly as on a logical page.
 Server renders only — `render_svg`, `export_topology` (PNG, PDF, PPTX image
 mode), `view_topology`, `export_flipbook`, `inspect_render`; the browser
-editor (no catalog) and the editable-shape exports (draw.io, `.vsdx`, PPTX
-shapes) draw the page logical for now.
+editor (no catalog), draw.io and PPTX shapes draw the page logical.
+`export_topology format:"vsdx"` uses native per-model Visio masters, and
+cables are glued to each port's named connection point (see
+[Exports](../../docs/EXPORTS.md#wire-sheet-pages)).
 
 - **Scale.** Panels draw at 1:k of their millimetres on a sheet at 96 px/in
   — true to scale when the PDF prints on its sheet size. `panelScale: k`
