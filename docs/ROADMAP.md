@@ -141,8 +141,8 @@ packets:
   primary links and labels at 1.5-2.8:1 because the engine's low-opacity,
   glow-dependent strokes survive `flattenViewer` without their glow. Fix at
   the source (role-aware engine alphas, drop glow underlays, white export
-  background, light minimums) with a composited-contrast test. Scheduled
-  after hw-catalog Phase 4 merges, before Phase 5. Brief:
+  background, light minimums) with a composited-contrast test. In review
+  (after hw-catalog Phase 4, before Phase 5). Brief and outcome:
   [`futures/light-theme-contrast.md`](futures/light-theme-contrast.md).
 
 - **Clean render profile for exports and the inline view** — measured on a

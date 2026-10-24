@@ -21,6 +21,15 @@ from one shared, format-neutral scene (`src/export/scene.ts`), so they agree
 on where a node sits, which zone holds it, which layer it is on and which way
 a wire runs.
 
+## Light theme
+
+`theme: "light"` exports (SVG, PNG, PDF, flipbook frames, the inline view)
+sit on white and draw links, flows, zone borders and labels solid: the
+engine's dark-tuned translucent strokes and glows are themed per paint role,
+and a render-level test holds primary strokes to ≥ 3:1 and labels to ≥
+4.5:1 as composited ([`futures/light-theme-contrast.md`](futures/light-theme-contrast.md)).
+Fill washes (cloud fills, zone tints) stay translucent.
+
 ## PNG and PDF — print-true raster
 
 Rendered from the same engine SVG as the canvas (`calm`: animation frozen).
