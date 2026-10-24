@@ -6,6 +6,7 @@
  * name internal documents; this in-Worker read is the only way in.
  */
 import { CatalogLoader } from '../src/catalog/loader.js';
+import type { WorkerEnv } from './env.js';
 
 /** Only bundle / manifest names; never a path. */
 const FILE_RE = /^(manifest|catalog-[0-9a-f]{12})\.json$/;
@@ -16,10 +17,14 @@ const ASSET_ORIGIN = 'https://assets.invalid';
 let loader: CatalogLoader | null = null;
 
 /** One loader (and so one LRU) per isolate. */
-export function workerCatalogLoader(assets: Fetcher): CatalogLoader {
+export function workerCatalogLoader(
+  assets: WorkerEnv['ASSETS'],
+): CatalogLoader {
   loader ??= new CatalogLoader(async (file) => {
     if (!FILE_RE.test(file)) throw new Error(`refusing catalog file "${file}"`);
-    const res = await assets.fetch(`${ASSET_ORIGIN}/catalog/${file}`);
+    const res = await assets.fetch(
+      new Request(`${ASSET_ORIGIN}/catalog/${file}`),
+    );
     if (!res.ok)
       throw new Error(`asset /catalog/${file} returned ${res.status}`);
     return res.text();

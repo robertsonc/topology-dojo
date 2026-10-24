@@ -819,6 +819,7 @@ function loadDoc(
     'sheet',
     'tiers',
     'bundles',
+    'catalogVersion',
   ] as const) {
     if (next[key] === undefined) delete doc[key];
     else (doc[key] as unknown) = structuredClone(next[key]);

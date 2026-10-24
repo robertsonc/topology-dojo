@@ -29,6 +29,12 @@ export interface BundleDef {
   kind?: BundleKind;
   /** Port-table text (defaults to the id). */
   label?: string;
+  /**
+   * LACP on a lag bundle (hw-catalog): `true` / `false` for every node the
+   * bundle spans, or per node id — one name can span two nodes (an ESI-LAG)
+   * that need different settings. Absent = not requested.
+   */
+  lacp?: boolean | Record<string, boolean>;
 }
 
 export function defineBundle(
@@ -40,6 +46,7 @@ export function defineBundle(
     id: def.id,
     ...(def.kind !== undefined && def.kind !== 'lag' ? { kind: def.kind } : {}),
     ...(def.label !== undefined ? { label: def.label } : {}),
+    ...(def.lacp !== undefined ? { lacp: def.lacp } : {}),
   };
   const i = bundles.findIndex((b) => b.id === def.id);
   if (i >= 0) bundles[i] = next;

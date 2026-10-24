@@ -16,7 +16,7 @@ catalog/
     glyphs/symbols/*.svg       topology symbols (currentColor)
     optics.json                generic IEEE optic types + cage acceptance
   fixtures/
-    wiring/*.json              14 golden wiring fixtures + expected rule codes
+    wiring/*.json              15 golden wiring fixtures + expected rule codes (Python + TS)
     resolve/golden.json        resolve_interface parity golden (Python ⇄ TypeScript)
   tools/                       Python reference tools (stdlib + jsonschema)
     catalog_lib.py             loader + resolve_interface (the spec the TS port matches)

@@ -1,6 +1,6 @@
 # Sitrep 01 — hw-catalog Phase 1: catalog core
 
-Status: **done**, in review. Next: Phase 2 (bind hardware + validate).
+Status: **done**, merged (PR #285). Next: Phase 2 (bind hardware + validate).
 
 ## What landed
 

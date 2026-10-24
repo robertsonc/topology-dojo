@@ -14,6 +14,7 @@
  * so canvas, exports and the headless render agree; the layout analyzer
  * and the tiered layout read the same boxes.
  */
+import { endPortLabel } from '../api/hardware.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { LinkConfig, NodeConfig } from '../vendor/topology-ds.js';
 import type { BoundsRect } from '../api/geometry.js';
@@ -112,7 +113,7 @@ export function portTableRows(
     if (l.to === node.id) ends.push('to');
     for (const end of ends) {
       const far = end === 'from' ? 'to' : 'from';
-      const port = text(end === 'from' ? l.fromLabel : l.toLabel) || '-';
+      const port = endPortLabel(l, end) || '-';
       const bundleName = endBundle(l, end);
       const bundleDef = bundleName
         ? doc.bundles?.find((b) => b.id === bundleName)
@@ -128,7 +129,7 @@ export function portTableRows(
         : text(l.bandwidth) || text(l.transport) || '-';
       const farNode = nodes.get(l[far]);
       const farName = farNode ? text(farNode.label) || farNode.id : l[far];
-      const farPort = text(far === 'from' ? l.fromLabel : l.toLabel);
+      const farPort = endPortLabel(l, far);
       const icl =
         bundleName && bundleKind(doc.bundles, bundleName) === 'icl'
           ? ' (ICL)'

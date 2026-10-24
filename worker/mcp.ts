@@ -29,6 +29,7 @@ import { EdgeConnectProvider } from '../src/connect/edgeconnect.js';
 import { renderDocument } from './render.js';
 import { WORKER_MAX_PIXELS, workerRasterizer } from './raster.js';
 import type { WorkerEnv } from './env.js';
+import { workerCatalogLoader } from './catalog.js';
 import { analyticsEnabled } from './env.js';
 import { WorkspaceService } from './workspaces.js';
 import { workspaceToolNames } from './workspace-tools.js';
@@ -130,6 +131,7 @@ export class TopologyMcp extends McpAgent<WorkerEnv> {
         renderDocument,
         rasterizer: workerRasterizer,
         maxRasterPixels: WORKER_MAX_PIXELS,
+        catalog: workerCatalogLoader(this.env.ASSETS),
         ...(share
           ? {
               publishTopology: (doc: TopologyDocument) => this.publish(doc),

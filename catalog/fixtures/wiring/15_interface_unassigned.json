@@ -1,0 +1,30 @@
+{
+  "description": "Bound endpoint with no interface yet: warning only, end unconstrained",
+  "nodes": [
+    {
+      "id": "br-ec",
+      "model": "edgeconnect-ec-10104"
+    },
+    {
+      "id": "fw",
+      "model": "juniper-srx300"
+    }
+  ],
+  "links": [
+    {
+      "id": "l1",
+      "a": {
+        "node": "br-ec"
+      },
+      "z": {
+        "node": "fw",
+        "if": "ge-0/0/1"
+      }
+    }
+  ],
+  "bonds": [],
+  "expect": [
+    "W_INTERFACE_UNASSIGNED",
+    "I_SCHEMATIC_PANEL"
+  ]
+}

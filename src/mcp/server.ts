@@ -27,6 +27,7 @@ import { EdgeConnectProvider } from '../connect/edgeconnect.js';
 import { MockProvider } from '../connect/mock.js';
 import type { TopologyProvider } from '../connect/types.js';
 import { registerTopologyTools } from './register.js';
+import { nodeCatalogLoader } from '../server/catalog.js';
 
 function providerFromEnv(): TopologyProvider | undefined {
   if (process.env.TOPOLOGY_PROVIDER === 'mock') return new MockProvider();
@@ -47,6 +48,7 @@ registerTopologyTools(server, {
   renderDocument: renderDocumentToSVG,
   rasterizer: nodeRasterizer,
   maxRasterPixels: NODE_MAX_PIXELS,
+  catalog: nodeCatalogLoader(),
   writeExport: (requested, bytes) => writeExportFile(root, requested, bytes),
   ...(provider ? { provider } : {}),
 });

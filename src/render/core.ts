@@ -17,6 +17,7 @@ import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
+import { withInterfaceLabels } from '../api/hardware.js';
 import { pageHasPills, pillBands, stripPillLabels } from './port-pills.js';
 import { registerHitBoxes } from './hit-boxes.js';
 import {
@@ -177,7 +178,7 @@ function renderPageUnthemed(
   for (const l of links) {
     const { id, ...cfg } = stripPillLabels(
       page,
-      resolveLinkStyle(l, opts.linkStyles),
+      resolveLinkStyle(withInterfaceLabels(l), opts.linkStyles),
       nodeById,
     );
     topo.link(id, fadedEmph(id, cfg));

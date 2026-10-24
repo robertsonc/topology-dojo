@@ -1,0 +1,79 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`validate_topology on unbound documents is unchanged > EdgeHA_after 1`] = `
+{
+  "layoutClean": true,
+  "problems": [],
+  "valid": true,
+}
+`;
+
+exports[`validate_topology on unbound documents is unchanged > sampleDocument 1`] = `
+{
+  "layoutClean": true,
+  "problems": [],
+  "valid": true,
+}
+`;
+
+exports[`validate_topology on unbound documents is unchanged > sampleDocument-broken 1`] = `
+{
+  "layoutClean": false,
+  "problems": [
+    {
+      "level": "error",
+      "message": "duplicate node id "user"",
+      "where": "page[0] "Frame 1"",
+    },
+    {
+      "level": "error",
+      "message": "unknown node type "no-such-type"",
+      "where": "page[0] "Frame 1" node "odd"",
+    },
+    {
+      "level": "warning",
+      "message": "unconnected node — no link, flow, zone, or marker references it",
+      "where": "page[0] "Frame 1" node "odd"",
+    },
+    {
+      "level": "warning",
+      "message": "unknown link type "lan"",
+      "where": "page[0] "Frame 1" link "dangling"",
+    },
+    {
+      "level": "error",
+      "message": "'to' references missing "nowhere"",
+      "where": "page[0] "Frame 1" link "dangling"",
+    },
+    {
+      "level": "warning",
+      "message": "node "odd" extends past the page edge",
+      "where": "page[0] "Frame 1"",
+    },
+    {
+      "level": "warning",
+      "message": "nodes "user" and "ec" overlap",
+      "where": "page[0] "Frame 1"",
+    },
+    {
+      "level": "warning",
+      "message": "nodes "user" and "user" overlap",
+      "where": "page[0] "Frame 1"",
+    },
+    {
+      "level": "warning",
+      "message": "nodes "ec" and "user" overlap",
+      "where": "page[0] "Frame 1"",
+    },
+  ],
+  "valid": false,
+}
+`;
+
+exports[`validate_topology on unbound documents is unchanged > venue-distribution-leaf 1`] = `
+{
+  "layoutClean": true,
+  "problems": [],
+  "valid": true,
+}
+`;
