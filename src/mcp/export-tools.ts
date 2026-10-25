@@ -135,7 +135,7 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
       .describe(
         'png: one page, print-true raster (image content). pdf: raster pages on real paper sizes (ANSI / A-series from the document sheet, or `paper`). ' +
           'drawio: editable draw.io file — layers → draw.io layers, zones → containers, metadata as shape data; re-importable with import_topology. ' +
-          'vsdx: editable Visio — shapes, glued connectors, page layers, metadata as Shape Data. ' +
+          'vsdx: editable Visio — shapes, glued connectors, page layers, metadata as Shape Data; wire-sheet pages use catalog model masters with connectors glued to named port connection points. ' +
           'pptx: one 16:9 slide per page (or per layer) with editable shapes, or the rendered image. ' +
           'mermaid: flowchart text (subgraphs from zones; no coordinates). ' +
           'cable-schedule: one row per link — both ends’ device, model, interface and optic, media, negotiated speed, bundle, layer, notes (catalog rule codes) — as CSV (default) or XLSX (`scheduleFormat`).',
@@ -303,7 +303,12 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             text = documentToMermaid(doc, pageIndex);
             break;
           case 'vsdx':
-            bytes = documentToVsdx(doc);
+            // Wire-sheet pages use catalog model masters when the catalog
+            // loaded; otherwise they export logical, as before.
+            bytes = documentToVsdx(
+              doc,
+              loaded.hw.hardware ? { hardware: loaded.hw.hardware } : {},
+            );
             summary.pages = doc.pages.length;
             break;
           case 'cable-schedule': {

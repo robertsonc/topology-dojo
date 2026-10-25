@@ -121,9 +121,45 @@ out. Mermaid has no coordinates, layers, port labels or metadata — those drop.
 A page with `view: "wiresheet"` (hw-catalog) draws hardware-bound nodes as
 their real panels with cables at the true ports. PNG, PDF, PPTX image mode,
 SVG, the flipbook and the inline view render it (true to scale on the
-sheet's paper — see the MCP README). draw.io, `.vsdx` and PPTX shapes export
-the page logical for now; native Visio masters with named connection points
-are the next phase.
+sheet's paper — see the MCP README). draw.io and PPTX shapes export the page
+logical.
+
+**`.vsdx` on wire sheets** (hw-catalog Phase 5) uses native Visio masters:
+
+- **One master per model** (per model, face and stack size), in the
+  document stencil, at the panel's real size in inches. Instances on the
+  page are sized to the page scale.
+  - The geometry is the sanitized panel glyph's rectangles and circles:
+    the chassis body filled, ports and other features as outlines.
+  - Where the catalog has no art, the master is drawn from the port
+    geometry.
+- **A named connection point at every port.** The row name is the
+  interface with Visio-safe characters (`1/1/1` → `P_1_1_1`). The prompt
+  (the tooltip) is the exact OS-native name (`1/1/1`, `wan0`, `ge-0/0/0`).
+  A VSF stack master repeats the per-member ports (`2/1/1` …).
+- **Shape Data:** Vendor, Model, ModelId, SKU, CatalogVersion, Hostname,
+  Confidence (panel position confidence), GAEligible and Face. Instances
+  set Hostname, SKU and `DojoId`.
+- **Cables glued to the port:** each cable end is a point glue
+  (`PAR(PNT(Sheet.N!Connections.Xi, …))` plus a `Connect` to that row). The
+  drawn path follows the wire-sheet route, and the interface name is the
+  end label.
+
+**Lossy:**
+
+- one fill per master: no silkscreen text, no per-port colour, no glyph
+  paths or transformed elements;
+- Visio may re-route a dynamic connector when a panel moves (the ends stay
+  on their ports);
+- port pills, panel badges and the notes box are not drawn.
+
+Without the catalog (or with an unknown pinned version) the page exports
+logical, as before.
+
+**Stencil:** `npm run catalog:stencil -- --out hw.vssx` writes a `.vssx` with
+one master per GA-eligible model (`--all` adds the rest, `--version` picks a
+published bundle). These are the same masters, single-chassis, front face
+(rear where only the rear has art).
 
 ## Cable schedule (CSV / XLSX) — the sheet installers work from
 
@@ -173,6 +209,11 @@ and downloads in every format above (handed to the host with
 [`src/mcp/README.md`](../src/mcp/README.md#inline-view-mcp-apps).
 
 ## Verification
+
+The wire-sheet `.vsdx` is converted by LibreOffice headless in CI (the
+`visio` job, `src/export/visio-render.test.ts`). The test checks the page
+count, the paper size and a low-DPI golden, and renders one catalog-sheet
+page per seed model.
 
 Structure is unit-tested (`src/export/*.test.ts`, `src/import/drawio.test.ts`,
 `src/mcp/export-tools.test.ts`; Worker rasterization in

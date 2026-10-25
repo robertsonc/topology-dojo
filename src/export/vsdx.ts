@@ -37,6 +37,23 @@ import {
   type SceneZone,
 } from './scene.js';
 import {
+  buildMaster,
+  masterContentsXml,
+  masterFace,
+  masterKey,
+  masterMembers,
+  mastersXml,
+  VISIO_MASTER_CT,
+  VISIO_MASTER_REL,
+  type VisioMaster,
+} from './visio-masters.js';
+import {
+  wiresheetLayout,
+  isWiresheetPage,
+  type WiresheetHardware,
+  type WiresheetLayout,
+} from '../render/wiresheet.js';
+import {
   CT,
   REL,
   XML_HEADER,
@@ -271,8 +288,17 @@ function connectionSection(w: number, h: number): string {
   );
 }
 
+/** A connector end glued to a master connection point. */
+interface PointGlue {
+  sheet: number;
+  /** Connection row index (0-based). */
+  ix: number;
+}
+
 interface PageCtx {
   heightIn: number;
+  /** Wire-sheet glue for link ends: `${linkId}|from|to` → point. */
+  pointGlue: Map<string, PointGlue>;
   layerIndex: Map<string, number>;
   nextId: () => number;
   idOf: Map<string, number>;
@@ -479,10 +505,25 @@ function connectorShape(
   const H = e.y - b.y;
   const fromId = l.fromIsNode ? ctx.idOf.get(l.from) : undefined;
   const toId = l.toIsNode ? ctx.idOf.get(l.to) : undefined;
-  const glue = (n: string, v: number, sheet: number | undefined): string =>
-    sheet !== undefined
-      ? fcell(n, v, '_WALKGLUE(BegTrigger,EndTrigger,WalkPreference)')
-      : cell(n, v);
+  const fromPt = ctx.pointGlue.get(`${l.id}|from`);
+  const toPt = ctx.pointGlue.get(`${l.id}|to`);
+  // Point glue (a named port on a hardware master) holds the end on that
+  // connection point; shape glue walks to the nearest side.
+  const glue = (
+    n: string,
+    v: number,
+    sheet: number | undefined,
+    pt: PointGlue | undefined,
+  ): string =>
+    pt
+      ? fcell(
+          n,
+          v,
+          `PAR(PNT(Sheet.${pt.sheet}!Connections.X${pt.ix + 1},Sheet.${pt.sheet}!Connections.Y${pt.ix + 1}))`,
+        )
+      : sheet !== undefined
+        ? fcell(n, v, '_WALKGLUE(BegTrigger,EndTrigger,WalkPreference)')
+        : cell(n, v);
   const props: [string, string][] = [
     ['DojoType', l.type],
     ['DojoId', l.id],
@@ -503,11 +544,19 @@ function connectorShape(
       .join('') +
     '</Section>';
 
-  if (fromId !== undefined)
+  if (fromPt)
+    connects.push(
+      `<Connect FromSheet="${id}" FromCell="BeginX" FromPart="9" ToSheet="${fromPt.sheet}" ToCell="Connections.X${fromPt.ix + 1}" ToPart="${100 + fromPt.ix}"/>`,
+    );
+  else if (fromId !== undefined)
     connects.push(
       `<Connect FromSheet="${id}" FromCell="BeginX" FromPart="9" ToSheet="${fromId}" ToCell="PinX" ToPart="3"/>`,
     );
-  if (toId !== undefined)
+  if (toPt)
+    connects.push(
+      `<Connect FromSheet="${id}" FromCell="EndX" FromPart="12" ToSheet="${toPt.sheet}" ToCell="Connections.X${toPt.ix + 1}" ToPart="${100 + toPt.ix}"/>`,
+    );
+  else if (toId !== undefined)
     connects.push(
       `<Connect FromSheet="${id}" FromCell="EndX" FromPart="12" ToSheet="${toId}" ToCell="PinX" ToPart="3"/>`,
     );
@@ -521,15 +570,32 @@ function connectorShape(
     fcell('LocPinX', W / 2, 'Width*0.5') +
     fcell('LocPinY', H / 2, 'Height*0.5') +
     cell('Angle', 0) +
-    glue('BeginX', b.x, fromId) +
-    glue('BeginY', b.y, fromId) +
-    glue('EndX', e.x, toId) +
-    glue('EndY', e.y, toId) +
+    glue('BeginX', b.x, fromId, fromPt) +
+    glue('BeginY', b.y, fromId, fromPt) +
+    glue('EndX', e.x, toId, toPt) +
+    glue('EndY', e.y, toId, toPt) +
     (fromId !== undefined
       ? fcell('BegTrigger', 2, `_XFTRIGGER(Sheet.${fromId}!EventXFMod)`)
       : '') +
     (toId !== undefined
       ? fcell('EndTrigger', 2, `_XFTRIGGER(Sheet.${toId}!EventXFMod)`)
+      : '') +
+    // A labelled connector gets a real text box: by default it is as wide
+    // as the connector's horizontal extent, which wraps a vertical cable's
+    // label one letter per line.
+    (l.label
+      ? (() => {
+          const tw = Math.max(0.6, l.label.length * 0.075);
+          return (
+            fcell('TxtPinX', W / 2, 'Width*0.5') +
+            fcell('TxtPinY', H / 2, 'Height*0.5') +
+            fcell('TxtWidth', tw, `${r4(tw)} in`) +
+            fcell('TxtHeight', 0.2, '0.2 in') +
+            fcell('TxtLocPinX', tw / 2, 'TxtWidth*0.5') +
+            fcell('TxtLocPinY', 0.1, 'TxtHeight*0.5') +
+            cell('TxtAngle', 0)
+          );
+        })()
       : '') +
     cell('ObjType', 2) +
     cell('ShapeRouteStyle', l.routing === 'orthogonal' ? 1 : 16) +
@@ -549,14 +615,120 @@ function connectorShape(
   );
 }
 
-function pageContents(page: ScenePage, ctx: PageCtx): string {
+/** Wire-sheet hardware on one page: the node's master and its panel box. */
+interface PageHardware {
+  ws: WiresheetLayout;
+  master: Map<string, VisioMaster>;
+}
+
+/**
+ * A bound node on a wire-sheet page: an instance of its model master at the
+ * panel's page-scale size (geometry and connection points scale with it),
+ * with the node's hostname and SKU as Shape Data.
+ */
+function masterInstanceShape(
+  ctx: PageCtx,
+  n: SceneNode,
+  m: VisioMaster,
+  rect: { x: number; y: number; w: number; h: number },
+  sku: string | undefined,
+): string {
+  const id = ctx.nextId();
+  ctx.idOf.set(n.id, id);
+  const W = rect.w * PX;
+  const host = n.label || n.id;
+  return (
+    `<Shape ID="${id}" NameU="${xmlEsc(m.nameU)}.${id}" Name="${xmlEsc(host)}" Type="Shape" Master="${m.id}">` +
+    cell('PinX', (rect.x + rect.w / 2) * PX) +
+    cell('PinY', ctx.heightIn - (rect.y + rect.h / 2) * PX) +
+    cell('Width', W) +
+    cell('Height', rect.h * PX) +
+    fcell('LocPinX', W / 2, 'Width*0.5') +
+    fcell('LocPinY', (rect.h * PX) / 2, 'Height*0.5') +
+    cell('Angle', 0) +
+    layerMember(ctx, n.layer) +
+    m.instanceXml(W, rect.h * PX) +
+    '<Section N="Property">' +
+    `<Row N="Hostname">${cell('Value', host, ' U="STR"')}</Row>` +
+    (sku ? `<Row N="SKU">${cell('Value', sku, ' U="STR"')}</Row>` : '') +
+    `<Row N="DojoId">${cell('Label', 'DojoId')}${cell('Value', n.id, ' U="STR"')}${cell('Type', 0)}</Row>` +
+    '</Section>' +
+    `<Text>${xmlEsc(host)}</Text>` +
+    '</Shape>'
+  );
+}
+
+function pageContents(
+  page: ScenePage,
+  ctx: PageCtx,
+  hw?: PageHardware,
+): string {
   const shapes: string[] = [];
   const connects: string[] = [];
   for (const z of page.zones) shapes.push(zoneShape(ctx, z));
-  for (const n of page.nodes) shapes.push(nodeShape(ctx, n));
-  for (const l of page.links) {
+  for (const n of page.nodes) {
+    const panel = hw?.ws.panels.find((p) => p.nodeId === n.id);
+    const m = panel && hw?.master.get(n.id);
+    shapes.push(
+      panel && m
+        ? masterInstanceShape(
+            ctx,
+            n,
+            m,
+            panel.rect,
+            hw!.ws.page.nodes.find((x) => x.id === n.id)?.hw?.sku,
+          )
+        : nodeShape(ctx, n),
+    );
+  }
+  // Ends on a port: glue to the master's connection point, and start the
+  // drawn route at the port (the engine route leaves by the panel edge).
+  if (hw)
+    for (const e of hw.ws.ends) {
+      const m = hw.master.get(e.nodeId);
+      const ix = m?.connectionIndex.get(e.interface);
+      const sheet = ctx.idOf.get(e.nodeId);
+      if (ix !== undefined && sheet !== undefined)
+        ctx.pointGlue.set(`${e.linkId}|${e.end}`, { sheet, ix });
+    }
+  for (const scene of page.links) {
+    let l = scene;
+    const route = hw?.ws.routes.get(scene.id);
+    if (hw && route) {
+      const a = hw.ws.ends.find(
+        (e) => e.linkId === scene.id && e.end === 'from',
+      );
+      const z = hw.ws.ends.find((e) => e.linkId === scene.id && e.end === 'to');
+      const pts = route.map((p) => ({ x: p.x, y: p.y }));
+      if (a) pts.unshift(a.port);
+      else pts[0] = scene.points[0]!;
+      if (z) pts.push(z.port);
+      else pts[pts.length - 1] = scene.points[scene.points.length - 1]!;
+      // Port names travel as the end labels (small text by each port).
+      l = {
+        ...scene,
+        points: pts,
+        ...(a ? { fromLabel: a.interface } : {}),
+        ...(z ? { toLabel: z.interface } : {}),
+      };
+    }
     shapes.push(connectorShape(ctx, l, connects));
-    if (l.fromLabel)
+    // Wire-sheet port names sit on the lead, outside the panel.
+    const leadOf = (end: 'from' | 'to') => {
+      const e = hw?.ws.ends.find((x) => x.linkId === scene.id && x.end === end);
+      return e
+        ? { x: e.pill.x + e.pill.w / 2, y: e.pill.y + e.pill.h / 2 }
+        : null;
+    };
+    const fromAt = leadOf('from');
+    const toAt = leadOf('to');
+    if (fromAt && l.fromLabel)
+      shapes.push(
+        noteShape(ctx, l.fromLabel, fromAt, l.color, l.layer, 'Port'),
+      );
+    if (toAt && l.toLabel)
+      shapes.push(noteShape(ctx, l.toLabel, toAt, l.color, l.layer, 'Port'));
+    if (!fromAt && l.fromLabel)
       shapes.push(
         noteShape(
           ctx,
@@ -567,7 +739,7 @@ function pageContents(page: ScenePage, ctx: PageCtx): string {
           'Port',
         ),
       );
-    if (l.toLabel)
+    if (!toAt && l.toLabel)
       shapes.push(
         noteShape(
           ctx,
@@ -603,7 +775,7 @@ function layerSection(page: ScenePage): string {
   );
 }
 
-function documentXml(): string {
+export function documentXml(): string {
   // One "No Style" stylesheet carrying every default the shapes inherit.
   const style =
     `<StyleSheet ID="0" NameU="No Style" Name="No Style">` +
@@ -674,8 +846,43 @@ function pageNames(pages: ScenePage[]): string[] {
 }
 
 /** The whole document as a .vsdx package. */
-export function documentToVsdx(doc: TopologyDocument): Uint8Array<ArrayBuffer> {
+export function documentToVsdx(
+  doc: TopologyDocument,
+  opts: { hardware?: WiresheetHardware } = {},
+): Uint8Array<ArrayBuffer> {
   const scene = buildScene(doc);
+  // Hardware masters (wire-sheet pages), one per model / face / stack size.
+  const masters = new Map<string, VisioMaster>();
+  const pageHw: (PageHardware | undefined)[] = doc.pages.map((p) => {
+    if (!opts.hardware || !isWiresheetPage(p)) return undefined;
+    const ws = wiresheetLayout(doc, p, opts.hardware);
+    if (!ws) return undefined;
+    const { catalog } = opts.hardware;
+    const byNode = new Map<string, VisioMaster>();
+    for (const panel of ws.panels) {
+      const node = p.nodes.find((n) => n.id === panel.nodeId)!;
+      const face = masterFace(
+        catalog,
+        panel.platform,
+        node.hw?.face ?? 'front',
+      );
+      const members = masterMembers(panel.model, node.hw?.stackMembers);
+      const key = masterKey(panel.model.id, face, members);
+      let m = masters.get(key);
+      if (!m) {
+        m = buildMaster(
+          catalog,
+          panel.model.id,
+          face,
+          members,
+          masters.size + 2,
+        );
+        masters.set(key, m);
+      }
+      byNode.set(panel.nodeId, m);
+    }
+    return { ws, master: byNode };
+  });
   const names = pageNames(scene.pages);
   const parts: Record<string, string | Uint8Array> = {};
   const overrides: Record<string, string> = {
@@ -696,6 +903,7 @@ export function documentToVsdx(doc: TopologyDocument): Uint8Array<ArrayBuffer> {
     let seq = 0;
     const ctx: PageCtx = {
       heightIn: hIn,
+      pointGlue: new Map(),
       layerIndex: new Map(page.layers.map((l, ix) => [l.id, ix])),
       nextId: () => ++seq,
       idOf: new Map(),
@@ -703,16 +911,26 @@ export function documentToVsdx(doc: TopologyDocument): Uint8Array<ArrayBuffer> {
       mediaSeq,
     };
     const file = `page${i + 1}.xml`;
-    parts[`visio/pages/${file}`] = pageContents(page, ctx);
+    const hw = pageHw[i];
+    parts[`visio/pages/${file}`] = pageContents(page, ctx, hw);
     overrides[`/visio/pages/${file}`] = VCT.page;
-    if (ctx.media.length) {
-      parts[`visio/pages/_rels/${file}.rels`] = relsXml(
-        ctx.media.map((m) => ({
+    const masterIndex = [...masters.values()];
+    const pageMasters = hw
+      ? [...new Set(hw.master.values())].map((m) => ({
+          id: `rIdM${m.id}`,
+          type: VISIO_MASTER_REL.master,
+          target: `../masters/master${masterIndex.indexOf(m) + 1}.xml`,
+        }))
+      : [];
+    if (ctx.media.length || pageMasters.length) {
+      parts[`visio/pages/_rels/${file}.rels`] = relsXml([
+        ...ctx.media.map((m) => ({
           id: m.rid,
           type: REL.image,
           target: m.target,
         })),
-      );
+        ...pageMasters,
+      ]);
       for (const m of ctx.media) {
         parts[`visio/media/${m.target.slice('../media/'.length)}`] = m.bytes;
         defaults[m.ext === 'jpeg' ? 'jpg' : m.ext] =
@@ -745,6 +963,22 @@ export function documentToVsdx(doc: TopologyDocument): Uint8Array<ArrayBuffer> {
     );
   });
 
+  if (masters.size) {
+    const list = [...masters.values()];
+    parts['visio/masters/masters.xml'] = mastersXml(list);
+    overrides['/visio/masters/masters.xml'] = VISIO_MASTER_CT.masters;
+    parts['visio/masters/_rels/masters.xml.rels'] = relsXml(
+      list.map((_m, i) => ({
+        id: `rId${i + 1}`,
+        type: VISIO_MASTER_REL.master,
+        target: `master${i + 1}.xml`,
+      })),
+    );
+    list.forEach((m, i) => {
+      parts[`visio/masters/master${i + 1}.xml`] = masterContentsXml(m);
+      overrides[`/visio/masters/master${i + 1}.xml`] = VISIO_MASTER_CT.master;
+    });
+  }
   parts['[Content_Types].xml'] = contentTypesXml(defaults, overrides);
   parts['_rels/.rels'] = relsXml([
     { id: 'rId1', type: VREL.document, target: 'visio/document.xml' },
@@ -757,6 +991,15 @@ export function documentToVsdx(doc: TopologyDocument): Uint8Array<ArrayBuffer> {
   parts['visio/_rels/document.xml.rels'] = relsXml([
     { id: 'rId1', type: VREL.pages, target: 'pages/pages.xml' },
     { id: 'rId2', type: VREL.windows, target: 'windows.xml' },
+    ...(masters.size
+      ? [
+          {
+            id: 'rId3',
+            type: VISIO_MASTER_REL.masters,
+            target: 'masters/masters.xml',
+          },
+        ]
+      : []),
   ]);
   parts['visio/pages/pages.xml'] =
     XML_HEADER +

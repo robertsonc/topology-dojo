@@ -39,6 +39,9 @@ python3 -I -B catalog/tools/resolve_probe.py --catalog catalog/data --check cata
 npm run catalog:build     # -> public/catalog/catalog-<sha256-12>.json + manifest.json
 npm run catalog:types     # regenerate src/catalog/types.generated.ts from the schema
 npm run catalog:check     # CI: bundle and types are current
+
+# Visio stencil: one master per GA-eligible model (--all: every model).
+npm run catalog:stencil -- --out hw.vssx [--all] [--version <12-hex>]
 ```
 
 After editing anything in `data/`: run the three Python tools, then
