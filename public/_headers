@@ -16,3 +16,8 @@
 # showcase ships on the next deploy and is picked up within the window.
 /showcase/*
   Cache-Control: public, max-age=86400
+
+# Cinematic login scene; non-fingerprinted public assets used pre-auth.
+# Cache briefly so updates reach visitors without a hard refresh.
+/landing/*
+  Cache-Control: public, max-age=3600
