@@ -47,7 +47,7 @@ describe('GET /login', () => {
     expect(body).toContain('ILLUSTRATIVE DEMO');
     expect(body).toContain('/landing/scene.css');
     expect(body).toContain('/landing/scene.js');
-    expect(body.match(/href="\\/auth\\/github\\?go=%2F"/g)).toHaveLength(2);
+    expect(body.split('href="/auth/github?go=%2F"').length - 1).toBe(2);
     expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
     expect(res.headers.get('content-security-policy')).not.toContain('unsafe-inline');
   });
@@ -55,7 +55,7 @@ describe('GET /login', () => {
   it('keeps the post-login return path bound to the existing safe redirect', async () => {
     const res = await handle.fetch('/login?go=%2Fkeys');
     const body = await res.text();
-    expect(body.match(/href="\\/auth\\/github\\?go=%2Fkeys"/g)).toHaveLength(2);
+    expect(body.split('href="/auth/github?go=%2Fkeys"').length - 1).toBe(2);
   });
 
   it('allows anonymous requests for cinematic JS and CSS assets', async () => {
