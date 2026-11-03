@@ -11,3 +11,6 @@ catalog/fixtures/
 public/catalog/
 # Verbatim brief (kept as delivered).
 docs/futures/hw-catalog-build-prompt.md
+# Cinematic scene art is hand-minified for the public pre-auth path.
+public/landing/scene.css
+public/landing/scene.js
