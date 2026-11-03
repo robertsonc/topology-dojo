@@ -14,3 +14,5 @@ docs/futures/hw-catalog-build-prompt.md
 # Cinematic scene art is hand-minified for the public pre-auth path.
 public/landing/scene.css
 public/landing/scene.js
+# The Worker landing template embeds generated, tightly packed SVG/HTML scene art.
+worker/landing.ts
