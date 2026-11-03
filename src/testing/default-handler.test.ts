@@ -39,7 +39,7 @@ describe('GET /login', () => {
     expect(body).toContain('/auth/github?go=%2F');
   });
 
-  it('renders the cinematic hero with a non-animated first-paint poster', async () => {
+  it('renders the cinematic hero with a static poster', async () => {
     const res = await handle.fetch('/login');
     const body = await res.text();
     expect(body).toContain('Give the');
@@ -48,11 +48,15 @@ describe('GET /login', () => {
     expect(body).toContain('/landing/scene.css');
     expect(body).toContain('/landing/scene.js');
     expect(body.split('href="/auth/github?go=%2F"').length - 1).toBe(2);
-    expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
-    expect(res.headers.get('content-security-policy')).not.toContain('unsafe-inline');
+    expect(res.headers.get('content-security-policy')).toContain(
+      "script-src 'self'",
+    );
+    expect(res.headers.get('content-security-policy')).not.toContain(
+      'unsafe-inline',
+    );
   });
 
-  it('keeps the post-login return path bound to the existing safe redirect', async () => {
+  it('preserves the safe OAuth return path', async () => {
     const res = await handle.fetch('/login?go=%2Fkeys');
     const body = await res.text();
     expect(body.split('href="/auth/github?go=%2Fkeys"').length - 1).toBe(2);
@@ -64,7 +68,7 @@ describe('GET /login', () => {
         headers: { accept: '*/*' },
         redirect: 'manual',
       });
-      // This harness stubs ASSETS, so non-redirect proves the auth gate is skipped.
+      // This harness stubs ASSETS; non-redirect proves the auth gate is skipped.
       expect(res.status, path).not.toBe(302);
     }
   });
