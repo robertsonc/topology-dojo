@@ -1,3 +1,4 @@
+/* global document, window, setInterval, clearInterval, requestAnimationFrame, matchMedia, URLSearchParams, location, IntersectionObserver */
 (()=>{
   document.documentElement.classList.add('js-active');
   const scene=document.getElementById('scene'),world=document.getElementById('world'),replay=document.getElementById('replay');
