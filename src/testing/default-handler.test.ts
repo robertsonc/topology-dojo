@@ -39,6 +39,36 @@ describe('GET /login', () => {
     expect(body).toContain('/auth/github?go=%2F');
   });
 
+  it('renders the cinematic hero with a non-animated first-paint poster', async () => {
+    const res = await handle.fetch('/login');
+    const body = await res.text();
+    expect(body).toContain('Give the');
+    expect(body).toContain('id="scene" data-phase="3"');
+    expect(body).toContain('ILLUSTRATIVE DEMO');
+    expect(body).toContain('/landing/scene.css');
+    expect(body).toContain('/landing/scene.js');
+    expect(body.match(/href="\\/auth\\/github\\?go=%2F"/g)).toHaveLength(2);
+    expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
+    expect(res.headers.get('content-security-policy')).not.toContain('unsafe-inline');
+  });
+
+  it('keeps the post-login return path bound to the existing safe redirect', async () => {
+    const res = await handle.fetch('/login?go=%2Fkeys');
+    const body = await res.text();
+    expect(body.match(/href="\\/auth\\/github\\?go=%2Fkeys"/g)).toHaveLength(2);
+  });
+
+  it('allows anonymous requests for cinematic JS and CSS assets', async () => {
+    for (const path of ['/landing/scene.css', '/landing/scene.js']) {
+      const res = await handle.fetch(path, {
+        headers: { accept: '*/*' },
+        redirect: 'manual',
+      });
+      // This harness stubs ASSETS, so non-redirect proves the auth gate is skipped.
+      expect(res.status, path).not.toBe(302);
+    }
+  });
+
   it('includes the pre-login showcase filmstrip (ungated static stills)', async () => {
     const res = await handle.fetch('/login');
     const body = await res.text();
