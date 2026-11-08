@@ -1,7 +1,9 @@
 # Proposal 0011 — Icon gap review
 
-**Status:** Tier 1 in progress. Places shipped (2026-11-08: `branchoffice`,
-`campus`, `datacenter`, `homeoffice`); the rest of tier 1 is next.
+**Status:** Tier 1 shipped (2026-11-08). Places: `branchoffice`, `campus`,
+`datacenter`, `homeoffice`. The rest: `ssepop`, `nac`, `authserver`,
+`directory`, `siem`, `waf`, `l3switch`, `mobile`, `managedendpoint`,
+`orchestrator` (laptop stays `host`). Tier 2 is next when needed.
 
 **Captured:** 2026-11-08
 
@@ -29,20 +31,20 @@ Don't trade these away while closing gaps:
 
 "Have" means an icon exists, possibly under another name.
 
-### Tier 1 — directly used by SASE / SD-WAN / ZTNA diagrams (build next)
+### Tier 1 — directly used by SASE / SD-WAN / ZTNA diagrams (shipped)
 
-| Reference shape                                      | Have?                             | Why it matters here                                                                                                                           |
-| ---------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Branch office / Data centre / Campus / Home (Places) | **Shipped** (Places group)        | Site tiles for SD-WAN site detail (0010 slice 2) and remote-worker ZTNA stories                                                               |
-| SASE / SSE PoP                                       | Partial (`overlayCloud`)          | A dedicated SSE PoP glyph, distinct from a generic overlay cloud, for slice 4 on-ramps                                                        |
-| NAC                                                  | No                                | ClearPass in every campus and ZTNA posture story                                                                                              |
-| Auth server (RADIUS/TACACS+)                         | No                                | Pairs with NAC; distinct from the identity provider                                                                                           |
-| Directory                                            | Partial (`idcard`)                | AD / Entra ID as the account store, separate from the auth server answering requests                                                          |
-| SIEM                                                 | No                                | Log and telemetry destinations in SSE and SOC flows                                                                                           |
-| WAF                                                  | No                                | Private-app and SaaS protection paths                                                                                                         |
-| L3 switch                                            | No (`switch`, `switchEnterprise`) | EVPN-VXLAN leaf/spine and campus core; the reference palette's shape-semantics rule (router 4 arrows, L3 switch 8, switch 2) is worth copying |
-| Laptop / Mobile / Managed endpoint                   | Partial (`host`)                  | ZTNA and SWG stories need managed vs unmanaged devices                                                                                        |
-| Orchestrator / cloud controller                      | No (reference lacks it too)       | EdgeConnect Orchestrator, Mist cloud, Aruba Central: the management plane in every SD-WAN diagram                                             |
+| Reference shape                                      | Have?                                                     | Why it matters here                                                                                                                           |
+| ---------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch office / Data centre / Campus / Home (Places) | **Shipped** (Places group)                                | Site tiles for SD-WAN site detail (0010 slice 2) and remote-worker ZTNA stories                                                               |
+| SASE / SSE PoP                                       | **Shipped** `ssepop`                                      | A dedicated SSE PoP glyph, distinct from a generic overlay cloud, for slice 4 on-ramps                                                        |
+| NAC                                                  | **Shipped** `nac`                                         | ClearPass in every campus and ZTNA posture story                                                                                              |
+| Auth server (RADIUS/TACACS+)                         | **Shipped** `authserver`                                  | Pairs with NAC; distinct from the identity provider                                                                                           |
+| Directory                                            | **Shipped** `directory`                                   | AD / Entra ID as the account store, separate from the auth server answering requests                                                          |
+| SIEM                                                 | **Shipped** `siem`                                        | Log and telemetry destinations in SSE and SOC flows                                                                                           |
+| WAF                                                  | **Shipped** `waf`                                         | Private-app and SaaS protection paths                                                                                                         |
+| L3 switch                                            | **Shipped** `l3switch`                                    | EVPN-VXLAN leaf/spine and campus core; the reference palette's shape-semantics rule (router 4 arrows, L3 switch 8, switch 2) is worth copying |
+| Laptop / Mobile / Managed endpoint                   | **Shipped** `mobile`, `managedendpoint` (laptop = `host`) | ZTNA and SWG stories need managed vs unmanaged devices                                                                                        |
+| Orchestrator / cloud controller                      | **Shipped** `orchestrator`                                | EdgeConnect Orchestrator, Mist cloud, Aruba Central: the management plane in every SD-WAN diagram                                             |
 
 ### Tier 2 — useful, not urgent
 

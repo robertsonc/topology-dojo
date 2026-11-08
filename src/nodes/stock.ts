@@ -119,6 +119,29 @@ export const STOCK_NODE_SPECS: CustomNodeSpec[] = [
   device('campus', 'square', 'campus', TEAL, { size: 26 }),
   device('datacenter', 'square', 'datacenter', TEAL, { size: 26 }),
   device('homeoffice', 'square', 'home', TEAL, { size: 26 }),
+  // ── Tier 1 (proposal 0011): SASE / NAC / identity / SOC / management.
+  // Badged where the glyph alone is shared (shield, key, fingerprint).
+  device('ssepop', 'hexagon', 'cloud', GREEN, {
+    badge: true,
+    badgeText: 'SSE',
+  }),
+  device('nac', 'square', 'fingerprint', RED, {
+    badge: true,
+    badgeText: 'NAC',
+  }),
+  device('authserver', 'square', 'key', RED, {
+    badge: true,
+    badgeText: 'AAA',
+  }),
+  device('waf', 'hexagon', 'shield', RED, { badge: true, badgeText: 'WAF' }),
+  device('siem', 'square', 'chart', BLUE, { badge: true, badgeText: 'SIEM' }),
+  device('directory', 'square', 'directory', GOLD),
+  device('orchestrator', 'square', 'dashboard', GREEN),
+  // Shape encodes forwarding role: router = circle (4 arrows), L3 switch =
+  // rounded square (8 arrows), switch = wide chassis.
+  device('l3switch', 'square', 'l3switch', GREEN, { radius: 8 }),
+  device('mobile', 'square', 'mobile', SLATE),
+  device('managedendpoint', 'square', 'laptopcheck', SLATE),
   // ── Wiring-sheet chassis (proposal 0008, W7): a generic rack-unit front
   // panel with a port row and status LEDs, sized so pills / anchor-box
   // slots land along its long bottom edge. Name + model go in the node's
@@ -178,6 +201,16 @@ export const STOCK_NODE_LABELS: Record<string, string> = {
   campus: 'Campus',
   datacenter: 'Data Center',
   homeoffice: 'Home Office',
+  ssepop: 'SSE PoP',
+  nac: 'NAC',
+  authserver: 'Auth Server',
+  waf: 'WAF',
+  siem: 'SIEM',
+  directory: 'Directory',
+  orchestrator: 'Orchestrator',
+  l3switch: 'L3 Switch',
+  mobile: 'Mobile',
+  managedendpoint: 'Managed Endpoint',
 };
 
 /** Palette category + search aliases per stock type (default: Cloud). */
@@ -284,6 +317,75 @@ export const STOCK_NODE_META: Record<
   homeoffice: {
     category: 'Places',
     keywords: ['home', 'remote worker', 'teleworker', 'wfh', 'residence'],
+  },
+  ssepop: {
+    category: 'Security',
+    keywords: ['sase', 'sse', 'pop', 'swg', 'casb', 'ztna', 'security cloud'],
+  },
+  nac: {
+    category: 'Security',
+    keywords: [
+      'network access control',
+      'clearpass',
+      'posture',
+      '802.1x',
+      'profiling',
+    ],
+  },
+  authserver: {
+    category: 'Security',
+    keywords: ['radius', 'tacacs', 'aaa', 'authentication', 'ise'],
+  },
+  waf: {
+    category: 'Security',
+    keywords: ['web application firewall', 'app protection', 'owasp'],
+  },
+  siem: {
+    category: 'Security',
+    keywords: ['soc', 'logs', 'syslog', 'splunk', 'sentinel', 'analytics'],
+  },
+  directory: {
+    category: 'Security',
+    keywords: [
+      'active directory',
+      'ad',
+      'ldap',
+      'entra',
+      'idp',
+      'identity store',
+    ],
+  },
+  orchestrator: {
+    category: 'Edge',
+    keywords: [
+      'controller',
+      'management',
+      'orchestrator',
+      'mist',
+      'central',
+      'sd-wan manager',
+      'nms',
+    ],
+  },
+  l3switch: {
+    category: 'Network',
+    keywords: [
+      'layer 3',
+      'multilayer',
+      'core',
+      'leaf',
+      'spine',
+      'evpn',
+      'routing switch',
+    ],
+  },
+  mobile: {
+    category: 'Endpoint',
+    keywords: ['phone', 'smartphone', 'tablet', 'byod', 'ios', 'android'],
+  },
+  managedendpoint: {
+    category: 'Endpoint',
+    keywords: ['managed', 'corporate laptop', 'mdm', 'posture', 'compliant'],
   },
 };
 

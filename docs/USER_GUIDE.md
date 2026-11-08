@@ -451,6 +451,11 @@ The built-in library covers:
   for sites rather than devices (SD-WAN site tiles, ZTNA remote workers), in one
   shape and colour so a site never reads as an appliance; searchable by
   aliases such as "dc", "hq", or "remote worker";
+- SASE, identity and operations types — SSE PoP, NAC, auth server
+  (RADIUS/TACACS+), WAF, SIEM, directory, orchestrator/controller, L3 switch
+  (rounded square with eight arrows, next to the router's circle with four),
+  mobile, and managed endpoint — searchable by aliases such as "clearpass",
+  "radius", "entra", "mist", or "byod";
 - generic geometric shapes;
 - an **Image** entry that opens a file picker: the picture is downscaled to a
   compact data URI (≤256KB), embedded in the document, and placed sized to its

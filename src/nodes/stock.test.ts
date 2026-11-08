@@ -90,6 +90,38 @@ describe('stock cloud-native node types', () => {
     expect(hit('dc')).toContain('datacenter');
   });
 
+  it('ships the tier 1 SASE / identity / SOC / management types', () => {
+    const expected: Record<string, string> = {
+      ssepop: 'Security',
+      nac: 'Security',
+      authserver: 'Security',
+      waf: 'Security',
+      siem: 'Security',
+      directory: 'Security',
+      orchestrator: 'Edge',
+      l3switch: 'Network',
+      mobile: 'Endpoint',
+      managedendpoint: 'Endpoint',
+    };
+    for (const [t, category] of Object.entries(expected)) {
+      const info = getNodeType(t)!;
+      expect(info.custom, t).toBe(false);
+      expect(info.category, t).toBe(category);
+      expect(info.label, t).not.toBe(t);
+    }
+    const find = (q: string) =>
+      nodeCatalog()
+        .filter((n) => n.keywords?.includes(q))
+        .map((n) => n.type);
+    expect(find('clearpass')).toEqual(['nac']);
+    expect(find('radius')).toEqual(['authserver']);
+    expect(find('mist')).toEqual(['orchestrator']);
+    // Shape encodes forwarding role: the L3 switch is a rounded square.
+    const l3 = STOCK_NODE_SPECS.find((s) => s.typeName === 'l3switch')!;
+    expect(l3.shape).toBe('square');
+    expect(l3.radius).toBeGreaterThan(3);
+  });
+
   it('generic-pack nodes validate and render without per-document definitions', () => {
     const doc = createDocument('Campus')
       .page()
