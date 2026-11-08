@@ -451,6 +451,11 @@ The built-in library covers:
   for sites rather than devices (SD-WAN site tiles, ZTNA remote workers), in one
   shape and colour so a site never reads as an appliance; searchable by
   aliases such as "dc", "hq", or "remote worker";
+- SASE, identity and operations types — SSE PoP, NAC, auth server
+  (RADIUS/TACACS+), WAF, SIEM, directory, orchestrator/controller, L3 switch
+  (rounded square with eight arrows, next to the router's circle with four),
+  mobile, and managed endpoint — searchable by aliases such as "clearpass",
+  "radius", "entra", "mist", or "byod";
 - generic geometric shapes;
 - an **Image** entry that opens a file picker: the picture is downscaled to a
   compact data URI (≤256KB), embedded in the document, and placed sized to its
@@ -484,8 +489,10 @@ default below-node label; on basic shapes it is the label inside the shape),
 **Label X** / **Label Y** (absolute offsets from the node center that
 fine-tune a placement; blank = the placement's default), label color, lock,
 metadata,
-**Link URL** (`href` — Ctrl/Cmd+click follows it in the editor, and SVG
-exports and public share views render it as a real clickable link) and
+**Link** (`href` — Ctrl/Cmd+click follows it in the editor, and SVG
+exports and public share views render it as a real clickable link; a link of
+the form `#page=<page id>` jumps to another page of the same document instead,
+and draw.io export keeps it as a draw.io page link) and
 **Tooltip** (shown on hover), layer, and source identity. Type-specific controls add settings such as device variant,
 managed/agent state, SaaS logo, switch ports, or text-box typography, fill,
 border, alignment, padding, and width.
@@ -774,17 +781,22 @@ be closed before replacing the document.
 SD-WAN fabric from a few choices. A live preview shows the device, tunnel and
 cable counts that will land on the canvas.
 
-| Choice                    | Options                                                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Vendor                    | HPE EdgeConnect, Juniper SRX (Mist WAN Assurance)                                                                                       |
-| How much detail?          | Every device (appliances, transport clouds, cabling) or one box per site                                                                |
-| Regions                   | 1–4; regions tile two across, each in a dashed region zone. With 3–4 regions the top row is flipped so all hubs face a central hub band |
-| Mesh hubs across regions? | Shown with 2+ regions. Hubs always mesh within a region                                                                                 |
-| Hubs per region           | 1 or 2. Two hubs are independent appliances, not an HA pair                                                                             |
-| Branches per region       | 1–12                                                                                                                                    |
-| WAN links per branch      | 1–3, each Internet, MPLS or LTE                                                                                                         |
-| Branch edge               | Single, or HA pair (EdgeConnect) / chassis cluster (Juniper)                                                                            |
-| Branch LAN                | None, switch, or switch + AP (device detail only)                                                                                       |
+| Choice                    | Options                                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Vendor                    | HPE EdgeConnect, Juniper SRX (Mist WAN Assurance)                                                                                          |
+| How much detail?          | Every device (appliances, transport clouds, cabling); one box per site (data-center hubs, branch-office tiles); or overview + region pages |
+| Regions                   | 1–4; regions tile two across, each in a dashed region zone. With 3–4 regions the top row is flipped so all hubs face a central hub band    |
+| Mesh hubs across regions? | Shown with 2+ regions. Hubs always mesh within a region                                                                                    |
+| Hubs per region           | 1 or 2. Two hubs are independent appliances, not an HA pair                                                                                |
+| Branches per region       | 1–12. With 2+ regions, each region gets its own row: a name and a branch count                                                             |
+| WAN links per branch      | 1–3, each Internet, MPLS or LTE                                                                                                            |
+| Branch edge               | Single, or HA pair (EdgeConnect) / chassis cluster (Juniper)                                                                               |
+| Branch LAN                | None, switch, or switch + AP (device detail and region pages)                                                                              |
+
+**Overview + region pages** builds a page per region behind a site-level
+overview. Ctrl/Cmd+click any site tile on the overview to open its region's
+device page; each region page has a **◂ Overview** link back. The inter-region
+hub mesh is drawn on the overview only.
 
 The vendor decides how tunnels and HA are drawn:
 

@@ -608,7 +608,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'generate_sdwan_topology',
       description:
-        'Generate an SD-WAN hub-and-spoke topology from intent (vendor, regions, hubs, branches, WAN transports, branch HA, branch LAN) as a new document. Vendor semantics decide tunnel and HA counts — edgeconnect: label-matched underlay tunnels (hidden layer) + one bonded overlay per appliance pair, HA pairs where both members tunnel; juniper: SRX (Mist WAN Assurance) per-path IPsec overlays, chassis clusters that tunnel from node0. LTE circuits reach the hub Internet label. detail:"site" draws one tile per site. Elements carry source system "synthetic". Returns the new id plus device/tunnel/link counts.',
+        'Generate an SD-WAN hub-and-spoke topology from intent (vendor, regions, hubs, branches, WAN transports, branch HA, branch LAN) as a new document. Vendor semantics decide tunnel and HA counts — edgeconnect: label-matched underlay tunnels (hidden layer) + one bonded overlay per appliance pair, HA pairs where both members tunnel; juniper: SRX (Mist WAN Assurance) per-path IPsec overlays, chassis clusters that tunnel from node0. LTE circuits reach the hub Internet label. detail:"site" draws one place tile per site (hubs as data centers, branches as branch offices); detail:"overview" adds one device-detail page per region, with every overview tile linked to its region page (href "#page=<id>") and a back link on each region page. Elements carry source system "synthetic". Returns the new id plus device/tunnel/link counts.',
       inputShape: {
         vendor: z.enum(SDWAN_VENDORS),
         detail: z.enum(DETAIL_LEVELS).optional(),

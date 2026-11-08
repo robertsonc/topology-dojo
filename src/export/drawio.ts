@@ -25,6 +25,7 @@
  *
  * DOM-free and pure.
  */
+import { DRAWIO_PAGE_LINK_PREFIX } from '../api/page-link.js';
 import type { TopologyDocument } from '../pages/model.js';
 import {
   buildScene,
@@ -194,6 +195,8 @@ function nodeCell(
   if (n.sublabel) attrs.push(`dojoSublabel="${esc(n.sublabel)}"`);
   if (n.body) attrs.push(`dojoBody="${esc(n.body)}"`);
   if (n.href) attrs.push(`link="${esc(n.href)}"`);
+  else if (n.pageLink)
+    attrs.push(`link="${esc(DRAWIO_PAGE_LINK_PREFIX + n.pageLink)}"`);
   if (n.tooltip) attrs.push(`tooltip="${esc(n.tooltip)}"`);
   for (const [k, v] of Object.entries(n.meta ?? {})) {
     const key = dataKey(k);

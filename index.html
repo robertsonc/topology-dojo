@@ -2847,6 +2847,25 @@
         color: var(--accent);
         background: color-mix(in srgb, var(--accent) 14%, transparent);
       }
+      .sdw-regions {
+        display: grid;
+        gap: 6px;
+      }
+      .sdw-region {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px;
+      }
+      .sdw-region-name {
+        min-width: 0;
+        padding: 5px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--panel2);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+      }
       .sdw-side {
         position: sticky;
         top: 0;

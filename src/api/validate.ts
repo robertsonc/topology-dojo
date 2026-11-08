@@ -6,6 +6,7 @@
  *
  * `parseDoc` (persist) guarantees structural shape; this checks meaning.
  */
+import { pageLinkTarget } from './page-link.js';
 import { PANEL_SCALE_MAX, PANEL_SCALE_MIN } from '../render/wiresheet-scale.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { isBuiltinNodeType, isLinkType } from './builtins.js';
@@ -53,6 +54,8 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
   };
 
   if (!doc.pages.length) err('document', 'document has no pages');
+  // Page ids, for in-document page links (`href: "#page=<id>"`).
+  const linkablePages = new Set(doc.pages.map((p) => p.id));
 
   // Custom node type names: unique, and the set of all valid node types.
   const customTypes = new Set<string>();
@@ -229,7 +232,14 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       if (typeof h !== 'string') warn(where, 'href must be a string URL');
       else if (/^\s*javascript:/i.test(h))
         err(where, 'href must not use the javascript: scheme');
-      else if (!/^https?:\/\//i.test(h.trim()))
+      else if (pageLinkTarget(h) !== null) {
+        const target = pageLinkTarget(h)!;
+        if (!linkablePages.has(target))
+          warn(
+            where,
+            `page link "${h.slice(0, 60)}" points at no page in this document`,
+          );
+      } else if (!/^https?:\/\//i.test(h.trim()))
         warn(
           where,
           `href "${h.slice(0, 60)}" is not an http(s) URL — it will not render as a link`,

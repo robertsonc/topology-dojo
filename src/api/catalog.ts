@@ -206,10 +206,12 @@ const SOURCE_FIELD: FieldSpec = {
  * Nodes, links, and zones can carry a hyperlink (rendered as a clickable
  * `<a>` in SVG exports and the public viewer; Ctrl/Cmd+click in the editor)
  * and a hover tooltip (an SVG `<title>`). Only http(s) URLs are rendered.
+ * `#page=<pageId>` links to another page of the same document (see
+ * api/page-link): Ctrl/Cmd+click switches pages; draw.io export keeps it.
  */
 const HREF_FIELD: FieldSpec = {
   key: 'href',
-  label: 'Link URL',
+  label: 'Link (URL or #page=id)',
   kind: 'string',
   max: TEXT_LIMITS.url,
 };
