@@ -279,6 +279,7 @@ to the task's affected region and change summaries, not total document size.
 | `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                                                                 |
 | `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page); hardware-catalog cabling rules on bound nodes                                  |
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                                                         |
+| `auto_place_labels`                                    | Move node labels away from links (fewest crossings, layout rules kept, hand-placed labels untouched)                                          |
 | `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                              |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force / tiered — rows by declared tiers, `mirror`, `tierZones`)                        |
 | `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                              |

@@ -11,6 +11,8 @@ import {
   generateSdwan,
   SDWAN_LIMITS,
   type BranchLan,
+  type CloudHub,
+  type SseMode,
   type DetailLevel,
   type SdwanIntent,
   type SdwanResult,
@@ -81,6 +83,8 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
       | 'branchHa'
       | 'branchLan'
       | 'interRegionHubMesh'
+      | 'cloudHub'
+      | 'sse'
     >
   > & {
     /** Branch count per region slot (all four kept, so shrinking and
@@ -99,6 +103,8 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
     branchHa: false,
     branchLan: 'none',
     interRegionHubMesh: true,
+    cloudHub: 'none',
+    sse: 'none',
   };
   let result: SdwanResult | null = null;
 
@@ -277,6 +283,27 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
         intent.branchHa,
         (v) => (intent.branchHa = v),
       ),
+      group<CloudHub>(
+        'Cloud hub per region',
+        [
+          { value: 'none', label: 'None' },
+          { value: 'aws', label: 'AWS' },
+          { value: 'azure', label: 'Azure' },
+          { value: 'gcp', label: 'Google Cloud' },
+        ],
+        intent.cloudHub,
+        (v) => (intent.cloudHub = v),
+      ),
+      group<SseMode>(
+        'SSE on-ramp',
+        [
+          { value: 'none', label: 'None' },
+          { value: 'branch', label: 'From branches' },
+          { value: 'hub', label: 'Via hubs' },
+        ],
+        intent.sse,
+        (v) => (intent.sse = v),
+      ),
       // Overview region pages are device detail, so LAN applies there too.
       ...(intent.detail !== 'site'
         ? [
@@ -328,6 +355,8 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
         branchHa: intent.branchHa,
         branchLan: intent.branchLan,
         interRegionHubMesh: intent.interRegionHubMesh,
+        cloudHub: intent.cloudHub,
+        sse: intent.sse,
       });
     } catch (err) {
       result = null;
@@ -343,9 +372,10 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
     const tunnels =
       s.underlayTunnels > 0
         ? `${plural(s.overlayTunnels, 'overlay tunnel')} · ${s.underlayTunnels} underlay (hidden layer)`
-        : plural(s.tunnels, 'tunnel');
+        : plural(s.tunnels - s.sseTunnels, 'tunnel');
     const pages = s.pages > 1 ? ` · ${s.pages} pages` : '';
-    stats.textContent = `${plural(s.devices, 'device')} · ${tunnels} · ${plural(s.links, 'cable')}${pages}`;
+    const sse = s.sseTunnels > 0 ? ` (${s.sseTunnels} to SSE)` : '';
+    stats.textContent = `${plural(s.devices, 'device')} · ${tunnels}${sse} · ${plural(s.links, 'cable')}${pages}`;
     note.textContent =
       intent.detail === 'device' && s.overlayTunnels > DENSE_TUNNELS
         ? `Dense: ${s.overlayTunnels} visible tunnels. "One box per site" or "Overview + region pages" reads better at this size.`

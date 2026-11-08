@@ -33,6 +33,7 @@ describe('MCP tools', () => {
         'add_page',
         'add_policy_marker',
         'add_zone',
+        'auto_place_labels',
         'balance_topology',
         'create_from_template',
         'create_topology',
@@ -401,6 +402,39 @@ describe('MCP tools', () => {
         branchesPerRegion: [1, 1, 1],
       }),
     ).toThrow(/branchesPerRegion has 3 entries/);
+  });
+
+  it('auto_place_labels lifts a hub label off the links fanning below it', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    call('add_node', {
+      topologyId: id,
+      type: 'ec',
+      x: 500,
+      y: 120,
+      nodeId: 'hub',
+      label: 'Hub',
+    });
+    for (const [i, x] of [200, 400, 600, 800].entries()) {
+      call('add_node', {
+        topologyId: id,
+        type: 'ec',
+        x,
+        y: 450,
+        nodeId: `b${i}`,
+        label: `Branch ${i}`,
+      });
+      call('add_link', { topologyId: id, from: 'hub', to: `b${i}` });
+    }
+    const out = call('auto_place_labels', { topologyId: id }) as {
+      changed: number;
+    };
+    expect(out.changed).toBe(1);
+    const doc = call('get_topology', { topologyId: id }) as {
+      pages: { nodes: { id: string; labelPlacement?: string }[] }[];
+    };
+    const byId = new Map(doc.pages[0]!.nodes.map((n) => [n.id, n]));
+    expect(byId.get('hub')?.labelPlacement).toBe('n');
+    expect(byId.get('b0')?.labelPlacement).toBeUndefined();
   });
 
   it('sets node metadata (replace + merge) reachable via the document', () => {

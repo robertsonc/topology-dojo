@@ -5140,6 +5140,10 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
     { label: 'Tidy layout', run: () => editor.tidy() },
     { label: 'Balance layout', run: () => editor.balance() },
     {
+      label: 'Auto-place labels',
+      run: () => editor.autoLabels(doc.customNodes),
+    },
+    {
       label: 'Fit page to content',
       run: () => {
         editor.fitPageToContent();

@@ -7,6 +7,8 @@
  * selection visuals, the marquee, and drag ghosts — so dragging is smooth
  * without re-rendering the heavy art every frame.
  */
+import { autoPlaceLabels } from '../render/label-auto.js';
+import type { CustomNodeSpec } from '../nodes/spec.js';
 import { STOCK_NODE_LABELS } from '../nodes/stock.js';
 import { isFollowableHref } from '../api/page-link.js';
 import {
@@ -422,6 +424,25 @@ export class Editor {
     this.renderArt();
     this.renderOverlay();
     this.onChange();
+  }
+
+  /**
+   * Move node labels away from links (render/label-auto): one undo step;
+   * returns how many labels moved. Hand-placed labels are left alone.
+   */
+  autoLabels(customNodes?: CustomNodeSpec[]): number {
+    this.snapshot();
+    const { changed } = autoPlaceLabels(this.page, {
+      ...(customNodes ? { customNodes } : {}),
+    });
+    if (changed === 0) {
+      this.undoStack.pop(); // nothing changed — don't pollute history
+      return 0;
+    }
+    this.renderArt();
+    this.renderOverlay();
+    this.onChange();
+    return changed;
   }
 
   /** Balance the layout: de-overlap, align rows/columns, centre; page grows to fit. */

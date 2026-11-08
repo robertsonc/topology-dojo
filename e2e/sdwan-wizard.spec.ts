@@ -99,3 +99,29 @@ test('overview mode: named regions, drill down to a region page and back', async
   // Following links never edits the document.
   await expect.poll(() => statusCount(page, 'nodes')).toBe(10);
 });
+
+test('cloud hub and SSE on-ramp land on the canvas with their counts', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await page.selectOption('#fTemplate', '__sdwan');
+  await question(page, 'Cloud hub per region')
+    .getByRole('button', { name: 'AWS' })
+    .click();
+  await question(page, 'SSE on-ramp')
+    .getByRole('button', { name: 'From branches' })
+    .click();
+  // Defaults: 1 region, 2 hubs + 1 cloud hub, 4 single branches on INET.
+  // Overlay: 4 branches × 3 hubs + 3 hub pairs = 15; SSE: one per branch.
+  await expect(page.locator('.sdw-stats')).toHaveText(
+    '7 devices · 15 overlay tunnels · 15 underlay (hidden layer) (4 to SSE) · 8 cables',
+  );
+  page.once('dialog', (d) => void d.accept());
+  await page.getByRole('button', { name: 'Create diagram' }).click();
+  await expect(
+    page.locator('#page-canvas [data-tds-node="cloudgw_amer"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('#page-canvas [data-tds-node="sse_amer"]'),
+  ).toHaveCount(1);
+});

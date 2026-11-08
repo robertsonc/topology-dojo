@@ -142,6 +142,51 @@ export const STOCK_NODE_SPECS: CustomNodeSpec[] = [
   device('l3switch', 'square', 'l3switch', GREEN, { radius: 8 }),
   device('mobile', 'square', 'mobile', SLATE),
   device('managedendpoint', 'square', 'laptopcheck', SLATE),
+  // ── Tier 2 (proposal 0011): segmentation, wireless WAN, out-of-band and
+  // power, privileged access, and SSE threat storytelling.
+  device('vrf', 'square', 'layers', GREEN, { badge: true, badgeText: 'VRF' }),
+  device('satellite', 'circle', 'dish', BLUE),
+  device('cellular', 'circle', 'tower', BLUE, {
+    badge: true,
+    badgeText: '5G',
+  }),
+  device('microwave', 'circle', 'tower', BLUE, {
+    badge: true,
+    badgeText: 'MW',
+  }),
+  device('consoleserver', 'rectangle', 'terminal', SLATE, {
+    leds: true,
+    ledCount: 2,
+  }),
+  // Passive: a port row and no status LEDs (a cable ending here is a
+  // cross-connect, not a transceiver).
+  spec({
+    typeName: 'patchpanel',
+    shape: 'chassis',
+    icon: null,
+    colorStroke: SLATE,
+    colorFill: '#22252e',
+    size: 30,
+    radius: 2,
+    badge: false,
+    glow: false,
+    ports: true,
+    portCount: 24,
+    portPos: 'bottom',
+  }),
+  device('pdu', 'rectangle', 'lightning', SLATE),
+  device('jumphost', 'square', 'terminal', RED, {
+    badge: true,
+    badgeText: 'JMP',
+  }),
+  device('pam', 'square', 'key', RED, { badge: true, badgeText: 'PAM' }),
+  device('mdm', 'square', 'mobile', BLUE, { badge: true, badgeText: 'MDM' }),
+  device('attacker', 'diamond', 'user', RED),
+  device('infectedhost', 'square', 'bug', RED),
+  // Verdict is a colour, not a type: recolour green (clean), grey
+  // (unknown) or red (malicious).
+  device('file', 'square', 'file', SLATE),
+  device('website', 'circle', 'globe', SLATE),
   // ── Wiring-sheet chassis (proposal 0008, W7): a generic rack-unit front
   // panel with a port row and status LEDs, sized so pills / anchor-box
   // slots land along its long bottom edge. Name + model go in the node's
@@ -211,6 +256,20 @@ export const STOCK_NODE_LABELS: Record<string, string> = {
   l3switch: 'L3 Switch',
   mobile: 'Mobile',
   managedendpoint: 'Managed Endpoint',
+  vrf: 'VRF',
+  satellite: 'Satellite Terminal',
+  cellular: 'LTE / 5G Router',
+  microwave: 'Microwave Radio',
+  consoleserver: 'Console Server',
+  patchpanel: 'Patch Panel',
+  pdu: 'PDU',
+  jumphost: 'Jump Host',
+  pam: 'PAM',
+  mdm: 'MDM',
+  attacker: 'Attacker',
+  infectedhost: 'Infected Host',
+  file: 'File',
+  website: 'Website',
 };
 
 /** Palette category + search aliases per stock type (default: Cloud). */
@@ -386,6 +445,76 @@ export const STOCK_NODE_META: Record<
   managedendpoint: {
     category: 'Endpoint',
     keywords: ['managed', 'corporate laptop', 'mdm', 'posture', 'compliant'],
+  },
+  vrf: {
+    category: 'Network',
+    keywords: [
+      'vrf',
+      'vdom',
+      'vsys',
+      'virtual context',
+      'segment',
+      'tenant',
+      'routing instance',
+    ],
+  },
+  satellite: {
+    category: 'Network',
+    keywords: ['leo', 'starlink', 'geo', 'vsat', 'satellite wan'],
+  },
+  cellular: {
+    category: 'Network',
+    keywords: ['lte', '5g', '4g', 'wireless wan', 'cellular', 'fwa'],
+  },
+  microwave: {
+    category: 'Network',
+    keywords: ['radio link', 'point to point', 'ptp', 'backhaul', 'mw'],
+  },
+  consoleserver: {
+    category: 'Network',
+    keywords: ['oob', 'out of band', 'serial', 'terminal server', 'opengear'],
+  },
+  patchpanel: {
+    category: 'Network',
+    keywords: ['patch', 'cross connect', 'cabling', 'mdf', 'idf'],
+  },
+  pdu: {
+    category: 'Endpoint',
+    keywords: ['power', 'rack power', 'power strip'],
+  },
+  jumphost: {
+    category: 'Security',
+    keywords: ['bastion', 'jump box', 'admin access'],
+  },
+  pam: {
+    category: 'Security',
+    keywords: ['privileged access', 'vault', 'cyberark', 'password vault'],
+  },
+  mdm: {
+    category: 'Security',
+    keywords: [
+      'endpoint manager',
+      'intune',
+      'uem',
+      'device management',
+      'posture source',
+    ],
+  },
+  attacker: {
+    category: 'Security',
+    keywords: ['threat actor', 'adversary', 'hacker', 'attack'],
+  },
+  infectedhost: {
+    category: 'Security',
+    keywords: ['malware', 'compromised', 'infected laptop', 'bot'],
+  },
+  file: {
+    category: 'Security',
+    keywords: ['document', 'download', 'sandbox', 'verdict', 'payload'],
+  },
+  website: {
+    category: 'Security',
+    keywords: ['url', 'site', 'phishing', 'swg', 'web category', 'verdict'],
   },
 };
 

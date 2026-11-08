@@ -376,7 +376,15 @@ Right-click a link for:
 - stacking, lock, and delete actions.
 
 Right-click empty canvas for **Paste**, **Select all**, **Tidy layout**,
-**Balance layout**, and **Fit page to content**.
+**Balance layout**, **Auto-place labels**, and **Fit page to content**.
+
+**Auto-place labels** moves each node's label (its **Placement**) to the side
+crossed by the fewest links, so a hub whose links fan downward gets its name
+above it. It never crowds another node or label, grows a zone into its
+neighbour, or leaves the page; ties keep the label below. Labels you positioned
+by hand (Label X / Label Y) are left alone, and the whole pass is one undo
+step. Agents use **auto_place_labels**; generated SD-WAN fabrics are placed this
+way automatically.
 
 Context menus support Up/Down, Enter, and Escape. Dialogs and menus keep Tab
 focus inside the open overlay and restore focus when closed.
@@ -456,6 +464,12 @@ The built-in library covers:
   (rounded square with eight arrows, next to the router's circle with four),
   mobile, and managed endpoint — searchable by aliases such as "clearpass",
   "radius", "entra", "mist", or "byod";
+- segmentation, wireless WAN and operations types — VRF (also VDOM / VSYS),
+  satellite terminal, LTE / 5G router, microwave radio, console server, patch
+  panel (passive: ports, no status LEDs), and PDU;
+- privileged-access and threat types for SSE stories — jump host, PAM, MDM,
+  attacker, infected host, file, and website. A file's or website's verdict is
+  its colour: green for clean, grey for unknown, red for malicious;
 - generic geometric shapes;
 - an **Image** entry that opens a file picker: the picture is downscaled to a
   compact data URI (≤256KB), embedded in the document, and placed sized to its
@@ -792,6 +806,8 @@ cable counts that will land on the canvas.
 | WAN links per branch      | 1–3, each Internet, MPLS or LTE                                                                                                            |
 | Branch edge               | Single, or HA pair (EdgeConnect) / chassis cluster (Juniper)                                                                               |
 | Branch LAN                | None, switch, or switch + AP (device detail and region pages)                                                                              |
+| Cloud hub per region      | None, AWS, Azure or Google Cloud: a virtual edge (EC-V / vSRX) per region, BGP-peered with the provider's cloud router                     |
+| SSE on-ramp               | None; from branches (IPsec from every branch edge, local breakout); or via hubs (from the data-center hubs, backhaul)                      |
 
 **Overview + region pages** builds a page per region behind a site-level
 overview. Ctrl/Cmd+click any site tile on the overview to open its region's
@@ -811,6 +827,18 @@ The vendor decides how tunnels and HA are drawn:
   terminated once, on node0.
 - **LTE** circuits reach the hub's Internet label (`LTE1→INET1`); hubs never get
   an LTE circuit. Hubs terminate every other transport their branches use.
+
+- **Cloud hub** — an extra hub in each region: the vendor's virtual edge,
+  reachable over Internet labels only (MPLS does not reach the cloud), meshed
+  with the region's other hubs. In device detail the provider's router sits
+  beside it, linked by its peering: AWS Transit Gateway Connect (GRE + BGP),
+  Azure Virtual WAN (EdgeConnect as an NVA in the hub; vSRX in a connected
+  VNet), or Google Cloud NCC router appliance with Cloud Router (BGP). With a
+  cloud hub, data-center hubs always get an Internet circuit.
+- **SSE on-ramp** — one SSE PoP per region on the hub row, with IPsec tunnels on
+  an **SSE on-ramp** layer: from every tunnel-terminating branch edge (both
+  members of an EC HA pair; node0 of an SRX cluster) or from the data-center
+  hubs.
 
 Generated elements carry the source system `synthetic`, so they are never
 mistaken for objects pulled from a live Orchestrator or Mist org. Agents use the
