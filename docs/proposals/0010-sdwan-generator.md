@@ -1,7 +1,7 @@
 # Proposal 0010 — SD-WAN topology generator
 
-**Status:** Spec accepted; slices 1 (PR #293), 2 (PR #295), 3 and 4 (PR
-#296) implemented (2026-11-08; branch-to-branch mesh deferred). Slice 5 is in
+**Status:** Spec accepted; slices 1 (PR #293), 2 (PR #295), 4 (PR #296) and 3
+implemented (2026-11-08; branch-to-branch mesh deferred). Slice 5 is in
 research.
 
 **Captured:** 2026-11-08
