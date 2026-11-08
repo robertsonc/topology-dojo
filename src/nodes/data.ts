@@ -153,6 +153,25 @@ export const ICONS: Record<string, { cat: string; d: string }> = {
     cat: 'Misc',
     d: 'M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42A6.92 6.92 0 0 1 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7a6.92 6.92 0 0 1 2.59-5.41L6.17 5.17A8.93 8.93 0 0 0 3 12a9 9 0 0 0 18 0 8.93 8.93 0 0 0-3.17-6.83z',
   },
+  // Places (proposal 0011, tier 1): original glyphs. Each is one path drawn
+  // clockwise, with windows and doors counter-clockwise so the default
+  // nonzero fill rule cuts them out as holes.
+  building: {
+    cat: 'Places',
+    d: 'M5 3h14v18h-5v-4h-4v4H5ZM7.5 6v2h2v-2ZM11 6v2h2v-2ZM14.5 6v2h2v-2ZM7.5 9.5v2h2v-2ZM11 9.5v2h2v-2ZM14.5 9.5v2h2v-2ZM7.5 13v2h2v-2ZM11 13v2h2v-2ZM14.5 13v2h2v-2Z',
+  },
+  campus: {
+    cat: 'Places',
+    d: 'M2 10h5V4h10v6h5v11H2ZM9 6.5v2h2v-2ZM13 6.5v2h2v-2ZM9 10v2h2v-2ZM13 10v2h2v-2ZM3.5 12.5v2h2v-2ZM18.5 12.5v2h2v-2ZM3.5 16v2h2v-2ZM18.5 16v2h2v-2ZM10.5 21h3v-4h-3Z',
+  },
+  datacenter: {
+    cat: 'Places',
+    d: 'M3 4h5v17h-5ZM9.5 4h5v17h-5ZM16 4h5v17h-5ZM4 6.5v1.5h3v-1.5ZM10.5 6.5v1.5h3v-1.5ZM17 6.5v1.5h3v-1.5ZM4 10v1.5h3v-1.5ZM10.5 10v1.5h3v-1.5ZM17 10v1.5h3v-1.5ZM4 13.5v1.5h3v-1.5ZM10.5 13.5v1.5h3v-1.5ZM17 13.5v1.5h3v-1.5Z',
+  },
+  home: {
+    cat: 'Places',
+    d: 'M12 3l10 8.5h-2.5V21h-15v-9.5H2ZM10.5 21h3v-5h-3ZM6.5 13.5v3h2.5v-3ZM15 13.5v3h2.5v-3Z',
+  },
 };
 
 export interface ShapeGeom {

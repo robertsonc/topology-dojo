@@ -447,6 +447,10 @@ The built-in library covers:
   modem, DNS/web/mail servers, NAS, UPS, printer, IP camera, VoIP phone, IoT
   device, VM, container, Kubernetes, IDS/IPS, VPN concentrator, and user
   group — searchable by common aliases (e.g. "haproxy", "cctv", "docker");
+- a **Places** group — branch office, campus, data center, and home office —
+  for sites rather than devices (SD-WAN site tiles, ZTNA remote workers), in one
+  shape and colour so a site never reads as an appliance; searchable by
+  aliases such as "dc", "hq", or "remote worker";
 - generic geometric shapes;
 - an **Image** entry that opens a file picker: the picture is downscaled to a
   compact data URI (≤256KB), embedded in the document, and placed sized to its

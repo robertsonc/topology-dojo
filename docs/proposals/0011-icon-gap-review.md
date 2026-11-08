@@ -1,7 +1,7 @@
 # Proposal 0011 — Icon gap review
 
-**Status:** Review — no icons added yet. Tier 1 is proposed for the next node-art
-packet.
+**Status:** Tier 1 in progress. Places shipped (2026-11-08: `branchoffice`,
+`campus`, `datacenter`, `homeoffice`); the rest of tier 1 is next.
 
 **Captured:** 2026-11-08
 
@@ -33,7 +33,7 @@ Don't trade these away while closing gaps:
 
 | Reference shape                                      | Have?                             | Why it matters here                                                                                                                           |
 | ---------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Branch office / Data centre / Campus / Home (Places) | No                                | Site tiles for SD-WAN site detail (0010 slice 2) and remote-worker ZTNA stories                                                               |
+| Branch office / Data centre / Campus / Home (Places) | **Shipped** (Places group)        | Site tiles for SD-WAN site detail (0010 slice 2) and remote-worker ZTNA stories                                                               |
 | SASE / SSE PoP                                       | Partial (`overlayCloud`)          | A dedicated SSE PoP glyph, distinct from a generic overlay cloud, for slice 4 on-ramps                                                        |
 | NAC                                                  | No                                | ClearPass in every campus and ZTNA posture story                                                                                              |
 | Auth server (RADIUS/TACACS+)                         | No                                | Pairs with NAC; distinct from the identity provider                                                                                           |

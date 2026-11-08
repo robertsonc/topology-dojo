@@ -71,6 +71,25 @@ describe('stock cloud-native node types', () => {
     expect(getNodeType('vm')?.category).toBe('Compute');
   });
 
+  it('ships place types as one Places family with search aliases', () => {
+    const places = ['branchoffice', 'campus', 'datacenter', 'homeoffice'];
+    for (const t of places) {
+      const info = getNodeType(t)!;
+      expect(info.custom).toBe(false);
+      expect(info.category).toBe('Places');
+    }
+    // One family colour and shape, so a site never reads as an appliance.
+    const specs = STOCK_NODE_SPECS.filter((s) => places.includes(s.typeName));
+    expect(new Set(specs.map((s) => s.colorStroke)).size).toBe(1);
+    expect(new Set(specs.map((s) => s.shape))).toEqual(new Set(['square']));
+    const hit = (q: string) =>
+      nodeCatalog()
+        .filter((n) => n.keywords?.includes(q))
+        .map((n) => n.type);
+    expect(hit('remote worker')).toEqual(['homeoffice']);
+    expect(hit('dc')).toContain('datacenter');
+  });
+
   it('generic-pack nodes validate and render without per-document definitions', () => {
     const doc = createDocument('Campus')
       .page()
