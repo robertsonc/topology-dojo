@@ -9,6 +9,7 @@
  * a minimal stub on `globalThis` before instantiation. `_renderSVG()` itself
  * only builds strings.
  */
+import { registerBackdrops } from './backdrops.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import { customHitBox, renderCustomNode } from '../nodes/render.js';
@@ -55,6 +56,10 @@ export interface EngineInstance {
 export interface EngineStatic {
   new (cfg: Record<string, unknown>): EngineInstance;
   registerNodeType(name: string, plugin: unknown): void;
+  registerBackdrop?(
+    name: string,
+    backdrop: { w: number; h: number; d: string },
+  ): unknown;
 }
 
 export interface RenderOptions {
@@ -128,6 +133,7 @@ function renderPageUnthemed(
   // Stock cloud types ship with the app; the document's own custom types layer
   // on top (and override by name if a user redefines one).
   registerCustomTypes(E, [...STOCK_NODE_SPECS, ...customNodes]);
+  registerBackdrops(E);
   registerHitBoxes(customNodes);
 
   const topo = new E({ viewBox: page.viewBox });

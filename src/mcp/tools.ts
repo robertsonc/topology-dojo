@@ -671,6 +671,12 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe(
             'Add a cloud hub per region: the vendor virtual edge (EC-V / vSRX), Internet-only, BGP-peered with the provider router (AWS TGW Connect, Azure vWAN, GCP NCC + Cloud Router).',
           ),
+        mapBackdrop: z
+          .boolean()
+          .optional()
+          .describe(
+            "Draw each region's continent (Natural Earth outline) faintly behind its zone, matched by region name: AMER, EMEA, APAC, LATAM and aliases; other names get none.",
+          ),
         sse: z
           .enum(SSE_MODES)
           .optional()

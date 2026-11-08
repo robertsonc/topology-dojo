@@ -548,6 +548,13 @@ Zones visually group related nodes. Edit the label, sublabel, description,
 member list, color, border, padding, alignment, parent zone, layer, and source
 fields as needed.
 
+**Map backdrop** draws a faint land outline inside the zone box: World, North
+America, Europe-Middle East-Africa, Asia-Pacific, or Latin America. It is fill
+only, in the zone's colour, scaled to fit the box, and never clickable. The
+outlines come from Natural Earth (public domain) and ship with the app, so
+nothing is fetched and exports stay self-contained. SVG, PNG and PDF exports
+draw it; draw.io, Visio and PowerPoint exports leave it out.
+
 Zones are always the bottom layer — behind nodes, links, and anchors, for
 drawing and for clicks. Anything inside a zone (including a node's label) wins
 the click. Dragging from a zone's empty space rubber-bands the nodes inside it;
@@ -808,6 +815,7 @@ cable counts that will land on the canvas.
 | Branch LAN                | None, switch, or switch + AP (device detail and region pages)                                                                              |
 | Cloud hub per region      | None, AWS, Azure or Google Cloud: a virtual edge (EC-V / vSRX) per region, BGP-peered with the provider's cloud router                     |
 | SSE on-ramp               | None; from branches (IPsec from every branch edge, local breakout); or via hubs (from the data-center hubs, backhaul)                      |
+| Map backdrop              | None, or each region's continent behind its zone, matched by region name (AMER, EMEA, APAC, LATAM and aliases such as Europe or APJ)       |
 
 **Overview + region pages** builds a page per region behind a site-level
 overview. Ctrl/Cmd+click any site tile on the overview to open its region's

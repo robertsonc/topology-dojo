@@ -251,6 +251,8 @@ export interface ZoneConfig {
   labelPosition?: 'top' | 'bottom';
   /** Id of an enclosing zone (zones may nest). */
   parentZone?: string;
+  /** Map backdrop drawn faintly inside the box (render/backdrops names). */
+  backdrop?: string;
   /** Hyperlink: rendered as a clickable <a> (http(s) only) in SVG/viewer. */
   href?: string;
   /** Hover tooltip, rendered as an SVG <title>. */
@@ -598,6 +600,10 @@ interface EngineStatic {
   new (cfg: Record<string, unknown>): EngineInstance;
   NODE_TYPES: Record<string, (x: number, y: number, cfg: unknown) => string>;
   registerNodeType(name: string, plugin: NodePlugin): void;
+  registerBackdrop?(
+    name: string,
+    backdrop: { w: number; h: number; d: string },
+  ): unknown;
 }
 
 declare global {

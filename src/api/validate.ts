@@ -6,6 +6,7 @@
  *
  * `parseDoc` (persist) guarantees structural shape; this checks meaning.
  */
+import { BACKDROP_NAMES, isBackdropName } from '../render/backdrops.js';
 import { pageLinkTarget } from './page-link.js';
 import { PANEL_SCALE_MAX, PANEL_SCALE_MIN } from '../render/wiresheet-scale.js';
 import type { TopologyDocument } from '../pages/model.js';
@@ -536,6 +537,11 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
       for (const nId of z.nodes ?? [])
         if (!nodeIds.has(nId))
           warn(where, `member references missing node "${nId}"`);
+      if (z.backdrop !== undefined && !isBackdropName(z.backdrop))
+        warn(
+          where,
+          `backdrop "${String(z.backdrop).slice(0, 40)}" is not a known map (${BACKDROP_NAMES.join(', ')}) — it will not draw`,
+        );
       if (z.parentZone === z.id) err(where, 'zone is its own parent');
       else if (z.parentZone && !zoneIds.has(z.parentZone))
         warn(where, `parentZone references missing zone "${z.parentZone}"`);

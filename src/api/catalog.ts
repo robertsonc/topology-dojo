@@ -7,6 +7,7 @@
  * Adding a node/link type means adding an entry here — a parity test asserts the
  * catalog covers the whole built-in vocabulary, so nothing can be UI-only.
  */
+import { BACKDROP_LABELS, BACKDROP_NAMES } from '../render/backdrops.js';
 import { BUILTIN_NODE_TYPES, LINK_TYPES } from './builtins.js';
 import { POLICY_MARKER_TYPES } from './markers.js';
 import { LAYER_KINDS } from './layers.js';
@@ -753,6 +754,14 @@ const ANNOTATION_CATALOG: Record<AnnotationKind, AnnotationTypeInfo> = {
         options: ['top', 'bottom'],
       },
       { key: 'parentZone', label: 'Parent zone', kind: 'ref' },
+      {
+        // Natural Earth land outline drawn faintly inside the zone box.
+        key: 'backdrop',
+        label: 'Map backdrop',
+        kind: 'enum',
+        options: BACKDROP_NAMES,
+        optionLabels: BACKDROP_LABELS,
+      },
       HREF_FIELD,
       TOOLTIP_FIELD,
       LAYER_FIELD,

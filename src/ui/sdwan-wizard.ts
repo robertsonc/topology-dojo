@@ -85,6 +85,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
       | 'interRegionHubMesh'
       | 'cloudHub'
       | 'sse'
+      | 'mapBackdrop'
     >
   > & {
     /** Branch count per region slot (all four kept, so shrinking and
@@ -105,6 +106,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
     interRegionHubMesh: true,
     cloudHub: 'none',
     sse: 'none',
+    mapBackdrop: false,
   };
   let result: SdwanResult | null = null;
 
@@ -304,6 +306,15 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
         intent.sse,
         (v) => (intent.sse = v),
       ),
+      group(
+        'Map backdrop',
+        [
+          { value: false, label: 'None' },
+          { value: true, label: 'Region continents' },
+        ],
+        intent.mapBackdrop,
+        (v) => (intent.mapBackdrop = v),
+      ),
       // Overview region pages are device detail, so LAN applies there too.
       ...(intent.detail !== 'site'
         ? [
@@ -357,6 +368,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
         interRegionHubMesh: intent.interRegionHubMesh,
         cloudHub: intent.cloudHub,
         sse: intent.sse,
+        mapBackdrop: intent.mapBackdrop,
       });
     } catch (err) {
       result = null;

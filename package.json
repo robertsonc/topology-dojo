@@ -21,6 +21,7 @@
     "format": "prettier --write .",
     "test:e2e": "playwright test",
     "build:export-fonts": "tsx scripts/build-export-fonts.ts",
+    "build:backdrops": "tsx scripts/build-backdrops.ts",
     "catalog:types": "tsx scripts/catalog-types.ts",
     "catalog:build": "tsx scripts/catalog-build.ts",
     "catalog:check": "tsx scripts/catalog-build.ts --check && tsx scripts/catalog-types.ts --check",
@@ -45,6 +46,7 @@
     "typescript-eslint": "^8.18.0",
     "vite": "^6.0.0",
     "vitest": "^3.0.0",
+    "world-atlas": "2.0.2",
     "wrangler": "^4.98.0"
   },
   "dependencies": {
