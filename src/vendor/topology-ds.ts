@@ -589,6 +589,8 @@ export interface NodePlugin {
   render: (x: number, y: number, cfg: { color?: string }) => string;
   defaults?: Record<string, unknown>;
   hitBox?: { rx: number; ry: number };
+  /** South labels clear the hit box (Node Designer glyphs fill it). */
+  labelClearsHitBox?: boolean;
   haloColor?: string;
 }
 

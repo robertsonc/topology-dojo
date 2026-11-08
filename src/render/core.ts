@@ -104,6 +104,7 @@ function registerCustomTypes(E: EngineStatic, specs: CustomNodeSpec[]): void {
         renderCustomNode(spec, x, y, cfg),
       defaults: { color: spec.colorStroke },
       hitBox: customHitBox(spec),
+      labelClearsHitBox: true,
       haloColor: glowForColor(spec.colorStroke),
     });
   }

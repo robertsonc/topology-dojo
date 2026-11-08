@@ -145,6 +145,9 @@ export function registerCustomNode(spec: CustomNodeSpec): void {
       renderCustomNode(spec, x, y, cfg),
     defaults: { color: spec.colorStroke },
     hitBox: customHitBox(spec),
+    // A designer glyph fills its hit box: south labels clear it (engine
+    // `_nodeLabelPos`; mirrored in render/label-placement).
+    labelClearsHitBox: true,
     haloColor: glowForColor(spec.colorStroke),
   });
 }

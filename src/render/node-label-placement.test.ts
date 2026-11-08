@@ -47,6 +47,37 @@ describe('node label placement', () => {
     expect(textAt(svg, 'FW')).toEqual({ x: 300, y: 324, anchor: 'middle' });
   });
 
+  it('clears the glyph of a Node Designer type (stock pack), engine = mirror', () => {
+    // k8s fills a 24px-half hit box: the fixed 24px baseline sat on its
+    // bottom edge; the label now clears the box (24 + 14).
+    for (const type of ['k8s', 'branchoffice', 'vrf']) {
+      const node = { type, label: 'Lbl' };
+      const svg = renderPageToSVG(pageWith(node));
+      const drawn = textAt(svg, 'Lbl')!;
+      const mirror = nodeLabelPos({
+        id: 'n',
+        x: 300,
+        y: 300,
+        ...node,
+      } as NodeConfig);
+      expect(drawn.y, type).toBe(mirror.y);
+      expect(drawn.y, type).toBeGreaterThanOrEqual(300 + 38);
+    }
+    // Built-in types keep the classic 24px baseline.
+    expect(textAt(renderPageToSVG(pageWith({ label: 'FW' })), 'FW')!.y).toBe(
+      324,
+    );
+    // An explicit offset still wins.
+    expect(
+      textAt(
+        renderPageToSVG(
+          pageWith({ type: 'k8s', label: 'Lbl', labelOffset: 30 }),
+        ),
+        'Lbl',
+      )!.y,
+    ).toBe(330);
+  });
+
   it('keeps an explicit labelOffset as the absolute baseline offset', () => {
     const svg = renderPageToSVG(pageWith({ label: 'FW', labelOffset: 40 }));
     expect(textAt(svg, 'FW')).toEqual({ x: 300, y: 340, anchor: 'middle' });
