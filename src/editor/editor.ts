@@ -7,6 +7,7 @@
  * selection visuals, the marquee, and drag ghosts — so dragging is smooth
  * without re-rendering the heavy art every frame.
  */
+import { STOCK_NODE_LABELS } from '../nodes/stock.js';
 import {
   renderPageInto,
   type AnchorConfig,
@@ -4415,6 +4416,9 @@ function clamp(v: number, lo: number, hi: number): number {
 
 /** A readable default label for a freshly-added node. */
 function defaultLabel(type: string): string {
+  // Stock types carry a friendly name ("Home Office", not "Homeoffice").
+  const stock = STOCK_NODE_LABELS[type];
+  if (stock) return stock;
   const t = type.replace(/^shape:/, '');
   return t.charAt(0).toUpperCase() + t.slice(1);
 }

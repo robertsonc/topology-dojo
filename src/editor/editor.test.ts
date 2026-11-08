@@ -478,3 +478,18 @@ describe('zones are the bottom layer', () => {
     expect(editor.selectedNodeIds()).toEqual(['c']);
   });
 });
+
+describe('default node labels', () => {
+  it('uses a stock type’s friendly name, else the capitalised type', () => {
+    const p = basePage('p1');
+    const editor = mkEditor(p);
+    editor.addNode('homeoffice');
+    editor.addNode('loadbalancer');
+    editor.addNode('ec');
+    expect(p.nodes.slice(-3).map((n) => n.label)).toEqual([
+      'Home Office',
+      'Load Balancer',
+      'Ec',
+    ]);
+  });
+});

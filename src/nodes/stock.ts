@@ -33,6 +33,8 @@ const BLUE = '#65aef9';
 const GOLD = '#deb146';
 const RED = '#fc6161';
 const SLATE = '#7d8a92';
+/** Places family accent (sites, not devices). */
+const TEAL = '#00a4b3';
 
 function spec(
   partial: Partial<CustomNodeSpec> & { typeName: string },
@@ -110,6 +112,13 @@ export const STOCK_NODE_SPECS: CustomNodeSpec[] = [
   device('ids', 'diamond', 'eye', RED, { badge: true, badgeText: 'IDS' }),
   device('vpnconc', 'diamond', 'lock', RED),
   device('usergroup', 'circle', 'users', GOLD),
+  // ── Places (proposal 0011, tier 1): sites rather than devices — SD-WAN
+  // site tiles, ZTNA remote workers. One shape and colour for the family so
+  // a site never reads as an appliance.
+  device('branchoffice', 'square', 'building', TEAL, { size: 26 }),
+  device('campus', 'square', 'campus', TEAL, { size: 26 }),
+  device('datacenter', 'square', 'datacenter', TEAL, { size: 26 }),
+  device('homeoffice', 'square', 'home', TEAL, { size: 26 }),
   // ── Wiring-sheet chassis (proposal 0008, W7): a generic rack-unit front
   // panel with a port row and status LEDs, sized so pills / anchor-box
   // slots land along its long bottom edge. Name + model go in the node's
@@ -165,6 +174,10 @@ export const STOCK_NODE_LABELS: Record<string, string> = {
   ids: 'IDS / IPS',
   vpnconc: 'VPN Concentrator',
   usergroup: 'User Group',
+  branchoffice: 'Branch Office',
+  campus: 'Campus',
+  datacenter: 'Data Center',
+  homeoffice: 'Home Office',
 };
 
 /** Palette category + search aliases per stock type (default: Cloud). */
@@ -255,6 +268,22 @@ export const STOCK_NODE_META: Record<
   usergroup: {
     category: 'Endpoint',
     keywords: ['team', 'users', 'department'],
+  },
+  branchoffice: {
+    category: 'Places',
+    keywords: ['branch', 'site', 'office', 'store', 'retail', 'spoke'],
+  },
+  campus: {
+    category: 'Places',
+    keywords: ['site', 'headquarters', 'hq', 'buildings', 'corporate'],
+  },
+  datacenter: {
+    category: 'Places',
+    keywords: ['dc', 'data centre', 'hub', 'colo', 'racks', 'site'],
+  },
+  homeoffice: {
+    category: 'Places',
+    keywords: ['home', 'remote worker', 'teleworker', 'wfh', 'residence'],
   },
 };
 
