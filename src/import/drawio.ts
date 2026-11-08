@@ -27,6 +27,11 @@
  *
  * DOM-free and pure: shared by the browser open flow and `import_topology`.
  */
+import {
+  DRAWIO_PAGE_LINK_PREFIX,
+  pageLinkHref,
+  pageLinkTarget,
+} from '../api/page-link.js';
 import { inflateSync, strFromU8 } from 'fflate';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type {
@@ -280,6 +285,33 @@ const DATA_SKIP = new Set([
   'tooltip',
 ]);
 
+/**
+ * Point imported page links at the imported page ids: draw.io links name its
+ * own diagram ids, which become `p1`, `p2`, … here. Links to a page that is
+ * not in the file are dropped with a warning.
+ */
+function remapPageLinks(
+  pages: Page[],
+  diagrams: { id: string; sourceId?: string }[],
+  warnings: string[],
+): void {
+  const byDiagram = new Map<string, string>();
+  for (const d of diagrams) if (d.sourceId) byDiagram.set(d.sourceId, d.id);
+  for (const page of pages)
+    for (const n of page.nodes) {
+      const target = pageLinkTarget(n.href);
+      if (target === null) continue;
+      const mapped = byDiagram.get(target);
+      if (mapped) n.href = pageLinkHref(mapped);
+      else {
+        delete n.href;
+        warnings.push(
+          `node "${n.id}" links to a page not in this file; link dropped`,
+        );
+      }
+    }
+}
+
 function convertPage(
   model: XmlElement,
   name: string,
@@ -441,6 +473,10 @@ function convertPage(
       n.width = round(w);
     }
     if (c.data.link && /^https?:\/\//i.test(c.data.link)) n.href = c.data.link;
+    // draw.io page link → our page link, keyed by draw.io's diagram id for
+    // now; remapped to the imported page ids once every page is converted.
+    else if (c.data.link?.startsWith(DRAWIO_PAGE_LINK_PREFIX))
+      n.href = pageLinkHref(c.data.link.slice(DRAWIO_PAGE_LINK_PREFIX.length));
     if (c.data.tooltip) n.tooltip = c.data.tooltip;
     const meta: Record<string, string> = {};
     for (const [k, v] of Object.entries(c.data))
@@ -623,7 +659,13 @@ export function convertDrawio(
       error: err instanceof Error ? err.message : String(err),
     };
   }
-  const diagrams: { name: string; id: string; model: XmlElement }[] = [];
+  const diagrams: {
+    name: string;
+    id: string;
+    /** draw.io's own diagram id (page-link target), when it has one. */
+    sourceId?: string;
+    model: XmlElement;
+  }[] = [];
   try {
     if (root.name === 'mxGraphModel') {
       diagrams.push({ name: 'Page-1', id: 'p1', model: root });
@@ -650,6 +692,7 @@ export function convertDrawio(
         diagrams.push({
           name: d.attrs.name || `Page-${i + 1}`,
           id: `p${i + 1}`,
+          ...(d.attrs.id ? { sourceId: d.attrs.id } : {}),
           model,
         });
       });
@@ -670,6 +713,7 @@ export function convertDrawio(
     pages = diagrams.map((d) =>
       convertPage(d.model, d.name, d.id, layers, warnings),
     );
+    remapPageLinks(pages, diagrams, warnings);
   } catch (err) {
     return {
       ok: false,

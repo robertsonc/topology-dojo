@@ -7,6 +7,7 @@
  * hands the generated document to the caller, which loads it like a template.
  */
 import {
+  DEFAULT_REGION_NAMES,
   generateSdwan,
   SDWAN_LIMITS,
   type BranchLan,
@@ -81,12 +82,19 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
       | 'branchLan'
       | 'interRegionHubMesh'
     >
-  > & { branches: number; transports: Transport[] } = {
+  > & {
+    /** Branch count per region slot (all four kept, so shrinking and
+     * re-growing the region count does not forget an entry). */
+    branches: number[];
+    names: string[];
+    transports: Transport[];
+  } = {
     vendor: 'edgeconnect',
     detail: 'device',
     regions: 1,
     hubsPerRegion: 2,
-    branches: 4,
+    branches: [4, 4, 4, 4],
+    names: [...DEFAULT_REGION_NAMES],
     transports: ['inet'],
     branchHa: false,
     branchLan: 'none',
@@ -140,6 +148,48 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
     return wrap;
   };
 
+  /** Name + branch count per region. Edits regenerate the preview without
+   * rebuilding the form, so typing keeps focus. */
+  const regionRows = (): HTMLElement => {
+    const wrap = document.createElement('div');
+    wrap.className = 'sdw-q';
+    wrap.innerHTML =
+      `<div class="sdw-label" id="sdw-regions">Regions: name and branches</div>` +
+      `<div class="sdw-regions" role="group" aria-labelledby="sdw-regions"></div>`;
+    const rows = wrap.querySelector<HTMLElement>('.sdw-regions')!;
+    for (let r = 0; r < intent.regions; r++) {
+      const row = document.createElement('div');
+      row.className = 'sdw-region';
+      const name = document.createElement('input');
+      name.type = 'text';
+      name.className = 'sdw-region-name';
+      name.maxLength = 24;
+      name.value = intent.names[r]!;
+      name.placeholder = DEFAULT_REGION_NAMES[r]!;
+      name.setAttribute('aria-label', `Region ${r + 1} name`);
+      name.addEventListener('input', () => {
+        intent.names[r] = name.value;
+        regenerate();
+      });
+      const count = document.createElement('select');
+      count.className = 'tbtn sdw-region-count';
+      count.setAttribute('aria-label', `Region ${r + 1} branches`);
+      for (const c of range(
+        SDWAN_LIMITS.branchesPerRegion.min,
+        SDWAN_LIMITS.branchesPerRegion.max,
+      ))
+        count.add(new Option(`${c.label} branches`, String(c.value)));
+      count.value = String(intent.branches[r]);
+      count.addEventListener('change', () => {
+        intent.branches[r] = Number(count.value);
+        regenerate();
+      });
+      row.append(name, count);
+      rows.appendChild(row);
+    }
+    return wrap;
+  };
+
   const buildForm = (): void => {
     const haLabel =
       intent.vendor === 'edgeconnect' ? 'HA pair' : 'Chassis cluster';
@@ -158,6 +208,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
         [
           { value: 'device', label: 'Every device' },
           { value: 'site', label: 'One box per site' },
+          { value: 'overview', label: 'Overview + region pages' },
         ],
         intent.detail,
         (v) => (intent.detail = v),
@@ -190,15 +241,17 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
         intent.hubsPerRegion,
         (v) => (intent.hubsPerRegion = v),
       ),
-      group(
-        'Branches per region',
-        range(
-          SDWAN_LIMITS.branchesPerRegion.min,
-          SDWAN_LIMITS.branchesPerRegion.max,
-        ),
-        intent.branches,
-        (v) => (intent.branches = v),
-      ),
+      intent.regions === 1
+        ? group(
+            'Branches per region',
+            range(
+              SDWAN_LIMITS.branchesPerRegion.min,
+              SDWAN_LIMITS.branchesPerRegion.max,
+            ),
+            intent.branches[0]!,
+            (v) => (intent.branches[0] = v),
+          )
+        : regionRows(),
       group(
         'WAN links per branch',
         range(SDWAN_LIMITS.wanLinks.min, SDWAN_LIMITS.wanLinks.max),
@@ -224,7 +277,8 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
         intent.branchHa,
         (v) => (intent.branchHa = v),
       ),
-      ...(intent.detail === 'device'
+      // Overview region pages are device detail, so LAN applies there too.
+      ...(intent.detail !== 'site'
         ? [
             group<BranchLan>(
               'Branch LAN',
@@ -257,13 +311,19 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
           : now.find((b) => b.textContent === focusText);
       same?.focus();
     }
+    regenerate();
+  };
+
+  /** Regenerate the document, preview and counts from the current intent. */
+  const regenerate = (): void => {
     try {
       result = generateSdwan({
         vendor: intent.vendor,
         detail: intent.detail,
         regions: intent.regions,
+        regionNames: intent.names.slice(0, intent.regions),
         hubsPerRegion: intent.hubsPerRegion,
-        branchesPerRegion: intent.branches,
+        branchesPerRegion: intent.branches.slice(0, intent.regions),
         transports: intent.transports,
         branchHa: intent.branchHa,
         branchLan: intent.branchLan,
@@ -284,11 +344,14 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
       s.underlayTunnels > 0
         ? `${plural(s.overlayTunnels, 'overlay tunnel')} · ${s.underlayTunnels} underlay (hidden layer)`
         : plural(s.tunnels, 'tunnel');
-    stats.textContent = `${plural(s.devices, 'device')} · ${tunnels} · ${plural(s.links, 'cable')}`;
+    const pages = s.pages > 1 ? ` · ${s.pages} pages` : '';
+    stats.textContent = `${plural(s.devices, 'device')} · ${tunnels} · ${plural(s.links, 'cable')}${pages}`;
     note.textContent =
       intent.detail === 'device' && s.overlayTunnels > DENSE_TUNNELS
-        ? `Dense: ${s.overlayTunnels} visible tunnels. "One box per site" reads better at this size.`
-        : VENDOR_NOTE[intent.vendor];
+        ? `Dense: ${s.overlayTunnels} visible tunnels. "One box per site" or "Overview + region pages" reads better at this size.`
+        : intent.detail === 'overview'
+          ? `Preview shows the overview page. Ctrl/Cmd+click a site to open its region's device page; each region page links back. ${VENDOR_NOTE[intent.vendor]}`
+          : VENDOR_NOTE[intent.vendor];
   };
 
   let release: () => void = () => {};

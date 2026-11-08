@@ -8,6 +8,7 @@
  * without re-rendering the heavy art every frame.
  */
 import { STOCK_NODE_LABELS } from '../nodes/stock.js';
+import { isFollowableHref } from '../api/page-link.js';
 import {
   renderPageInto,
   type AnchorConfig,
@@ -3717,7 +3718,9 @@ export class Editor {
         el && typeof (el as { href?: unknown }).href === 'string'
           ? ((el as { href: string }).href ?? '').trim()
           : '';
-      if (/^https?:\/\//i.test(href)) {
+      // http(s) opens a tab; `#page=<id>` switches to that page (the shell
+      // decides — see setOpenHrefHandler).
+      if (isFollowableHref(href)) {
         this.onOpenHref(href);
         return;
       }

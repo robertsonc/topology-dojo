@@ -57,3 +57,45 @@ test('Escape closes the SD-WAN wizard without touching the document', async ({
   await expect(page.locator('.sdw-card')).toHaveCount(0);
   expect(await statusCount(page, 'nodes')).toBe(n0);
 });
+
+test('overview mode: named regions, drill down to a region page and back', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await page.selectOption('#fTemplate', '__sdwan');
+  await question(page, 'Regions').getByRole('button', { name: '2' }).click();
+  await page.getByLabel('Region 1 name').fill('West');
+  await page.getByLabel('Region 2 branches').selectOption('2');
+  await question(page, 'How much detail?')
+    .getByRole('button', { name: 'Overview + region pages' })
+    .click();
+  await expect(page.locator('.sdw-stats')).toContainText('3 pages');
+
+  page.once('dialog', (d) => void d.accept());
+  await page.getByRole('button', { name: 'Create diagram' }).click();
+  const frames = page.locator('#filmstrip [data-page]');
+  await expect(frames).toHaveCount(3);
+  await expect(frames.nth(0)).toHaveClass(/\bon\b/);
+  // West: 2 hubs + 4 branches; EMEA: 2 hubs + 2 branches.
+  await expect.poll(() => statusCount(page, 'nodes')).toBe(10);
+
+  // Ctrl/Cmd+click an EMEA branch tile → the EMEA device page. (EMEA sits
+  // mid-canvas; West's tiles can sit under the node library at this size.)
+  const ctrlClick = async (selector: string) => {
+    const box = (await page.locator(selector).boundingBox())!;
+    await page.keyboard.down('Control');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.keyboard.up('Control');
+  };
+  await ctrlClick('#page-canvas [data-tds-node="ne_emea-br01"]');
+  await expect(frames.nth(2)).toHaveClass(/\bon\b/);
+  await expect(
+    page.locator('#page-canvas [data-tds-node="ne_emea-hub01"]'),
+  ).toHaveCount(1);
+
+  // The back link returns to the overview.
+  await ctrlClick('#page-canvas [data-tds-node="nav_emea_overview"]');
+  await expect(frames.nth(0)).toHaveClass(/\bon\b/);
+  // Following links never edits the document.
+  await expect.poll(() => statusCount(page, 'nodes')).toBe(10);
+});

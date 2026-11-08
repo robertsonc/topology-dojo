@@ -15,6 +15,7 @@
  * DOM-free and pure: shared by the browser, the stdio MCP server and the
  * Worker.
  */
+import { pageLinkTarget } from '../api/page-link.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type {
   LinkConfig,
@@ -88,6 +89,9 @@ export interface SceneNode {
   /** https / data:image URI for `image` nodes. */
   imageHref?: string;
   href?: string;
+  /** Target page id of an in-document page link (`href: "#page=<id>"`).
+   * Kept apart from `href` so URL-only exporters never emit it. */
+  pageLink?: string;
   tooltip?: string;
   meta?: Record<string, string | number | boolean>;
 }
@@ -375,6 +379,8 @@ function sceneNode(
   }
   if (typeof n.href === 'string' && /^https?:\/\//i.test(n.href))
     out.href = n.href;
+  const pageLink = pageLinkTarget(n.href);
+  if (pageLink !== null) out.pageLink = pageLink;
   if (typeof n.tooltip === 'string' && n.tooltip) out.tooltip = n.tooltip;
   if (n.meta && Object.keys(n.meta).length) out.meta = { ...n.meta };
   return out;

@@ -35,6 +35,7 @@
 import { compileFabric, FABRIC_LAYERS, type FabricRecords } from './compile.js';
 import type { ApplianceRecord, TunnelRecord } from './types.js';
 import { defineLayer } from '../api/builder.js';
+import { pageLinkHref } from '../api/page-link.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 
 /** Source-system id on every generated element — never a live provider's. */
@@ -49,8 +50,15 @@ export type Transport = (typeof TRANSPORTS)[number];
 export const BRANCH_LAN = ['none', 'switch', 'switch-ap'] as const;
 export type BranchLan = (typeof BRANCH_LAN)[number];
 
-export const DETAIL_LEVELS = ['device', 'site'] as const;
+/**
+ * `device`: every appliance and cable. `site`: one tile per site.
+ * `overview`: a site page whose tiles link to one device page per region.
+ */
+export const DETAIL_LEVELS = ['device', 'site', 'overview'] as const;
 export type DetailLevel = (typeof DETAIL_LEVELS)[number];
+
+/** Page id of the generated (first) page; region pages are `sdwan-<region>`. */
+export const SDWAN_PAGE_ID = 'sdwan';
 
 export const SDWAN_LIMITS = {
   regions: { min: 1, max: 4 },
@@ -63,7 +71,7 @@ export const DEFAULT_REGION_NAMES = ['AMER', 'EMEA', 'APAC', 'LATAM'] as const;
 
 export interface SdwanIntent {
   vendor: SdwanVendor;
-  /** `device`: every appliance and cable. `site`: one tile per site. */
+  /** `device` | `site` | `overview` (site page + one page per region). */
   detail?: DetailLevel;
   /** Number of regions (1–4). */
   regions?: number;
@@ -103,6 +111,8 @@ export interface SdwanStats {
   overlayTunnels: number;
   /** Physical cables (WAN circuits, HA/cluster links, LAN). */
   links: number;
+  /** Pages generated (1, or 1 + regions for `overview`). */
+  pages: number;
 }
 
 export interface SdwanResult {
@@ -218,14 +228,21 @@ export function resolveSdwanIntent(intent: SdwanIntent): ResolvedSdwanIntent {
   const branchLan = intent.branchLan ?? 'none';
   if (!BRANCH_LAN.includes(branchLan))
     throw new IntentError(`branchLan must be one of ${BRANCH_LAN.join(', ')}`);
-  const names = (intent.regionNames ?? [])
-    .map((n) => String(n).trim().slice(0, 24))
-    .filter(Boolean);
+  // A blank name falls back to that region's default — by position, so
+  // blanking region 2 never shifts region 3's name into its place.
+  const names = intent.regionNames ?? [];
   const regionNames = Array.from(
     { length: regions },
-    (_, i) => names[i] ?? DEFAULT_REGION_NAMES[i] ?? `R${i + 1}`,
+    (_, i) =>
+      String(names[i] ?? '')
+        .trim()
+        .slice(0, 24) ||
+      DEFAULT_REGION_NAMES[i] ||
+      `R${i + 1}`,
   );
-  if (new Set(regionNames.map((n) => n.toLowerCase())).size !== regions)
+  // Page ids and element ids derive from the name's slug, so two names that
+  // differ only in punctuation would collide.
+  if (new Set(regionNames.map(slug)).size !== regions)
     throw new IntentError('regionNames must be distinct');
   const overlayName =
     String(intent.overlayName ?? 'Default')
@@ -453,6 +470,8 @@ const GEO = {
   /** Branch sites per row before wrapping (single / HA). */
   perRow: { single: 6, ha: 4 },
   rowGap: 200,
+  /** Space above a region page's fabric for its back link (overview). */
+  navBand: 60,
   row: { hub: 120, cloud: 330, branch: 560, sw: 170, ap: 320 },
 } as const;
 
@@ -476,14 +495,18 @@ function decorate(
   const p = VENDOR_PROFILE[i.vendor];
   const ec = i.vendor === 'edgeconnect';
   const device = i.detail === 'device';
-  page.id = 'sdwan';
+  page.id = SDWAN_PAGE_ID;
   page.name = device ? 'SD-WAN fabric' : 'SD-WAN overview';
   const byId = new Map(page.nodes.map((n) => [n.id, n]));
   const node = (applianceId: string) => byId.get(nodeIdFor(page, applianceId))!;
 
   // Every element the compiler made is synthetic; label the vendor platform.
+  // Site detail draws places, not appliances: hubs are data centers,
+  // branches branch offices, each tile named for its site.
   for (const n of page.nodes) {
-    n.type = p.nodeType;
+    const hub = n.meta?.role === 'hub';
+    n.type = device ? p.nodeType : hub ? 'datacenter' : 'branchoffice';
+    if (!device && n.source) n.label = n.source.id;
     n.meta = { ...(n.meta ?? {}), platform: p.displayName, generated: 'true' };
   }
 
@@ -785,12 +808,88 @@ export function sdwanStats(doc: TopologyDocument): SdwanStats {
     (l) => l.layer === FABRIC_LAYERS.overlay,
   ).length;
   return {
-    devices: page.nodes.filter((n) => n.type !== 'cloud').length,
+    devices: page.nodes.filter((n) => n.type !== 'cloud' && n.type !== 'text')
+      .length,
     tunnels: underlayTunnels + overlayTunnels,
     underlayTunnels,
     overlayTunnels,
     links: page.links.filter((l) => !l.layer).length,
+    pages: doc.pages.length,
   };
+}
+
+/** One document for a `device` or `site` intent (one page). */
+function buildFabric(i: ResolvedSdwanIntent): TopologyDocument {
+  const plan = synthesize(i);
+  const doc = compileFabric(plan.records, {
+    system: SYNTHETIC_SYSTEM,
+    title: i.title,
+    // Fixed stamp: generated documents are deterministic, and the source
+    // refs mark the elements as synthetic rather than freshly fetched.
+    fetchedAt: '1970-01-01T00:00:00.000Z',
+  });
+  decorate(doc, plan, i);
+  return doc;
+}
+
+/**
+ * `overview`: page 1 is the site view; every tile links (`#page=`) to its
+ * region's device page, and each region page links back. Region pages carry
+ * only that region's fabric: the inter-region hub mesh lives on page 1.
+ */
+function buildOverview(i: ResolvedSdwanIntent): TopologyDocument {
+  const doc = buildFabric({ ...i, detail: 'site' });
+  const overview = doc.pages[0]!;
+  const layers = new Map((doc.layers ?? []).map((l) => [l.id, l]));
+  i.regionNames.forEach((name, r) => {
+    const rs = slug(name);
+    const pageId = `${SDWAN_PAGE_ID}-${rs}`;
+    const region = buildFabric({
+      ...i,
+      detail: 'device',
+      regions: 1,
+      regionNames: [name],
+      branchesPerRegion: [i.branchesPerRegion[r]!],
+      interRegionHubMesh: false,
+    });
+    const page = region.pages[0]!;
+    page.id = pageId;
+    page.name = `${name} detail`;
+    page.caption = `${name}: every device. Inter-region hub mesh is on the overview page.`;
+    // The region page draws its fabric below a back link to the overview.
+    for (const n of page.nodes) n.y += GEO.navBand;
+    const [vx, vy, vw, vh] = page.viewBox.split(' ').map(Number) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    page.viewBox = `${vx} ${vy} ${vw} ${vh + GEO.navBand}`;
+    page.nodes.push({
+      id: `nav_${rs}_overview`,
+      type: 'text',
+      x: GEO.margin + 60,
+      y: 50,
+      label: '◂ Overview',
+      href: pageLinkHref(SDWAN_PAGE_ID),
+      tooltip: 'Ctrl/Cmd+click to open the overview page',
+      meta: { generated: 'true' },
+    });
+    doc.pages.push(page);
+    // Region pages may declare planes the overview lacks (the EC underlay).
+    for (const l of region.layers ?? []) layers.set(l.id, l);
+    // Overview tiles of this region drill into its page.
+    for (const n of overview.nodes)
+      if (n.source && n.id.startsWith(`ne_${rs}-`)) {
+        n.href = pageLinkHref(pageId);
+        n.tooltip = `Ctrl/Cmd+click to open ${name} detail`;
+      }
+  });
+  const order = [FABRIC_LAYERS.underlay, FABRIC_LAYERS.overlay];
+  doc.layers = [...layers.values()].sort(
+    (a, b) => order.indexOf(a.id as never) - order.indexOf(b.id as never),
+  );
+  return doc;
 }
 
 /**
@@ -799,14 +898,9 @@ export function sdwanStats(doc: TopologyDocument): SdwanStats {
  */
 export function generateSdwan(intent: SdwanIntent): SdwanResult {
   const resolved = resolveSdwanIntent(intent);
-  const plan = synthesize(resolved);
-  const doc = compileFabric(plan.records, {
-    system: SYNTHETIC_SYSTEM,
-    title: resolved.title,
-    // Fixed stamp: generated documents are deterministic, and the source
-    // refs mark the elements as synthetic rather than freshly fetched.
-    fetchedAt: '1970-01-01T00:00:00.000Z',
-  });
-  decorate(doc, plan, resolved);
+  const doc =
+    resolved.detail === 'overview'
+      ? buildOverview(resolved)
+      : buildFabric(resolved);
   return { doc, intent: resolved, stats: sdwanStats(doc) };
 }

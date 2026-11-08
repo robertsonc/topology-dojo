@@ -8,7 +8,8 @@ import {
 import { FABRIC_LAYERS } from './compile.js';
 import { validateDocument } from '../api/validate.js';
 import { analyzeLayout } from '../api/layout.js';
-import type { TopologyDocument } from '../pages/model.js';
+import type { Page, TopologyDocument } from '../pages/model.js';
+import { pageLinkTarget } from '../api/page-link.js';
 
 const page = (doc: TopologyDocument) => doc.pages[0]!;
 const tunnels = (doc: TopologyDocument, layer: string) =>
@@ -212,6 +213,61 @@ describe('generateSdwan — regions and detail', () => {
     ).toBe('HA pair · INET1+MPLS1');
   });
 
+  it('site detail draws places: hubs are data centers, branches offices', () => {
+    const { doc } = generateSdwan({ vendor: 'juniper', detail: 'site' });
+    const types = (role: string) =>
+      new Set(
+        page(doc)
+          .nodes.filter((n) => n.meta?.role === role)
+          .map((n) => n.type),
+      );
+    expect(types('hub')).toEqual(new Set(['datacenter']));
+    expect(types('spoke')).toEqual(new Set(['branchoffice']));
+    // Tiles are named for the site, not an appliance hostname.
+    expect(
+      page(doc).nodes.find((n) => n.id === nodeId('amer-br01'))?.label,
+    ).toBe('amer-br01');
+  });
+
+  it('overview: a site page that drills into one device page per region', () => {
+    const { doc, stats } = generateSdwan({
+      vendor: 'edgeconnect',
+      detail: 'overview',
+      regions: 3,
+      regionNames: ['West', 'East', 'Asia'],
+      branchesPerRegion: [2, 3, 1],
+      branchHa: true,
+      transports: ['inet', 'mpls'],
+    });
+    expect(stats.pages).toBe(4);
+    expect(doc.pages.map((p) => p.id)).toEqual([
+      'sdwan',
+      'sdwan-west',
+      'sdwan-east',
+      'sdwan-asia',
+    ]);
+    const [overview, west] = doc.pages as [Page, Page];
+    // Every overview tile links to its own region's page.
+    for (const n of overview.nodes.filter((x) => x.source)) {
+      const region = n.id.split('_')[1]!.split('-')[0];
+      expect(pageLinkTarget(n.href), n.id).toBe(`sdwan-${region}`);
+    }
+    // Region pages: device detail for that region only, plus a back link.
+    expect(west.nodes.some((n) => n.id === nodeId('west-br01-2'))).toBe(true);
+    expect(west.nodes.some((n) => n.id.includes('east'))).toBe(false);
+    const back = west.nodes.find((n) => n.type === 'text')!;
+    expect(pageLinkTarget(back.href)).toBe('sdwan');
+    // The EC underlay plane exists (hidden) because region pages use it.
+    expect(doc.layers?.map((l) => [l.id, l.defaultVisible])).toEqual([
+      ['underlay', false],
+      ['overlay', undefined],
+    ]);
+    // No dangling page links.
+    expect(
+      validateDocument(doc).filter((p) => /page link/.test(p.message)),
+    ).toEqual([]);
+  });
+
   it('marks every fabric element synthetic, never a live provider', () => {
     const { doc } = generateSdwan({ vendor: 'edgeconnect', branchHa: true });
     const sourced = [...page(doc).nodes, ...page(doc).links].filter(
@@ -237,7 +293,7 @@ describe('generateSdwan — regions and detail', () => {
 describe('generateSdwan — every shape is valid and overlap-free', () => {
   const matrix: SdwanIntent[] = [];
   for (const vendor of ['edgeconnect', 'juniper'] as const)
-    for (const detail of ['device', 'site'] as const)
+    for (const detail of ['device', 'site', 'overview'] as const)
       for (const regions of [1, 4])
         for (const branchHa of [false, true])
           for (const branchLan of ['none', 'switch-ap'] as const)
@@ -282,6 +338,23 @@ describe('resolveSdwanIntent — bounds', () => {
     [{ vendor: 'juniper', regions: 2, regionNames: ['A', 'a'] }, /distinct/],
   ])('rejects %j', (intent, msg) => {
     expect(() => resolveSdwanIntent(intent as SdwanIntent)).toThrow(msg);
+  });
+
+  it('fills a blank region name by position and rejects slug collisions', () => {
+    expect(
+      resolveSdwanIntent({
+        vendor: 'juniper',
+        regions: 3,
+        regionNames: ['West', '', 'Asia'],
+      }).regionNames,
+    ).toEqual(['West', 'EMEA', 'Asia']);
+    expect(() =>
+      resolveSdwanIntent({
+        vendor: 'juniper',
+        regions: 2,
+        regionNames: ['US-East', 'US East'],
+      }),
+    ).toThrow(/distinct/);
   });
 
   it('defaults to inter-region mesh only when there are several regions', () => {

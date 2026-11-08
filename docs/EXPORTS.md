@@ -53,18 +53,18 @@ does, with JetBrains Mono embedded because a Worker has no system fonts.
 
 ## draw.io (`.drawio`) — "my team can still edit it"
 
-| Topology Dojo                                                   | draw.io                                                                                                            |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| page                                                            | one `<diagram>` (page) in one `<mxfile>`                                                                           |
-| declared layer                                                  | draw.io layer (hidden when the layer's `defaultVisible` is false); untagged → the base layer                       |
-| zone                                                            | container (`container=1`); same-layer members are children with relative geometry; zones nest                      |
-| node                                                            | vertex wrapped in `<object>`: `dojoType`, label, sublabel, metadata as **Edit Data** properties, `link`, `tooltip` |
-| router / firewall / server / load balancer / proxy / mail / NAS | draw.io network stencils (`mxgraph.networks.*`)                                                                    |
-| cloud / database                                                | built-in cloud / `cylinder3`                                                                                       |
-| basic shapes                                                    | matching built-in shapes                                                                                           |
-| link                                                            | edge glued to both ends; waypoints, orthogonal / curved routing, colour, width, dash                               |
-| port labels                                                     | edge-end labels                                                                                                    |
-| anchor                                                          | 6 px endpoint stub                                                                                                 |
+| Topology Dojo                                                   | draw.io                                                                                                                                                                                              |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| page                                                            | one `<diagram>` (page) in one `<mxfile>`                                                                                                                                                             |
+| declared layer                                                  | draw.io layer (hidden when the layer's `defaultVisible` is false); untagged → the base layer                                                                                                         |
+| zone                                                            | container (`container=1`); same-layer members are children with relative geometry; zones nest                                                                                                        |
+| node                                                            | vertex wrapped in `<object>`: `dojoType`, label, sublabel, metadata as **Edit Data** properties, `link` (a page link `#page=<id>` becomes draw.io's `data:page/id,<id>` and imports back), `tooltip` |
+| router / firewall / server / load balancer / proxy / mail / NAS | draw.io network stencils (`mxgraph.networks.*`)                                                                                                                                                      |
+| cloud / database                                                | built-in cloud / `cylinder3`                                                                                                                                                                         |
+| basic shapes                                                    | matching built-in shapes                                                                                                                                                                             |
+| link                                                            | edge glued to both ends; waypoints, orthogonal / curved routing, colour, width, dash                                                                                                                 |
+| port labels                                                     | edge-end labels                                                                                                                                                                                      |
+| anchor                                                          | 6 px endpoint stub                                                                                                                                                                                   |
 
 A zone member on a different layer than its zone stays a top-level cell of
 its own layer (draw.io children always share their container's layer).

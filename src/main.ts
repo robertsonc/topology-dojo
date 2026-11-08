@@ -69,6 +69,7 @@ import { captionSVG } from './editor/caption.js';
 import { applyRenderTheme, type RenderTheme } from './render/theme.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
 import { openSdwanWizard } from './ui/sdwan-wizard.js';
+import { pageLinkTarget } from './api/page-link.js';
 /** Template-picker value that opens the SD-WAN generator instead. */
 const SDWAN_WIZARD = '__sdwan';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
@@ -490,7 +491,16 @@ function openInlineLabelEditor(req: InlineEditRequest): void {
 editor.setInlineEditHandler(openInlineLabelEditor);
 // Ctrl/Cmd+click on an element carrying an `href` opens it in a new tab —
 // mirroring the clickable <a> the renderer emits in SVG exports and /v/:id.
-editor.setOpenHrefHandler((href) => window.open(href, '_blank', 'noopener'));
+editor.setOpenHrefHandler((href) => {
+  // In-document page link (`#page=<id>`): switch frames, never navigate.
+  const target = pageLinkTarget(href);
+  if (target !== null) {
+    const i = doc.pages.findIndex((p) => p.id === target);
+    if (i >= 0) selectPage(i);
+    return;
+  }
+  window.open(href, '_blank', 'noopener');
+});
 
 /* ── quick-add (double-click empty canvas → type-to-place a node) ─────
  * A draw.io/Lucid-style creation accelerator: a small popover with the same

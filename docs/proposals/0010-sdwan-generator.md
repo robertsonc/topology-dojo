@@ -1,7 +1,7 @@
 # Proposal 0010 — SD-WAN topology generator
 
-**Status:** Spec accepted; slice 1 implemented (2026-11-08, PR #293). Slices
-2–5 open.
+**Status:** Spec accepted; slices 1 (PR #293) and 2 implemented (2026-11-08).
+Slices 3–5 open.
 
 **Captured:** 2026-11-08
 
@@ -122,9 +122,22 @@ nothing is created.
 
 - **`device`:** every appliance, cloud, circuit, HA/cluster link and LAN device.
   Branch zones wrap a site's devices only when there are two or more.
-- **`site`:** one tile per site (hub or branch), one overlay tunnel per
+- **`site`:** one place tile per site — hubs `datacenter`, branches
+  `branchoffice`, named for the site (`amer-br01`) — one overlay tunnel per
   branch–hub pair and per meshed hub pair, no clouds, circuits or LAN. Each
   branch tile's sublabel summarizes the site (`HA pair · INET1+MPLS1`).
+- **`overview`** (slice 2): page 1 (`sdwan`) is the `site` view; then one
+  `device` page per region (`sdwan-<region>`) with that region's fabric only.
+  Every overview tile carries `href: "#page=sdwan-<region>"` and each region
+  page a **◂ Overview** text link back. The inter-region hub mesh is drawn on
+  the overview only.
+
+**Page links** (slice 2): an element `href` of the form `#page=<pageId>` links
+to another page of the document. Validation warns when the page does not exist;
+Ctrl/Cmd+click in the editor switches pages; draw.io export writes draw.io's
+own page link (`data:page/id,<id>`) and import maps it back. Renderer, Visio,
+PowerPoint and PDF outputs emit only http(s) links, so page links never leak
+as broken URLs.
 
 ### 6.4 Layout
 
@@ -166,16 +179,21 @@ tunnels, tunnel captions move into link metadata to keep the canvas legible.
 | AC10 | Wizard counts equal the counts on the canvas after Create; Esc leaves the document untouched                                  | ✅ e2e                   |
 | AC11 | MCP tool returns a document that `validate_topology` reports valid and layout-clean                                           | ✅ MCP                   |
 | AC12 | Wizard is usable at phone width (390px) with the preview above the form                                                       | ✅ manual screenshot     |
+| AC13 | Site detail uses place icons (hubs `datacenter`, branches `branchoffice`), tiles named for their site                         | ✅ unit (slice 2)        |
+| AC14 | `overview` gives 1 + regions pages; every overview tile links to its region page and each region page links back              | ✅ unit + e2e (slice 2)  |
+| AC15 | Ctrl/Cmd+click follows a page link in the editor and never edits the document                                                 | ✅ e2e (slice 2)         |
+| AC16 | A dangling page link is a validation warning; draw.io export/import keeps page links pointing at the right page               | ✅ unit (slice 2)        |
+| AC17 | A blank region name falls back to that region's default by position; names whose slugs collide are rejected                   | ✅ unit (slice 2)        |
 
 ## 9. Slices
 
-| Slice | Scope                                                                                                                                                                                                                                                               | Depends on                                                                       |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| **1** | Intent, EdgeConnect + Juniper SRX vendor rules, device/site detail, layout, MCP tool, wizard. **Done (PR #293).**                                                                                                                                                   | —                                                                                |
-| 2     | **Site tiles and drill-down.** Site detail uses place icons (branch, data centre, home) instead of appliance glyphs; an overview page plus one detail page per region, linked by an in-document page link. Region names and per-region branch counts in the wizard. | Place icons (0011 tier 1); a page-link field (`href` accepts http(s) only today) |
-| 3     | **Geography.** Optional AMER/EMEA/APAC map backdrop on a locked bottom layer behind region zones.                                                                                                                                                                   | A map backdrop asset                                                             |
-| 4     | **Cloud and SASE edges.** Cloud hubs (AWS TGW, Azure vWAN, GCP Cloud Router: stock icons exist), an SSE/SASE PoP on-ramp, local breakout vs backhaul, optional branch-to-branch mesh.                                                                               | SSE/SASE PoP icon (0011)                                                         |
-| 5     | **More vendors.** Juniper SSR (Secure Vector Routing — tunnel-free, needs its own profile), Fortinet SD-WAN/ADVPN (FGCP cluster terminates once).                                                                                                                   | Vendor review                                                                    |
+| Slice | Scope                                                                                                                                                                                                                                       | Depends on                      |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| **1** | Intent, EdgeConnect + Juniper SRX vendor rules, device/site detail, layout, MCP tool, wizard. **Done (PR #293).**                                                                                                                           | —                               |
+| **2** | **Site tiles and drill-down.** Site detail uses place icons; `overview` detail adds one device page per region, linked by in-document page links (`href: "#page=<id>"`). Region names and per-region branch counts in the wizard. **Done.** | Place icons (0011 tier 1, done) |
+| 3     | **Geography.** Optional AMER/EMEA/APAC map backdrop on a locked bottom layer behind region zones.                                                                                                                                           | A map backdrop asset            |
+| 4     | **Cloud and SASE edges.** Cloud hubs (AWS TGW, Azure vWAN, GCP Cloud Router: stock icons exist), an SSE/SASE PoP on-ramp, local breakout vs backhaul, optional branch-to-branch mesh.                                                       | SSE/SASE PoP icon (0011)        |
+| 5     | **More vendors.** Juniper SSR (Secure Vector Routing — tunnel-free, needs its own profile), Fortinet SD-WAN/ADVPN (FGCP cluster terminates once).                                                                                           | Vendor review                   |
 
 ## 10. Risks and open questions
 
