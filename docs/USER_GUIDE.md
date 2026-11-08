@@ -376,7 +376,15 @@ Right-click a link for:
 - stacking, lock, and delete actions.
 
 Right-click empty canvas for **Paste**, **Select all**, **Tidy layout**,
-**Balance layout**, and **Fit page to content**.
+**Balance layout**, **Auto-place labels**, and **Fit page to content**.
+
+**Auto-place labels** moves each node's label (its **Placement**) to the side
+crossed by the fewest links, so a hub whose links fan downward gets its name
+above it. It never crowds another node or label, grows a zone into its
+neighbour, or leaves the page; ties keep the label below. Labels you positioned
+by hand (Label X / Label Y) are left alone, and the whole pass is one undo
+step. Agents use **auto_place_labels**; generated SD-WAN fabrics are placed this
+way automatically.
 
 Context menus support Up/Down, Enter, and Escape. Dialogs and menus keep Tab
 focus inside the open overlay and restore focus when closed.

@@ -89,6 +89,7 @@ import {
 } from '../connect/generate.js';
 import type { RenderOptions } from '../render/core.js';
 import { inspectPage } from '../render/inspect.js';
+import { autoPlaceLabels } from '../render/label-auto.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { convertLegacyStudio, detectLegacyStudio } from '../import/legacy.js';
 import { convertMermaid, detectMermaid } from '../import/mermaid.js';
@@ -2065,6 +2066,39 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             ? { keepInBounds: Boolean(a.keepInBounds) }
             : {}),
         }),
+    },
+    {
+      name: 'auto_place_labels',
+      description:
+        'Move node labels away from links: for each node, pick the compass placement (labelPlacement) whose label is crossed by the fewest links as drawn, without crowding another node or label, growing into a foreign zone, or leaving the page; below is preferred on ties. Labels placed by hand (labelOffset / labelOffsetX / labelY) are left alone. Mutates the stored topology; returns the changed count per page. generate_sdwan_topology already does this.',
+      inputShape: {
+        topologyId,
+        pageIndex: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe('0-based page index; omit to place labels on every page.'),
+      },
+      handler: (a) => {
+        const doc = store.get(String(a.topologyId));
+        const indices =
+          a.pageIndex === undefined
+            ? doc.pages.map((_, i) => i)
+            : [Number(a.pageIndex)];
+        const pages = indices.map((i) => {
+          const page = doc.pages[i];
+          if (!page) throw new Error(`no page at index ${i}`);
+          const { changed } = autoPlaceLabels(page, {
+            customNodes: doc.customNodes,
+          });
+          return { pageIndex: i, changed };
+        });
+        return {
+          changed: pages.reduce((n, p) => n + p.changed, 0),
+          pages,
+        };
+      },
     },
     {
       name: 'layout_topology',

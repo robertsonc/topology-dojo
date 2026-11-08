@@ -126,6 +126,7 @@ export const MUTATING_MCP_TOOLS: ReadonlySet<string> = new Set([
   'bind_hardware',
   'assign_interfaces',
   'tidy_topology',
+  'auto_place_labels',
   'balance_topology',
   'layout_topology',
   'build_flow_topology',

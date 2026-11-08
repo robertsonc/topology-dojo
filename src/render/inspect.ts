@@ -1094,7 +1094,7 @@ function drawnPolyline(attach: AttachContext, l: LinkConfig): Pt[] | null {
  * engine's `_buildLinkPath` orthogonal elbows inserted, or the control polygon
  * for a curved link (its 2-point bulge is ≤20px, so the chord stands in).
  */
-function linkPolyline(l: LinkConfig, from: Pt, to: Pt): Pt[] {
+export function linkPolyline(l: LinkConfig, from: Pt, to: Pt): Pt[] {
   const wps = (l.waypoints ?? []).filter(
     (p) => Number.isFinite(p.x) && Number.isFinite(p.y),
   );
@@ -1125,14 +1125,14 @@ function polylinesCross(p: Pt[], q: Pt[]): Pt | null {
 }
 
 /** True when any segment of the polyline intersects the rect. */
-function polylineIntersectsRect(p: Pt[], r: BoundsRect): boolean {
+export function polylineIntersectsRect(p: Pt[], r: BoundsRect): boolean {
   for (let i = 0; i + 1 < p.length; i++)
     if (segmentIntersectsRect(p[i]!, p[i + 1]!, r)) return true;
   return false;
 }
 
 /** True when segment a→b intersects the rect (endpoint inside or edge cross). */
-function segmentIntersectsRect(a: Pt, b: Pt, r: BoundsRect): boolean {
+export function segmentIntersectsRect(a: Pt, b: Pt, r: BoundsRect): boolean {
   const inside = (p: Pt): boolean =>
     p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
   if (inside(a) || inside(b)) return true;

@@ -171,6 +171,10 @@ mirrored (LAN on top, hubs at the bottom), so every region's hubs face one
 central hub band, the inter-region hub mesh stays inside that band, and region
 names label the hub edge. The page `viewBox` fits the content. Above 24
 tunnels, tunnel captions move into link metadata to keep the canvas legible.
+Finally every page runs automatic label placement (`render/label-auto`): each
+node's label moves to the compass side crossed by the fewest drawn links —
+hubs whose tunnels fan downward get their names above — without breaking any
+layout rule.
 
 ## 7. Surfaces
 

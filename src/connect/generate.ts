@@ -36,6 +36,7 @@ import { compileFabric, FABRIC_LAYERS, type FabricRecords } from './compile.js';
 import type { ApplianceRecord, TunnelRecord } from './types.js';
 import { defineLayer } from '../api/builder.js';
 import { pageLinkHref } from '../api/page-link.js';
+import { autoPlaceLabels } from '../render/label-auto.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 
 /** Source-system id on every generated element — never a live provider's. */
@@ -1022,6 +1023,9 @@ function buildFabric(i: ResolvedSdwanIntent): TopologyDocument {
     fetchedAt: '1970-01-01T00:00:00.000Z',
   });
   decorate(doc, plan, i);
+  // Labels go where the tunnels are not (a hub whose links fan downward
+  // gets its name above it, and so on).
+  for (const page of doc.pages) autoPlaceLabels(page);
   return doc;
 }
 
