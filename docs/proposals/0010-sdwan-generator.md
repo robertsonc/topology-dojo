@@ -1,0 +1,192 @@
+# Proposal 0010 — SD-WAN topology generator
+
+**Status:** Spec accepted; slice 1 implemented (2026-11-08, PR #293). Slices
+2–5 open.
+
+**Captured:** 2026-11-08
+
+**Owner:** Topology Dojo maintainers
+
+## 1. Problem
+
+Drawing an SD-WAN fabric by hand is the slowest diagram a TME or SE makes, and
+the one most often drawn wrong. A 3-region, dual-hub, 8-branch, dual-transport
+fabric is hundreds of tunnels, and the counts depend on vendor behaviour the
+person drawing it has to remember: which labels match, whether HA members
+tunnel separately, where LTE lands. People cut corners (one line per site, no
+underlay), and the result looks like a hub-and-spoke cartoon rather than the
+customer's fabric.
+
+A generator wizard is the right interaction: a handful of choices, a live
+preview, a running count. But generated SD-WAN diagrams commonly take four
+modelling shortcuts that this one must not:
+
+1. **"2 hubs (HA)"** drawn as an HA cluster (heartbeat cables) _and_ with
+   every branch tunnelling to both members — mixing an HA cluster up with dual
+   independent hubs.
+2. **No underlay.** Tunnels run box-to-box with no transport cloud, so the
+   diagram cannot show which overlay rides which transport.
+3. **No transport matching.** Every branch tunnels to every hub over every
+   transport, whether or not both ends have it.
+4. **Per-member tunnels for every vendor.** Correct for EdgeConnect HA; wrong
+   for an SRX chassis cluster or a FortiGate FGCP cluster.
+
+## 2. Goals
+
+- **G1 — Correct by vendor.** Tunnel, circuit and HA counts follow the selected
+  vendor's behaviour, and the preview count equals what lands on the canvas.
+- **G2 — One pipeline.** Generated fabrics compile through the same
+  `compileFabric` as a live EdgeConnect Orchestrator pull, so a design and the
+  live fabric look the same: same layers, zones, colours, source conventions.
+- **G3 — Readable at size.** Dense planes are layers that can be hidden; a
+  site-level view exists for the executive diagram; the layout stays
+  overlap-free (`analyzeLayout` clean) across the whole input range.
+- **G4 — Agent parity.** Everything the wizard can do, an agent can do over MCP
+  with the same intent object.
+- **G5 — Honest provenance.** Generated elements can never be mistaken for live
+  data by source-drift reconciliation.
+
+## 3. Non-goals
+
+- Config generation (no Orchestrator templates, Junos set commands, Mist JSON).
+- Routing-protocol detail (BGP sessions, route reflectors, OSPF areas).
+- Capacity or path simulation (bandwidth, SLA, failover behaviour).
+- Arbitrary topologies — this is hub-and-spoke with optional hub mesh. Full mesh
+  and on-demand branch-to-branch shortcuts are a later slice (§9).
+- Pixel-matching any vendor's own topology view.
+
+## 4. Users and stories
+
+- **SE preparing a customer meeting:** "Show the customer's 3 regions, dual
+  hubs, INET+MPLS with LTE backup, as EdgeConnect" — in under a minute, with
+  counts they can quote.
+- **TME building a demo or doc:** generate a clean baseline, then edit it in the
+  canvas (rename sites, add a cloud on-ramp).
+- **Agent over MCP:** "Generate a Juniper fabric like this one, then add the
+  ZTNA connector" — one tool call, then normal edit tools.
+- **Architect comparing designs:** flip vendor or HA mode and watch the tunnel
+  count change, to explain why dual hubs cost what they cost.
+
+## 5. Intent model
+
+One object is the contract for the wizard, the MCP tool and tests.
+
+| Field                | Type                              | Default       | Bounds                                   |
+| -------------------- | --------------------------------- | ------------- | ---------------------------------------- |
+| `vendor`             | `edgeconnect` \| `juniper`        | required      | —                                        |
+| `detail`             | `device` \| `site`                | `device`      | —                                        |
+| `regions`            | int                               | 1             | 1–4                                      |
+| `regionNames`        | string[]                          | AMER, EMEA, … | distinct, ≤24 chars                      |
+| `hubsPerRegion`      | int                               | 2             | 1–2 (independent hubs)                   |
+| `branchesPerRegion`  | int \| int[]                      | 4             | 1–12 each; array length = `regions`      |
+| `transports`         | (`inet`\|`mpls`\|`lte`)[]         | `['inet']`    | 1–3 entries, port order; repeats allowed |
+| `branchHa`           | boolean                           | false         | —                                        |
+| `branchLan`          | `none` \| `switch` \| `switch-ap` | `none`        | device detail only                       |
+| `interRegionHubMesh` | boolean                           | `regions > 1` | —                                        |
+| `overlayName`        | string                            | `Default`     | ≤32 chars; EdgeConnect BIO name          |
+| `title`              | string                            | derived       | ≤120 chars                               |
+
+Invalid input fails with an error that names the field and the allowed range;
+nothing is created.
+
+## 6. Behaviour
+
+### 6.1 Common rules (all vendors)
+
+- **WAN labels** follow port order per transport: `INET1`, `INET2`, `MPLS1`,
+  `LTE1`.
+- **Hubs** are independent appliances, never an HA pair. Each hub terminates one
+  circuit per transport family its region's branches use. LTE is not a hub
+  family: an LTE circuit is matched to the hub's Internet label (`LTE1→INET1`).
+- **Branch → hub** tunnels go to every hub in the branch's own region.
+- **Hub ↔ hub** tunnels always mesh within a region, and mesh across regions
+  when `interRegionHubMesh` is set.
+- **Transport clouds** (device detail): one per family per region (Internet,
+  MPLS); every WAN circuit links its appliance to the cloud.
+- **Provenance:** every compiled element has `source.system = "synthetic"` and a
+  fixed `fetchedAt`; output is byte-identical for identical intent.
+
+### 6.2 Vendor rules
+
+| Aspect          | EdgeConnect                                                         | Juniper SRX (Mist WAN Assurance)                       |
+| --------------- | ------------------------------------------------------------------- | ------------------------------------------------------ |
+| Glyph           | `ec`                                                                | `firewall`                                             |
+| Underlay layer  | One tunnel per matching label per appliance pair; hidden by default | none (layer omitted)                                   |
+| Overlay layer   | One bonded tunnel per appliance pair, labelled with the BIO         | One IPsec tunnel per WAN path per spoke–hub pair       |
+| Branch HA       | Two active appliances + HA link                                     | Chassis cluster node0/node1 + control and fabric links |
+| HA circuits     | Alternate across members (WAN1 → member 1, WAN2 → member 2, …)      | Every circuit on both nodes (reth)                     |
+| Tunnels from HA | Each member, all labels (shared over the HA link)                   | The cluster, drawn on node0 only                       |
+| LAN             | AOS-CX switch, AP                                                   | EX switch, Mist AP                                     |
+
+### 6.3 Detail levels
+
+- **`device`:** every appliance, cloud, circuit, HA/cluster link and LAN device.
+  Branch zones wrap a site's devices only when there are two or more.
+- **`site`:** one tile per site (hub or branch), one overlay tunnel per
+  branch–hub pair and per meshed hub pair, no clouds, circuits or LAN. Each
+  branch tile's sublabel summarizes the site (`HA pair · INET1+MPLS1`).
+
+### 6.4 Layout
+
+Deterministic, no force layout. Each region is a dashed zone containing rows:
+hubs, transport clouds, branches (wrapping at 6 per row, 4 for HA), then LAN.
+Regions tile one or two across. With three or four regions the top grid row is
+mirrored (LAN on top, hubs at the bottom), so every region's hubs face one
+central hub band, the inter-region hub mesh stays inside that band, and region
+names label the hub edge. The page `viewBox` fits the content. Above 24
+tunnels, tunnel captions move into link metadata to keep the canvas legible.
+
+## 7. Surfaces
+
+- **Headless API:** `generateSdwan(intent) → { doc, intent, stats }` in
+  `src/connect/generate.ts`.
+- **MCP:** `generate_sdwan_topology` (zod-validated intent; stores the
+  document, returns `{ id, title, stats, intent }`; counted against the mutating
+  rate limit).
+- **Editor:** **＋ template… → Generate SD-WAN…** opens a modal: one question
+  per field, conditional questions (inter-region mesh only with 2+ regions; LAN
+  only in device detail; one "WAN n type" per link), HA labelled per vendor
+  (HA pair / Chassis cluster), a live preview and counts, and a hint to switch to
+  site detail above 120 visible tunnels. Create replaces the document after
+  confirmation, like a template. Keyboard: focus trap, Esc to close.
+
+## 8. Acceptance criteria
+
+| #    | Criterion                                                                                                                     | Slice 1                  |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| AC1  | The baseline case (EC, 1 region, 2 hubs, 4 branches, 1 INET) gives 9 underlay, 9 overlay, 6 devices, no HA cable between hubs | ✅ unit                  |
+| AC2  | Underlay tunnels form only between matching labels; LTE yields `LTE1→INET1`; no LTE cloud is drawn                            | ✅ unit                  |
+| AC3  | EdgeConnect HA: both members tunnel to every hub; circuits alternate members; one HA link                                     | ✅ unit                  |
+| AC4  | SRX cluster: no tunnel touches node1; control + fabric links; each circuit on both nodes; no underlay layer                   | ✅ unit                  |
+| AC5  | Inter-region mesh adds exactly the cross-region hub pairs                                                                     | ✅ unit                  |
+| AC6  | Site detail: one tile per site, one tunnel per branch–hub pair, no cables                                                     | ✅ unit                  |
+| AC7  | Every vendor × detail × regions × HA × LAN combination validates with no errors and `analyzeLayout` is empty                  | ✅ unit (32-case matrix) |
+| AC8  | Identical intent → identical JSON; every sourced element is `synthetic`                                                       | ✅ unit                  |
+| AC9  | Out-of-range input names the field; nothing is stored                                                                         | ✅ unit + MCP            |
+| AC10 | Wizard counts equal the counts on the canvas after Create; Esc leaves the document untouched                                  | ✅ e2e                   |
+| AC11 | MCP tool returns a document that `validate_topology` reports valid and layout-clean                                           | ✅ MCP                   |
+| AC12 | Wizard is usable at phone width (390px) with the preview above the form                                                       | ✅ manual screenshot     |
+
+## 9. Slices
+
+| Slice | Scope                                                                                                                                                                                                                                                               | Depends on                                                                       |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **1** | Intent, EdgeConnect + Juniper SRX vendor rules, device/site detail, layout, MCP tool, wizard. **Done (PR #293).**                                                                                                                                                   | —                                                                                |
+| 2     | **Site tiles and drill-down.** Site detail uses place icons (branch, data centre, home) instead of appliance glyphs; an overview page plus one detail page per region, linked by an in-document page link. Region names and per-region branch counts in the wizard. | Place icons (0011 tier 1); a page-link field (`href` accepts http(s) only today) |
+| 3     | **Geography.** Optional AMER/EMEA/APAC map backdrop on a locked bottom layer behind region zones.                                                                                                                                                                   | A map backdrop asset                                                             |
+| 4     | **Cloud and SASE edges.** Cloud hubs (AWS TGW, Azure vWAN, GCP Cloud Router: stock icons exist), an SSE/SASE PoP on-ramp, local breakout vs backhaul, optional branch-to-branch mesh.                                                                               | SSE/SASE PoP icon (0011)                                                         |
+| 5     | **More vendors.** Juniper SSR (Secure Vector Routing — tunnel-free, needs its own profile), Fortinet SD-WAN/ADVPN (FGCP cluster terminates once).                                                                                                                   | Vendor review                                                                    |
+
+## 10. Risks and open questions
+
+- **Juniper hub-to-hub tunnels (open):** slice 1 draws one per shared transport.
+  Verify against how Mist hub profiles are deployed before customer use.
+- **EdgeConnect HA circuit placement (assumption):** alternating members is the
+  common pattern, not the only one. A per-circuit placement option may be needed.
+- **Density:** EdgeConnect device detail at the top of the range (4 regions ×
+  12 HA branches × 3 transports) produces several hundred underlay tunnels. The
+  layer is hidden by default and the wizard steers to site detail; if editor
+  performance suffers, cap device detail lower than site detail.
+- **Hub transports:** hubs take every family their branches use. A hub that
+  lacks MPLS (and branches that therefore tunnel over INET only) is not
+  expressible yet.
