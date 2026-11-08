@@ -4152,7 +4152,16 @@ ${grid}`;
     // North: lift the block by its descent (extra label lines + sublabel
     // lines) so its last baseline sits just above the glyph.
     if (north) dy = -(hh + 6) - TopologyDesigner._nodeLabelDescent(TopologyDesigner._nodeLabelLines(nodeCfg.label, nodeCfg.sublabel, nodeCfg.labelWidth));
-    else if (south) dy = image ? hh + 14 : 24;
+    else if (south) {
+      dy = image ? hh + 14 : 24;
+      // Node Designer types (stock pack + custom) fill their hit box, so the
+      // fixed 24px baseline sits on the glyph's bottom edge: clear the box.
+      const meta = TopologyDesigner._nodePluginMeta[nodeCfg.type];
+      if (!image && meta && meta.labelClearsHitBox && meta.hitBox) {
+        const hb = typeof meta.hitBox === 'function' ? meta.hitBox(nodeCfg) : meta.hitBox;
+        if (hb && Number(hb.ry) > 0) dy = Math.max(24, Number(hb.ry) + 14);
+      }
+    }
     else dy = 4; // pure east/west: vertically centred on the glyph
     const ox = Number(nodeCfg.labelOffsetX);
     const oy = Number(nodeCfg.labelOffset);

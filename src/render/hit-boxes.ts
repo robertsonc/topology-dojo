@@ -19,17 +19,32 @@ export interface HitBox {
 }
 
 const registry = new Map<string, HitBox>();
-for (const spec of STOCK_NODE_SPECS)
+/** Types drawn from a Node Designer spec (stock pack + document custom):
+ * their glyph fills the hit box, so south labels clear it. Hardware panel
+ * types (`registerHitBox`) keep the classic label distance. */
+const designerTypes = new Set<string>();
+for (const spec of STOCK_NODE_SPECS) {
   registry.set(spec.typeName, customHitBox(spec));
+  designerTypes.add(spec.typeName);
+}
 
 /** Register (overwrite by type name) a document's custom node hit boxes. */
 export function registerHitBoxes(specs: readonly CustomNodeSpec[] = []): void {
-  for (const spec of specs) registry.set(spec.typeName, customHitBox(spec));
+  for (const spec of specs) {
+    registry.set(spec.typeName, customHitBox(spec));
+    designerTypes.add(spec.typeName);
+  }
+}
+
+/** The hit box of a Node Designer type (stock or custom), else undefined. */
+export function designerHitBox(type: string): HitBox | undefined {
+  return designerTypes.has(type) ? registry.get(type) : undefined;
 }
 
 /** Register one type's hit box (wire-sheet panel types, hw-catalog Phase 4). */
 export function registerHitBox(type: string, box: HitBox): void {
   registry.set(type, box);
+  designerTypes.delete(type);
 }
 
 /** The live registry: stock pack + every custom type registered so far. */

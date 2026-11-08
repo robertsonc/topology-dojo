@@ -296,9 +296,13 @@ describe('byte-identical output when the options are absent', () => {
   // Re-pinned by the light-theme contrast fix: flattenViewer now drops the
   // glow-underlay strokes (opacity ≤ .05, tds filter). An element diff
   // against origin/main 9813d8b showed those removals and nothing else.
+  // Re-pinned when Node Designer types started clearing their hit box with
+  // the south label: the sample's custom "sensor" label moved down. With
+  // that one label held at its old 24px offset the render reproduces the
+  // previous hash (2ac48fcc…) byte for byte, so nothing else changed.
   const EXPECTED: Record<string, string> = {
     sampleDocument:
-      '2ac48fcc492afd5de7f18933c10f11dc6dd0086e430b9f0e0a3a7506bbd3c966',
+      '806622b700e291bfad4a7796458d9e40b7f818c8ace2851566e8c37fe9242add',
     'fixtures/EdgeHA_after.json':
       'd121142a71f600b674c4fa613b08f8663237034f537f08136f0837160afc5a80',
     'fixtures/EdgeHA_before.json':

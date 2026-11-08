@@ -9,6 +9,7 @@
  * ABSOLUTE offsets from the node centre that override the placement's default
  * distances, so pre-placement documents render unchanged.
  */
+import { designerHitBox } from './hit-boxes.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
 import type { BoundsRect } from '../api/geometry.js';
 import {
@@ -90,8 +91,12 @@ export function nodeLabelPos(n: NodeConfig): NodeLabelPos {
   // North: lift the block by its descent (the extra label lines and the
   // sublabel lines) so its last baseline sits just above the glyph.
   if (north) dy = -(hh + 6) - nodeLabelDescent(nodeLabelLines(n));
-  else if (south) dy = image ? hh + 14 : 24;
-  else dy = 4;
+  else if (south) {
+    dy = image ? hh + 14 : 24;
+    // Node Designer types fill their hit box: clear it (engine mirror).
+    const hb = image ? undefined : designerHitBox(n.type);
+    if (hb && hb.ry > 0) dy = Math.max(24, hb.ry + 14);
+  } else dy = 4;
   const x = n.x + finiteOr(n.labelOffsetX, dx);
   const labelY = finiteOr((n as { labelY?: unknown }).labelY, NaN);
   const y = Number.isFinite(labelY)
