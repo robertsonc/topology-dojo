@@ -3,7 +3,11 @@
 **Status:** Tier 1 shipped (2026-11-08). Places: `branchoffice`, `campus`,
 `datacenter`, `homeoffice`. The rest: `ssepop`, `nac`, `authserver`,
 `directory`, `siem`, `waf`, `l3switch`, `mobile`, `managedendpoint`,
-`orchestrator` (laptop stays `host`). Tier 2 is next when needed.
+`orchestrator` (laptop stays `host`). Tier 2 shipped (2026-11-08): `vrf`,
+`satellite`, `cellular`, `microwave`, `consoleserver`, `patchpanel`, `pdu`,
+`jumphost`, `pam`, `mdm`, `attacker`, `infectedhost`, `file`, `website`; typed
+transport clouds stay the labelled `cloud`. The shared `terminal` glyph was
+redrawn (it relied on an even-odd fill and drew as a solid block).
 
 **Captured:** 2026-11-08
 
@@ -46,18 +50,18 @@ Don't trade these away while closing gaps:
 | Laptop / Mobile / Managed endpoint                   | **Shipped** `mobile`, `managedendpoint` (laptop = `host`) | ZTNA and SWG stories need managed vs unmanaged devices                                                                                        |
 | Orchestrator / cloud controller                      | **Shipped** `orchestrator`                                | EdgeConnect Orchestrator, Mist cloud, Aruba Central: the management plane in every SD-WAN diagram                                             |
 
-### Tier 2 — useful, not urgent
+### Tier 2 — useful, not urgent (shipped)
 
-| Reference shape                                                                  | Have?             | Use                                                                |
-| -------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------ |
-| VRF / virtual context (VDOM, VSYS)                                               | No                | Segmentation views; EVPN tenant VRFs                               |
-| Satellite terminal / Satellite                                                   | No                | LEO as an SD-WAN transport (a fourth `transport` in the generator) |
-| LTE/5G radio / microwave radio link                                              | Partial (`modem`) | Wireless WAN transports                                            |
-| Console server, patch panel, PDU                                                 | No                | Wiring sheets and rack builds (the hardware-catalog track)         |
-| Attacker, infected host, file and website verdicts (clean / malicious / unknown) | No                | SSE demos: SWG block, CASB, sandbox verdict storytelling           |
-| Jump host, PAM                                                                   | No                | Privileged-access paths in ZTNA                                    |
-| Endpoint manager (MDM)                                                           | No                | Device posture source in ZTNA                                      |
-| Places: Internet / WAN / MAN / PSTN                                              | Partial (`cloud`) | Typed transport clouds instead of one generic cloud                |
+| Reference shape                                                                  | Have?                                                                        | Use                                                                |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| VRF / virtual context (VDOM, VSYS)                                               | **Shipped** `vrf`                                                            | Segmentation views; EVPN tenant VRFs                               |
+| Satellite terminal / Satellite                                                   | **Shipped** `satellite`                                                      | LEO as an SD-WAN transport (a fourth `transport` in the generator) |
+| LTE/5G radio / microwave radio link                                              | **Shipped** `cellular`, `microwave`                                          | Wireless WAN transports                                            |
+| Console server, patch panel, PDU                                                 | **Shipped** `consoleserver`, `patchpanel`, `pdu`                             | Wiring sheets and rack builds (the hardware-catalog track)         |
+| Attacker, infected host, file and website verdicts (clean / malicious / unknown) | **Shipped** `attacker`, `infectedhost`, `file`, `website` (verdict = colour) | SSE demos: SWG block, CASB, sandbox verdict storytelling           |
+| Jump host, PAM                                                                   | **Shipped** `jumphost`, `pam`                                                | Privileged-access paths in ZTNA                                    |
+| Endpoint manager (MDM)                                                           | **Shipped** `mdm`                                                            | Device posture source in ZTNA                                      |
+| Places: Internet / WAN / MAN / PSTN                                              | Kept as labelled `cloud`                                                     | Typed transport clouds instead of one generic cloud                |
 
 ### Tier 3 — out of scope unless a demo needs it
 

@@ -122,6 +122,55 @@ describe('stock cloud-native node types', () => {
     expect(l3.radius).toBeGreaterThan(3);
   });
 
+  it('ships tier 2: segmentation, wireless WAN, OOB, privileged access, threats', () => {
+    const expected: Record<string, string> = {
+      vrf: 'Network',
+      satellite: 'Network',
+      cellular: 'Network',
+      microwave: 'Network',
+      consoleserver: 'Network',
+      patchpanel: 'Network',
+      pdu: 'Endpoint',
+      jumphost: 'Security',
+      pam: 'Security',
+      mdm: 'Security',
+      attacker: 'Security',
+      infectedhost: 'Security',
+      file: 'Security',
+      website: 'Security',
+    };
+    for (const [t, category] of Object.entries(expected)) {
+      const info = getNodeType(t)!;
+      expect(info.custom, t).toBe(false);
+      expect(info.category, t).toBe(category);
+      expect(info.label, t).not.toBe(t);
+    }
+    const find = (q: string) =>
+      nodeCatalog()
+        .filter((n) => n.keywords?.includes(q))
+        .map((n) => n.type);
+    expect(find('starlink')).toEqual(['satellite']);
+    expect(find('bastion')).toEqual(['jumphost']);
+    expect(find('vdom')).toEqual(['vrf']);
+    // A patch panel is passive: ports, no status LEDs.
+    const pp = STOCK_NODE_SPECS.find((s) => s.typeName === 'patchpanel')!;
+    expect(pp.ports).toBe(true);
+    expect(pp.leds).toBe(false);
+  });
+
+  it('a document custom type of the same name still overrides a stock one', () => {
+    const doc = createDocument('Shadow')
+      .page()
+      .node({ id: 'f', type: 'file', x: 200, y: 200, label: 'Mine' })
+      .build();
+    doc.customNodes.push({
+      ...STOCK_NODE_SPECS.find((s) => s.typeName === 'file')!,
+      colorStroke: '#123456',
+    });
+    const errors = validateDocument(doc).filter((p) => p.level === 'error');
+    expect(errors).toEqual([]);
+  });
+
   it('generic-pack nodes validate and render without per-document definitions', () => {
     const doc = createDocument('Campus')
       .page()

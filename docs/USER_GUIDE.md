@@ -464,6 +464,12 @@ The built-in library covers:
   (rounded square with eight arrows, next to the router's circle with four),
   mobile, and managed endpoint — searchable by aliases such as "clearpass",
   "radius", "entra", "mist", or "byod";
+- segmentation, wireless WAN and operations types — VRF (also VDOM / VSYS),
+  satellite terminal, LTE / 5G router, microwave radio, console server, patch
+  panel (passive: ports, no status LEDs), and PDU;
+- privileged-access and threat types for SSE stories — jump host, PAM, MDM,
+  attacker, infected host, file, and website. A file's or website's verdict is
+  its colour: green for clean, grey for unknown, red for malicious;
 - generic geometric shapes;
 - an **Image** entry that opens a file picker: the picture is downscaled to a
   compact data URI (≤256KB), embedded in the document, and placed sized to its
