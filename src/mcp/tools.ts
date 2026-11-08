@@ -79,7 +79,9 @@ import { POLICY_MARKER_TYPES } from '../api/markers.js';
 import { buildTemplate, listTemplates } from '../api/templates.js';
 import {
   BRANCH_LAN,
+  CLOUD_HUBS,
   DETAIL_LEVELS,
+  SSE_MODES,
   generateSdwan,
   SDWAN_LIMITS,
   SDWAN_VENDORS,
@@ -608,7 +610,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'generate_sdwan_topology',
       description:
-        'Generate an SD-WAN hub-and-spoke topology from intent (vendor, regions, hubs, branches, WAN transports, branch HA, branch LAN) as a new document. Vendor semantics decide tunnel and HA counts — edgeconnect: label-matched underlay tunnels (hidden layer) + one bonded overlay per appliance pair, HA pairs where both members tunnel; juniper: SRX (Mist WAN Assurance) per-path IPsec overlays, chassis clusters that tunnel from node0. LTE circuits reach the hub Internet label. detail:"site" draws one place tile per site (hubs as data centers, branches as branch offices); detail:"overview" adds one device-detail page per region, with every overview tile linked to its region page (href "#page=<id>") and a back link on each region page. Elements carry source system "synthetic". Returns the new id plus device/tunnel/link counts.',
+        'Generate an SD-WAN hub-and-spoke topology from intent (vendor, regions, hubs, branches, WAN transports, branch HA, branch LAN) as a new document. Vendor semantics decide tunnel and HA counts — edgeconnect: label-matched underlay tunnels (hidden layer) + one bonded overlay per appliance pair, HA pairs where both members tunnel; juniper: SRX (Mist WAN Assurance) per-path IPsec overlays, chassis clusters that tunnel from node0. LTE circuits reach the hub Internet label. detail:"site" draws one place tile per site (hubs as data centers, branches as branch offices); detail:"overview" adds one device-detail page per region, with every overview tile linked to its region page (href "#page=<id>") and a back link on each region page. cloudHub adds a cloud hub per region; sse adds an SSE PoP per region with IPsec on-ramps. Elements carry source system "synthetic". Returns the new id plus device/tunnel/link counts.',
       inputShape: {
         vendor: z.enum(SDWAN_VENDORS),
         detail: z.enum(DETAIL_LEVELS).optional(),
@@ -662,6 +664,18 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         overlayName: displayString(32)
           .optional()
           .describe('EdgeConnect Business Intent Overlay name.'),
+        cloudHub: z
+          .enum(CLOUD_HUBS)
+          .optional()
+          .describe(
+            'Add a cloud hub per region: the vendor virtual edge (EC-V / vSRX), Internet-only, BGP-peered with the provider router (AWS TGW Connect, Azure vWAN, GCP NCC + Cloud Router).',
+          ),
+        sse: z
+          .enum(SSE_MODES)
+          .optional()
+          .describe(
+            'SSE on-ramp: "branch" = IPsec from each branch edge to the region SSE PoP (local breakout); "hub" = from the data-center hubs (backhaul). Drawn on an "sse" layer.',
+          ),
         title: displayString(TEXT_LIMITS.title).optional(),
       },
       handler: (a) => {

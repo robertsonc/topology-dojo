@@ -1,6 +1,7 @@
 # Proposal 0010 — SD-WAN topology generator
 
-**Status:** Spec accepted; slices 1 (PR #293) and 2 implemented (2026-11-08).
+**Status:** Spec accepted; slices 1 (PR #293), 2 (PR #295) and 4 implemented
+(2026-11-08; branch-to-branch mesh deferred).
 Slices 3–5 open.
 
 **Captured:** 2026-11-08
@@ -71,20 +72,22 @@ modelling shortcuts that this one must not:
 
 One object is the contract for the wizard, the MCP tool and tests.
 
-| Field                | Type                              | Default       | Bounds                                   |
-| -------------------- | --------------------------------- | ------------- | ---------------------------------------- |
-| `vendor`             | `edgeconnect` \| `juniper`        | required      | —                                        |
-| `detail`             | `device` \| `site`                | `device`      | —                                        |
-| `regions`            | int                               | 1             | 1–4                                      |
-| `regionNames`        | string[]                          | AMER, EMEA, … | distinct, ≤24 chars                      |
-| `hubsPerRegion`      | int                               | 2             | 1–2 (independent hubs)                   |
-| `branchesPerRegion`  | int \| int[]                      | 4             | 1–12 each; array length = `regions`      |
-| `transports`         | (`inet`\|`mpls`\|`lte`)[]         | `['inet']`    | 1–3 entries, port order; repeats allowed |
-| `branchHa`           | boolean                           | false         | —                                        |
-| `branchLan`          | `none` \| `switch` \| `switch-ap` | `none`        | device detail only                       |
-| `interRegionHubMesh` | boolean                           | `regions > 1` | —                                        |
-| `overlayName`        | string                            | `Default`     | ≤32 chars; EdgeConnect BIO name          |
-| `title`              | string                            | derived       | ≤120 chars                               |
+| Field                | Type                                | Default       | Bounds                                   |
+| -------------------- | ----------------------------------- | ------------- | ---------------------------------------- |
+| `vendor`             | `edgeconnect` \| `juniper`          | required      | —                                        |
+| `detail`             | `device` \| `site`                  | `device`      | —                                        |
+| `regions`            | int                                 | 1             | 1–4                                      |
+| `regionNames`        | string[]                            | AMER, EMEA, … | distinct, ≤24 chars                      |
+| `hubsPerRegion`      | int                                 | 2             | 1–2 (independent hubs)                   |
+| `branchesPerRegion`  | int \| int[]                        | 4             | 1–12 each; array length = `regions`      |
+| `transports`         | (`inet`\|`mpls`\|`lte`)[]           | `['inet']`    | 1–3 entries, port order; repeats allowed |
+| `branchHa`           | boolean                             | false         | —                                        |
+| `branchLan`          | `none` \| `switch` \| `switch-ap`   | `none`        | device detail only                       |
+| `interRegionHubMesh` | boolean                             | `regions > 1` | —                                        |
+| `overlayName`        | string                              | `Default`     | ≤32 chars; EdgeConnect BIO name          |
+| `cloudHub`           | `none` \| `aws` \| `azure` \| `gcp` | `none`        | slice 4                                  |
+| `sse`                | `none` \| `branch` \| `hub`         | `none`        | slice 4                                  |
+| `title`              | string                              | derived       | ≤120 chars                               |
 
 Invalid input fails with an error that names the field and the allowed range;
 nothing is created.
@@ -117,6 +120,26 @@ nothing is created.
 | HA circuits     | Alternate across members (WAN1 → member 1, WAN2 → member 2, …)      | Every circuit on both nodes (reth)                     |
 | Tunnels from HA | Each member, all labels (shared over the HA link)                   | The cluster, drawn on node0 only                       |
 | LAN             | AOS-CX switch, AP                                                   | EX switch, Mist AP                                     |
+
+### 6.2a Cloud hubs and SSE on-ramp (slice 4)
+
+- **Cloud hub** (`cloudHub`): one per region, `<region>-cloud01`, the vendor's
+  virtual edge (EdgeConnect EC-V, Juniper vSRX). It is a hub: branches and the
+  region's hubs tunnel to it, and it joins the hub mesh. It terminates Internet
+  only, so MPLS-only branches do not reach it; with a cloud hub, data-center
+  hubs always carry an Internet circuit so they can mesh with it.
+  - Device detail adds the provider's router on the hub row, linked by its
+    peering: AWS Transit Gateway via TGW Connect (GRE + BGP); Azure Virtual WAN
+    hub (EdgeConnect as an NVA in the hub, otherwise an NVA in a connected
+    VNet, both BGP); Google Cloud Router via an NCC router appliance (BGP).
+  - Site detail draws the cloud hub tile as the provider's router.
+- **SSE on-ramp** (`sse`): one SSE PoP per region (`sse_<region>`) on the hub
+  row; IPsec tunnels on the `sse` layer (kind `service`). `branch`: from every
+  tunnel end (both EC HA members; SRX cluster node0) — local breakout. `hub`:
+  from the data-center hubs only — backhaul. One tunnel per edge; real
+  deployments usually add a secondary PoP.
+- SSE PoPs and cloud routers are not counted as devices; SSE tunnels are counted
+  in `tunnels` and reported as `sseTunnels`.
 
 ### 6.3 Detail levels
 
@@ -184,6 +207,9 @@ tunnels, tunnel captions move into link metadata to keep the canvas legible.
 | AC15 | Ctrl/Cmd+click follows a page link in the editor and never edits the document                                                 | ✅ e2e (slice 2)         |
 | AC16 | A dangling page link is a validation warning; draw.io export/import keeps page links pointing at the right page               | ✅ unit (slice 2)        |
 | AC17 | A blank region name falls back to that region's default by position; names whose slugs collide are rejected                   | ✅ unit (slice 2)        |
+| AC18 | A cloud hub per region joins branch tunnels and the hub mesh over Internet labels only, peered with the provider router       | ✅ unit (slice 4)        |
+| AC19 | SSE `branch` draws one IPsec tunnel per tunnel-terminating edge; `hub` only from data-center hubs; on the `sse` layer         | ✅ unit + e2e (slice 4)  |
+| AC20 | Every vendor × detail × cloud × SSE combination at 4 regions with HA and LAN validates and lays out overlap-free              | ✅ unit (18 cases)       |
 
 ## 9. Slices
 
@@ -192,7 +218,7 @@ tunnels, tunnel captions move into link metadata to keep the canvas legible.
 | **1** | Intent, EdgeConnect + Juniper SRX vendor rules, device/site detail, layout, MCP tool, wizard. **Done (PR #293).**                                                                                                                           | —                               |
 | **2** | **Site tiles and drill-down.** Site detail uses place icons; `overview` detail adds one device page per region, linked by in-document page links (`href: "#page=<id>"`). Region names and per-region branch counts in the wizard. **Done.** | Place icons (0011 tier 1, done) |
 | 3     | **Geography.** Optional AMER/EMEA/APAC map backdrop on a locked bottom layer behind region zones.                                                                                                                                           | A map backdrop asset            |
-| 4     | **Cloud and SASE edges.** Cloud hubs (AWS TGW, Azure vWAN, GCP Cloud Router: stock icons exist), an SSE/SASE PoP on-ramp, local breakout vs backhaul, optional branch-to-branch mesh.                                                       | SSE/SASE PoP icon (0011)        |
+| **4** | **Cloud and SASE edges.** Cloud hub per region (AWS / Azure / GCP) and SSE on-ramp (branch breakout or hub backhaul). **Done**; branch-to-branch mesh deferred.                                                                             | SSE/SASE PoP icon (0011, done)  |
 | 5     | **More vendors.** Juniper SSR (Secure Vector Routing — tunnel-free, needs its own profile), Fortinet SD-WAN/ADVPN (FGCP cluster terminates once).                                                                                           | Vendor review                   |
 
 ## 10. Risks and open questions
@@ -205,6 +231,13 @@ tunnels, tunnel captions move into link metadata to keep the canvas legible.
   12 HA branches × 3 transports) produces several hundred underlay tunnels. The
   layer is hidden by default and the wizard steers to site detail; if editor
   performance suffers, cap device detail lower than site detail.
+- **Cloud integration patterns (assumption):** TGW Connect, NVA in the vWAN hub
+  (EdgeConnect) or in a connected VNet (vSRX), and NCC router appliance are the
+  common patterns; check each against the vendor's current cloud docs before a
+  customer sees them. Direct Connect / ExpressRoute / Interconnect (MPLS-like
+  private paths into the cloud) are not modelled.
+- **SSE PoP redundancy:** one tunnel per edge to one PoP; primary/secondary PoP
+  pairs are not drawn yet.
 - **Hub transports:** hubs take every family their branches use. A hub that
   lacks MPLS (and branches that therefore tunnel over INET only) is not
   expressible yet.

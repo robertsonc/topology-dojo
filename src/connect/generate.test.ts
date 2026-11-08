@@ -290,6 +290,123 @@ describe('generateSdwan — regions and detail', () => {
   });
 });
 
+describe('generateSdwan — cloud hubs and SSE on-ramp', () => {
+  it('adds a virtual edge per region, peered with the provider router', () => {
+    const { doc } = generateSdwan({
+      vendor: 'edgeconnect',
+      regions: 2,
+      hubsPerRegion: 1,
+      branchesPerRegion: 1,
+      transports: ['inet'],
+      cloudHub: 'aws',
+    });
+    const p = page(doc);
+    const vhub = p.nodes.find((n) => n.id === nodeId('amer-cloud01'))!;
+    expect(vhub.label).toBe('amer-cloud01-ecv');
+    expect(vhub.sublabel).toBe('EC-V in AWS');
+    expect(p.nodes.find((n) => n.id === 'cloudgw_amer')?.type).toBe('tgw');
+    expect(byKind(doc, 'cloud-peering').map((l) => [l.from, l.label])).toEqual([
+      [nodeId('amer-cloud01'), 'TGW Connect · GRE + BGP'],
+      [nodeId('emea-cloud01'), 'TGW Connect · GRE + BGP'],
+    ]);
+    // The branch tunnels to its cloud hub, and the cloud hubs join the mesh.
+    const overlay = tunnels(doc, FABRIC_LAYERS.overlay);
+    const pair = (a: string, b: string) =>
+      overlay.some(
+        (l) =>
+          (l.from === nodeId(a) && l.to === nodeId(b)) ||
+          (l.from === nodeId(b) && l.to === nodeId(a)),
+      );
+    expect(pair('amer-br01', 'amer-cloud01')).toBe(true);
+    expect(pair('amer-cloud01', 'emea-cloud01')).toBe(true);
+    expect(pair('amer-hub01', 'amer-cloud01')).toBe(true);
+  });
+
+  it('reaches the cloud hub over Internet labels only', () => {
+    const { doc } = generateSdwan({
+      vendor: 'edgeconnect',
+      hubsPerRegion: 1,
+      branchesPerRegion: 1,
+      transports: ['mpls'],
+      cloudHub: 'azure',
+    });
+    const toCloud = tunnels(doc, FABRIC_LAYERS.underlay).filter(
+      (l) => l.to === nodeId('amer-cloud01'),
+    );
+    // MPLS-only branch: no path into the cloud; the DC hub reaches it on INET.
+    expect(toCloud.map((l) => [l.from, l.label])).toEqual([
+      [nodeId('amer-hub01'), 'INET1'],
+    ]);
+    expect(byKind(doc, 'cloud-peering')[0]!.label).toBe(
+      'NVA in vWAN hub · BGP',
+    );
+    expect(
+      byKind(
+        generateSdwan({ vendor: 'juniper', cloudHub: 'azure' }).doc,
+        'cloud-peering',
+      )[0]!.label,
+    ).toBe('VNet NVA · BGP');
+  });
+
+  it('site view draws the cloud hub as the provider router, with no extra node', () => {
+    const { doc } = generateSdwan({
+      vendor: 'juniper',
+      detail: 'site',
+      cloudHub: 'gcp',
+    });
+    const p = page(doc);
+    expect(p.nodes.find((n) => n.id === nodeId('amer-cloud01'))?.type).toBe(
+      'cloudrouter',
+    );
+    expect(p.nodes.some((n) => n.id.startsWith('cloudgw_'))).toBe(false);
+  });
+
+  it('SSE from branches: one IPsec tunnel per tunnel-terminating edge', () => {
+    const ec = generateSdwan({
+      vendor: 'edgeconnect',
+      hubsPerRegion: 2,
+      branchesPerRegion: 3,
+      branchHa: true,
+      sse: 'branch',
+    });
+    // EC HA: both members break out → 3 branches × 2.
+    expect(ec.stats.sseTunnels).toBe(6);
+    expect(tunnels(ec.doc, 'sse').every((l) => l.to === 'sse_amer')).toBe(true);
+    expect(ec.doc.layers?.map((l) => l.id)).toEqual([
+      'underlay',
+      'overlay',
+      'sse',
+    ]);
+    // SRX cluster: the cluster breaks out once (node0).
+    const srx = generateSdwan({
+      vendor: 'juniper',
+      branchesPerRegion: 3,
+      branchHa: true,
+      sse: 'branch',
+    });
+    expect(srx.stats.sseTunnels).toBe(3);
+  });
+
+  it('SSE via hubs: only the data-center hubs tunnel to the PoP', () => {
+    const { doc, stats } = generateSdwan({
+      vendor: 'edgeconnect',
+      hubsPerRegion: 2,
+      cloudHub: 'aws',
+      sse: 'hub',
+    });
+    expect(stats.sseTunnels).toBe(2);
+    expect(
+      tunnels(doc, 'sse')
+        .map((l) => l.from)
+        .sort(),
+    ).toEqual([nodeId('amer-hub01'), nodeId('amer-hub02')]);
+    // SSE PoPs and cloud routers are not counted as devices.
+    expect(stats.devices).toBe(
+      page(doc).nodes.filter((n) => n.source && n.id.startsWith('ne_')).length,
+    );
+  });
+});
+
 describe('generateSdwan — every shape is valid and overlap-free', () => {
   const matrix: SdwanIntent[] = [];
   for (const vendor of ['edgeconnect', 'juniper'] as const)
@@ -307,6 +424,27 @@ describe('generateSdwan — every shape is valid and overlap-free', () => {
               branchesPerRegion: regions === 1 ? 12 : 3,
               transports: regions === 1 ? ['inet'] : ['inet', 'mpls', 'lte'],
             });
+
+  // Cloud hub × SSE combinations at the dense end (4 regions, HA, LAN).
+  for (const vendor of ['edgeconnect', 'juniper'] as const)
+    for (const detail of ['device', 'site', 'overview'] as const)
+      for (const [cloudHub, sse] of [
+        ['aws', 'branch'],
+        ['azure', 'hub'],
+        ['gcp', 'none'],
+      ] as const)
+        matrix.push({
+          vendor,
+          detail,
+          regions: 4,
+          hubsPerRegion: 2,
+          branchesPerRegion: 3,
+          branchHa: true,
+          branchLan: 'switch-ap',
+          transports: ['inet', 'mpls'],
+          cloudHub,
+          sse,
+        });
 
   it.each(matrix.map((m) => [JSON.stringify(m), m] as const))(
     '%s',

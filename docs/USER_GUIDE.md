@@ -792,6 +792,8 @@ cable counts that will land on the canvas.
 | WAN links per branch      | 1–3, each Internet, MPLS or LTE                                                                                                            |
 | Branch edge               | Single, or HA pair (EdgeConnect) / chassis cluster (Juniper)                                                                               |
 | Branch LAN                | None, switch, or switch + AP (device detail and region pages)                                                                              |
+| Cloud hub per region      | None, AWS, Azure or Google Cloud: a virtual edge (EC-V / vSRX) per region, BGP-peered with the provider's cloud router                     |
+| SSE on-ramp               | None; from branches (IPsec from every branch edge, local breakout); or via hubs (from the data-center hubs, backhaul)                      |
 
 **Overview + region pages** builds a page per region behind a site-level
 overview. Ctrl/Cmd+click any site tile on the overview to open its region's
@@ -811,6 +813,18 @@ The vendor decides how tunnels and HA are drawn:
   terminated once, on node0.
 - **LTE** circuits reach the hub's Internet label (`LTE1→INET1`); hubs never get
   an LTE circuit. Hubs terminate every other transport their branches use.
+
+- **Cloud hub** — an extra hub in each region: the vendor's virtual edge,
+  reachable over Internet labels only (MPLS does not reach the cloud), meshed
+  with the region's other hubs. In device detail the provider's router sits
+  beside it, linked by its peering: AWS Transit Gateway Connect (GRE + BGP),
+  Azure Virtual WAN (EdgeConnect as an NVA in the hub; vSRX in a connected
+  VNet), or Google Cloud NCC router appliance with Cloud Router (BGP). With a
+  cloud hub, data-center hubs always get an Internet circuit.
+- **SSE on-ramp** — one SSE PoP per region on the hub row, with IPsec tunnels on
+  an **SSE on-ramp** layer: from every tunnel-terminating branch edge (both
+  members of an EC HA pair; node0 of an SRX cluster) or from the data-center
+  hubs.
 
 Generated elements carry the source system `synthetic`, so they are never
 mistaken for objects pulled from a live Orchestrator or Mist org. Agents use the

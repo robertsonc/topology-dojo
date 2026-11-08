@@ -69,6 +69,17 @@ export const SDWAN_LIMITS = {
 
 export const DEFAULT_REGION_NAMES = ['AMER', 'EMEA', 'APAC', 'LATAM'] as const;
 
+/** Cloud hub per region: a virtual edge peered with the provider's router. */
+export const CLOUD_HUBS = ['none', 'aws', 'azure', 'gcp'] as const;
+export type CloudHub = (typeof CLOUD_HUBS)[number];
+
+/** SSE on-ramp: none, from each branch (local breakout), or via the hubs. */
+export const SSE_MODES = ['none', 'branch', 'hub'] as const;
+export type SseMode = (typeof SSE_MODES)[number];
+
+/** Layer for SSE on-ramp tunnels (declared only when used). */
+export const SSE_LAYER = 'sse';
+
 export interface SdwanIntent {
   vendor: SdwanVendor;
   /** `device` | `site` | `overview` (site page + one page per region). */
@@ -90,6 +101,10 @@ export interface SdwanIntent {
   interRegionHubMesh?: boolean;
   /** EdgeConnect Business Intent Overlay name (default "Default"). */
   overlayName?: string;
+  /** Add a cloud hub per region (virtual edge + provider router). */
+  cloudHub?: CloudHub;
+  /** Internet breakout through an SSE PoP per region. */
+  sse?: SseMode;
   title?: string;
 }
 
@@ -109,6 +124,8 @@ export interface SdwanStats {
   tunnels: number;
   underlayTunnels: number;
   overlayTunnels: number;
+  /** IPsec tunnels to the SSE PoPs (included in `tunnels`). */
+  sseTunnels: number;
   /** Physical cables (WAN circuits, HA/cluster links, LAN). */
   links: number;
   /** Pages generated (1, or 1 + regions for `overview`). */
@@ -127,6 +144,9 @@ const VENDOR_PROFILE: Record<
     displayName: string;
     nodeType: string;
     edgeName: string;
+    /** Hostname suffix of the vendor's virtual (cloud) edge. */
+    virtualName: string;
+    virtualLabel: string;
     switchName: string;
     apName: string;
   }
@@ -135,6 +155,8 @@ const VENDOR_PROFILE: Record<
     displayName: 'HPE Aruba Networking EdgeConnect',
     nodeType: 'ec',
     edgeName: 'ec',
+    virtualName: 'ecv',
+    virtualLabel: 'EC-V',
     switchName: 'AOS-CX switch',
     apName: 'AP',
   },
@@ -142,10 +164,54 @@ const VENDOR_PROFILE: Record<
     displayName: 'Juniper SRX (Mist WAN Assurance)',
     nodeType: 'firewall',
     edgeName: 'srx',
+    virtualName: 'vsrx',
+    virtualLabel: 'vSRX',
     switchName: 'EX switch',
     apName: 'Mist AP',
   },
 };
+
+/**
+ * How a region's virtual edge reaches each provider's cloud router. These are
+ * the common integration patterns, not the only ones — see proposal 0010 §10.
+ */
+const CLOUD_PROFILE: Record<
+  Exclude<CloudHub, 'none'>,
+  {
+    name: string;
+    gatewayType: string;
+    gatewayLabel: string;
+    color: string;
+    peering: (vendor: SdwanVendor) => string;
+  }
+> = {
+  aws: {
+    name: 'AWS',
+    gatewayType: 'tgw',
+    gatewayLabel: 'Transit Gateway',
+    color: '#ff9900',
+    peering: () => 'TGW Connect · GRE + BGP',
+  },
+  azure: {
+    name: 'Azure',
+    gatewayType: 'vwanhub',
+    gatewayLabel: 'Virtual WAN hub',
+    color: '#0078d4',
+    // EdgeConnect deploys as an NVA inside the vWAN hub; other NVAs sit in a
+    // connected VNet and BGP-peer with the hub router.
+    peering: (v) =>
+      v === 'edgeconnect' ? 'NVA in vWAN hub · BGP' : 'VNet NVA · BGP',
+  },
+  gcp: {
+    name: 'Google Cloud',
+    gatewayType: 'cloudrouter',
+    gatewayLabel: 'Cloud Router',
+    color: '#4285f4',
+    peering: () => 'NCC router appliance · BGP',
+  },
+};
+
+const SSE_COLOR = '#7764fc';
 
 /** Transport → the label family a hub terminates (LTE rides Internet). */
 const HUB_FAMILY: Record<Transport, 'inet' | 'mpls'> = {
@@ -244,6 +310,12 @@ export function resolveSdwanIntent(intent: SdwanIntent): ResolvedSdwanIntent {
   // differ only in punctuation would collide.
   if (new Set(regionNames.map(slug)).size !== regions)
     throw new IntentError('regionNames must be distinct');
+  const cloudHub = intent.cloudHub ?? 'none';
+  if (!CLOUD_HUBS.includes(cloudHub))
+    throw new IntentError(`cloudHub must be one of ${CLOUD_HUBS.join(', ')}`);
+  const sse = intent.sse ?? 'none';
+  if (!SSE_MODES.includes(sse))
+    throw new IntentError(`sse must be one of ${SSE_MODES.join(', ')}`);
   const overlayName =
     String(intent.overlayName ?? 'Default')
       .trim()
@@ -260,6 +332,8 @@ export function resolveSdwanIntent(intent: SdwanIntent): ResolvedSdwanIntent {
     branchLan,
     interRegionHubMesh: intent.interRegionHubMesh ?? regions > 1,
     overlayName,
+    cloudHub,
+    sse,
     title:
       String(intent.title ?? '')
         .trim()
@@ -297,6 +371,8 @@ interface SitePlan {
   label: string;
   region: number;
   role: 'hub' | 'branch';
+  /** Set on a region's cloud hub (virtual edge in that provider). */
+  cloud?: Exclude<CloudHub, 'none'>;
   members: Member[];
   /** The member that terminates tunnels (all for EC; node0 for SRX). */
   tunnelEnds: string[];
@@ -319,7 +395,14 @@ function synthesize(i: ResolvedSdwanIntent): Plan {
   const appliances: ApplianceRecord[] = [];
   const underlay: TunnelRecord[] = [];
   const overlay: TunnelRecord[] = [];
-  const families = Array.from(new Set(i.transports.map((t) => HUB_FAMILY[t])));
+  // Data-center hubs always reach the Internet when a cloud hub exists:
+  // the cloud hub is Internet-only, and the hubs must mesh with it.
+  const families = Array.from(
+    new Set([
+      ...i.transports.map((t) => HUB_FAMILY[t]),
+      ...(i.cloudHub !== 'none' ? (['inet'] as const) : []),
+    ]),
+  );
   // Hubs carry one circuit per family the region's branches need.
   const hubTransports: Transport[] = families.map((f) => f);
   const regionFamilies = i.regionNames.map(() => families);
@@ -344,6 +427,32 @@ function synthesize(i: ResolvedSdwanIntent): Plan {
         tunnelEnds: [id],
         transports: hubTransports,
         wanLabels: wanLabels(hubTransports),
+      });
+    }
+    // Cloud hub: a virtual edge in the provider, reachable over Internet
+    // labels only (no MPLS into the cloud), so it meshes like any other hub.
+    if (i.cloudHub !== 'none') {
+      const id = `${rs}-cloud01`;
+      const cloud = CLOUD_PROFILE[i.cloudHub];
+      const rec: ApplianceRecord = {
+        id,
+        hostname: `${id}-${p.virtualName}`,
+        role: 'hub',
+        site: `${rName} ${cloud.name} hub`,
+        model: p.virtualLabel,
+      };
+      appliances.push(rec);
+      const inet: Transport[] = ['inet'];
+      sites.push({
+        id,
+        label: rec.site!,
+        region: r,
+        role: 'hub',
+        cloud: i.cloudHub,
+        members: [{ record: rec, circuits: [0] }],
+        tunnelEnds: [id],
+        transports: inet,
+        wanLabels: wanLabels(inet),
       });
     }
     for (let b = 1; b <= i.branchesPerRegion[r]!; b++) {
@@ -557,21 +666,76 @@ function decorate(
           ? GEO.row.sw
           : 0;
     const stride = lanDepth + GEO.rowGap;
+    // Hub row: [SSE PoP] hubs… [cloud gateway]. Everything that faces the
+    // other regions lives on this row, so the mirrored grid keeps it banded.
+    const cloudSite = hubs.find((h) => h.cloud);
+    const sseSlot = i.sse !== 'none';
+    const gatewaySlot = device && cloudSite !== undefined;
+    const slots = hubs.length + (sseSlot ? 1 : 0) + (gatewaySlot ? 1 : 0);
     const width = Math.max(
       firstRow * pitch,
-      hubs.length * GEO.hubPitch,
+      slots * GEO.hubPitch,
       device ? families.length * GEO.hubPitch : 0,
     );
     const centre = (count: number, step: number, k: number): number =>
       Math.round(cursorX + width / 2 - ((count - 1) * step) / 2 + k * step);
+    let slot = 0;
+    const hubY = originY + GEO.row.hub;
 
-    hubs.forEach((h, k) => {
+    let sseId: string | undefined;
+    if (sseSlot) {
+      sseId = `sse_${rs}`;
+      page.nodes.push({
+        id: sseId,
+        type: 'ssepop',
+        x: centre(slots, GEO.hubPitch, slot++),
+        y: hubY,
+        label: `${rs}-sse`,
+        sublabel: `${rName} SSE PoP`,
+        meta: { generated: 'true' },
+      });
+      regionNodes.push(sseId);
+    }
+
+    hubs.forEach((h) => {
       const n = node(h.members[0]!.record.id);
-      n.x = centre(hubs.length, GEO.hubPitch, k);
-      n.y = originY + GEO.row.hub;
+      n.x = centre(slots, GEO.hubPitch, slot++);
+      n.y = hubY;
       n.sublabel = h.label;
+      if (h.cloud) {
+        const cloud = CLOUD_PROFILE[h.cloud];
+        // Site view: the cloud hub is the provider's router; device view:
+        // the vendor's virtual edge, with the router beside it.
+        if (!device) n.type = cloud.gatewayType;
+        else n.sublabel = `${p.virtualLabel} in ${cloud.name}`;
+        n.meta = { ...(n.meta ?? {}), cloud: h.cloud, virtual: 'true' };
+      }
       regionNodes.push(n.id);
     });
+
+    if (gatewaySlot && cloudSite?.cloud) {
+      const cloud = CLOUD_PROFILE[cloudSite.cloud];
+      const gw = `cloudgw_${rs}`;
+      page.nodes.push({
+        id: gw,
+        type: cloud.gatewayType,
+        x: centre(slots, GEO.hubPitch, slot++),
+        y: hubY,
+        label: `${rs}-${cloud.gatewayType}`,
+        sublabel: `${cloud.gatewayLabel}`,
+        meta: { cloud: cloudSite.cloud, generated: 'true' },
+      });
+      page.links.push({
+        id: `lk_${cloudSite.id}_peering`,
+        type: 'line',
+        from: node(cloudSite.members[0]!.record.id).id,
+        to: gw,
+        label: cloud.peering(i.vendor),
+        color: cloud.color,
+        meta: { kind: 'cloud-peering', generated: 'true' },
+      });
+      regionNodes.push(gw);
+    }
 
     // Transport clouds (device detail): one per label family per region.
     const cloudIds: Partial<Record<'inet' | 'mpls', string>> = {};
@@ -719,6 +883,26 @@ function decorate(
       }
     });
 
+    // SSE on-ramp: IPsec from every tunnel end (branch breakout) or from the
+    // data-center hubs (backhaul) to the region's PoP.
+    if (sseId) {
+      const ends =
+        i.sse === 'branch'
+          ? branches.flatMap((b) => b.tunnelEnds)
+          : hubs.filter((h) => !h.cloud).flatMap((h) => h.tunnelEnds);
+      for (const end of ends)
+        page.links.push({
+          id: `lk_${end}_sse`,
+          type: 'tunnel',
+          from: node(end).id,
+          to: sseId,
+          layer: SSE_LAYER,
+          color: SSE_COLOR,
+          label: 'IPsec',
+          meta: { kind: 'sse-tunnel', generated: 'true' },
+        });
+    }
+
     // Hubs sit in the region band, not their own one-node zones.
     page.zones = page.zones.filter(
       (z) => !hubs.some((h) => h.label === z.label),
@@ -788,6 +972,8 @@ function decorate(
       (l) => l.id !== FABRIC_LAYERS.underlay,
     );
   doc.layers = (doc.layers ?? []).filter((l) => l.id !== FABRIC_LAYERS.policy);
+  if (page.links.some((l) => l.layer === SSE_LAYER))
+    defineLayer(doc, { id: SSE_LAYER, name: 'SSE on-ramp', kind: 'service' });
 }
 
 function summarizeSite(i: ResolvedSdwanIntent): string {
@@ -801,18 +987,25 @@ function summarizeSite(i: ResolvedSdwanIntent): string {
 
 export function sdwanStats(doc: TopologyDocument): SdwanStats {
   const page = doc.pages[0]!;
-  const underlayTunnels = page.links.filter(
-    (l) => l.layer === FABRIC_LAYERS.underlay,
-  ).length;
-  const overlayTunnels = page.links.filter(
-    (l) => l.layer === FABRIC_LAYERS.overlay,
-  ).length;
+  const on = (layer: string) =>
+    page.links.filter((l) => l.layer === layer).length;
+  const underlayTunnels = on(FABRIC_LAYERS.underlay);
+  const overlayTunnels = on(FABRIC_LAYERS.overlay);
+  const sseTunnels = on(SSE_LAYER);
   return {
-    devices: page.nodes.filter((n) => n.type !== 'cloud' && n.type !== 'text')
-      .length,
-    tunnels: underlayTunnels + overlayTunnels,
+    // Network devices only: not transport clouds, captions, SSE PoPs or the
+    // providers' cloud routers.
+    devices: page.nodes.filter(
+      (n) =>
+        n.type !== 'cloud' &&
+        n.type !== 'text' &&
+        !n.id.startsWith('sse_') &&
+        !n.id.startsWith('cloudgw_'),
+    ).length,
+    tunnels: underlayTunnels + overlayTunnels + sseTunnels,
     underlayTunnels,
     overlayTunnels,
+    sseTunnels,
     links: page.links.filter((l) => !l.layer).length,
     pages: doc.pages.length,
   };
@@ -885,9 +1078,13 @@ function buildOverview(i: ResolvedSdwanIntent): TopologyDocument {
         n.tooltip = `Ctrl/Cmd+click to open ${name} detail`;
       }
   });
-  const order = [FABRIC_LAYERS.underlay, FABRIC_LAYERS.overlay];
+  const order: string[] = [
+    FABRIC_LAYERS.underlay,
+    FABRIC_LAYERS.overlay,
+    SSE_LAYER,
+  ];
   doc.layers = [...layers.values()].sort(
-    (a, b) => order.indexOf(a.id as never) - order.indexOf(b.id as never),
+    (a, b) => order.indexOf(a.id) - order.indexOf(b.id),
   );
   return doc;
 }
