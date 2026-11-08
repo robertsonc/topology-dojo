@@ -68,6 +68,9 @@ import {
 import { captionSVG } from './editor/caption.js';
 import { applyRenderTheme, type RenderTheme } from './render/theme.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
+import { openSdwanWizard } from './ui/sdwan-wizard.js';
+/** Template-picker value that opens the SD-WAN generator instead. */
+const SDWAN_WIZARD = '__sdwan';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { STOCK_NODE_SPECS } from './nodes/stock.js';
 import { openNodeDesigner } from './nodes/designer.js';
@@ -1226,11 +1229,32 @@ templateSel.innerHTML =
       (t) =>
         `<option value="${t.id}" title="${esc(t.description)}">${esc(t.name)}</option>`,
     )
-    .join('');
+    .join('') +
+  `<option value="${SDWAN_WIZARD}" title="Generate an SD-WAN fabric: vendor, regions, hubs, branches, WAN transports, HA, LAN">Generate SD-WAN…</option>`;
 templateSel.addEventListener('change', () => {
   const id = templateSel.value;
   templateSel.value = '';
   if (!id) return;
+  if (id === SDWAN_WIZARD) {
+    openSdwanWizard({
+      mount: app,
+      render: (generated) => {
+        const p = generated.pages[0]!;
+        return pageToSVG(p, {
+          layers: generated.layers,
+          calm: true,
+          theme: currentTheme(),
+        });
+      },
+      onCreate: (generated) => {
+        if (!confirm('Replace the current diagram? Unsaved changes are lost.'))
+          return;
+        if (!closeWorkspaceForDocumentReplacement()) return;
+        loadDoc(generated);
+      },
+    });
+    return;
+  }
   if (!confirm('Start from this template? Unsaved changes are lost.')) return;
   if (!closeWorkspaceForDocumentReplacement()) return;
   loadDoc(buildTemplate(id));

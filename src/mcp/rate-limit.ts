@@ -102,6 +102,7 @@ export const RATE_LIMITS: Record<RateLimitBucket, RateLimitSpec> = {
 export const MUTATING_MCP_TOOLS: ReadonlySet<string> = new Set([
   'create_topology',
   'create_from_template',
+  'generate_sdwan_topology',
   'delete_topology',
   'import_topology',
   'set_document_title',

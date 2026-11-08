@@ -77,6 +77,14 @@ import { tidyDocument, balanceDocument } from '../api/tidy.js';
 import { layoutDocument, type LayoutAlgorithm } from '../api/autolayout.js';
 import { POLICY_MARKER_TYPES } from '../api/markers.js';
 import { buildTemplate, listTemplates } from '../api/templates.js';
+import {
+  BRANCH_LAN,
+  DETAIL_LEVELS,
+  generateSdwan,
+  SDWAN_LIMITS,
+  SDWAN_VENDORS,
+  TRANSPORTS,
+} from '../connect/generate.js';
 import type { RenderOptions } from '../render/core.js';
 import { inspectPage } from '../render/inspect.js';
 import type { TopologyDocument } from '../pages/model.js';
@@ -595,6 +603,73 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         if (a.title) doc.title = String(a.title);
         const { id } = store.import(doc);
         return { id, title: doc.title, pages: doc.pages.length };
+      },
+    },
+    {
+      name: 'generate_sdwan_topology',
+      description:
+        'Generate an SD-WAN hub-and-spoke topology from intent (vendor, regions, hubs, branches, WAN transports, branch HA, branch LAN) as a new document. Vendor semantics decide tunnel and HA counts — edgeconnect: label-matched underlay tunnels (hidden layer) + one bonded overlay per appliance pair, HA pairs where both members tunnel; juniper: SRX (Mist WAN Assurance) per-path IPsec overlays, chassis clusters that tunnel from node0. LTE circuits reach the hub Internet label. detail:"site" draws one tile per site. Elements carry source system "synthetic". Returns the new id plus device/tunnel/link counts.',
+      inputShape: {
+        vendor: z.enum(SDWAN_VENDORS),
+        detail: z.enum(DETAIL_LEVELS).optional(),
+        regions: z
+          .number()
+          .int()
+          .min(SDWAN_LIMITS.regions.min)
+          .max(SDWAN_LIMITS.regions.max)
+          .optional(),
+        regionNames: z
+          .array(displayString(24))
+          .max(SDWAN_LIMITS.regions.max)
+          .optional(),
+        hubsPerRegion: z
+          .number()
+          .int()
+          .min(SDWAN_LIMITS.hubsPerRegion.min)
+          .max(SDWAN_LIMITS.hubsPerRegion.max)
+          .optional()
+          .describe(
+            'Independent hubs per region (two hubs are not an HA pair).',
+          ),
+        branchesPerRegion: z
+          .union([
+            z
+              .number()
+              .int()
+              .min(SDWAN_LIMITS.branchesPerRegion.min)
+              .max(SDWAN_LIMITS.branchesPerRegion.max),
+            z
+              .array(
+                z
+                  .number()
+                  .int()
+                  .min(SDWAN_LIMITS.branchesPerRegion.min)
+                  .max(SDWAN_LIMITS.branchesPerRegion.max),
+              )
+              .max(SDWAN_LIMITS.regions.max),
+          ])
+          .optional()
+          .describe('One count for every region, or one per region.'),
+        transports: z
+          .array(z.enum(TRANSPORTS))
+          .min(SDWAN_LIMITS.wanLinks.min)
+          .max(SDWAN_LIMITS.wanLinks.max)
+          .optional()
+          .describe('Transport of each branch WAN circuit, in port order.'),
+        branchHa: z.boolean().optional(),
+        branchLan: z.enum(BRANCH_LAN).optional(),
+        interRegionHubMesh: z.boolean().optional(),
+        overlayName: displayString(32)
+          .optional()
+          .describe('EdgeConnect Business Intent Overlay name.'),
+        title: displayString(TEXT_LIMITS.title).optional(),
+      },
+      handler: (a) => {
+        const { doc, stats, intent } = generateSdwan(
+          a as unknown as Parameters<typeof generateSdwan>[0],
+        );
+        const { id } = store.import(doc);
+        return { id, title: doc.title, stats, intent };
       },
     },
     {

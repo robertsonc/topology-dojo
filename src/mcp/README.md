@@ -256,6 +256,7 @@ to the task's affected region and change summaries, not total document size.
 | `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                                                          |
 | `create_topology`                                      | New document (one empty page)                                                                                                                 |
 | `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                                                     |
+| `generate_sdwan_topology`                              | Generate an SD-WAN fabric from intent (EdgeConnect or Juniper SRX; regions, hubs, branches, transports, HA, LAN) as a new document            |
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                         |
 | `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a draw.io file, a Mermaid flowchart, or CSV data (`format` auto-detects)              |
 | `set_document_title`                                   | Rename a document                                                                                                                             |
