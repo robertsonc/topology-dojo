@@ -764,6 +764,42 @@ Starting from a template replaces the active canvas after confirmation. Download
 the current JSON first if it must be retained. A connected Agent Workspace must
 be closed before replacing the document.
 
+### Generate an SD-WAN fabric
+
+**＋ template… → Generate SD-WAN…** opens a wizard that builds a hub-and-spoke
+SD-WAN fabric from a few choices. A live preview shows the device, tunnel and
+cable counts that will land on the canvas.
+
+| Choice                    | Options                                                                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Vendor                    | HPE EdgeConnect, Juniper SRX (Mist WAN Assurance)                                                                                       |
+| How much detail?          | Every device (appliances, transport clouds, cabling) or one box per site                                                                |
+| Regions                   | 1–4; regions tile two across, each in a dashed region zone. With 3–4 regions the top row is flipped so all hubs face a central hub band |
+| Mesh hubs across regions? | Shown with 2+ regions. Hubs always mesh within a region                                                                                 |
+| Hubs per region           | 1 or 2. Two hubs are independent appliances, not an HA pair                                                                             |
+| Branches per region       | 1–12                                                                                                                                    |
+| WAN links per branch      | 1–3, each Internet, MPLS or LTE                                                                                                         |
+| Branch edge               | Single, or HA pair (EdgeConnect) / chassis cluster (Juniper)                                                                            |
+| Branch LAN                | None, switch, or switch + AP (device detail only)                                                                                       |
+
+The vendor decides how tunnels and HA are drawn:
+
+- **EdgeConnect** — one underlay tunnel per _matching_ WAN label between each
+  appliance pair (INET1↔INET1, MPLS1↔MPLS1) on the **Underlay** layer, which is
+  hidden by default because it is dense; one bonded tunnel per appliance pair on
+  the **Overlay** layer. An HA pair is two active appliances joined by an HA
+  link: each circuit lands on one member and both members build tunnels.
+- **Juniper SRX** — one IPsec overlay tunnel per WAN path to each hub; there is
+  no separate underlay layer. A chassis cluster is drawn as node0 and node1 with
+  control and fabric links, every circuit on both nodes (reth), and tunnels
+  terminated once, on node0.
+- **LTE** circuits reach the hub's Internet label (`LTE1→INET1`); hubs never get
+  an LTE circuit. Hubs terminate every other transport their branches use.
+
+Generated elements carry the source system `synthetic`, so they are never
+mistaken for objects pulled from a live Orchestrator or Mist org. Agents use the
+same generator through the **generate_sdwan_topology** MCP tool.
+
 ## 11. Save, import, export, and share
 
 ### Browser autosave and JSON
@@ -1326,7 +1362,7 @@ Workspace limits include:
 | Task                         | Principal tools                                                                                                                                                                                                                                                                                      |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Discover                     | **describe_capabilities**, **layout_guidelines**, **list_templates**                                                                                                                                                                                                                                 |
-| Create/manage private drafts | **create_topology**, **list_topologies**, **get_topology**, **delete_topology**, **create_from_template**, **import_topology**                                                                                                                                                                       |
+| Create/manage private drafts | **create_topology**, **list_topologies**, **get_topology**, **delete_topology**, **create_from_template**, **generate_sdwan_topology**, **import_topology**                                                                                                                                          |
 | Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**, **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                                        |
 | Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                                            |
 | Edit content                 | **edit_topology**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**, **define_link_style**, **define_tier**, **define_bundle**, **set_port_table**                                                                                               |

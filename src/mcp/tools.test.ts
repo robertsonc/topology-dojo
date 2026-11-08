@@ -46,6 +46,7 @@ describe('MCP tools', () => {
         'edit_topology',
         'export_flipbook',
         'export_topology',
+        'generate_sdwan_topology',
         'get_topology',
         'import_topology',
         'inspect_render',
@@ -375,6 +376,31 @@ describe('MCP tools', () => {
     };
     expect(v.valid).toBe(true);
     expect(v.layoutClean).toBe(true);
+  });
+
+  it('generate_sdwan_topology creates a valid, clean, vendor-aware fabric', () => {
+    const out = call('generate_sdwan_topology', {
+      vendor: 'juniper',
+      regions: 2,
+      branchesPerRegion: [2, 3],
+      transports: ['inet', 'mpls'],
+      branchHa: true,
+    }) as { id: string; stats: { overlayTunnels: number; devices: number } };
+    // node0 × 2 hubs × 2 paths per branch (5) + C(4,2) hub pairs × 2 paths.
+    expect(out.stats.overlayTunnels).toBe(5 * 4 + 6 * 2);
+    const v = call('validate_topology', { topologyId: out.id }) as {
+      valid: boolean;
+      layoutClean: boolean;
+    };
+    expect(v.valid).toBe(true);
+    expect(v.layoutClean).toBe(true);
+    expect(() =>
+      call('generate_sdwan_topology', {
+        vendor: 'juniper',
+        regions: 2,
+        branchesPerRegion: [1, 1, 1],
+      }),
+    ).toThrow(/branchesPerRegion has 3 entries/);
   });
 
   it('sets node metadata (replace + merge) reachable via the document', () => {
