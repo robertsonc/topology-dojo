@@ -238,6 +238,24 @@ sourcedOnly:true` list what an importer owns; there's no surface yet for
 
 Valuable but non-blocking; no current evidence anything is waiting on these:
 
+- **SD-WAN generator: more vendors (proposal 0010 slice 5)** — researched,
+  not committed. [Proposal 0012](proposals/0012-sdwan-vendor-research.md)
+  records how **Fortinet FortiGate** (per-transport IPsec overlays,
+  independent dual hubs, FGCP cluster as one endpoint, optional ADVPN
+  shortcuts, documented AWS / Azure / GCP and FortiSASE patterns) and
+  **Juniper SSR** (tunnel-free SVR peer paths by neighborhood, per-node HA
+  paths, Conductor or Mist management; cloud patterns undocumented) would be
+  modelled, with sources, inferences and open questions. Recommended order:
+  Fortinet first. Decisions pending: ADVPN shortcuts as a hidden layer; SSR
+  standby paths dimmed or omitted. Re-verify against current vendor docs
+  before building.
+- **SD-WAN generator: per-vendor Azure peering label + management plane** —
+  from the same research: the Azure cloud-hub label must become per vendor
+  (Fortinet NVAs sit inside the vWAN hub, so "VNet NVA" is wrong for it), and
+  every vendor would gain an optional management-plane layer (Orchestrator,
+  Mist / Conductor, FortiManager + FortiAnalyzer) with dotted lines off the
+  data path.
+
 - **Finer element-set leases** — today leases are page-scoped only (proposal
   0002's "S4," explicitly skipped: "per-page leases are fine; revisit only on
   measured contention," `docs/HANDOFF.md`).

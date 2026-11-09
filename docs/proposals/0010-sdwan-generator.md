@@ -1,8 +1,8 @@
 # Proposal 0010 — SD-WAN topology generator
 
 **Status:** Spec accepted; slices 1 (PR #293), 2 (PR #295), 4 (PR #296) and 3
-implemented (2026-11-08; branch-to-branch mesh deferred). Slice 5 is in
-research.
+implemented (2026-11-08; branch-to-branch mesh deferred). Slice 5 is
+researched but not committed (proposal 0012).
 
 **Captured:** 2026-11-08
 
@@ -224,7 +224,7 @@ layout rule.
 | **2** | **Site tiles and drill-down.** Site detail uses place icons; `overview` detail adds one device page per region, linked by in-document page links (`href: "#page=<id>"`). Region names and per-region branch counts in the wizard. **Done.**                                                                                                                     | Place icons (0011 tier 1, done) |
 | **3** | **Geography.** `mapBackdrop`: each region zone draws its business-region map (Natural Earth 1:110m countries, public domain, Equal Earth projection; North America, LATAM, AMER, Europe, Africa, EMEA, APAC, World; Russia cut at 60°E outside the World map) faintly inside its box, matched by region name. A zone `backdrop` field anyone can set. **Done.** | —                               |
 | **4** | **Cloud and SASE edges.** Cloud hub per region (AWS / Azure / GCP) and SSE on-ramp (branch breakout or hub backhaul). **Done**; branch-to-branch mesh deferred.                                                                                                                                                                                                 | SSE/SASE PoP icon (0011, done)  |
-| 5     | **More vendors.** Juniper SSR (Secure Vector Routing — tunnel-free, needs its own profile), Fortinet SD-WAN/ADVPN (FGCP cluster terminates once).                                                                                                                                                                                                               | Vendor review                   |
+| 5     | **More vendors.** Researched, not committed: see [proposal 0012](0012-sdwan-vendor-research.md) for Fortinet FortiGate (per-transport IPsec, FGCP cluster terminates once, ADVPN shortcuts) and Juniper SSR (SVR peer paths, per-node HA).                                                                                                                      | Vendor review                   |
 
 ## 10. Risks and open questions
 
