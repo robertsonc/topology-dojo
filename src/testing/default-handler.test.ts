@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SNAPSHOT_GET_LIMIT } from '../mcp/rate-limit.js';
 import {
   buildWorkerBundle,
   startMiniflare,
@@ -194,6 +195,14 @@ describe('GET /api/topology/:id', () => {
   });
 
   it('429s a public snapshot GET after the per-IP window is exhausted', async () => {
+    // SNAPSHOT_GET_LIMIT counts in fixed one-minute windows aligned to the
+    // clock. If the 61 requests below straddle a minute boundary the count
+    // resets mid-loop and no 429 ever comes (seen on a slow CI runner), so
+    // start well inside a window: within 10s of the boundary, wait it out.
+    const windowMs = SNAPSHOT_GET_LIMIT.windowMs;
+    const intoWindow = Date.now() % windowMs;
+    if (intoWindow > windowMs - 10_000)
+      await new Promise((r) => setTimeout(r, windowMs - intoWindow + 50));
     const kv = await handle.miniflare.getKVNamespace('TOPOLOGY_KV');
     await kv.put('doc:ratelimit', JSON.stringify({ title: 'RL' }));
     const headers = { 'CF-Connecting-IP': '198.51.100.77' };
@@ -213,7 +222,7 @@ describe('GET /api/topology/:id', () => {
     await expect(limited!.json()).resolves.toMatchObject({
       error: 'rate_limited',
     });
-  });
+  }, 20_000);
 
   it("does not let one IP's quota block a different client", async () => {
     const kv = await handle.miniflare.getKVNamespace('TOPOLOGY_KV');
