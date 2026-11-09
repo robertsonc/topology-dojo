@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { BACKDROPS } from './backdrops.generated.js';
 import {
   BACKDROP_NAMES,
   backdropForRegion,
+  composeBackdrop,
   isBackdropName,
 } from './backdrops.js';
 import { renderPageToSVG } from '../server/render.js';
@@ -26,22 +26,39 @@ function zonePage(backdrop?: string): Page {
 }
 
 describe('map backdrops', () => {
-  it('ships one normalised outline per name', () => {
-    expect(Object.keys(BACKDROPS).sort()).toEqual([...BACKDROP_NAMES].sort());
+  it('composes every business region from shared pieces', () => {
+    const world = composeBackdrop('world');
     for (const name of BACKDROP_NAMES) {
-      const b = BACKDROPS[name];
-      expect(b.w, name).toBe(1000);
-      expect(b.h, name).toBeGreaterThan(100);
+      const b = composeBackdrop(name);
       expect(b.d, name).toMatch(/^M[\d.]+ [\d.]+L/);
-      // No antimeridian artefact: no coordinate leaves the w × h box.
-      for (const n of b.d.match(/-?[\d.]+/g)!.map(Number))
-        expect(n, name).toBeGreaterThanOrEqual(-0.1);
+      expect(b.b.length, name).toBeGreaterThan(0);
+      // Each crop sits inside the world frame…
+      expect(b.x, name).toBeGreaterThanOrEqual(world.x);
+      expect(b.x + b.w, name).toBeLessThanOrEqual(world.x + world.w);
+      expect(b.y + b.h, name).toBeLessThanOrEqual(world.y + world.h);
     }
+    // …and composites cover their parts.
+    const amer = composeBackdrop('amer');
+    for (const part of ['na', 'latam'] as const) {
+      const p = composeBackdrop(part);
+      expect(amer.x).toBeLessThanOrEqual(p.x);
+      expect(amer.x + amer.w).toBeGreaterThanOrEqual(p.x + p.w);
+    }
+    // Europe stops at the Russia split (60°E), well short of APAC's east edge.
+    const europe = composeBackdrop('europe');
+    const apac = composeBackdrop('apac');
+    expect(europe.x + europe.w).toBeLessThan(apac.x + apac.w - 200);
+    // No antimeridian artefact: no coordinate leaves the world frame.
+    for (const n of world.d.match(/-?[\d.]+/g)!.map(Number))
+      expect(n).toBeGreaterThanOrEqual(-0.1);
   });
 
   it('maps region names and aliases, and nothing else', () => {
     expect(backdropForRegion('AMER')).toBe('amer');
-    expect(backdropForRegion(' Europe ')).toBe('emea');
+    expect(backdropForRegion('North America')).toBe('na');
+    expect(backdropForRegion(' Europe ')).toBe('europe');
+    expect(backdropForRegion('Middle East')).toBe('emea');
+    expect(backdropForRegion('Africa')).toBe('africa');
     expect(backdropForRegion('APJ')).toBe('apac');
     expect(backdropForRegion('South America')).toBe('latam');
     expect(backdropForRegion('West')).toBeUndefined();
@@ -53,19 +70,23 @@ describe('map backdrops', () => {
     expect(renderPageToSVG(zonePage())).not.toContain('tds-backdrop');
     const svg = renderPageToSVG(zonePage('emea'));
     const m =
-      /class="tds-backdrop"[^>]*transform="translate\(([\d.-]+) ([\d.-]+)\) scale\(([\d.]+)\)"/.exec(
+      /class="tds-backdrop" transform="translate\(([\d.-]+) ([\d.-]+)\) scale\(([\d.]+)\)"/.exec(
         svg,
       );
     expect(m).not.toBeNull();
     const [tx, ty, k] = [Number(m![1]), Number(m![2]), Number(m![3])];
-    const b = BACKDROPS.emea;
-    // Fits within the zone (nodes 200..600 × 200..450 plus padding).
-    expect(tx).toBeGreaterThan(100);
-    expect(ty).toBeGreaterThan(100);
-    expect(tx + b.w * k).toBeLessThan(700);
-    expect(ty + b.h * k).toBeLessThan(560);
-    // Fill only: clipped region edges must never be outlined.
-    expect(svg).not.toMatch(/class="tds-backdrop"[^>]*stroke=/);
+    const b = composeBackdrop('emea');
+    // The crop box lands inside the zone (nodes 200..600 × 200..450 + pad).
+    const left = tx + b.x * k;
+    const top = ty + b.y * k;
+    expect(left).toBeGreaterThan(100);
+    expect(top).toBeGreaterThan(100);
+    expect(left + b.w * k).toBeLessThan(700);
+    expect(top + b.h * k).toBeLessThan(560);
+    // Fill, then a faint border stroke; the fill itself is never outlined.
+    expect(svg).toMatch(
+      /fill-opacity="\.08"\/><path d="[^"]+" fill="none" stroke=/,
+    );
   });
 
   it('warns on an unknown backdrop name', () => {
@@ -87,7 +108,7 @@ describe('map backdrops', () => {
     });
     const byId = new Map(doc.pages[0]!.zones.map((z) => [z.id, z.backdrop]));
     expect(byId.get('region_amer')).toBe('amer');
-    expect(byId.get('region_europe')).toBe('emea');
+    expect(byId.get('region_europe')).toBe('europe');
     expect(byId.get('region_lab')).toBeUndefined();
     // Off by default.
     const off = generateSdwan({ vendor: 'edgeconnect' }).doc;

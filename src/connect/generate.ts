@@ -913,7 +913,8 @@ function decorate(
       (z) => !hubs.some((h) => h.label === z.label),
     );
     const regionZone = `region_${rs}`;
-    // Map backdrop by region name (AMER, EMEA, APAC, LATAM and aliases); a
+    // Map backdrop by region name (NA, LATAM, AMER, Europe, Africa, EMEA,
+    // APAC and aliases — render/backdrops); a
     // name that names no region gets none rather than a wrong continent.
     const backdrop = i.mapBackdrop ? backdropForRegion(rName) : undefined;
     page.zones.push({
