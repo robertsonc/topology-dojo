@@ -1,8 +1,8 @@
 # Proposal 0010 — SD-WAN topology generator
 
-**Status:** Spec accepted; slices 1 (PR #293), 2 (PR #295) and 4 implemented
-(2026-11-08; branch-to-branch mesh deferred).
-Slices 3–5 open.
+**Status:** Spec accepted; slices 1 (PR #293), 2 (PR #295), 4 (PR #296) and 3
+implemented (2026-11-08; branch-to-branch mesh deferred). Slice 5 is in
+research.
 
 **Captured:** 2026-11-08
 
@@ -214,6 +214,7 @@ layout rule.
 | AC18 | A cloud hub per region joins branch tunnels and the hub mesh over Internet labels only, peered with the provider router       | ✅ unit (slice 4)        |
 | AC19 | SSE `branch` draws one IPsec tunnel per tunnel-terminating edge; `hub` only from data-center hubs; on the `sse` layer         | ✅ unit + e2e (slice 4)  |
 | AC20 | Every vendor × detail × cloud × SSE combination at 4 regions with HA and LAN validates and lays out overlap-free              | ✅ unit (18 cases)       |
+| AC21 | `mapBackdrop` puts each region's continent behind its zone by name; unknown names get none; fill only, inside the zone box    | ✅ unit (slice 3)        |
 
 ## 9. Slices
 
@@ -221,7 +222,7 @@ layout rule.
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | **1** | Intent, EdgeConnect + Juniper SRX vendor rules, device/site detail, layout, MCP tool, wizard. **Done (PR #293).**                                                                                                                           | —                               |
 | **2** | **Site tiles and drill-down.** Site detail uses place icons; `overview` detail adds one device page per region, linked by in-document page links (`href: "#page=<id>"`). Region names and per-region branch counts in the wizard. **Done.** | Place icons (0011 tier 1, done) |
-| 3     | **Geography.** Optional AMER/EMEA/APAC map backdrop on a locked bottom layer behind region zones.                                                                                                                                           | A map backdrop asset            |
+| **3** | **Geography.** `mapBackdrop`: each region zone draws its continent (Natural Earth 1:110m land, public domain, Equal Earth projection) faintly inside its box, matched by region name. A zone `backdrop` field anyone can set. **Done.**     | —                               |
 | **4** | **Cloud and SASE edges.** Cloud hub per region (AWS / Azure / GCP) and SSE on-ramp (branch breakout or hub backhaul). **Done**; branch-to-branch mesh deferred.                                                                             | SSE/SASE PoP icon (0011, done)  |
 | 5     | **More vendors.** Juniper SSR (Secure Vector Routing — tunnel-free, needs its own profile), Fortinet SD-WAN/ADVPN (FGCP cluster terminates once).                                                                                           | Vendor review                   |
 

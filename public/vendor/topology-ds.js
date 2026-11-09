@@ -3743,6 +3743,19 @@ ${grid}`;
 
   /* Plugin metadata storage */
   static _nodePluginMeta = {};
+
+  /** Map backdrops a zone can draw inside its box: name → { w, h, d }. */
+  static _backdrops = {};
+
+  /**
+   * Register a zone backdrop (vector outline in a w × h box). A zone with
+   * `backdrop: name` draws it faintly inside its box, scaled to fit.
+   */
+  static registerBackdrop(name, backdrop) {
+    if (backdrop && backdrop.d && backdrop.w > 0 && backdrop.h > 0)
+      TopologyDesigner._backdrops[name] = backdrop;
+    return TopologyDesigner;
+  }
   static _linkPlugins = {};
 
   // Note: registerNodeType and registerLinkType are defined above with full plugin interface
@@ -4280,6 +4293,20 @@ ${grid}`;
     const subY = bottom ? minY + h - 20 : minY + 26;
     let s = '';
     s += `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" rx="8" fill="${c}" fill-opacity=".04" stroke="${c}" stroke-width="1" stroke-opacity="${this._la('.35')}"${dash !== 'none' ? ` stroke-dasharray="${dash}"` : ''}/>`;
+    // Map backdrop: fill only (no outline, so clipped region edges never
+    // show), scaled to fit inside the box clear of the caption strip.
+    const bd = zone.backdrop && TopologyDesigner._backdrops[zone.backdrop];
+    if (bd) {
+      const pad = 10, cap = 22;
+      const iy = bottom ? minY + pad : minY + cap;
+      const iw = w - pad * 2, ih = h - pad - cap;
+      if (iw > 0 && ih > 0) {
+        const k = Math.min(iw / bd.w, ih / bd.h);
+        const tx = minX + pad + (iw - bd.w * k) / 2;
+        const ty = iy + (ih - bd.h * k) / 2;
+        s += `<path class="tds-backdrop" d="${bd.d}" transform="translate(${Math.round(tx * 10) / 10} ${Math.round(ty * 10) / 10}) scale(${Math.round(k * 10000) / 10000})" fill="${c}" fill-opacity=".09" pointer-events="none"/>`;
+      }
+    }
     s += `<text x="${labelX}" y="${labelY}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity="${this._ta('.7')}">${_esc(zone.label || zone.id)}</text>`;
     const sublabelText = zone.sublabel || zone.description;
     if (sublabelText) {

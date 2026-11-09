@@ -57,7 +57,7 @@ does, with JetBrains Mono embedded because a Worker has no system fonts.
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | page                                                            | one `<diagram>` (page) in one `<mxfile>`                                                                                                                                                             |
 | declared layer                                                  | draw.io layer (hidden when the layer's `defaultVisible` is false); untagged → the base layer                                                                                                         |
-| zone                                                            | container (`container=1`); same-layer members are children with relative geometry; zones nest                                                                                                        |
+| zone                                                            | container (`container=1`); same-layer members are children with relative geometry; zones nest. A map `backdrop` is not exported                                                                      |
 | node                                                            | vertex wrapped in `<object>`: `dojoType`, label, sublabel, metadata as **Edit Data** properties, `link` (a page link `#page=<id>` becomes draw.io's `data:page/id,<id>` and imports back), `tooltip` |
 | router / firewall / server / load balancer / proxy / mail / NAS | draw.io network stencils (`mxgraph.networks.*`)                                                                                                                                                      |
 | cloud / database                                                | built-in cloud / `cylinder3`                                                                                                                                                                         |
@@ -80,7 +80,7 @@ its own layer (draw.io children always share their container's layer).
 | label          | shape text — inside shapes, under device outlines                                                                                                                           |
 | link           | 1D dynamic connector glued to both shapes (`Connects` + `_WALKGLUE` / `_XFTRIGGER`), colour / weight / dash, waypoints as the drawn path, label as connector text           |
 | port labels    | small text shapes near each end, plus `FromPort` / `ToPort` Shape Data                                                                                                      |
-| zone           | background rectangle in the zone colour and dash, label top-left (bottom for tier bands)                                                                                    |
+| zone           | background rectangle in the zone colour and dash, label top-left (bottom for tier bands); a map `backdrop` is not exported                                                  |
 | image node     | foreign (bitmap) shape for embedded PNG / JPEG / GIF                                                                                                                        |
 
 **Drops:** device glyph art (a generic outline stands in), glow and

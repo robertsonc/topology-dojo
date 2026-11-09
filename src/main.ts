@@ -74,6 +74,7 @@ import { pageLinkTarget } from './api/page-link.js';
 const SDWAN_WIZARD = '__sdwan';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { STOCK_NODE_SPECS } from './nodes/stock.js';
+import { registerBackdrops } from './render/backdrops.js';
 import { openNodeDesigner } from './nodes/designer.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
@@ -111,6 +112,7 @@ const doc: TopologyDocument = loadLocal() ?? sampleDocument();
 // Register the shipped cloud-native types, then the document's custom types,
 // with the engine before any render.
 registerCustomNodes(STOCK_NODE_SPECS);
+registerBackdrops(window.TopologyDesigner);
 registerCustomNodes(doc.customNodes);
 registerHitBoxes(doc.customNodes);
 let current = 0;

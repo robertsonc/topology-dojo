@@ -32,6 +32,7 @@
  *
  * DOM-free and deterministic: same intent → same document.
  */
+import { backdropForRegion } from '../render/backdrops.js';
 import { compileFabric, FABRIC_LAYERS, type FabricRecords } from './compile.js';
 import type { ApplianceRecord, TunnelRecord } from './types.js';
 import { defineLayer } from '../api/builder.js';
@@ -106,6 +107,8 @@ export interface SdwanIntent {
   cloudHub?: CloudHub;
   /** Internet breakout through an SSE PoP per region. */
   sse?: SseMode;
+  /** Draw each region's continent faintly behind its zone (by region name). */
+  mapBackdrop?: boolean;
   title?: string;
 }
 
@@ -335,6 +338,7 @@ export function resolveSdwanIntent(intent: SdwanIntent): ResolvedSdwanIntent {
     overlayName,
     cloudHub,
     sse,
+    mapBackdrop: intent.mapBackdrop ?? false,
     title:
       String(intent.title ?? '')
         .trim()
@@ -909,6 +913,9 @@ function decorate(
       (z) => !hubs.some((h) => h.label === z.label),
     );
     const regionZone = `region_${rs}`;
+    // Map backdrop by region name (AMER, EMEA, APAC, LATAM and aliases); a
+    // name that names no region gets none rather than a wrong continent.
+    const backdrop = i.mapBackdrop ? backdropForRegion(rName) : undefined;
     page.zones.push({
       id: regionZone,
       label: rName,
@@ -917,6 +924,7 @@ function decorate(
       labelAlign: 'left',
       // A mirrored region labels its hub edge, like the row below it.
       ...(mirrorTopRow && r < cols ? { labelPosition: 'bottom' as const } : {}),
+      ...(backdrop ? { backdrop } : {}),
     });
     // A site zone only earns its box when it groups more than one device.
     page.zones = page.zones.filter(
