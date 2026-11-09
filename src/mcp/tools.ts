@@ -675,7 +675,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .boolean()
           .optional()
           .describe(
-            "Draw each region's continent (Natural Earth outline) faintly behind its zone, matched by region name: AMER, EMEA, APAC, LATAM and aliases; other names get none.",
+            "Draw each region's map (Natural Earth countries, faint borders) behind its zone, matched by region name: North America, LATAM, AMER, Europe, Africa, EMEA, APAC (and aliases such as NA, APJ, Middle East); other names get none.",
           ),
         sse: z
           .enum(SSE_MODES)

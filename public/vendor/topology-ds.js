@@ -4293,8 +4293,10 @@ ${grid}`;
     const subY = bottom ? minY + h - 20 : minY + 26;
     let s = '';
     s += `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" rx="8" fill="${c}" fill-opacity=".04" stroke="${c}" stroke-width="1" stroke-opacity="${this._la('.35')}"${dash !== 'none' ? ` stroke-dasharray="${dash}"` : ''}/>`;
-    // Map backdrop: fill only (no outline, so clipped region edges never
-    // show), scaled to fit inside the box clear of the caption strip.
+    // Map backdrop: land fill plus faint country borders, scaled to fit
+    // inside the box clear of the caption strip. The backdrop's own crop box
+    // (x, y, w, h) selects its region of the shared world frame; borders
+    // never include artificial cut edges, so a clipped region shows no seam.
     const bd = zone.backdrop && TopologyDesigner._backdrops[zone.backdrop];
     if (bd) {
       const pad = 10, cap = 22;
@@ -4302,9 +4304,14 @@ ${grid}`;
       const iw = w - pad * 2, ih = h - pad - cap;
       if (iw > 0 && ih > 0) {
         const k = Math.min(iw / bd.w, ih / bd.h);
-        const tx = minX + pad + (iw - bd.w * k) / 2;
-        const ty = iy + (ih - bd.h * k) / 2;
-        s += `<path class="tds-backdrop" d="${bd.d}" transform="translate(${Math.round(tx * 10) / 10} ${Math.round(ty * 10) / 10}) scale(${Math.round(k * 10000) / 10000})" fill="${c}" fill-opacity=".09" pointer-events="none"/>`;
+        const r = (v, p) => Math.round(v * p) / p;
+        const tx = minX + pad + (iw - bd.w * k) / 2 - (bd.x || 0) * k;
+        const ty = iy + (ih - bd.h * k) / 2 - (bd.y || 0) * k;
+        const tf = `translate(${r(tx, 10)} ${r(ty, 10)}) scale(${r(k, 10000)})`;
+        s += `<g class="tds-backdrop" transform="${tf}" pointer-events="none">`;
+        s += `<path d="${bd.d}" fill="${c}" fill-opacity=".08"/>`;
+        if (bd.b) s += `<path d="${bd.b}" fill="none" stroke="${c}" stroke-opacity=".22" stroke-width="${r(0.8 / k, 1000)}" stroke-linejoin="round"/>`;
+        s += `</g>`;
       }
     }
     s += `<text x="${labelX}" y="${labelY}" text-anchor="${anchor}" fill="${c}" font-size="9" font-weight="700" letter-spacing="1" opacity="${this._ta('.7')}">${_esc(zone.label || zone.id)}</text>`;

@@ -548,12 +548,15 @@ Zones visually group related nodes. Edit the label, sublabel, description,
 member list, color, border, padding, alignment, parent zone, layer, and source
 fields as needed.
 
-**Map backdrop** draws a faint land outline inside the zone box: World, North
-America, Europe-Middle East-Africa, Asia-Pacific, or Latin America. It is fill
-only, in the zone's colour, scaled to fit the box, and never clickable. The
-outlines come from Natural Earth (public domain) and ship with the app, so
-nothing is fetched and exports stay self-contained. SVG, PNG and PDF exports
-draw it; draw.io, Visio and PowerPoint exports leave it out.
+**Map backdrop** draws a faint map of a business region inside the zone box:
+World, North America, Latin America, Americas (AMER = North America + Latin
+America), Europe, Africa, EMEA (Europe + Middle East + Africa), or Asia-Pacific.
+The land is filled in the zone's colour with faint country borders, scaled to
+fit the box, and never clickable. Russia is cut at 60°E on the Europe and EMEA
+maps so Europe is not dwarfed; the World map shows it whole. The outlines come
+from Natural Earth (public domain) and ship with the app, so nothing is fetched
+and exports stay self-contained. SVG, PNG and PDF exports draw it; draw.io,
+Visio and PowerPoint exports leave it out.
 
 Zones are always the bottom layer — behind nodes, links, and anchors, for
 drawing and for clicks. Anything inside a zone (including a node's label) wins
@@ -802,20 +805,20 @@ be closed before replacing the document.
 SD-WAN fabric from a few choices. A live preview shows the device, tunnel and
 cable counts that will land on the canvas.
 
-| Choice                    | Options                                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Vendor                    | HPE EdgeConnect, Juniper SRX (Mist WAN Assurance)                                                                                          |
-| How much detail?          | Every device (appliances, transport clouds, cabling); one box per site (data-center hubs, branch-office tiles); or overview + region pages |
-| Regions                   | 1–4; regions tile two across, each in a dashed region zone. With 3–4 regions the top row is flipped so all hubs face a central hub band    |
-| Mesh hubs across regions? | Shown with 2+ regions. Hubs always mesh within a region                                                                                    |
-| Hubs per region           | 1 or 2. Two hubs are independent appliances, not an HA pair                                                                                |
-| Branches per region       | 1–12. With 2+ regions, each region gets its own row: a name and a branch count                                                             |
-| WAN links per branch      | 1–3, each Internet, MPLS or LTE                                                                                                            |
-| Branch edge               | Single, or HA pair (EdgeConnect) / chassis cluster (Juniper)                                                                               |
-| Branch LAN                | None, switch, or switch + AP (device detail and region pages)                                                                              |
-| Cloud hub per region      | None, AWS, Azure or Google Cloud: a virtual edge (EC-V / vSRX) per region, BGP-peered with the provider's cloud router                     |
-| SSE on-ramp               | None; from branches (IPsec from every branch edge, local breakout); or via hubs (from the data-center hubs, backhaul)                      |
-| Map backdrop              | None, or each region's continent behind its zone, matched by region name (AMER, EMEA, APAC, LATAM and aliases such as Europe or APJ)       |
+| Choice                    | Options                                                                                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vendor                    | HPE EdgeConnect, Juniper SRX (Mist WAN Assurance)                                                                                                              |
+| How much detail?          | Every device (appliances, transport clouds, cabling); one box per site (data-center hubs, branch-office tiles); or overview + region pages                     |
+| Regions                   | 1–4; regions tile two across, each in a dashed region zone. With 3–4 regions the top row is flipped so all hubs face a central hub band                        |
+| Mesh hubs across regions? | Shown with 2+ regions. Hubs always mesh within a region                                                                                                        |
+| Hubs per region           | 1 or 2. Two hubs are independent appliances, not an HA pair                                                                                                    |
+| Branches per region       | 1–12. With 2+ regions, each region gets its own row: a name and a branch count                                                                                 |
+| WAN links per branch      | 1–3, each Internet, MPLS or LTE                                                                                                                                |
+| Branch edge               | Single, or HA pair (EdgeConnect) / chassis cluster (Juniper)                                                                                                   |
+| Branch LAN                | None, switch, or switch + AP (device detail and region pages)                                                                                                  |
+| Cloud hub per region      | None, AWS, Azure or Google Cloud: a virtual edge (EC-V / vSRX) per region, BGP-peered with the provider's cloud router                                         |
+| SSE on-ramp               | None; from branches (IPsec from every branch edge, local breakout); or via hubs (from the data-center hubs, backhaul)                                          |
+| Map backdrop              | None, or each region's map behind its zone, matched by region name: North America, LATAM, AMER, Europe, Africa, EMEA, APAC and aliases (NA, APJ, Middle East…) |
 
 **Overview + region pages** builds a page per region behind a site-level
 overview. Ctrl/Cmd+click any site tile on the overview to open its region's
