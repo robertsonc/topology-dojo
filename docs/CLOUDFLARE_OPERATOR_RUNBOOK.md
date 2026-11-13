@@ -43,7 +43,7 @@ configured)._
 | Where                | Dashboard → **Workers & Pages** → select **`topology-dojo`** (production) → **Metrics** tab. Repeat for **`topology-dojo-staging`** so you can tell the two apart on sight.                                  |
 | What you should find | Requests, error counts/rates (including uncaught exceptions), CPU time and duration percentiles (median/p99), per time range. Durable Object metrics appear per namespace under the Durable Objects section. |
 | Environment          | Both — but bookmark the two script pages separately.                                                                                                                                                         |
-| Validation           | The production page shows the request pattern you expect (low, single-owner volume) and the deployed version matches the latest `deploy-production` run.                                                     |
+| Validation           | The production page shows the request pattern you expect (low, single-owner volume) and the deployed version matches the latest `Release` (`release.yml`) run.                                               |
 | Evidence             | Screenshot of the production Metrics tab showing the script name + date range.                                                                                                                               |
 
 For log-level investigation: Dashboard → **Workers & Pages** →
@@ -98,7 +98,7 @@ has no Workers-error type:**
 1. **Standalone Health Checks** (plan-gated): an HTTPS check against
    `https://topology-dojo.harnessed.cloud/healthz` expecting 200, with its
    status-change notification type. This is the closest Cloudflare-native
-   equivalent of the repo's own daily verify, at minutes-level latency.
+   equivalent of the repo's own hourly verify, at minutes-level latency.
 2. **Zone HTTP error-rate alert types** (plan-gated, Business+
    historically): scope to the `harnessed.cloud` zone; note they watch the
    zone, not the Worker script, so staging (workers.dev) never triggers

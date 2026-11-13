@@ -81,3 +81,95 @@ Severity guide: **Critical** = a reader would materially misjudge production ris
   `v3`–`v5` rollout examples in `DEPLOYMENT_RUNBOOK.md` (which carry a note).
   Proposal 0004's own text is left as the record of the original design;
   0007 states what supersedes it.
+
+## Follow-up — 2026-11-13
+
+Accuracy pass over the planning, architecture and operations docs against
+`main` at `e99b012` (code, `wrangler.jsonc`, `.github/workflows/`, `scripts/`
+and `git log`; the local clone is shallow, so history before 2026-08-16 was
+not re-read). Counts quoted here are evidence for that revision only.
+
+Found and corrected:
+
+- **`HANDOFF.md` baseline was three months stale** (`4add174`, "849 Vitest
+  cases in 71 files plus 11 Chromium cases", "three visual cases"). Now
+  `e99b012`: 1768 Vitest cases in 146 files, 32 Playwright cases in 9 spec
+  files, 5 visual cases; `catalog:check` and the CI `visio` job added to the
+  gate description. The "Recently completed" and "Key files" sections had no
+  entry for anything merged after PR #243 (exports, hardware catalog, SD-WAN
+  generator, API keys, landing page); added.
+- **Flag inventory.** `HANDOFF.md`, `ROADMAP.md`, `ALERTS.md`,
+  `DEPLOYMENT_RUNBOOK.md` and `GAME_DAY.md` described three flags.
+  `wrangler.jsonc` has five: `API_KEYS_ENABLED` (staging `"true"`,
+  production `"false"`) and `LIVE_DATA_ENABLED` (`"false"` in both) were
+  missing or only partly reflected. `GAME_DAY.md` step 1.6 said "record all
+  six values".
+- **Smoke check count.** "14-check smoke" in `HANDOFF.md`, `ROADMAP.md`,
+  `ALERTS.md` and "14/14" in `GAME_DAY.md` S-0 / P-1: `scripts/smoke.mjs`
+  runs 15 since proposal 0005 added `mcp-apikey-unauth`. The dated
+  2026-07-19 spot-check figures in `ALERTS.md` are left as recorded.
+- **Workspace tool count.** `GAME_DAY.md`'s forward-recovery table said "the
+  8 workspace MCP tools"; `WORKSPACE_TOOL_NAMES` (`worker/workspace-tools.ts`)
+  lists 11.
+- **MCP tool inventory.** `ROADMAP.md` said "62 possible tool
+  registrations"; `createTools` with every optional dependency supplied
+  returns 72 at `e99b012` (43 with none).
+- **Shipped items listed as pending.** `ROADMAP.md` _Next_: hardware catalog
+  "Phases 1-3 merged, Phase 4 in review" (Phases 1–5 merged, PRs #285–#288,
+  #290) and the light-theme contrast fix "in review" (merged, PR #289).
+  `futures/hw-catalog.md` Phase 5 and `futures/light-theme-contrast.md`
+  status lines said "in review". `IMPLEMENTATION_PLAN.md` and
+  `PACKET_ISSUES.md` still read "implemented this PR … do not merge/deploy"
+  for A1–A6 (merged as PR #243) and carried no done-marker for O3.
+- **Closes the 2026-10-10 "not updated" list for two files.**
+  `ARCHITECTURE.md` (production deploys via `deploy-production.yml` behind a
+  protected environment approval) and `CLOUDFLARE_OPERATOR_RUNBOOK.md`
+  ("latest `deploy-production` run", "daily verify") now describe
+  `release.yml` and the hourly verify. `ROADMAP.md` "Deliberately excluded"
+  still named the protected-environment approval; corrected.
+- **`ARCHITECTURE.md` module map and engine claim.** The Layers block
+  predated `src/export/`, `src/import/` (beyond legacy), `src/catalog/`,
+  `src/profile/`, `src/share/`, `src/ui/`, `src/connect/generate.ts` and
+  most of `src/render/`; extended. Locked decision 5 said "the engine is
+  vendored unmodified" and Known constraints listed three sanctioned edits;
+  `git log -- public/vendor/topology-ds.js` shows targeted engine edits in
+  more than a dozen commits since August (flow paths following links, wire
+  labels, link anchor box, tiers, rounded corners, light-theme knobs, map
+  backdrops). Both statements now say so.
+- **Proposal 0007 status line** said "pending the owner's GitHub settings
+  changes … before the first unattended release"; the workflows merged as
+  PR #273 and `release.yml` is the only production path in the repository.
+  The settings checklist itself stays unchecked (see below).
+- **Stale cross-reference.** `IMPLEMENTATION_PLAN.md` / `PACKET_ISSUES.md`
+  O1 acceptance cites a `HANDOFF.md` "O12" checklist row that no longer
+  exists; annotated to point at the `CLOUDFLARE_OPERATOR_RUNBOOK.md`
+  checklist.
+
+Revalidated, no change needed: Durable Object classes and migration tags
+`v1`–`v5` (identical in both environments); `release.yml` triggers, jobs
+and dispatch inputs; `deploy-staging.yml` inputs; `production-verify.yml`
+hourly schedule; `nightly-staging-smoke.yml`; the smoke check table in
+`DEPLOYMENT_RUNBOOK.md`; `ROLLBACK.md`'s freeze, rollback and
+migration-class rules; every relative link in the files reviewed.
+
+Initiative status confirmed, not changed: B, E and T are **not started**
+(no `src/briefs/`, `src/stories/`, `create_from_brief`,
+`compile_flow_story` or recorded EdgeConnect fixtures). Their packets now
+carry a note that the SD-WAN generator (proposal 0010) overlaps B and that
+the live-fabric tools also require `LIVE_DATA_ENABLED`.
+
+Left as unverified (the repository cannot evidence these; not flipped):
+
+- Cloudflare notification policies (O1, CF-1..CF-6) and whether a game day
+  has been executed (O2).
+- The proposal 0007 GitHub settings checklist in `HANDOFF.md` (branch
+  protection, environment reviewers, token scoping, `release-freeze` label).
+- Which SHA production and staging currently serve, and whether any
+  `ORCH_*`, `DIAGNOSTICS_TOKEN` or `SESSION_HMAC_SECRET` secret is set.
+- Verification of `.vsdx` / `.pptx` output in Microsoft Visio / PowerPoint,
+  and publication of `server.json` to the MCP registry.
+
+Not corrected in this pass (outside its file scope, flagged for the owning
+docs): `CAPABILITY_MATRIX.md` still says "60 possible registrations"; the
+`worker/env.ts` and `worker/workspace-tools.ts` comments still say "the
+eight workspace MCP tools". Rows 15–16 above remain as deferred in July.

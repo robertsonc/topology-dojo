@@ -79,7 +79,7 @@ export const SHARE_LIMIT: RateLimitSpec = {
 
 /**
  * Public `GET /api/topology/:id`. Edge cache already absorbs repeats
- * (24h immutable). 60/min per IP covers a classroom opening the same
+ * (`max-age=60`). 60/min per IP covers a classroom opening the same
  * link without amplifying KV reads on scrape.
  */
 export const SNAPSHOT_GET_LIMIT: RateLimitSpec = {
@@ -123,6 +123,11 @@ export const MUTATING_MCP_TOOLS: ReadonlySet<string> = new Set([
   'set_node_metadata',
   'set_legend',
   'set_palette',
+  'set_sheet',
+  'define_link_style',
+  'define_tier',
+  'define_bundle',
+  'set_port_table',
   'bind_hardware',
   'assign_interfaces',
   'tidy_topology',

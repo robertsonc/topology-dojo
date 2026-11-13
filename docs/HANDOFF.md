@@ -1,7 +1,8 @@
 # Handoff
 
 _The primary entry point for picking up work on this repo. Rewritten
-2026-07-19 and revalidated 2026-08-09 against `main` at `4add174` (see
+2026-07-19; revalidated 2026-08-09 (`4add174`) and again 2026-11-13 against
+`main` at `e99b012` (see
 [`ROADMAP.md`](ROADMAP.md), [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md),
 [`DISCREPANCY_REGISTER.md`](DISCREPANCY_REGISTER.md)). Earlier handoff notes
 and the pre-reset implementation plan are preserved under
@@ -22,21 +23,31 @@ picture with evidence citations.
 
 ## Current repository baseline
 
-As of this review (`main` @ `4add174`, PR #219 merged 2026-08-09):
+As of this review (`main` @ `e99b012`, PR #300 merged 2026-11-08):
 
-- **All three major feature flags are live**: `WORKSPACE_ENABLED`,
+- **All three migration-backed feature flags are live**: `WORKSPACE_ENABLED`,
   `PROFILES_ENABLED`, `ANALYTICS_ENABLED` are all `"true"` in the top-level
-  (production) `wrangler.jsonc`. Nothing is bootstrapped-but-inert right now.
+  (production) `wrangler.jsonc` and in `env.staging`. No Durable Object class
+  is bootstrapped-but-inert right now.
+- **Two non-migration flags are deliberately off in production**:
+  `API_KEYS_ENABLED` (proposal 0005 — `"true"` on staging, `"false"` in
+  production until UAT-MCP-04 passes) and `LIVE_DATA_ENABLED` (the seven
+  EdgeConnect fabric tools — `"false"` in both environments; opt-in,
+  independent of `ORCH_*` secret presence, issue #228). Neither has a
+  binding or migration.
 - **Migrations `v1`–`v5` are all applied** in production: `TopologyMcp`,
   `TopologyRegistry`, `TopologyDocument`, `AuthoringProfile`, `AnalyticsLog`.
 - **Production origin**: `https://topology-dojo.harnessed.cloud` (moved from
   the `workers.dev` subdomain 2026-07-18; the GitHub OAuth App callback was
   repointed to match). Staging stays on its own `workers.dev` subdomain,
   fully isolated (`check-wrangler-env.mjs` enforces this in CI).
-- **The current automated gate is 849 Vitest cases in 71 files plus 11
-  Chromium browser cases.** Counts are evidence for this revision, not a
-  durable product claim; use the living QA plan and the current CI run for a
-  release decision.
+- **The current automated gate is 1768 Vitest cases in 146 files plus 32
+  Chromium browser cases in 9 spec files** (`e99b012`, local run 2026-11-13;
+  CI additionally runs the Python catalog reference tools, `catalog:check`,
+  and a LibreOffice `.vsdx` render job — `ci.yml` jobs `check`, `e2e`,
+  `visio`). Counts are evidence for this revision, not a durable product
+  claim; use the living QA plan and the current CI run for a release
+  decision.
 - **The external monitoring gate needs current operator evidence**: this
   repository cannot read Cloudflare notification policy state. The repo-side
   half of `IMPLEMENTATION_PLAN.md` initiative
@@ -45,8 +56,9 @@ As of this review (`main` @ `4add174`, PR #219 merged 2026-08-09):
   game-day framework + evidence template (`docs/GAME_DAY.md`), hourly (since
   proposal 0007; daily before) + on-demand production verification
   (`production-verify.yml`, deduplicated `production-smoke` issues, deployed
-  SHA asserted against the GitHub Deployments record), a 14-check
-  smoke with per-flag disabled-contract flags, staging flag-override deploy
+  SHA asserted against the GitHub Deployments record), a 15-check
+  smoke (14 when it landed; `mcp-apikey-unauth` arrived with proposal 0005)
+  with per-flag disabled-contract flags, staging flag-override deploy
   inputs, and a staging-only synthetic-fault route
   (`worker/staging-fault.ts`). Still human-only: the Cloudflare dashboard
   configuration (O1) and actually executing/recording the game day (O2).
@@ -70,8 +82,44 @@ Initiative A (agent activity + explainability) is implemented and shipped:
 bounded MCP-session trails on existing `TopologyMcp` storage, a session index
 on `AnalyticsLog` (v5), owner-gated `/api/admin/sessions`, an Agent Sessions
 admin section, and a non-causal guidance-consulted timeline signal. Flag
-choice: reuse already-on `ANALYTICS_ENABLED`. Merged as PR #243; live on
-production at `5de7813`.
+choice: reuse already-on `ANALYTICS_ENABLED`. Merged as PR #243 (`5de7813`,
+2026-08-19).
+
+Shipped since the August baseline, outside the six-initiative plan (details
+and evidence in `ROADMAP.md` §"Completed historical milestones"; PR numbers
+from `git log --first-parent`):
+
+- **Application rate limits** for MCP tools, share publish and large exports
+  (PR #239, 2026-08-16), and the opt-in `LIVE_DATA_ENABLED` gate on the
+  fabric tools (issue #228).
+- **Competitive gap-closing batch** — inline label editing, quick-add,
+  Share dialog with revoke (closes M20), hyperlinks, image nodes, status
+  LEDs, Mermaid/CSV import, PDF export (`71b21e7`, 2026-08-17).
+- **User-tied API keys** (proposal 0005, PR #247) and **importer sync
+  ergonomics** (`element.upsert`, proposal 0006, PR #248), 2026-09-20.
+- **Merge is the release** (proposal 0007, PR #273, 2026-10-10):
+  `release.yml` + `deploy-worker.yml` + `scripts/migration-guard.mjs`
+  replaced the manual `deploy-production.yml`.
+- **Rendering/authoring quality**: flow paths follow link geometry (#257),
+  light theme (#266, contrast fix #289), wire labels (#267), link anchor box
+  (experimental, opt-in, #274), read-only draft tools served from a shared
+  workspace's current revision (#279), attributed proposal conflicts (#270).
+- **Wiring-sheet conventions** (proposal 0008, PR #282, 2026-10-15): link
+  styles, tiers, port pills, bundles, port tables, sheet frame.
+- **Phase 1 adoption** (PR #283, 2026-10-23): `export_topology` (PNG / PDF /
+  draw.io / Visio / PowerPoint / Mermaid — `src/export/`), `view_topology`
+  and the MCP Apps inline view, `server.json`.
+- **Hardware catalog Phases 1–5** (PRs #285–#288, #290, 2026-10-24/25):
+  `catalog/` data + `src/catalog/`, bind/validate, hardware MCP tools,
+  wire-sheet rendering, native Visio masters. Phase 6 (feed importers) is
+  not started; the real-Visio check is still pending
+  (`futures/hw-catalog.md`).
+- **Cinematic landing page** (PR #292, `worker/landing.ts`, 2026-11-03).
+- **SD-WAN generator** (proposal 0010; PRs #293, #295, #296, #298,
+  2026-11-08): `generate_sdwan_topology`, the editor wizard
+  (`src/ui/sdwan-wizard.ts`), place tiles and page links, cloud hubs / SSE
+  on-ramp, Natural Earth map backdrops (#298, #299); icon tiers 1–2
+  (proposal 0011, #294–#296).
 
 ## Active implementation program
 
@@ -82,9 +130,19 @@ Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 | N   | Living product/quality documentation        | Baseline refreshed 2026-08-09; maintain with each change  | None                                                                     |
 | O   | Cloudflare alerting + production game day   | Repo-side done 2026-07-19; O1/O2 human halves outstanding | None — human can start immediately                                       |
 | A   | Agent activity + explainability             | Implemented A1–A6; shipped (PR #243, live `5de7813`)      | None — reuses `ANALYTICS_ENABLED`; no new DO/migration                   |
-| B   | Guided topology briefs + semantic templates | Not started                                               | None — soft dependency on N landing                                      |
+| B   | Guided topology briefs + semantic templates | Not started (see note)                                    | None — soft dependency on N landing                                      |
 | E   | EdgeConnect live-import hardening + UI      | Not started                                               | None — soft dependency on N landing                                      |
 | T   | Time-aware flow/failure storytelling        | Not started                                               | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
+
+Status verified 2026-11-13 at `e99b012`: none of B's, E's or T's planned
+modules or tools exist (`src/briefs/`, `src/stories/`, `create_from_brief`,
+`compile_flow_story`, `fixtures/edgeconnect/`). **B's premise has moved**:
+the SD-WAN generator (proposal 0010) already ships one intent-to-document
+compiler with an MCP tool and a GUI wizard (`src/connect/generate.ts`,
+`generate_sdwan_topology`, `src/ui/sdwan-wizard.ts`) — re-scope B against it
+before starting B1. Work since August has been driven by proposals
+0005–0011 and `futures/hw-catalog.md` rather than this table; proposal 0009
+(status: Proposed) would re-cut _Now/Next_ if accepted.
 
 Before starting a July implementation packet, revalidate its premise against
 `ROADMAP.md`, `CAPABILITY_MATRIX.md`, and current code. O1/O2 remain explicitly
@@ -181,14 +239,15 @@ npm test             # Vitest unit + Miniflare integration suites
 npm run build        # tsc --noEmit && vite build
 npm run test:e2e     # Chromium functional + Linux-baseline visual release gate
 npm run check:wrangler   # node scripts/check-wrangler-env.mjs — staging isolation + migration parity
+npm run catalog:check    # hardware-catalog bundle + generated types are current (CI runs this)
 ```
 
 Run the complete gate before opening a PR. Miniflare tests require permission
 to bind a localhost listener; a restricted sandbox may report `listen EPERM`,
 which is an environment failure rather than a product test result. Visual
 baselines are CI-rendered for Linux; a macOS run can execute the functional
-cases but cannot compare the three visual cases unless reviewed Darwin
-baselines are deliberately added. See `launch-readiness/QA_TEST_PLAN.md`.
+cases but cannot compare the five visual cases (`e2e/visual.spec.ts`) unless
+reviewed Darwin baselines are deliberately added. See `launch-readiness/QA_TEST_PLAN.md`.
 
 ## Key files
 
@@ -196,15 +255,19 @@ baselines are deliberately added. See `launch-readiness/QA_TEST_PLAN.md`.
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Document model + persistence     | `src/pages/model.ts`, `src/pages/persist.ts`                                                                                                                                    |
 | Headless authoring API           | `src/api/{builder,edit,validate,layout,autolayout,catalog,tidy}.ts`                                                                                                             |
-| MCP tools (both transports)      | `src/mcp/tools.ts` (source of truth), `src/mcp/register.ts`, `src/mcp/server.ts` (stdio), `worker/mcp.ts` (remote)                                                              |
+| MCP tools (both transports)      | `src/mcp/tools.ts` (source of truth), `src/mcp/{export-tools,hardware-tools}.ts`, `src/mcp/register.ts`, `src/mcp/server.ts` (stdio), `worker/mcp.ts` (remote)                  |
 | Connector/flow-compiler platform | `src/connect/{types,mock,edgeconnect,compile}.ts`                                                                                                                               |
+| SD-WAN generator + wizard        | `src/connect/generate.ts`, `src/ui/sdwan-wizard.ts`, `src/render/backdrops.ts` (proposal 0010)                                                                                  |
+| Export / import formats          | `src/export/` (scene, PNG, PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedule), `src/import/`, `worker/raster.ts`; contract in `docs/EXPORTS.md`                          |
+| Hardware catalog + wire sheets   | `catalog/` (data, schema, Python reference tools), `src/catalog/`, `src/api/hardware.ts`, `src/render/wiresheet.ts`, `worker/catalog.ts`, `scripts/catalog-*.ts`                |
+| API keys (proposal 0005)         | `worker/api-keys.ts`, `worker/api-keys-page.ts`, `src/server/api-key.ts`                                                                                                        |
 | Shared workspace coordinator     | `worker/document.ts` (revisions/proposals/leases/checkpoints/presence), `worker/registry.ts`, `worker/workspaces.ts`                                                            |
 | Workspace client                 | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                                                               |
 | Adaptive authoring profiles      | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`                                                |
 | Admin/analytics dashboard        | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`, `src/agent-activity/`                                                                  |
-| Auth + login page + showcase     | `worker/auth.ts`, `public/showcase/*.webp`                                                                                                                                      |
+| Auth + landing page + showcase   | `worker/auth.ts`, `worker/landing.ts`, `public/landing/`, `public/showcase/*.webp`                                                                                              |
 | Deployment config                | `wrangler.jsonc`, `.github/workflows/{release,deploy-worker,deploy-staging,ci,production-verify,nightly-staging-smoke}.yml`, `scripts/{check-wrangler-env,migration-guard}.mjs` |
-| Flags                            | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `isAdmin`)                                                                                          |
+| Flags                            | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `liveDataEnabled`, `isAdmin`), `worker/api-keys.ts` (`apiKeysEnabled`)                              |
 
 ## Known risks (from the launch-readiness findings register)
 
@@ -266,6 +329,16 @@ staging` with a generated ≥16-char value kept only in the operator's
   profiles, and the deployment pipeline. All four are implemented; 0001's
   status header already said so, 0003/0004's were corrected as part of this
   reset (see `DISCREPANCY_REGISTER.md`).
+- `docs/proposals/0005`–`0012` — API keys (implemented, production flag
+  off), importer sync (implemented), merge-is-the-release (implemented),
+  wiring-diagram conventions (implemented except harness routing), the
+  vendor-neutral diagramming-tool direction (**Proposed**, not accepted),
+  the SD-WAN generator (slices 1–4 implemented), the icon gap review
+  (tiers 1–2 shipped), and SD-WAN vendor research (research only). Each
+  file's status header is authoritative.
+- `docs/EXPORTS.md` — the export/import fidelity contract.
+- `docs/futures/hw-catalog.md` — hardware-catalog phase status;
+  `docs/sitrep/` holds its dated progress notes (historical).
 
 ## Working conventions (unchanged, proven across ~20 packets)
 
@@ -284,6 +357,11 @@ staging` with a generated ≥16-char value kept only in the operator's
 
 Owner actions that complete "merge is the release" (details and rationale
 in `proposals/0007-merge-is-the-release.md` §"GitHub settings checklist"):
+
+_Status as of 2026-11-13: unverified. These are GitHub/Cloudflare settings
+the repository cannot read; `release.yml` has been the only deploy path for
+every merge since PR #273, but no dated owner evidence for the items below
+is recorded here, so the boxes stay unchecked until the owner confirms._
 
 - [ ] Branch protection on `main`: PR required; required checks `CI / check`
       and `CI / e2e`; no bypass, administrators included.

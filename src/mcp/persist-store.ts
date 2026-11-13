@@ -50,6 +50,10 @@ export async function rehydrateStore(
     }
     if (doc) {
       store.load(id, doc);
+      // Baseline = the document as THIS code serializes it, not the stored
+      // bytes: an older stored shape that parses to the same document must not
+      // read as "changed" and be written back by an unrelated persist.
+      store.markPersisted(id, serializeDoc(doc));
       loaded.push(id);
     } else {
       failed.push(id);
@@ -60,16 +64,25 @@ export async function rehydrateStore(
 
 /**
  * Write the store back to durable storage: delete the keys for documents this
- * session explicitly removed, then (re)serialize every current document.
+ * session explicitly removed, then write every document this session changed.
  *
- * Deletion is EXPLICIT — driven by `store.drainPendingDeletes()`, not a
- * set-difference against what's in storage. This matters because storage is
- * shared across all of a user's MCP sessions: a set-difference mirror would let
- * a session that only loaded a subset delete documents a concurrent session
- * just created, and would let an empty store (e.g. after a failed rehydrate)
- * wipe everything. Explicit deletion removes only what this session removed.
- * `put` is idempotent and only ever adds/updates, so it's safe under
- * concurrency. O(n) in the documents held this session (single-digit).
+ * Storage is shared across all of a user's MCP sessions, and each session
+ * holds its own in-memory copy, so both halves are scoped to what THIS session
+ * did:
+ *
+ * - Deletion is EXPLICIT — driven by `store.drainPendingDeletes()`, not a
+ *   set-difference against what's in storage. A set-difference mirror would
+ *   let a session that only loaded a subset delete documents a concurrent
+ *   session just created, and would let an empty store (e.g. after a failed
+ *   rehydrate) wipe everything.
+ * - Writes are CHANGE-ONLY — a document is written only when its serialized
+ *   form differs from the copy this session last saw in storage. Re-writing
+ *   every held document would let a session that merely loaded a document
+ *   put its stale copy back after another session deleted or edited it
+ *   (#302). A session can still only clobber a document it actually changed.
+ *
+ * O(n) serializations in the documents held this session (single-digit), and
+ * one storage write per changed document.
  */
 export async function persistStore(
   store: TopologyStore,
@@ -78,6 +91,10 @@ export async function persistStore(
   const current = new Set(store.list().map((e) => e.id));
   for (const id of store.drainPendingDeletes())
     if (!current.has(id)) await storage.delete(DOC_PREFIX + id);
-  for (const id of current)
-    await storage.put(DOC_PREFIX + id, serializeDoc(store.get(id)));
+  for (const id of current) {
+    const json = serializeDoc(store.get(id));
+    if (json === store.persistedJson(id)) continue;
+    await storage.put(DOC_PREFIX + id, json);
+    store.markPersisted(id, json);
+  }
 }

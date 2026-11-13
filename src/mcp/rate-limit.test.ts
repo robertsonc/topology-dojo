@@ -18,6 +18,11 @@ import {
   snapshotRateLimitKey,
   utf8Bytes,
 } from './rate-limit.js';
+import { TopologyStore } from './store.js';
+import { createTools } from './tools.js';
+import { NO_LEGACY_PERSIST_TOOLS } from '../../worker/legacy-persist.js';
+import { renderDocumentToSVG } from '../server/render.js';
+import { nodeCatalogLoader } from '../server/catalog.js';
 
 describe('utf8Bytes / formatMib / assertExportWithinLimit', () => {
   it('counts UTF-8 bytes, not JS string length', () => {
@@ -67,6 +72,24 @@ describe('rateLimitBucketForTool', () => {
     expect(rateLimitBucketForTool('apply_workspace_changes')).toBe('mutating');
     expect(rateLimitBucketForTool('create_checkpoint')).toBe('mutating');
     expect(MUTATING_MCP_TOOLS.has(SHARE_MCP_TOOL)).toBe(false);
+  });
+
+  it('quotas every tool that writes the per-user draft store', () => {
+    // The list is hand-maintained, so pin it to the real tool surface: a
+    // tool whose success persists the draft store (anything the worker does
+    // not exempt in NO_LEGACY_PERSIST_TOOLS) must consume the mutating
+    // quota. Five wiring-sheet tools shipped without it.
+    const unquotad = createTools(new TopologyStore(), {
+      renderDocument: renderDocumentToSVG,
+      catalog: nodeCatalogLoader(),
+    })
+      .map((t) => t.name)
+      .filter(
+        (name) =>
+          !NO_LEGACY_PERSIST_TOOLS.has(name) &&
+          rateLimitBucketForTool(name) === null,
+      );
+    expect(unquotad).toEqual([]);
   });
 
   it("leaves read-only inspect/render/list tools unquota'd", () => {

@@ -3,8 +3,8 @@
 A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes
 Topology Dojo's headless authoring + rendering API as tools, so an agent can
 build, validate, and render the same topologies the GUI produces. It is a thin
-adapter over `src/api` (authoring/validation) and `src/server/render` (headless
-SVG). Every persisted diagram field the editor can express is reachable here;
+adapter over `src/api` (authoring/validation) and `src/server/render.ts`
+(headless SVG). Every persisted diagram field the editor can express is reachable here;
 transient browser view preferences and browser-owner governance actions are
 intentionally outside the MCP authoring contract.
 
@@ -108,7 +108,7 @@ Apps, secrets, or KV namespace ids across environments.
 >
 > The read-only document tools keep working on a shared workspace:
 > `get_topology`, `validate_topology`, `inspect_render`, `render_svg`,
-> `export_flipbook`, `export_topology`, `view_topology` and
+> `export_flipbook`, `export_topology`, `view_topology`, `catalog_diff` and
 > `describe_capabilities` (with a `topologyId`) accept a
 > workspace id and are served from the workspace's **current revision**, which
 > they report — a JSON result carries `workspaceRevision`, a rendered SVG /
@@ -251,6 +251,12 @@ to the task's affected region and change summaries, not total document size.
 
 ## Tools
 
+The servers define 72 tools; a session sees the subset its runtime enables.
+The _(live-data)_ tools need a provider; the share, workspace
+(`WORKSPACE_ENABLED`) and authoring-preference (`PROFILES_ENABLED`) tools
+exist only on the hosted server; and an API key registers only the groups in
+its scopes. `outputPath` on `export_topology` exists only on the stdio server.
+
 | Tool                                                   | Purpose                                                                                                                                       |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                                                          |
@@ -314,6 +320,35 @@ to the task's affected region and change summaries, not total document size.
 | `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`)                                     |
 | `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                                                                |
 | `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                                                             |
+
+### SD-WAN generator (`generate_sdwan_topology`)
+
+Builds a hub-and-spoke SD-WAN fabric as a new document from intent and
+returns `{ id, title, stats, intent }` (the resolved intent with defaults
+filled in). It is the same generator as the editor's **＋ template… →
+Generate SD-WAN…** wizard; the vendor semantics (tunnel and HA counts,
+layers) are described in the
+[user guide](../../docs/USER_GUIDE.md#generate-an-sd-wan-fabric) and
+[proposal 0010](../../docs/proposals/0010-sdwan-generator.md).
+
+| Argument             | Values                                                                   |
+| -------------------- | ------------------------------------------------------------------------ |
+| `vendor` (required)  | `edgeconnect`, `juniper`                                                 |
+| `detail`             | `device`, `site`, `overview` (an overview page plus one page per region) |
+| `regions`            | 1–4; `regionNames` names them                                            |
+| `hubsPerRegion`      | 1–2 (independent hubs, not an HA pair)                                   |
+| `branchesPerRegion`  | 1–12: one count for every region, or an array with one count per region  |
+| `transports`         | 1–3 of `inet`, `mpls`, `lte`: each branch WAN circuit, in port order     |
+| `branchHa`           | boolean: HA pair (EdgeConnect) / chassis cluster (Juniper)               |
+| `branchLan`          | `none`, `switch`, `switch-ap`                                            |
+| `interRegionHubMesh` | boolean                                                                  |
+| `overlayName`        | EdgeConnect Business Intent Overlay name                                 |
+| `cloudHub`           | `none`, `aws`, `azure`, `gcp`: a virtual edge per region                 |
+| `sse`                | `none`, `branch`, `hub`: SSE on-ramp tunnels on an `sse` layer           |
+| `mapBackdrop`        | boolean: each region's map behind its zone, matched by region name       |
+| `title`              | document title                                                           |
+
+Generated elements carry the source system `synthetic`.
 
 ### Exports
 
@@ -490,9 +525,10 @@ block rendering), alongside the semantic checks.
 
 To arrange a topology you haven't placed (or placed badly), **`layout_topology`**
 runs a real algorithm — `hierarchical` (layered by link direction), `grid`,
-`circular`, or `force` (force-directed) — then a tidy finisher. `tidy_topology`
+`circular`, `force` (force-directed), or `tiered` (rows by declared
+`define_tier` tiers, for wiring sheets) — then a tidy finisher. `tidy_topology`
 is the lighter pass that only nudges existing positions. In the editor, the
-**arrange…** dropdown runs the same algorithms.
+**arrange…** dropdown runs the first four algorithms; `tiered` is MCP-only.
 
 When a generated layout has issues, **`tidy_topology`** resolves them
 automatically: it snaps nodes to the grid, pushes apart overlapping/crowded
@@ -608,8 +644,11 @@ in `counts`, so the report stays a few KB. Inspect one page per call
 validate/tidy/balance and **before** `render_svg` / `share_topology` /
 `export_flipbook`; only render once the report is clean.
 
-The tool handlers live in `tools.ts` (pure, unit-tested in `tools.test.ts`);
-`server.ts` registers them with the SDK and maps results to MCP text content.
+The tool handlers live in `tools.ts`, `export-tools.ts` and
+`hardware-tools.ts` (pure, unit-tested in the matching `*.test.ts` files);
+`register.ts` registers them with the SDK and maps results to MCP content for
+both entry points — the stdio server (`server.ts`) and the Worker agent
+(`worker/mcp.ts`).
 
 ## Rate limits and export size
 

@@ -2,7 +2,13 @@
 
 This runbook defines the supported deployment process for Topology Dojo. It is
 the operational companion to
-[`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md).
+[`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md)
+and [`proposals/0007-merge-is-the-release.md`](proposals/0007-merge-is-the-release.md).
+
+_Repository-side facts (workflow names, jobs, inputs, flags, migration tags,
+smoke checks) revalidated 2026-11-13 against `main` at `e99b012`. Cloudflare
+and GitHub settings, secrets, and the state of either live origin are
+external and were not verified._
 
 ## Invariants
 
@@ -159,6 +165,7 @@ Run from a clean checkout of the exact candidate SHA:
 npm ci
 npm run check:wrangler
 npm run typecheck
+npm run catalog:check
 npm test
 npm run lint
 npm run build
@@ -166,6 +173,11 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 npx wrangler deploy --env staging --dry-run
 ```
+
+This mirrors the CI `check` and `e2e` jobs (`ci.yml`). CI additionally runs
+the Python catalog reference tools inside `check` and a third job, `visio`
+(the `.vsdx` export opened in LibreOffice), which need Python 3.12 and
+LibreOffice respectively.
 
 The dry run validates bundling but does not prove remote bindings or apply a
 migration.
@@ -185,8 +197,8 @@ Review the effective configuration before continuing:
 
 Dispatch [`deploy-staging.yml`](../.github/workflows/deploy-staging.yml)
 (`workflow_dispatch`, optional `ref` input — defaults to the ref the run was
-dispatched on). It re-runs the `ci.yml` `check` job against the resolved
-commit, then deploys through the shared
+dispatched on). It re-runs `ci.yml` (all three jobs: `check`, `e2e`,
+`visio`) against the resolved commit, then deploys through the shared
 [`deploy-worker.yml`](../.github/workflows/deploy-worker.yml). The
 underlying command is:
 
@@ -280,9 +292,13 @@ every event):
 
 ## Production deployment with a new migration
 
-> **Current migration state (revalidated 2026-08-09):** `v1`–`v5` are applied
-> and their three product flags are enabled in the repository's production
-> configuration. The `v3`–`v5` sections below are completed rollout examples,
+> **Current migration state (revalidated 2026-11-13, `e99b012`):** `v1`–`v5`
+> are declared in both environments and their three product flags
+> (`WORKSPACE_ENABLED`, `PROFILES_ENABLED`, `ANALYTICS_ENABLED`) are enabled
+> in the repository's production configuration. No migration has been added
+> since `v5`; the two later flags, `API_KEYS_ENABLED` (staging `"true"`,
+> production `"false"`) and `LIVE_DATA_ENABLED` (`"false"` in both), have no
+> Durable Object or migration and are routine releases to change. The `v3`–`v5` sections below are completed rollout examples,
 > retained because they show the required three-gate pattern. For a new tag,
 > copy the pattern with the new class/binding/flag; do not repeat a completed
 > bootstrap or treat these examples as pending work. Where an example says
@@ -527,7 +543,8 @@ be meaningful. These same numbers are the `[A]`-marked rows of the standing
 production alert matrix ([`ALERTS.md`](ALERTS.md)); the human dashboard steps
 to wire them into Cloudflare notifications are
 [`CLOUDFLARE_OPERATOR_RUNBOOK.md`](CLOUDFLARE_OPERATOR_RUNBOOK.md) (packet O1
-— **not yet configured** as of 2026-07-19; the GitHub synthetic layer in
+— **not yet configured** as of 2026-07-19, and no completion evidence has
+been recorded in the repository since; the GitHub synthetic layer in
 `ALERTS.md` §"Detection layers" is the active safety net meanwhile).
 
 Every trip recovers the same way: **forward-deploy `WORKSPACE_ENABLED=false`**

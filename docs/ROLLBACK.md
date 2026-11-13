@@ -4,8 +4,13 @@ Cloudflare Worker releases containing Durable Object migrations need a
 different recovery model from ordinary stateless code releases. This runbook
 defines the supported response for both.
 
-See also [`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md) and
-[`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md).
+See also [`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md),
+[`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md),
+and [`proposals/0007-merge-is-the-release.md`](proposals/0007-merge-is-the-release.md).
+
+_Revalidated 2026-11-13 against `main` at `e99b012`: the `release.yml`
+inputs, guard behaviour, freeze rule and migration classes described below
+match the workflow and `scripts/migration-guard.mjs`._
 
 > **Note (2026-07-19, packet O3):** this document is migration-agnostic.
 > Where a worked example names `v3`/`TopologyDocument` (the first migration

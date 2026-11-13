@@ -615,7 +615,13 @@ function placePills(
     const a = pos.get(l.from),
       b = pos.get(l.to);
     if (!label || !a || !b) continue;
-    const seg = polylineSegments([a, b])[0]!;
+    // The engine anchors the label on the chord between the link's DRAWN
+    // endpoints (`_linkGeometry`'s silhouette-trimmed from/to, waypoints
+    // ignored) — not the raw node centres, whose midpoint is off by half the
+    // difference of the two trims when the endpoints differ in shape or size
+    // (#301).
+    const e = attach.endpoints(l);
+    const seg = polylineSegments(e ? [e.from, e.to] : [a, b])[0]!;
     const anchor = segmentLabelAnchor(seg);
     const s =
       typeof l.labelScale === 'number' && Number.isFinite(l.labelScale)

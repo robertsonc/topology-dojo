@@ -1,8 +1,10 @@
 # Proposal 0007 — Merge Is the Release
 
-**Status:** Implemented in the repository (workflows, guard script, tests,
-docs) — pending the owner's GitHub settings changes listed under "GitHub
-settings checklist" before the first unattended release. Supersedes the
+**Status:** Implemented (PR #273, merged 2026-10-10): workflows, guard
+script, tests, docs. `release.yml` has been the only production deploy path
+since. The owner's GitHub settings changes listed under "GitHub settings
+checklist" have no completion evidence recorded in the repository (status
+note 2026-11-13). Supersedes the
 production half of proposal 0004 decision 3 and closes the drift recorded in
 `../DISCREPANCY_REGISTER.md` ("Follow-up — 2026-10-09").
 

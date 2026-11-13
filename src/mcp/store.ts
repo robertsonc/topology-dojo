@@ -30,6 +30,15 @@ export class TopologyStore {
    * session created (it only ever deletes what it itself removed).
    */
   private pendingDeletes = new Set<string>();
+  /**
+   * The serialized form of each document as this session last saw it in the
+   * durable backing store (recorded on rehydrate and after each write).
+   * Persistence writes a document only when it differs from this baseline, so
+   * a session never re-writes a copy it merely loaded: with storage shared
+   * across a user's sessions, an untouched stale copy must not overwrite
+   * another session's edit or resurrect another session's delete (#302).
+   */
+  private persisted = new Map<string, string>();
 
   /** Create a new document seeded with one empty page (so adds work at once). */
   create(title?: string): StoreEntry {
@@ -75,6 +84,17 @@ export class TopologyStore {
   load(id: string, document: TopologyDocument): void {
     this.docs.set(id, document);
     this.pendingDeletes.delete(id);
+    this.persisted.delete(id);
+  }
+
+  /** Record `json` as the durable copy of `id` (see `persisted`). */
+  markPersisted(id: string, json: string): void {
+    if (this.docs.has(id)) this.persisted.set(id, json);
+  }
+
+  /** The durable copy of `id` this session last saw, if any. */
+  persistedJson(id: string): string | undefined {
+    return this.persisted.get(id);
   }
 
   /** Drop a local cache entry without recording a durable deletion. Used when
@@ -82,6 +102,7 @@ export class TopologyStore {
   unload(id: string): boolean {
     const removed = this.docs.delete(id);
     this.pendingDeletes.delete(id);
+    this.persisted.delete(id);
     return removed;
   }
 
@@ -95,6 +116,7 @@ export class TopologyStore {
 
   remove(id: string): boolean {
     const removed = this.docs.delete(id);
+    this.persisted.delete(id);
     if (removed) this.pendingDeletes.add(id);
     return removed;
   }

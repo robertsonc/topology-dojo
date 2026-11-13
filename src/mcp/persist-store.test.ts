@@ -111,4 +111,111 @@ describe('MCP store durability', () => {
     expect(storage.map.has(DOC_PREFIX + 'corrupt')).toBe(true);
     expect(storage.map.has(DOC_PREFIX + good)).toBe(true);
   });
+
+  // Issue #302: storage is shared across a user's sessions, each with its own
+  // in-memory copy. A session must only write what it changed.
+  it('does not resurrect a topology another session deleted', async () => {
+    const storage = fakeStorage();
+    const seed = new TopologyStore();
+    const x = seed.create('Deleted topology').id;
+    await persistStore(seed, storage);
+
+    // Two warm sessions both loaded X.
+    const a = new TopologyStore();
+    const b = new TopologyStore();
+    await rehydrateStore(a, storage);
+    await rehydrateStore(b, storage);
+
+    a.remove(x);
+    await persistStore(a, storage);
+    expect(storage.map.has(DOC_PREFIX + x)).toBe(false);
+
+    // Session B, still holding its stale X, changes something unrelated.
+    const y = b.create('Unrelated').id;
+    await persistStore(b, storage);
+
+    expect(storage.map.has(DOC_PREFIX + y)).toBe(true);
+    expect(storage.map.has(DOC_PREFIX + x)).toBe(false);
+    const fresh = new TopologyStore();
+    await rehydrateStore(fresh, storage);
+    expect(() => fresh.get(x)).toThrow(/unknown topology/);
+  });
+
+  it("does not overwrite another session's edit with an untouched stale copy", async () => {
+    const storage = fakeStorage();
+    const seed = new TopologyStore();
+    const x = seed.create('Shared').id;
+    await persistStore(seed, storage);
+
+    const a = new TopologyStore();
+    const b = new TopologyStore();
+    await rehydrateStore(a, storage);
+    await rehydrateStore(b, storage);
+
+    a.page(x).nodes.push({ id: 'n1', type: 'ec', x: 10, y: 20, label: 'EC' });
+    await persistStore(a, storage);
+
+    b.create('Unrelated');
+    await persistStore(b, storage);
+
+    const fresh = new TopologyStore();
+    await rehydrateStore(fresh, storage);
+    expect(fresh.page(x).nodes.map((n) => n.id)).toEqual(['n1']);
+  });
+
+  it('writes only the documents that changed since the last persist', async () => {
+    const storage = fakeStorage();
+    const puts: string[] = [];
+    const put = storage.put.bind(storage);
+    storage.put = async (key, value) => {
+      puts.push(key);
+      await put(key, value);
+    };
+
+    const store = new TopologyStore();
+    const a = store.create('A').id;
+    const b = store.create('B').id;
+    await persistStore(store, storage);
+    expect(puts.sort()).toEqual([DOC_PREFIX + a, DOC_PREFIX + b].sort());
+
+    puts.length = 0;
+    await persistStore(store, storage);
+    expect(puts).toEqual([]);
+
+    store.get(b).title = 'B renamed';
+    await persistStore(store, storage);
+    expect(puts).toEqual([DOC_PREFIX + b]);
+
+    // Same rule after a cold start: a rehydrated, untouched store writes
+    // nothing, and an in-place edit is still picked up.
+    puts.length = 0;
+    const warm = new TopologyStore();
+    await rehydrateStore(warm, storage);
+    await persistStore(warm, storage);
+    expect(puts).toEqual([]);
+    warm.page(a).nodes.push({ id: 'n1', type: 'ec', x: 0, y: 0, label: 'EC' });
+    await persistStore(warm, storage);
+    expect(puts).toEqual([DOC_PREFIX + a]);
+  });
+
+  it('does not rewrite a stored document whose bytes are not canonical', async () => {
+    // An older/hand-written stored shape parses fine; loading it must not
+    // count as a change, or an unrelated persist would write it back (and so
+    // resurrect it after another session's delete).
+    const storage = fakeStorage();
+    const seed = new TopologyStore();
+    const x = seed.create('Compact').id;
+    await persistStore(seed, storage);
+    const compact = JSON.stringify(
+      JSON.parse(storage.map.get(DOC_PREFIX + x)!),
+    );
+    storage.map.set(DOC_PREFIX + x, compact);
+
+    const b = new TopologyStore();
+    await rehydrateStore(b, storage);
+    storage.map.delete(DOC_PREFIX + x); // another session deletes it
+    b.create('Unrelated');
+    await persistStore(b, storage);
+    expect(storage.map.has(DOC_PREFIX + x)).toBe(false);
+  });
 });

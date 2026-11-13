@@ -1,6 +1,6 @@
 # Topology Dojo User Guide
 
-**Last reviewed:** 2026-08-19
+**Last reviewed:** 2026-11-13 (against `main` at `e99b012`)
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
 edit a diagram directly on the canvas, or an MCP-capable agent can author the
@@ -14,7 +14,8 @@ whether the deployment has enabled that feature.
 
 For product principles and technical details, see the
 [README](../README.md), [design guide](DESIGN.md),
-[architecture](ARCHITECTURE.md), and [MCP guide](../src/mcp/README.md).
+[architecture](ARCHITECTURE.md), [MCP guide](../src/mcp/README.md), and the
+[export and import fidelity contract](EXPORTS.md).
 
 ## 1. Choose the right surface
 
@@ -44,7 +45,8 @@ frame, not a delta from the previous page. A page can contain:
 - a caption, emphasis selection, hold duration, and cut or fade transition.
 
 The document also carries custom node definitions, reusable stencils, layers, a
-legend setting, and an optional brand palette. Duplicating a page deep-copies
+legend setting, an optional brand palette, and the optional wiring-sheet
+settings (sheet frame, wire classes, tiers, and bundles). Duplicating a page deep-copies
 the page so it can be edited independently.
 
 ## 2. Getting started
@@ -159,7 +161,7 @@ shared, or public.
 | Canonical Agent Workspace                 | Hosted per-document coordinator                                                | The authenticated owner and authorized tools operating for that owner | Revisioned and server-backed. Recent history can be compacted. Named checkpoints are capped at 12.                                                                                                                                                                               |
 | Workspace offline cache and pending queue | IndexedDB in the current browser plus a lightweight local workspace pointer    | The person using that browser profile                                 | Supports reload and reconnection recovery. Do not clear site data while operations are pending.                                                                                                                                                                                  |
 | Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                           | Anyone with the URL; no login to view                                 | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. The publisher can revoke with **unpublish_topology** or **unpublish link** (signed-in `DELETE /api/topology/<id>`). Public GETs may be cached for about a minute. |
-| SVG, PNG, or flipbook export              | Downloaded file or MCP result                                                  | Anyone who receives the artifact                                      | Outside Topology Dojo after export. Handle it according to the content's sensitivity.                                                                                                                                                                                            |
+| Exported file (SVG, PNG, PDF, flipbook…)  | Downloaded file or MCP result                                                  | Anyone who receives the artifact                                      | Outside Topology Dojo after export. Handle it according to the content's sensitivity.                                                                                                                                                                                            |
 | Authoring preferences                     | Hosted profile store, when enabled                                             | The owner; agents can read confirmed guidance only                    | The owner can confirm, pause, reject, or forget rules.                                                                                                                                                                                                                           |
 | Login analytics                           | Hosted analytics store, when enabled                                           | The configured deployment administrator                               | Login and workspace metadata only; no diagram contents. Collection is going-forward and best-effort.                                                                                                                                                                             |
 | MCP-session activity                      | Per-session `TopologyMcp` trail plus the analytics session index, when enabled | The configured deployment administrator                               | Tool name, timestamp, and coarse success/error only — never prompts or arguments. Bounded and ephemeral with the session Durable Object; going-forward, best-effort, never blocks a tool call.                                                                                   |
@@ -173,7 +175,8 @@ The editor is organized into six areas.
 
 1. **Top toolbar.** File actions (including **share** on hosted
    deployments), undo and redo, **svg**, **png**, the **⤓ export…** menu
-   (PDF, flipbook HTML, clipboard PNG, selection-only exports), templates,
+   (PDF, flipbook HTML, draw.io, Visio, PowerPoint, Mermaid, clipboard PNG,
+   selection-only exports), templates,
    drawing tools, view controls (including **▶** Present), layout actions,
    selection actions, and the optional workspace/profile/admin/account chips.
 2. **Node library.** A searchable, categorized catalog on the left. It also
@@ -220,8 +223,9 @@ minimap provides an overview of content outside the current viewport.
 8. Add pages, captions, emphasis, and playback timing if the diagram tells a
    sequence.
 9. Wait for **✓ saved**, then choose **download** for a portable JSON backup.
-10. Export the current frame as **svg** or **png**, or use MCP for a flipbook or
-    public share link.
+10. Export the current frame as **svg** or **png**, pick another format from
+    **⤓ export…** (see [Save, import, export, and share](#11-save-import-export-and-share)),
+    or publish a public share link.
 
 ### Add and move nodes
 
@@ -501,7 +505,9 @@ unknown; in-use statuses join the legend), label **Placement** (a 3×3 compass:
 above, below, left, right, or a corner of the node — the center cell is the
 default below-node label; on basic shapes it is the label inside the shape),
 **Label X** / **Label Y** (absolute offsets from the node center that
-fine-tune a placement; blank = the placement's default), label color, lock,
+fine-tune a placement; blank = the placement's default — double-clicking a
+compass cell nudges the label one pixel that way without changing the
+placement), label color, lock,
 metadata,
 **Link** (`href` — Ctrl/Cmd+click follows it in the editor, and SVG
 exports and public share views render it as a real clickable link; a link of
@@ -664,8 +670,8 @@ Properties; nothing is drawn that the document does not say.
    (10G/25G/40G/50G/100G × DAC/SR/LR, NBASE-T).
 3. **Tiers** (node Properties → _Wiring sheet_ → **Tier**). Declare the role
    rows top → bottom (gateways / distribution / core) and tag each node.
-   **Layout → tiered** (MCP `layout_topology` algorithm `tiered`) rows nodes
-   by tier, keeps nodes that share a zone together as a group, orders each
+   The **tiered** layout (MCP `layout_topology` algorithm `tiered`; the
+   editor's **arrange…** menu does not offer it) rows nodes by tier, keeps nodes that share a zone together as a group, orders each
    row so the cable fan does not cross itself, places `-01` / `-02` pairs
    symmetric about the page centre (`mirror`), pins every tiered link end to
    the face that looks at the other tier, reserves the margins the port
@@ -730,7 +736,8 @@ warnings for visual quality.
   bounds.
 - **balance** or **Shift+T**: tidy, align rows/columns, and center the result.
 - **arrange…**: rebuild the current page using **hierarchical**, **grid**,
-  **circular**, or **force-directed** layout.
+  **circular**, or **force-directed** layout. (The **tiered** wiring-sheet
+  layout is available through MCP `layout_topology` only.)
 - **fit to content**: resize the page around its current content.
 - **Fit view** or **0**: change only the viewport so content is visible.
 
@@ -872,7 +879,9 @@ Use the file controls:
 
 - **new** creates a blank one-page document after confirmation;
 - **download** saves the full document as JSON;
-- **open** loads a Topology Dojo or recognized legacy JSON file.
+- **open** loads a Topology Dojo JSON file, a recognized legacy Topology
+  Studio save, a draw.io file, a Mermaid flowchart, or CSV data (see
+  [draw.io, Mermaid, and CSV import](#drawio-mermaid-and-csv-import)).
 
 Opening a file, starting a new document, or choosing a template replaces the
 active canvas. Export first when in doubt.
@@ -908,8 +917,9 @@ label text, white cards and label chips, and accents darkened for contrast.
 Colours set on your own nodes, links, zones and brand palette are left as they
 are. To get the other theme, flip the toggle and export again.
 
-Over MCP, pass `theme: "light"` to **render_svg** or **export_flipbook**
-(default `"dark"`, which is the unchanged canvas look):
+Over MCP, pass `theme: "light"` to **render_svg**, **export_flipbook**, or
+**export_topology** (PNG, PDF, and PowerPoint image mode); the default is
+`"dark"`, the unchanged canvas look:
 
 ```json
 { "topologyId": "…", "pageIndex": 0, "theme": "light" }
@@ -917,28 +927,47 @@ Over MCP, pass `theme: "light"` to **render_svg** or **export_flipbook**
 
 ### PNG
 
-Choose **png** to download the current frame as a two-times static raster. PNG
-export runs in the browser; there is no server/MCP PNG tool.
+Choose **png** to download the current frame as a two-times static raster,
+rasterized in the browser. Agents get a server-rendered PNG from the MCP
+**export_topology** tool (`format: "png"`), which also stamps the print DPI.
 
 ### PDF, clipboard, and selection exports
 
 The **⤓ export…** toolbar menu adds:
 
 - **PDF — current frame** and **PDF — all frames** (one multi-page PDF, each
-  page sized to its frame). PDF export rasterizes at 2× through the same
-  pipeline as PNG, so it always matches the canvas.
+  page sized to its frame, or to the sheet's paper size when a standard
+  **Sheet frame** size is set). PDF export rasterizes at 2× through the same
+  pipeline as PNG, so it always matches the canvas. Over MCP,
+  **export_topology** `format: "pdf"` renders the same pages server-side.
 - **Copy PNG to clipboard** (also on the right-click menu as **Copy as
   image** for a selection and **Copy frame as image** on empty canvas).
 - **SVG — selection only** and **PNG — selection only**: a cropped export of
   just the selected nodes and the links between them.
 
-### draw.io XML
+### draw.io, Visio, PowerPoint, and Mermaid
 
-**⤓ export… → draw.io XML** downloads a `.drawio` file (one draw.io page per
-frame) for handing to draw.io / diagrams.net / Confluence users. This is a
-one-way, deliberately lossy interchange: geometry, labels, waypoints, zones,
-colors, and images survive; flow paths, policy markers, layers, and playback
-do not.
+The **⤓ export…** menu also writes the formats other teams edit in. The
+three office formats are editable and deliberately lossy; what each keeps and
+drops is specified in the [export fidelity contract](EXPORTS.md).
+
+- **draw.io — all frames** downloads a `.drawio` file (one draw.io page per
+  frame) for draw.io / diagrams.net / Confluence users. Geometry, labels,
+  waypoints, colors, declared layers (as draw.io layers), zones (as
+  containers), and node metadata survive; a `.drawio` file can be opened
+  again with **open**.
+- **Visio .vsdx — all frames** downloads an editable Visio drawing: shapes,
+  glued connectors, page layers, and metadata as Shape Data.
+- **PowerPoint .pptx — slide per frame** or **slide per layer** downloads a
+  deck of editable shapes.
+- **Mermaid — current frame** downloads a `.mmd` flowchart (graph only, no
+  coordinates).
+
+Device glyph art, flow paths, policy markers, port pills and port tables, the
+sheet frame, and the legend do not carry into draw.io, Visio, or PowerPoint
+shapes. Agents get the same files, plus a PowerPoint image mode and a cable
+schedule (CSV / XLSX), from the MCP **export_topology** tool — see
+[Export files and the inline view](#export-files-and-the-inline-view).
 
 ### Flipbook HTML
 
@@ -947,10 +976,14 @@ The **⤓ export… → Flipbook HTML** toolbar action (and the MCP
 self-contained HTML presentation of all pages. It includes page timing,
 cut/fade behavior, looped play/pause, and page navigation.
 
-### Mermaid and CSV import
+### draw.io, Mermaid, and CSV import
 
 The **open** dialog also accepts:
 
+- **draw.io files** (`.drawio` / `.xml`, plain or compressed): pages, layers,
+  containers as zones, shapes as typed nodes, edges with waypoints, and shape
+  data as metadata. What is dropped (with warnings in the confirm summary)
+  is listed in the [fidelity contract](EXPORTS.md#drawio-import--migrate-existing-diagrams-in).
 - **Mermaid flowcharts** (`.mmd`, or any text starting with `flowchart …` /
   `graph …`): nodes (shape brackets map to the closest vocabulary — `[(x)]`
   becomes a database, `{x}` a diamond, and so on), edges with labels,
@@ -963,7 +996,7 @@ The **open** dialog also accepts:
   types fall back to host/line with line-numbered warnings.
 
 The MCP **import_topology** tool accepts the same text formats via
-`format: "mermaid" | "csv"` (or auto-detection).
+`format: "drawio" | "mermaid" | "csv"` (or auto-detection).
 
 ### Public share links
 
@@ -1348,8 +1381,10 @@ The complete tool table and connection details are in the
 8. Call **inspect_render** for a compact final visual-quality report covering
    crop, labels, link routing, and density.
 9. Call **render_svg** once the inspection is clean. Use
-   **export_flipbook** for all pages or hosted **share_topology** for a public
-   snapshot.
+   **export_flipbook** for all pages, **export_topology** for a file (PNG,
+   PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedule), **view_topology**
+   to show the diagram inline in a host that supports MCP Apps, or hosted
+   **share_topology** for a public snapshot.
 10. Retrieve or export JSON before ending a local stdio process.
 
 Element creation tools default to the most recently added page unless the agent
@@ -1378,7 +1413,8 @@ Then:
    types, palette) or the whole document is needed, **get_workspace_document**
    returns it with its revision (`summary: true` / `pageIndex` narrow it).
 6. Check and render the workspace directly: **validate_topology**,
-   **inspect_render**, **render_svg**, **export_flipbook**, **get_topology**
+   **inspect_render**, **render_svg**, **export_flipbook**,
+   **export_topology**, **view_topology**, **catalog_diff**, **get_topology**
    and **describe_capabilities** accept a workspace id. They are served from
    the workspace's current revision and report it (`workspaceRevision` on a
    JSON result; a `<!-- workspace revision N -->` comment in an SVG or
@@ -1421,15 +1457,70 @@ Workspace limits include:
 | Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**, **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                                        |
 | Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                                            |
 | Edit content                 | **edit_topology**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**, **define_link_style**, **define_tier**, **define_bundle**, **set_port_table**                                                                                               |
-| Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **inspect_render**                                                                                                                                                                                              |
-| Output                       | **render_svg**, **export_flipbook**, hosted **share_topology** / **list_shares** / **unpublish_topology**                                                                                                                                                                                            |
+| Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **auto_place_labels**, **inspect_render**                                                                                                                                                                       |
+| Output                       | **render_svg**, **export_flipbook**, **export_topology**, **view_topology**, hosted **share_topology** / **list_shares** / **unpublish_topology**                                                                                                                                                    |
+| Hardware catalog             | **list_hardware**, **describe_hardware**, **bind_hardware**, **assign_interfaces**, **catalog_diff**                                                                                                                                                                                                 |
 | Workspace                    | **create_workspace**, **list_workspaces**, **get_workspace_manifest**, **get_workspace_document**, **describe_workspace_operations**, **get_workspace_changes**, **get_workspace_elements**, **propose_workspace_changes**, **apply_workspace_changes**, **create_checkpoint**, **list_checkpoints** |
 | Preferences                  | **get_authoring_guidance**, **list_authoring_preferences**, **explain_authoring_preference**                                                                                                                                                                                                         |
 
+### Export files and the inline view
+
+**export_topology** returns a topology as a file. `format` is one of `png`,
+`pdf`, `drawio`, `vsdx`, `pptx`, `mermaid`, or `cable-schedule`:
+
+- PNG and PDF are rendered server-side from the same SVG the canvas shows.
+  A document with a standard sheet size prints true to scale; `dpi`, `paper`,
+  `orientation`, `visibleLayers`, and `theme` adjust the result.
+- draw.io, Visio, and PowerPoint files are editable and documented-lossy;
+  PowerPoint takes `slides: "pages" | "layers"` and
+  `pptxMode: "shapes" | "image"`.
+- `cable-schedule` writes one row per link (both ends' device, model,
+  interface, and optic, plus media, speed, bundle, layer, and notes) as CSV
+  or, with `scheduleFormat: "xlsx"`, XLSX. It is available only through MCP.
+
+The local stdio server can write the file to disk with `outputPath`, confined
+to `TOPOLOGY_DOJO_EXPORT_DIR` (default: the server's working directory). The
+hosted server returns files as embedded resources.
+
+**view_topology** shows the diagram inline in MCP hosts that support MCP Apps:
+pan, zoom, page switching, layer toggles, light/dark, full screen, and
+downloads in every export format, without the file passing through the model.
+In other hosts it returns a one-line summary only.
+
+Per-format fidelity is in the [export fidelity contract](EXPORTS.md); tool
+parameters are in the [MCP guide](../src/mcp/README.md#exports).
+
+### Hardware catalog and wire sheets
+
+The MCP servers carry a hardware catalog of real device models (panel
+geometry, interface names, speeds, optics). It is an agent-side capability:
+the browser editor has no catalog and draws these pages as ordinary logical
+pages.
+
+1. **list_hardware** / **describe_hardware** find a model and its interfaces.
+2. **bind_hardware** binds a node to a model (`sku`, `stackMembers`, `face`).
+3. **assign_interfaces** plans free, compatible interfaces for the links on
+   bound nodes; pass `apply: true` to write the plan.
+4. **validate_topology** then checks cabling on bound nodes (unknown or
+   reused ports, optic / cage / media / speed mismatches, bond rules) and
+   reports rule-coded errors, warnings, and notes.
+5. **set_page_properties** with `view: "wiresheet"` draws bound nodes as their
+   real panels with cables at the true port positions in server renders
+   (**render_svg**, **export_topology**, **view_topology**,
+   **export_flipbook**).
+6. **export_topology** `format: "cable-schedule"` produces the installer's
+   cable list; **catalog_diff** reports what a catalog upgrade would change.
+
+The tool inputs, rule codes, scale rules, and honesty marks (`SCHEMATIC`,
+`NOT TO SCALE`) are in the
+[MCP guide](../src/mcp/README.md#hardware-catalog-bind-assign-validate); the
+catalog's contents and provenance are in the
+[catalog README](../catalog/README.md).
+
 ### Conditional EdgeConnect live-data tools
 
-Live fabric tools appear only when a TopologyProvider is configured. Their
-absence is normal and does not mean the core MCP server is unhealthy.
+Live fabric tools appear only when a TopologyProvider is configured (an API key
+additionally needs the `live-data` scope). Their absence is normal and does not mean the core MCP server is unhealthy.
 
 Available conditional tools are:
 
@@ -1509,9 +1600,10 @@ or an **arrange…** algorithm when the whole layout can be rebuilt. Finish with
 
 ### PNG export fails
 
-PNG rasterization is browser-only. Try **svg** as a lossless fallback, verify
-the current page renders, and use a supported local SVG-to-PNG workflow if the
-browser still cannot create the raster.
+The toolbar **png** action rasterizes in the browser. Try **svg** as a
+lossless fallback and verify the current page renders. If the browser still
+cannot create the raster, an MCP agent can render the same page server-side
+with **export_topology** `format: "png"`.
 
 ### Agent Workspace is missing or disabled
 
@@ -1553,9 +1645,11 @@ whether the signed-in identity has the required role.
 
 ### Live-data tools are missing
 
-Confirm **TOPOLOGY_PROVIDER=mock** for a local fixture or both Orchestrator
-environment values for EdgeConnect. If either required value is absent, the
-live tools are deliberately not registered.
+Confirm **TOPOLOGY_PROVIDER=mock** for a local fixture, or
+`LIVE_DATA_ENABLED=true` plus both Orchestrator environment values
+(`ORCH_BASE_URL`, `ORCH_API_KEY`) for EdgeConnect. If the flag or either
+value is absent, the live tools are deliberately not registered. On a hosted
+deployment, `LIVE_DATA_GITHUB_IDS` can also restrict them to listed owners.
 
 ### Authentication loops or fails
 
@@ -1585,7 +1679,15 @@ KV bindings, and authenticated readiness checks using the
 - **API-key sessions are visible in the same places as OAuth sessions.** The
   admin session index and activity trail record them under your identity
   (metadata only); the key itself is never logged.
-- **PNG is browser-only.** MCP renders SVG and flipbook HTML, not PNG.
+- **Editable exports are lossy.** draw.io, Visio, and PowerPoint shape exports
+  keep structure and geometry but drop device glyph art, flow paths, policy
+  markers, port pills and tables, the sheet frame, and the legend; see the
+  [export fidelity contract](EXPORTS.md).
+- **Wire sheets are server-rendered.** Hardware binding and `view:
+"wiresheet"` pages are driven through MCP; the browser editor has no
+  hardware catalog and draws those pages as logical pages.
+- **Clipboard and selection-only exports are browser-only**, and the cable
+  schedule is MCP-only.
 - **Local browser autosave is not cloud backup.** It is tied to the browser
   profile/device until the document is handed off, downloaded, or otherwise
   exported.
@@ -1624,6 +1726,9 @@ For operational privacy, incident response, and recovery behavior, use the
 - [README](../README.md) — product model, entry points, and repository map.
 - [MCP guide](../src/mcp/README.md) — remote/local setup and complete tool
   reference.
+- [Exports and imports](EXPORTS.md) — per-format fidelity contract.
+- [Hardware catalog](../catalog/README.md) — catalog data, tools, and
+  provenance.
 - [Design](DESIGN.md) — product principles.
 - [Architecture](ARCHITECTURE.md) — document, renderer, Worker, and workspace
   architecture.
@@ -1640,6 +1745,11 @@ For operational privacy, incident response, and recovery behavior, use the
   for unattended agents on the hosted MCP endpoint.
 - [Importer sync ergonomics proposal](proposals/0006-importer-sync-ergonomics.md)
   — `element.upsert` for workspaces, sourced-element listings, upsert outcomes.
+- [Wiring-diagram conventions proposal](proposals/0008-wiring-diagram-conventions.md)
+  — tiers, port pills, bundles, link key, port tables, and the sheet frame.
+- [SD-WAN generator proposal](proposals/0010-sdwan-generator.md) — the
+  vendor-aware generator behind **Generate SD-WAN…** and
+  **generate_sdwan_topology**.
 - [Adaptive preferences proposal](proposals/0003-adaptive-agent-authoring-profiles.md)
   — preference evidence, confirmation, scope, and agent guidance.
 - [Deployment runbook](DEPLOYMENT_RUNBOOK.md) — staged deployment and service

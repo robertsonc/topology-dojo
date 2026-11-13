@@ -480,6 +480,28 @@ describe('wire-label pills (#261)', () => {
     expect(messages(stuck)).toMatch(/label of link "l1" sits on node "n"/);
   });
 
+  it('anchors a link pill on the drawn (silhouette-trimmed) endpoints (#301)', () => {
+    // ec (rx 32) at x=100 and cloud (rx 64) at x=500 draw the wire from
+    // x=135 to x=433, so the engine's label sits at x=284 — 16px left of the
+    // raw centre midpoint (300). A node under the real pill must be reported;
+    // one under the raw midpoint only must not.
+    const at = (x: number): InspectReport =>
+      inspectPage(
+        page({
+          nodes: [
+            node('a', 100, 300),
+            { id: 'b', type: 'cloud', x: 500, y: 300 },
+            node('n', x, 335),
+          ],
+          links: [{ ...link('l1', 'a', 'b'), label: 'HA' }],
+        }),
+      );
+    expect(messages(at(272))).toMatch(/label of link "l1" sits on node "n"/);
+    expect(messages(at(312))).not.toMatch(
+      /label of link "l1" sits on node "n"/,
+    );
+  });
+
   it('notes a marker label longer than 24 chars', () => {
     const r = inspectPage(
       page({

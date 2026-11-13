@@ -61,8 +61,8 @@ therefore prove all of the following:
 - The real EdgeConnect provider is shipped, but deployed secret state is not
   visible in the repository. Mock/injected-provider behavior remains in normal
   CI; a real-fabric acceptance track and deployed-tool inventory are mandatory
-  before any environment claims supported `ORCH_BASE_URL`/`ORCH_API_KEY`
-  activation.
+  before any environment claims supported `LIVE_DATA_ENABLED` plus
+  `ORCH_BASE_URL`/`ORCH_API_KEY` activation.
 - `src/core` is the retired beat model. Its existing tests remain regression
   evidence for retained code, but it is not a supported runtime surface.
 - Full touch editing is not presently a support claim. Public shared views must
@@ -131,8 +131,14 @@ coverage rather than the open-risk list.
 
 ## 4. Verified automated baseline (2026-08-09)
 
-The following results were verified against the current checkout during this
-audit. They are a point-in-time baseline, not permanent release evidence.
+The following results were verified against the checkout audited on
+2026-08-09 (`4add174`). They are a point-in-time baseline, not permanent
+release evidence, and they predate the work merged since (exports and
+imports, wiring-sheet conventions, the hardware catalog, the SD-WAN
+generator, API keys): the test, file and Playwright counts in §4–§4.2 are
+historical and were not re-run for later revisions. CI now also runs a third
+`visio` job (LibreOffice render of the wire-sheet `.vsdx`) and the catalog
+checks (`npm run catalog:check` plus the Python reference tools).
 
 | Gate                                 | Verified result                                                                      | Evidence boundary                                                                                                                                                                                                                                                            |
 | ------------------------------------ | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -201,10 +207,13 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-CI enforces those checks in two jobs: the fast `check` job and the separate
-browser job. Staging and production deployment workflows resolve one immutable
-SHA and call the same reusable CI workflow before building and deploying that
-SHA.
+CI enforces those checks in the fast `check` job (which also runs
+`npm run catalog:check` and the Python catalog reference tools) and the
+separate browser job; a third `visio` job renders the wire-sheet `.vsdx` in
+LibreOffice. The release workflow (`release.yml`, production — merging to
+`main` is the release, proposal 0007) and `deploy-staging.yml` resolve one
+immutable SHA and call the same reusable CI workflow before building and
+deploying that SHA.
 
 External smoke syntax:
 
@@ -345,17 +354,17 @@ Status legend:
 
 ### 7.7 Cloudflare delivery and operations
 
-| ID     | Scenario and expected result                                                                                                                         | Status/environment                                                                                                                                                                                           |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| OPS-01 | Clean CI installs and all gates operate on the exact resolved deploy SHA                                                                             | Automated workflow configuration; record run URL                                                                                                                                                             |
-| OPS-02 | Staging Worker name, base URL, GitHub client, both KV IDs, all DO namespaces, and secrets are isolated from production                               | Partial automated checker plus deployment evidence                                                                                                                                                           |
-| OPS-03 | v1–v5 migration history is present, ordered, append-only, and identical in staging/production; every bound class is exported                         | Equality partially automated; append-only/export guard Required                                                                                                                                              |
-| OPS-04 | `/healthz` reports live status, exact SHA, and effective feature posture; `/readyz` probes every enabled dependency under an owner session           | Current health coverage verifies status/SHA and the workspace flag only; readiness probes KV/registry/document only. Both posture and dependency coverage are Partial; deployed authenticated check Required |
-| OPS-05 | All 14 unauthenticated smoke checks pass with zero skips for a current release                                                                       | Suite automated; current CLI permits skips, so release review must reject them manually until strict mode exists                                                                                             |
-| OPS-06 | Browser OAuth, remote MCP, shared workspace, profiles, and admin positive journeys pass after staging deploy                                         | Required manual/automated staging pack                                                                                                                                                                       |
-| OPS-07 | Workspace/profile/admin forward-disable and re-enable preserve data and unaffected routes; staging synthetic fault never activates without its token | Gate/fault unit coverage; recorded game day Required                                                                                                                                                         |
-| OPS-08 | Production deploy waits for approval, cannot bypass `main` except explicit recovery SHA, and is followed by SHA-bound smoke                          | Workflow configuration; record deployment evidence                                                                                                                                                           |
-| OPS-09 | Cloudflare error-rate policies notify the expected channel and recovery closes/updates the incident record                                           | Required external operator evidence                                                                                                                                                                          |
+| ID     | Scenario and expected result                                                                                                                                                                                                 | Status/environment                                                                                                                                                                                           |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OPS-01 | Clean CI installs and all gates operate on the exact resolved deploy SHA                                                                                                                                                     | Automated workflow configuration; record run URL                                                                                                                                                             |
+| OPS-02 | Staging Worker name, base URL, GitHub client, both KV IDs, all DO namespaces, and secrets are isolated from production                                                                                                       | Partial automated checker plus deployment evidence                                                                                                                                                           |
+| OPS-03 | v1–v5 migration history is present, ordered, append-only, and identical in staging/production; every bound class is exported                                                                                                 | Equality partially automated; append-only/export guard Required                                                                                                                                              |
+| OPS-04 | `/healthz` reports live status, exact SHA, and effective feature posture; `/readyz` probes every enabled dependency under an owner session                                                                                   | Current health coverage verifies status/SHA and the workspace flag only; readiness probes KV/registry/document only. Both posture and dependency coverage are Partial; deployed authenticated check Required |
+| OPS-05 | All 14 unauthenticated smoke checks pass with zero skips for a current release                                                                                                                                               | Suite automated; current CLI permits skips, so release review must reject them manually until strict mode exists                                                                                             |
+| OPS-06 | Browser OAuth, remote MCP, shared workspace, profiles, and admin positive journeys pass after staging deploy                                                                                                                 | Required manual/automated staging pack                                                                                                                                                                       |
+| OPS-07 | Workspace/profile/admin forward-disable and re-enable preserve data and unaffected routes; staging synthetic fault never activates without its token                                                                         | Gate/fault unit coverage; recorded game day Required                                                                                                                                                         |
+| OPS-08 | Production release runs only from `main` (merge is the release; a migration release waits for a typed `apply_migration_tag` dispatch), cannot bypass `main` except explicit recovery SHA, and is followed by SHA-bound smoke | Workflow configuration; record deployment evidence                                                                                                                                                           |
+| OPS-09 | Cloudflare error-rate policies notify the expected channel and recovery closes/updates the incident record                                                                                                                   | Required external operator evidence                                                                                                                                                                          |
 
 ---
 
@@ -533,7 +542,8 @@ does **not** by itself satisfy the release-candidate exit gate.
 
 ### 10.4 Production exit
 
-- Protected environment approval names the approved SHA.
+- The release run (`release.yml`) names the released SHA; a migration release
+  also records its typed `apply_migration_tag` acknowledgement.
 - SHA-bound production smoke passes without a skip.
 - A non-mutating login/public-view check and disposable remote MCP read/create/
   validate/render check pass, then test data is retired per policy.

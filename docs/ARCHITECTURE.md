@@ -1,5 +1,10 @@
 # Architecture
 
+_Revalidated 2026-11-13 against `main` at `e99b012`: the module map below was
+extended for the directories added since August (exports, imports, hardware
+catalog, SD-WAN generator, API keys) and the deployment section corrected
+for proposal 0007._
+
 ## Layers
 
 ```
@@ -25,10 +30,41 @@ api/                    headless authoring, DOM-free:
   builtins.ts           the built-in node/link vocabulary.
   layout.ts             layout ground-truth: rules + overlap/crowding analyzer.
   tidy.ts               auto-layout: grid-snap + de-overlap + keep-in-bounds.
+  autolayout.ts         arrange from scratch (hierarchical / grid / circular /
+                        force / tiered); templates.ts builds the six starters.
   geometry.ts           pure node AABBs (shared by editor + layout).
+  layers.ts, link-styles.ts, tiers.ts, bundles.ts, sheet.ts, page-link.ts,
+  hardware.ts           document vocabulary added since: layers, wire classes,
+                        tiers, LAG/ECMP bundles, the sheet frame, page links,
+                        and hardware bindings (proposals 0008 / 0010, hw-catalog).
 
 render/core.ts          engine-agnostic render: (EngineClass, page) → SVG string.
+render/                 TypeScript overlays + headless mirrors around the core:
+                        theme.ts (light theme remap), inspect.ts (the
+                        inspect_render QA report), link-attach.ts / hit-boxes.ts
+                        (mirror the engine's link trimming and node footprints),
+                        port-pills.ts, port-table.ts, sheet.ts, wire-labels.ts,
+                        zone-box.ts, wiresheet.ts (hardware panel pages),
+                        backdrops.ts (map backdrops), flipbook.ts (HTML export).
 server/render.ts        Node: load the engine via createRequire, call the core.
+server/                 other Node/shared helpers: raster.ts (resvg loader),
+                        catalog.ts, export-file.ts + safe-path.ts (stdio export
+                        to disk), session.ts (signed cookies), api-key.ts.
+
+export/                 output formats. scene.ts is the one format-neutral
+                        geometry model behind the editable exports (drawio.ts,
+                        vsdx.ts + visio-masters.ts + vssx.ts, pptx.ts);
+                        raster.ts / png.ts / pdf.ts rasterize the engine SVG
+                        with resvg (wasm); mermaid.ts; cable-schedule.ts.
+                        Fidelity contract: docs/EXPORTS.md.
+import/                 inputs: legacy.ts (Topology Studio), drawio.ts,
+                        mermaid.ts, csv.ts, open.ts (file-kind detection).
+
+catalog/                hardware catalog (hw-catalog): loader.ts (versioned
+                        bundle + LRU), validate.ts (wiring rules, a port of the
+                        Python reference in /catalog/tools), assign.ts,
+                        describe.ts, diff.ts, sanitize-svg.ts. Data, schema and
+                        fixtures live in the top-level /catalog directory.
 
 nodes/                  custom node types (data, not code): spec.ts (CustomNodeSpec),
                         render.ts (pure interpreter + browser registration),
@@ -41,22 +77,41 @@ editor/editor.ts        the canvas editor: an interaction overlay <svg> over the
 connect/                the live-data connector layer: types.ts (the vendor-neutral
                         TopologyProvider contract + normalized records), edgeconnect.ts
                         (EdgeConnect Orchestrator REST client; injectable fetch),
-                        mock.ts (fixture fabric for tests/demos). Credentials come
-                        from env/secrets only — never through tool arguments.
+                        mock.ts (fixture fabric for tests/demos), compile.ts (the
+                        flow-to-topology compiler), generate.ts (the SD-WAN
+                        generator: intent → fabric records → the same compiler;
+                        proposal 0010). Credentials come from env/secrets only —
+                        never through tool arguments.
 
-mcp/                    MCP server: tools.ts (pure handlers), store.ts (in-memory
-                        registry), register.ts (adapter + runtime arg validation),
-                        server.ts (stdio entry).
+mcp/                    MCP server: tools.ts (pure handlers), export-tools.ts
+                        (export_topology / view_topology), hardware-tools.ts,
+                        store.ts (in-memory registry), persist-store.ts (durable
+                        mirror), rate-limit.ts, workspace-reads.ts, viewer-html.ts
+                        (the MCP Apps inline view), register.ts (adapter + runtime
+                        arg validation), server.ts (stdio entry).
                         Shared by the Worker. (Remote auth lives in worker/, not here.)
 
 workspace/              shared human-agent write protocol: revision/operation/
                         proposal types, local snapshot→operation adapter,
-                        field-level conflict targets, browser API client.
+                        field-level conflict targets, browser API client,
+                        upsert.ts, preview.ts, presence.ts, offline.ts.
 
-worker/                 Cloudflare Worker: index.ts (serve app + route /mcp),
-                        mcp.ts (transport/private-draft DO), document.ts (one
-                        canonical coordinator per shared topology), workspaces.ts
-                        (owner directory + lazy migration), render.ts.
+profile/                adaptive authoring profiles (proposal 0003): features.ts,
+                        learner.ts, refinement.ts, guidance.ts — pure, DOM-free.
+share/                  public share snapshots: snapshot.ts (KV contract), copy.ts.
+agent-activity/, admin/ MCP-session trail shaping and the owner dashboard's
+                        client/model (Initiative A, admin dashboard).
+ui/                     browser panels outside the canvas: workspace-panel.ts,
+                        profile-panel.ts, admin-dashboard.ts, sdwan-wizard.ts.
+
+worker/                 Cloudflare Worker: index.ts (OAuth provider wrapper +
+                        Durable Object exports), default-handler.ts (routes),
+                        mcp.ts (transport/private-draft DO), registry.ts (per-owner
+                        drafts + directory DO), document.ts (one canonical
+                        coordinator per shared topology), workspaces.ts (owner
+                        directory + lazy migration), profile.ts, analytics.ts,
+                        auth.ts + landing.ts, api-keys.ts, share.ts, catalog.ts,
+                        raster.ts, render.ts, staging-fault.ts.
 
 core/                   the retired beat-model (model/resolve/tween) — dormant.
 ```
@@ -76,6 +131,13 @@ Page = { id, name, viewBox,
          zones[], flowPaths[], policyMarkers[]  // annotation layer
        }
 ```
+
+That is the core shape. `src/pages/model.ts` is authoritative for the
+optional fields added since: on the document, `legend`, `stencils`,
+`linkStyles`, `tiers`, `bundles`, `sheet`, `palette` and `catalogVersion`;
+on a page, `duration` / `transition`, `caption` / `emphasis`, `lineJumps`,
+`linkAttach`, `portLabels`, and `view: 'logical' | 'wiresheet'` with
+`panelScale`.
 
 **Layers** (`api/layers.ts`): a document may declare named planes —
 underlay / overlay / policy / service — and any element opts in via a `layer`
@@ -185,11 +247,24 @@ public origin. This staging environment is live: it is deployed by a CI-gated
 `deploy-staging.yml` workflow and has passed a fully-green gated deploy with
 external smoke evidence. Cloudflare version uploads are not used for Durable
 Object migration releases; staging receives a full environment-scoped deploy.
-Production deploys through the same CI-gated Actions path
-(`deploy-production.yml`, restricted to `main` behind a protected environment
-approval). The cutover from the legacy Workers Builds path and the first gated
+Production deploys through the same CI-gated Actions path: since proposal
+0007 (2026-10-10) that is `release.yml`, which runs on every non-docs push
+to `main` — CI on the merge SHA, a staging rehearsal, a Durable Object
+migration guard (`scripts/migration-guard.mjs`), then production — through
+the `deploy-worker.yml` implementation it shares with `deploy-staging.yml`.
+Merging to `main` is the release decision; the earlier manual
+`deploy-production.yml` dispatch and its protected-environment approval were
+removed. The cutover from the legacy Workers Builds path and the first gated
 production deploy are complete; laptop-driven production deployment remains
 deliberately unavailable.
+
+The Worker declares five Durable Object classes, one migration tag each
+(`wrangler.jsonc`, identical in `env.staging`): `v1` `TopologyMcp`, `v2`
+`TopologyRegistry`, `v3` `TopologyDocument`, `v4` `AuthoringProfile`, `v5`
+`AnalyticsLog`. Feature flags are plain `vars`: `WORKSPACE_ENABLED`,
+`PROFILES_ENABLED` and `ANALYTICS_ENABLED` are `"true"` in both
+environments; `API_KEYS_ENABLED` is `"true"` on staging and `"false"` in
+production; `LIVE_DATA_ENABLED` is `"false"` in both.
 
 Migration-bearing feature releases separate namespace creation from feature
 activation. Migrations `v3`–`v5` are the historical examples of that pattern:
@@ -202,6 +277,7 @@ the feature where possible and deploying a compatible repair.
 
 See
 [`proposals/0004-isolated-staging-and-deployment-pipeline.md`](proposals/0004-isolated-staging-and-deployment-pipeline.md),
+[`proposals/0007-merge-is-the-release.md`](proposals/0007-merge-is-the-release.md),
 [`DEPLOYMENT_RUNBOOK.md`](DEPLOYMENT_RUNBOOK.md), and
 [`ROLLBACK.md`](ROLLBACK.md).
 
@@ -236,7 +312,9 @@ refused. See
 4. **One render core** shared across Node and Workers; **one capability catalog**
    shared across GUI, validation, and MCP.
 5. **TypeScript strict** (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`,
-   `isolatedModules`); the engine is vendored unmodified.
+   `isolatedModules`); the engine is vendored and used only as a renderer.
+   It is no longer byte-for-byte the upstream file: targeted edits are
+   listed under "Known constraints".
 6. **Operations, not document checkout, for collaboration.** Agents suggest by
    default; short UI-granted leases are scoped authority, not a global mutex.
 7. **Repository state, not chat history, for implementation.** Agentic feature
@@ -259,7 +337,7 @@ refused. See
   `ROADMAP.md` §"Evidence-triggered." _(Corrected 2026-07-19; see
   `DISCREPANCY_REGISTER.md` row 10.)_
 - The vendored engine is treated as an opaque renderer; we drive a small, typed
-  slice of its surface and avoid editing it. Sanctioned exceptions so far, both
+  slice of its surface and avoid editing it. The first sanctioned exceptions,
   additive and default-preserving: (1) a per-marker `icon` override so the
   catalog — not the engine — owns the policy-marker glyph set (`src/api/markers.ts`);
   (2) per-link flow controls (`flowSpeed` / `flowParticles` / `reverseFlow`) honored
@@ -267,3 +345,12 @@ refused. See
   (3) per-node `opacity` multiplied into the primary node-render path so it is a
   real document field (the engine's other render path already honored it) —
   values below 0.9 also pick up the engine's existing depth-of-field blur.
+  Since August 2026 `public/vendor/topology-ds.js` has taken further targeted
+  edits (`git log -- public/vendor/topology-ds.js`): flow paths that follow
+  link geometry (on by default; `followLinks: false` opts out), wire-label
+  wrapping and placement, the callout/text `body` field, zone boxes sized to
+  member labels, the opt-in link anchor box, tiers / zone bottom captions /
+  the chassis shape, rounded orthogonal corners, role-aware light-theme
+  knobs, node-label placement, and zone map backdrops. Each new headless
+  mirror (`src/render/link-attach.ts`, `src/render/hit-boxes.ts`) exists so
+  TypeScript code measures what the edited engine actually draws.

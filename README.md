@@ -1,174 +1,183 @@
 # Topology Dojo
 
-A studio for designing **network topology diagrams**, with a built-in
-**MCP (Model Context Protocol) server** — built so the persisted
-diagram vocabulary is equally authorable by **people** (a direct-manipulation
-canvas editor) and by **agents** (a headless API exposed over MCP). Both use the
-same document contract and renderer; browser-only view preferences and
-owner-only governance actions remain intentionally human-facing.
+Network topology diagrams that a person can draw and an AI agent can generate,
+in the same format, with the same renderer.
 
-The long-term aim: one consistent topology framework for everything SASE, where
-every diagram has the same look and feel whether a human drew it or an LLM
-generated it.
+![The editor showing a generated three-region SD-WAN fabric: hubs and branches per region over continent map backdrops](docs/images/editor-sdwan.png)
 
-New here? Start with the **[User Guide](docs/USER_GUIDE.md)**. Release testers
-should use the living [QA plan](docs/launch-readiness/QA_TEST_PLAN.md),
-[UAT plan](docs/launch-readiness/UAT_PLAN.md), and
-[traceability matrix](docs/launch-readiness/TRACEABILITY_MATRIX.md).
+There are two ways to author a diagram, and they produce the same document:
 
-## The model in one minute
+- **The editor** — a browser canvas for drawing by hand.
+- **The MCP server** — tools an agent (Claude, or any
+  [Model Context Protocol](https://modelcontextprotocol.io) client) calls to
+  build, validate, lay out, render and export a diagram.
 
-- A **document** is an ordered list of **pages** — each page a complete,
-  standalone topology frame (like a sheet of transparency film). Duplicating a
-  page deep-copies it; "animation" is flipping between pages. No deltas, no
-  choreography engine — you edit frames directly. (This "flipbook" model
-  replaced an earlier beat/delta model, whose core still lives in `src/core`,
-  dormant.)
-- A page holds **nodes**, **links**, **anchors**, and an annotation layer of
-  **zones**, **flow paths**, and **policy markers**.
-- The document JSON is the **authoring contract**: every persisted diagram field
-  exposed by the GUI is reachable from the headless API. Transient view state
-  (pan/zoom, theme, panel layout) and browser-owner actions are outside that
-  parity invariant.
-- A handed-off document is a **revisioned shared workspace**. Browser gestures
-  become compact semantic operations; agents read bounded deltas and propose
-  change sets by default, so collaboration does not require repeatedly placing
-  the whole document in model context.
+Everything a person can set in the editor's inspector, an agent can set through
+the API, so a diagram looks the same whoever made it. The exceptions are
+deliberate: view state (pan, zoom, theme) and owner-only actions stay in the
+browser.
 
-## Quick start
+## Use it
+
+**Hosted editor:** <https://topology-dojo.harnessed.cloud> — sign in with
+GitHub.
+
+**Hosted MCP server:** add `https://topology-dojo.harnessed.cloud/mcp` to your
+MCP client as a remote (Streamable HTTP) server. Sign-in is GitHub OAuth in the
+browser; there is no key to paste. In Claude Code:
+
+```bash
+claude mcp add --transport http topology-dojo https://topology-dojo.harnessed.cloud/mcp
+```
+
+Then ask for a diagram ("draw a dual-hub SD-WAN fabric with four branches and
+show it"). In chat hosts that support MCP Apps, `view_topology` renders the
+result inline with pan, zoom, layers and downloads.
+
+The server is described for MCP directories in [`server.json`](server.json).
+Tool reference, local stdio setup and auth details:
+[`src/mcp/README.md`](src/mcp/README.md).
+
+## Run it locally
+
+Needs Node.js 22 (the version CI uses).
 
 ```bash
 npm ci
-npm run dev         # app at http://localhost:5173
-npm test            # unit tests (Vitest)
-npm run lint        # eslint + prettier
-npm run typecheck   # typecheck app + Cloudflare Worker
-npm run build       # app typecheck + production bundle
-npm run test:e2e    # Chromium browser release gate (Linux visual baselines)
-npm run mcp         # run the MCP server over stdio
+npm run dev    # editor at http://localhost:5173
+npm run mcp    # MCP server over stdio, no account needed
 ```
 
-## Three ways in
+The local editor has no backend: documents autosave to browser storage, and
+sign-in, sharing and the shared workspace need the hosted Worker. The local
+MCP server keeps topologies in memory for the life of the process.
 
-1. **The editor** — a canvas editor over the vendored rendering engine: select /
-   marquee / drag, space-drag pan, smart alignment + spacing guides, grid + snap,
-   links with on-canvas waypoint editing, anchors (free-floating link endpoints)
-   via the anchor tool, select-by (type / color / connected / invert), find /
-   jump-to-element (Ctrl+F), a minimap overview, a right-click context menu,
-   align / distribute, light / dark + calm-canvas toggles, a catalog-driven
-   palette (with live node-art previews) + inspector (incl. document/page
-   properties), a filmstrip of pages, a
-   live status bar, a Node Designer for custom node types, reusable stencils,
-   per-page undo, recoverable frame deletion, and one-click **Tidy** / **Balance**
-   layout. The hosted editor also includes an **Agent Workspace** for handoff,
-   geometry-aware proposal review, selective acceptance, checkpoints, presence,
-   offline recovery, conflicts, and a revocable ten-minute current-page lease;
-   confirmed authoring preferences and a metadata-only owner dashboard are
-   feature-gated companion surfaces.
-2. **The headless API** (`src/api`) — build / mutate / validate / lay out /
-   render a document in code, DOM-free. The GUI is just one client of it.
-3. **MCP** (`src/mcp`, `worker/`) — the same API exposed as tools over the Model
-   Context Protocol, both locally (stdio) and hosted on Cloudflare (GitHub
-   OAuth for interactive clients, user-minted API keys for unattended agents).
-   See [`src/mcp/README.md`](src/mcp/README.md).
+| Command             | What it checks                                         |
+| ------------------- | ------------------------------------------------------ |
+| `npm test`          | Unit tests (Vitest)                                    |
+| `npm run lint`      | ESLint and Prettier                                    |
+| `npm run typecheck` | The app and the Cloudflare Worker                      |
+| `npm run build`     | App typecheck and production bundle                    |
+| `npm run test:e2e`  | Chromium release gate; visual baselines are Linux-only |
 
-## Hand it to your team
+## What it does
 
-Diagrams leave Topology Dojo in the formats network teams already use —
-**PNG / PDF** (print-true on ANSI and A-series sheets), **draw.io** (layers and
-containers kept, re-importable), **Visio `.vsdx`** (shapes, glued connectors,
-layers, Shape Data), **PowerPoint `.pptx`** (a slide per page or per layer)
-and **Mermaid** — from the editor's export menu or the `export_topology` MCP
-tool. Existing **draw.io** and Mermaid diagrams import. In chat hosts that
-support MCP Apps, `view_topology` shows the diagram inline (pan, zoom, layers,
-downloads). What each format keeps and drops: [`docs/EXPORTS.md`](docs/EXPORTS.md).
+**Draws network diagrams, not generic boxes.** The node palette is network
+gear (SD-WAN edges, switches, routers, firewalls, clouds), links have types
+(tunnel, optical, wireless, PoE and more), and zones, flow paths and policy
+markers sit on an annotation layer. You can define your own node types in the
+Node Designer.
 
-**Install the hosted MCP server:** add `https://topology-dojo.harnessed.cloud/mcp`
-as a remote (Streamable HTTP) MCP server — sign-in is GitHub OAuth, no key to
-paste. It is described for MCP directories in [`server.json`](server.json)
-(MCP Registry format).
+**Generates an SD-WAN fabric from a few choices.** The SD-WAN wizard
+(`template…` menu, or the `generate_sdwan_topology` tool) takes vendor, regions,
+hubs, branches, WAN links and HA, and builds the fabric with tunnel counts that
+follow the vendor's behaviour. HPE EdgeConnect and Juniper SRX are supported
+today. Design and limits:
+[proposal 0010](docs/proposals/0010-sdwan-generator.md).
 
-## Layout that holds up for AI
+**Produces wiring sheets.** Nodes can bind to real hardware models from the
+[hardware catalog](catalog/README.md), so a cable has to land on an interface
+that exists, with a compatible optic and speed. Wire-sheet pages draw front
+panels with cables at the real port positions, plus link styles, tiers, LAG
+bundles, port tables and a title block. The catalog is small so far (a handful
+of models built from fixtures, not vendor data feeds); status is in
+[`docs/futures/hw-catalog.md`](docs/futures/hw-catalog.md).
 
-Agent-generated diagrams tend to overlap. The API ships a layout **ground
-truth**: `layoutGuidelines` (machine-readable spacing/grid/zone rules), an
-overlap **analyzer** folded into `validate`, and **`tidy`** auto-layout
-(grid-snap + de-overlap + keep-in-bounds). The agent loop is **discover → build →
-validate → tidy → render**.
+**Exports to what network teams already use.** PNG and PDF (print-true on ANSI
+and A-series sheets), draw.io, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid, SVG,
+and a self-playing HTML flipbook. draw.io and Mermaid diagrams import. What
+each format keeps and drops: [`docs/EXPORTS.md`](docs/EXPORTS.md). The Visio
+and PowerPoint output has been checked in LibreOffice, not yet in the Microsoft
+apps.
 
-## Structure
+**Tells a story across pages.** A document is an ordered list of pages, each
+one a complete diagram. Duplicate a page, change it, and flipping between them
+is the animation ("before and after", "failover", "packet walk").
+
+**Keeps agent output tidy.** Generated diagrams tend to overlap. The API
+publishes its layout rules, `validate_topology` reports overlaps,
+`inspect_render` checks the drawn result for collisions and clipped labels, and
+`tidy_topology` fixes spacing. The loop an agent follows is discover, build, validate,
+tidy, render.
+
+**Lets a person and an agent work on one diagram.** In the hosted editor's
+Agent Workspace, an agent proposes changes that you review and accept in whole
+or in part. It can write directly only under a page-scoped lease you grant from
+the browser, which lasts ten minutes and can be revoked. Checkpoints, a
+revision timeline, presence and offline recovery are included.
+
+Task-by-task instructions for all of this are in the
+**[User Guide](docs/USER_GUIDE.md)**.
+
+### Behind a flag
+
+These exist in the code but are switched off in production in
+[`wrangler.jsonc`](wrangler.jsonc) at the time of writing:
+
+- **API keys** for agents that cannot do a browser sign-in
+  (`API_KEYS_ENABLED`; on in staging).
+  [Proposal 0005](docs/proposals/0005-api-key-auth.md).
+- **Live SD-WAN data** from an EdgeConnect Orchestrator (`LIVE_DATA_ENABLED`).
+  The client is tested against fixtures only and has not been verified against
+  a live Orchestrator.
+
+## How it is built
 
 ```
 src/
-  vendor/      typed facade over the vendored TopologyDesigner engine (the renderer)
-  pages/       the flipbook document model + persistence (autosave / import / export)
-  api/         headless authoring: builder · validate · catalog · layout · tidy · geometry
-  render/      engine-agnostic render core (shared by Node and the Worker)
-  server/      Node headless renderer (loads the engine via createRequire)
-  nodes/       custom node types: spec · interpreter · Node Designer
-  editor/      the canvas editor (selection, drag, guides, links, tidy)
-  mcp/         MCP server: tools · store · auth · registration (used by stdio + worker)
-  workspace/   semantic operations · conflict targets · browser API client
-  core/        the retired beat-model (dormant; kept for reference)
-worker/        Cloudflare Worker: app + /mcp + per-document coordinators
-public/vendor/ the vendored engine + theme (classic script in the browser, CommonJS in Node)
+  pages/       the document model (pages, nodes, links, zones) and persistence
+  api/         headless authoring: build, validate, lay out, tidy; no DOM
+  render/      render core shared by Node and the Worker, plus inspect_render
+  export/      PNG, PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedules
+  import/      draw.io, Mermaid and legacy-document importers
+  catalog/     hardware catalog loader and interface resolution
+  connect/     SD-WAN generator, and the live-data provider and flow compiler
+  editor/ ui/  the canvas editor and its panels
+  nodes/       custom node types and the Node Designer
+  mcp/         MCP tools, store and registration (shared by stdio and Worker)
+  workspace/   shared-workspace operations, conflicts and browser client
+  profile/     learned authoring preferences
+  share/       public snapshot links
+  server/      Node-side headless renderer and helpers
+  vendor/      typed facade over the vendored rendering engine
+  core/        the retired beat model, kept for reference only
+worker/        Cloudflare Worker: serves the app, /mcp, and per-document state
+catalog/       hardware catalog data, schema and Python reference tools
+public/vendor/ the vendored rendering engine and theme
+e2e/           Playwright browser tests
 ```
 
-## Docs
-
-- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) — task-based guidance for human
-  authors, public-link recipients, workspace owners, MCP operators, and admins.
-- [`docs/launch-readiness/QA_TEST_PLAN.md`](docs/launch-readiness/QA_TEST_PLAN.md),
-  [`UAT_PLAN.md`](docs/launch-readiness/UAT_PLAN.md), and
-  [`TRACEABILITY_MATRIX.md`](docs/launch-readiness/TRACEABILITY_MATRIX.md) —
-  living release-quality plans and feature-to-evidence coverage.
-- [`docs/DESIGN.md`](docs/DESIGN.md) — the north star and the principles every PR
-  is reviewed against.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the model, the render seam, the
-  API surface, the MCP/Worker shape, and the locked decisions.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's built and what's next.
-- [`docs/decisions/`](docs/decisions/) — architecture decision records (ADRs),
-  e.g. [why flipbook over beats/ASP](docs/decisions/0001-flipbook-vs-beats.md).
-- [`docs/proposals/0002-shared-human-agent-workspace.md`](docs/proposals/0002-shared-human-agent-workspace.md)
-  — revision, operation, proposal, lease, conflict, and migration contract.
-- [`docs/proposals/0003-adaptive-agent-authoring-profiles.md`](docs/proposals/0003-adaptive-agent-authoring-profiles.md)
-  — bounded, explainable learning from repeated user corrections without
-  self-modifying or context-bloating MCP tools.
-- [`docs/AGENTIC_IMPLEMENTATION_WORKFLOW.md`](docs/AGENTIC_IMPLEMENTATION_WORKFLOW.md)
-  — bounded task packets, implementation/review roles, context discipline, and
-  human-controlled merge/release gates for agent-built features.
-- [`docs/proposals/0004-isolated-staging-and-deployment-pipeline.md`](docs/proposals/0004-isolated-staging-and-deployment-pipeline.md)
-  — implementation plan for isolated staging, gated deployments, Durable Object
-  migrations, and smoke evidence.
-- [`docs/proposals/0005-api-key-auth.md`](docs/proposals/0005-api-key-auth.md)
-  — user-tied, scoped API keys for unattended agents on the hosted MCP
-  endpoint, beside the existing GitHub OAuth.
-- [`docs/proposals/0006-importer-sync-ergonomics.md`](docs/proposals/0006-importer-sync-ergonomics.md)
-  — `element.upsert` for shared workspaces, sourced-element listings, and
-  upsert outcomes, so re-syncing importers stay idempotent and cheap.
-- [`docs/DEPLOYMENT_RUNBOOK.md`](docs/DEPLOYMENT_RUNBOOK.md) and
-  [`docs/ROLLBACK.md`](docs/ROLLBACK.md) — operator procedures for routine and
-  migration-bearing releases, error 10211, rollback, and forward recovery.
-- [`src/mcp/README.md`](src/mcp/README.md) — running and deploying the MCP server.
+The editor is one client of `src/api`; the MCP server is another. Hosted, the
+app runs on Cloudflare Workers with Durable Objects for MCP sessions, the
+per-user registry and each shared document, behind OAuth 2.1 with GitHub as
+the identity provider.
 
 ## Deployment
 
-Hosted on **Cloudflare Workers**: `npm run build` produces `dist/`, and the
-Worker (`worker/index.ts`) serves it as static assets while routing `/mcp` to
-the MCP server. Transport sessions and canonical per-document coordinators are
-separate Durable Objects behind OAuth 2.1 / GitHub sign-in. Config is in
-[`wrangler.jsonc`](wrangler.jsonc).
+Merging to `main` is the release. Every push that touches more than docs runs
+CI, rehearses the build on staging, then deploys to production and smoke-tests
+it, with no second approval. A release that adds a Durable Object migration is
+held until a person dispatches the workflow and types the new migration tag.
+The workflow is [`release.yml`](.github/workflows/release.yml); procedures are
+in the [deployment runbook](docs/DEPLOYMENT_RUNBOOK.md) and the
+[rollback runbook](docs/ROLLBACK.md).
 
-Production and isolated staging deploy through CI-gated GitHub Actions; the
-production workflow is restricted to `main` and requires protected-environment
-approval. A Worker containing a new Durable Object migration must use a full
-environment-scoped `wrangler deploy`; `wrangler versions upload` fails with
-Cloudflare error 10211 and is not an approved preview path. See the
-[deployment plan](docs/proposals/0004-isolated-staging-and-deployment-pipeline.md)
-and [runbook](docs/DEPLOYMENT_RUNBOOK.md).
+## Documentation
+
+| If you want to                            | Read                                                                                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Use the editor or connect an agent        | [User Guide](docs/USER_GUIDE.md), [MCP server](src/mcp/README.md), [exports](docs/EXPORTS.md)                                                                                                    |
+| Pick up development                       | [Handoff](docs/HANDOFF.md) first, then [architecture](docs/ARCHITECTURE.md) and [design principles](docs/DESIGN.md)                                                                              |
+| See what is built and what is next        | [Roadmap](docs/ROADMAP.md), [capability matrix](docs/CAPABILITY_MATRIX.md)                                                                                                                       |
+| Understand why something is the way it is | [Decisions](docs/decisions/) and [proposals](docs/proposals/)                                                                                                                                    |
+| Operate production                        | [Deployment](docs/DEPLOYMENT_RUNBOOK.md), [rollback](docs/ROLLBACK.md), [alerts](docs/ALERTS.md), [Cloudflare operator steps](docs/CLOUDFLARE_OPERATOR_RUNBOOK.md), [game day](docs/GAME_DAY.md) |
+| Test a release                            | [QA plan](docs/launch-readiness/QA_TEST_PLAN.md), [UAT plan](docs/launch-readiness/UAT_PLAN.md), [traceability matrix](docs/launch-readiness/TRACEABILITY_MATRIX.md)                             |
+| Build features with coding agents         | [Agentic implementation workflow](docs/AGENTIC_IMPLEMENTATION_WORKFLOW.md)                                                                                                                       |
+
+`docs/archive/` and `docs/sitrep/` are dated records, not current status.
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](LICENSE). This covers the whole
-repository, including the vendored Topology Studio rendering engine under
-`public/vendor/`, which is the maintainer's own work.
+Apache License 2.0; see [`LICENSE`](LICENSE). This covers the whole repository,
+including the vendored rendering engine under `public/vendor/`, which is the
+maintainer's own work.

@@ -29,7 +29,8 @@ the precondition for "topology as a framework for all of SASE."
 
 **Workspace-authority carve-out (temporary).** A few _workspace_ actions are
 deliberately gated to the browser owner rather than exposed to agents: accepting
-proposals, and — as of Packet R3 — restoring or forking a named checkpoint.
+proposals, granting or revoking a direct-write lease, and — as of Packet R3 —
+restoring, forking or deleting a named checkpoint.
 Agents can still _create_ and _list_ checkpoints (to snapshot before a risky
 batch); they just can't unilaterally roll the canonical document back or spawn a
 fork. This is a limit on _authority_ over shared state, not on document
@@ -39,7 +40,7 @@ restore/fork.
 
 ## 3. One catalog as the source of truth
 
-The capability catalog (`api/catalog.ts`) is the single machine-readable schema
+The capability catalog (`src/api/catalog.ts`) is the single machine-readable schema
 of every node, link, and annotation type and its fields. The palette, the
 inspector, validation, and MCP discovery all derive from it — never from
 hand-maintained parallel lists. A parity test fails the build if the catalog
@@ -56,14 +57,14 @@ view over the contract, not a separate authoring language.
 
 `validate` reports dangling references, duplicate ids, unknown types, and
 out-of-range enums; the layout analyzer reports overlaps, crowding, off-page
-elements, and zone collisions. Problems surface up front — in the editor and on
-the MCP `validate` call — rather than as a quietly broken render.
+elements, and zone collisions. Problems surface up front — in the editor's Problems panel and on
+the MCP `validate_topology` call — rather than as a quietly broken render.
 
 ## 6. Ground truth for machine authors
 
 Agents generate coordinates badly if left to guess. So we publish the rules
 (`layoutGuidelines`), check against them (`analyzeLayout`, folded into
-`validate`), and can apply them automatically (`tidy`). Prevention + detection +
+`validate_topology`), and can apply them automatically (`tidy`). Prevention + detection +
 correction, all from the same numbers — so "no overlapping nodes/labels/zones"
 is something the system upholds, not something a human re-tunes by hand.
 
