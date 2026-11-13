@@ -2938,8 +2938,12 @@ function renderInspector(): void {
   } else if (link) {
     const info = getLinkType(link.type);
     const types = linkCatalog().map((l) => l.type);
+    const linkCount = editor.selectedLinkIds().length;
     html +=
       `<div class="insp-h">Link</div>` +
+      (linkCount > 1
+        ? `<div class="insp-hint">${linkCount} links selected. Type, colour, style and layer changes apply to all; everything else edits this one.</div>`
+        : '') +
       typeRow(link.type, types) +
       endpointRow('from', link.from, link.to) +
       endpointRow('to', link.to, link.from) +

@@ -162,6 +162,25 @@ const LINK_FORMAT_KEYS = [
   'reverseFlow',
 ] as const;
 
+/**
+ * Link fields an inspector edit applies to every selected link, not just the
+ * primary: appearance and behaviour. Anything that is per-link data
+ * (endpoints, bends, labels and their offsets, interfaces, bundles) is not
+ * here, so editing it changes the primary only.
+ */
+const SHARED_LINK_KEYS: ReadonlySet<string> = new Set([
+  ...LINK_FORMAT_KEYS,
+  'style',
+  'layer',
+  'dots',
+  'opacity',
+  'labelScale',
+  'cornerRadius',
+  'bandwidth',
+  'transport',
+  'locked',
+]);
+
 export class Editor {
   private sel = new Set<string>();
   private undoStack: string[] = [];
@@ -266,7 +285,21 @@ export class Editor {
   }[] = [];
   /** Node currently under the cursor in Select mode (drives connection dots). */
   private hoverNode: string | null = null;
-  private linkSel: string | null = null;
+  private _linkSel: string | null = null;
+  /**
+   * Links selected alongside `linkSel` (Shift / Ctrl / Cmd-click). `linkSel`
+   * stays the primary: it owns the inspector and the bend / end handles.
+   * Deleting and style edits apply to the whole set.
+   */
+  private linkSelExtra = new Set<string>();
+  /** The primary selected link. Assigning it resets the multi-selection. */
+  private get linkSel(): string | null {
+    return this._linkSel;
+  }
+  private set linkSel(id: string | null) {
+    this._linkSel = id;
+    this.linkSelExtra.clear();
+  }
   private linkSeq = 0;
   /**
    * The single selected anchor (drives the inspector). Mirrors `selAnchors`
@@ -1013,6 +1046,16 @@ export class Editor {
       if (poly.length < 2) continue;
       const d = 'M' + poly.map((p) => `${p.x},${p.y}`).join(' L');
       out += `<path d="${d}" fill="none" stroke="${ACCENT}" stroke-width="3" opacity="0.5"/>`;
+    }
+    // The rest of a multi-selection: the same highlight, no handles.
+    for (const other of this.page.links) {
+      if (!this.linkSelExtra.has(other.id)) continue;
+      const route = linkPolyline(this.page, other);
+      for (const poly of this.linkShape(other.id) ?? [route]) {
+        if (poly.length < 2) continue;
+        const d = 'M' + poly.map((p) => `${p.x},${p.y}`).join(' L');
+        out += `<path data-link-sel d="${d}" fill="none" stroke="${ACCENT}" stroke-width="3" opacity="0.5"/>`;
+      }
     }
     const s = this.handleSize();
     // Endpoint handles: drag one onto another node/anchor to re-attach that
@@ -2000,7 +2043,8 @@ export class Editor {
       this.fireZoneSelect();
     }
     if (this.linkSel !== null) {
-      this.page.links = this.page.links.filter((l) => l.id !== this.linkSel);
+      const doomed = new Set(this.selectedLinkIds());
+      this.page.links = this.page.links.filter((l) => !doomed.has(l.id));
       this.linkSel = null;
       this.fireLinkSelect();
     }
@@ -2137,7 +2181,7 @@ export class Editor {
   emphasizeSelection(): void {
     const next = new Set(this.page.emphasis ?? []);
     for (const id of this.sel) next.add(id);
-    if (this.linkSel) next.add(this.linkSel);
+    for (const id of this.selectedLinkIds()) next.add(id);
     if (next.size === (this.page.emphasis?.length ?? 0)) return;
     this.applyEmphasis([...next]);
   }
@@ -2745,6 +2789,22 @@ export class Editor {
       link as unknown as Record<string, unknown>,
       patch,
     );
+    // With several links selected, appearance edits apply to all of them.
+    // Per-link data (endpoints, bends, labels, interfaces) stays with the
+    // primary.
+    if (this.linkSelExtra.size) {
+      const shared = Object.fromEntries(
+        Object.entries(patch).filter(([key]) => SHARED_LINK_KEYS.has(key)),
+      ) as Partial<LinkConfig>;
+      if (Object.keys(shared).length)
+        for (const other of this.page.links)
+          if (this.linkSelExtra.has(other.id) && !other.locked)
+            this.assignAndEmit(
+              'links',
+              other as unknown as Record<string, unknown>,
+              shared,
+            );
+    }
     if (commit) this.renderArt();
     else this.scheduleArt();
     this.renderOverlay();
@@ -3882,10 +3942,13 @@ export class Editor {
       return;
     }
 
+    // Shift, Ctrl and Cmd all extend / toggle the selection. (A Ctrl/Cmd
+    // click on an element with a followable href was handled above.)
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
     if (hit) {
       this.clearLinkSel();
       this.clearZoneSel();
-      if (e.shiftKey) {
+      if (additive) {
         if (this.sel.has(hit)) this.sel.delete(hit);
         else this.sel.add(hit);
       } else if (!this.sel.has(hit)) {
@@ -3903,7 +3966,7 @@ export class Editor {
       if (anchorHit) {
         this.clearLinkSel();
         this.clearZoneSel();
-        if (e.shiftKey) {
+        if (additive) {
           if (this.selAnchors.has(anchorHit)) this.selAnchors.delete(anchorHit);
           else this.selAnchors.add(anchorHit);
         } else if (!this.selAnchors.has(anchorHit)) {
@@ -3925,7 +3988,8 @@ export class Editor {
         this.sel.clear();
         this.selAnchors.clear();
         this.syncAnchorSel();
-        this.linkSel = link;
+        if (additive && this.linkSel !== null) this.toggleLinkSel(link);
+        else this.linkSel = link;
         this.fireSelect();
         this.fireLinkSelect();
         this.overlay.setPointerCapture(e.pointerId);
@@ -3936,10 +4000,10 @@ export class Editor {
       // zone's empty space starts a marquee like bare canvas does (so nodes
       // inside a zone can be rubber-banded), and a click released without
       // dragging selects the zone (see finishUp).
-      this.zonePress = e.shiftKey ? null : this.zoneAt(p);
+      this.zonePress = additive ? null : this.zoneAt(p);
       this.clearLinkSel();
       this.clearZoneSel();
-      if (!e.shiftKey) {
+      if (!additive) {
         this.sel.clear();
         this.selAnchors.clear();
         this.syncAnchorSel();
@@ -3956,6 +4020,24 @@ export class Editor {
       this.linkSel = null;
       this.fireLinkSelect();
     }
+  }
+
+  /** Add `id` to, or drop it from, the link selection (additive click). */
+  private toggleLinkSel(id: string): void {
+    if (id === this._linkSel) {
+      // Dropping the primary promotes another selected link, if any.
+      const next = this.linkSelExtra.values().next();
+      if (next.done) this.linkSel = null;
+      else {
+        this.linkSelExtra.delete(next.value);
+        this._linkSel = next.value;
+      }
+    } else if (!this.linkSelExtra.delete(id)) this.linkSelExtra.add(id);
+  }
+
+  /** Every selected link id: the primary first, then the rest. */
+  selectedLinkIds(): string[] {
+    return this._linkSel === null ? [] : [this._linkSel, ...this.linkSelExtra];
   }
 
   private onMove(e: PointerEvent): void {
@@ -4361,7 +4443,7 @@ export class Editor {
   }
   /** Total movable elements selected (nodes + anchors) — gates arrow-nudge. */
   selectionCount(): number {
-    return this.sel.size + this.selAnchors.size;
+    return this.sel.size + this.selAnchors.size + this.selectedLinkIds().length;
   }
 }
 
