@@ -7,6 +7,7 @@
  * selection visuals, the marquee, and drag ghosts — so dragging is smooth
  * without re-rendering the heavy art every frame.
  */
+import { pageContentBounds } from '../render/content-bounds.js';
 import { autoPlaceLabels } from '../render/label-auto.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import { STOCK_NODE_LABELS } from '../nodes/stock.js';
@@ -548,32 +549,15 @@ export class Editor {
     this.viewInsets = fn;
   }
 
-  /** Axis-aligned bounds of all drawn content (nodes + anchors), or null. */
+  /** Axis-aligned bounds of all drawn content (nodes, their labels, anchors
+   * and zone boxes), or null for an empty page. */
   private contentBounds(): {
     x: number;
     y: number;
     w: number;
     h: number;
   } | null {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    let has = false;
-    const add = (x: number, y: number, w: number, h: number): void => {
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x + w);
-      maxY = Math.max(maxY, y + h);
-      has = true;
-    };
-    for (const n of this.page.nodes) {
-      const b = nodeBounds(n);
-      add(b.x, b.y, b.w, b.h);
-    }
-    for (const a of this.page.anchors) add(a.x - 4, a.y - 4, 8, 8);
-    if (!has) return null;
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    return pageContentBounds(this.page);
   }
 
   /**

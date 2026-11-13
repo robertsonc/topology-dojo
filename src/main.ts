@@ -9,6 +9,7 @@
 // Latin-only subset: the UI is latin, and the aggregate weight CSS ships six
 // @font-face subsets (cyrillic/greek/vietnamese/…) per weight, bloating the
 // deployed bundle 6x for glyphs this app never draws.
+import { pageFramedForExport } from './render/content-bounds.js';
 import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-500.css';
 import '@fontsource/jetbrains-mono/latin-600.css';
@@ -1039,7 +1040,7 @@ function exportExtra(page: Page): string {
   return documentOverlaySVG(doc, page) + captionSVG(page);
 }
 app.querySelector('#fSvg')?.addEventListener('click', () => {
-  const page = doc.pages[current]!;
+  const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.svg`;
   try {
     exportPageSVG(
@@ -1062,7 +1063,7 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
 });
 app.querySelector('#fPng')?.addEventListener('click', () => {
   if (pngBtn?.disabled) return;
-  const page = doc.pages[current]!;
+  const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.png`;
   if (pngBtn) pngBtn.disabled = true;
   reportExport('pending', '… exporting png', filename);
@@ -1085,6 +1086,15 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
  * it always matches the canvas), the standalone flipbook HTML (same generator
  * as the MCP tool — no fork), clipboard PNG, and selection-only crops. */
 const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
+/**
+ * The page as an image export frames it. Exports render the page frame
+ * (viewBox); when drawn content — a zone box, an outside label — extends past
+ * it, the frame is widened so nothing is cut off. A document with a sheet
+ * frame keeps its frame exactly: there the frame is the paper.
+ */
+function framed(page: Page): Page {
+  return doc.sheet ? page : pageFramedForExport(page);
+}
 function pageExtra(page: Page): string {
   return documentOverlaySVG(doc, page) + captionSVG(page);
 }
@@ -1118,15 +1128,21 @@ async function runExport(kind: string): Promise<void> {
   const page = doc.pages[current]!;
   switch (kind) {
     case 'pdf-page': {
+      const whole = framed(page);
       const blob = await pagesToPDFBlob([
-        { page, opts: pageOpts(page), extra: pageExtra(page), ...paperSpec() },
+        {
+          page: whole,
+          opts: pageOpts(whole),
+          extra: pageExtra(whole),
+          ...paperSpec(),
+        },
       ]);
       downloadBlob(`${exportBase()}.pdf`, blob);
       return;
     }
     case 'pdf-all': {
       const blob = await pagesToPDFBlob(
-        doc.pages.map((p) => ({
+        doc.pages.map(framed).map((p) => ({
           page: p,
           opts: pageOpts(p),
           extra: pageExtra(p),
@@ -1199,7 +1215,7 @@ async function runExport(kind: string): Promise<void> {
       return;
     }
     case 'copy-png':
-      await copyPagePNG(page, pageExtra(page), pageOpts(page));
+      await copyPagePNG(framed(page), pageExtra(framed(page)), pageOpts(page));
       return;
     case 'svg-selection': {
       const sp = selectionAsPage();
