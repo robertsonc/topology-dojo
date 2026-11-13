@@ -268,9 +268,7 @@ export interface ToolDeps {
 }
 
 /* Reusable field fragments ------------------------------------------------- */
-const topologyId = z
-  .string()
-  .describe('Topology id returned by create_topology / import_topology.');
+const topologyId = z.string().describe('Topology id.');
 /** Render theme for the export tools (#264): "dark" (default) or "light". */
 const renderTheme = z
   .enum(['dark', 'light'])
@@ -290,7 +288,7 @@ const pageIndex = z
   .number()
   .int()
   .optional()
-  .describe('0-based page index; defaults to the most recently added page.');
+  .describe('0-based page; default: the last page.');
 
 /** Zod string: reject overlong raw input, then strip controls / collapse space. */
 function displayString(max: number, opts?: { multiline?: boolean }) {
@@ -2541,7 +2539,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     const workspace = deps.workspace;
     const workspaceId = z
       .string()
-      .describe('Workspace id shown in the browser Agent Workspace panel.');
+      .describe('Workspace id (Agent Workspace panel).');
     const operationId = z
       .string()
       .min(1)
