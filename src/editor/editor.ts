@@ -48,6 +48,7 @@ import {
   resolvePos,
   zoneBounds,
 } from './geometry.js';
+import type { BoundsRect } from '../api/geometry.js';
 import type { BadgePlacement } from './problem-badges.js';
 import {
   anchorBox,
@@ -182,6 +183,9 @@ const SHARED_LINK_KEYS: ReadonlySet<string> = new Set([
   'locked',
 ]);
 
+/** Ring colour for `Editor.spotlight` (the Problems panel's warning amber). */
+const SPOTLIGHT = '#e0a44a';
+
 export class Editor {
   private sel = new Set<string>();
   private undoStack: string[] = [];
@@ -286,6 +290,9 @@ export class Editor {
   }[] = [];
   /** Node currently under the cursor in Select mode (drives connection dots). */
   private hoverNode: string | null = null;
+  /** Elements ringed by `spotlight` (a Problems-panel click), until cleared. */
+  private spotlit: { kind: 'node' | 'link' | 'zone'; id: string }[] = [];
+  private spotlightTimer: ReturnType<typeof setTimeout> | undefined;
   private _linkSel: string | null = null;
   /**
    * Links selected alongside `linkSel` (Shift / Ctrl / Cmd-click). `linkSel`
@@ -1003,6 +1010,95 @@ export class Editor {
   }
 
   /** Highlight the selected zone's region (a dashed accent frame). */
+  /**
+   * Ring every element a problem refers to and bring them into view, so it is
+   * obvious WHAT the problem is about — not just the first element it names.
+   * The rings fade after a few seconds, or on the next press / Esc. Purely a
+   * view aid: nothing is selected or changed.
+   */
+  spotlight(
+    targets: { kind: 'node' | 'link' | 'zone'; id: string }[],
+    holdMs = 6000,
+  ): void {
+    clearTimeout(this.spotlightTimer);
+    this.spotlit = targets;
+    const boxes = targets
+      .map((t) => this.spotlightBox(t))
+      .filter((b): b is BoundsRect => b !== null);
+    if (boxes.length) {
+      const x0 = Math.min(...boxes.map((b) => b.x));
+      const y0 = Math.min(...boxes.map((b) => b.y));
+      const x1 = Math.max(...boxes.map((b) => b.x + b.w));
+      const y1 = Math.max(...boxes.map((b) => b.y + b.h));
+      // Zoom out only when the elements don't fit the current view.
+      const k =
+        Math.max((x1 - x0) / this.view.w, (y1 - y0) / this.view.h) * 1.25;
+      if (k > 1) {
+        this.view.w *= k;
+        this.view.h *= k;
+      }
+      this.panTo((x0 + x1) / 2, (y0 + y1) / 2);
+    }
+    this.renderOverlay();
+    if (targets.length)
+      this.spotlightTimer = setTimeout(() => this.clearSpotlight(), holdMs);
+  }
+
+  /** Remove the problem rings (no-op when there are none). */
+  clearSpotlight(): void {
+    clearTimeout(this.spotlightTimer);
+    if (!this.spotlit.length) return;
+    this.spotlit = [];
+    this.renderOverlay();
+  }
+
+  private spotlightBox(t: {
+    kind: 'node' | 'link' | 'zone';
+    id: string;
+  }): BoundsRect | null {
+    if (t.kind === 'node') {
+      const n = this.page.nodes.find((m) => m.id === t.id);
+      return n ? nodeBounds(n) : null;
+    }
+    if (t.kind === 'zone') {
+      const z = this.page.zones.find((m) => m.id === t.id);
+      return z ? zoneBounds(this.page, z) : null;
+    }
+    const link = this.page.links.find((l) => l.id === t.id);
+    const pts = link ? linkPolyline(this.page, link) : [];
+    if (!pts.length) return null;
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }
+
+  private spotlightSvg(): string {
+    if (!this.spotlit.length) return '';
+    const s = this.handleSize();
+    const pulse = `<animate attributeName="stroke-opacity" values="1;0.25;1" dur="1.1s" repeatCount="indefinite"/>`;
+    let out = '';
+    for (const t of this.spotlit) {
+      if (t.kind === 'link') {
+        const link = this.page.links.find((l) => l.id === t.id);
+        if (!link) continue;
+        const route = linkPolyline(this.page, link);
+        for (const poly of this.linkShape(link.id) ?? [route]) {
+          if (poly.length < 2) continue;
+          const d = 'M' + poly.map((p) => `${p.x},${p.y}`).join(' L');
+          out += `<path data-spotlight="link" d="${d}" fill="none" stroke="${SPOTLIGHT}" stroke-width="${s * 0.9}" stroke-linecap="round" pointer-events="none">${pulse}</path>`;
+        }
+        continue;
+      }
+      const b = this.spotlightBox(t);
+      if (!b) continue;
+      const pad = t.kind === 'node' ? s * 1.4 : 0;
+      out += `<rect data-spotlight="${t.kind}" x="${b.x - pad}" y="${b.y - pad}" width="${b.w + 2 * pad}" height="${b.h + 2 * pad}" rx="${s}" fill="${SPOTLIGHT}" fill-opacity="0.08" stroke="${SPOTLIGHT}" stroke-width="${s * 0.45}" pointer-events="none">${pulse}</rect>`;
+    }
+    return out;
+  }
+
   private zoneSelSvg(): string {
     if (this.zoneSel === null) return '';
     const zone = this.page.zones.find((z) => z.id === this.zoneSel);
@@ -1707,6 +1803,7 @@ export class Editor {
       this.guidesSvg() +
       this.labelGuidesSvg() +
       this.zoneSelSvg() +
+      this.spotlightSvg() +
       this.anchorsSvg() +
       this.linkSelSvg() +
       this.selectionSvg() +
@@ -2126,6 +2223,7 @@ export class Editor {
 
   /** Clear node + link + anchor + zone selection (Esc). */
   clearSelection(): void {
+    this.clearSpotlight();
     const had =
       this.sel.size > 0 ||
       this.linkSel !== null ||
@@ -3722,6 +3820,7 @@ export class Editor {
   }
 
   private onDown(e: PointerEvent): void {
+    this.clearSpotlight();
     // Touch: track fingers; a second finger starts a pinch (zoom + pan) and
     // cancels whatever single-finger gesture was in flight, uncommitted.
     if (e.pointerType === 'touch') {

@@ -1689,6 +1689,102 @@ function selectProblemTarget(loc: {
   else editor.focusNode(loc.id);
 }
 
+/** Every element a problem names on its page, in the order it names them. */
+function problemTargets(
+  p: Problem,
+): { kind: 'node' | 'link' | 'zone'; id: string }[] {
+  const pm = p.where.match(/page\[(\d+)\]/);
+  const page = doc.pages[pm ? Number(pm[1]) : current];
+  if (!page) return [];
+  const out: { kind: 'node' | 'link' | 'zone'; id: string }[] = [];
+  const seen = new Set<string>();
+  for (const m of `${p.where} ${p.message}`.matchAll(/["']([^"']+)["']/g)) {
+    const id = m[1]!;
+    const kind = page.nodes.some((n) => n.id === id)
+      ? 'node'
+      : page.links.some((l) => l.id === id)
+        ? 'link'
+        : page.zones.some((z) => z.id === id)
+          ? 'zone'
+          : null;
+    if (!kind || seen.has(`${kind}:${id}`)) continue;
+    seen.add(`${kind}:${id}`);
+    out.push({ kind, id });
+  }
+  return out;
+}
+
+/**
+ * A problem's message for people: element ids replaced by what the element is
+ * called on the canvas (its label), and the page given by number and name.
+ * Validation reports ids because that is what an agent needs; a person looking
+ * at the diagram knows "Chicago-EC-01", not "nmwfa0ld0b".
+ */
+function problemText(p: Problem): { message: string; where: string } {
+  const pm = p.where.match(/page\[(\d+)\]/);
+  const pageIndex = pm ? Number(pm[1]) : -1;
+  const page = doc.pages[pageIndex];
+  if (!page) return { message: p.message, where: p.where };
+  const nameOf = (id: string): string | undefined => {
+    const el =
+      page.nodes.find((n) => n.id === id) ??
+      page.zones.find((z) => z.id === id) ??
+      page.links.find((l) => l.id === id);
+    const label = (el as { label?: unknown } | undefined)?.label;
+    return typeof label === 'string' && label.trim()
+      ? label.trim().replace(/\s+/g, ' ')
+      : undefined;
+  };
+  const named = (text: string): string =>
+    text.replace(/(["'])([^"']+)\1/g, (whole, _q: string, id: string) => {
+      const name = nameOf(id);
+      return name ? `“${name}”` : whole;
+    });
+  // What `where` says beyond the page (e.g. `node "n1"`, `.link 'l3'`).
+  const rest = p.where
+    .replace(/page\[\d+\]/, '')
+    .replace(`"${page.name}"`, '')
+    .replace(/^[\s.]+/, '')
+    .trim();
+  return {
+    message: named(p.message),
+    where:
+      `Page ${pageIndex + 1} · ${page.name}` +
+      (rest ? ` · ${named(rest)}` : ''),
+  };
+}
+
+/*
+ * Hidden problems: a per-browser view preference, like the badge toggle. A
+ * hidden problem is still reported by `validate_topology`; it just stops
+ * counting and drawing a badge here. Keyed by the problem's own text, so it
+ * reappears if the underlying issue changes.
+ */
+const HIDDEN_PROBLEMS_KEY = 'tds-problems-hidden';
+const MAX_HIDDEN_PROBLEMS = 500;
+let hiddenProblems = new Set<string>();
+try {
+  const raw: unknown = JSON.parse(
+    localStorage.getItem(HIDDEN_PROBLEMS_KEY) ?? '[]',
+  );
+  if (Array.isArray(raw))
+    hiddenProblems = new Set(raw.filter((k) => typeof k === 'string'));
+} catch {
+  hiddenProblems = new Set();
+}
+let showHiddenProblems = false;
+const problemKey = (p: Problem): string => `${p.where}|${p.message}`;
+function saveHiddenProblems(): void {
+  try {
+    localStorage.setItem(
+      HIDDEN_PROBLEMS_KEY,
+      JSON.stringify([...hiddenProblems].slice(-MAX_HIDDEN_PROBLEMS)),
+    );
+  } catch {
+    /* storage unavailable — the choice just lasts for this session */
+  }
+}
+
 /**
  * On-canvas problem badges (Packet B1) — a view-state toggle, not document
  * data (DESIGN.md #2 carve-out: the underlying problems are already
@@ -1731,7 +1827,18 @@ function setProblemsCollapsed(collapsed: boolean): void {
 
 function renderProblems(): void {
   if (!statusReady) return;
-  const problems = [...validateDocument(doc), ...analyzeLayout(doc)];
+  const all = [...validateDocument(doc), ...analyzeLayout(doc)];
+  // Forget hidden entries whose problem no longer exists.
+  const live = new Set(all.map(problemKey));
+  let pruned = false;
+  for (const key of hiddenProblems)
+    if (!live.has(key)) {
+      hiddenProblems.delete(key);
+      pruned = true;
+    }
+  if (pruned) saveHiddenProblems();
+  const problems = all.filter((p) => !hiddenProblems.has(problemKey(p)));
+  const hiddenCount = all.length - problems.length;
   const errors = problems.filter((p) => p.level === 'error').length;
   const warnings = problems.length - errors;
 
@@ -1744,36 +1851,74 @@ function renderProblems(): void {
   lastProblems = { errors, warnings };
   renderStatus();
 
-  if (!problems.length) {
-    problemsPanel.innerHTML = `<div class="prob-empty">No problems — validation and layout are clean.</div>`;
-  } else {
-    problemsPanel.innerHTML = problems
-      .map((p, i) => {
-        const loc = problemLocateGlobal(p);
-        const attrs = loc
-          ? ` data-prob-page="${loc.pageIndex}" data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
-          : '';
-        return (
-          `<button class="prob prob-${p.level}${loc ? ' locatable' : ''}"${attrs} data-i="${i}">` +
-          `<span class="prob-dot"></span>` +
-          `<span class="prob-msg">${esc(p.message)}<span class="prob-where">${esc(p.where)}</span></span>` +
-          `</button>`
-        );
-      })
-      .join('');
-    problemsPanel
-      .querySelectorAll<HTMLButtonElement>('[data-prob-id]')
-      .forEach((b) =>
-        b.addEventListener('click', () => {
-          const kind = b.dataset.probKind as 'node' | 'link' | 'zone';
-          // Switch to the referenced page first when the problem is elsewhere,
-          // then select + center the element (existing focus path).
-          const page = Number(b.dataset.probPage);
-          if (Number.isInteger(page) && page !== current) gotoPage(page);
-          selectProblemTarget({ kind, id: b.dataset.probId! });
-        }),
+  const listed = showHiddenProblems ? all : problems;
+  const rows = listed
+    .map((p, i) => {
+      const loc = problemLocateGlobal(p);
+      const text = problemText(p);
+      const isHidden = hiddenProblems.has(problemKey(p));
+      const attrs = loc
+        ? ` data-prob-page="${loc.pageIndex}" data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
+        : '';
+      return (
+        `<div class="prob prob-${p.level}${isHidden ? ' prob-hidden' : ''}">` +
+        `<button class="prob-go${loc ? ' locatable' : ''}"${attrs} data-i="${i}" title="${esc(`${p.message} — ${p.where}`)}">` +
+        `<span class="prob-dot"></span>` +
+        `<span class="prob-msg">${esc(text.message)}<span class="prob-where">${esc(text.where)}</span></span>` +
+        `</button>` +
+        `<button class="prob-hide" data-hide="${i}" title="${isHidden ? 'Show this problem again' : 'Hide this problem (it stays in validation)'}" aria-label="${isHidden ? 'Show this problem again' : 'Hide this problem'}">${isHidden ? '↺' : '✕'}</button>` +
+        `</div>`
       );
-  }
+    })
+    .join('');
+  const footer = hiddenCount
+    ? `<div class="prob-foot"><span>${hiddenCount} hidden</span>` +
+      `<button class="prob-link" id="prob-show-hidden">${showHiddenProblems ? 'hide them' : 'show'}</button>` +
+      `<button class="prob-link" id="prob-restore">restore all</button></div>`
+    : '';
+  problemsPanel.innerHTML =
+    (rows ||
+      `<div class="prob-empty">${
+        hiddenCount
+          ? 'No other problems.'
+          : 'No problems — validation and layout are clean.'
+      }</div>`) + footer;
+
+  problemsPanel
+    .querySelectorAll<HTMLButtonElement>('.prob-go[data-prob-id]')
+    .forEach((b) =>
+      b.addEventListener('click', () => {
+        const kind = b.dataset.probKind as 'node' | 'link' | 'zone';
+        // Switch to the referenced page first when the problem is elsewhere,
+        // then select the first element and ring everything it names.
+        const page = Number(b.dataset.probPage);
+        if (Number.isInteger(page) && page !== current) gotoPage(page);
+        selectProblemTarget({ kind, id: b.dataset.probId! });
+        editor.spotlight(problemTargets(listed[Number(b.dataset.i)]!));
+      }),
+    );
+  problemsPanel.querySelectorAll<HTMLButtonElement>('.prob-hide').forEach((b) =>
+    b.addEventListener('click', () => {
+      const key = problemKey(listed[Number(b.dataset.hide)]!);
+      if (!hiddenProblems.delete(key)) hiddenProblems.add(key);
+      saveHiddenProblems();
+      renderProblems();
+    }),
+  );
+  problemsPanel
+    .querySelector('#prob-show-hidden')
+    ?.addEventListener('click', () => {
+      showHiddenProblems = !showHiddenProblems;
+      renderProblems();
+    });
+  problemsPanel
+    .querySelector('#prob-restore')
+    ?.addEventListener('click', () => {
+      hiddenProblems.clear();
+      showHiddenProblems = false;
+      saveHiddenProblems();
+      renderProblems();
+    });
 
   // Auto-collapse when everything is clean; otherwise honour the user's explicit
   // preference (default: expanded so problems are visible when they appear).
@@ -1781,9 +1926,9 @@ function renderProblems(): void {
     problems.length === 0 ? true : (problemsPref ?? false),
   );
 
-  // Badge layer reuses the same `problems` list + `problemLocate` mapping (the
-  // current-page locate) — one computation feeds both surfaces, and badges
-  // always reflect the current page only.
+  // Badge layer reuses the same (visible) `problems` list + `problemLocate`
+  // mapping (the current-page locate) — one computation feeds both surfaces,
+  // and badges always reflect the current page only.
   editor.setBadges(
     badgesVisible
       ? computeBadgePlacements(problems, editor.page, problemLocate)
