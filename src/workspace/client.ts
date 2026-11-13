@@ -31,22 +31,41 @@ export class WorkspaceDisabledError extends Error {
   }
 }
 
+/**
+ * The server answered, and refused. Distinct from a transport failure (a
+ * `fetch` rejection, which has no status) so callers can tell "the network is
+ * down, retry" from "this request will never succeed as sent".
+ */
+export class WorkspaceRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'WorkspaceRequestError';
+  }
+}
+
 async function decode<T>(response: Response): Promise<T> {
   let value: unknown;
   try {
     value = await response.json();
   } catch {
-    throw new Error(`workspace request failed (HTTP ${response.status})`);
+    throw new WorkspaceRequestError(
+      `workspace request failed (HTTP ${response.status})`,
+      response.status,
+    );
   }
   if (!response.ok) {
     const message = (value as { error?: unknown }).error;
     if (response.status === 503 && message === 'workspace_disabled') {
       throw new WorkspaceDisabledError();
     }
-    throw new Error(
+    throw new WorkspaceRequestError(
       typeof message === 'string'
         ? message
         : `workspace request failed (HTTP ${response.status})`,
+      response.status,
     );
   }
   return value as T;

@@ -60,6 +60,11 @@ import {
   sanitizeActorLabel,
 } from '../src/workspace/presence.js';
 
+import {
+  MAX_COMMIT_BYTES,
+  MAX_COMMIT_OPERATIONS,
+} from '../src/workspace/batch.js';
+
 const META_KEY = 'meta';
 const PAGE_PREFIX = 'page:';
 const CHANGE_PREFIX = 'change:';
@@ -68,10 +73,10 @@ const CHECKPOINT_PREFIX = 'checkpoint:';
 const REQUEST_PREFIX = 'request:';
 /** Authoring-profile learner (Packet P2): the bounded agent-authorship window. */
 const AGENT_WINDOW_PREFIX = 'agentwin:';
-const MAX_BATCH_BYTES = 512 * 1024;
+const MAX_BATCH_BYTES = MAX_COMMIT_BYTES;
 const MAX_PAGE_BYTES = 1_800 * 1024;
 const MAX_META_BYTES = 1_800 * 1024;
-const MAX_OPERATIONS = 250;
+const MAX_OPERATIONS = MAX_COMMIT_OPERATIONS;
 const HISTORY_LIMIT = 500;
 const REQUEST_LIMIT = 200;
 /**
