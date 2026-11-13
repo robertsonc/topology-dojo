@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderPageToSVG } from '../server/render.js';
 import { nodeLabelPos } from './label-placement.js';
+import { designerHitBox } from './hit-boxes.js';
 import { inspectPage } from './inspect.js';
 import type { Page } from '../pages/model.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
@@ -76,6 +77,37 @@ describe('node label placement', () => {
         'Lbl',
       )!.y,
     ).toBe(330);
+  });
+
+  it('clears a Node Designer glyph on north / east / west too, engine = mirror', () => {
+    // These types fill a hit box larger than the 22×18 default the other
+    // placements measured from, so an "n" label (with its sublabel) sat on
+    // the glyph and an "e" / "w" label started inside it.
+    for (const type of ['webserver', 'k8s', 'branchoffice']) {
+      const hb = designerHitBox(type)!;
+      expect(hb.ry).toBeGreaterThan(18);
+      for (const labelPlacement of ['n', 'e', 'w', 'ne', 'sw'] as const) {
+        const node = { type, label: 'Lbl', sublabel: 'Sub', labelPlacement };
+        const svg = renderPageToSVG(pageWith(node));
+        const drawn = textAt(svg, 'Lbl')!;
+        const mirror = nodeLabelPos({
+          id: 'n',
+          x: 300,
+          y: 300,
+          ...node,
+        } as NodeConfig);
+        expect(drawn).toEqual(mirror);
+        const sub = textAt(svg, 'Sub')!;
+        // North: the whole block (sublabel is its last line) ends above the box.
+        if (labelPlacement.startsWith('n'))
+          expect(sub.y).toBeLessThanOrEqual(300 - hb.ry);
+        // East / west: the text starts outside the box.
+        if (labelPlacement.endsWith('e'))
+          expect(drawn.x).toBeGreaterThanOrEqual(300 + hb.rx);
+        if (labelPlacement.endsWith('w'))
+          expect(drawn.x).toBeLessThanOrEqual(300 - hb.rx);
+      }
+    }
   });
 
   it('keeps an explicit labelOffset as the absolute baseline offset', () => {

@@ -190,7 +190,11 @@ The editor is organized into six areas.
 5. **Pages strip.** The filmstrip along the bottom, including playback and page
    management.
 6. **Properties and Problems.** A resizable right column. Properties follow the
-   selection; Problems shows validation and layout findings.
+   selection; Problems shows validation and layout findings. Each finding names
+   elements by their label. Click one to ring every element it refers to and
+   bring them into view. Hover a finding and choose **✕** to hide it in this
+   browser; the footer shows how many are hidden and restores them. A hidden
+   finding is still reported by `validate_topology`.
 
 The status bar reports the active tool, cursor location, element counts, zoom,
 history availability, and current error/warning counts.
@@ -313,7 +317,13 @@ a side port still moves along its side into a slot under Distribute, a corner
 port never does, and Problems says so for each such link end. These fields
 only take effect while the anchor box is active for that node. The feature is experimental: documents without it render
 exactly as before, and `inspect_render` / Problems measure the drawn geometry
-either way.
+either way. With **Distribute** on, the link ends on one side of a node are
+ordered by the direction of each link, so neighbouring links fan out without
+crossing at the node.
+
+The text in a port pill is the link's **Port (A)** / **Port (Z)** label, or,
+when that is empty, its **Interface (A)** / **Interface (Z)** name. Select the
+link and edit the interface (and optic) under **Wiring sheet** in Properties.
 
 ### Anchors
 
@@ -344,7 +354,12 @@ positions around its auto position; the center cell restores auto placement.
 ### Select, copy, format, and delete
 
 - Click an item to select it.
-- Shift-click to add to or remove from the selection.
+- Shift-click or Ctrl/Cmd-click to add to or remove from the selection. (On an
+  element with a hyperlink, Ctrl/Cmd-click follows the link instead.)
+- Several links can be selected the same way. The first one stays the primary:
+  Properties shows it and its bend handles. **Delete** removes them all, and
+  changes to type, colour, wire class, line style, layer, and animation apply to
+  all of them; endpoints, bends, labels, and interfaces edit the primary only.
 - Drag on empty canvas in **select** mode to marquee-select.
 - Use **Ctrl/Cmd+A** to select all.
 - Use **Ctrl/Cmd+C**, **X**, and **V** for copy, cut, and paste.
@@ -412,7 +427,7 @@ focus inside the open overlay and restore focus when closed.
 | [ or ]                             | Send back or bring forward                                                    |
 | Ctrl/Cmd+[ or Ctrl/Cmd+]           | Send to back or bring to front                                                |
 | Ctrl/Cmd+A                         | Select all                                                                    |
-| Shift-click                        | Add to selection                                                              |
+| Shift-click or Ctrl/Cmd-click      | Add to or remove from the selection (nodes, anchors, links)                   |
 | Arrow keys                         | Nudge; Shift makes the step ten times larger                                  |
 | Left/Right Arrow with no selection | Move to the previous or next page                                             |
 | Mouse wheel                        | Zoom toward the cursor                                                        |
@@ -738,7 +753,11 @@ warnings for visual quality.
 - **arrange…**: rebuild the current page using **hierarchical**, **grid**,
   **circular**, or **force-directed** layout. (The **tiered** wiring-sheet
   layout is available through MCP `layout_topology` only.)
-- **fit to content**: resize the page around its current content.
+- **fit to content**: resize the page around its current content, including
+  zone boxes and labels placed outside their nodes. SVG, PNG, and PDF exports
+  render the page frame; if drawn content still extends past it, the export is
+  widened to include it. A document with a **Sheet frame** always exports
+  exactly its frame.
 - **Fit view** or **0**: change only the viewport so content is visible.
 
 Tidy/Balance can grow the page when needed. Layout operations are undoable.

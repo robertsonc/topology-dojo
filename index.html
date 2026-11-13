@@ -2256,6 +2256,12 @@
         flex: none;
         display: flex;
         flex-direction: column;
+        /* Take the inspector column's width instead of setting it: a long
+           problem message wraps rather than widening the whole right panel
+           and squeezing the canvas. */
+        width: 0;
+        min-width: 100%;
+        box-sizing: border-box;
         gap: 4px;
         margin-top: 6px;
         padding-top: 8px;
@@ -2354,11 +2360,75 @@
         font-size: 11px;
         color: var(--text);
       }
-      .prob.locatable {
+      .prob {
+        padding: 0;
+        align-items: stretch;
+      }
+      .prob-go {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        text-align: left;
+        background: none;
+        border: none;
+        border-radius: 5px;
+        padding: 4px 6px;
+        cursor: default;
+        font: inherit;
+        color: inherit;
+      }
+      .prob-go.locatable {
         cursor: pointer;
       }
-      .prob.locatable:hover {
+      .prob-go.locatable:hover {
         background: var(--panel);
+      }
+      .prob-hide {
+        flex: none;
+        width: 22px;
+        background: none;
+        border: none;
+        border-radius: 5px;
+        color: var(--muted);
+        font: inherit;
+        cursor: pointer;
+        opacity: 0;
+      }
+      .prob:hover .prob-hide,
+      .prob-hide:focus-visible,
+      .prob-hidden .prob-hide {
+        opacity: 1;
+      }
+      .prob-hide:hover {
+        background: var(--panel);
+        color: var(--text);
+      }
+      .prob-hidden .prob-go {
+        opacity: 0.5;
+      }
+      .prob-foot {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 4px 6px;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .prob-link {
+        background: none;
+        border: none;
+        padding: 0;
+        font: inherit;
+        color: var(--accent, #01a982);
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      @media (hover: none) {
+        .prob-hide {
+          opacity: 1;
+        }
       }
       .prob-dot {
         flex: none;

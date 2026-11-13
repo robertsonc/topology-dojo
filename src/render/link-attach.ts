@@ -387,6 +387,25 @@ interface Slot {
 type Slots = Record<Side, Slot[]>;
 
 /**
+ * Sort key for the endpoints sharing one side of a distributing node: the
+ * direction to the far end, as its offset along the side per unit of
+ * distance away from it (a slope). MIRROR OF the engine's `_slotOrderKey`.
+ *
+ * Slots must follow the links' angular order or neighbouring links cross
+ * right at the node. Ordering by the far end's coordinate alone gets that
+ * wrong whenever a nearer target sits at the same (or a lesser) offset as a
+ * farther one — e.g. two branches side by side below a hub both have the
+ * same y, tied, and fell back to link-id order. A far end level with or
+ * behind the side (a pinned port) is treated as one unit away, which sends
+ * it to the end of the side it leans towards.
+ */
+export function slotOrderKey(side: Side, dx: number, dy: number): number {
+  const along = side === 'n' || side === 's' ? dx : dy;
+  const away = side === 'e' ? dx : side === 'w' ? -dx : side === 's' ? dy : -dy;
+  return along / Math.max(away, 1);
+}
+
+/**
  * Per-page attachment context: resolves every link's drawn endpoints the way
  * the engine does, memoising the distribute slot scan per node like the
  * engine's per-render cache. Build one per page and reuse it.
@@ -478,7 +497,7 @@ export function createAttachContext(
   };
 
   // `_distributeSlots`: per side, every endpoint attaching there, sorted by
-  // the far end's coordinate along the side's axis, then link id, then end.
+  // the direction to the far end (`slotOrderKey`), then link id, then end.
   const distributeSlots = (nodeId: string, pad: number): Slots => {
     const key = `${nodeId}|${pad}`;
     const hit = slotCache.get(key);
@@ -506,7 +525,11 @@ export function createAttachContext(
         sides[side].push({
           id: link.id,
           end,
-          axis: side === 'n' || side === 's' ? ctx.toward.x : ctx.toward.y,
+          axis: slotOrderKey(
+            side,
+            ctx.toward.x - ctx.pos.x,
+            ctx.toward.y - ctx.pos.y,
+          ),
         });
       }
     }

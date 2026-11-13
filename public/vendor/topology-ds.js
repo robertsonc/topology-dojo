@@ -1585,10 +1585,25 @@ class TopologyDesigner {
   }
 
   /**
+   * Sort key for the endpoints sharing one side of a distributing node: the
+   * direction to the far end, as its offset along the side per unit of
+   * distance away from it (a slope). MIRROR OF src/render/link-attach.ts
+   * `slotOrderKey`. Slots must follow the links' angular order or
+   * neighbouring links cross right at the node; the far end's coordinate
+   * alone ties (and falls back to link-id order) for targets side by side.
+   * A far end level with or behind the side counts as one unit away.
+   */
+  static _slotOrderKey(side, dx, dy) {
+    const along = side === 'n' || side === 's' ? dx : dy;
+    const away = side === 'e' ? dx : side === 'w' ? -dx : side === 's' ? dy : -dy;
+    return along / Math.max(away, 1);
+  }
+
+  /**
    * Distribute slots for a node: per side n/s/e/w, every link endpoint that
    * attaches to that side (auto endpoints by the face their ray exits, side
-   * ports by their side; corner ports excluded), sorted by the far end's
-   * coordinate along the side's axis, tie-broken by link id (then end).
+   * ports by their side; corner ports excluded), sorted by the direction to
+   * the far end (`_slotOrderKey`), tie-broken by link id (then end).
    * Memoised per render (`_slotCache`, reset by _renderSVG).
    */
   _distributeSlots(nodeId, pad) {
@@ -1614,7 +1629,7 @@ class TopologyDesigner {
         if (!side) continue;
         sides[side].push({
           id: link.id, end,
-          axis: side === 'n' || side === 's' ? ctx.toward.x : ctx.toward.y,
+          axis: TopologyDesigner._slotOrderKey(side, ctx.toward.x - ctx.pos.x, ctx.toward.y - ctx.pos.y),
         });
       }
     }
@@ -4154,6 +4169,16 @@ ${grid}`;
     } else if (_STATUS_HALF[nodeCfg.type]) {
       [hw, hh] = _STATUS_HALF[nodeCfg.type];
     }
+    // Node Designer types (stock pack + custom) fill their hit box, which is
+    // often larger than the 22×18 default: measure every placement from it,
+    // or a north / east / west label lands on the glyph.
+    let designerBox = null;
+    const meta = TopologyDesigner._nodePluginMeta[nodeCfg.type];
+    if (!image && meta && meta.labelClearsHitBox && meta.hitBox) {
+      designerBox = typeof meta.hitBox === 'function' ? meta.hitBox(nodeCfg) : meta.hitBox;
+      if (designerBox && Number(designerBox.rx) > 0) hw = Math.max(hw, Number(designerBox.rx));
+      if (designerBox && Number(designerBox.ry) > 0) hh = Math.max(hh, Number(designerBox.ry));
+    }
     const north = p === 'n' || p === 'ne' || p === 'nw';
     const south = p === 's' || p === 'se' || p === 'sw';
     const east = p === 'e' || p === 'ne' || p === 'se';
@@ -4169,11 +4194,7 @@ ${grid}`;
       dy = image ? hh + 14 : 24;
       // Node Designer types (stock pack + custom) fill their hit box, so the
       // fixed 24px baseline sits on the glyph's bottom edge: clear the box.
-      const meta = TopologyDesigner._nodePluginMeta[nodeCfg.type];
-      if (!image && meta && meta.labelClearsHitBox && meta.hitBox) {
-        const hb = typeof meta.hitBox === 'function' ? meta.hitBox(nodeCfg) : meta.hitBox;
-        if (hb && Number(hb.ry) > 0) dy = Math.max(24, Number(hb.ry) + 14);
-      }
+      if (designerBox && Number(designerBox.ry) > 0) dy = Math.max(24, Number(designerBox.ry) + 14);
     }
     else dy = 4; // pure east/west: vertically centred on the glyph
     const ox = Number(nodeCfg.labelOffsetX);
