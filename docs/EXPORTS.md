@@ -2,19 +2,32 @@
 
 Phase 1 ("remove adoption blockers") makes a Topology Dojo diagram usable
 where network teams already work. This page is the fidelity contract: what
-each format keeps, what it drops, and why. Every export is reachable from the
-editor's **⤓ export…** menu and from MCP (`export_topology`); imports go
-through **open** and `import_topology`.
+each format keeps, what it drops, and why. Exports are reachable from the
+editor toolbar (**svg**, **png**, and the **⤓ export…** menu) and from MCP
+(`render_svg`, `export_flipbook`, `export_topology`); the "Where it runs"
+column says which side has each format. Imports go through **open** and
+`import_topology`.
 
-| Format             | Direction | Editable in the target tool | Fidelity                                      | Where it runs                    |
-| ------------------ | --------- | --------------------------- | --------------------------------------------- | -------------------------------- |
-| SVG                | export    | (vector art)                | Pixel-identical to the canvas                 | browser, MCP `render_svg`        |
-| PNG                | export    | no                          | Pixel-identical; print DPI stamped            | browser, MCP (server-side resvg) |
-| PDF                | export    | no                          | Pixel-identical raster on real paper sizes    | browser, MCP (server-side resvg) |
-| draw.io            | both      | yes                         | Structure + geometry; generic outlines        | browser, MCP                     |
-| Visio `.vsdx`      | export    | yes                         | Structure + geometry; generic outlines        | browser, MCP                     |
-| PowerPoint `.pptx` | export    | yes (shapes) / no (image)   | Shapes mode: structure; image mode: identical | browser (shapes), MCP (both)     |
-| Mermaid            | both      | yes                         | Graph only (no coordinates)                   | browser, MCP                     |
+_Last reviewed 2026-11-13 against `main` at `e99b012`._
+
+| Format                      | Direction | Editable in the target tool | Fidelity                                      | Where it runs                    |
+| --------------------------- | --------- | --------------------------- | --------------------------------------------- | -------------------------------- |
+| SVG                         | export    | (vector art)                | Pixel-identical to the canvas                 | browser, MCP `render_svg`        |
+| PNG                         | export    | no                          | Pixel-identical; print DPI stamped            | browser, MCP (server-side resvg) |
+| PDF                         | export    | no                          | Pixel-identical raster on real paper sizes    | browser, MCP (server-side resvg) |
+| draw.io                     | both      | yes                         | Structure + geometry; generic outlines        | browser, MCP                     |
+| Visio `.vsdx`               | export    | yes                         | Structure + geometry; generic outlines        | browser, MCP                     |
+| PowerPoint `.pptx`          | export    | yes (shapes) / no (image)   | Shapes mode: structure; image mode: identical | browser (shapes), MCP (both)     |
+| Mermaid                     | both      | yes                         | Graph only (no coordinates)                   | browser, MCP                     |
+| Flipbook HTML               | export    | no                          | Self-playing pages, rendered like SVG         | browser, MCP `export_flipbook`   |
+| Cable schedule (CSV / XLSX) | export    | yes (spreadsheet)           | One row per link, from the hardware catalog   | MCP only                         |
+| CSV data                    | import    | —                           | Nodes and links only                          | browser, MCP                     |
+
+The browser's Mermaid export writes the current frame; MCP exports one page
+or all pages. PowerPoint image mode and the cable schedule are MCP-only;
+clipboard PNG and selection-only SVG / PNG are browser-only. CSV and legacy
+Topology Studio imports are described in the
+[user guide](USER_GUIDE.md#11-save-import-export-and-share).
 
 The three editable office formats (draw.io, Visio, PowerPoint shapes) are built
 from one shared, format-neutral scene (`src/export/scene.ts`), so they agree

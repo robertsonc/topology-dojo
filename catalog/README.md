@@ -63,8 +63,17 @@ regenerate the parity golden with
   the `list_hardware` / `describe_hardware`, `assign_interfaces` and
   `catalog_diff` MCP tools (`src/mcp/hardware-tools.ts`). Agent-facing views
   return provenance **tiers** only, never sources.
+- `src/api/hardware.ts` — node bindings (`hw`) behind `bind_hardware`: the
+  catalog category → node type mapping, the interface-as-port-label
+  fallback, per-node LACP on lag bundles.
 - `src/export/cable-schedule.ts` — `export_topology` `cable-schedule`
   (CSV / XLSX).
+- `src/export/visio-masters.ts` — per-model Visio masters for wire-sheet
+  `.vsdx` export; `src/export/vssx.ts` — the `.vssx` stencil
+  (`npm run catalog:stencil`, `scripts/catalog-export-stencil.ts`).
+- The browser editor does not load the catalog: wire-sheet pages draw there
+  as logical pages. Agent-facing behaviour is documented in the
+  [MCP guide](../src/mcp/README.md#hardware-catalog-bind-assign-validate).
 - `src/catalog/sanitize-svg.ts` — panel glyphs are untrusted: the build
   sanitizes each one into the bundle (`glyphs`), and the wire-sheet renderer
   (`src/render/wiresheet.ts`) sanitizes again before drawing.
