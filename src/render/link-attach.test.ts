@@ -438,6 +438,46 @@ describe('distribute', () => {
     expectMirrorAgrees(b);
   });
 
+  it('orders a side by direction, so links to targets side by side do not cross', () => {
+    // Both targets sit at the same height below-right of the hub, so both
+    // links leave its east side. `near` is the steeper of the two and must
+    // take the lower slot; ordering by the far end's y alone tied and fell
+    // back to link id, which put it on top and crossed the pair at the hub.
+    const p = page({
+      linkAttach: { distribute: true },
+      nodes: [
+        node('hub', 'cloud', 480, 1140),
+        node('near', 'ec', 1300, 1400),
+        node('far', 'ec', 1900, 1400),
+      ],
+      // Ids chosen so id order (a-, b-) is the crossing order.
+      links: [link('a-near', 'near', 'hub'), link('b-far', 'far', 'hub')],
+    });
+    const c = createAttachContext(p);
+    const atHub = (id: string): Pt =>
+      c.endpoints(p.links.find((l) => l.id === id)!)!.to;
+    expect(atHub('a-near').x).toBe(atHub('b-far').x); // same (east) side
+    expect(atHub('a-near').y).toBeGreaterThan(atHub('b-far').y);
+    expectMirrorAgrees(p);
+
+    // Mirrored to the west side the same rule holds.
+    const w = page({
+      linkAttach: { distribute: true },
+      nodes: [
+        node('hub', 'cloud', 2000, 1140),
+        node('near', 'ec', 1180, 1400),
+        node('far', 'ec', 580, 1400),
+      ],
+      links: [link('a-far', 'far', 'hub'), link('b-near', 'near', 'hub')],
+    });
+    const cw = createAttachContext(w);
+    const atW = (id: string): Pt =>
+      cw.endpoints(w.links.find((l) => l.id === id)!)!.to;
+    expect(atW('b-near').x).toBe(atW('a-far').x); // same (west) side
+    expect(atW('b-near').y).toBeGreaterThan(atW('a-far').y);
+    expectMirrorAgrees(w);
+  });
+
   it('renders the same SVG for both declaration orders of the hub links', () => {
     // Paint order differs, so compare the link paths as a sorted set.
     const paths = (p: Page): string[] =>

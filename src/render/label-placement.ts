@@ -74,6 +74,14 @@ export function nodeLabelPos(n: NodeConfig): NodeLabelPos {
   } else if (HALF[n.type]) {
     [hw, hh] = HALF[n.type]!;
   }
+  // Node Designer types (stock pack + custom) fill their hit box, which is
+  // often larger than the 22×18 default: measure every placement from it, or
+  // a north / east / west label lands on the glyph (engine mirror).
+  const hb = image ? undefined : designerHitBox(n.type);
+  if (hb) {
+    if (hb.rx > 0) hw = Math.max(hw, hb.rx);
+    if (hb.ry > 0) hh = Math.max(hh, hb.ry);
+  }
   const north = p === 'n' || p === 'ne' || p === 'nw';
   const south = p === 's' || p === 'se' || p === 'sw';
   const east = p === 'e' || p === 'ne' || p === 'se';
@@ -94,7 +102,6 @@ export function nodeLabelPos(n: NodeConfig): NodeLabelPos {
   else if (south) {
     dy = image ? hh + 14 : 24;
     // Node Designer types fill their hit box: clear it (engine mirror).
-    const hb = image ? undefined : designerHitBox(n.type);
     if (hb && hb.ry > 0) dy = Math.max(24, hb.ry + 14);
   } else dy = 4;
   const x = n.x + finiteOr(n.labelOffsetX, dx);

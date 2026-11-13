@@ -546,6 +546,34 @@ const LINK_COMMON: FieldSpec[] = [
     kind: 'string',
     max: TEXT_LIMITS.label,
   },
+  // Hardware interface (and optic) at each end, in the device's own naming
+  // (e.g. "ge-0/0/1", "lan0"). An interface fills the port label when
+  // "Port (A/Z)" is empty, and is what catalog-aware validation checks
+  // against a bound hardware model.
+  {
+    key: 'fromInterface',
+    label: 'Interface (A)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  {
+    key: 'toInterface',
+    label: 'Interface (Z)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  {
+    key: 'fromOptic',
+    label: 'Optic (A)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
+  {
+    key: 'toOptic',
+    label: 'Optic (Z)',
+    kind: 'string',
+    max: TEXT_LIMITS.label,
+  },
   // W3 bundle (LAG / ECMP) name of each end; kinds via define_bundle.
   {
     key: 'fromBundle',

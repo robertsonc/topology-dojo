@@ -2351,7 +2351,17 @@ const LINK_GROUPS: FieldGroup[] = [
   },
   {
     title: 'Wiring sheet',
-    keys: ['style', 'fromBundle', 'toBundle', 'bandwidth', 'transport'],
+    keys: [
+      'style',
+      'fromInterface',
+      'toInterface',
+      'fromOptic',
+      'toOptic',
+      'fromBundle',
+      'toBundle',
+      'bandwidth',
+      'transport',
+    ],
   },
   {
     title: 'Routing',
