@@ -41,8 +41,10 @@ import {
   restoreWorkspaceCheckpoint,
   revokeWorkspaceLease,
   WorkspaceDisabledError,
+  WorkspaceRequestError,
   type WorkspaceSocketHandle,
 } from '../workspace/client.js';
+import { exceedsCommitLimits, firstCommitBatch } from '../workspace/batch.js';
 import {
   cacheWorkspace,
   clearCachedWorkspace,
@@ -185,6 +187,9 @@ export interface WorkspacePanelHandle {
   /** Open the panel scrolled to the current conflict/error notice. */
   openToConflict(): void;
 }
+
+/** Server refusals of the same commit before sync stops retrying it. */
+const MAX_SYNC_REFUSALS = 3;
 
 export interface WorkspaceChipState {
   on: boolean;
@@ -797,6 +802,9 @@ export function mountWorkspacePanel(
   // offering actions that would just 503 (see WorkspaceDisabledError).
   let workspaceDisabled = false;
   let workspaceSaveTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Consecutive commits the server answered with a refusal (see
+   * `syncWorkspace`); reset by a success or a manual sync. */
+  let syncRefusals = 0;
   // The push socket (Packet S1) — a pure accelerant over the 8s poll below.
   // Null whenever it is closed/down; the poll loop keeps running regardless.
   let workspaceSocket: WorkspaceSocketHandle | null = null;
@@ -1248,16 +1256,38 @@ export function mountWorkspacePanel(
 
     let request = workspace.pending;
     let target = workspace.pendingTarget;
-    if (force) clearTimeout(workspaceSaveTimer);
+    if (force) {
+      clearTimeout(workspaceSaveTimer);
+      syncRefusals = 0;
+    }
+    // A stored batch over the coordinator's limits was refused before any of
+    // it applied, so replaying it can never succeed (and nothing is lost by
+    // dropping it: the edits are still in the local document). Rebuild it
+    // from the diff below, which splits.
+    if (request && exceedsCommitLimits(request.operations)) {
+      request = null;
+      target = null;
+      workspace.pending = null;
+      workspace.pendingTarget = null;
+    }
     if (!request) {
       target = structuredClone(host.getDoc());
-      const operations = chooseCommitOperations(workspace.lastSynced, target);
+      let operations = chooseCommitOperations(workspace.lastSynced, target);
       if (!operations.length) {
         workspace.status = 'synced';
         workspace.error = null;
         updateWorkspaceChip();
         renderWorkspacePanel();
         return true;
+      }
+      // One commit holds at most 250 operations / 512 KiB. A larger change
+      // (a generated fabric, a big paste, a layout over a large page) goes up
+      // as consecutive commits: send the leading batch, advance `lastSynced`
+      // by exactly that batch, and let the "still has local changes" check
+      // after a successful commit schedule the next one.
+      if (exceedsCommitLimits(operations)) {
+        operations = firstCommitBatch(operations);
+        target = applyOperations(workspace.lastSynced, operations);
       }
       request = {
         baseRevision: workspace.revision,
@@ -1294,17 +1324,37 @@ export function mountWorkspacePanel(
       workspace.pendingTarget = null;
       workspace.status = result.rebased ? 'synced · rebased' : 'synced';
       workspace.error = null;
+      syncRefusals = 0;
       writeWorkspaceLink();
       cacheActiveWorkspace();
       host.savedEl.textContent = '✓ synced';
       if (workspaceHasLocalChanges(workspace)) scheduleWorkspaceSync();
       return true;
     } catch (error) {
-      workspace.status = 'offline · retry pending';
       workspace.error = error instanceof Error ? error.message : String(error);
       writeWorkspaceLink(request);
       cacheActiveWorkspace(request);
       clearTimeout(workspaceSaveTimer);
+      // The server answered and refused the request (a 4xx other than "sign
+      // in again" / "slow down"). That is not being offline: the same batch
+      // will be refused again, so retrying it forever just hides the reason
+      // behind an "offline" label. Allow a few retries, because the API also
+      // reports a transient coordinator error as 400, then stop and show the
+      // server's message; "Sync now" or "Reload server" recovers.
+      const refused =
+        error instanceof WorkspaceRequestError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        ![401, 408, 429].includes(error.status);
+      if (refused && ++syncRefusals >= MAX_SYNC_REFUSALS) {
+        workspace.status = 'sync rejected';
+        workspace.paused = true;
+        return false;
+      }
+      workspace.status =
+        error instanceof WorkspaceRequestError
+          ? 'sync failed · retrying'
+          : 'offline · retry pending';
       workspaceSaveTimer = setTimeout(() => void syncWorkspace(), 5000);
       return false;
     } finally {
