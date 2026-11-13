@@ -191,11 +191,17 @@ Run the baseline repository gates:
 ```bash
 npm run check:wrangler
 npm run typecheck
+npm run catalog:check
 npm test
 npm run lint
 npm run build
 npm run test:e2e
 ```
+
+These are the commands behind the two required PR checks, `CI / check` and
+`CI / e2e` (`.github/workflows/ci.yml`). CI's `check` also runs the Python
+catalog reference tools, and a third job, `visio`, opens the `.vsdx` export
+in LibreOffice.
 
 Add targeted checks based on risk:
 
@@ -375,6 +381,10 @@ A workflow is not complete until:
 - [ ] the human retains merge and production authority.
 
 ## Initial rollout
+
+_Historical: the pilot below concluded long ago; this workflow has been the
+working convention for every packet and proposal since (see
+`DISCREPANCY_REGISTER.md` row 8)._
 
 1. Use this workflow for the staging/deployment implementation in proposal 0004.
 2. Use one small diagram-editor quality-of-life feature as the first standard

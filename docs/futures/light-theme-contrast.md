@@ -1,6 +1,6 @@
 # Fix: light-theme renders look muted / washed out vs draw.io
 
-Status: **done**, in review — the plan below is kept as received. What
+Status: **done** — merged as PR #289 (2026-10-24); the plan below is kept as received. What
 landed, and what differed from the plan, is under "Outcome" at the end.
 
 Related: the "Clean render profile" roadmap item also edits

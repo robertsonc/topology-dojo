@@ -15,6 +15,15 @@ Full context (architecture, dependency graph, hotspots, risk register) for
 every packet below lives in `IMPLEMENTATION_PLAN.md`; this file trades that
 context for a template a tracker expects.
 
+**Status at 2026-11-13 (`main` @ `e99b012`):** O3 is done; A1–A6 are done
+(merged as PR #243, `5de7813`, 2026-08-19) and are kept below only as the
+record; O1 and O2 are human-only and have no completion evidence in the
+repository; every B, E and T packet is not started. Before copying a B, E
+or T block into a tracker, read `IMPLEMENTATION_PLAN.md` §"Status at
+2026-11-13": the SD-WAN generator (proposal 0010) overlaps B, the
+live-fabric tools now also need `LIVE_DATA_ENABLED`, and "approve the
+production deploy" now means the owner's merge to `main` (proposal 0007).
+
 ---
 
 ## O1 — Configure Cloudflare alerting
@@ -36,7 +45,9 @@ same); a small runbook update.
 **Dependencies:** None — can start immediately.
 
 **Acceptance criteria:** `docs/HANDOFF.md` operator checklist item O12 flips
-from "◑ Partial" to "✅ done," citing the configured policy.
+from "◑ Partial" to "✅ done," citing the configured policy. _(2026-11-13:
+`HANDOFF.md` no longer has an O12 row; the completion record is the
+checklist at the bottom of `CLOUDFLARE_OPERATOR_RUNBOOK.md`.)_
 
 **Test requirements:** None (not code). Verify by triggering a synthetic
 error spike against **staging** and confirming the alert fires.
@@ -66,7 +77,9 @@ broken" deploy requires (should be a flag flip, not new code).
 **Dependencies:** O3 (rollback doc should be accurate first).
 
 **Acceptance criteria:** A dated completion record exists matching the
-checklist in `docs/ROLLBACK.md`.
+checklist in `docs/ROLLBACK.md`. _(The runnable drill is now
+`docs/GAME_DAY.md` with `docs/GAME_DAY_EVIDENCE_TEMPLATE.md`, which
+supersede that checklist. Not executed as of 2026-11-13.)_
 
 **Test requirements:** The drill itself is the test.
 
@@ -103,6 +116,8 @@ only or latest migration.
 
 **Human approval requirements:** None beyond normal PR review.
 
+**Status:** done 2026-07-19 (see the note at the top of `docs/ROLLBACK.md`).
+
 ---
 
 ## A1 — Agent-session activity data model
@@ -135,8 +150,8 @@ live). Flag this design choice for review before implementing A2.
 
 **Human approval requirements:** None beyond normal PR review.
 
-**Status:** implemented this PR (A1–A6 landed together; flag = reuse
-`ANALYTICS_ENABLED`).
+**Status:** done — A1–A6 landed together in PR #243 (`5de7813`,
+2026-08-19); flag = reuse `ANALYTICS_ENABLED`.
 
 ---
 
@@ -281,7 +296,7 @@ already on.
 **Human approval requirements:** Approve the PR merge and the production
 deploy (standard). The implementing agent must not merge or deploy.
 
-**Status:** implemented this PR (docs + gate); pending human merge/deploy.
+**Status:** done — merged as PR #243 (`5de7813`, 2026-08-19).
 
 ---
 

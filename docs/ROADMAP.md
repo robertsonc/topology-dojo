@@ -4,7 +4,8 @@ Built methodically, one reviewable PR at a time, each reviewed against
 [`DESIGN.md`](DESIGN.md).
 
 _Reset 2026-07-19 and revalidated 2026-08-09 after a full-repository
-documentation and quality audit (see
+documentation and quality audit; status lines revalidated 2026-11-13 against
+`main` at `e99b012` (see
 [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md) for the evidence and
 [`DISCREPANCY_REGISTER.md`](DISCREPANCY_REGISTER.md) for what this reset
 corrected). The active implementation plan is
@@ -15,21 +16,28 @@ preserved at [`archive/IMPLEMENTATION_PLAN_2026-07-12.md`](archive/IMPLEMENTATIO
 
 Topology Dojo is a **production-hosted, collaborative, AI-agent-assisted
 network-topology authoring platform** — not merely a diagram editor. As of
-this reset, all three major feature flags are live in production
+this reset, all three migration-backed feature flags are live in production
 (`WORKSPACE_ENABLED`, `PROFILES_ENABLED`, `ANALYTICS_ENABLED` are all
 `"true"` in the top-level `wrangler.jsonc`), and every Durable Object
-migration through `v5` is applied and active. Concretely, today a user can:
+migration through `v5` is applied and active. Two later, non-migration flags
+are off in production: `API_KEYS_ENABLED` (on in staging) and
+`LIVE_DATA_ENABLED` (off in both environments). Concretely, today a user can:
 
 - Sign in with GitHub and author multi-page flipbook topology diagrams by
   hand, with full editing (selection, alignment guides, waypoint-edited
   links, custom node types), validation (semantic + layout), and export (SVG,
   self-playing HTML flipbook, PNG / PDF, draw.io, Visio, PowerPoint, Mermaid —
-  see `docs/EXPORTS.md`).
+  see `docs/EXPORTS.md`). An SD-WAN wizard generates a vendor-aware fabric
+  from intent (proposal 0010), and nodes can be bound to hardware-catalog
+  models for catalog-aware wiring validation and wire-sheet pages
+  (`futures/hw-catalog.md`).
 - Connect an AI agent through the same catalog-driven API the GUI uses. Local
   stdio is process-local and has no hosted account, OAuth, or Durable Object;
   remote `/mcp` uses OAuth 2.1 with GitHub and owner-isolated Durable Object
-  storage. There are 62 possible tool registrations; actual discovery varies
-  by runtime, flags, and provider.
+  storage. There are 72 possible tool registrations at `e99b012` (43 with
+  no optional dependency; the rest are the hardware-catalog, share,
+  workspace, authoring-guidance and live-fabric groups); actual discovery
+  varies by runtime, flags, API-key scopes, and provider.
 - **Collaborate with that agent in a shared workspace**: the agent proposes
   changes as one attributed revision (review/accept/reject, including a
   selective/partial accept), or — with a browser-granted, revocable
@@ -46,10 +54,12 @@ migration through `v5` is applied and active. Concretely, today a user can:
   flag rules for re-review; nothing is ever auto-promoted or agent-confirmed.
 - **Conditionally pull from a real SD-WAN fabric**: a vendor-neutral provider
   abstraction and flow compiler exist and are tested, with a real but
-  integration-unverified EdgeConnect Orchestrator HTTP client. The repository
-  cannot reveal whether Cloudflare secrets are currently provisioned, so it
-  does not prove live activation; an operator must verify the environment and
-  run the conditional QA/UAT track before making a support claim.
+  integration-unverified EdgeConnect Orchestrator HTTP client. The fabric
+  tools register only when `LIVE_DATA_ENABLED` is `"true"` (it is `"false"`
+  in both environments' `wrangler.jsonc`) _and_ the `ORCH_*` secrets exist.
+  The repository cannot reveal whether Cloudflare secrets are currently
+  provisioned; an operator must verify the environment and run the
+  conditional QA/UAT track before making a support claim.
 - **See who's using it**: the deployment owner has a private admin dashboard
   (login roster, per-user workspace metadata — never diagram content) behind
   their own GitHub identity, and a pre-login showcase filmstrip demonstrates
@@ -91,8 +101,9 @@ packet-level ordering and what can run in parallel):
    half landed 2026-07-19 (PR #197)_: alert matrix + severity model
    (`docs/ALERTS.md`), Cloudflare operator checklist
    (`docs/CLOUDFLARE_OPERATOR_RUNBOOK.md`), game-day framework + evidence
-   template (`docs/GAME_DAY.md`), daily/on-demand production verification
-   (`production-verify.yml`), a 14-check smoke suite, and a staging-only
+   template (`docs/GAME_DAY.md`), on-demand and scheduled production
+   verification (`production-verify.yml`; daily then, hourly since proposal
+   0007), a 14-check smoke suite (15 checks today), and a staging-only
    synthetic-fault mechanism; packet O3 (rollback generalization) is done.
    **Human-only verification**: inspect/configure the Cloudflare notification
    policies as needed (O1), prove delivery, and execute/record the drill (O2).
@@ -107,24 +118,34 @@ packet-level ordering and what can run in parallel):
    no new flag, no new Durable Object class, no migration. Packets A1–A6.
 4. **Guided topology briefs + semantic templates** — today an agent (or a
    human) starts from either a blank page or one of six static starter
-   templates (`list_templates`/`create_from_template`); there's no structured
-   "describe the topology you want" contract that compiles into a scaffolded,
-   validated starting document. Packets: B1–B7.
+   templates (`list_templates`/`create_from_template`); there's no general
+   structured "describe the topology you want" contract that compiles into a
+   scaffolded, validated starting document. Packets: B1–B7. **Not started**
+   (2026-11-13). One archetype now exists outside this plan: the SD-WAN
+   generator (proposal 0010 — `generate_sdwan_topology` and the editor
+   wizard) compiles intent into a document; re-scope B against it first.
 5. **EdgeConnect live-import hardening + UI** — the provider/compiler code is
    shipped and tested against injectable mocks, but has never been run against
    a real or recorded Orchestrator payload, and there's no GUI surface for a
    human to trigger/review a live import (today it's MCP-tool-only). Packets:
-   E1–E7.
+   E1–E7. **Not started** (2026-11-13); the tools are additionally gated by
+   `LIVE_DATA_ENABLED`, off in both environments.
 6. **Time-aware flow and failure storytelling** — the flow compiler already
    produces animated, per-hop flow paths for a point-in-time fabric snapshot;
    there's no scenario model for "walk through this fabric before, during,
    and after a failure" the way the flipbook already does for static topology
-   states. Packets: T1–T7.
+   states. Packets: T1–T7. **Not started** (2026-11-13).
 
 Items 4–6 can be scoped and start in parallel (see the
 dependency graph); none of them share a Durable Object or migration, so they
 don't block each other structurally. See `IMPLEMENTATION_PLAN.md` for full
 packet specs, risk, and acceptance criteria for all six initiatives.
+
+Since August the work that actually merged came from numbered proposals
+(0005–0008, 0010, 0011) and the hardware-catalog plan rather than items 4–6;
+it is recorded under "Completed historical milestones". Proposal 0009 (the
+vendor-neutral diagramming-tool direction) is **Proposed, not accepted**; if
+accepted it re-cuts _Now/Next_.
 
 ## Next
 
@@ -134,16 +155,16 @@ packets:
 - **Hardware catalog + trustworthy wire sheets** — nodes bound to real
   models, catalog-aware wiring validation, real front panels on wire sheets,
   native Visio masters. Six phases; plan and status in
-  [`futures/hw-catalog.md`](futures/hw-catalog.md) (Phases 1-3 merged,
-  Phase 4 wire-sheet rendering in review).
+  [`futures/hw-catalog.md`](futures/hw-catalog.md). Phases 1–5 are merged
+  (PRs #285–#288, #290; summarized under "Completed historical milestones");
+  what remains is Phase 6 (feed importers, not started), the real-Visio
+  verification of the Phase 5 masters, and official catalog data.
 
-- **Light-theme contrast fix** — light renders (`theme: "light"`) composite
-  primary links and labels at 1.5-2.8:1 because the engine's low-opacity,
-  glow-dependent strokes survive `flattenViewer` without their glow. Fix at
-  the source (role-aware engine alphas, drop glow underlays, white export
-  background, light minimums) with a composited-contrast test. In review
-  (after hw-catalog Phase 4, before Phase 5). Brief and outcome:
-  [`futures/light-theme-contrast.md`](futures/light-theme-contrast.md).
+- ~~**Light-theme contrast fix**~~ — **shipped 2026-10-24 (PR #289)**:
+  role-aware engine alphas, no glow underlays, white export background and
+  measured light minimums, with a composited-contrast test
+  (`src/testing/contrast.ts`, `src/testing/light-probe.ts`). Brief and
+  outcome: [`futures/light-theme-contrast.md`](futures/light-theme-contrast.md).
 
 - **Clean render profile for exports and the inline view** — measured on a
   7-node / 6-link template: the SVG defines 29 filters but references 3
@@ -154,7 +175,7 @@ packets:
   transfer. Scope: emit only referenced defs, add a `profile: "clean"`
   render option (flat per `flattenViewer`, no background animation, no
   unused defs), and make it the default for `render_svg`, `view_topology`,
-  PNG and PDF. The editable exports (draw.io / Visio / PowerPoint shapes)
+  PNG and PDF. Not started (no `profile` render option exists at `e99b012`). The editable exports (draw.io / Visio / PowerPoint shapes)
   are built from the export scene, not the SVG, so they are unaffected.
 - **Link anchor box on by default for new documents** — on a dual-homed
   hub-and-spoke page (the most common SD-WAN shape), `inspect_render` flags
@@ -165,7 +186,9 @@ packets:
   `linkAttach: "none"`). Stored documents keep rendering as they do today —
   flipping the engine default would move every existing diagram's wires,
   which the byte-identical-render promise rules out. Graduate the flag
-  out of EXPERIMENTAL once it is the default.
+  out of EXPERIMENTAL once it is the default. Not started: the opt-in
+  mechanism shipped (PR #274, with a corner-pin warning in #275) and is
+  still marked EXPERIMENTAL in `src/api/catalog.ts`.
 
 - **Second fabric provider: Juniper Mist** — the `TopologyProvider`
   abstraction is vendor-neutral by design (`src/connect/types.ts`), and the
@@ -191,9 +214,10 @@ packets:
 sourcedOnly:true` list what an importer owns; there's no surface yet for
   "this element's source data changed since last import, review the diff"
   the way workspace proposals do for human/agent edits.
-- **Richer explainability analytics** — once agent-activity foundation (Now
-  item 3) ships, aggregate views (which guidance rules actually change agent
-  behavior, correction-rate trends) become possible.
+- **Richer explainability analytics** — the agent-activity foundation (Now
+  item 3) has shipped, so aggregate views (which guidance rules actually
+  change agent behavior, correction-rate trends) are now possible; none is
+  built yet.
 - ~~**Share-link revocation (finding M20)**~~ — **shipped 2026-08-17**
   (snapshot owner metadata + `worker/share.ts` listing index, the browser
   Share dialog, MCP `list_shares` / `unpublish_topology`, and
@@ -261,8 +285,8 @@ Valuable but non-blocking; no current evidence anything is waiting on these:
   measured contention," `docs/HANDOFF.md`).
 - **Comments, mentions, and review threads** on workspace proposals/revisions
   (proposal 0002's "Follow-on work" item 8, still deferred).
-- **Standalone HTML/PNG export polish** — flipbook HTML export exists;
-  further export format work (beyond the MCP-PNG gap already in "Next") is
+- **Standalone HTML/PNG export polish** — flipbook HTML export exists and
+  server-side PNG / PDF shipped in Phase 1; further export format work is
   low-urgency.
 - **Reverse agentic dispatch — live path discovery ("examine path to
   Teams")** — extend "Path analysis between elements" (Next) from _what the
@@ -299,8 +323,8 @@ Do not start until the repository shows the specific evidence listed:
   only once "Organization-level collaboration" (Next) ships and a second
   real organization is using it with a concrete permission gap the simple
   owner+collaborator model can't express.
-- **High-volume, long-term agent-trace retention** — start only if
-  "Agent activity + explainability" (Now item 3) ships and actual usage
+- **High-volume, long-term agent-trace retention** — "Agent activity +
+  explainability" (Now item 3) has shipped; start only if actual usage
   shows the bounded/ephemeral trace model it establishes is insufficient
   (e.g., an owner needs to audit agent behavior from more than N days ago).
   Building unbounded retention up front risks exactly the kind of storage/PII
@@ -323,7 +347,9 @@ so a future contributor doesn't have to re-litigate them:
   delta/override machinery between pages, ever — see `DESIGN.md` #1.
 - **Laptop-driven production deployment.** `npm run deploy` was deleted
   (finding L1, closed); the only production deploy path is the gated GitHub
-  Actions pipeline with protected-environment approval.
+  Actions pipeline (`release.yml` — merging to `main` is the release
+  decision; the protected-environment approval click was removed
+  2026-10-09).
 - **Raw prompt/conversation logging.** The authoring-profile learner and the
   agent-explainability initiative (Now item 3) both operate on structured,
   deterministic _feature_ extraction from document operations — never on raw
@@ -574,6 +600,10 @@ agent-authored revision timeline entries. Still deferred: session duration /
 
 ### Public showcase
 
+_Since PR #292 (2026-11-03) the sign-in page is the cinematic landing page
+(`worker/landing.ts`, assets under `public/landing/`); the film-strip below
+is one section of it._
+
 A pre-login film-strip on the sign-in page shows four topologies authored
 through the MCP server (a hub-and-spoke WAN, a data-center spine-leaf fabric,
 an SD-WAN/SASE path, a three-tier app with a DMZ) as looping animated WebP
@@ -581,7 +611,7 @@ stills, served ungated (image sub-resources aren't document navigations, so
 they're never behind the sign-in gate) and self-contained (no dependency on
 any ephemeral `/v/:id` share snapshot, so the landing page never rots).
 
-### Phase 1 — adoption blockers (2026-10-24)
+### Phase 1 — adoption blockers (PR #283, 2026-10-23)
 
 Dojo output usable where network teams already work, and findable where
 agents look (fidelity contract: `docs/EXPORTS.md`):
@@ -603,6 +633,44 @@ agents look (fidelity contract: `docs/EXPORTS.md`):
 - Not yet done: verifying `.vsdx` / `.pptx` in Microsoft Visio / PowerPoint
   (checked in LibreOffice only); publishing `server.json` to the registry
   (`mcp-publisher`, needs the repo owner's GitHub login).
+
+### Hardware catalog and wire sheets (Phases 1–5, 2026-10-24/25)
+
+Plan and per-phase status: [`futures/hw-catalog.md`](futures/hw-catalog.md).
+
+- **Catalog core** (PR #285): `catalog/` data, schema and Python reference
+  tools; generated TypeScript types and a content-hashed bundle
+  (`npm run catalog:build` / `catalog:check`, both gated in CI) served to the
+  Worker through the `ASSETS` binding (`worker/catalog.ts`).
+- **Bind + validate** (PR #286): node `hw`, link interface / optic fields,
+  catalog rules folded into `validate_topology`, `catalogVersion` pinning.
+- **MCP tools** (PR #287): `list_hardware`, `describe_hardware`,
+  `bind_hardware`, `assign_interfaces`, `catalog_diff`, and the
+  `cable-schedule` export format.
+- **Wire-sheet rendering** (PR #288): page `view: "wiresheet"` with panel
+  glyphs and cables anchored at port positions.
+- **Native Visio masters** (PR #290): per-model masters on wire-sheet
+  `.vsdx` exports, `.vssx` stencil export (`npm run catalog:stencil`), and a
+  LibreOffice render check as the CI `visio` job.
+- Not yet done: Phase 6 feed importers; verification in real Microsoft
+  Visio; official vendor data (the catalog is seeded from fixtures).
+
+### SD-WAN generator, map backdrops and icons (proposals 0010 / 0011, 2026-11-08)
+
+- **Generator** (`src/connect/generate.ts`, slice 1, PR #293): intent
+  (vendor — EdgeConnect or Juniper SRX — regions, hubs, branches,
+  transports, HA, LAN) expands into fabric records and runs through the
+  existing flow compiler; exposed as the `generate_sdwan_topology` MCP tool
+  and the editor wizard (`src/ui/sdwan-wizard.ts`).
+- **Overview drill-down** (slice 2, PR #295): place tiles and page links
+  (`src/api/page-link.ts`). **Cloud hubs and SSE on-ramp** (slice 4,
+  PR #296). **Map backdrops** (slice 3, PRs #298, #299): Natural Earth
+  region outlines behind a zone (`src/render/backdrops.ts`, built by
+  `scripts/build-backdrops.ts`).
+- **Icons** (proposal 0011): Places and tier 1 (PRs #294, #295), tier 2
+  (PR #296).
+- Not done: branch-to-branch mesh (deferred) and more vendors (slice 5 —
+  research only, [proposal 0012](proposals/0012-sdwan-vendor-research.md)).
 
 ### Wiring-sheet conventions (proposal 0008, 2026-10-15)
 
