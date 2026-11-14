@@ -120,8 +120,12 @@ export interface ActiveWorkspace {
 export interface WorkspacePanelHost {
   /** The live, mutable document instance (never reassigned by main.ts). */
   getDoc(): TopologyDocument;
-  /** Replace the whole document (open / new / adopt a workspace snapshot). */
-  loadDoc(next: TopologyDocument, sync?: boolean): void;
+  /**
+   * Replace the whole document (open / new / adopt a workspace snapshot).
+   * `sameDocument`: this is the open workspace document at another revision,
+   * not a different document — the editor keeps its undo history.
+   */
+  loadDoc(next: TopologyDocument, sync?: boolean, sameDocument?: boolean): void;
   /** The page id the browser is currently viewing (for lease grants). */
   getCurrentPageId(): string;
   /**
@@ -1367,6 +1371,7 @@ export function mountWorkspacePanel(
   function adoptWorkspaceSnapshot(
     snapshot: Awaited<ReturnType<typeof getWorkspace>>,
     status = 'synced',
+    sameDocument = true,
   ): void {
     const workspace = activeWorkspace;
     if (!workspace) return;
@@ -1377,7 +1382,7 @@ export function mountWorkspacePanel(
     workspace.paused = false;
     workspace.status = status;
     workspace.error = null;
-    host.loadDoc(snapshot.document, false);
+    host.loadDoc(snapshot.document, false, sameDocument);
     writeWorkspaceLink();
     cacheActiveWorkspace();
     updateWorkspaceChip();
@@ -1503,7 +1508,8 @@ export function mountWorkspacePanel(
       status: 'opened · suggest only',
       error: null,
     };
-    adoptWorkspaceSnapshot(snapshot, 'opened · synced');
+    // Opening a workspace replaces whatever was on the canvas.
+    adoptWorkspaceSnapshot(snapshot, 'opened · synced', false);
     connectWorkspaceSocket();
     await refreshWorkspaceState(false);
   }

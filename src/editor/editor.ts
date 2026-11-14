@@ -1866,6 +1866,22 @@ export class Editor {
     this.histories.delete(pageId);
   }
 
+  /**
+   * Forget ALL history: the live stacks and every page's stash. Call BEFORE
+   * `setPage` when the whole document is replaced (new, open, template,
+   * generate, import, share link). History is kept per page id and ids repeat
+   * across documents (an imported page is always `p1`, a generated fabric
+   * `sdwan`), so history kept from the previous document would be replayed
+   * into the new one: one Ctrl+Z and the new diagram becomes the old.
+   */
+  resetHistory(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.histories.clear();
+    this.nudgeActive = false;
+    clearTimeout(this.nudgeTimer);
+  }
+
   /* ── gesture → operation funnel (Packet S2) ───────────────────────
    *
    * The single seam through which gestures publish the semantic operation(s)
@@ -2839,6 +2855,37 @@ export class Editor {
     else this.scheduleArt();
     this.renderOverlay();
     this.onChange();
+  }
+
+  /**
+   * Set the label of ONE element, named by id — not of whatever is selected.
+   * The inline editor commits through this: by the time its input blurs, the
+   * click that blurred it has already selected a different element (or none),
+   * so a selection-based update would rename the wrong thing or nothing.
+   * One undo step. Returns false when the element no longer exists.
+   */
+  renameElement(
+    kind: 'node' | 'link' | 'zone',
+    id: string,
+    label: string,
+  ): boolean {
+    const collection =
+      kind === 'node' ? 'nodes' : kind === 'link' ? 'links' : 'zones';
+    const el = (this.page[collection] as { id: string }[]).find(
+      (e) => e.id === id,
+    );
+    if (!el) return false;
+    this.snapshot();
+    this.assignAndEmit(collection, el as unknown as Record<string, unknown>, {
+      label,
+    });
+    if (kind === 'zone') this.afterAnnotationChange(true);
+    else {
+      this.renderArt();
+      this.renderOverlay();
+      this.onChange();
+    }
+    return true;
   }
 
   /**

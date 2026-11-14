@@ -575,6 +575,11 @@ function slotKey(slot: DocSlot): string {
   return slot === 'shared' ? `${KEY}:shared` : KEY;
 }
 
+/** The localStorage key of an autosave slot (for `storage` events). */
+export function autosaveKey(slot: DocSlot = 'local'): string {
+  return slotKey(slot);
+}
+
 /**
  * Persist to localStorage. Returns whether the write actually succeeded —
  * storage can be unavailable (private browsing, policy) or full (quota), and
@@ -584,8 +589,13 @@ export function saveLocal(
   doc: TopologyDocument,
   slot: DocSlot = 'local',
 ): boolean {
+  return saveSerialized(serializeDoc(doc), slot);
+}
+
+/** `saveLocal` for a document that is already serialized (`serializeDoc`). */
+export function saveSerialized(json: string, slot: DocSlot = 'local'): boolean {
   try {
-    localStorage.setItem(slotKey(slot), serializeDoc(doc));
+    localStorage.setItem(slotKey(slot), json);
     return true;
   } catch {
     return false;
