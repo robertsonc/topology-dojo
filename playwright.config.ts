@@ -6,6 +6,10 @@ import { defineConfig, devices } from '@playwright/test';
  * not an exhaustive e2e matrix. Runs against the Vite dev server (no worker
  * APIs; network-backed flows are mocked per-test with page.route).
  */
+/** The dev-server port. Override with E2E_PORT to run two checkouts at once
+ * (each needs its own server: a reused one would serve the other's code). */
+const port = Number(process.env.E2E_PORT) || 4173;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -13,7 +17,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: `http://localhost:${port}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     // Sandboxed dev environments can point at a pre-provisioned Chromium
@@ -35,8 +39,8 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'npm run dev -- --port 4173 --strictPort',
-    url: 'http://localhost:4173',
+    command: `npm run dev -- --port ${port} --strictPort`,
+    url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     stdout: 'ignore',
   },
