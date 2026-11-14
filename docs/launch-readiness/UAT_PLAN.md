@@ -2,8 +2,8 @@
 
 | Plan metadata     | Value                                                                                                                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Version           | 2.1                                                                                                                                                                                              |
-| Effective date    | 2026-08-19                                                                                                                                                                                       |
+| Version           | 2.2                                                                                                                                                                                              |
+| Effective date    | 2026-11-14                                                                                                                                                                                       |
 | Status            | Living release-acceptance plan                                                                                                                                                                   |
 | System under test | Topology Dojo browser editor, public shared-copy experience, human-agent workspace, MCP authoring service, adaptive authoring preferences, owner administration, exports, and release operations |
 
@@ -51,16 +51,16 @@ interaction state and are not part of MCP parity acceptance.
 
 ### 2.1 Acceptance personas
 
-| Persona                          | Representative need                                                                                           | Primary scenarios                              |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| New author                       | Create, edit, save, and deliver a first topology with understandable in-product guidance.                     | UAT-NA-01, UAT-NA-02                           |
-| Power user / network architect   | Build a rich multi-page story efficiently and preserve document semantics through advanced edits and exports. | UAT-PU-01, UAT-PU-02                           |
-| Public recipient / reviewer      | Open a public snapshot without signing in, navigate it, and avoid replacing unrelated local work.             | UAT-PR-01, UAT-PR-02                           |
-| Human-agent workspace owner      | Hand off a document, review proposals, resolve conflicts, manage authority, and recover work.                 | UAT-WS-01, UAT-WS-02, UAT-WS-03                |
-| MCP operator                     | Configure an MCP client and guide an agent through efficient, bounded topology authoring.                     | UAT-MCP-01, UAT-MCP-02, UAT-MCP-03, UAT-MCP-04 |
-| Preference manager               | Review, scope, pause, reject, and forget adaptive authoring preferences.                                      | UAT-PM-01                                      |
-| Deployment owner / administrator | Review access and usage metadata without access to document content.                                          | UAT-AD-01                                      |
-| Release operator                 | Promote an exact build through the gated deployment and recovery process.                                     | UAT-OP-01, UAT-OP-02                           |
+| Persona                          | Representative need                                                                                           | Primary scenarios               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| New author                       | Create, edit, save, and deliver a first topology with understandable in-product guidance.                     | UAT-NA-01, UAT-NA-02, UAT-NA-03 |
+| Power user / network architect   | Build a rich multi-page story efficiently and preserve document semantics through advanced edits and exports. | UAT-PU-01 through UAT-PU-05     |
+| Public recipient / reviewer      | Open a public snapshot without signing in, navigate it, and avoid replacing unrelated local work.             | UAT-PR-01, UAT-PR-02            |
+| Human-agent workspace owner      | Hand off a document, review proposals, resolve conflicts, manage authority, and recover work.                 | UAT-WS-01 through UAT-WS-04     |
+| MCP operator                     | Configure an MCP client and guide an agent through efficient, bounded topology authoring.                     | UAT-MCP-01 through UAT-MCP-06   |
+| Preference manager               | Review, scope, pause, reject, and forget adaptive authoring preferences.                                      | UAT-PM-01                       |
+| Deployment owner / administrator | Review access and usage metadata without access to document content.                                          | UAT-AD-01                       |
+| Release operator                 | Promote an exact build through the gated deployment and recovery process.                                     | UAT-OP-01, UAT-OP-02            |
 
 Accessibility is a characteristic of every persona, not a separate kind of
 user. UAT-AX-01 is therefore run across the new-author, public-recipient, and
@@ -105,6 +105,11 @@ untested.
 | Browser authoring, local persistence, import, JSON/SVG/PNG export, and public shared snapshots | Core                                                                     | Supported browser and production-candidate build                                                                                                    |
 | Standalone flipbook HTML export                                                                | Core for MCP acceptance; also a browser **⤓ export…** action             | Hosted or local MCP client and a multi-page document                                                                                                |
 | Remote MCP authoring and OAuth                                                                 | Core for hosted releases; local stdio remains a diagnostic/operator path | Hosted `/mcp`, GitHub OAuth application, and MCP client                                                                                             |
+| Starter templates with parameters and the SD-WAN generator                                     | Core                                                                     | Supported browser; hosted or local MCP client for the agent path                                                                                    |
+| Editable exports (draw.io, Visio, PowerPoint, Mermaid) and draw.io / Mermaid import            | Core                                                                     | Supported browser; draw.io and an office suite to open the files; hosted or local MCP client                                                        |
+| Hardware catalog, wire sheets, and cable schedule                                              | Core for MCP acceptance; no browser surface                              | Hosted or local MCP client                                                                                                                          |
+| Path analysis (`analyze_path`)                                                                 | Core for MCP acceptance                                                  | Hosted or local MCP client; private drafts only                                                                                                     |
+| User-tied API keys                                                                             | Feature-gated                                                            | `API_KEYS_ENABLED=true`                                                                                                                             |
 | Human-agent workspace, proposals, leases, checkpoints, presence, and offline recovery          | Feature-gated                                                            | `WORKSPACE_ENABLED=true`                                                                                                                            |
 | Adaptive authoring preferences                                                                 | Feature-gated                                                            | `PROFILES_ENABLED=true`                                                                                                                             |
 | Owner analytics/admin dashboard                                                                | Feature-gated and identity-gated                                         | `ANALYTICS_ENABLED=true` and a valid `ADMIN_GITHUB_ID`                                                                                              |
@@ -125,6 +130,9 @@ untested.
   offline workflows when the workspace flag is on.
 - Efficient MCP discovery, bounded reads, `edit_topology`, validation, layout,
   `inspect_render`, render, and error recovery.
+- Starter templates with parameters, the SD-WAN generator, editable exports
+  and their round trips, wiring-sheet conventions, and, over MCP, path
+  analysis, the hardware catalog, and wire sheets.
 - Adaptive preferences, admin roster/workspace metadata, Agent Sessions, and
   the non-causal guidance-consulted timeline signal when analytics is on.
 - Critical-journey accessibility, usability, operational release evidence, and
@@ -151,10 +159,10 @@ Before the UAT lead opens a cycle:
 1. The release candidate has a unique source SHA and immutable build/deployment
    identifier.
 2. Required QA gates in the [QA test plan](./QA_TEST_PLAN.md) are green on the
-   candidate. This includes both Linux CI jobs and all 11 current Chromium
-   cases, including the three canonical visual comparisons. Any exception has
-   a written risk decision from the QA and product owners; the local macOS
-   8/11 partial browser run is not the canonical entry gate.
+   candidate. This includes the Linux CI jobs and every current Chromium case
+   (120 in 27 spec files at `663ebf6`), including the three screenshot
+   comparisons. Any exception has a written risk decision from the QA and
+   product owners; a local browser run is not the canonical entry gate.
 3. The isolated staging deployment serves the candidate SHA and uses staging
    OAuth, KV, Durable Object namespaces, secrets, and callback URLs.
 4. The effective workspace, profile, analytics, admin-identity, and provider
@@ -175,7 +183,7 @@ Before the UAT lead opens a cycle:
 | Isolated staging                 | Primary acceptance environment; production-like auth, Worker, storage, flags, and MCP transport       | All applicable scenarios                               |
 | Production                       | Read-only or low-impact final smoke after approval; never failure injection or a destructive game day | UAT-OP-01 smoke subset, UAT-PR-01 with disposable data |
 | Local browser/Vite               | Controlled storage-failure, offline, accessibility, and exploratory reproduction                      | UAT-NA-02, UAT-WS-03, UAT-AX-01                        |
-| Local stdio MCP                  | Client compatibility and mock provider baseline                                                       | UAT-MCP-01 and UAT-MCP-03                              |
+| Local stdio MCP                  | Client compatibility and mock provider baseline                                                       | UAT-MCP-01, UAT-MCP-03, UAT-MCP-05, UAT-MCP-06         |
 | Approved EdgeConnect test system | Optional real live-fabric acceptance                                                                  | Conditional branch of UAT-MCP-03 only                  |
 
 The target manual browser set is current Chrome, Edge, Firefox, and Safari on
@@ -188,7 +196,9 @@ cycle.
 
 ### 4.3 Test-data pack
 
-Create disposable data with no customer secrets:
+Create disposable data with no customer secrets. The repository ships none of
+the `TD-UAT-*` items below: each one names data the UAT lead prepares for the
+cycle from its description.
 
 - `TD-UAT-BLANK`: new browser profile with no saved document.
 - `TD-UAT-LOCAL-MARKER`: a locally saved two-page document titled
@@ -196,8 +206,11 @@ Create disposable data with no customer secrets:
 - `TD-UAT-RICH`: a five-page SASE story containing nodes, links, anchors,
   waypoints, zones, flow paths, policy markers, layers, captions, emphasis,
   legend, stencil, custom node type, transitions, and brand palette.
-- `TD-UAT-UNDO`: a two-page document and an ordered 12-edit script spanning
-  element fields, geometry, layers, links, deletion cascades, and page switches.
+- `TD-UAT-UNDO`: a two-page document for the 12-edit script written out in
+  UAT-NA-02 (the repository has no fixture file or script file for it). Build
+  it from **＋ template… → Three-tier web app** with the default parameters,
+  then **⧉ duplicate** the page, so that both pages hold Users, Firewall,
+  Web 1, Web 2, App, and Database with their six links.
 - `TD-UAT-UGLY`: overlapping, off-grid, but semantically valid geometry for
   layout recovery.
 - `TD-UAT-CONFLICT`: a shared workspace with two browser sessions for the same
@@ -267,8 +280,9 @@ opened.
 **Steps and expected results:**
 
 1. Sign in to staging and create a new document from a relevant starter
-   template. The editor opens without an auth loop; the participant can identify
-   the palette, canvas, pages, inspector, status, and export controls.
+   template (a template with parameters first shows its parameter dialog; see
+   UAT-NA-03). The editor opens without an auth loop; the participant can
+   identify the palette, canvas, pages, inspector, status, and export controls.
 2. Rename the document and page. Add at least four nodes, two different link
    types, one zone, and one annotation; edit labels and one visual property in
    the inspector. Every intended change is visible and remains selected or
@@ -296,36 +310,105 @@ opened.
 **Persona:** New author / power user
 **Business outcome:** BO-02
 
-**Preconditions:** `TD-UAT-UNDO`; a safe method approved by QA to deny or exhaust
-browser storage; an exported starting JSON backup.
+**Preconditions:** `TD-UAT-UNDO`, built as §4.3 describes; a safe method
+approved by QA to deny or exhaust browser storage; an exported starting JSON
+backup.
+
+**Edit script.** The user guide describes each gesture
+([Build and edit a topology](../USER_GUIDE.md#5-build-and-edit-a-topology),
+[Layers](../USER_GUIDE.md#layers)).
+
+| Edit | Page | Action                                                          |
+| ---- | ---- | --------------------------------------------------------------- |
+| 1    | 1    | Rename **Users** in place to `Clients`                          |
+| 2    | 1    | Change the colour of **Firewall** in Properties                 |
+| 3    | 1    | Declare a layer and assign **Database** to it                   |
+| 4    | 1    | Draw a link from **Web 1** to **Web 2**                         |
+| 5    | 1    | Add one node from the Node library                              |
+| 6    | 1    | Select **App** and delete it; its three links go with it        |
+| 7    | 2    | Draw a link from **Users** to **Database**                      |
+| 8    | 2    | Add a bend to that link by dragging a segment midpoint handle   |
+| 9    | 2    | Drag **Database** to a new position                             |
+| 10   | 2    | Select **Database** and delete it; both of its links go with it |
+| 11   | 1    | Add one node from the Node library (used in step 5)             |
+| 12   | 1    | Rename a node to `STORAGE FAILED` (used in step 6)              |
 
 **Steps and expected results:**
 
-1. On page 1, perform the ordered edits 1–6 from the fixture script. Switch to
-   page 2 and perform edits 7–10, including a link plus its dependent waypoint
-   or anchor and a layer/property change.
-2. Return to page 1 and undo two edits. Only page 1 changes; page 2 remains
-   exactly as left. Redo both and verify complete state, including selection-
-   relevant geometry and dependent references.
-3. Return to page 2 and undo its last two edits. The page-specific history is
-   intact after switching pages, and cascaded element state is restored without
-   dangling references.
+1. On page 1, perform edits 1–6. Switch to page 2 and perform edits 7–10.
+2. Return to page 1 and undo two edits. The first undo brings back **App**
+   with its three links; the second removes the node added in edit 5. Page 2
+   remains exactly as left. Redo both and verify the page is as it was after
+   edit 6.
+3. Return to page 2 and undo its last two edits. The first undo brings back
+   **Database** with both links, the bend included; the second returns
+   **Database** to its position before edit 9. The page-specific history is
+   intact after switching pages, and no link is left without an end.
 4. Delete page 2. The UI provides the documented recovery interval and action.
    Recover it before expiry. Its content and history-bearing document state are
    intact. Delete it again and allow the interval to expire; the deletion then
    remains committed and another page is active.
-5. Make an edit with normal storage available, wait for the saved indication,
-   close/reopen, and verify the exact final edit is restored.
-6. Activate the approved storage-failure condition and make a distinctive edit.
+5. Perform edit 11 with normal storage available, wait for the saved
+   indication, close/reopen, and verify the added node is restored.
+6. Activate the approved storage-failure condition and perform edit 12.
    The UI must not claim success. A persistent, keyboard-accessible recovery
    action offers downloadable JSON containing the current in-memory document.
 7. Download the recovery JSON, open it in a clean profile, and verify the
    distinctive edit. Restore storage, make one further edit, and confirm the
    status returns to a truthful saved state.
+8. Open the editor in a second tab of the same browser profile, add a node
+   there, and wait for the saved indication. The first tab's status changes to
+   **⚠ changed in another tab — load it**. Reload the first tab without
+   editing it: it opens with the second tab's node, because an idle tab does
+   not write its older copy back. Repeat, and this time click the status in
+   the first tab: the newer version loads there and the status returns to a
+   saved state.
+9. Make two edits, then open a JSON file. Undo is unavailable right after the
+   file opens, and no undo brings the previous document back.
 
 **Acceptance:** No cross-page undo leakage, incomplete snapshot, dangling
-reference, false saved indication, or unrecoverable in-memory work. Attach the
+reference, false saved indication, unrecoverable in-memory work, newer work
+overwritten by an idle tab, or undo across a replaced document. Attach the
 normal export, recovery export, and before/after screenshots.
+
+### UAT-NA-03 — Start from a template with parameters and generate an SD-WAN fabric
+
+**Priority:** P1
+**Capability state:** Core
+**Persona:** New author
+**Business outcome:** BO-01
+**Time box:** 20 minutes
+
+**Preconditions:** `TD-UAT-BLANK`; the user guide's
+[Starter templates](../USER_GUIDE.md#10-starter-templates) section may be
+opened.
+
+**Steps and expected results:**
+
+1. From **＋ template…** choose **Spine-leaf fabric**. A dialog asks for
+   Spines and Leaves and shows a preview with the node and link counts: 6
+   nodes and 8 links at the defaults. Set 4 spines and 12 leaves: the counts
+   read 16 nodes and 48 links.
+2. Press Esc: the dialog closes and the canvas is unchanged. Open the dialog
+   again, set the same values, choose **Create diagram**, and decline the
+   confirmation: the canvas is still unchanged.
+3. Choose **Create diagram** and accept the confirmation. The status bar
+   counts 16 nodes and 48 links, Problems lists nothing for the page, and
+   **Fit view** shows the whole fabric.
+4. Choose **ZTNA user-to-app**. No dialog opens: the usual confirmation is
+   asked and the template loads.
+5. Choose **＋ template… → Generate SD-WAN…**. Pick a vendor, two regions, two
+   hubs per region, and three branches per region. The preview shows device,
+   tunnel, and cable counts that change with each choice. Create the diagram:
+   the fabric lands on the canvas with each region in its own zone.
+6. Generate again with the detail set to overview plus region pages. Following
+   a site tile's link on the overview opens its region page, and the
+   **◂ Overview** link returns.
+7. Rate task confidence from 1–5.
+
+**Acceptance:** The counts in each dialog match the canvas; Esc and a declined
+confirmation change nothing; a created template needs no tidying; confidence
+is at least 4/5.
 
 ### UAT-PU-01 — Power user creates a maintainable multi-page network story
 
@@ -355,9 +438,10 @@ participant starts from a suitable template.
    mutate its source page.
 5. Use page playback and calm/reduced-motion-friendly presentation controls.
    The narrative order, durations, captions, emphasis, and layers are coherent.
-6. From the browser, export JSON, SVG, and PNG. Re-import JSON and compare the
-   rich semantics against the source. Validate standalone flipbook HTML through
-   UAT-MCP-01; it is not a browser-toolbar action.
+6. From the browser, export JSON, SVG, and PNG, and the flipbook from
+   **⤓ export… → Flipbook HTML — all frames**. Re-import JSON and compare the
+   rich semantics against the source. Open the flipbook file with networking
+   disabled and check its pages, captions, and timing.
 
 **Acceptance:** The participant judges the result customer-ready at least 4/5;
 all semantic features survive JSON round-trip; browser-supported export formats
@@ -387,6 +471,134 @@ expected conversion result.
 **Acceptance:** The participant repairs the document in 15 minutes or less;
 there are no remaining semantic errors or layout overlaps; conversion losses,
 if any, match the user guide rather than appearing silently.
+
+### UAT-PU-03 — Link attachment, labels, selection, and layout that respects locks
+
+**Priority:** P1
+**Capability state:** Core
+**Persona:** Power user / network architect
+**Business outcome:** BO-02
+**Time box:** 40 minutes
+
+**Preconditions:** The editor on the candidate; a Mermaid or CSV file to
+import; the user guide's
+[Build and edit a topology](../USER_GUIDE.md#5-build-and-edit-a-topology)
+section may be opened.
+
+**Steps and expected results:**
+
+1. Start a **new** document. Add a hub node and four nodes below it, and link
+   the hub to each. Page Properties show **Link anchor box** and
+   **Distribute ends** on. The links leave the hub below its label, at evenly
+   spaced points, and none runs through the label text.
+2. Turn **Link anchor box** off: the links meet the icon edge again. Turn it
+   back on. Open the Mermaid or CSV file: its page has the switch off until it
+   is turned on.
+3. Make one link orthogonal. Click it on its drawn route, away from the
+   straight line between its ends: the link is selected. Drag one of its end
+   handles onto another node: that end re-attaches. Pick a different node in
+   the **From** or **To** picker: that end moves. Undo reverts each move.
+4. Put two nodes in a zone. A click on a node inside the zone selects the
+   node, a drag from the zone's empty space rubber-bands the nodes inside it,
+   and a plain click on that empty space selects the zone.
+5. Select a node. The label **Placement** compass moves its label above the
+   node and to a side; double-clicking a compass cell nudges the label one
+   pixel that way without changing the placement; the centre cell restores
+   the default. Repeat on a link that has a label.
+6. Give a flow path a two-sentence label: it wraps in a pill on the longest
+   drawn segment of the route, and **Label width** changes where it wraps.
+   With **Follow link geometry** on, the flow rides the drawn route of each
+   link; turned off, it runs in straight segments.
+7. Select two links with Shift-click. Properties reports two links selected;
+   a colour change applies to both; deleting removes both.
+8. Lock one node, then run **tidy**, **balance**, and each **arrange…**
+   algorithm: the locked node does not move. On a page with a zone, two
+   different arrange algorithms arrange the nodes inside the zone differently.
+9. Emphasize one node on the frame, then delete that node: nothing stays
+   dimmed.
+10. In Problems, a finding names elements by their labels and a click rings
+    them. Hide one finding: the count drops, and the footer restores it.
+
+**Acceptance:** Every step matches the user guide; no link runs through its own
+node's label on a new document; undo reverts each re-attachment; a locked node
+never moves.
+
+### UAT-PU-04 — Exports other teams can open, and round trips
+
+**Priority:** P1
+**Capability state:** Core
+**Persona:** Power user / network architect
+**Business outcome:** BO-02
+**Time box:** 40 minutes
+
+**Preconditions:** `TD-UAT-RICH`, or the document built in UAT-PU-01; draw.io
+(diagrams.net); an office suite that opens `.vsdx` and `.pptx`; the
+[export fidelity contract](../EXPORTS.md) may be opened.
+
+**Steps and expected results:**
+
+1. With the light theme on, export **svg**, **png**, and
+   **PDF — all frames**. Each is a light page with dark, readable labels, and
+   colours set on the document's own elements are unchanged. With the dark
+   theme the same exports are dark.
+2. Give a frame a caption of about 200 characters and export PNG. The caption
+   wraps inside the frame and none of it is cut.
+3. Open the PNG and the PDF: labels are drawn in the canvas's fixed-width
+   typeface, not a serif face.
+4. Select three nodes, one with its label placed beside it, and choose
+   **PNG — selection only**. The image holds the three nodes, their labels,
+   and the links between them, with nothing cropped.
+5. Choose **draw.io — all frames** and open the file in draw.io: one page per
+   frame, zones as containers, declared layers as layers. Without saving it
+   from draw.io, **open** the same file in Topology Dojo: the title, page
+   captions, node types, zones, layers, labels, and colours match the
+   original, and an element that had no colour is not grey.
+6. On a page whose labels contain a quote, a pipe, and a closing bracket,
+   choose **Mermaid — current frame** and **open** the `.mmd` file. Nodes,
+   links, zones, and those labels come back intact; positions are laid out
+   again.
+7. Choose **Visio .vsdx — all frames** and **PowerPoint .pptx — slide per
+   frame** and open both files in the office suite. Shapes, connectors, and
+   labels are present and editable.
+8. Compare what each editable format dropped with the fidelity contract.
+
+**Acceptance:** Every export opens in its target tool; the draw.io and Mermaid
+round trips return the same diagram within the documented limits; nothing an
+editable export dropped is missing from the fidelity contract. Record the
+office suite: the project has checked `.vsdx` and `.pptx` in LibreOffice only.
+
+### UAT-PU-05 — Wiring-sheet conventions from Properties
+
+**Priority:** P1
+**Capability state:** Core
+**Persona:** Power user / network architect
+**Business outcome:** BO-02
+**Time box:** 30 minutes
+
+**Preconditions:** `fixtures/venue-distribution-leaf.json` from a checkout of the
+candidate (this file is in the repository); the user guide's
+[Wiring sheets](../USER_GUIDE.md#wiring-sheets) section may be opened.
+
+**Steps and expected results:**
+
+1. **open** the fixture. The page is an ANSI C sheet with a border and title
+   block, devices in three rows (gateways, distribution, core), port names as
+   pills on the node edges, rings around bundled ports, four port tables in
+   the margins, and a Key listing the wire classes in use. Problems lists
+   nothing.
+2. Select a cable and change its **Wire class**. Its colour follows the class
+   and the Key lists the class.
+3. In page Properties switch **Port labels** from pill to chip and back. The
+   port names move between pills on the node edge and chips beside the wire.
+4. Select a device that has a port table and turn **Port table** off and on.
+   The table leaves the margin and returns.
+5. Choose **PDF — current frame**. The PDF page is 22 × 17 in, the ANSI C
+   sheet.
+6. Switch to the light theme and export PNG. Cables, pills, port tables, and
+   the title block are readable on white.
+
+**Acceptance:** Every convention in the user guide's list is visible on the
+fixture, and each control changes what the guide says it changes.
 
 ### UAT-PR-01 — Public recipient opens a shared copy without losing local work
 
@@ -418,10 +630,15 @@ local document; browser B is signed out or signed in but contains
 6. Confirm the user guide or publish guidance states that the URL is public to
    anyone who has it, expires after 30 days, can be revoked by the publisher,
    and may be cached for about a minute. No sensitive fixture data is used.
+7. In browser A, still signed out, find the **sign in** chip in the toolbar.
+   Choose **keep this copy**, or start a **new** document: a prompt offers
+   sign-in, says the work stays in this browser until then, can be dismissed,
+   and blocks nothing. The editor keeps working and the status reads saved.
 
 **Acceptance:** The link works signed out; local and shared autosave slots never
 silently overwrite one another; back and keep behave exactly as described; the
-public-link residual risk is discoverable and understood by the participant.
+sign-in prompt never blocks editing; the public-link residual risk is
+discoverable and understood by the participant.
 
 ### UAT-PR-02 — Invalid, expired, and refreshed shared-link behavior
 
@@ -497,9 +714,11 @@ current product does not grant a second owner identity access to the workspace.
 1. From the same base revision, let the human and agent change different fields
    on different elements. Submit the agent proposal after the human commit. The
    disjoint changes rebase without losing either result.
-2. Repeat with both editing the same field. The product reports a conflict and
-   does not choose a silent winner. Resolve deliberately and verify canonical
-   state and timeline attribution.
+2. Repeat with both setting the same field to different values. The product
+   reports a conflict, names the committed write it collided with, and does
+   not choose a silent winner. Resolve deliberately and verify canonical
+   state and timeline attribution. (Setting the field to the value already
+   committed is not a conflict; UAT-WS-04 covers that case.)
 3. Repeat with one actor deleting an element while the other edits it. The
    conflict or dependency result is explicit; no dangling reference is created.
 4. Attempt direct agent application without a lease. It fails with actionable
@@ -551,6 +770,43 @@ controls; enough disposable checkpoints to exercise the documented cap.
 not duplicate or vanish; conflicts and recovery choices are explicit; timeline,
 checkpoint ids, and before/after exports are attached.
 
+### UAT-WS-04 — Attributed conflicts, supersede, text limits, and large syncs
+
+**Priority:** P1 when workspace is enabled
+**Capability state:** Feature-gated — `WORKSPACE_ENABLED`
+**Persona:** Human-agent workspace owner
+**Business outcome:** BO-04
+
+**Preconditions:** An active workspace, the owner's browser, and an authorized
+MCP agent; a node the agent may relabel; no active lease.
+
+**Steps and expected results:**
+
+1. Have the agent propose a new label for the node from revision R, and accept
+   it. Have the agent submit a second proposal that is also based on R and
+   sets the same label to another value. The second proposal arrives
+   conflicted; its card names the field and attributes the collision to the
+   agent's earlier accepted proposal, with its revision, author, and committed
+   value.
+2. The card offers **Accept · supersede**. Accept it: the newer value is
+   committed as a new revision.
+3. Repeat step 1, but edit the same label in the browser before the second
+   proposal arrives. The proposal is conflicted, names the owner's edit, and
+   offers no supersede.
+4. Have the agent propose setting a field to the value a later revision has
+   already committed. The proposal is not conflicted on that field.
+5. Have the agent submit a proposal whose label is 201 characters long. It is
+   refused when submitted, the message names the operation, the element, and
+   the field, and no proposal appears.
+6. Generate an SD-WAN fabric with three regions, three WAN links per branch,
+   and HA branch edges, and hand it off as a new workspace. Select everything,
+   copy, and paste. The sync completes without an error and the workspace
+   revision advances by more than one.
+
+**Acceptance:** Every conflict is attributed; supersede is offered only for the
+agent's own earlier writes; identical writes do not conflict; overlong text
+never becomes a proposal; a large change syncs in full.
+
 ### UAT-MCP-01 — Compact MCP authoring loop with batch edit and render inspection
 
 **Priority:** P0 for hosted MCP releases
@@ -569,13 +825,15 @@ configuration; sanitized transcript capture; no topology ids from another owner.
 2. Create a private topology. Use `edit_topology` to add a coherent batch of
    nodes, links, a zone, layers, and annotations. A malformed operation in a
    separate test returns a structured actionable error and does not corrupt the
-   document.
+   document. So does an argument the tool does not take: the error names the
+   argument and the ones the tool accepts, and nothing is written.
 3. Use bounded/summary reads to inspect page ids, counts, and only the elements
    needed for the next edit. The normal loop does not repeatedly return the
    entire rich document.
-4. Validate, then run the appropriate layout/Tidy/Balance operations. Anchors
-   and manual waypoints remain attached; the final validation has no semantic
-   error or overlap warning.
+4. Validate, then run the appropriate layout/Tidy/Balance operations. Pass
+   `pageIndex` when only one page should move; without it these tools arrange
+   every page. Anchors and manual waypoints remain attached; the final
+   validation has no semantic error or overlap warning.
 5. Call `inspect_render`. Use its compact findings to correct at least one
    intentionally seeded visual-quality issue, then call it again and confirm
    improvement.
@@ -611,9 +869,9 @@ on.
 3. In the browser, edit one element of each major kind and add a page. The agent
    reads the compact manifest/change summary and hydrates only affected
    elements, then accurately explains the changes.
-4. Send invalid element id, out-of-range page target, and invalid enum requests
-   one at a time. Each returns an actionable error; the following valid request
-   succeeds and canonical state remains valid.
+4. Send invalid element id, out-of-range page target, invalid enum, and
+   unknown-argument requests one at a time. Each returns an actionable error;
+   the following valid request succeeds and canonical state remains valid.
 5. Have the agent submit a final proposal, accept it in the browser, and verify
    the same revision through both surfaces.
 
@@ -630,7 +888,10 @@ declared in scope
 
 **Preconditions:** Mock provider in a non-production environment. For the real
 branch, written approval, a read-only test tenant, known expected inventory, and
-secrets injected only through environment configuration.
+secrets injected only through environment configuration. The real branch also
+needs `LIVE_DATA_ENABLED=true`; when `LIVE_DATA_GITHUB_IDS` is set the tester's
+GitHub numeric id must be on it, and an API key needs the `live-data` scope.
+Otherwise the live-data tools are not registered at all.
 
 **Steps and expected results:**
 
@@ -686,6 +947,97 @@ MCP client that can send a static bearer header (or `curl`).
 
 **Acceptance:** All steps pass. Any key accepted on a cookie route, any
 plaintext at rest, or any scope leak (step 2) is a P0 failure.
+
+### UAT-MCP-05 — Templates with parameters, the SD-WAN generator, and path analysis
+
+**Priority:** P1 for hosted MCP releases
+**Capability state:** Core hosted MCP; repeat steps 1–9 over local stdio
+**Persona:** MCP operator
+**Business outcome:** BO-05
+
+**Preconditions:** As UAT-MCP-01. Step 10 needs the hosted endpoint and a
+client that can send more than 120 calls in a minute.
+
+**Steps and expected results:**
+
+1. Call `list_templates`. The result is an object: `templates`, each with its
+   `params` (name, type, range, default), and `generators`, which points to
+   `generate_sdwan_topology`.
+2. Call `create_from_template` with
+   `{"template": "hub-spoke", "params": {"hubs": 2, "sites": 9}}`. The result
+   returns the resolved `params` and `stats` of 11 nodes and 19 links.
+   `validate_topology` and `inspect_render` report no problem.
+3. Call it with `{"template": "spine-leaf", "params": {"leaves": 40}}`, then
+   with `{"template": "spine-leaf", "params": {"leafs": 4}}`. Each call is
+   refused with a message that names the parameter, and no topology is
+   created.
+4. Call `generate_sdwan_topology` with a vendor, two regions, and HA branch
+   edges. A new, laid-out fabric is created, `validate_topology` reports no
+   error, and its elements carry the source system `synthetic`.
+5. On the document from step 2 call `analyze_path` from `site1` to `site3`.
+   The answer has `status: "found"`, lists a two-hop route through each hub
+   first, and longer routes after them. Nothing in the document changes.
+6. Call `analyze_path` again with `show: "page"`. A page named for the path is
+   appended, with the route spotlit and a caption; the page that was read is
+   unchanged.
+7. Add a node with no link and call `analyze_path` to it: the answer is
+   `status: "disconnected"` with a `next` hint. Use an id that is not a node
+   or anchor: the call is an error that names the id.
+8. Call `tidy_topology` with `pageIndex: 1` on the two-page document: only
+   that page is arranged. Call it with `page: 1`: the call is refused, the
+   message suggests `pageIndex`, and nothing moves.
+9. Call `add_node` with `status: "down"` written beside the other arguments:
+   the node is created with that status. Call `add_link` to an id that is not
+   on the page: the call is refused and says to add the node first. Confirm
+   `set_document_title` is absent from the tool list and works as an
+   `edit_topology` operation.
+10. Hosted only: send 121 `add_node` calls within one minute. The call over
+    the limit is refused with a message that begins
+    `rate limited (mutating MCP tools: 120 per 60s). Retry after`, and a call
+    after the stated delay succeeds. One `edit_topology` batch of many nodes
+    counts as a single call.
+
+**Acceptance:** Parameters, refusals, and path answers match the MCP guide; no
+argument is silently dropped; the rate limit names its retry delay.
+
+### UAT-MCP-06 — File exports, the inline view, and a wire sheet over MCP
+
+**Priority:** P1 for hosted MCP releases
+**Capability state:** Core hosted MCP; steps 1, 2, and 4–6 also over local stdio
+**Persona:** MCP operator
+**Business outcome:** BO-05
+
+**Preconditions:** As UAT-MCP-01; a two-page draft with a caption and a declared
+layer; draw.io and an office suite to open the files; for step 3, a host that
+supports MCP Apps.
+
+**Steps and expected results:**
+
+1. Call `export_topology` once for each `format`: `png`, `pdf`, `drawio`,
+   `vsdx`, `pptx`, and `mermaid`. Each call returns a file; over local stdio,
+   `outputPath` writes it under the export directory instead. Open each file:
+   the PNG and PDF match `render_svg` for the page, the PDF has one page per
+   frame, and the draw.io, Visio, and PowerPoint files open with their shapes
+   and connectors.
+2. Call `render_svg` with no `profile`, then with `profile: "full"`. The first
+   result is static and smaller; the second is the animated build.
+3. Call `view_topology`. In a host that supports MCP Apps the diagram appears
+   inline with pan, zoom, page switching, layer toggles, light and dark, and
+   downloads. In any other host the call returns a one-line summary. Mark the
+   inline branch `N/A — condition unavailable` when no such host is at hand.
+4. Call `list_hardware` and pick a model. Bind two nodes with
+   `bind_hardware`, link them, and call `assign_interfaces`, first to read
+   the plan and then with `apply: true`. `validate_topology` reports no
+   cabling error, or names the rule code to fix.
+5. Call `set_page_properties` with `view: "wiresheet"`, then `render_svg`.
+   The bound nodes are drawn as their panels with the cable on the assigned
+   ports.
+6. Call `export_topology` with `format: "cable-schedule"`. The result has one
+   row per link with both ends' device, model, and interface.
+
+**Acceptance:** Every export opens in its target tool; the inline view or its
+summary appears as described; the wire sheet and cable schedule agree with the
+bindings. Record the office suite used.
 
 ### UAT-PM-01 — Preference observation, confirmation, scope, and control
 
@@ -1047,6 +1399,14 @@ release has not claimed otherwise. They must remain visible in the UAT report:
 10. **Forward-only migration recovery applies.** Once a Durable Object migration
     is applied, recovery uses a new forward deployment and feature disablement,
     not rollback across the migration.
+11. **Editable exports are lossy, and Microsoft Office is unverified.** draw.io,
+    Visio, and PowerPoint exports keep structure and geometry and drop what
+    the [export fidelity contract](../EXPORTS.md) lists. The `.vsdx` and
+    `.pptx` files have been opened in LibreOffice, not in Microsoft Visio or
+    PowerPoint.
+12. **The hardware catalog and wire sheets are server-side.** They are reached
+    through MCP; the browser editor has no catalog and draws a wire-sheet page
+    as a logical page.
 
 Any change to these risks requires a user-guide, QA, UAT, and traceability update
 in the same release.

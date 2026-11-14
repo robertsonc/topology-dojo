@@ -40,6 +40,36 @@ The User Guide tells users not to select anchors as zone members until this is
 resolved. This observation is a current QA finding and does not alter the
 historical July finding count above.
 
+### November 2026 review: observations left open
+
+A second review ran on 2026-11-14 against `501e7a4`: four browser QA passes,
+an MCP acceptance pass, a code review, and a comparison with other diagram
+tools. What it found and fixed is recorded as test cases in the
+[QA test plan](./QA_TEST_PLAN.md) §7.9–§7.14, with the evidence for each.
+
+The rows below are what it found and did **not** fix. Each was reproduced at
+`501e7a4`. None was re-tested after the fixes, so a row may have been
+improved in passing; none was targeted.
+
+| ID                    | Status | Observation                                                                                                                                                                                               | Suggested disposition                                                                            |
+| --------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| QA-2026-11-14-UI-01   | Open   | The toolbar is wider than the window below about 1,850 px: at 1,440 px its content was 1,846 px in 1,406 px of room, so the right-hand controls are reached by scrolling the bar sideways.                | Group the export, template and arrange actions into menus, or an overflow menu.                  |
+| QA-2026-11-14-UI-02   | Open   | Document- and page-level edits are outside undo: title, page name, legend, sheet, layers, brand palette, custom node types, stencil delete, and adding, duplicating or reordering frames.                 | Decide which belong in history; frame operations are the ones users expect to undo.              |
+| QA-2026-11-14-UI-03   | Open   | Reference fields take internal ids typed by hand: an element's layer, a marker's node and flow path, a zone's parent zone, a callout's target.                                                            | Draw them as pickers listing the page's elements by label.                                       |
+| QA-2026-11-14-UI-04   | Open   | With several nodes selected, Properties offers Format and (for two nodes) Path, but no shared fields: colour, layer and status cannot be set on a multi-selection there.                                  | Show the fields the selection has in common.                                                     |
+| QA-2026-11-14-A11Y-01 | Open   | Canvas elements cannot be reached or selected from the keyboard, links cannot be created without a pointer, and the context menu has no keyboard trigger (Shift+F10 or the Menu key).                     | A keyboard path to select and act on elements; owned by the accessibility cases in QA plan §8.2. |
+| QA-2026-11-14-A11Y-02 | Open   | Toggle buttons (tool, grid, snap, calm, badges) expose no pressed state and panel toggles no expanded state; several text and icon colours measured below 4.5:1 (muted text 4.32:1, placeholders 2.97:1). | Add `aria-pressed` / `aria-expanded`; adjust the muted and placeholder tokens.                   |
+| QA-2026-11-14-CAN-01  | Open   | Flow paths and policy markers cannot be selected on the canvas, only from the Properties list. Dragging a zone does not move its members.                                                                 | Hit-test flows and markers; treat a zone drag as a move of its members.                          |
+| QA-2026-11-14-CAN-02  | Open   | A 2,000-node document took 7.6 s to add one node. The cause was not profiled.                                                                                                                             | Profile first (QA plan §8.3), then decide.                                                       |
+| QA-2026-11-14-DOC-01  | Open   | Changing the sheet size overwrites every frame's canvas size, with nothing to put the old sizes back.                                                                                                     | Apply to the current frame, or make it one undoable step.                                        |
+| QA-2026-11-14-DOC-02  | Open   | Present mode does not fill the screen.                                                                                                                                                                    | Size the stage to the viewport.                                                                  |
+| QA-2026-11-14-DOC-03  | Open   | The SD-WAN wizard's Cancel confirmation discards the choices made, and its preview counts the first page only.                                                                                            | Keep the choices on a declined cancel; count every page.                                         |
+| QA-2026-11-14-MCP-01  | Open   | Server-side PNG and PDF draw emoji marker icons as empty boxes (the embedded font has no emoji). Arrows and the deny, redirect and NAT icons were fixed.                                                  | Draw marker icons as paths rather than text.                                                     |
+| QA-2026-11-14-MCP-02  | Open   | `export_topology` PNG has no size check before rendering; there is no element-level read, so an agent fetches a whole page to inspect one element; a compiled flow cannot be refreshed in place.          | Separate follow-ups; none blocks authoring.                                                      |
+| QA-2026-11-14-MCP-03  | Open   | `analyze_path` is refused on a shared workspace even with `show: none`, because admission is by tool name and the tool can write.                                                                         | Admit by arguments, or split the read from the write.                                            |
+| QA-2026-11-14-RND-01  | Open   | `inspect_render` measures an overlay-cloud hub as 40×40 where it is drawn about 124×68, so overlaps with the cloud go unreported.                                                                         | Give the type a hit box that matches its art.                                                    |
+| QA-2026-11-14-WHL-01  | Open   | The mouse-or-trackpad guess behind the wheel's Auto setting was not run on physical devices.                                                                                                              | QA case EDT-39: a real trackpad and a real mouse on macOS and Windows.                           |
+
 ## CRITICAL (4)
 
 ### C1. Malformed page viewBox turns every node coordinate into NaN in tidy/layout/balance — persisted data destruction
