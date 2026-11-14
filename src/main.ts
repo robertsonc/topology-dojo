@@ -91,6 +91,12 @@ import {
   defaultPanelCollapsed,
   isMobileLayoutWidth,
 } from './ui/mobile-layout.js';
+import {
+  editorInsets,
+  fitInsets,
+  leftInsetShift,
+  type PanelBox,
+} from './ui/fit-insets.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -456,11 +462,6 @@ const editor = new Editor(
   onZoneSelectChange,
 );
 
-/*
- * Tell the editor how much of the canvas the floating panels cover, so
- * fit-to-content frames the *visible* area and never tucks edge content behind
- * the inspector or minimap. Recomputed on each fit (panels collapse/expand).
- */
 // Draw the auto-legend (B.1) on the canvas — recomputed each overlay paint from
 // the elements in use, so it tracks edits live. Off unless the document opts in.
 // Themed like the art (#264) so the on-canvas legend/caption read in light mode.
@@ -832,32 +833,63 @@ editor.setConnectEmptyHandler((req) =>
   ),
 );
 
+/*
+ * Tell the editor how much of the canvas the floating panels cover, so
+ * fit-to-content frames the *visible* area and never tucks edge content behind
+ * the node library, the bottom band or the properties drawer. Recomputed on
+ * each fit (panels collapse/expand).
+ */
+/** A floating panel's box, or null while it is collapsed or not laid out. */
+const openPanelBox = (id: string): PanelBox | null => {
+  const el = document.getElementById(id);
+  if (!el || el.classList.contains('collapsed')) return null;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 ? r : null;
+};
+/** The left inset the editor's latest fit was computed with (see fitView). */
+let fitLeftInset = 0;
 editor.setViewInsets(() => {
-  const canvas = overlaySvg.getBoundingClientRect();
-  let right = 0;
-  const insp = document.getElementById('inspector-wrap');
-  if (insp && !insp.classList.contains('collapsed')) {
-    const r = insp.getBoundingClientRect();
-    if (r.width > 0) right = Math.max(right, canvas.right - r.left + 12);
-  }
-  // The bottom band (frames strip + view controls) floats over the canvas;
-  // reserve it so a fit never tucks content behind it. The view controls are
-  // always there, so the band is reserved with the strip collapsed too. The
-  // minimap docks in the left rail and reserves nothing.
-  let bottom = 0;
-  const dock = document.getElementById('canvas-dock');
-  if (dock) {
-    const r = dock.getBoundingClientRect();
-    if (r.height > 0) bottom = Math.max(0, canvas.bottom - r.top + 12);
-  }
-  // Never surrender more than ~60% of the canvas to a panel.
-  return {
-    right: Math.max(0, Math.min(right, canvas.width * 0.6)),
-    bottom: Math.max(0, Math.min(bottom, canvas.height * 0.6)),
-  };
+  const insets = fitInsets({
+    canvas: overlaySvg.getBoundingClientRect(),
+    palette: openPanelBox('palette'),
+    inspector: openPanelBox('inspector-wrap'),
+    // The view controls are always in the bottom band, so it is reserved
+    // with the frames strip collapsed too.
+    dock: openPanelBox('canvas-dock'),
+  });
+  fitLeftInset = insets.left;
+  return editorInsets(insets);
 });
+/*
+ * The editor's fit takes a right and a bottom inset and centres the content
+ * in what is left, measured from the canvas's left edge — it has no notion of
+ * a panel on the left. So the left inset reaches it folded into the right one
+ * (which gets the scale right), and once the editor has fitted, the view is
+ * moved here so the content sits past the node library instead of under it.
+ * Every fit the shell asks for goes through fitView / showPage for that.
+ */
+function settleFit(): void {
+  const left = fitLeftInset;
+  fitLeftInset = 0;
+  const width = overlaySvg.getBoundingClientRect().width;
+  const view = editor.getView();
+  const shift = leftInsetShift(view.w, width, left);
+  if (shift > 0) editor.panTo(view.x + view.w / 2 - shift, view.y + view.h / 2);
+}
+/** Fit the view to the page's content, clear of the floating panels. */
+function fitView(): void {
+  fitLeftInset = 0;
+  editor.resetView();
+  settleFit();
+}
+/** Show a page in the editor, fitted clear of the floating panels. */
+function showPage(page: Page): void {
+  fitLeftInset = 0;
+  editor.setPage(page);
+  settleFit();
+}
 // Initial fit once the canvas has real dimensions (constructor ran pre-layout).
-requestAnimationFrame(() => editor.resetView());
+requestAnimationFrame(fitView);
 
 /* Replace the whole document (open / new) and refresh everything.
  * `slot` is the autosave destination: every explicit replacement (new, open,
@@ -909,7 +941,7 @@ function loadDoc(
   buildPalette();
   // Adopt the incoming document's brand palette (canvas + chrome + inputs).
   applyBrandPalette(doc.palette, false);
-  editor.setPage(doc.pages[current]!);
+  showPage(doc.pages[current]!);
   renderFilmstrip();
   renderProblems();
   if (sync) markDirty();
@@ -1483,10 +1515,8 @@ app
 app
   .querySelector('#ccZoomOut')!
   .addEventListener('click', () => editor.zoomOut());
-ccZoom.addEventListener('click', () => editor.resetView());
-app
-  .querySelector('#ccFit')!
-  .addEventListener('click', () => editor.resetView());
+ccZoom.addEventListener('click', fitView);
+app.querySelector('#ccFit')!.addEventListener('click', fitView);
 
 /** Reflect undo/redo availability + live zoom % in the chrome. */
 function refreshChrome(): void {
@@ -3003,7 +3033,7 @@ function wireSheet(): void {
     const vb = sheetViewBox(sh().size, sh().orientation);
     if (!vb) return;
     for (const p of doc.pages) p.viewBox = vb;
-    editor.setPage(doc.pages[current]!);
+    showPage(doc.pages[current]!);
   };
   inspector
     .querySelector<HTMLSelectElement>('#p-sheet-size')
@@ -4273,7 +4303,7 @@ function renderFilmstrip(): void {
 function gotoPage(i: number): void {
   stopPlayback();
   current = i;
-  editor.setPage(doc.pages[current]!);
+  showPage(doc.pages[current]!);
   renderFilmstrip();
   renderProblems();
 }
@@ -4342,7 +4372,7 @@ function deletePage(i: number): void {
   };
   if (current >= doc.pages.length) current = doc.pages.length - 1;
   else if (i < current) current -= 1;
-  editor.setPage(doc.pages[current]!);
+  showPage(doc.pages[current]!);
   renderFilmstrip();
   markDirty();
 }
@@ -4361,7 +4391,7 @@ function reorderPage(from: number, to: number): void {
 function selectPage(i: number): void {
   if (i < 0 || i >= doc.pages.length) return;
   current = i;
-  editor.setPage(doc.pages[current]!);
+  showPage(doc.pages[current]!);
   // Report the new page to the workspace presence socket (Packet S1).
   workspacePanelHandle.notifyPageChanged();
   // Update highlight without rebuilding the strip (so dblclick-rename survives).
@@ -4661,7 +4691,7 @@ layoutSel.addEventListener('change', () => {
       algorithm: algorithm as 'grid' | 'hierarchical' | 'circular' | 'force',
     });
 });
-app.querySelector('#tFit')?.addEventListener('click', () => editor.resetView());
+app.querySelector('#tFit')?.addEventListener('click', fitView);
 
 /* ── Keyboard-shortcut help overlay (?) ────────────────────────────── */
 const SHORTCUTS: { group: string; items: [string, string][] }[] = [
@@ -5321,7 +5351,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
   if (e.key === 't') editor.tidy();
   if (e.key === 'T') editor.balance(); // Shift+T
-  if (e.key === '0') editor.resetView();
+  if (e.key === '0') fitView();
   if (e.key === 'l' || e.key === 'L') setTool('link');
   if (e.key === 'v' || e.key === 'V') setTool('select');
   if (e.key === 'a' || e.key === 'A') setTool('anchor');

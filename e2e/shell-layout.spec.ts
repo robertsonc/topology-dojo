@@ -144,3 +144,77 @@ test('the quick-add picker opens fully inside the visible canvas', async ({
   expectInside(pop, b.stage!);
   expectInside(pop, b.viewport!);
 });
+
+/** Viewport boxes of every node drawn on the canvas. */
+async function nodeBoxes(page: Page): Promise<Box[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('#page-canvas [data-tds-node]')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    }),
+  );
+}
+
+/** Every node is on the visible canvas: right of the node library (when it
+ * is open), above the bottom band and inside the canvas box. */
+async function expectContentVisible(
+  page: Page,
+  paletteOpen: boolean,
+): Promise<number> {
+  const b = await boxes(page, {
+    host: '.canvas-host',
+    palette: '#palette',
+    dock: '#canvas-dock',
+  });
+  const nodes = await nodeBoxes(page);
+  expect(nodes.length).toBeGreaterThan(0);
+  for (const n of nodes) {
+    expectInside(n, b.host!);
+    expect(n.bottom).toBeLessThanOrEqual(b.dock!.top);
+    if (paletteOpen) expect(n.left).toBeGreaterThanOrEqual(b.palette!.right);
+  }
+  return Math.min(...nodes.map((n) => n.left));
+}
+
+for (const viewport of [
+  { width: 1280, height: 720 },
+  { width: 1440, height: 900 },
+]) {
+  test(`fit view keeps the content clear of the node library at ${viewport.width}×${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await bootEditor(page);
+
+    // The first fit, made as the editor boots.
+    await expect
+      .poll(async () => Math.min(...(await nodeBoxes(page)).map((n) => n.left)))
+      .toBeGreaterThan(174);
+    await expectContentVisible(page, true);
+
+    // Each way of asking for a fit: the shortcut, the toolbar, the canvas.
+    for (const fit of [
+      () => page.keyboard.press('0'),
+      () => page.locator('#tFit').click(),
+      () => page.locator('#ccFit').click(),
+      () => page.locator('#ccZoom').click(),
+    ]) {
+      await page.locator('#ccZoomOut').click(); // move off the fitted view
+      await fit();
+      await expectContentVisible(page, true);
+    }
+    const leftWithPalette = await expectContentVisible(page, true);
+
+    // A frame switch fits the new frame the same way.
+    await page.locator('#dupPage').click();
+    await expect(page.locator('#frames-ind')).toHaveText('2/2');
+    await expectContentVisible(page, true);
+
+    // With the library collapsed its edge is free again and the content
+    // moves back into it.
+    await page.locator('#palette-toggle').click();
+    await page.keyboard.press('0');
+    const leftWithout = await expectContentVisible(page, false);
+    expect(leftWithout).toBeLessThan(leftWithPalette);
+  });
+}
