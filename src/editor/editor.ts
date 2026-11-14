@@ -2225,6 +2225,10 @@ export class Editor {
   }
 
   undo(): void {
+    // Not while a button is held: the gesture in flight owns the newest
+    // undo entry (or is about to push one), and stepping through history
+    // under it leaves the drag impossible to undo.
+    if (this.gestureActive()) return;
     const prev = this.undoStack.pop();
     if (prev === undefined) return;
     // Undo/redo replace the page wholesale; emitting precise inverse ops isn't
@@ -2239,6 +2243,7 @@ export class Editor {
   }
 
   redo(): void {
+    if (this.gestureActive()) return; // see undo
     const next = this.redoStack.pop();
     if (next === undefined) return;
     this.pendingOps = [];
@@ -2250,16 +2255,14 @@ export class Editor {
   }
 
   /**
-   * After undo / redo replaced the page: the node and zone selection is
-   * dropped; selected links and anchors stay selected only if they still
-   * exist (a link whose creation was just undone must not stay "selected").
-   * The shell is told in any case, since what it shows may have changed.
+   * After undo / redo replaced the page: the selection stays, minus whatever
+   * no longer exists (a link whose creation was just undone must not stay
+   * "selected"). Clearing it instead would send the next arrow key to "flip
+   * the page" in the middle of a nudge → undo → nudge. The shell is told in
+   * any case, since what it shows of the selection may have changed.
    */
   private afterHistoryStep(): void {
-    if (this._linkSel !== null || this.selAnchors.size > 0)
-      this.pruneSelection();
-    if (this.sel.size > 0 || this.zoneSel !== null)
-      this.setSelection({ anchors: this.selAnchors });
+    this.pruneSelection();
     this.renderOverlay();
     this.fireSelect();
   }
