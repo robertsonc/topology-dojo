@@ -555,6 +555,7 @@ export class Editor {
     this.endDrag = null;
     this.zonePress = null;
     this.hoverNode = null;
+    this.emphasisPreview = null; // a preview belongs to the page it was made on
     this.view = this.computeFitView();
     this.renderArt();
     this.renderOverlay();
@@ -910,6 +911,8 @@ export class Editor {
    * always applied on top.
    */
   private renderOpts: (() => Record<string, unknown>) | null = null;
+  /** View-only emphasis drawn in place of the frame's own (previewEmphasis). */
+  private emphasisPreview: string[] | null = null;
   setRenderOpts(fn: (() => Record<string, unknown>) | null): void {
     this.renderOpts = fn;
     this.renderArt();
@@ -927,16 +930,23 @@ export class Editor {
       this.artRaf = 0;
     }
     this.linkShapes.clear();
-    renderPageInto(this.art, this.page, {
+    renderPageInto(this.art, this.page, this.artOptions());
+    // renderPageInto resets the art viewBox to the page's; re-apply the view.
+    this.applyView();
+  }
+
+  /** What every art render is drawn with. */
+  private artOptions(): Record<string, unknown> {
+    return {
       ...this.renderOpts?.(),
-      emphasis: this.page.emphasis,
+      // A preview (see `previewEmphasis`) is drawn in place of the frame's own
+      // emphasis while it is set; the frame's is untouched.
+      emphasis: this.emphasisPreview ?? this.page.emphasis,
       calm: this.calm,
       ambient: this.ambient,
       theme: this.light ? 'light' : 'dark',
       palette: this.palette,
-    });
-    // renderPageInto resets the art viewBox to the page's; re-apply the view.
-    this.applyView();
+    };
   }
 
   /**
@@ -952,14 +962,7 @@ export class Editor {
     this.artRaf = requestAnimationFrame(() => {
       this.artRaf = 0;
       this.linkShapes.clear();
-      renderPageInto(this.art, this.page, {
-        ...this.renderOpts?.(),
-        emphasis: this.page.emphasis,
-        calm: this.calm,
-        ambient: this.ambient,
-        theme: this.light ? 'light' : 'dark',
-        palette: this.palette,
-      });
+      renderPageInto(this.art, this.page, this.artOptions());
       this.applyView();
     });
   }
@@ -2648,6 +2651,47 @@ export class Editor {
     this.renderOverlay();
     this.onChange();
   }
+  /**
+   * Make `ids` the frame's emphasis, as one undo step: these are spotlit and
+   * everything else is dimmed. An empty list clears it. Ids that are not a
+   * node or a link of the page are dropped; nothing is pushed on the undo
+   * stack when the frame already has exactly this emphasis.
+   */
+  setEmphasis(ids: readonly string[]): void {
+    const known = this.emphasizable();
+    const next = [...new Set(ids)].filter((id) => known.has(id));
+    if (JSON.stringify(next) === JSON.stringify(this.page.emphasis ?? []))
+      return;
+    this.applyEmphasis(next);
+  }
+
+  /**
+   * Draw the page as if `ids` were its emphasis, without changing the
+   * document: nothing is stored, nothing goes on the undo stack, and exports
+   * and the saved file still carry the frame's own emphasis. `null` ends the
+   * preview. Switching pages ends it too.
+   */
+  previewEmphasis(ids: readonly string[] | null): void {
+    const known = this.emphasizable();
+    const next = ids === null ? null : ids.filter((id) => known.has(id));
+    if (JSON.stringify(next) === JSON.stringify(this.emphasisPreview)) return;
+    this.emphasisPreview = next;
+    this.renderArt();
+  }
+
+  /** The ids being previewed, or null when there is no preview. */
+  emphasisPreviewIds(): string[] | null {
+    return this.emphasisPreview ? [...this.emphasisPreview] : null;
+  }
+
+  /** Ids emphasis can name: the page's nodes and links. */
+  private emphasizable(): Set<string> {
+    return new Set([
+      ...this.page.nodes.map((n) => n.id),
+      ...this.page.links.map((l) => l.id),
+    ]);
+  }
+
   /** Add the current selection (nodes + the selected link) to the emphasis set. */
   emphasizeSelection(): void {
     const next = new Set(this.page.emphasis ?? []);

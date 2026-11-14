@@ -279,21 +279,25 @@ sourcedOnly:true` list what an importer owns; there's no surface yet for
   human-only view control.
 - ~~**Server-side / MCP PNG export**~~ — **shipped** in Phase 1 (resvg
   WebAssembly rasterizer, `export_topology` png / pdf; see `docs/EXPORTS.md`).
-- **Path analysis between elements ("visual traceroute")** — select two
-  nodes (e.g. two hosts), right-click → "Analyze path": compute the
-  traversal across the page's drawn link graph and present it as a focused
-  view — the traversal set spotlit, everything else dimmed — with the hops
-  optionally overlaid as an animated flow. Both rendering primitives already
-  exist: the per-frame `emphasis` option (`src/render/core.ts` — spotlight a
-  node/link id set, dim the rest to 25%) and page `flowPaths`
-  (`add_flow_path` waypoints). The new pieces are a deterministic
-  shortest/all-paths computation over the in-document graph, the two-node
-  selection + context-menu UX, and — per the one-catalog rule (`DESIGN.md`
-  #2/#3) — an agent-callable `analyze_path` equivalent of the same action.
-  Static first: answers come only from what the document already draws
-  (multiple candidate paths → present alternatives; disconnected → say so,
-  which is itself diagnostic). Page-scoped presentation state (or emitted as
-  a new flipbook page), never cross-page inheritance (decision 0001).
+- ~~**Path analysis between elements ("visual traceroute")**~~ — **shipped
+  2026-11-14**, static, as scoped: answers come only from what the page
+  draws.
+  - One computation for people and agents: `analyzePath` in
+    `src/api/path.ts` (routes shortest first over the page's drawn link
+    graph; hidden layers, blocked / down links and down nodes respected;
+    alternatives up to a bound; "disconnected" explained).
+  - Editor: select two nodes → **Analyze path** (context menu or Properties).
+    The route is spotlit as a preview that changes nothing; a bar offers the
+    alternatives and three ways to keep it — emphasize the frame, add a flow
+    along it, or copy the frame with the route emphasized and captioned. The
+    path is traced again after every edit while the bar is open.
+  - Agents: `analyze_path`, whose `show` option (`emphasis` / `flow` /
+    `page`) is the same three actions.
+  - Page-scoped throughout (decision 0001): emphasis and flows are written
+    to the page, a new frame is a new page; nothing is inherited across
+    pages.
+  - Not done: weighting (cost, bandwidth, policy), and anything live — see
+    "Reverse agentic dispatch — live path discovery" under Later.
 
 ## Later
 

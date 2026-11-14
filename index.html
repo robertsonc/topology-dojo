@@ -2670,6 +2670,63 @@
         color: var(--muted);
       }
 
+      /* Path analysis bar: the route between two nodes, and what to do
+         with it. Sits under the toolbar, over the canvas. */
+      .path-bar {
+        position: fixed;
+        top: 64px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 29;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        /* As wide as its one line of text needs, up to the limit; then the
+           text wraps. */
+        width: max-content;
+        max-width: min(860px, calc(100vw - 32px));
+        box-sizing: border-box;
+        padding: 6px 8px 6px 12px;
+        background: var(--panel2);
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        font-family: var(--font);
+        font-size: 12px;
+        color: var(--text);
+      }
+      .path-bar.none {
+        border-color: var(--border);
+      }
+      .path-text {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .path-title {
+        overflow-wrap: anywhere;
+      }
+      .path-notes {
+        margin-top: 2px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .path-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 2px;
+      }
+      .path-count {
+        color: var(--muted);
+        padding: 0 2px;
+        white-space: nowrap;
+      }
+      .path-bar .tbtn:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
       /* Inline label editing — a floating input anchored over the canvas
          element being renamed (double-click a node / link / zone). */
       .inline-label-edit {
