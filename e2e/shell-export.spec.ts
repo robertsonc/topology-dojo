@@ -117,3 +117,42 @@ test('every export in the menu reports how it went', async ({ page }) => {
   await expect(status).toHaveAttribute('title', /select one or more nodes/i);
   expect(alerts).toHaveLength(1);
 });
+
+/* ── imports ───────────────────────────────────────────────────────────── */
+
+/** A two-page draw.io file: three shapes and a connector, then one shape. */
+const TWO_PAGE_DRAWIO = `<mxfile>
+  <diagram name="Core"><mxGraphModel><root>
+    <mxCell id="0"/><mxCell id="1" parent="0"/>
+    <mxCell id="a" value="R1" style="rounded=1" vertex="1" parent="1"><mxGeometry x="80" y="80" width="80" height="40" as="geometry"/></mxCell>
+    <mxCell id="b" value="R2" style="rounded=1" vertex="1" parent="1"><mxGeometry x="280" y="80" width="80" height="40" as="geometry"/></mxCell>
+    <mxCell id="c" value="R3" style="rounded=1" vertex="1" parent="1"><mxGeometry x="180" y="220" width="80" height="40" as="geometry"/></mxCell>
+    <mxCell id="e" edge="1" source="a" target="b" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+  </root></mxGraphModel></diagram>
+  <diagram name="Edge"><mxGraphModel><root>
+    <mxCell id="0"/><mxCell id="1" parent="0"/>
+    <mxCell id="d" value="S1" style="rounded=1" vertex="1" parent="1"><mxGeometry x="80" y="80" width="80" height="40" as="geometry"/></mxCell>
+  </root></mxGraphModel></diagram>
+</mxfile>`;
+
+test('the import confirmation counts every page and says the diagram is replaced', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const asked: string[] = [];
+  page.on('dialog', (d) => {
+    asked.push(d.message());
+    void d.accept();
+  });
+  await page.locator('#fInput').setInputFiles({
+    name: 'two-pages.drawio',
+    mimeType: 'application/xml',
+    buffer: Buffer.from(TWO_PAGE_DRAWIO),
+  });
+  await expect(page.locator('#frames-ind')).toHaveText('1/2');
+
+  expect(asked).toHaveLength(1);
+  const question = asked[0]!;
+  expect(question).toMatch(/^Replace the current diagram with this draw\.io/);
+  expect(question).toContain('2 pages, 4 nodes and 1 link in total');
+});

@@ -113,6 +113,7 @@ import {
   parseNumberField,
 } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
+import { importConfirmText } from './ui/replace-document.js';
 import { exportRenderOptions } from './ui/export-options.js';
 import { exportReport, type ExportState } from './ui/export-status.js';
 import { classifyOpenedFile } from './import/open.js';
@@ -1449,19 +1450,7 @@ fileInput.addEventListener('change', async () => {
       return;
     }
     const { document, warnings } = classified.result;
-    const shown = warnings.slice(0, 8);
-    const summary =
-      `Imported from ${what}: ${document!.pages[0]!.nodes.length} node(s), ` +
-      `${document!.pages[0]!.links.length} link(s), ${warnings.length} warning(s)` +
-      (shown.length
-        ? ':\n' +
-          shown.map((w) => `- ${w}`).join('\n') +
-          (warnings.length > shown.length
-            ? `\n+ ${warnings.length - shown.length} more`
-            : '')
-        : '') +
-      '\nLoad it?';
-    if (!confirm(summary)) return;
+    if (!confirm(importConfirmText(what, document!, warnings))) return;
     if (!closeWorkspaceForDocumentReplacement()) return;
     loadDoc(document!);
     return;
@@ -1474,18 +1463,12 @@ fileInput.addEventListener('change', async () => {
       return;
     }
     const { document, warnings } = classified.result;
-    const shown = warnings.slice(0, 8);
-    const summary =
-      `Converted from legacy Topology Studio: ${document.pages.length} page(s), ${warnings.length} warning(s)` +
-      (shown.length
-        ? ':\n' +
-          shown.map((w) => `- ${w}`).join('\n') +
-          (warnings.length > shown.length
-            ? `\n+ ${warnings.length - shown.length} more`
-            : '')
-        : '') +
-      '\nLoad it?';
-    if (!confirm(summary)) return;
+    const question = importConfirmText(
+      'converted Topology Studio file',
+      document,
+      warnings,
+    );
+    if (!confirm(question)) return;
     if (!closeWorkspaceForDocumentReplacement()) return;
     loadDoc(document);
     return;
