@@ -63,6 +63,80 @@ export async function clickNode(page: Page, id: string): Promise<void> {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
+/** A point on the drawn route of a link, by its id (`at` of the way along). */
+export async function linkPoint(
+  page: Page,
+  id: string,
+  at = 0.4,
+): Promise<{ x: number; y: number }> {
+  return page.evaluate(
+    ([linkId, t]) => {
+      const g = document.querySelector(
+        `#page-canvas g[data-tds-link="${CSS.escape(linkId)}"]`,
+      );
+      if (!g) throw new Error(`no link "${linkId}" on the canvas`);
+      const el = [...g.querySelectorAll<SVGGeometryElement>('path, line')].sort(
+        (a, b) => b.getTotalLength() - a.getTotalLength(),
+      )[0]!;
+      const q = el.getPointAtLength(el.getTotalLength() * t);
+      const p = new DOMPoint(q.x, q.y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    },
+    [id, at] as const,
+  );
+}
+
+/** Click a link on the canvas (selects it), by its id. */
+export async function clickLink(page: Page, id: string): Promise<void> {
+  const p = await linkPoint(page, id);
+  await page.mouse.click(p.x, p.y);
+}
+
+/** One saved element as loose JSON, for asserting on its stored fields. */
+export type SavedElement = Record<string, unknown> & { id: string };
+
+/** A saved page as loose JSON. */
+export interface SavedPage {
+  viewBox: string;
+  nodes: SavedElement[];
+  links: SavedElement[];
+  zones: SavedElement[];
+  flowPaths: SavedElement[];
+  policyMarkers: SavedElement[];
+  [key: string]: unknown;
+}
+
+/**
+ * The document as autosaved once the editor reports the latest change saved.
+ * Call it after an edit: a tab that has changed nothing has saved nothing.
+ */
+export async function savedDocument(
+  page: Page,
+): Promise<{ title: string; pages: SavedPage[]; [key: string]: unknown }> {
+  await expect(page.locator('#saved')).toHaveText('✓ saved');
+  const doc = await page.evaluate(() =>
+    localStorage.getItem('topology-dojo:doc'),
+  );
+  if (!doc) throw new Error('nothing has been autosaved yet');
+  return JSON.parse(doc) as {
+    title: string;
+    pages: SavedPage[];
+    [key: string]: unknown;
+  };
+}
+
+/** One element of the first saved page, by collection and id. */
+export async function savedElement(
+  page: Page,
+  collection: 'nodes' | 'links' | 'zones' | 'flowPaths' | 'policyMarkers',
+  id: string,
+): Promise<SavedElement> {
+  const doc = await savedDocument(page);
+  const el = doc.pages[0]![collection].find((e) => e.id === id);
+  if (!el) throw new Error(`no ${collection} element "${id}" in the autosave`);
+  return el;
+}
+
 /**
  * Move keyboard focus to a control the way a keyboard user does: with Tab.
  * `locator.focus()` alone is a scripted focus, which the editor (rightly)

@@ -104,12 +104,20 @@ import {
   routeKey,
   type FocusFacts,
 } from './ui/key-routing.js';
+import {
+  boundsAttrs,
+  findField,
+  numberBounds,
+  numberFieldText,
+  parseNumberField,
+} from './ui/number-field.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
 import { genId } from './api/builder.js';
 import { computeBadgePlacements } from './editor/problem-badges.js';
 import {
+  LINK_ATTACH_FIELDS,
   filterNodeCatalog,
   getAnnotationType,
   getLinkType,
@@ -2457,7 +2465,7 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         swatchRow(f.key, v as string | undefined),
       );
     case 'number':
-      return `<label class="${row}"><span>${f.label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${f.range ? ` min="${f.range[0]}" max="${f.range[1]}" step="any"` : ''}/></label>`;
+      return `<label class="${row}"><span>${f.label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
     case 'object': {
       // An enable switch on the field itself (checked = the object present,
       // at its defaults), then its nested fields as dotted keys
@@ -2492,7 +2500,7 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
 /**
  * The element patch for one inspector edit. A dotted key addresses a nested
  * `object` field ("linkAttach.pad"): the current object is copied and the
- * sub-field set (a blank / NaN number clears it). A boolean on an `object`
+ * sub-field set (an unset / blank / NaN value clears it). A boolean on an `object`
  * field itself is its enable switch: true → `{}` (on, at the defaults),
  * false → the field cleared. Plain keys patch as before.
  */
@@ -2515,7 +2523,11 @@ function fieldPatch(
     typeof cur === 'object' && cur !== null
       ? { ...(cur as Record<string, unknown>) }
       : {};
-  if (val === '' || (typeof val === 'number' && Number.isNaN(val)))
+  if (
+    val === undefined ||
+    val === '' ||
+    (typeof val === 'number' && Number.isNaN(val))
+  )
     delete next[child];
   else next[child] = val;
   return { [parent]: next };
@@ -2913,9 +2925,24 @@ function wireProperties(): void {
   const wIn = inspector.querySelector<HTMLInputElement>('#p-w');
   const hIn = inspector.querySelector<HTMLInputElement>('#p-h');
   const applySize = (): void => {
-    const [vx, vy] = editor.page.viewBox.split(/\s+/).map(Number);
-    const w = Math.max(1, Math.round(Number(wIn?.value)) || 0);
-    const h = Math.max(1, Math.round(Number(hIn?.value)) || 0);
+    if (!wIn || !hIn) return;
+    const [vx, vy, vw, vh] = editor.page.viewBox.split(/\s+/).map(Number);
+    // A canvas always has a size: a blank, zero or negative entry is not one,
+    // so the field goes back to the size the page has.
+    const size = (input: HTMLInputElement, now: number | undefined): number => {
+      const parsed = parseNumberField(
+        input.value,
+        { min: 0, exclusiveMin: true },
+        { required: true, badInput: input.validity.badInput },
+      );
+      const px = parsed.kind === 'value' ? Math.round(parsed.value) : 0;
+      return px >= 1 ? px : now || 0;
+    };
+    const w = size(wIn, vw);
+    const h = size(hIn, vh);
+    wIn.value = String(w);
+    hIn.value = String(h);
+    if (w === vw && h === vh) return;
     editor.setViewBox(`${vx || 0} ${vy || 0} ${w} ${h}`);
   };
   wIn?.addEventListener('change', applySize);
@@ -2964,14 +2991,19 @@ function wireProperties(): void {
     renderInspector();
   });
   const attachPad = inspector.querySelector<HTMLInputElement>('#p-attach-pad');
-  attachPad?.addEventListener('input', () => {
-    const v = Number(attachPad.value);
-    const next = { ...editor.page.linkAttach };
-    if (attachPad.value === '' || !Number.isFinite(v)) delete next.pad;
-    else next.pad = Math.max(0, v);
-    editor.updatePageProps({ linkAttach: next }, !editing);
-    editing = true;
-  });
+  if (attachPad)
+    wireNumberInput(
+      attachPad,
+      LINK_ATTACH_FIELDS.find((f) => f.key === 'pad'),
+      (val) => {
+        const next = { ...editor.page.linkAttach };
+        if (val === undefined) delete next.pad;
+        else next.pad = val;
+        editor.updatePageProps({ linkAttach: next }, !editing);
+        editing = true;
+      },
+      () => editor.page.linkAttach?.pad,
+    );
   const attachDist =
     inspector.querySelector<HTMLInputElement>('#p-attach-dist');
   attachDist?.addEventListener('change', () => {
@@ -3259,37 +3291,50 @@ function renderInspector(): void {
       editor.updateNode({ type: t });
       renderInspector();
     });
-    wireFields((key, val, commit) => {
-      const info = getNodeType(node.type, doc.customNodes);
-      editor.updateNode(
-        fieldPatch(
-          info,
-          editor.getSelectedNode() as Record<string, unknown> | undefined,
-          key,
-          val,
-        ) as Record<string, unknown>,
-        commit,
-      );
-      // An `object` field's enable switch shows/hides its nested rows.
-      if (info?.fields.find((f) => f.key === key)?.kind === 'object')
-        renderInspector();
-    });
+    wireFields(
+      (key, val, commit) => {
+        const info = getNodeType(node.type, doc.customNodes);
+        editor.updateNode(
+          fieldPatch(
+            info,
+            editor.getSelectedNode() as Record<string, unknown> | undefined,
+            key,
+            val,
+          ) as Record<string, unknown>,
+          commit,
+        );
+        // An `object` field's enable switch shows/hides its nested rows.
+        if (info?.fields.find((f) => f.key === key)?.kind === 'object')
+          renderInspector();
+      },
+      {
+        fields: () => getNodeType(node.type, doc.customNodes)?.fields,
+        current: () =>
+          editor.getSelectedNode() as Record<string, unknown> | null,
+      },
+    );
     wireMeta(node.meta);
   } else if (link) {
     wireType((t) => {
       editor.updateLink({ type: t });
       renderInspector();
     });
-    wireFields((key, val, commit) =>
-      editor.updateLink(
-        fieldPatch(
-          getLinkType(link.type),
-          editor.getSelectedLink() as Record<string, unknown> | undefined,
-          key,
-          val,
-        ) as Record<string, unknown>,
-        commit,
-      ),
+    wireFields(
+      (key, val, commit) =>
+        editor.updateLink(
+          fieldPatch(
+            getLinkType(link.type),
+            editor.getSelectedLink() as Record<string, unknown> | undefined,
+            key,
+            val,
+          ) as Record<string, unknown>,
+          commit,
+        ),
+      {
+        fields: () => getLinkType(link.type)?.fields,
+        current: () =>
+          editor.getSelectedLink() as Record<string, unknown> | null,
+      },
     );
     for (const end of ['from', 'to'] as const)
       inspector
@@ -3310,14 +3355,22 @@ function renderInspector(): void {
   } else if (anchor) {
     const ax = inspector.querySelector<HTMLInputElement>('#a-x');
     const ay = inspector.querySelector<HTMLInputElement>('#a-y');
-    ax?.addEventListener('input', () => {
-      editor.updateAnchor({ x: Number(ax.value) }, !editing);
-      editing = true;
-    });
-    ay?.addEventListener('input', () => {
-      editor.updateAnchor({ y: Number(ay.value) }, !editing);
-      editing = true;
-    });
+    // An anchor always has a position: a cleared field keeps the old one.
+    for (const [input, axis] of [
+      [ax, 'x'],
+      [ay, 'y'],
+    ] as const)
+      if (input)
+        wireNumberInput(
+          input,
+          { key: axis, label: axis, kind: 'number', required: true },
+          (val) => {
+            if (val === undefined) return;
+            editor.updateAnchor({ [axis]: val }, !editing);
+            editing = true;
+          },
+          () => editor.getSelectedAnchor()?.[axis],
+        );
     inspector.querySelector('#a-del')?.addEventListener('click', () => {
       editor.deleteSelected();
       renderInspector();
@@ -3433,9 +3486,57 @@ function wireType(onChange: (t: string) => void): void {
     );
 }
 
-/** Wire every catalog-rendered field control to the given setter. */
+/** The value stored under an inspector key ("opacity", "linkAttach.pad"). */
+function storedValue(
+  el: Record<string, unknown> | null | undefined,
+  key: string,
+): unknown {
+  let cur: unknown = el;
+  for (const part of key.split('.'))
+    cur =
+      typeof cur === 'object' && cur !== null
+        ? (cur as Record<string, unknown>)[part]
+        : undefined;
+  return cur;
+}
+
+/**
+ * Wire one number input. Each keystroke is read by `parseNumberField`: a
+ * cleared field unsets the property (`undefined`), an out-of-range number is
+ * clamped, and text that is no usable number stores nothing. Leaving the
+ * field then shows what is stored, so a clamped or refused entry does not
+ * linger looking as if it had been accepted.
+ */
+function wireNumberInput(
+  el: HTMLInputElement,
+  spec: FieldSpec | undefined,
+  set: (val: number | undefined) => void,
+  stored: () => unknown,
+): void {
+  const bounds = spec ? numberBounds(spec) : {};
+  el.addEventListener('input', () => {
+    const parsed = parseNumberField(el.value, bounds, {
+      required: spec?.required,
+      badInput: el.validity.badInput,
+    });
+    if (parsed.kind === 'invalid') return;
+    set(parsed.kind === 'value' ? parsed.value : undefined);
+  });
+  el.addEventListener('change', () => {
+    el.value = numberFieldText(stored());
+  });
+}
+
+/**
+ * Wire every catalog-rendered field control to the given setter. `source`
+ * gives the element's field specs and its current state, for number fields.
+ */
 function wireFields(
   set: (key: string, val: unknown, commit: boolean) => void,
+  source: {
+    fields: () => FieldSpec[] | undefined;
+    current: () => Record<string, unknown> | null | undefined;
+  },
 ): void {
   inspector
     .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-key]')
@@ -3445,10 +3546,19 @@ function wireFields(
         el.addEventListener('change', () => set(key, el.value, true));
       } else if (el.type === 'checkbox') {
         el.addEventListener('change', () => set(key, el.checked, true));
+      } else if (el.dataset.kind === 'number') {
+        wireNumberInput(
+          el,
+          findField(source.fields(), key),
+          (val) => {
+            set(key, val, !editing);
+            editing = true;
+          },
+          () => storedValue(source.current(), key),
+        );
       } else {
-        const num = el.dataset.kind === 'number';
         el.addEventListener('input', () => {
-          set(key, num ? Number(el.value) : el.value, !editing);
+          set(key, el.value, !editing);
           editing = true;
         });
       }
@@ -3643,7 +3753,7 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         aswatchRow(f.key, v as string | undefined),
       );
     case 'number':
-      return `<label class="insp-row"><span>${f.label}</span><input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}" placeholder="auto"/></label>`;
+      return `<label class="insp-row"><span>${f.label}</span><input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
     case 'refs': {
       const ids = Array.isArray(v) ? (v as string[]) : [];
       const hint =
@@ -3798,19 +3908,36 @@ function wireAnnotations(): void {
     const id = host.dataset.aid!;
     const setA = (key: string, val: unknown, commit: boolean): void =>
       editor.updateAnnotation(col, id, { [key]: val }, commit);
+    const annoFields = getAnnotationType(
+      ANNO_GROUPS.find((g) => g.col === col)!.kind,
+    )?.fields;
     host
       .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-akey]')
       .forEach((el) => {
         const key = el.dataset.akey!;
         if (el instanceof HTMLSelectElement) {
           el.addEventListener('change', () => setA(key, el.value, true));
+        } else if (el.dataset.akind === 'number') {
+          wireNumberInput(
+            el,
+            findField(annoFields, key),
+            (val) => {
+              setA(key, val, !editing);
+              editing = true;
+            },
+            () =>
+              storedValue(
+                (editor.page[col] as { id: string }[]).find(
+                  (a) => a.id === id,
+                ) as Record<string, unknown> | undefined,
+                key,
+              ),
+          );
         } else {
           const kind = el.dataset.akind;
           el.addEventListener('input', () => {
             let val: unknown = el.value;
-            if (kind === 'number') val = Number(el.value);
-            else if (kind === 'refs')
-              val = el.value.split(/[\s,]+/).filter(Boolean);
+            if (kind === 'refs') val = el.value.split(/[\s,]+/).filter(Boolean);
             setA(key, val, !editing);
             editing = true;
           });
