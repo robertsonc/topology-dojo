@@ -28,7 +28,7 @@ import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
 import { stampableLinks } from './stencil.js';
 import type { Page } from '../pages/model.js';
-import { cascadeEndpointRemoval } from '../pages/cascade.js';
+import { cascadeEndpointRemoval, pruneEmphasis } from '../pages/cascade.js';
 import type {
   ElementKind,
   FieldPatch,
@@ -2469,6 +2469,7 @@ export class Editor {
       id: m.id,
       snap: { flowPathId: m.flowPathId } as Record<string, unknown>,
     }));
+    const beforeEmphasis = JSON.stringify(this.page.emphasis ?? null);
     // Callouts that point at something: the cascade clears the pointer of
     // one whose target is deleted.
     const pointing = new Set(
@@ -2501,6 +2502,16 @@ export class Editor {
         ...beforeAnchors.filter((id) => !nowAnchorIds.has(id)),
       ]),
     );
+    // A link deleted on its own leaves the frame's emphasis list as well (the
+    // cascade does the same for nodes, anchors and the links they take along):
+    // a list left holding only ids that no longer exist dims the whole frame.
+    pruneEmphasis(this.page, doomed.links);
+    if (JSON.stringify(this.page.emphasis ?? null) !== beforeEmphasis)
+      this.emitPagePatch(
+        this.page.emphasis
+          ? { set: { emphasis: [...this.page.emphasis] } }
+          : { unset: ['emphasis'] },
+      );
     // Emit the semantic delete: one remove per element that vanished (direct or
     // via cascade), then a patch for any zone whose membership was pruned.
     const nowNodes = new Set(this.page.nodes.map((n) => n.id));
@@ -3546,9 +3557,16 @@ export class Editor {
     if (collection === 'zones') {
       this.page.zones = this.page.zones.filter((e) => e.id !== id);
       if (this.zoneSel === id) this.setSelection(null);
-    } else if (collection === 'flowPaths')
+    } else if (collection === 'flowPaths') {
       this.page.flowPaths = this.page.flowPaths.filter((e) => e.id !== id);
-    else
+      // A marker that pointed at the flow keeps its place and loses the
+      // pointer, as it does when the flow goes with a deleted node.
+      for (const m of this.page.policyMarkers)
+        if (m.flowPathId === id) {
+          delete m.flowPathId;
+          this.emitPatch('policyMarkers', m.id, { unset: ['flowPathId'] });
+        }
+    } else
       this.page.policyMarkers = this.page.policyMarkers.filter(
         (e) => e.id !== id,
       );
