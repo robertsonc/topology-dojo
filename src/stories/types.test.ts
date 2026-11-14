@@ -543,6 +543,39 @@ describe('validateFlowScenario names the step and the field', () => {
     ]);
   });
 
+  it('takes anything and never throws', () => {
+    const cycle: Record<string, unknown> = { system: 'x' };
+    cycle.base = cycle;
+    const withFunction = scenario([{ name: 'Normal' }]);
+    (withFunction.base.appliances[0] as unknown as { f: unknown }).f = () => 1;
+    const oddKind = scenario([
+      { name: 'Odd', changes: [{ kind: Object.create(null) } as never] },
+    ]);
+    for (const input of [
+      undefined,
+      7,
+      'scenario',
+      [],
+      () => story,
+      cycle,
+      withFunction,
+      oddKind,
+      { system: 1n, base: 2n, steps: 3n },
+    ]) {
+      const problems = validateFlowScenario(input);
+      expect(problems.length).toBeGreaterThan(0);
+      for (const p of problems) expect(typeof p.message).toBe('string');
+    }
+    expect(validateFlowScenario(oddKind).map(formatScenarioProblem)).toEqual([
+      'step 1 "Odd", steps[0].changes[0].kind: must be one of set-tunnel, set-appliance, set-flow, add-flow, remove-flow (got {})',
+    ]);
+    // Not plain data at all: one problem, at the root.
+    expect(validateFlowScenario(withFunction).map((p) => p.path)).toEqual(['']);
+    expect(validateFlowScenario(withFunction)[0]!.message).toMatch(
+      /^is not plain data: /,
+    );
+  });
+
   it('lets a live base carry what the flow compiler would skip, but not a step', () => {
     // A tunnel to an appliance the read did not return, and a flow on one:
     // the compiler draws neither, and a snapshot must not be rejected for it.

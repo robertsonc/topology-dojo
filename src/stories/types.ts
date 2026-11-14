@@ -186,9 +186,18 @@ export class ScenarioError extends Error {
   }
 }
 
-/** Every problem in a scenario; an empty list means it will compile. */
+/**
+ * Every problem in a scenario; an empty list means it will compile. Takes
+ * anything and never throws: what is not plain data at all (a function, a
+ * cycle) comes back as one problem at the root.
+ */
 export function validateFlowScenario(input: unknown): ScenarioProblem[] {
-  return walk(input).problems;
+  try {
+    return walk(input).problems;
+  } catch (err) {
+    const why = err instanceof Error ? err.message : 'it cannot be read';
+    return [{ path: '', message: `is not plain data: ${why}` }];
+  }
 }
 
 /**
@@ -384,8 +393,15 @@ const isDuration = (v: unknown): boolean =>
   typeof v === 'number' && Number.isFinite(v) && v > 0;
 const ofType = (v: unknown, type: FieldType): boolean =>
   type === 'number' ? Number.isFinite(v) : typeof v === type;
-const quote = (v: unknown): string =>
-  typeof v === 'string' ? `"${v}"` : String(JSON.stringify(v));
+/** A value as it reads in a message. Total: any value, no throw. */
+const quote = (v: unknown): string => {
+  if (typeof v === 'string') return `"${v}"`;
+  try {
+    return JSON.stringify(v) ?? typeof v;
+  } catch {
+    return typeof v;
+  }
+};
 /** A table's own entry: `constructor` and the like are not in any table. */
 const own = <T>(table: Record<string, T>, key: string): T | undefined =>
   Object.hasOwn(table, key) ? table[key] : undefined;
@@ -665,8 +681,9 @@ function walk(input: unknown): {
 
   const change = (c: unknown, path: string): void => {
     if (!isObj(c)) return bad(path, 'must be a change { kind, … }');
-    const keys = own(CHANGE_KEYS, String(c.kind));
-    if (keys) onlyKeys(c, keys, path, `a ${String(c.kind)} field`);
+    const kind = typeof c.kind === 'string' ? c.kind : '';
+    const keys = own(CHANGE_KEYS, kind);
+    if (keys) onlyKeys(c, keys, path, `a ${kind} field`);
     switch (c.kind) {
       case 'set-tunnel': {
         const t = tunnel(c.tunnelId);
