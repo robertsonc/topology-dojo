@@ -229,8 +229,10 @@ describe('analyze_path', () => {
         show: 'page',
       };
       expect(parseToolArgs(tool, full)).toEqual(full);
-      // Unknown keys never reach the handler.
-      expect(parseToolArgs(tool, { ...base, extraHops: 9 })).toEqual(base);
+      // An argument the tool does not take is refused, not dropped.
+      expect(() => parseToolArgs(tool, { ...base, extraHops: 9 })).toThrow(
+        /unknown argument "extraHops"/,
+      );
     });
 
     it.each([

@@ -180,6 +180,13 @@ pass `pageIndex` to target another. `render_svg`, `inspect_render` and
 page** unless `pageIndex` names one, so pass it when only one page needs
 arranging: the others may have been placed by hand.
 
+Arguments: a tool never drops an argument it does not take. On `add_node` and
+`add_link`, a field of the element written beside the arguments
+(`status: "down"`, `vlan: "100"`) is treated as if it were in `extra`. Any
+other unknown argument is an error that names it, the nearest real argument
+when there is one, and what the tool accepts; inside `edit_topology` the
+error names the operation, and the batch applies nothing.
+
 Call `describe_capabilities` first to discover the vocabulary. It defaults to a
 compact **index** (type names/categories only); request editable fields with
 `detail:"full"`, or — cheaper — narrow with `types:[…]` / `query:"…"` to get

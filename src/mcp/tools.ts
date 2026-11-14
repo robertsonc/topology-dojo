@@ -134,6 +134,7 @@ import type { Rasterizer } from '../export/raster.js';
 import { exportTools } from './export-tools.js';
 import { hardwareTools } from './hardware-tools.js';
 import { pathTools } from './path-tools.js';
+import { admitArgs } from './args.js';
 import { withHardware } from './hardware-render.js';
 import { wiresheetLayout } from '../render/wiresheet.js';
 import { scaleLabel } from '../render/wiresheet-scale.js';
@@ -2503,11 +2504,22 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             throw new Error(
               `operations[${i}]: unknown op "${name}" (expected one of ${BATCH_OPS.join(', ')})`,
             );
-          const args = {
+          let args: Record<string, unknown> = {
             topologyId: tid,
-            ...(a.pageIndex !== undefined ? { pageIndex: a.pageIndex } : {}),
+            // The batch's page is inherited only by operations that have one.
+            ...(a.pageIndex !== undefined && 'pageIndex' in tool.inputShape
+              ? { pageIndex: a.pageIndex }
+              : {}),
             ...rest,
           };
+          try {
+            // Nothing an operation carries is dropped silently.
+            args = admitArgs(tool, args);
+          } catch (err) {
+            throw new Error(
+              `operations[${i}] (${name}): ${(err as Error).message.replace(/^invalid arguments for \S+ — /, '')}`,
+            );
+          }
           const parsed = z.object(tool.inputShape).safeParse(args);
           if (!parsed.success)
             throw new Error(

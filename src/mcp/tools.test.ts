@@ -1605,16 +1605,25 @@ describe('MCP tools', () => {
     expect(() => parseToolArgs(addNode, { type: 'ec', x: 0, y: 0 })).toThrow(
       /topologyId/,
     );
-    // Valid input passes through; unknown keys are stripped.
+    // Valid input passes through.
     const parsed = parseToolArgs(addNode, {
       topologyId: 't',
       type: 'ec',
       x: 1,
       y: 2,
-      bogus: true,
     });
     expect(parsed.x).toBe(1);
-    expect('bogus' in parsed).toBe(false);
+    // An argument the tool does not take is refused by name, never dropped
+    // (see args.test.ts).
+    expect(() =>
+      parseToolArgs(addNode, {
+        topologyId: 't',
+        type: 'ec',
+        x: 1,
+        y: 2,
+        bogus: true,
+      }),
+    ).toThrow(/invalid arguments for add_node — unknown argument "bogus"/);
     // Enum-checked tools reject out-of-vocabulary values.
     const upsert = tools.find((t) => t.name === 'upsert_by_source')!;
     expect(() =>
