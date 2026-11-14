@@ -303,7 +303,7 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                                                          |
 | `create_topology`                                      | New document (one empty page)                                                                                                                 |
-| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                                                     |
+| `list_templates` / `create_from_template`              | List starter templates and their parameters; instantiate one, optionally with `params`, as a new document                                     |
 | `generate_sdwan_topology`                              | Generate an SD-WAN fabric from intent (EdgeConnect or Juniper SRX; regions, hubs, branches, transports, HA, LAN) as a new document            |
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                         |
 | `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a draw.io file, a Mermaid flowchart, or CSV data (`format` auto-detects)              |
@@ -363,6 +363,51 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`)                                     |
 | `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                                                                |
 | `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                                                             |
+
+### Starter templates (`list_templates`, `create_from_template`)
+
+`list_templates` returns `{ templates, generators }`. Each template lists its
+`params`: for every parameter a `name`, a `label`, a `type` (`integer` with
+`min` and `max`, or `boolean`), a `default` and a one-line `description`.
+The parameter schema lives in this result, not in the tool list, where every
+connected agent would pay for it on every session. `generators` names the
+tools that build a design from intent instead of from a template: SD-WAN
+fabrics come from `generate_sdwan_topology`.
+
+`create_from_template` takes the template id, an optional `params` object and
+an optional `title`:
+
+```json
+{ "template": "spine-leaf", "params": { "spines": 4, "leaves": 12 } }
+```
+
+It returns `{ id, title, pages, params, stats }`, where `params` is every
+parameter of the template with defaults filled in and `stats` is the node and
+link count. A parameter that is left out takes its default, so a call without
+`params` builds the same nodes, links and positions as before templates took
+parameters. A name the template does not have, or a value outside its range,
+is refused with a message that names the field, and nothing is created:
+
+```text
+leaves must be an integer from 2 to 16 (got 40)
+"leafs" is not a parameter of template "spine-leaf" (it takes spines, leaves)
+```
+
+| Template               | Parameters (range, default)                                     |
+| ---------------------- | --------------------------------------------------------------- |
+| `three-tier`           | `webServers` 1–6 (2), `appServers` 1–4 (1)                      |
+| `firewall-dmz`         | `dmzServers` 1–6 (2), `internalFirewall` true / false (false)   |
+| `spine-leaf`           | `spines` 1–4 (2), `leaves` 2–16 (4); every leaf on every spine  |
+| `hub-spoke`            | `hubs` 1–2 (1), `sites` 2–24 (6); two hubs dual-home every site |
+| `sdwan-branch`, `ztna` | none                                                            |
+
+The result is laid out: at every parameter value, `validate_topology` and
+`inspect_render` report no problems (a test holds every template to that), so
+there is nothing to tidy before editing. A shape too large for the standard
+1050 × 700 page gets a larger `viewBox` instead of a crowded one, and a wide
+fan or mesh has its links pinned to the facing sides of its nodes
+(`fromPort` / `toPort`). The same code builds the editor's **＋ template…**
+menu, so a person and an agent get the same document for the same values.
 
 ### SD-WAN generator (`generate_sdwan_topology`)
 

@@ -77,7 +77,7 @@ import {
 import { tidyDocument, balanceDocument } from '../api/tidy.js';
 import { layoutDocument, type LayoutAlgorithm } from '../api/autolayout.js';
 import { POLICY_MARKER_TYPES } from '../api/markers.js';
-import { buildTemplate, listTemplates } from '../api/templates.js';
+import { generateTemplate, listTemplates } from '../api/templates.js';
 import {
   BRANCH_LAN,
   CLOUD_HUBS,
@@ -418,6 +418,18 @@ const compactWorkspaceOperations = z
   .min(1)
   .max(250);
 
+/**
+ * Where `list_templates` sends an agent whose shape a template does not
+ * cover: the generators build whole designs from intent, as their own tools.
+ */
+const TEMPLATE_GENERATORS = [
+  {
+    tool: 'generate_sdwan_topology',
+    description:
+      'SD-WAN fabrics (vendor, regions, hubs, branches, WAN transports, HA, LAN, cloud hubs, SSE) are generated from intent, not built from a template.',
+  },
+] as const;
+
 /** Same-author supersede flag shared by the workspace write tools (issue #269). */
 const supersedeFlag = z
   .boolean()
@@ -613,9 +625,14 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'list_templates',
       description:
-        'List starter templates (id + name + description) that create_from_template can instantiate.',
+        'List starter templates and their parameters for create_from_template.',
       inputShape: {},
-      handler: () => listTemplates(),
+      // Each template carries its parameter schema here, in the result,
+      // where it costs nothing in the tool list (see token-budget.test.ts).
+      handler: () => ({
+        templates: listTemplates(),
+        generators: TEMPLATE_GENERATORS,
+      }),
     },
     {
       name: 'create_from_template',
@@ -623,13 +640,28 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         'Create a new topology from a starter template (see list_templates). Returns its id, like create_topology.',
       inputShape: {
         template: z.string().describe('Template id from list_templates.'),
+        // A bare object keeps the tool list small; `generateTemplate` checks
+        // every name and value and names the bad one.
+        params: z
+          .looseObject({})
+          .optional()
+          .describe('Template parameters, by name.'),
         title: displayString(TEXT_LIMITS.title).optional(),
       },
       handler: (a) => {
-        const doc = buildTemplate(String(a.template));
+        const { doc, params, stats } = generateTemplate(
+          String(a.template),
+          a.params,
+        );
         if (a.title) doc.title = String(a.title);
         const { id } = store.import(doc);
-        return { id, title: doc.title, pages: doc.pages.length };
+        return {
+          id,
+          title: doc.title,
+          pages: doc.pages.length,
+          params,
+          stats,
+        };
       },
     },
     {

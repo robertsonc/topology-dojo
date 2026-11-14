@@ -15,6 +15,7 @@ import { nodeCatalogLoader } from '../server/catalog.js';
 import { linkCatalog, nodeCatalog } from '../api/catalog.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { TEXT_LIMITS } from '../api/text.js';
+import { listTemplates } from '../api/templates.js';
 import { DOCUMENT_FIELDS, PAGE_FIELDS } from '../workspace/operations.js';
 
 describe('MCP tools', () => {
@@ -92,6 +93,22 @@ describe('MCP tools', () => {
       .map((t) => t.name)
       .filter((n) => !readme.includes(`\`${n}\``));
     expect(undocumented).toEqual([]);
+  });
+
+  it('documents every template parameter in the MCP README', () => {
+    const readme = readFileSync(
+      fileURLToPath(new URL('./README.md', import.meta.url)),
+      'utf8',
+    );
+    for (const t of listTemplates()) {
+      expect(readme, t.id).toContain(`\`${t.id}\``);
+      for (const p of t.params)
+        expect(readme, `${t.id}.${p.name}`).toContain(
+          p.type === 'integer'
+            ? `\`${p.name}\` ${p.min}–${p.max} (${p.default})`
+            : `\`${p.name}\` true / false (${p.default})`,
+        );
+    }
   });
 
   it('exposes layout guidelines and folds layout checks into validation', () => {
@@ -392,18 +409,142 @@ describe('MCP tools', () => {
   });
 
   it('create_from_template instantiates a valid, clean template', () => {
-    const list = call('list_templates') as { id: string }[];
+    const list = (call('list_templates') as { templates: { id: string }[] })
+      .templates;
     expect(list.length).toBeGreaterThanOrEqual(5);
-    const { id } = call('create_from_template', {
+    const out = call('create_from_template', {
       template: list[0]!.id,
       title: 'My net',
-    }) as { id: string };
-    const v = call('validate_topology', { topologyId: id }) as {
+    }) as { id: string; title: string; pages: number };
+    // The result keeps the fields it always had.
+    expect(out).toMatchObject({ title: 'My net', pages: 1 });
+    const v = call('validate_topology', { topologyId: out.id }) as {
       valid: boolean;
       layoutClean: boolean;
     };
     expect(v.valid).toBe(true);
     expect(v.layoutClean).toBe(true);
+  });
+
+  it('list_templates carries each parameter schema and points to the generators', () => {
+    const out = call('list_templates') as {
+      templates: {
+        id: string;
+        params: {
+          name: string;
+          label: string;
+          type: string;
+          min?: number;
+          max?: number;
+          default: number | boolean;
+          description: string;
+        }[];
+      }[];
+      generators: { tool: string; description: string }[];
+    };
+    const spineLeaf = out.templates.find((t) => t.id === 'spine-leaf')!;
+    expect(spineLeaf.params).toEqual([
+      {
+        name: 'spines',
+        label: 'Spines',
+        type: 'integer',
+        min: 1,
+        max: 4,
+        default: 2,
+        description: expect.any(String),
+      },
+      {
+        name: 'leaves',
+        label: 'Leaves',
+        type: 'integer',
+        min: 2,
+        max: 16,
+        default: 4,
+        description: expect.any(String),
+      },
+    ]);
+    expect(
+      out.templates.find((t) => t.id === 'firewall-dmz')!.params[1],
+    ).toEqual({
+      name: 'internalFirewall',
+      label: 'Internal firewall',
+      type: 'boolean',
+      default: false,
+      description: expect.any(String),
+    });
+    expect(out.templates.find((t) => t.id === 'ztna')!.params).toEqual([]);
+    // SD-WAN fabrics are a generator, not a template: the listing says so
+    // and names a tool that exists.
+    expect(out.generators.map((g) => g.tool)).toEqual([
+      'generate_sdwan_topology',
+    ]);
+    expect(out.generators[0]!.description).toMatch(/SD-WAN/);
+    for (const g of out.generators)
+      expect(tools.some((t) => t.name === g.tool)).toBe(true);
+    // The whole listing stays a small reply.
+    expect(JSON.stringify(out).length).toBeLessThan(3_000);
+  });
+
+  it('create_from_template takes parameters and reports what it built', () => {
+    const tool = tools.find((t) => t.name === 'create_from_template')!;
+    const create = (args: Record<string, unknown>): unknown =>
+      tool.handler(parseToolArgs(tool, args));
+    const out = create({
+      template: 'spine-leaf',
+      params: { spines: 4, leaves: 12 },
+    }) as { id: string; params: unknown; stats: unknown };
+    expect(out.params).toEqual({ spines: 4, leaves: 12 });
+    expect(out.stats).toEqual({ nodes: 16, links: 48 });
+    const doc = call('get_topology', {
+      topologyId: out.id,
+    }) as TopologyDocument;
+    expect(doc.pages[0]!.nodes).toHaveLength(16);
+    expect(doc.pages[0]!.links).toHaveLength(48);
+    const v = call('validate_topology', { topologyId: out.id }) as {
+      valid: boolean;
+      layoutClean: boolean;
+      problems: unknown[];
+    };
+    expect(v).toMatchObject({ valid: true, layoutClean: true, problems: [] });
+    expect(
+      (
+        call('inspect_render', { topologyId: out.id }) as {
+          clean: boolean;
+        }
+      ).clean,
+    ).toBe(true);
+
+    // Defaults fill in what is not given; a fixed template reports none.
+    expect(
+      create({ template: 'hub-spoke', params: { hubs: 2 } }),
+    ).toMatchObject({
+      params: { hubs: 2, sites: 6 },
+      stats: { nodes: 8, links: 13 },
+    });
+    expect(create({ template: 'ztna' })).toMatchObject({
+      params: {},
+      stats: { nodes: 5, links: 4 },
+    });
+
+    // A bad value or name is refused with the field named, and nothing is
+    // stored.
+    const before = (call('list_topologies') as unknown[]).length;
+    expect(() =>
+      create({ template: 'spine-leaf', params: { leaves: 40 } }),
+    ).toThrow(/leaves must be an integer from 2 to 16 \(got 40\)/);
+    expect(() =>
+      create({ template: 'spine-leaf', params: { leaves: '12' } }),
+    ).toThrow(/leaves must be an integer/);
+    expect(() =>
+      create({ template: 'spine-leaf', params: { leafs: 4 } }),
+    ).toThrow(/"leafs" is not a parameter of template "spine-leaf"/);
+    expect(() => create({ template: 'ztna', params: { apps: 2 } })).toThrow(
+      /takes no parameters/,
+    );
+    expect(() => create({ template: 'spine-leaf', params: [4, 12] })).toThrow(
+      /invalid arguments for create_from_template — params/,
+    );
+    expect((call('list_topologies') as unknown[]).length).toBe(before);
   });
 
   it('generate_sdwan_topology creates a valid, clean, vendor-aware fabric', () => {
