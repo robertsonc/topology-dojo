@@ -231,8 +231,30 @@ const DOT_DEPTH = 0.3;
 /** Ring colour for `Editor.spotlight` (the Problems panel's warning amber). */
 const SPOTLIGHT = '#e0a44a';
 
+/**
+ * What can be selected at one time: nodes and anchors together (they drag,
+ * nudge and delete as one block), or links (the first is the primary), or one
+ * zone. Never a mix of the three.
+ */
+type Selection =
+  | { nodes?: Iterable<string>; anchors?: Iterable<string> }
+  | { links: Iterable<string> }
+  | { zone: string };
+
 export class Editor {
-  private sel = new Set<string>();
+  /**
+   * The selection. It has three families and at most ONE of them holds
+   * anything at a time: nodes + anchors (`sel`, `selAnchors`), links
+   * (`linkSel` is the primary, `linkSelExtra` the rest of a multi-selection)
+   * or one zone (`zoneSel`). `anchorSel` mirrors a lone selected anchor for
+   * the inspector.
+   *
+   * All of these are written by `setSelection` and nowhere else. A command
+   * that selects something states the whole new selection there, so it can
+   * never leave another family's selection behind for Delete to act on. The
+   * sets are typed read-only to keep it that way.
+   */
+  private sel: ReadonlySet<string> = new Set<string>();
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   /**
@@ -356,14 +378,10 @@ export class Editor {
    * stays the primary: it owns the inspector and the bend / end handles.
    * Deleting and style edits apply to the whole set.
    */
-  private linkSelExtra = new Set<string>();
-  /** The primary selected link. Assigning it resets the multi-selection. */
+  private linkSelExtra: ReadonlySet<string> = new Set<string>();
+  /** The primary selected link (read-only: see `setSelection`). */
   private get linkSel(): string | null {
     return this._linkSel;
-  }
-  private set linkSel(id: string | null) {
-    this._linkSel = id;
-    this.linkSelExtra.clear();
   }
   private linkSeq = 0;
   /**
@@ -372,7 +390,7 @@ export class Editor {
    */
   private anchorSel: string | null = null;
   /** Multi-selection of anchors (parallel to `sel` for nodes). */
-  private selAnchors = new Set<string>();
+  private selAnchors: ReadonlySet<string> = new Set<string>();
   private anchorSeq = 0;
   private zoneSeq = 0;
   /** The selected zone region (clicked on canvas), or null. */
@@ -463,7 +481,9 @@ export class Editor {
       this.redoStack = stashed?.redo ?? [];
     }
     this.page = page;
-    this.sel.clear();
+    // The fresh page starts with nothing selected; the shell is told below,
+    // unconditionally, because the page itself changed.
+    this.setSelection(null, true);
     // A page switch (or a whole-document open) changes the commit baseline; any
     // ops buffered for the old page are dropped so the sync cleanly falls back
     // to the snapshot diff rather than committing stale intent.
@@ -471,15 +491,11 @@ export class Editor {
     this.drag = null;
     this.marquee = null;
     this.wpDrag = null;
-    this.linkSel = null;
     this.linkStart = null;
     this.dragLink = null;
     this.endDrag = null;
     this.zonePress = null;
     this.hoverNode = null;
-    this.anchorSel = null;
-    this.selAnchors.clear();
-    this.zoneSel = null;
     this.view = this.computeFitView();
     this.renderArt();
     this.renderOverlay();
@@ -674,13 +690,9 @@ export class Editor {
   focusNode(id: string): void {
     const n = this.page.nodes.find((m) => m.id === id);
     if (!n) return;
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set([id]);
+    this.setSelection({ nodes: [id] });
     this.panTo(n.x, n.y);
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
   }
 
   /** Select a single link and center the view on its midpoint (click-to-locate). */
@@ -689,15 +701,9 @@ export class Editor {
     if (!link) return;
     const a = resolvePos(this.page, link.from);
     const b = resolvePos(this.page, link.to);
-    this.sel.clear();
-    this.selAnchors.clear();
-    this.anchorSel = null;
-    this.linkSel = id;
+    this.setSelection({ links: [id] });
     if (a && b) this.panTo((a.x + b.x) / 2, (a.y + b.y) / 2);
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
-    this.fireAnchorSelect();
   }
 
   /**
@@ -1749,14 +1755,10 @@ export class Editor {
     this.page.links.push({ id: lid, type: 'line', from: fromId, to: nid });
     this.emitAdds('nodes', [{ id: nid }]);
     this.emitAdds('links', [{ id: lid }]);
-    this.clearLinkSel();
-    this.clearAnchorSel();
-    this.clearZoneSel();
-    this.sel = new Set([nid]);
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
+    this.setSelection({ nodes: [nid] });
+    this.renderOverlay();
     // Hand the fresh node straight to the inline label editor.
     if (this.onInlineEdit) {
       const h = nodeHalf(node);
@@ -2210,12 +2212,9 @@ export class Editor {
     this.pendingOps = [];
     this.redoStack.push(JSON.stringify(serialize(this.page)));
     this.restore(prev);
-    this.sel.clear();
-    this.clearZoneSel();
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
+    this.afterHistoryStep();
   }
 
   redo(): void {
@@ -2224,11 +2223,23 @@ export class Editor {
     this.pendingOps = [];
     this.undoStack.push(JSON.stringify(serialize(this.page)));
     this.restore(next);
-    this.sel.clear();
-    this.clearZoneSel();
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
+    this.afterHistoryStep();
+  }
+
+  /**
+   * After undo / redo replaced the page: the node and zone selection is
+   * dropped; selected links and anchors stay selected only if they still
+   * exist (a link whose creation was just undone must not stay "selected").
+   * The shell is told in any case, since what it shows may have changed.
+   */
+  private afterHistoryStep(): void {
+    if (this._linkSel !== null || this.selAnchors.size > 0)
+      this.pruneSelection();
+    if (this.sel.size > 0 || this.zoneSel !== null)
+      this.setSelection({ anchors: this.selAnchors });
+    this.renderOverlay();
     this.fireSelect();
   }
 
@@ -2293,12 +2304,10 @@ export class Editor {
       ...extra,
     });
     this.emitAdds('nodes', [{ id }]);
-    this.sel.clear();
-    this.sel.add(id);
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
+    this.setSelection({ nodes: [id] });
+    this.renderOverlay();
   }
 
   deleteSelected(): void {
@@ -2334,26 +2343,18 @@ export class Editor {
       // Deleting a zone removes the region annotation only — its member nodes
       // (and their links) stay on the canvas.
       this.page.zones = this.page.zones.filter((z) => z.id !== this.zoneSel);
-      this.zoneSel = null;
-      this.fireZoneSelect();
     }
     if (this.linkSel !== null) {
       const doomed = new Set(this.selectedLinkIds());
       this.page.links = this.page.links.filter((l) => !doomed.has(l.id));
-      this.linkSel = null;
-      this.fireLinkSelect();
     }
     if (this.selAnchors.size > 0) {
       this.page.anchors = this.page.anchors.filter(
         (a) => !this.selAnchors.has(a.id),
       );
-      this.selAnchors.clear();
-      this.anchorSel = null;
-      this.fireAnchorSelect();
     }
     if (this.sel.size > 0) {
       this.page.nodes = this.page.nodes.filter((n) => !this.sel.has(n.id));
-      this.sel.clear();
     }
     // Cascade — the shared endpoint-removal semantics (pages/cascade.ts, also
     // behind the headless remove_element API): links, policy markers, zone
@@ -2430,31 +2431,19 @@ export class Editor {
       if (fp) this.emitPatch('policyMarkers', m.id, fp);
     }
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
+    // Everything that was selected is gone.
+    this.pruneSelection();
+    this.renderOverlay();
     this.fireSelect();
   }
 
   /** Clear node + link + anchor + zone selection (Esc). */
   clearSelection(): void {
     this.clearSpotlight();
-    const had =
-      this.sel.size > 0 ||
-      this.linkSel !== null ||
-      this.selAnchors.size > 0 ||
-      this.anchorSel !== null ||
-      this.zoneSel !== null;
-    this.sel.clear();
-    this.selAnchors.clear();
-    this.linkSel = null;
-    this.anchorSel = null;
-    this.clearZoneSel();
-    if (had) {
-      this.renderOverlay();
-      this.fireSelect();
-      this.fireLinkSelect();
-      this.fireAnchorSelect();
-    }
+    const had = this.selectionCount() > 0 || this.zoneSel !== null;
+    this.setSelection(null);
+    if (had) this.renderOverlay();
   }
 
   /* ── per-frame emphasis (Phase 2.2) ───────────────────────────── */
@@ -2508,33 +2497,18 @@ export class Editor {
     const p = clientToUser(this.overlay, clientX, clientY);
     const node = this.nodeAt(p);
     if (node) {
-      this.clearLinkSel();
-      this.clearAnchorSel();
-      if (!this.sel.has(node)) {
-        this.sel.clear();
-        this.sel.add(node);
-      }
-      this.fireSelect();
+      if (!this.sel.has(node)) this.setSelection({ nodes: [node] });
       this.renderOverlay();
       return { kind: 'node', id: node };
     }
     const link = this.linkAt(p);
     if (link) {
-      this.sel.clear();
-      this.clearAnchorSel();
-      this.fireSelect();
-      if (this.linkSel !== link) {
-        this.linkSel = link;
-        this.fireLinkSelect();
-      }
+      if (this.linkSel !== link) this.setSelection({ links: [link] });
       this.renderOverlay();
       return { kind: 'link', id: link };
     }
     // Empty canvas — clear any current selection.
-    this.sel.clear();
-    this.clearLinkSel();
-    this.clearAnchorSel();
-    this.fireSelect();
+    this.setSelection(null);
     this.renderOverlay();
     return { kind: 'empty', id: null };
   }
@@ -2543,24 +2517,18 @@ export class Editor {
 
   /** Select every node on the page. */
   selectAll(): void {
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set(this.page.nodes.map((n) => n.id));
+    this.setSelection({ nodes: this.page.nodes.map((n) => n.id) });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
   }
 
   /* ── select by / filter ───────────────────────────────────────── */
 
   /** Replace the selection with all nodes matching `predicate`. */
   private selectWhere(predicate: (n: NodeConfig) => boolean): void {
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set(this.page.nodes.filter(predicate).map((n) => n.id));
+    this.setSelection({
+      nodes: this.page.nodes.filter(predicate).map((n) => n.id),
+    });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
   }
 
   /** The first currently-selected node (selection order is page order). */
@@ -2599,12 +2567,8 @@ export class Editor {
       if (this.sel.has(l.to) && this.page.nodes.some((n) => n.id === l.from))
         next.add(l.from);
     }
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = next;
+    this.setSelection({ nodes: next });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
   }
 
   /** Current zoom factor (1 = 100%): page width over the displayed width. */
@@ -2779,13 +2743,10 @@ export class Editor {
     this.page.links.push(...links);
     this.emitAdds('nodes', nodes);
     this.emitAdds('links', links);
-    this.linkSel = null;
-    this.sel = new Set(nodes.map((n) => n.id));
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireLinkSelect();
+    this.setSelection({ nodes: nodes.map((n) => n.id) });
+    this.renderOverlay();
   }
 
   /* ── stencils / reusable groups (C.3) ─────────────────────────── */
@@ -2834,14 +2795,10 @@ export class Editor {
     this.page.links.push(...links);
     this.emitAdds('nodes', nodes);
     this.emitAdds('links', links);
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set(nodes.map((n) => n.id));
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireLinkSelect();
+    this.setSelection({ nodes: nodes.map((n) => n.id) });
+    this.renderOverlay();
   }
 
   /* ── container zones (C.2) ────────────────────────────────────── */
@@ -2862,28 +2819,16 @@ export class Editor {
   selectZoneMembers(id: string): boolean {
     const ids = this.zoneMemberIds(id);
     if (!ids.length) return false;
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.clearZoneSel();
-    this.sel = new Set(ids);
+    this.setSelection({ nodes: ids });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
     return true;
   }
 
   /** Select a zone by id (e.g. from the annotations list) and show its editor. */
   selectZone(id: string): boolean {
     if (!this.page.zones.some((z) => z.id === id)) return false;
-    this.sel.clear();
-    this.selAnchors.clear();
-    this.clearAnchorSel();
-    this.linkSel = null;
-    this.zoneSel = id;
+    this.setSelection({ zone: id });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
-    this.fireZoneSelect();
     return true;
   }
 
@@ -2931,14 +2876,10 @@ export class Editor {
     this.emitAdds('nodes', nodes);
     this.emitAdds('links', links);
     this.emitAdds('zones', [{ id: newZone.id }]);
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set(nodes.map((n) => n.id));
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireLinkSelect();
+    this.setSelection({ nodes: nodes.map((n) => n.id) });
+    this.renderOverlay();
   }
 
   /* ── nudge (arrow keys) ───────────────────────────────────────── */
@@ -3304,7 +3245,7 @@ export class Editor {
     this.snapshot();
     if (collection === 'zones') {
       this.page.zones = this.page.zones.filter((e) => e.id !== id);
-      if (this.zoneSel === id) this.clearZoneSel();
+      if (this.zoneSel === id) this.setSelection(null);
     } else if (collection === 'flowPaths')
       this.page.flowPaths = this.page.flowPaths.filter((e) => e.id !== id);
     else
@@ -3399,35 +3340,82 @@ export class Editor {
     return this.page.zones.find((z) => z.id === this.zoneSel) ?? null;
   }
 
-  /** Drop any zone selection (and notify) — used when another element is picked. */
-  private clearZoneSel(): void {
-    if (this.zoneSel !== null) {
-      this.zoneSel = null;
-      this.fireZoneSelect();
+  /**
+   * Replace the whole selection. This is the only place the selection stores
+   * are written: selecting one family (nodes + anchors, links, or a zone)
+   * always clears the other two, so what Delete, the inspector and the
+   * overlay act on is exactly what was last selected. `null` clears it.
+   *
+   * The shell is told about every store that changed (`quiet` skips that, for
+   * a caller that notifies unconditionally itself). Callers re-render the
+   * overlay.
+   */
+  private setSelection(next: Selection | null, quiet = false): void {
+    const nodes = new Set<string>();
+    const anchors = new Set<string>();
+    let links: string[] = [];
+    let zone: string | null = null;
+    if (next) {
+      if ('links' in next) links = [...new Set(next.links)];
+      else if ('zone' in next) zone = next.zone;
+      else {
+        for (const id of next.nodes ?? []) nodes.add(id);
+        for (const id of next.anchors ?? []) anchors.add(id);
+      }
     }
-  }
-
-  private clearAnchorSel(): void {
-    this.selAnchors.clear();
-    if (this.anchorSel !== null) {
-      this.anchorSel = null;
-      this.fireAnchorSelect();
-    }
+    const was = {
+      nodes: this.sel,
+      anchors: this.selAnchors,
+      links: this.selectedLinkIds(),
+      zone: this.zoneSel,
+      anchor: this.anchorSel,
+    };
+    this.sel = nodes;
+    this.selAnchors = anchors;
+    this._linkSel = links[0] ?? null;
+    this.linkSelExtra = new Set(links.slice(1));
+    this.zoneSel = zone;
+    // The inspector edits one anchor at a time: the lone selected anchor,
+    // when no node is selected with it.
+    this.anchorSel =
+      nodes.size === 0 && anchors.size === 1 ? [...anchors][0]! : null;
+    if (quiet) return;
+    const linksChanged =
+      was.links.length !== links.length ||
+      was.links.some((id, i) => id !== links[i]);
+    const changed =
+      linksChanged ||
+      was.zone !== zone ||
+      !sameIds(was.nodes, nodes) ||
+      !sameIds(was.anchors, anchors);
+    if (changed) this.fireSelect();
+    if (linksChanged) this.fireLinkSelect();
+    if (was.anchor !== this.anchorSel) this.fireAnchorSelect();
+    if (was.zone !== zone) this.fireZoneSelect();
   }
 
   /**
-   * Keep `anchorSel` (the inspector's single-anchor target) in sync with the
-   * multi-selection: it points at the lone selected anchor when exactly one
-   * anchor and no nodes are selected, else null.
+   * Drop from the selection whatever no longer exists on the page (deleted,
+   * undone, or removed behind the editor's back). The rest stays selected.
    */
-  private syncAnchorSel(): void {
-    const single =
-      this.sel.size === 0 && this.selAnchors.size === 1
-        ? [...this.selAnchors][0]!
-        : null;
-    if (single !== this.anchorSel) {
-      this.anchorSel = single;
-      this.fireAnchorSelect();
+  private pruneSelection(): void {
+    const present = (all: readonly { id: string }[]): Set<string> =>
+      new Set(all.map((e) => e.id));
+    if (this._linkSel !== null) {
+      const links = present(this.page.links);
+      this.setSelection({
+        links: this.selectedLinkIds().filter((id) => links.has(id)),
+      });
+    } else if (this.zoneSel !== null) {
+      if (!this.page.zones.some((z) => z.id === this.zoneSel))
+        this.setSelection(null);
+    } else {
+      const nodes = present(this.page.nodes);
+      const anchors = present(this.page.anchors);
+      this.setSelection({
+        nodes: [...this.sel].filter((id) => nodes.has(id)),
+        anchors: [...this.selAnchors].filter((id) => anchors.has(id)),
+      });
     }
   }
 
@@ -3521,14 +3509,10 @@ export class Editor {
     const id = `a${Date.now().toString(36)}${(this.anchorSeq++).toString(36)}`;
     this.page.anchors.push({ id, x: this.snapVal(x), y: this.snapVal(y) });
     this.emitAdds('anchors', [{ id }]);
-    this.sel.clear();
-    this.clearLinkSel();
-    this.anchorSel = id;
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireAnchorSelect();
+    this.setSelection({ anchors: [id] });
+    this.renderOverlay();
   }
 
   /* ── links ────────────────────────────────────────────────────── */
@@ -3547,13 +3531,10 @@ export class Editor {
     const id = `l${Date.now().toString(36)}${(this.linkSeq++).toString(36)}`;
     this.page.links.push({ id, type: 'line', from, to });
     this.emitAdds('links', [{ id }]);
-    this.sel.clear();
-    this.linkSel = id;
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireLinkSelect();
+    this.setSelection({ links: [id] });
+    this.renderOverlay();
   }
 
   /** Current selected link's type + routing style (for the link toolbar). */
@@ -3951,13 +3932,7 @@ export class Editor {
     const nodeId = this.nodeAt(p);
     if (nodeId) {
       const node = this.page.nodes.find((n) => n.id === nodeId)!;
-      this.clearLinkSel();
-      this.clearAnchorSel();
-      this.clearZoneSel();
-      if (!(this.sel.size === 1 && this.sel.has(nodeId))) {
-        this.sel = new Set([nodeId]);
-        this.fireSelect();
-      }
+      this.setSelection({ nodes: [nodeId] });
       this.renderOverlay();
       // Anchor on the node's label position (just under the node art).
       const h = nodeHalf(node);
@@ -4040,14 +4015,8 @@ export class Editor {
 
   /** Make `linkId` the selected link, so the inspector shows what is edited. */
   private selectLinkForEdit(linkId: string): void {
-    this.sel.clear();
-    this.clearAnchorSel();
-    this.clearZoneSel();
-    this.fireSelect();
-    if (this.linkSel !== linkId) {
-      this.linkSel = linkId;
-      this.fireLinkSelect();
-    }
+    // Already the primary of a multi-selection: leave the others selected.
+    if (this.linkSel !== linkId) this.setSelection({ links: [linkId] });
     this.renderOverlay();
   }
 
@@ -4439,14 +4408,9 @@ export class Editor {
               .map((c) => ({ x: c.x, y: c.y })),
           };
           // Select the link so the inspector + label tools reflect it.
-          this.clearZoneSel();
-          this.sel.clear();
-          this.selAnchors.clear();
-          this.syncAnchorSel();
-          this.linkSel = lab.lid;
+          this.setSelection({ links: [lab.lid] });
           this.overlay.setPointerCapture(e.pointerId);
           this.fireSelect();
-          this.fireLinkSelect();
           this.renderOverlay();
           return;
         }
@@ -4464,11 +4428,9 @@ export class Editor {
     if (this.tool === 'select' && !this.spaceHeld && !e.shiftKey) {
       const grab = this.connectAffordanceAt(p);
       if (grab) {
-        if (!this.sel.has(grab.id)) {
-          this.sel.clear();
-          this.sel.add(grab.id);
-          this.fireSelect();
-        }
+        // The link starts from this node: it becomes the selection, unless
+        // it is already part of a node selection.
+        if (!this.sel.has(grab.id)) this.setSelection({ nodes: [grab.id] });
         this.dragLink = {
           from: grab.id,
           start: p,
@@ -4508,36 +4470,29 @@ export class Editor {
     // click on an element with a followable href was handled above.)
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
     if (hit) {
-      this.clearLinkSel();
-      this.clearZoneSel();
       if (additive) {
-        if (this.sel.has(hit)) this.sel.delete(hit);
-        else this.sel.add(hit);
+        // Toggle the node in the node + anchor selection.
+        const nodes = new Set(this.sel);
+        if (!nodes.delete(hit)) nodes.add(hit);
+        this.setSelection({ nodes, anchors: this.selAnchors });
       } else if (!this.sel.has(hit)) {
         // Plain click on a fresh node replaces the whole selection.
-        this.sel.clear();
-        this.selAnchors.clear();
-        this.sel.add(hit);
+        this.setSelection({ nodes: [hit] });
       }
-      this.syncAnchorSel();
       // Begin drag of the current selection (locked nodes don't move).
       if (this.sel.has(hit)) this.beginGroupDrag(hit, p);
     } else {
       // No node — try an anchor, then a link, else start a marquee.
       const anchorHit = hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
       if (anchorHit) {
-        this.clearLinkSel();
-        this.clearZoneSel();
         if (additive) {
-          if (this.selAnchors.has(anchorHit)) this.selAnchors.delete(anchorHit);
-          else this.selAnchors.add(anchorHit);
+          const anchors = new Set(this.selAnchors);
+          if (!anchors.delete(anchorHit)) anchors.add(anchorHit);
+          this.setSelection({ nodes: this.sel, anchors });
         } else if (!this.selAnchors.has(anchorHit)) {
           // Plain click on a fresh anchor replaces the whole selection.
-          this.sel.clear();
-          this.selAnchors.clear();
-          this.selAnchors.add(anchorHit);
+          this.setSelection({ anchors: [anchorHit] });
         }
-        this.syncAnchorSel();
         if (this.selAnchors.has(anchorHit)) this.beginGroupDrag(anchorHit, p);
         this.fireSelect();
         this.overlay.setPointerCapture(e.pointerId);
@@ -4546,14 +4501,17 @@ export class Editor {
       }
       const link = this.linkAt(p);
       if (link) {
-        this.clearZoneSel();
-        this.sel.clear();
-        this.selAnchors.clear();
-        this.syncAnchorSel();
-        if (additive && this.linkSel !== null) this.toggleLinkSel(link);
-        else this.linkSel = link;
+        if (additive && this.linkSel !== null) {
+          // Toggle the link in the link selection. Dropping the primary
+          // promotes the next selected link.
+          const links = this.selectedLinkIds();
+          this.setSelection({
+            links: links.includes(link)
+              ? links.filter((id) => id !== link)
+              : [...links, link],
+          });
+        } else this.setSelection({ links: [link] });
         this.fireSelect();
-        this.fireLinkSelect();
         this.overlay.setPointerCapture(e.pointerId);
         this.renderOverlay();
         return;
@@ -4563,38 +4521,16 @@ export class Editor {
       // inside a zone can be rubber-banded), and a click released without
       // dragging selects the zone (see finishUp).
       this.zonePress = additive ? null : this.zoneAt(p);
-      this.clearLinkSel();
-      this.clearZoneSel();
-      if (!additive) {
-        this.sel.clear();
-        this.selAnchors.clear();
-        this.syncAnchorSel();
-      }
+      // An additive marquee extends the node + anchor selection; a plain one
+      // starts from nothing. Either way a link or zone selection ends here.
+      this.setSelection(
+        additive ? { nodes: this.sel, anchors: this.selAnchors } : null,
+      );
       this.marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     }
     this.overlay.setPointerCapture(e.pointerId);
     this.fireSelect();
     this.renderOverlay();
-  }
-
-  private clearLinkSel(): void {
-    if (this.linkSel !== null) {
-      this.linkSel = null;
-      this.fireLinkSelect();
-    }
-  }
-
-  /** Add `id` to, or drop it from, the link selection (additive click). */
-  private toggleLinkSel(id: string): void {
-    if (id === this._linkSel) {
-      // Dropping the primary promotes another selected link, if any.
-      const next = this.linkSelExtra.values().next();
-      if (next.done) this.linkSel = null;
-      else {
-        this.linkSelExtra.delete(next.value);
-        this._linkSel = next.value;
-      }
-    } else if (!this.linkSelExtra.delete(id)) this.linkSelExtra.add(id);
   }
 
   /** Every selected link id: the primary first, then the rest. */
@@ -4915,11 +4851,7 @@ export class Editor {
         // zoomed far out — means "select that node", as it would unselected.
         const pp = clientToUser(this.overlay, e.clientX, e.clientY);
         const node = this.nodeAt(pp);
-        if (node) {
-          this.clearLinkSel();
-          this.sel = new Set([node]);
-          this.fireSelect();
-        }
+        if (node) this.setSelection({ nodes: [node] });
       }
       // Released over nothing: the link stays as it was.
       this.renderOverlay();
@@ -4980,20 +4912,22 @@ export class Editor {
       this.zonePress = null;
       if (Math.abs(x1 - x0) <= 2 && Math.abs(y1 - y0) <= 2 && zonePress) {
         // A plain click on a zone's empty space selects the zone.
-        this.zoneSel = zonePress;
-        this.fireZoneSelect();
+        this.setSelection({ zone: zonePress });
       } else if (Math.abs(x1 - x0) > 2 || Math.abs(y1 - y0) > 2) {
-        for (const id of nodesInRect(this.page, x0, y0, x1, y1))
-          this.sel.add(id);
+        // The rubber band adds what it holds to the node + anchor selection
+        // the press left in place (empty unless the press was additive).
+        const nodes = new Set(this.sel);
+        for (const id of nodesInRect(this.page, x0, y0, x1, y1)) nodes.add(id);
         // Anchors whose point falls in the rect join the selection too.
+        const anchors = new Set(this.selAnchors);
         const xa = Math.min(x0, x1),
           xb = Math.max(x0, x1),
           ya = Math.min(y0, y1),
           yb = Math.max(y0, y1);
         for (const a of this.page.anchors)
           if (a.x >= xa && a.x <= xb && a.y >= ya && a.y <= yb)
-            this.selAnchors.add(a.id);
-        this.syncAnchorSel();
+            anchors.add(a.id);
+        this.setSelection({ nodes, anchors });
       }
       this.marquee = null;
     }
@@ -5087,6 +5021,13 @@ function midpoint(
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/** True when two id sets hold the same ids. */
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
 }
 
 /** True when the point lies inside the rect (edges included). */
