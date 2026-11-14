@@ -9,14 +9,18 @@ test('a problem names its elements, rings them on click, and can be hidden', asy
   page,
 }) => {
   await bootEditor(page);
-  // Two nodes dropped from the palette land near each other and unconnected,
-  // which raises layout and validation warnings about them.
+  // A node from the palette and a duplicate of it: unconnected, and one grid
+  // step apart, so they overlap. That raises a validation warning about each
+  // and a layout warning about the pair. (A second palette click no longer
+  // lands on the first node, so the overlap comes from a duplicate.)
   await page.locator('.pitem').first().click();
-  await page.locator('.pitem').first().click();
+  await page.keyboard.press('Control+d');
 
   const count = page.locator('#prob-count');
   await expect(count).not.toHaveText('0');
   const total = Number(await count.innerText());
+  // The dock stays closed until it is asked for: its header shows the count.
+  await page.locator('#problems-toggle').click();
 
   // The long-message dock takes the inspector's width, not its own.
   const dock = await page.locator('#problems-dock').boundingBox();

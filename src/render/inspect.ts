@@ -20,9 +20,10 @@
  * the pill sizes to the wrapped block, and after placement a pill that
  * overlaps a node hit box, a zone title strip or an earlier pill slides along
  * its segment by fixed fractions of its width (the engine's collision nudge).
- * Placement: a link label sits at the chord midpoint nudged 12px
- * perpendicular (+ labelOffset, × labelScale; only `line` links are nudged
- * for collisions, the other link types draw fixed chips); a flow-path label
+ * Placement: a `line` link's label sits at the chord midpoint nudged 12px
+ * perpendicular (+ labelOffset, × labelScale) and is nudged for collisions;
+ * every other link type draws a fixed chip of its own size and distance
+ * (`./link-chips`), never nudged; a flow-path label
  * sits on the longest drawn segment of its route (each hop follows its
  * link's polyline, or the straight hop with `followLinks: false`); a marker
  * label hangs under its badge. Pill/node and the nudge use the engine's hit
@@ -51,6 +52,7 @@
  */
 import type { WiresheetLayout } from './wiresheet.js';
 import { nodeLabelRect } from './label-placement.js';
+import { linkChipRect } from './link-chips.js';
 import { NODE_LABEL, nodeLabelLines } from './node-labels.js';
 import { zoneBox } from './zone-box.js';
 import { portPills } from './port-pills.js';
@@ -621,6 +623,14 @@ function placePills(
     // difference of the two trims when the endpoints differ in shape or size
     // (#301).
     const e = attach.endpoints(l);
+    // Every type but `line` draws a fixed chip of its own size, beside the
+    // wire on the engine's side, and is never slid clear (`link-chips.ts`).
+    const chip = linkChipRect(l, e ? e.from : a, e ? e.to : b);
+    if (chip === null) continue; // this type draws no centre label
+    if (chip) {
+      place('link', l.id, chip, null, new Set([l.from, l.to]));
+      continue;
+    }
     const seg = polylineSegments(e ? [e.from, e.to] : [a, b])[0]!;
     const anchor = segmentLabelAnchor(seg);
     const s =
@@ -633,14 +643,8 @@ function placePills(
       anchor.y + (l.labelOffset?.y ?? 0),
       size,
     );
-    // Only `line` links go through the engine's nudging label renderer.
-    place(
-      'link',
-      l.id,
-      rect,
-      l.type === 'line' ? anchor.dir : null,
-      new Set([l.from, l.to]),
-    );
+    // A `line` link's pill goes through the engine's nudging label renderer.
+    place('link', l.id, rect, anchor.dir, new Set([l.from, l.to]));
   }
 
   for (const f of page.flowPaths ?? []) {

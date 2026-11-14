@@ -115,3 +115,36 @@ describe('convertMermaid', () => {
     expect(r.error).toContain('flowchart');
   });
 });
+
+describe('convertMermaid: label quoting and entity codes', () => {
+  const page = (text: string) => {
+    const res = convertMermaid(text);
+    expect(res.ok).toBe(true);
+    return res.document!.pages[0]!;
+  };
+
+  it('reads a quoted edge label without its quote marks', () => {
+    const p = page('flowchart LR\n  a ---|"MPLS core"| b\n');
+    expect(p.links[0]!.label).toBe('MPLS core');
+  });
+
+  it('accepts a pipe inside a quoted edge label', () => {
+    const p = page('flowchart LR\n  a ---|"primary|backup"| b\n');
+    expect(p.links).toHaveLength(1);
+    expect(p.links[0]!.label).toBe('primary|backup');
+  });
+
+  it('decodes entity codes in every kind of label', () => {
+    const p = page(
+      'flowchart LR\n  subgraph s ["DC #91;east#93;"]\n    a["say #quot;hi#quot; #35;1"]\n  end\n  a -- "x #124; y" --> b\n',
+    );
+    expect(p.zones[0]!.label).toBe('DC [east]');
+    expect(p.nodes.find((n) => n.id === 'a')!.label).toBe('say "hi" #1');
+    expect(p.links[0]!.label).toBe('x | y');
+  });
+
+  it('accepts a closing bracket inside a quoted subgraph title', () => {
+    const p = page('flowchart LR\n  subgraph s ["rack [3]"]\n    a\n  end\n');
+    expect(p.zones.map((z) => z.label)).toEqual(['rack [3]']);
+  });
+});

@@ -13,7 +13,7 @@
  * document in place instead of rebuilding it.
  */
 import type { Page } from '../pages/model.js';
-import { cascadeEndpointRemoval } from '../pages/cascade.js';
+import { cascadeEndpointRemoval, pruneEmphasis } from '../pages/cascade.js';
 import { sameSource, type SourceRef } from './source.js';
 import {
   addFlowPath,
@@ -182,6 +182,15 @@ export function removeElement(
         delete z.parentZone;
         cascaded.childZones += 1;
       }
+  }
+
+  if (found.kind === 'link') {
+    // A link removed on its own: hops that rode it lose the pointer, and it
+    // leaves the emphasis list (the endpoint cascade does both for the links
+    // it removes).
+    for (const f of page.flowPaths)
+      for (const h of f.hops ?? []) if (h.linkId === id) delete h.linkId;
+    pruneEmphasis(page, new Set([id]));
   }
 
   // Markers pointing at a flow path that no longer exists lose the pointer.

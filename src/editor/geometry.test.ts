@@ -5,6 +5,7 @@ import {
   hitTestNode,
   hitTestNodeLabel,
   hitTestZone,
+  nodeCaptionRect,
   resolvePos,
   zoneBounds,
 } from './geometry.js';
@@ -181,6 +182,22 @@ describe('node caption hit-testing', () => {
     });
     expect(hitTestNodeLabel(east, 130, 102)).toBe('r');
     expect(hitTestNodeLabel(east, 100, 124)).toBeNull();
+  });
+
+  it('nodeCaptionRect is the box those hits are tested against', () => {
+    // 'Leaf-01' is 7 characters of 6 units, one 12-unit line whose baseline
+    // sits 24 below the node; the hit pad adds 3 on every side.
+    expect(nodeCaptionRect(pg.nodes[0]!)).toEqual({
+      x: 100 - 21 - 3,
+      y: 100 + 24 - 10 - 3,
+      w: 42 + 6,
+      h: 12 + 6,
+    });
+    expect(nodeCaptionRect(pg.nodes[0]!, 0)).toMatchObject({ w: 42, h: 12 });
+    // A node that draws its own text has no caption beside it.
+    expect(
+      nodeCaptionRect({ id: 't', type: 'text', x: 0, y: 0, label: 'Note' }),
+    ).toBeNull();
   });
 });
 

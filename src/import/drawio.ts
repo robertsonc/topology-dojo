@@ -147,6 +147,18 @@ function num(v: string | undefined, d = 0): number {
   return Number.isFinite(n) ? n : d;
 }
 
+/**
+ * The colour to give an imported element. A cell this app exported says so
+ * itself: `dojoColor` when the element had a colour, nothing when it had none
+ * (its stroke is then only the exporter's neutral default, and reading it back
+ * would turn every uncoloured device grey). Any other cell: its stroke.
+ */
+function importedColor(c: Cell, fallback?: string): string | undefined {
+  const ours = c.data.dojoType !== undefined || c.data.dojoKind !== undefined;
+  if (ours) return hex(c.data.dojoColor);
+  return hex(c.style.strokeColor) ?? hex(fallback);
+}
+
 function hex(v: string | undefined): string | undefined {
   if (!v) return undefined;
   const s = v.trim();
@@ -281,6 +293,7 @@ const DATA_SKIP = new Set([
   'dojoBody',
   'dojoKind',
   'dojoStyle',
+  'dojoColor',
   'link',
   'tooltip',
 ]);
@@ -427,7 +440,7 @@ function convertPage(
       };
       const sub = c.data.dojoSublabel ?? rest.join(' ');
       if (sub) z.sublabel = sub;
-      const stroke = hex(c.style.strokeColor);
+      const stroke = importedColor(c);
       if (stroke) z.color = stroke;
       if (c.style.dashed === '1')
         z.borderStyle = c.style.dashPattern?.startsWith('1 ')
@@ -454,7 +467,7 @@ function convertPage(
     const sub = c.data.dojoSublabel ?? (type === 'text' ? '' : rest.join(' '));
     if (sub) n.sublabel = sub;
     if (c.data.dojoBody) n.body = c.data.dojoBody;
-    const stroke = hex(c.style.strokeColor) ?? hex(c.style.fillColor);
+    const stroke = importedColor(c, c.style.fillColor);
     if (stroke && type !== 'text' && type !== 'image') n.color = stroke;
     if (type === 'image') {
       const img = (c.style.image ?? '').replace(/%3B/gi, ';');
@@ -567,7 +580,7 @@ function convertPage(
     if (slot?.from) l.fromLabel = slot.from;
     if (slot?.to) l.toLabel = slot.to;
     if (c.data.dojoStyle) l.style = c.data.dojoStyle;
-    const color = hex(c.style.strokeColor);
+    const color = importedColor(c);
     if (color) l.color = color;
     const sw = num(c.style.strokeWidth, NaN);
     if (Number.isFinite(sw) && sw !== 2) l.strokeWidth = sw;
@@ -664,6 +677,8 @@ export function convertDrawio(
     id: string;
     /** draw.io's own diagram id (page-link target), when it has one. */
     sourceId?: string;
+    /** The frame narration this app's exporter wrote, when present. */
+    caption?: string;
     model: XmlElement;
   }[] = [];
   try {
@@ -693,6 +708,7 @@ export function convertDrawio(
           name: d.attrs.name || `Page-${i + 1}`,
           id: `p${i + 1}`,
           ...(d.attrs.id ? { sourceId: d.attrs.id } : {}),
+          ...(d.attrs.dojoCaption ? { caption: d.attrs.dojoCaption } : {}),
           model,
         });
       });
@@ -710,9 +726,11 @@ export function convertDrawio(
   const layers = new Map<string, LayerDef>();
   let pages: Page[];
   try {
-    pages = diagrams.map((d) =>
-      convertPage(d.model, d.name, d.id, layers, warnings),
-    );
+    pages = diagrams.map((d) => {
+      const page = convertPage(d.model, d.name, d.id, layers, warnings);
+      if (d.caption) page.caption = d.caption;
+      return page;
+    });
     remapPageLinks(pages, diagrams, warnings);
   } catch (err) {
     return {

@@ -42,7 +42,18 @@ export function captureStencil(
   }));
   const links = srcLinks
     .filter((l) => ids.has(l.from) && ids.has(l.to))
-    .map((l) => structuredClone(l));
+    .map((l) => {
+      const copy = structuredClone(l);
+      // Bends are stored relative to the group's centre, like the nodes, so
+      // stamping shifts both by the same amount.
+      if (Array.isArray(copy.waypoints))
+        copy.waypoints = copy.waypoints.map((p) => ({
+          ...p,
+          x: Math.round(p.x - cx),
+          y: Math.round(p.y - cy),
+        }));
+      return copy;
+    });
   return { name, nodes, links };
 }
 
@@ -59,4 +70,33 @@ export function stencilViewBox(nodes: NodeConfig[], pad = 60): string {
   const w = Math.max(...xs) - Math.min(...xs) + pad * 2;
   const h = Math.max(...ys) - Math.min(...ys) + pad * 2;
   return `${minX} ${minY} ${w} ${h}`;
+}
+
+/**
+ * A stencil's links, ready to stamp. Stencils saved before bends were stored
+ * relative to the group's centre carry them in the coordinates of the page
+ * they were captured on; shifted with the nodes they would land far from the
+ * stamped group. Such a link is stamped straight instead: a bend more than a
+ * group-width outside the stencil's own nodes cannot be a centred one.
+ */
+export function stampableLinks(
+  nodes: NodeConfig[],
+  links: LinkConfig[],
+): LinkConfig[] {
+  if (nodes.length === 0) return links;
+  const xs = nodes.map((n) => n.x);
+  const ys = nodes.map((n) => n.y);
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys);
+  const slack = Math.max(200, w, h);
+  const inside = (p: { x: number; y: number }): boolean =>
+    p.x >= Math.min(...xs) - slack &&
+    p.x <= Math.max(...xs) + slack &&
+    p.y >= Math.min(...ys) - slack &&
+    p.y <= Math.max(...ys) + slack;
+  return links.map((l) => {
+    if (!Array.isArray(l.waypoints) || l.waypoints.every(inside)) return l;
+    const { waypoints: _legacy, ...straight } = l;
+    return straight as LinkConfig;
+  });
 }

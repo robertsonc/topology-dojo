@@ -205,3 +205,30 @@ describe('edit ops', () => {
     ).toBe(true);
   });
 });
+
+describe('removeElement: a link removed on its own', () => {
+  it('leaves the emphasis list and the hops that rode it', () => {
+    const page = {
+      id: 'p',
+      name: 'F',
+      viewBox: '0 0 100 100',
+      nodes: [
+        { id: 'a', type: 'router', x: 0, y: 0 },
+        { id: 'b', type: 'router', x: 50, y: 0 },
+      ],
+      links: [{ id: 'ab', type: 'line', from: 'a', to: 'b' }],
+      anchors: [],
+      zones: [],
+      flowPaths: [
+        { id: 'f', waypoints: ['a', 'b'], hops: [{ ref: 'b', linkId: 'ab' }] },
+      ],
+      policyMarkers: [],
+      emphasis: ['ab'],
+    } as unknown as Page;
+    removeElement(page, 'ab');
+    // The only emphasized element is gone: emphasis turns off rather than
+    // dimming everything that is left.
+    expect(page.emphasis).toBeUndefined();
+    expect(page.flowPaths[0]!.hops).toEqual([{ ref: 'b' }]);
+  });
+});

@@ -26,8 +26,9 @@ import { clientToUser, userToClient } from './coords.js';
 import { balancePage, tidyPage } from '../api/tidy.js';
 import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
+import { stampableLinks } from './stencil.js';
 import type { Page } from '../pages/model.js';
-import { cascadeEndpointRemoval } from '../pages/cascade.js';
+import { cascadeEndpointRemoval, pruneEmphasis } from '../pages/cascade.js';
 import type {
   ElementKind,
   FieldPatch,
@@ -43,6 +44,7 @@ import {
   linkPolyline,
   type LinkShape,
   nodeBounds,
+  nodeCaptionRect,
   nodeHalf,
   nodesInRect,
   resolvePos,
@@ -87,6 +89,36 @@ const LINK_TYPES = [
 ];
 const LINK_STYLES = ['straight', 'orthogonal', 'curved'];
 
+/** One undo / redo step. */
+interface HistoryEntry {
+  /** The page as it was before the step, as JSON (see `serialize`). */
+  page: string;
+  /**
+   * True when the step resized the canvas (the page's viewBox) as part of
+   * what it did: "fit page to content", or a tidy / balance that grew the
+   * page. Only then does undoing or redoing the step put the canvas size
+   * back. For every other step the size is left as it is now, because it is
+   * otherwise edited outside history (`setViewBox`, the sheet size).
+   */
+  resized: boolean;
+}
+
+/**
+ * Page fields a history step never restores, because nothing that edits them
+ * pushes an undo step:
+ * - `name`: `renamePage`, and the filmstrip, which writes it on the page;
+ * - `view`, `panelScale`: set through the MCP page-properties tool only.
+ * (`viewBox` is edited both ways; see `HistoryEntry.resized`. The playback
+ * and presentation fields — caption, duration, transition, emphasis,
+ * lineJumps, linkAttach, portLabels — all go through `updatePageProps` /
+ * `applyEmphasis`, which do push a step, so they are restored.)
+ */
+const OUTSIDE_HISTORY: ReadonlySet<string> = new Set([
+  'name',
+  'view',
+  'panelScale',
+]);
+
 interface DragState {
   startX: number;
   startY: number;
@@ -100,18 +132,39 @@ interface DragState {
   /** Effective (snapped) delta applied to the whole selection. */
   dx: number;
   dy: number;
+  /**
+   * Where the bends of the links INSIDE the moving block started: a link whose
+   * two ends both move keeps its shape, so its waypoints move with them.
+   */
+  bends: Map<string, { x: number; y: number }[]>;
 }
+
+/**
+ * What an inline label edit targets: an element's own label, one of a link's
+ * two port (end) labels, or a flow path's label. The shell hands the kind and
+ * id of a request straight back to `Editor.renameElement`.
+ */
+export type InlineEditKind =
+  | 'node'
+  | 'link'
+  | 'link-from'
+  | 'link-to'
+  | 'zone'
+  | 'flow';
 
 /**
  * A request to edit an element's label in place (double-click gesture). The
  * editor computes what was hit and where its label anchor sits in *client*
  * coordinates; the shell (main.ts) owns the floating DOM input and commits
- * through the normal update paths. `kind: 'empty'` reports a double-click on
- * blank canvas (the quick-add gesture).
+ * with `renameElement(kind, id, text)`. `kind: 'empty'` reports a
+ * double-click on blank canvas (the quick-add gesture).
  */
 export interface InlineEditRequest {
-  kind: 'node' | 'link' | 'zone' | 'empty';
-  /** Hit element id; null for 'empty'. */
+  kind: InlineEditKind | 'empty';
+  /**
+   * Hit element id; null for 'empty'. For 'link-from' / 'link-to' it is the
+   * link's id (the kind says which end).
+   */
   id: string | null;
   /** Current label text ('' when unset). */
   current: string;
@@ -183,20 +236,73 @@ const SHARED_LINK_KEYS: ReadonlySet<string> = new Set([
   'locked',
 ]);
 
+/** How far (x and y) a pasted or duplicated copy lands from its original. */
+const CLONE_STEP = 24;
+
+/**
+ * How much room a node placed for the user keeps from the glyphs already on
+ * the page (see `clearSpot`): enough that neither covers the other's caption.
+ * The same margin `quickConnect` uses.
+ */
+const SPOT_CLEARANCE = 40;
+
+/** The order `clearSpot` tries directions in: down-right first, up-left last. */
+const SPOT_DIRECTIONS: readonly (readonly [number, number])[] = [
+  [1, 1],
+  [1, 0],
+  [0, 1],
+  [1, -1],
+  [-1, 1],
+  [0, -1],
+  [-1, 0],
+  [-1, -1],
+];
+
+/**
+ * How far into its glyph a connection dot can be grabbed, as a fraction of
+ * the glyph's half-extent on that axis (see `connectionDotHit`).
+ */
+const DOT_DEPTH = 0.3;
+
 /** Ring colour for `Editor.spotlight` (the Problems panel's warning amber). */
 const SPOTLIGHT = '#e0a44a';
 
+/**
+ * What can be selected at one time: nodes and anchors together (they drag,
+ * nudge and delete as one block), or links (the first is the primary), or one
+ * zone. Never a mix of the three.
+ */
+type Selection =
+  | { nodes?: Iterable<string>; anchors?: Iterable<string> }
+  | { links: Iterable<string> }
+  | { zone: string };
+
 export class Editor {
-  private sel = new Set<string>();
-  private undoStack: string[] = [];
-  private redoStack: string[] = [];
+  /**
+   * The selection. It has three families and at most ONE of them holds
+   * anything at a time: nodes + anchors (`sel`, `selAnchors`), links
+   * (`linkSel` is the primary, `linkSelExtra` the rest of a multi-selection)
+   * or one zone (`zoneSel`). `anchorSel` mirrors a lone selected anchor for
+   * the inspector.
+   *
+   * All of these are written by `setSelection` and nowhere else. A command
+   * that selects something states the whole new selection there, so it can
+   * never leave another family's selection behind for Delete to act on. The
+   * sets are typed read-only to keep it that way.
+   */
+  private sel: ReadonlySet<string> = new Set<string>();
+  private undoStack: HistoryEntry[] = [];
+  private redoStack: HistoryEntry[] = [];
   /**
    * Undo/redo stacks stashed per page id while other pages are edited (#204):
    * switching frames must not destroy the ability to undo edits made there.
    * Bounded: each stack is capped (see `snapshot`), and only the most recently
    * left MAX_STASHED_HISTORIES pages keep a stash (insertion-ordered eviction).
    */
-  private histories = new Map<string, { undo: string[]; redo: string[] }>();
+  private histories = new Map<
+    string,
+    { undo: HistoryEntry[]; redo: HistoryEntry[] }
+  >();
   private static readonly MAX_STASHED_HISTORIES = 32;
   /**
    * Gesture-native operation buffer (Packet S2). Each mutating gesture records
@@ -222,8 +328,32 @@ export class Editor {
   palette: BrandPalette | undefined = undefined;
 
   private drag: DragState | null = null;
-  /** Active waypoint drag on the selected link (index into link.waypoints). */
-  private wpDrag: { index: number; moved: boolean } | null = null;
+  /**
+   * The pointer whose press started the gesture in flight (it holds the
+   * overlay's pointer capture), or null when no gesture is.
+   */
+  private gesturePointer: number | null = null;
+  /**
+   * The undo entry the gesture in flight pushed when it first changed the
+   * page, and the redo stack that entry replaced: what `cancelGesture` puts
+   * back so a cancelled gesture leaves no trace in history.
+   */
+  private gestureUndo: { entry: HistoryEntry; redo: HistoryEntry[] } | null =
+    null;
+  /**
+   * A press on a bend handle of the selected link. `index` is the waypoint
+   * being dragged; with `insert` set the press was on a segment's "+" handle
+   * and the waypoint does not exist yet — it is inserted at `index`, at that
+   * point, once the press turns into a drag. `moved` flips when the pointer
+   * has travelled past `start` by the drag threshold: a plain click on a
+   * handle changes nothing.
+   */
+  private wpDrag: {
+    index: number;
+    moved: boolean;
+    start?: { x: number; y: number };
+    insert?: { x: number; y: number };
+  } | null = null;
   private marquee: { x0: number; y0: number; x1: number; y1: number } | null =
     null;
   /** Pan/zoom window in page coordinates (the displayed viewBox). */
@@ -299,14 +429,10 @@ export class Editor {
    * stays the primary: it owns the inspector and the bend / end handles.
    * Deleting and style edits apply to the whole set.
    */
-  private linkSelExtra = new Set<string>();
-  /** The primary selected link. Assigning it resets the multi-selection. */
+  private linkSelExtra: ReadonlySet<string> = new Set<string>();
+  /** The primary selected link (read-only: see `setSelection`). */
   private get linkSel(): string | null {
     return this._linkSel;
-  }
-  private set linkSel(id: string | null) {
-    this._linkSel = id;
-    this.linkSelExtra.clear();
   }
   private linkSeq = 0;
   /**
@@ -315,7 +441,7 @@ export class Editor {
    */
   private anchorSel: string | null = null;
   /** Multi-selection of anchors (parallel to `sel` for nodes). */
-  private selAnchors = new Set<string>();
+  private selAnchors: ReadonlySet<string> = new Set<string>();
   private anchorSeq = 0;
   private zoneSeq = 0;
   /** The selected zone region (clicked on canvas), or null. */
@@ -342,7 +468,11 @@ export class Editor {
     moved: boolean;
   } | null = null;
   /** Copy/paste buffer (cloned elements, page-independent). */
-  private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
+  private clipboard: {
+    nodes: NodeConfig[];
+    links: LinkConfig[];
+    anchors: AnchorConfig[];
+  } | null = null;
   /** Format-painter buffer: a copied node/link style to brush onto others. */
   private formatClip: {
     kind: 'node' | 'link';
@@ -406,7 +536,10 @@ export class Editor {
       this.redoStack = stashed?.redo ?? [];
     }
     this.page = page;
-    this.sel.clear();
+    this.endNudgeRun(); // a nudge run never continues on another page
+    // The fresh page starts with nothing selected; the shell is told below,
+    // unconditionally, because the page itself changed.
+    this.setSelection(null, true);
     // A page switch (or a whole-document open) changes the commit baseline; any
     // ops buffered for the old page are dropped so the sync cleanly falls back
     // to the snapshot diff rather than committing stale intent.
@@ -414,15 +547,14 @@ export class Editor {
     this.drag = null;
     this.marquee = null;
     this.wpDrag = null;
-    this.linkSel = null;
+    this.labelDrag = null;
+    this.gesturePointer = null;
+    this.gestureUndo = null;
     this.linkStart = null;
     this.dragLink = null;
     this.endDrag = null;
     this.zonePress = null;
     this.hoverNode = null;
-    this.anchorSel = null;
-    this.selAnchors.clear();
-    this.zoneSel = null;
     this.view = this.computeFitView();
     this.renderArt();
     this.renderOverlay();
@@ -440,12 +572,7 @@ export class Editor {
 
   /** Arrange the current page with a layout algorithm (grid/hierarchical/…). */
   layout(opts: AutoLayoutOptions): void {
-    this.snapshot();
-    const moved = layoutPage(this.page, opts);
-    if (moved === 0) {
-      this.undoStack.pop();
-      return;
-    }
+    if (!this.attempt(() => layoutPage(this.page, opts) > 0)) return;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -453,15 +580,16 @@ export class Editor {
 
   /** Auto-arrange the current page (grid-snap + de-overlap); page grows to fit. */
   tidy(): void {
-    this.snapshot();
-    // Don't clamp into the page — the page is effectively unlimited and grows to
-    // wrap the result, so a big topology spreads out instead of being squeezed.
-    const moved = tidyPage(this.page, { keepInBounds: false });
-    const grew = this.growPageToFit();
-    if (moved === 0 && !grew) {
-      this.undoStack.pop(); // nothing changed — don't pollute history
-      return;
-    }
+    const changed = this.attempt(() => {
+      // Don't clamp into the page — the page is effectively unlimited and
+      // grows to wrap the result, so a big topology spreads out instead of
+      // being squeezed.
+      const moved = tidyPage(this.page, { keepInBounds: false });
+      const grew = this.growPageToFit();
+      if (grew) this.markResized();
+      return moved > 0 || grew;
+    });
+    if (!changed) return;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -472,14 +600,14 @@ export class Editor {
    * returns how many labels moved. Hand-placed labels are left alone.
    */
   autoLabels(customNodes?: CustomNodeSpec[]): number {
-    this.snapshot();
-    const { changed } = autoPlaceLabels(this.page, {
-      ...(customNodes ? { customNodes } : {}),
+    let changed = 0;
+    const any = this.attempt(() => {
+      changed = autoPlaceLabels(this.page, {
+        ...(customNodes ? { customNodes } : {}),
+      }).changed;
+      return changed > 0;
     });
-    if (changed === 0) {
-      this.undoStack.pop(); // nothing changed — don't pollute history
-      return 0;
-    }
+    if (!any) return 0;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -488,14 +616,14 @@ export class Editor {
 
   /** Balance the layout: de-overlap, align rows/columns, centre; page grows to fit. */
   balance(): void {
-    this.snapshot();
-    const moved =
-      tidyPage(this.page, { keepInBounds: false }) + balancePage(this.page);
-    const grew = this.growPageToFit();
-    if (moved === 0 && !grew) {
-      this.undoStack.pop();
-      return;
-    }
+    const changed = this.attempt(() => {
+      const moved =
+        tidyPage(this.page, { keepInBounds: false }) + balancePage(this.page);
+      const grew = this.growPageToFit();
+      if (grew) this.markResized();
+      return moved > 0 || grew;
+    });
+    if (!changed) return;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -513,6 +641,7 @@ export class Editor {
     const vb = `${Math.round(b.x - M)} ${Math.round(b.y - M)} ${Math.round(b.w + 2 * M)} ${Math.round(b.h + 2 * M)}`;
     if (vb === this.page.viewBox) return;
     this.snapshot();
+    this.markResized();
     this.setViewBox(vb);
   }
 
@@ -617,13 +746,9 @@ export class Editor {
   focusNode(id: string): void {
     const n = this.page.nodes.find((m) => m.id === id);
     if (!n) return;
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set([id]);
+    this.setSelection({ nodes: [id] });
     this.panTo(n.x, n.y);
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
   }
 
   /** Select a single link and center the view on its midpoint (click-to-locate). */
@@ -632,15 +757,9 @@ export class Editor {
     if (!link) return;
     const a = resolvePos(this.page, link.from);
     const b = resolvePos(this.page, link.to);
-    this.sel.clear();
-    this.selAnchors.clear();
-    this.anchorSel = null;
-    this.linkSel = id;
+    this.setSelection({ links: [id] });
     if (a && b) this.panTo((a.x + b.x) / 2, (a.y + b.y) / 2);
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
-    this.fireAnchorSelect();
   }
 
   /**
@@ -678,7 +797,8 @@ export class Editor {
   /**
    * Set the page's viewBox (canvas extent) and reframe to it. Not placed on the
    * undo stack — a structural change like the filmstrip rename, kept out so that
-   * undoing node edits never resets pan/zoom.
+   * undoing node edits never resets pan/zoom. Undoing an earlier step does not
+   * bring the old size back either (see `HistoryEntry.resized`).
    */
   setViewBox(vb: string): void {
     if (this.page.viewBox !== vb) this.emitPagePatch({ set: { viewBox: vb } });
@@ -1147,9 +1267,12 @@ export class Editor {
         const p = ends[which];
         out += `<circle data-link-end="${which}" cx="${p.x}" cy="${p.y}" r="${s * 0.75}" fill="#0b0e14" stroke="${ACCENT}" stroke-width="2"/>`;
       }
-    // Midpoint "add" handles: hollow circle with a + on each segment.
-    for (let k = 0; k < pts.length - 1; k++) {
-      const m = midpoint(pts[k]!, pts[k + 1]!);
+    // A locked link takes no bend edits, so it shows no bend handles either.
+    if (link.locked) return out;
+    // "Add a bend" handles: hollow circle with a + on each segment.
+    const adds = this.bendAddPoints(link, pts);
+    for (let k = 0; k < adds.length; k++) {
+      const m = adds[k]!;
       out +=
         `<circle data-wp-add="${k}" cx="${m.x}" cy="${m.y}" r="${s * 0.6}" fill="${ACCENT}" fill-opacity="0.12" stroke="${ACCENT}" stroke-width="1"/>` +
         `<path d="M${m.x - s * 0.3},${m.y} h${s * 0.6} M${m.x},${m.y - s * 0.3} v${s * 0.6}" stroke="${ACCENT}" stroke-width="1"/>`;
@@ -1432,38 +1555,81 @@ export class Editor {
     return Math.max(4, (8 * this.view.w) / wpx);
   }
 
+  /**
+   * How far a press on a handle must travel before it counts as a drag, in
+   * user units (≈4 screen px, never under 3 units). Below it the gesture is
+   * a click, and a click on a handle edits nothing.
+   */
+  private dragSlop(): number {
+    const wpx = this.overlay.getBoundingClientRect().width || 1;
+    return Math.max(3, (4 * this.view.w) / wpx);
+  }
+
   /** Connection-dot radius in user units (≈5 screen px). */
   private dotRadius(): number {
     const wpx = this.overlay.getBoundingClientRect().width || 1;
     return Math.max(3, (5 * this.view.w) / wpx);
   }
 
-  /** The four edge-midpoint connection points of a node, in user units. */
-  private connectionDots(id: string): { x: number; y: number }[] {
+  /**
+   * The edge-midpoint connection points of a node, in user units, each with
+   * the outward direction of the edge it sits on. A dot that would sit on the
+   * node's own caption is left out: the caption owns that spot (a press there
+   * selects, drags or renames the node), so a dot drawn on it could never be
+   * grabbed.
+   */
+  private connectionDots(
+    id: string,
+  ): { x: number; y: number; ox: number; oy: number }[] {
     const n = this.page.nodes.find((m) => m.id === id);
     if (!n) return [];
     const b = nodeBounds(n);
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
+    const caption = nodeCaptionRect(n);
     return [
-      { x: cx, y: b.y }, // top
-      { x: b.x + b.w, y: cy }, // right
-      { x: cx, y: b.y + b.h }, // bottom
-      { x: b.x, y: cy }, // left
-    ];
+      { x: cx, y: b.y, ox: 0, oy: -1 }, // top
+      { x: b.x + b.w, y: cy, ox: 1, oy: 0 }, // right
+      { x: cx, y: b.y + b.h, ox: 0, oy: 1 }, // bottom
+      { x: b.x, y: cy, ox: -1, oy: 0 }, // left
+    ].filter((d) => !caption || !rectHolds(caption, d));
   }
 
   /**
    * If `p` lands on a connection dot of the hovered or a selected node, return
    * that node's id (so a link can be dragged out from it), else null.
+   *
+   * Outside the glyph and along its edge the grab distance is forgiving (≈9
+   * screen px). INTO the glyph a dot reaches only as far as it is drawn, and
+   * never more than `DOT_DEPTH` of the way to the centre: a fixed-size box
+   * there covers the whole of a thin or zoomed-out node, and then the node
+   * can no longer be dragged or double-clicked by its middle. `body` is the
+   * node whose glyph holds `p`, if any: inside another node's glyph that node
+   * wins, whatever dot of a neighbour reaches over it.
    */
-  private connectionDotHit(p: { x: number; y: number }): string | null {
-    const r = this.dotRadius() * 1.8; // forgiving grab radius
+  private connectionDotHit(
+    p: { x: number; y: number },
+    body: string | null = null,
+  ): string | null {
+    const reach = this.dotRadius() * 1.8;
     const ids = new Set<string>(this.sel);
     if (this.hoverNode) ids.add(this.hoverNode);
     for (const id of ids) {
+      if (body !== null && body !== id) continue;
+      const n = this.page.nodes.find((m) => m.id === id);
+      if (!n) continue;
+      const h = nodeHalf(n);
       for (const d of this.connectionDots(id)) {
-        if (Math.abs(p.x - d.x) <= r && Math.abs(p.y - d.y) <= r) return id;
+        // Distance from the dot along the edge's outward direction (negative
+        // = into the glyph) and sideways along the edge.
+        const out = (p.x - d.x) * d.ox + (p.y - d.y) * d.oy;
+        const along =
+          Math.abs((p.x - d.x) * d.oy) + Math.abs((p.y - d.y) * d.ox);
+        const depth = Math.min(
+          this.dotRadius(),
+          (d.ox !== 0 ? h.w : h.h) * DOT_DEPTH,
+        );
+        if (along <= reach && out <= reach && out >= -depth) return id;
       }
     }
     return null;
@@ -1507,12 +1673,39 @@ export class Editor {
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
     const off = this.dotRadius() * 4.2;
-    return [
+    const out: { x: number; y: number; dir: 'n' | 'e' | 's' | 'w' }[] = [
       { x: cx, y: b.y - off, dir: 'n' },
       { x: b.x + b.w + off, y: cy, dir: 'e' },
       { x: cx, y: b.y + b.h + off, dir: 's' },
       { x: b.x - off, y: cy, dir: 'w' },
     ];
+    // A chevron whose press area would overlap the node's own caption moves
+    // out past the caption (wherever the caption is placed). Left where it
+    // was, a click on the node's name would create a node instead of
+    // selecting it, and the chevron would be drawn over the text.
+    const caption = nodeCaptionRect(n);
+    if (caption) {
+      const r = this.chevronGrab();
+      for (const c of out) {
+        if (
+          c.x + r < caption.x ||
+          c.x - r > caption.x + caption.w ||
+          c.y + r < caption.y ||
+          c.y - r > caption.y + caption.h
+        )
+          continue;
+        if (c.dir === 'n') c.y = caption.y - r;
+        else if (c.dir === 's') c.y = caption.y + caption.h + r;
+        else if (c.dir === 'w') c.x = caption.x - r;
+        else c.x = caption.x + caption.w + r;
+      }
+    }
+    return out;
+  }
+
+  /** Half-size of a chevron's press area, in user units (≈12 screen px). */
+  private chevronGrab(): number {
+    return this.dotRadius() * 2.4;
   }
 
   /** The chevron (node + direction) under `p`, on hovered/selected nodes. */
@@ -1520,7 +1713,7 @@ export class Editor {
     x: number;
     y: number;
   }): { id: string; dir: 'n' | 'e' | 's' | 'w' } | null {
-    const r = this.dotRadius() * 2.4;
+    const r = this.chevronGrab();
     for (const id of this.chevronNodeIds()) {
       for (const c of this.chevrons(id)) {
         if (Math.abs(p.x - c.x) <= r && Math.abs(p.y - c.y) <= r)
@@ -1528,6 +1721,28 @@ export class Editor {
       }
     }
     return null;
+  }
+
+  /**
+   * The connect affordance a press at `p` would grab: a quick-connect chevron
+   * (`dir` set) or a connection dot, on a hovered or selected node. Two
+   * things under the pointer win over both, because they are what the user
+   * is pointing at: a node caption (the press selects, drags or renames that
+   * node) and the glyph of a different node than the affordance belongs to
+   * (a neighbour's dot or chevron reaching over a node must not swallow a
+   * press on it).
+   */
+  private connectAffordanceAt(p: {
+    x: number;
+    y: number;
+  }): { id: string; dir?: 'n' | 'e' | 's' | 'w' } | null {
+    const page = this.hitPage();
+    if (hitTestNodeLabel(page, p.x, p.y) !== null) return null;
+    const body = hitTestNode(page, p.x, p.y, 0);
+    const chevron = this.chevronHit(p);
+    if (chevron && (body === null || body === chevron.id)) return chevron;
+    const dot = this.connectionDotHit(p, body);
+    return dot === null ? null : { id: dot };
   }
 
   /** Nodes that show chevrons: the hovered node + a sole selected node. */
@@ -1599,14 +1814,10 @@ export class Editor {
     this.page.links.push({ id: lid, type: 'line', from: fromId, to: nid });
     this.emitAdds('nodes', [{ id: nid }]);
     this.emitAdds('links', [{ id: lid }]);
-    this.clearLinkSel();
-    this.clearAnchorSel();
-    this.clearZoneSel();
-    this.sel = new Set([nid]);
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
+    this.setSelection({ nodes: [nid] });
+    this.renderOverlay();
     // Hand the fresh node straight to the inline label editor.
     if (this.onInlineEdit) {
       const h = nodeHalf(node);
@@ -1642,7 +1853,11 @@ export class Editor {
     }[dir];
     let x = src.x + step.dx;
     let y = src.y + step.dy;
-    for (let i = 0; i < 6 && hitTestNode(this.page, x, y, 40); i++) {
+    for (
+      let i = 0;
+      i < 6 && hitTestNode(this.page, x, y, SPOT_CLEARANCE);
+      i++
+    ) {
       x += step.dx * 0.75;
       y += step.dy * 0.75;
     }
@@ -1841,9 +2056,43 @@ export class Editor {
 
   private snapshot(): void {
     this.nudgeActive = false; // any new snapshot ends a nudge-coalescing run
-    this.undoStack.push(JSON.stringify(serialize(this.page)));
+    this.undoStack.push(this.capture(false));
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
+  }
+
+  /** The page as it is now, as a history entry. */
+  private capture(resized: boolean): HistoryEntry {
+    return { page: JSON.stringify(serialize(this.page)), resized };
+  }
+
+  /**
+   * Mark the step just pushed as one that resizes the canvas itself ("fit
+   * page to content", a tidy that grows the page), so undoing it puts the old
+   * size back. See `HistoryEntry.resized`.
+   */
+  private markResized(): void {
+    const step = this.undoStack[this.undoStack.length - 1];
+    if (step) step.resized = true;
+  }
+
+  /**
+   * Run an edit that may turn out to change nothing (a tidy of an already
+   * tidy page). The edit works on the live page, so its undo step has to be
+   * pushed first; when the edit reports no change, history is put back
+   * exactly as it was — the undo stack, the redo stack the push had cleared,
+   * and a nudge run it had ended. Returns what the edit returned.
+   */
+  private attempt(edit: () => boolean): boolean {
+    const undo = [...this.undoStack];
+    const redo = this.redoStack;
+    const nudging = this.nudgeActive;
+    this.snapshot();
+    if (edit()) return true;
+    this.undoStack = undo;
+    this.redoStack = redo;
+    this.nudgeActive = nudging;
+    return false;
   }
 
   /** Park the live stacks under the current page's id (see `setPage`). */
@@ -2034,58 +2283,139 @@ export class Editor {
   private newZoneId(): string {
     return `z${Date.now().toString(36)}${(this.zoneSeq++).toString(36)}`;
   }
+  private newAnchorId(): string {
+    return `a${Date.now().toString(36)}${(this.anchorSeq++).toString(36)}`;
+  }
 
-  private restore(json: string): void {
-    const p = JSON.parse(json) as Record<string, unknown>;
+  /**
+   * Put the page back to a history entry. Fields that are edited outside
+   * history keep their current value (see `OUTSIDE_HISTORY`), and so does the
+   * canvas size unless the step resized the canvas itself: a snapshot holds
+   * the whole page, and restoring all of it used to undo a page rename or a
+   * canvas resize made AFTER the step being undone.
+   */
+  private restore(entry: HistoryEntry): void {
+    const p = JSON.parse(entry.page) as Record<string, unknown>;
     const page = this.page as unknown as Record<string, unknown>;
     // serialize() emits every mutable page field (undefined included), so its
     // key set is the complete field list; a key absent from the stored JSON is
     // an optional field that was unset and must be deleted, not skipped.
     for (const key of Object.keys(serialize(this.page))) {
+      if (OUTSIDE_HISTORY.has(key)) continue;
+      if (key === 'viewBox' && !entry.resized) continue;
       if (p[key] === undefined) delete page[key];
       else page[key] = p[key];
     }
   }
 
   undo(): void {
+    // Not while a button is held: the gesture in flight owns the newest
+    // undo entry (or is about to push one), and stepping through history
+    // under it leaves the drag impossible to undo.
+    if (this.gestureActive()) return;
     const prev = this.undoStack.pop();
     if (prev === undefined) return;
+    this.endNudgeRun();
     // Undo/redo replace the page wholesale; emitting precise inverse ops isn't
     // worth the risk, so we drop any buffered intent and let the sync fall back
     // to the snapshot diff, which computes the correct net delta.
     this.pendingOps = [];
-    this.redoStack.push(JSON.stringify(serialize(this.page)));
+    this.redoStack.push(this.capture(prev.resized));
     this.restore(prev);
-    this.sel.clear();
-    this.clearZoneSel();
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
+    this.afterHistoryStep();
   }
 
   redo(): void {
+    if (this.gestureActive()) return; // see undo
     const next = this.redoStack.pop();
     if (next === undefined) return;
+    this.endNudgeRun();
     this.pendingOps = [];
-    this.undoStack.push(JSON.stringify(serialize(this.page)));
+    this.undoStack.push(this.capture(next.resized));
     this.restore(next);
-    this.sel.clear();
-    this.clearZoneSel();
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
+    this.afterHistoryStep();
+  }
+
+  /**
+   * End a run of arrow-key nudges, so the next nudge pushes its own undo
+   * step. Undo and redo call it: a nudge made right after an undo used to
+   * join the run the undo had just reverted, pushed no step of its own, and
+   * could not be undone.
+   */
+  private endNudgeRun(): void {
+    this.nudgeActive = false;
+    clearTimeout(this.nudgeTimer);
+  }
+
+  /**
+   * After undo / redo replaced the page: the selection stays, minus whatever
+   * no longer exists (a link whose creation was just undone must not stay
+   * "selected"). Clearing it instead would send the next arrow key to "flip
+   * the page" in the middle of a nudge → undo → nudge. The shell is told in
+   * any case, since what it shows of the selection may have changed.
+   */
+  private afterHistoryStep(): void {
+    this.pruneSelection();
+    this.renderOverlay();
     this.fireSelect();
   }
 
   /* ── mutations ────────────────────────────────────────────────── */
 
-  /** Add a node of `type` at the current view center; selects it for dragging. */
+  /**
+   * A place near (x, y) for new nodes that were not dropped at a point the
+   * user chose (a palette click, a stencil stamp): (x, y) itself, or the
+   * nearest spot around it where none of them would land on or right beside
+   * a node already there. Without it every add lands on the view centre and
+   * a second click looks as if nothing happened. The search goes ring by
+   * ring, down-right first (where a pasted copy also goes), so the new nodes
+   * gather around the middle of the view instead of marching out of it.
+   * `block` holds each new node's offset from (x, y); hidden-layer nodes are
+   * not in the way.
+   */
+  private clearSpot(
+    x: number,
+    y: number,
+    block: readonly { x: number; y: number }[] = [{ x: 0, y: 0 }],
+  ): { x: number; y: number } {
+    const page = this.hitPage();
+    const blocked = (cx: number, cy: number): boolean =>
+      block.some(
+        (o) => hitTestNode(page, cx + o.x, cy + o.y, SPOT_CLEARANCE) !== null,
+      );
+    const nearest = (): { x: number; y: number } => {
+      if (!blocked(x, y)) return { x, y };
+      const RINGS = 12;
+      for (let ring = 1; ring <= RINGS; ring++)
+        for (const [dx, dy] of SPOT_DIRECTIONS) {
+          const cx = x + dx * ring * CLONE_STEP;
+          const cy = y + dy * ring * CLONE_STEP;
+          if (!blocked(cx, cy)) return { x: cx, y: cy };
+        }
+      // Crowded all around: keep stepping down-right, clear of the search.
+      const out = (RINGS + 1) * CLONE_STEP;
+      return { x: x + out, y: y + out };
+    };
+    const spot = nearest();
+    return { x: this.snapVal(spot.x), y: this.snapVal(spot.y) };
+  }
+
+  /**
+   * Add a node of `type` and select it for dragging. It goes to the middle of
+   * the view, or beside it while that spot is taken (see `clearSpot`); an
+   * `extra` carrying x / y places it exactly there instead.
+   */
   addNode(type: string, label?: string, extra?: Partial<NodeConfig>): void {
     this.snapshot();
     const id = `n${Date.now().toString(36)}${(this.nodeSeq++).toString(36)}`;
-    const x = this.snapVal(this.view.x + this.view.w / 2);
-    const y = this.snapVal(this.view.y + this.view.h / 2);
+    const { x, y } = this.clearSpot(
+      this.view.x + this.view.w / 2,
+      this.view.y + this.view.h / 2,
+    );
     this.page.nodes.push({
       id,
       type,
@@ -2095,20 +2425,27 @@ export class Editor {
       ...extra,
     });
     this.emitAdds('nodes', [{ id }]);
-    this.sel.clear();
-    this.sel.add(id);
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
+    this.setSelection({ nodes: [id] });
+    this.renderOverlay();
   }
 
+  /**
+   * Delete the selection. Locked nodes and links are left on the page (and
+   * stay selected, so it is plain why they are still there): lock protects an
+   * element from Delete as it does from a drag. A locked link still goes when
+   * one of its endpoints is deleted, since it cannot exist without it.
+   */
   deleteSelected(): void {
+    const doomed = this.deletable();
+    // Nothing that Delete would remove (nothing selected, everything locked,
+    // or ids that are no longer on the page): no undo step to push.
     if (
-      this.sel.size === 0 &&
-      this.linkSel === null &&
-      this.selAnchors.size === 0 &&
-      this.zoneSel === null
+      doomed.nodes.size === 0 &&
+      doomed.links.size === 0 &&
+      doomed.anchors.size === 0 &&
+      doomed.zone === null
     )
       return;
     this.snapshot();
@@ -2132,31 +2469,26 @@ export class Editor {
       id: m.id,
       snap: { flowPathId: m.flowPathId } as Record<string, unknown>,
     }));
-    if (this.zoneSel !== null) {
-      // Deleting a zone removes the region annotation only — its member nodes
-      // (and their links) stay on the canvas.
-      this.page.zones = this.page.zones.filter((z) => z.id !== this.zoneSel);
-      this.zoneSel = null;
-      this.fireZoneSelect();
-    }
-    if (this.linkSel !== null) {
-      const doomed = new Set(this.selectedLinkIds());
-      this.page.links = this.page.links.filter((l) => !doomed.has(l.id));
-      this.linkSel = null;
-      this.fireLinkSelect();
-    }
-    if (this.selAnchors.size > 0) {
+    const beforeEmphasis = JSON.stringify(this.page.emphasis ?? null);
+    // Callouts that point at something: the cascade clears the pointer of
+    // one whose target is deleted.
+    const pointing = new Set(
+      this.page.nodes
+        .filter((n) => n.type === 'callout' && n.target !== undefined)
+        .map((n) => n.id),
+    );
+    // Deleting a zone removes the region annotation only — its member nodes
+    // (and their links) stay on the canvas.
+    if (doomed.zone !== null)
+      this.page.zones = this.page.zones.filter((z) => z.id !== doomed.zone);
+    if (doomed.links.size > 0)
+      this.page.links = this.page.links.filter((l) => !doomed.links.has(l.id));
+    if (doomed.anchors.size > 0)
       this.page.anchors = this.page.anchors.filter(
-        (a) => !this.selAnchors.has(a.id),
+        (a) => !doomed.anchors.has(a.id),
       );
-      this.selAnchors.clear();
-      this.anchorSel = null;
-      this.fireAnchorSelect();
-    }
-    if (this.sel.size > 0) {
-      this.page.nodes = this.page.nodes.filter((n) => !this.sel.has(n.id));
-      this.sel.clear();
-    }
+    if (doomed.nodes.size > 0)
+      this.page.nodes = this.page.nodes.filter((n) => !doomed.nodes.has(n.id));
     // Cascade — the shared endpoint-removal semantics (pages/cascade.ts, also
     // behind the headless remove_element API): links, policy markers, zone
     // memberships, and flow-path waypoints/hops of vanished endpoints; a
@@ -2170,6 +2502,16 @@ export class Editor {
         ...beforeAnchors.filter((id) => !nowAnchorIds.has(id)),
       ]),
     );
+    // A link deleted on its own leaves the frame's emphasis list as well (the
+    // cascade does the same for nodes, anchors and the links they take along):
+    // a list left holding only ids that no longer exist dims the whole frame.
+    pruneEmphasis(this.page, doomed.links);
+    if (JSON.stringify(this.page.emphasis ?? null) !== beforeEmphasis)
+      this.emitPagePatch(
+        this.page.emphasis
+          ? { set: { emphasis: [...this.page.emphasis] } }
+          : { unset: ['emphasis'] },
+      );
     // Emit the semantic delete: one remove per element that vanished (direct or
     // via cascade), then a patch for any zone whose membership was pruned.
     const nowNodes = new Set(this.page.nodes.map((n) => n.id));
@@ -2231,32 +2573,63 @@ export class Editor {
         );
       if (fp) this.emitPatch('policyMarkers', m.id, fp);
     }
+    for (const n of this.page.nodes)
+      if (pointing.has(n.id) && n.target === undefined)
+        this.emitPatch('nodes', n.id, { unset: ['target'] });
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
+    // What was deleted leaves the selection; locked survivors stay in it.
+    this.pruneSelection();
+    this.renderOverlay();
     this.fireSelect();
   }
 
-  /** Clear node + link + anchor + zone selection (Esc). */
+  /**
+   * What Delete would remove right now: the selected elements that exist on
+   * the page and are not locked.
+   */
+  private deletable(): {
+    nodes: Set<string>;
+    links: Set<string>;
+    anchors: Set<string>;
+    zone: string | null;
+  } {
+    const links = new Set(this.selectedLinkIds());
+    return {
+      nodes: new Set(
+        this.page.nodes
+          .filter((n) => this.sel.has(n.id) && n.locked !== true)
+          .map((n) => n.id),
+      ),
+      links: new Set(
+        this.page.links
+          .filter((l) => links.has(l.id) && l.locked !== true)
+          .map((l) => l.id),
+      ),
+      anchors: new Set(
+        this.page.anchors
+          .filter((a) => this.selAnchors.has(a.id))
+          .map((a) => a.id),
+      ),
+      zone:
+        this.zoneSel !== null &&
+        this.page.zones.some((z) => z.id === this.zoneSel)
+          ? this.zoneSel
+          : null,
+    };
+  }
+
+  /**
+   * Esc: cancel the gesture in flight if there is one (the drag is taken
+   * back and the selection stays); otherwise clear the node + link + anchor
+   * + zone selection.
+   */
   clearSelection(): void {
+    if (this.cancelGesture()) return;
     this.clearSpotlight();
-    const had =
-      this.sel.size > 0 ||
-      this.linkSel !== null ||
-      this.selAnchors.size > 0 ||
-      this.anchorSel !== null ||
-      this.zoneSel !== null;
-    this.sel.clear();
-    this.selAnchors.clear();
-    this.linkSel = null;
-    this.anchorSel = null;
-    this.clearZoneSel();
-    if (had) {
-      this.renderOverlay();
-      this.fireSelect();
-      this.fireLinkSelect();
-      this.fireAnchorSelect();
-    }
+    const had = this.selectionCount() > 0 || this.zoneSel !== null;
+    this.setSelection(null);
+    if (had) this.renderOverlay();
   }
 
   /* ── per-frame emphasis (Phase 2.2) ───────────────────────────── */
@@ -2299,9 +2672,15 @@ export class Editor {
   /**
    * Hit-test at a client (screen) point and make that element the selection,
    * returning what was hit. Used by the right-click context menu so the menu
-   * acts on whatever is under the cursor. A node/link under the cursor that is
-   * already part of the selection is left selected (so a menu can act on a
-   * multi-selection); otherwise the selection is replaced with the single hit.
+   * acts on whatever is under the cursor. An element under the cursor that is
+   * already part of the selection leaves the selection as it is (so a menu
+   * can act on a multi-selection); otherwise the selection is replaced with
+   * the single hit.
+   *
+   * The shell has menus for nodes, links and the empty canvas. An anchor is
+   * reported as 'node' when nodes are selected with it (that menu acts on
+   * the whole block) and as 'empty' otherwise; a zone's empty region is
+   * 'empty'.
    */
   pickAt(
     clientX: number,
@@ -2310,59 +2689,65 @@ export class Editor {
     const p = clientToUser(this.overlay, clientX, clientY);
     const node = this.nodeAt(p);
     if (node) {
-      this.clearLinkSel();
-      this.clearAnchorSel();
-      if (!this.sel.has(node)) {
-        this.sel.clear();
-        this.sel.add(node);
-      }
-      this.fireSelect();
+      if (!this.sel.has(node)) this.setSelection({ nodes: [node] });
       this.renderOverlay();
       return { kind: 'node', id: node };
     }
+    const anchor = hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
+    if (anchor) {
+      if (!this.selAnchors.has(anchor))
+        this.setSelection({ anchors: [anchor] });
+      this.renderOverlay();
+      const lead = this.selectedNodeIds()[0];
+      return lead === undefined
+        ? { kind: 'empty', id: null }
+        : { kind: 'node', id: lead };
+    }
     const link = this.linkAt(p);
     if (link) {
-      this.sel.clear();
-      this.clearAnchorSel();
-      this.fireSelect();
-      if (this.linkSel !== link) {
-        this.linkSel = link;
-        this.fireLinkSelect();
-      }
+      // One of several selected links: all stay selected, and the one under
+      // the pointer becomes the primary, so the menu's single-link commands
+      // (swap, straighten) and the inspector act on the link that was
+      // right-clicked while Delete and Lock still cover them all.
+      const links = this.selectedLinkIds();
+      this.setSelection({
+        links: links.includes(link)
+          ? [link, ...links.filter((id) => id !== link)]
+          : [link],
+      });
       this.renderOverlay();
       return { kind: 'link', id: link };
     }
-    // Empty canvas — clear any current selection.
-    this.sel.clear();
-    this.clearLinkSel();
-    this.clearAnchorSel();
-    this.fireSelect();
+    // Empty canvas — clear the selection, unless it is the zone whose empty
+    // region the pointer is in (that region is where a zone is clicked).
+    const zone = this.zoneAt(p);
+    if (zone === null || zone !== this.zoneSel) this.setSelection(null);
     this.renderOverlay();
     return { kind: 'empty', id: null };
   }
 
   /* ── clipboard / duplicate / select-all ───────────────────────── */
 
-  /** Select every node on the page. */
+  /**
+   * Select every node the user can see. Nodes on a hidden layer are left
+   * out, here and in every other select-by command and the marquee: a
+   * Delete or a drag must never reach what is not drawn.
+   */
   selectAll(): void {
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set(this.page.nodes.map((n) => n.id));
+    this.setSelection({ nodes: this.hitPage().nodes.map((n) => n.id) });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
   }
 
   /* ── select by / filter ───────────────────────────────────────── */
 
-  /** Replace the selection with all nodes matching `predicate`. */
+  /** Replace the selection with all visible nodes matching `predicate`. */
   private selectWhere(predicate: (n: NodeConfig) => boolean): void {
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set(this.page.nodes.filter(predicate).map((n) => n.id));
+    this.setSelection({
+      nodes: this.hitPage()
+        .nodes.filter(predicate)
+        .map((n) => n.id),
+    });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
   }
 
   /** The first currently-selected node (selection order is page order). */
@@ -2395,18 +2780,16 @@ export class Editor {
   growConnected(): void {
     if (this.sel.size === 0) return;
     const next = new Set(this.sel);
-    for (const l of this.page.links) {
-      if (this.sel.has(l.from) && this.page.nodes.some((n) => n.id === l.to))
+    // Follow only links that are drawn, to nodes that are drawn.
+    const page = this.hitPage();
+    for (const l of page.links) {
+      if (this.sel.has(l.from) && page.nodes.some((n) => n.id === l.to))
         next.add(l.to);
-      if (this.sel.has(l.to) && this.page.nodes.some((n) => n.id === l.from))
+      if (this.sel.has(l.to) && page.nodes.some((n) => n.id === l.from))
         next.add(l.from);
     }
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = next;
+    this.setSelection({ nodes: next });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
   }
 
   /** Current zoom factor (1 = 100%): page width over the displayed width. */
@@ -2437,36 +2820,114 @@ export class Editor {
     this.zoomBy(1.25);
   }
 
-  /** Copy the selected nodes (+ links internal to them) into the clipboard. */
-  copySelection(): void {
-    if (this.sel.size === 0) return;
-    const ids = this.sel;
-    this.clipboard = {
-      nodes: this.page.nodes
-        .filter((n) => ids.has(n.id))
-        .map((n) => structuredClone(n)),
-      links: this.page.links
-        .filter((l) => ids.has(l.from) && ids.has(l.to))
-        .map((l) => structuredClone(l)),
+  /**
+   * What copy, cut and duplicate take with them: the selected nodes and
+   * anchors, the links that stay whole inside that block, and the anchors
+   * those links end on. An anchor is a wire's loose end: a link from a
+   * selected element to an anchor travels with the element, and takes the
+   * anchor along whether or not it was selected itself. A link to a node
+   * that is not selected is left behind, as before.
+   */
+  private carried(): {
+    nodes: NodeConfig[];
+    links: LinkConfig[];
+    anchors: AnchorConfig[];
+  } | null {
+    if (this.sel.size === 0 && this.selAnchors.size === 0) return null;
+    const picked = (id: string): boolean =>
+      this.sel.has(id) || this.selAnchors.has(id);
+    const anchorIds = new Set(this.page.anchors.map((a) => a.id));
+    const taken = new Set(this.selAnchors);
+    const links = this.page.links.filter((l) => {
+      const from = picked(l.from);
+      const to = picked(l.to);
+      const whole =
+        (from || anchorIds.has(l.from)) &&
+        (to || anchorIds.has(l.to)) &&
+        (from || to);
+      if (whole)
+        for (const end of [l.from, l.to])
+          if (anchorIds.has(end)) taken.add(end);
+      return whole;
+    });
+    return {
+      nodes: this.page.nodes.filter((n) => this.sel.has(n.id)),
+      links,
+      anchors: this.page.anchors.filter((a) => taken.has(a.id)),
     };
   }
 
-  /** Copy then delete the selection. */
+  /** Copy the selection (see `carried`) into the clipboard. */
+  copySelection(): void {
+    const block = this.carried();
+    if (block) this.clipboard = structuredClone(block);
+  }
+
+  /**
+   * Copy then delete the selection. What went to the clipboard leaves the
+   * page: besides the selection, an anchor that was only carried along goes
+   * too when the cut leaves it without any link (it would stay behind as a
+   * stray point, and the paste brings back its copy). Locked elements are
+   * copied but stay where they are (see `deleteSelected`).
+   */
   cut(): void {
-    if (this.sel.size === 0) return;
-    this.copySelection();
+    const block = this.carried();
+    if (!block) return;
+    this.clipboard = structuredClone(block);
+    // The links the delete below takes with it: those with an end that goes
+    // (a locked node stays, and so do its links).
+    const doomed = this.deletable();
+    const goes = (id: string): boolean =>
+      doomed.nodes.has(id) || doomed.anchors.has(id);
+    const orphaned = block.anchors
+      .filter((a) => !this.selAnchors.has(a.id))
+      .filter((a) =>
+        this.page.links.every(
+          (l) =>
+            (l.from !== a.id && l.to !== a.id) ||
+            goes(l.from === a.id ? l.to : l.from),
+        ),
+      );
+    if (orphaned.length)
+      this.setSelection({
+        nodes: this.sel,
+        anchors: [...this.selAnchors, ...orphaned.map((a) => a.id)],
+      });
     this.deleteSelected();
   }
 
-  /** Whether the clipboard holds nodes that `paste()` would place. */
+  /** Whether the clipboard holds something that `paste()` would place. */
   canPaste(): boolean {
-    return !!this.clipboard && this.clipboard.nodes.length > 0;
+    return (
+      !!this.clipboard &&
+      this.clipboard.nodes.length + this.clipboard.anchors.length > 0
+    );
   }
 
-  /** Paste the clipboard (offset), selecting the new nodes. */
+  /**
+   * Paste the clipboard, selecting the new nodes. A copy lands one step down
+   * and to the right of where it was copied from; while an element already
+   * sits exactly there (an earlier paste of the same clipboard) the copy
+   * steps on, so repeated pastes fan out like repeated duplicates instead of
+   * stacking on one spot where they look like a single node.
+   */
   paste(): void {
-    if (!this.clipboard || this.clipboard.nodes.length === 0) return;
-    this.placeClones(this.clipboard.nodes, this.clipboard.links);
+    if (!this.clipboard) return;
+    const lead = this.clipboard.nodes[0] ?? this.clipboard.anchors[0];
+    if (!lead) return;
+    const taken = (x: number, y: number): boolean =>
+      this.page.nodes.some((n) => n.x === x && n.y === y) ||
+      this.page.anchors.some((a) => a.x === x && a.y === y);
+    let steps = 1;
+    while (
+      steps < 200 &&
+      taken(
+        Math.round(lead.x + steps * CLONE_STEP),
+        Math.round(lead.y + steps * CLONE_STEP),
+      )
+    )
+      steps++;
+    this.placeClones(this.clipboard, steps * CLONE_STEP);
   }
 
   /* ── format painter ───────────────────────────────────────────────
@@ -2497,7 +2958,10 @@ export class Editor {
     return this.formatClip.kind === 'node' ? this.sel.size > 0 : !!this.linkSel;
   }
 
-  /** Brush the copied style onto the selection (all nodes, or the one link). */
+  /**
+   * Brush the copied style onto the selection: every selected node, or every
+   * selected link (not only the primary one the inspector shows).
+   */
   pasteFormat(): void {
     const clip = this.formatClip;
     if (!clip) return;
@@ -2510,10 +2974,16 @@ export class Editor {
           this.assignAndEmit('nodes', n as Record<string, unknown>, clip.style);
       }
     } else {
-      const link = this.getSelectedLink();
-      if (!link) return;
+      const ids = new Set(this.selectedLinkIds());
+      const links = this.page.links.filter((l) => ids.has(l.id));
+      if (links.length === 0) return;
       this.snapshot();
-      this.assignAndEmit('links', link as Record<string, unknown>, clip.style);
+      for (const link of links)
+        this.assignAndEmit(
+          'links',
+          link as Record<string, unknown>,
+          clip.style,
+        );
     }
     this.renderArt();
     this.renderOverlay();
@@ -2522,35 +2992,51 @@ export class Editor {
 
   /** Duplicate the current selection in place (offset), selecting the copies. */
   duplicateSelection(): void {
-    if (this.sel.size === 0) return;
-    const ids = this.sel;
-    const nodes = this.page.nodes.filter((n) => ids.has(n.id));
-    const links = this.page.links.filter(
-      (l) => ids.has(l.from) && ids.has(l.to),
-    );
-    this.placeClones(nodes, links);
+    const block = this.carried();
+    if (block) this.placeClones(block);
   }
 
-  private placeClones(srcNodes: NodeConfig[], srcLinks: LinkConfig[]): void {
-    if (srcNodes.length === 0) return;
+  /** Add copies of the elements, `offset` down and to the right, and select them. */
+  private placeClones(
+    src: { nodes: NodeConfig[]; links: LinkConfig[]; anchors: AnchorConfig[] },
+    offset = CLONE_STEP,
+  ): void {
+    if (src.nodes.length === 0 && src.anchors.length === 0) return;
     this.snapshot();
-    const { nodes, links } = cloneElements(srcNodes, srcLinks, {
-      nextNodeId: () => this.newNodeId(),
-      nextLinkId: () => this.newLinkId(),
-      dx: 24,
-      dy: 24,
-    });
+    const { nodes, links, anchors } = cloneElements(
+      src.nodes,
+      src.links,
+      {
+        nextNodeId: () => this.newNodeId(),
+        nextLinkId: () => this.newLinkId(),
+        nextAnchorId: () => this.newAnchorId(),
+        dx: offset,
+        dy: offset,
+      },
+      src.anchors,
+    );
+    // A copied callout may keep pointing at an element of this page (the
+    // copy made alongside it, or the original it was copied from). Pasted
+    // onto a page that has no such element, the pointer would dangle.
+    const here = new Set(
+      [...this.page.nodes, ...this.page.anchors, ...nodes, ...anchors].map(
+        (el) => el.id,
+      ),
+    );
+    dropStrayCalloutTargets(nodes, here);
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
+    this.page.anchors.push(...anchors);
     this.emitAdds('nodes', nodes);
     this.emitAdds('links', links);
-    this.linkSel = null;
-    this.sel = new Set(nodes.map((n) => n.id));
+    this.emitAdds('anchors', anchors);
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireLinkSelect();
+    this.setSelection({
+      nodes: nodes.map((n) => n.id),
+      anchors: anchors.map((a) => a.id),
+    });
+    this.renderOverlay();
   }
 
   /* ── stencils / reusable groups (C.3) ─────────────────────────── */
@@ -2576,31 +3062,41 @@ export class Editor {
    * Stamp a saved stencil's elements onto the current page, centred on the
    * viewport with fresh ids, selecting the placed copies. The stencil's nodes
    * are stored centred on (0,0), so the viewport centre becomes the group's
-   * centre. Undoable.
+   * centre; a stamp that would land on nodes already there steps aside as a
+   * block (see `clearSpot`). Undoable.
    */
   stampStencil(srcNodes: NodeConfig[], srcLinks: LinkConfig[]): void {
     if (srcNodes.length === 0) return;
     this.snapshot();
-    const cx = this.snapVal(this.view.x + this.view.w / 2);
-    const cy = this.snapVal(this.view.y + this.view.h / 2);
-    const { nodes, links } = cloneElements(srcNodes, srcLinks, {
-      nextNodeId: () => this.newNodeId(),
-      nextLinkId: () => this.newLinkId(),
-      dx: cx,
-      dy: cy,
-    });
+    // The stencil's nodes are stored around (0,0): they are the block's own
+    // offsets from where its centre goes.
+    const { x: cx, y: cy } = this.clearSpot(
+      this.view.x + this.view.w / 2,
+      this.view.y + this.view.h / 2,
+      srcNodes,
+    );
+    const { nodes, links } = cloneElements(
+      srcNodes,
+      stampableLinks(srcNodes, srcLinks),
+      {
+        nextNodeId: () => this.newNodeId(),
+        nextLinkId: () => this.newLinkId(),
+        dx: cx,
+        dy: cy,
+      },
+    );
+    // A stencil is a block of its own: a callout in it may point at another
+    // of its nodes, never at whatever on this page happens to carry the id
+    // its target had where the stencil was captured.
+    dropStrayCalloutTargets(nodes, new Set(nodes.map((n) => n.id)));
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
     this.emitAdds('nodes', nodes);
     this.emitAdds('links', links);
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set(nodes.map((n) => n.id));
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireLinkSelect();
+    this.setSelection({ nodes: nodes.map((n) => n.id) });
+    this.renderOverlay();
   }
 
   /* ── container zones (C.2) ────────────────────────────────────── */
@@ -2619,30 +3115,19 @@ export class Editor {
    * movable container.
    */
   selectZoneMembers(id: string): boolean {
-    const ids = this.zoneMemberIds(id);
+    const visible = new Set(this.hitPage().nodes.map((n) => n.id));
+    const ids = this.zoneMemberIds(id).filter((nid) => visible.has(nid));
     if (!ids.length) return false;
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.clearZoneSel();
-    this.sel = new Set(ids);
+    this.setSelection({ nodes: ids });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
     return true;
   }
 
   /** Select a zone by id (e.g. from the annotations list) and show its editor. */
   selectZone(id: string): boolean {
     if (!this.page.zones.some((z) => z.id === id)) return false;
-    this.sel.clear();
-    this.selAnchors.clear();
-    this.clearAnchorSel();
-    this.linkSel = null;
-    this.zoneSel = id;
+    this.setSelection({ zone: id });
     this.renderOverlay();
-    this.fireSelect();
-    this.fireLinkSelect();
-    this.fireZoneSelect();
     return true;
   }
 
@@ -2690,14 +3175,10 @@ export class Editor {
     this.emitAdds('nodes', nodes);
     this.emitAdds('links', links);
     this.emitAdds('zones', [{ id: newZone.id }]);
-    this.linkSel = null;
-    this.clearAnchorSel();
-    this.sel = new Set(nodes.map((n) => n.id));
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireLinkSelect();
+    this.setSelection({ nodes: nodes.map((n) => n.id) });
+    this.renderOverlay();
   }
 
   /* ── nudge (arrow keys) ───────────────────────────────────────── */
@@ -2726,6 +3207,8 @@ export class Editor {
       a.y = Math.round(a.y + dy);
       this.emitPatch('anchors', a.id, { set: { x: a.x, y: a.y } });
     }
+    const nudged = new Set([...nodes, ...anchors].map((el) => el.id));
+    this.shiftCarriedBends((id) => (nudged.has(id) ? { dx, dy } : undefined));
     clearTimeout(this.nudgeTimer);
     this.nudgeTimer = setTimeout(() => (this.nudgeActive = false), 500);
     // Held arrow keys repeat faster than frames — coalesce the art render.
@@ -2785,26 +3268,29 @@ export class Editor {
     return this.linkSel !== null || this.sel.size === 1;
   }
 
+  /** The selected nodes and links (all of them): what Lock applies to. */
+  private lockTargets(): { nodes: NodeConfig[]; links: LinkConfig[] } {
+    const links = new Set(this.selectedLinkIds());
+    return {
+      nodes: this.page.nodes.filter((n) => this.sel.has(n.id)),
+      links: this.page.links.filter((l) => links.has(l.id)),
+    };
+  }
+
   /** Whether every selected node/link is locked (so the menu can label it). */
   selectionLocked(): boolean {
-    const targets: { locked?: boolean }[] = this.page.nodes.filter((n) =>
-      this.sel.has(n.id),
-    );
-    const link = this.linkSel
-      ? this.page.links.find((l) => l.id === this.linkSel)
-      : null;
-    if (link) targets.push(link);
+    const { nodes, links } = this.lockTargets();
+    const targets: { locked?: boolean }[] = [...nodes, ...links];
     return targets.length > 0 && targets.every((t) => t.locked === true);
   }
 
-  /** Toggle lock on the selected nodes + link (locks all unless all locked). */
+  /**
+   * Toggle lock on every selected node and link (locks all unless all are
+   * locked already), as one undo step.
+   */
   toggleLock(): void {
-    const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
-    const link = this.linkSel
-      ? this.page.links.find((l) => l.id === this.linkSel)
-      : null;
-    const targets: { locked?: boolean }[] = [...nodes];
-    if (link) targets.push(link);
+    const { nodes, links } = this.lockTargets();
+    const targets: { locked?: boolean }[] = [...nodes, ...links];
     if (targets.length === 0) return;
     const next = !targets.every((t) => t.locked === true);
     this.snapshot();
@@ -2812,7 +3298,7 @@ export class Editor {
       this.assignAndEmit('nodes', n as unknown as Record<string, unknown>, {
         locked: next,
       });
-    if (link)
+    for (const link of links)
       this.assignAndEmit('links', link as unknown as Record<string, unknown>, {
         locked: next,
       });
@@ -2862,24 +3348,35 @@ export class Editor {
    * The inline editor commits through this: by the time its input blurs, the
    * click that blurred it has already selected a different element (or none),
    * so a selection-based update would rename the wrong thing or nothing.
-   * One undo step. Returns false when the element no longer exists.
+   * `kind` says which label: an element's own, a link's port label at one
+   * end ('link-from' / 'link-to', `id` is the link), or a flow path's. One
+   * undo step. Returns false when the element no longer exists.
    */
-  renameElement(
-    kind: 'node' | 'link' | 'zone',
-    id: string,
-    label: string,
-  ): boolean {
+  renameElement(kind: InlineEditKind, id: string, label: string): boolean {
     const collection =
-      kind === 'node' ? 'nodes' : kind === 'link' ? 'links' : 'zones';
+      kind === 'node'
+        ? 'nodes'
+        : kind === 'zone'
+          ? 'zones'
+          : kind === 'flow'
+            ? 'flowPaths'
+            : 'links';
     const el = (this.page[collection] as { id: string }[]).find(
       (e) => e.id === id,
-    );
+    ) as Record<string, unknown> | undefined;
     if (!el) return false;
     this.snapshot();
-    this.assignAndEmit(collection, el as unknown as Record<string, unknown>, {
-      label,
-    });
-    if (kind === 'zone') this.afterAnnotationChange(true);
+    if (kind === 'link-from' || kind === 'link-to') {
+      // A port label is optional text beside the wire: emptied, the field
+      // goes away rather than staying behind as an empty string.
+      const key = kind === 'link-from' ? 'fromLabel' : 'toLabel';
+      if (label === '') {
+        const had = el[key] !== undefined;
+        delete el[key];
+        if (had) this.emitPatch('links', id, { unset: [key] });
+      } else this.assignAndEmit('links', el, { [key]: label });
+    } else this.assignAndEmit(collection, el, { label });
+    if (kind === 'zone' || kind === 'flow') this.afterAnnotationChange(true);
     else {
       this.renderArt();
       this.renderOverlay();
@@ -2940,38 +3437,62 @@ export class Editor {
     this.onChange();
   }
 
-  /** Swap the selected link's endpoints (and reverse any waypoints). */
+  /**
+   * Swap the selected link's endpoints. Everything recorded per end — port
+   * and interface labels, optics, bundles, pinned sides and their offsets,
+   * label offsets — moves with its device to the other end, and the bends
+   * are reversed, so the link looks the same and only its direction changed.
+   */
   swapLink(): void {
     const link = this.getSelectedLink();
     if (!link) return;
     this.snapshot();
-    const { from, to } = link;
-    link.from = to;
-    link.to = from;
+    const rec = link as Record<string, unknown>;
+    const before = { ...rec };
+    // The pairs are read off the link's own keys (`from` / `to`, and every
+    // `fromXxx` / `toXxx`), not from a list: a per-end field added to the
+    // model later is swapped without anyone remembering to add it here.
+    const suffixes = new Set<string>();
+    for (const key of Object.keys(rec)) {
+      const m = /^(?:from|to)([A-Z].*)?$/.exec(key);
+      if (m) suffixes.add(m[1] ?? '');
+    }
+    const keys: string[] = ['waypoints'];
+    for (const suffix of suffixes) {
+      const a = `from${suffix}`;
+      const b = `to${suffix}`;
+      keys.push(a, b);
+      const va = rec[a];
+      const vb = rec[b];
+      if (vb === undefined) delete rec[a];
+      else rec[a] = vb;
+      if (va === undefined) delete rec[b];
+      else rec[b] = va;
+    }
     if (link.waypoints) link.waypoints = [...link.waypoints].reverse();
-    this.emitPatch('links', link.id, {
-      set: {
-        from: link.from,
-        to: link.to,
-        ...(link.waypoints
-          ? { waypoints: structuredClone(link.waypoints) }
-          : {}),
-      },
-    });
+    const fp = this.patchFromChange(before, rec, keys);
+    if (fp) this.emitPatch('links', link.id, fp);
     this.renderArt();
     this.renderOverlay();
     this.onChange();
   }
 
-  /** Whether the selected link has manual bend points (waypoints) to clear. */
+  /**
+   * Whether the selected link has manual bend points (waypoints) that can be
+   * cleared. A locked link's bends cannot, so the shell does not offer it.
+   */
   selectedLinkHasBends(): boolean {
-    return !!this.getSelectedLink()?.waypoints?.length;
+    const link = this.getSelectedLink();
+    return !!link && link.locked !== true && !!link.waypoints?.length;
   }
 
-  /** Straighten the selected link: drop its waypoints back to a direct route. */
+  /**
+   * Straighten the selected link: drop its waypoints back to a direct route.
+   * A locked link keeps its bends.
+   */
   straightenLink(): void {
     const link = this.getSelectedLink();
-    if (!link?.waypoints?.length) return;
+    if (!link?.waypoints?.length || link.locked === true) return;
     this.snapshot();
     delete link.waypoints;
     this.emitPatch('links', link.id, { unset: ['waypoints'] });
@@ -3035,10 +3556,17 @@ export class Editor {
     this.snapshot();
     if (collection === 'zones') {
       this.page.zones = this.page.zones.filter((e) => e.id !== id);
-      if (this.zoneSel === id) this.clearZoneSel();
-    } else if (collection === 'flowPaths')
+      if (this.zoneSel === id) this.setSelection(null);
+    } else if (collection === 'flowPaths') {
       this.page.flowPaths = this.page.flowPaths.filter((e) => e.id !== id);
-    else
+      // A marker that pointed at the flow keeps its place and loses the
+      // pointer, as it does when the flow goes with a deleted node.
+      for (const m of this.page.policyMarkers)
+        if (m.flowPathId === id) {
+          delete m.flowPathId;
+          this.emitPatch('policyMarkers', m.id, { unset: ['flowPathId'] });
+        }
+    } else
       this.page.policyMarkers = this.page.policyMarkers.filter(
         (e) => e.id !== id,
       );
@@ -3053,56 +3581,93 @@ export class Editor {
     this.onChange();
   }
 
-  /** Align selected nodes' centers. Needs 2+ selected. */
+  /**
+   * Align selected nodes' centers. Needs 2+ selected. A locked node is not
+   * moved, but it still counts toward the line the others are sent to, so
+   * nodes can be aligned WITH a locked one. Nothing to move, nothing pushed
+   * on the undo stack.
+   */
   alignSelection(
     mode: 'left' | 'centerH' | 'right' | 'top' | 'middleV' | 'bottom',
   ): void {
     const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
     if (nodes.length < 2) return;
-    this.snapshot();
     const xs = nodes.map((n) => n.x);
     const ys = nodes.map((n) => n.y);
     const minX = Math.min(...xs),
       maxX = Math.max(...xs),
       minY = Math.min(...ys),
       maxY = Math.max(...ys);
-    for (const n of nodes) {
-      const bx = n.x;
-      const by = n.y;
-      if (mode === 'left') n.x = minX;
-      else if (mode === 'right') n.x = maxX;
-      else if (mode === 'centerH') n.x = Math.round((minX + maxX) / 2);
-      else if (mode === 'top') n.y = minY;
-      else if (mode === 'bottom') n.y = maxY;
-      else if (mode === 'middleV') n.y = Math.round((minY + maxY) / 2);
-      const fp = this.patchFromChange({ x: bx, y: by }, n, ['x', 'y']);
-      if (fp) this.emitPatch('nodes', n.id, fp);
-    }
-    this.renderArt();
-    this.renderOverlay();
-    this.onChange();
+    const target = (n: NodeConfig): { x: number; y: number } => ({
+      x:
+        mode === 'left'
+          ? minX
+          : mode === 'right'
+            ? maxX
+            : mode === 'centerH'
+              ? Math.round((minX + maxX) / 2)
+              : n.x,
+      y:
+        mode === 'top'
+          ? minY
+          : mode === 'bottom'
+            ? maxY
+            : mode === 'middleV'
+              ? Math.round((minY + maxY) / 2)
+              : n.y,
+    });
+    this.moveNodes(
+      nodes.filter((n) => n.locked !== true).map((n) => ({ n, ...target(n) })),
+    );
   }
 
-  /** Distribute selected nodes' centers evenly along an axis. Needs 3+ selected. */
+  /**
+   * Distribute selected nodes' centers evenly along an axis. Needs 3+
+   * selected. The two outermost nodes stay where they are, and so does a
+   * locked node between them: each is a fixed post, and the nodes between two
+   * posts are spread evenly across that gap.
+   */
   distributeSelection(axis: 'h' | 'v'): void {
     const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
     if (nodes.length < 3) return;
+    const at = (n: NodeConfig): number => (axis === 'h' ? n.x : n.y);
+    nodes.sort((a, b) => at(a) - at(b));
+    const moves: { n: NodeConfig; x: number; y: number }[] = [];
+    let post = 0;
+    for (let i = 1; i < nodes.length; i++) {
+      const fixed = i === nodes.length - 1 || nodes[i]!.locked === true;
+      if (!fixed) continue;
+      const from = at(nodes[post]!);
+      const step = (at(nodes[i]!) - from) / (i - post);
+      for (let k = post + 1; k < i; k++) {
+        const n = nodes[k]!;
+        const v = Math.round(from + step * (k - post));
+        moves.push(axis === 'h' ? { n, x: v, y: n.y } : { n, x: n.x, y: v });
+      }
+      post = i;
+    }
+    this.moveNodes(moves);
+  }
+
+  /**
+   * Move nodes to new positions as one undo step, emitting a patch for each
+   * that actually moves. Does nothing at all when none would.
+   */
+  private moveNodes(moves: { n: NodeConfig; x: number; y: number }[]): void {
+    const moving = moves.filter((m) => m.x !== m.n.x || m.y !== m.n.y);
+    if (moving.length === 0) return;
     this.snapshot();
-    nodes.sort((a, b) => (axis === 'h' ? a.x - b.x : a.y - b.y));
-    const first = nodes[0]!;
-    const last = nodes[nodes.length - 1]!;
-    const span = axis === 'h' ? last.x - first.x : last.y - first.y;
-    const step = span / (nodes.length - 1);
-    nodes.forEach((n, i) => {
-      const v = Math.round((axis === 'h' ? first.x : first.y) + step * i);
-      const before = axis === 'h' ? n.x : n.y;
-      if (axis === 'h') n.x = v;
-      else n.y = v;
-      if (v !== before)
-        this.emitPatch('nodes', n.id, {
-          set: axis === 'h' ? { x: v } : { y: v },
-        });
-    });
+    const moved = new Map<string, { dx: number; dy: number }>();
+    for (const { n, x, y } of moving) {
+      const before = { x: n.x, y: n.y };
+      n.x = x;
+      n.y = y;
+      const fp = this.patchFromChange(before, n, ['x', 'y']);
+      if (fp) this.emitPatch('nodes', n.id, fp);
+      moved.set(n.id, { dx: n.x - before.x, dy: n.y - before.y });
+    }
+    // A link whose two ends moved by the same amount keeps its shape.
+    this.shiftCarriedBends((id) => moved.get(id));
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -3130,35 +3695,82 @@ export class Editor {
     return this.page.zones.find((z) => z.id === this.zoneSel) ?? null;
   }
 
-  /** Drop any zone selection (and notify) — used when another element is picked. */
-  private clearZoneSel(): void {
-    if (this.zoneSel !== null) {
-      this.zoneSel = null;
-      this.fireZoneSelect();
+  /**
+   * Replace the whole selection. This is the only place the selection stores
+   * are written: selecting one family (nodes + anchors, links, or a zone)
+   * always clears the other two, so what Delete, the inspector and the
+   * overlay act on is exactly what was last selected. `null` clears it.
+   *
+   * The shell is told about every store that changed (`quiet` skips that, for
+   * a caller that notifies unconditionally itself). Callers re-render the
+   * overlay.
+   */
+  private setSelection(next: Selection | null, quiet = false): void {
+    const nodes = new Set<string>();
+    const anchors = new Set<string>();
+    let links: string[] = [];
+    let zone: string | null = null;
+    if (next) {
+      if ('links' in next) links = [...new Set(next.links)];
+      else if ('zone' in next) zone = next.zone;
+      else {
+        for (const id of next.nodes ?? []) nodes.add(id);
+        for (const id of next.anchors ?? []) anchors.add(id);
+      }
     }
-  }
-
-  private clearAnchorSel(): void {
-    this.selAnchors.clear();
-    if (this.anchorSel !== null) {
-      this.anchorSel = null;
-      this.fireAnchorSelect();
-    }
+    const was = {
+      nodes: this.sel,
+      anchors: this.selAnchors,
+      links: this.selectedLinkIds(),
+      zone: this.zoneSel,
+      anchor: this.anchorSel,
+    };
+    this.sel = nodes;
+    this.selAnchors = anchors;
+    this._linkSel = links[0] ?? null;
+    this.linkSelExtra = new Set(links.slice(1));
+    this.zoneSel = zone;
+    // The inspector edits one anchor at a time: the lone selected anchor,
+    // when no node is selected with it.
+    this.anchorSel =
+      nodes.size === 0 && anchors.size === 1 ? [...anchors][0]! : null;
+    if (quiet) return;
+    const linksChanged =
+      was.links.length !== links.length ||
+      was.links.some((id, i) => id !== links[i]);
+    const changed =
+      linksChanged ||
+      was.zone !== zone ||
+      !sameIds(was.nodes, nodes) ||
+      !sameIds(was.anchors, anchors);
+    if (changed) this.fireSelect();
+    if (linksChanged) this.fireLinkSelect();
+    if (was.anchor !== this.anchorSel) this.fireAnchorSelect();
+    if (was.zone !== zone) this.fireZoneSelect();
   }
 
   /**
-   * Keep `anchorSel` (the inspector's single-anchor target) in sync with the
-   * multi-selection: it points at the lone selected anchor when exactly one
-   * anchor and no nodes are selected, else null.
+   * Drop from the selection whatever no longer exists on the page (deleted,
+   * undone, or removed behind the editor's back). The rest stays selected.
    */
-  private syncAnchorSel(): void {
-    const single =
-      this.sel.size === 0 && this.selAnchors.size === 1
-        ? [...this.selAnchors][0]!
-        : null;
-    if (single !== this.anchorSel) {
-      this.anchorSel = single;
-      this.fireAnchorSelect();
+  private pruneSelection(): void {
+    const present = (all: readonly { id: string }[]): Set<string> =>
+      new Set(all.map((e) => e.id));
+    if (this._linkSel !== null) {
+      const links = present(this.page.links);
+      this.setSelection({
+        links: this.selectedLinkIds().filter((id) => links.has(id)),
+      });
+    } else if (this.zoneSel !== null) {
+      if (!this.page.zones.some((z) => z.id === this.zoneSel))
+        this.setSelection(null);
+    } else {
+      const nodes = present(this.page.nodes);
+      const anchors = present(this.page.anchors);
+      this.setSelection({
+        nodes: [...this.sel].filter((id) => nodes.has(id)),
+        anchors: [...this.selAnchors].filter((id) => anchors.has(id)),
+      });
     }
   }
 
@@ -3191,7 +3803,55 @@ export class Editor {
         primary,
         dx: 0,
         dy: 0,
+        bends: new Map(
+          this.carriedLinks(base).map((l) => [
+            l.id,
+            l.waypoints!.map((w) => ({ x: w.x, y: w.y })),
+          ]),
+        ),
       };
+    }
+  }
+
+  /**
+   * The links that travel with a block of moving elements: both ends are in
+   * `moving` and the link has bends (and is not locked). A link with only one
+   * end in the block stays put — its other end is an anchor for the route.
+   */
+  private carriedLinks(moving: { has(id: string): boolean }): LinkConfig[] {
+    return this.page.links.filter(
+      (l) =>
+        !!l.waypoints?.length &&
+        l.locked !== true &&
+        moving.has(l.from) &&
+        moving.has(l.to),
+    );
+  }
+
+  /**
+   * After a set of elements moved, shift the bends of every link whose two
+   * ends moved by the SAME amount (so the link keeps its shape), and emit the
+   * change. `deltaOf` gives how far an element id moved, or undefined if it
+   * did not. Ends that moved differently leave the bends alone: there is no
+   * one right place for them.
+   */
+  private shiftCarriedBends(
+    deltaOf: (id: string) => { dx: number; dy: number } | undefined,
+  ): void {
+    for (const l of this.page.links) {
+      if (!l.waypoints?.length || l.locked === true) continue;
+      const a = deltaOf(l.from);
+      const b = deltaOf(l.to);
+      if (!a || !b || a.dx !== b.dx || a.dy !== b.dy) continue;
+      if (a.dx === 0 && a.dy === 0) continue;
+      l.waypoints = l.waypoints.map((w) => ({
+        ...w,
+        x: Math.round(w.x + a.dx),
+        y: Math.round(w.y + a.dy),
+      }));
+      this.emitPatch('links', l.id, {
+        set: { waypoints: structuredClone(l.waypoints) },
+      });
     }
   }
 
@@ -3214,6 +3874,15 @@ export class Editor {
         const n = this.page.nodes.find((m) => m.id === id);
         if (n) set(n, base);
       }
+    }
+    for (const [id, base] of this.drag.bends) {
+      const l = this.page.links.find((m) => m.id === id);
+      if (!l?.waypoints) continue;
+      l.waypoints = base.map((w, i) => {
+        const moved = { ...l.waypoints![i], x: w.x, y: w.y };
+        set(moved, w);
+        return moved;
+      });
     }
   }
 
@@ -3249,17 +3918,13 @@ export class Editor {
   /** Drop a new anchor at a page point, select it (used by the anchor tool). */
   private addAnchorAt(x: number, y: number): void {
     this.snapshot();
-    const id = `a${Date.now().toString(36)}${(this.anchorSeq++).toString(36)}`;
+    const id = this.newAnchorId();
     this.page.anchors.push({ id, x: this.snapVal(x), y: this.snapVal(y) });
     this.emitAdds('anchors', [{ id }]);
-    this.sel.clear();
-    this.clearLinkSel();
-    this.anchorSel = id;
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireAnchorSelect();
+    this.setSelection({ anchors: [id] });
+    this.renderOverlay();
   }
 
   /* ── links ────────────────────────────────────────────────────── */
@@ -3278,13 +3943,10 @@ export class Editor {
     const id = `l${Date.now().toString(36)}${(this.linkSeq++).toString(36)}`;
     this.page.links.push({ id, type: 'line', from, to });
     this.emitAdds('links', [{ id }]);
-    this.sel.clear();
-    this.linkSel = id;
     this.renderArt();
-    this.renderOverlay();
     this.onChange();
-    this.fireSelect();
-    this.fireLinkSelect();
+    this.setSelection({ links: [id] });
+    this.renderOverlay();
   }
 
   /** Current selected link's type + routing style (for the link toolbar). */
@@ -3454,7 +4116,25 @@ export class Editor {
         this.touches.delete(e.pointerId);
         if (this.touches.size < 2) this.pinch = null;
       }
+      // The system took the pointer away (palm rejection, a system gesture):
+      // whatever it was doing is void.
+      if (this.gesturePointer === null || e.pointerId === this.gesturePointer)
+        this.cancelGesture();
     });
+    // A gesture normally ends with pointerup. When the button comes up where
+    // the page cannot see it (over another window after Alt+Tab, a native
+    // menu) no pointerup ever arrives, and the gesture would stay armed: the
+    // node would follow the pointer with no button held. These two events,
+    // and a pointermove with no button down (see onMove), are the signs of
+    // that; each settles the gesture where it stands.
+    this.overlay.addEventListener('lostpointercapture', (e) => {
+      if (e.pointerId === this.gesturePointer) this.settleGesture();
+    });
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+    )
+      window.addEventListener('blur', () => this.settleGesture());
     this.overlay.addEventListener('pointerleave', () => {
       if (this.hoverNode !== null) {
         this.hoverNode = null;
@@ -3468,44 +4148,115 @@ export class Editor {
   }
 
   /**
-   * If `p` lands on a waypoint handle of the selected link, begin dragging it; if
-   * it lands on a segment's midpoint "+" handle, insert a new waypoint there and
-   * drag that. Returns true when a grab started.
+   * If `p` lands on a bend handle of the selected link, arm a bend drag: on a
+   * waypoint's square handle to move that waypoint, on a segment's "+" handle
+   * to insert one there. Nothing changes until the press becomes a drag (see
+   * onMove), so a click — or either press of a double-click — leaves the
+   * link as it is. Returns true when a grab started.
    */
-  private tryWaypointGrab(
-    p: { x: number; y: number },
-    suppressInsert = false,
-  ): boolean {
+  private tryWaypointGrab(p: { x: number; y: number }): boolean {
     const link = this.page.links.find((l) => l.id === this.linkSel);
-    if (!link) return false;
+    // A locked link's bends are not editable (and have no handles).
+    if (!link || link.locked) return false;
     const pts = linkPolyline(this.page, link);
     if (pts.length < 2) return false;
     const tol = this.handleSize() * 1.4;
     // Existing waypoint handles (polyline indices 1..n-2).
     for (let i = 1; i < pts.length - 1; i++) {
       if (dist(p, pts[i]!) <= tol) {
-        this.wpDrag = { index: i - 1, moved: false };
+        this.wpDrag = { index: i - 1, moved: false, start: p };
         return true;
       }
     }
-    // The second press of a rapid double-click must not insert a waypoint —
-    // the double-click is heading for the inline label editor instead.
-    if (suppressInsert) return false;
-    // Segment midpoint "add" handles → insert a waypoint at segment index k.
-    for (let k = 0; k < pts.length - 1; k++) {
-      const m = midpoint(pts[k]!, pts[k + 1]!);
-      if (dist(p, m) <= tol) {
-        this.snapshot();
-        const wps = link.waypoints ? [...link.waypoints] : [];
-        wps.splice(k, 0, { x: Math.round(m.x), y: Math.round(m.y) });
-        link.waypoints = wps;
-        this.wpDrag = { index: k, moved: true };
-        this.renderArt();
-        this.onChange();
+    // Segment "+" handles → a waypoint to insert at segment index k.
+    const adds = this.bendAddPoints(link, pts);
+    for (let k = 0; k < adds.length; k++) {
+      if (dist(p, adds[k]!) <= tol) {
+        this.wpDrag = { index: k, moved: false, start: p, insert: adds[k]! };
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * Where the "+" (add a bend) handle of each segment of a link sits. Segment
+   * k runs between polyline points k and k+1 (the two ends and the bends
+   * between them). An orthogonal or curved link is not drawn along those
+   * straight segments, so the handle goes on the route AS DRAWN: halfway, by
+   * length, between the spots on the route nearest the segment's two points.
+   * When the route cannot be measured the segment midpoints are used.
+   */
+  private bendAddPoints(
+    link: LinkConfig,
+    pts: { x: number; y: number }[],
+  ): { x: number; y: number }[] {
+    const mids = pts.slice(0, -1).map((a, k) => midpoint(a, pts[k + 1]!));
+    const shape = this.linkShape(link.id);
+    if (!shape) return mids;
+    // The longest drawn stroke is the wire itself (arrowheads, crossing hops
+    // and decorations are short); orient it from → to.
+    const lengthOf = (poly: { x: number; y: number }[]): number =>
+      poly.reduce((sum, q, i) => (i ? sum + dist(poly[i - 1]!, q) : 0), 0);
+    let route = shape.reduce((a, b) => (lengthOf(b) > lengthOf(a) ? b : a));
+    if (route.length < 2) return mids;
+    const first = pts[0]!,
+      last = pts[pts.length - 1]!;
+    const r0 = route[0]!,
+      r1 = route[route.length - 1]!;
+    if (dist(r0, first) + dist(r1, last) > dist(r0, last) + dist(r1, first))
+      route = [...route].reverse();
+    // Distance along the route at each of its vertices.
+    const cum: number[] = [0];
+    for (let i = 1; i < route.length; i++)
+      cum.push(cum[i - 1]! + dist(route[i - 1]!, route[i]!));
+    const total = cum[cum.length - 1]!;
+    if (!(total > 0)) return mids;
+    // How far along the route the spot nearest `q` is.
+    const along = (q: { x: number; y: number }): number => {
+      let best = 0;
+      let bestD = Infinity;
+      for (let i = 0; i < route.length - 1; i++) {
+        const a = route[i]!,
+          b = route[i + 1]!;
+        const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+        const t = len2
+          ? clamp(
+              ((q.x - a.x) * (b.x - a.x) + (q.y - a.y) * (b.y - a.y)) / len2,
+              0,
+              1,
+            )
+          : 0;
+        const d = Math.hypot(
+          q.x - (a.x + t * (b.x - a.x)),
+          q.y - (a.y + t * (b.y - a.y)),
+        );
+        if (d < bestD) {
+          bestD = d;
+          best = cum[i]! + t * (cum[i + 1]! - cum[i]!);
+        }
+      }
+      return best;
+    };
+    // The route's point at a distance along it.
+    const at = (s: number): { x: number; y: number } => {
+      let i = 1;
+      while (i < route.length - 1 && cum[i]! < s) i++;
+      const a = route[i - 1]!,
+        b = route[i]!;
+      const span = cum[i]! - cum[i - 1]!;
+      const t = span ? clamp((s - cum[i - 1]!) / span, 0, 1) : 0;
+      return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+    };
+    // The ends are the route's own ends (it stops at the node edge, short of
+    // the centre); each bend sits where the route passes nearest to it, never
+    // before the one preceding it.
+    const stops = pts.map((q, i) =>
+      i === 0 ? 0 : i === pts.length - 1 ? total : along(q),
+    );
+    for (let i = 1; i < stops.length; i++)
+      stops[i] = Math.max(stops[i]!, stops[i - 1]!);
+    return mids.map((_, k) => at((stops[k]! + stops[k + 1]!) / 2));
   }
 
   /** Double-click a waypoint handle to remove that bend point. */
@@ -3521,7 +4272,7 @@ export class Editor {
     // 1) Waypoint removal on the selected link keeps priority (existing gesture).
     if (this.linkSel) {
       const link = this.page.links.find((l) => l.id === this.linkSel);
-      if (link?.waypoints?.length) {
+      if (link?.waypoints?.length && !link.locked) {
         const p = clientToUser(this.overlay, clientX, clientY);
         const tol = this.handleSize() * 1.4;
         for (let i = 0; i < link.waypoints.length; i++) {
@@ -3539,6 +4290,7 @@ export class Editor {
             this.renderArt();
             this.renderOverlay();
             this.onChange();
+            this.fireLinkSelect(); // one bend fewer: refresh what the shell shows
             return;
           }
         }
@@ -3562,16 +4314,56 @@ export class Editor {
   requestInlineEditAt(clientX: number, clientY: number): string | null {
     if (!this.onInlineEdit) return null;
     const p = clientToUser(this.overlay, clientX, clientY);
+    // Labels first. They are drawn on top of everything, and a label usually
+    // sits off its wire (nudged beside it, or dragged well away), where no
+    // node / link / zone test would find its owner: the double-click would
+    // fall through to "empty canvas" and open the add-node picker.
+    const lab = this.hitLabel(p);
+    if (lab) {
+      const link = this.page.links.find((l) => l.id === lab.lid)!;
+      this.selectLinkForEdit(lab.lid);
+      const kind =
+        lab.which === 'centre'
+          ? 'link'
+          : lab.which === 'from'
+            ? 'link-from'
+            : 'link-to';
+      const text =
+        lab.which === 'centre'
+          ? link.label
+          : lab.which === 'from'
+            ? link.fromLabel
+            : link.toLabel;
+      const c = userToClient(this.overlay, lab.x, lab.y);
+      this.onInlineEdit({
+        kind,
+        id: lab.lid,
+        current: String(text ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return kind;
+    }
+    const flow = this.flowLabelAt(p);
+    if (flow) {
+      const c = userToClient(this.overlay, flow.x, flow.y);
+      this.onInlineEdit({
+        kind: 'flow',
+        id: flow.id,
+        current: flow.label,
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return 'flow';
+    }
     const nodeId = this.nodeAt(p);
     if (nodeId) {
       const node = this.page.nodes.find((n) => n.id === nodeId)!;
-      this.clearLinkSel();
-      this.clearAnchorSel();
-      this.clearZoneSel();
-      if (!(this.sel.size === 1 && this.sel.has(nodeId))) {
-        this.sel = new Set([nodeId]);
-        this.fireSelect();
-      }
+      this.setSelection({ nodes: [nodeId] });
       this.renderOverlay();
       // Anchor on the node's label position (just under the node art).
       const h = nodeHalf(node);
@@ -3590,15 +4382,7 @@ export class Editor {
     const linkId = this.linkAt(p);
     if (linkId) {
       const link = this.page.links.find((l) => l.id === linkId)!;
-      this.sel.clear();
-      this.clearAnchorSel();
-      this.clearZoneSel();
-      this.fireSelect();
-      if (this.linkSel !== linkId) {
-        this.linkSel = linkId;
-        this.fireLinkSelect();
-      }
-      this.renderOverlay();
+      this.selectLinkForEdit(linkId);
       // Anchor on the centre-label position: polyline midpoint + offset.
       const pts = linkPolyline(this.page, link);
       let ax = p.x,
@@ -3660,16 +4444,23 @@ export class Editor {
     return 'empty';
   }
 
+  /** Make `linkId` the selected link, so the inspector shows what is edited. */
+  private selectLinkForEdit(linkId: string): void {
+    // Already the primary of a multi-selection: leave the others selected.
+    if (this.linkSel !== linkId) this.setSelection({ links: [linkId] });
+    this.renderOverlay();
+  }
+
   /** Wheel = zoom toward the cursor (keeps the point under the cursor fixed). */
-  /** Start a two-finger pinch: capture start geometry + view, drop gestures. */
+  /**
+   * Start a two-finger pinch: capture start geometry + view. Whatever the
+   * first finger was doing is taken back (a node it was dragging returns to
+   * where it was, with no undo step): simply forgetting the drag left the
+   * node where the finger had moved it, unsaved and with a stray undo step.
+   */
   private beginPinch(): void {
-    this.drag = null;
-    this.marquee = null;
-    this.dragLink = null;
-    this.wpDrag = null;
-    this.labelDrag = null;
-    this.guides = [];
-    this.labelGuides = [];
+    // The first finger stays down and is half of the pinch: keep its capture.
+    this.abortGesture();
     const [a, b] = [...this.touches.values()] as [
       { x: number; y: number },
       { x: number; y: number },
@@ -3722,16 +4513,87 @@ export class Editor {
   }
 
   /**
-   * Hit-test the link labels (centre + endpoint/port) at point `p`. We match by
-   * the label's rendered `<text>` element so the box is exactly where the engine
-   * drew it — no need to replicate each link type's placement maths. The link's
-   * geometry only disambiguates which element belongs to which link when several
-   * share the same text. Returns the grabbed label, or null.
+   * Every link label as the art drew it: each link's centre label and its
+   * two port (end) labels, with the box of the rendered `<text>`. The engine
+   * decides where a label sits (per link type, plus the drag offsets), so
+   * the box is read off the art instead of being recomputed here.
+   *
+   * A label is looked for inside its own link's `<g data-tds-link>` group
+   * only. Text that merely reads the same — a node's caption, another link's
+   * identical label — is not it; matching by text alone made a double-click
+   * on such a caption edit the link, and a drag move the wrong link's label.
+   * Within the group, position tells apart labels with the same text: the
+   * centre label is the one nearest the link's middle, a port label the one
+   * nearest its end.
    */
+  private linkLabelBoxes(): {
+    lid: string;
+    which: 'centre' | 'from' | 'to';
+    box: { x: number; y: number; width: number; height: number };
+  }[] {
+    const drawn = new Map<
+      string,
+      { text: string; box: DOMRect; cx: number; cy: number }[]
+    >();
+    for (const t of Array.from(
+      this.art.querySelectorAll('g[data-tds-link] text'),
+    ) as SVGTextElement[]) {
+      const id = t.closest('g[data-tds-link]')?.getAttribute('data-tds-link');
+      if (id == null) continue;
+      let box: DOMRect;
+      try {
+        box = t.getBBox();
+      } catch {
+        continue; // not rendered (hidden layer) — nothing to hit
+      }
+      const list = drawn.get(id) ?? [];
+      list.push({
+        text: labelTextOf(t),
+        box,
+        cx: box.x + box.width / 2,
+        cy: box.y + box.height / 2,
+      });
+      drawn.set(id, list);
+    }
+    const out: ReturnType<Editor['linkLabelBoxes']> = [];
+    for (const link of this.page.links) {
+      const texts = drawn.get(link.id);
+      if (!texts) continue;
+      const pts = linkPolyline(this.page, link);
+      if (pts.length < 2) continue;
+      const a = pts[0]!;
+      const b = pts[pts.length - 1]!;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const probes: [
+        string | undefined,
+        'centre' | 'from' | 'to',
+        { x: number; y: number },
+      ][] = [
+        [link.label, 'centre', mid],
+        [link.fromLabel, 'from', a],
+        [link.toLabel, 'to', b],
+      ];
+      for (const [txt, which, region] of probes) {
+        if (!txt) continue;
+        let best: (typeof texts)[number] | null = null;
+        let bestD = Infinity;
+        for (const t of texts) {
+          if (t.text !== String(txt)) continue;
+          const d = Math.hypot(t.cx - region.x, t.cy - region.y);
+          if (d < bestD) {
+            bestD = d;
+            best = t;
+          }
+        }
+        if (best) out.push({ lid: link.id, which, box: best.box });
+      }
+    }
+    return out;
+  }
+
   /**
-   * Rendered centre (doc coords) of every link label currently drawn — matched
-   * by the label's `<text>` element, like hitLabel. Used to capture the dragged
-   * label's home + its neighbours for the drag guides.
+   * Rendered centre (doc coords) of every link label currently drawn. Used
+   * to capture the dragged label's home + its neighbours for the drag guides.
    */
   private labelCenters(): {
     lid: string;
@@ -3739,134 +4601,99 @@ export class Editor {
     x: number;
     y: number;
   }[] {
-    const texts = Array.from(
-      this.art.querySelectorAll('text'),
-    ) as SVGTextElement[];
-    const nearest = (
-      txt: string,
-      region: { x: number; y: number },
-    ): { x: number; y: number } | null => {
-      let best: { x: number; y: number } | null = null;
-      let bestD = Infinity;
-      for (const t of texts) {
-        if (labelTextOf(t) !== txt) continue;
-        let b: DOMRect;
-        try {
-          b = t.getBBox();
-        } catch {
-          continue;
-        }
-        const cx = b.x + b.width / 2;
-        const cy = b.y + b.height / 2;
-        const d = Math.hypot(cx - region.x, cy - region.y);
-        if (d < bestD) {
-          bestD = d;
-          best = { x: cx, y: cy };
-        }
-      }
-      return best;
-    };
-    const out: {
-      lid: string;
-      which: 'centre' | 'from' | 'to';
-      x: number;
-      y: number;
-    }[] = [];
-    for (const link of this.page.links) {
-      const pts = linkPolyline(this.page, link);
-      if (pts.length < 2) continue;
-      const a = pts[0]!;
-      const b = pts[pts.length - 1]!;
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const probes: [
-        string | undefined,
-        'centre' | 'from' | 'to',
-        { x: number; y: number },
-      ][] = [
-        [link.label, 'centre', mid],
-        [link.fromLabel, 'from', a],
-        [link.toLabel, 'to', b],
-      ];
-      for (const [txt, which, region] of probes) {
-        if (!txt) continue;
-        const c = nearest(String(txt), region);
-        if (c) out.push({ lid: link.id, which, x: c.x, y: c.y });
-      }
-    }
-    return out;
+    return this.linkLabelBoxes().map(({ lid, which, box }) => ({
+      lid,
+      which,
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+    }));
   }
 
-  private hitLabel(p: {
+  /** The link label (centre or port) drawn under `p`, or null. */
+  private hitLabel(p: { x: number; y: number }): {
+    lid: string;
+    which: 'centre' | 'from' | 'to';
+    /** Centre of the label as drawn (page coordinates). */
     x: number;
     y: number;
-  }): { lid: string; which: 'centre' | 'from' | 'to' } | null {
-    const texts = Array.from(
-      this.art.querySelectorAll('text'),
-    ) as SVGTextElement[];
-    if (!texts.length) return null;
+  } | null {
     const PAD = 6;
-    // The rendered text nearest `region` whose content matches `txt`.
-    const nearest = (
-      txt: string,
-      region: { x: number; y: number },
-    ): SVGTextElement | null => {
-      let best: SVGTextElement | null = null;
-      let bestD = Infinity;
-      for (const t of texts) {
-        if (labelTextOf(t) !== txt) continue;
-        let b: DOMRect;
-        try {
-          b = t.getBBox();
-        } catch {
-          continue;
-        }
-        const d = Math.hypot(
-          b.x + b.width / 2 - region.x,
-          b.y + b.height / 2 - region.y,
-        );
-        if (d < bestD) {
-          bestD = d;
-          best = t;
-        }
+    const boxes = this.linkLabelBoxes();
+    // Last link drawn sits on top, so test in reverse paint order.
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const { lid, which, box } = boxes[i]!;
+      if (
+        p.x >= box.x - PAD &&
+        p.x <= box.x + box.width + PAD &&
+        p.y >= box.y - PAD &&
+        p.y <= box.y + box.height + PAD
+      )
+        return {
+          lid,
+          which,
+          x: box.x + box.width / 2,
+          y: box.y + box.height / 2,
+        };
+    }
+    return null;
+  }
+
+  /**
+   * The flow path whose label is drawn under `p`, with the label's rendered
+   * centre. The engine wraps each flow in a `<g data-tds-flowpath>`, so the
+   * owner is read off the label's own group; the text is compared with the
+   * flow's label so other text in the group is not mistaken for it.
+   */
+  private flowLabelAt(p: {
+    x: number;
+    y: number;
+  }): { id: string; label: string; x: number; y: number } | null {
+    const texts = Array.from(
+      this.art.querySelectorAll('g[data-tds-flowpath] text'),
+    ) as SVGTextElement[];
+    const PAD = 6;
+    // Last drawn sits on top, so test in reverse paint order.
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const t = texts[i]!;
+      const id = t
+        .closest('g[data-tds-flowpath]')
+        ?.getAttribute('data-tds-flowpath');
+      const flow = this.page.flowPaths.find((f) => f.id === id);
+      const label = typeof flow?.label === 'string' ? flow.label : '';
+      if (!flow || !label || labelTextOf(t) !== label) continue;
+      let b: DOMRect;
+      try {
+        b = t.getBBox();
+      } catch {
+        continue; // not rendered (hidden layer) — nothing to hit
       }
-      return best;
-    };
-    const inside = (t: SVGTextElement): boolean => {
-      const b = t.getBBox();
-      return (
+      if (
         p.x >= b.x - PAD &&
         p.x <= b.x + b.width + PAD &&
         p.y >= b.y - PAD &&
         p.y <= b.y + b.height + PAD
-      );
-    };
-    // Last link drawn sits on top, so test in reverse paint order.
-    for (let i = this.page.links.length - 1; i >= 0; i--) {
-      const link = this.page.links[i]!;
-      const pts = linkPolyline(this.page, link);
-      if (pts.length < 2) continue;
-      const a = pts[0]!;
-      const b = pts[pts.length - 1]!;
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const probes: [
-        string | undefined,
-        'centre' | 'from' | 'to',
-        { x: number; y: number },
-      ][] = [
-        [link.label, 'centre', mid],
-        [link.fromLabel, 'from', a],
-        [link.toLabel, 'to', b],
-      ];
-      for (const [txt, which, region] of probes) {
-        if (!txt) continue;
-        const t = nearest(String(txt), region);
-        if (t && inside(t)) return { lid: link.id, which };
-      }
+      )
+        return {
+          id: flow.id,
+          label,
+          x: b.x + b.width / 2,
+          y: b.y + b.height / 2,
+        };
     }
     return null;
   }
 
   private onDown(e: PointerEvent): void {
+    // A gesture still in flight when a new press arrives lost its release
+    // (see bind): settle it before starting the next one. A second finger is
+    // different: it turns the gesture into a pinch (see press).
+    if (e.pointerType !== 'touch' && this.gestureActive()) this.settleGesture();
+    const before = this.gestureActive();
+    this.press(e);
+    if (!before && this.gestureActive()) this.gesturePointer = e.pointerId;
+  }
+
+  private press(e: PointerEvent): void {
     this.clearSpotlight();
     // Touch: track fingers; a second finger starts a pinch (zoom + pan) and
     // cancels whatever single-finger gesture was in flight, uncommitted.
@@ -3879,6 +4706,12 @@ export class Editor {
       }
       if (this.pinch) return; // ignore extra fingers mid-pinch
     }
+    // Only the primary button starts a gesture (the middle one pans, just
+    // below). A right press belongs to the context menu: the shell opens it
+    // from the `contextmenu` event and picks what is under the pointer itself
+    // (pickAt). Treated as a press it would drag nodes, drop anchors, arm the
+    // link tool and collapse the very selection the menu is about to act on.
+    if (e.button !== 0 && e.button !== 1) return;
     // Pan: middle button, or left button while Space is held / Hand tool is on.
     if (
       e.button === 1 ||
@@ -3955,11 +4788,7 @@ export class Editor {
     }
 
     // Editing waypoints on the selected link takes priority over other hits.
-    if (
-      this.tool === 'select' &&
-      this.linkSel &&
-      this.tryWaypointGrab(p, this.isSecondClickDown(e))
-    ) {
+    if (this.tool === 'select' && this.linkSel && this.tryWaypointGrab(p)) {
       this.overlay.setPointerCapture(e.pointerId);
       this.renderOverlay();
       return;
@@ -3996,14 +4825,9 @@ export class Editor {
               .map((c) => ({ x: c.x, y: c.y })),
           };
           // Select the link so the inspector + label tools reflect it.
-          this.clearZoneSel();
-          this.sel.clear();
-          this.selAnchors.clear();
-          this.syncAnchorSel();
-          this.linkSel = lab.lid;
+          this.setSelection({ links: [lab.lid] });
           this.overlay.setPointerCapture(e.pointerId);
           this.fireSelect();
-          this.fireLinkSelect();
           this.renderOverlay();
           return;
         }
@@ -4016,34 +4840,21 @@ export class Editor {
     // node) drags out a link — no tool switch needed. Dot beats node-body so you
     // can link from the edge without moving the node. A quick-connect chevron
     // starts the same drag; released without moving it creates + connects a
-    // node in that direction instead (see finishUp).
+    // node in that direction instead (see finishUp). A node caption beats
+    // both (see connectAffordanceAt).
     if (this.tool === 'select' && !this.spaceHeld && !e.shiftKey) {
-      const chev = this.chevronHit(p);
-      if (chev) {
-        if (!this.sel.has(chev.id)) {
-          this.sel.clear();
-          this.sel.add(chev.id);
-          this.fireSelect();
-        }
+      const grab = this.connectAffordanceAt(p);
+      if (grab) {
+        // The link starts from this node: it becomes the selection, unless
+        // it is already part of a node selection.
+        if (!this.sel.has(grab.id)) this.setSelection({ nodes: [grab.id] });
         this.dragLink = {
-          from: chev.id,
+          from: grab.id,
           start: p,
           cursor: p,
           moved: false,
-          dir: chev.dir,
+          ...(grab.dir ? { dir: grab.dir } : {}),
         };
-        this.overlay.setPointerCapture(e.pointerId);
-        this.renderOverlay();
-        return;
-      }
-      const dotNode = this.connectionDotHit(p);
-      if (dotNode) {
-        if (!this.sel.has(dotNode)) {
-          this.sel.clear();
-          this.sel.add(dotNode);
-          this.fireSelect();
-        }
-        this.dragLink = { from: dotNode, start: p, cursor: p, moved: false };
         this.overlay.setPointerCapture(e.pointerId);
         this.renderOverlay();
         return;
@@ -4076,36 +4887,29 @@ export class Editor {
     // click on an element with a followable href was handled above.)
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
     if (hit) {
-      this.clearLinkSel();
-      this.clearZoneSel();
       if (additive) {
-        if (this.sel.has(hit)) this.sel.delete(hit);
-        else this.sel.add(hit);
+        // Toggle the node in the node + anchor selection.
+        const nodes = new Set(this.sel);
+        if (!nodes.delete(hit)) nodes.add(hit);
+        this.setSelection({ nodes, anchors: this.selAnchors });
       } else if (!this.sel.has(hit)) {
         // Plain click on a fresh node replaces the whole selection.
-        this.sel.clear();
-        this.selAnchors.clear();
-        this.sel.add(hit);
+        this.setSelection({ nodes: [hit] });
       }
-      this.syncAnchorSel();
       // Begin drag of the current selection (locked nodes don't move).
       if (this.sel.has(hit)) this.beginGroupDrag(hit, p);
     } else {
       // No node — try an anchor, then a link, else start a marquee.
       const anchorHit = hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
       if (anchorHit) {
-        this.clearLinkSel();
-        this.clearZoneSel();
         if (additive) {
-          if (this.selAnchors.has(anchorHit)) this.selAnchors.delete(anchorHit);
-          else this.selAnchors.add(anchorHit);
+          const anchors = new Set(this.selAnchors);
+          if (!anchors.delete(anchorHit)) anchors.add(anchorHit);
+          this.setSelection({ nodes: this.sel, anchors });
         } else if (!this.selAnchors.has(anchorHit)) {
           // Plain click on a fresh anchor replaces the whole selection.
-          this.sel.clear();
-          this.selAnchors.clear();
-          this.selAnchors.add(anchorHit);
+          this.setSelection({ anchors: [anchorHit] });
         }
-        this.syncAnchorSel();
         if (this.selAnchors.has(anchorHit)) this.beginGroupDrag(anchorHit, p);
         this.fireSelect();
         this.overlay.setPointerCapture(e.pointerId);
@@ -4114,14 +4918,17 @@ export class Editor {
       }
       const link = this.linkAt(p);
       if (link) {
-        this.clearZoneSel();
-        this.sel.clear();
-        this.selAnchors.clear();
-        this.syncAnchorSel();
-        if (additive && this.linkSel !== null) this.toggleLinkSel(link);
-        else this.linkSel = link;
+        if (additive && this.linkSel !== null) {
+          // Toggle the link in the link selection. Dropping the primary
+          // promotes the next selected link.
+          const links = this.selectedLinkIds();
+          this.setSelection({
+            links: links.includes(link)
+              ? links.filter((id) => id !== link)
+              : [...links, link],
+          });
+        } else this.setSelection({ links: [link] });
         this.fireSelect();
-        this.fireLinkSelect();
         this.overlay.setPointerCapture(e.pointerId);
         this.renderOverlay();
         return;
@@ -4131,38 +4938,16 @@ export class Editor {
       // inside a zone can be rubber-banded), and a click released without
       // dragging selects the zone (see finishUp).
       this.zonePress = additive ? null : this.zoneAt(p);
-      this.clearLinkSel();
-      this.clearZoneSel();
-      if (!additive) {
-        this.sel.clear();
-        this.selAnchors.clear();
-        this.syncAnchorSel();
-      }
+      // An additive marquee extends the node + anchor selection; a plain one
+      // starts from nothing. Either way a link or zone selection ends here.
+      this.setSelection(
+        additive ? { nodes: this.sel, anchors: this.selAnchors } : null,
+      );
       this.marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     }
     this.overlay.setPointerCapture(e.pointerId);
     this.fireSelect();
     this.renderOverlay();
-  }
-
-  private clearLinkSel(): void {
-    if (this.linkSel !== null) {
-      this.linkSel = null;
-      this.fireLinkSelect();
-    }
-  }
-
-  /** Add `id` to, or drop it from, the link selection (additive click). */
-  private toggleLinkSel(id: string): void {
-    if (id === this._linkSel) {
-      // Dropping the primary promotes another selected link, if any.
-      const next = this.linkSelExtra.values().next();
-      if (next.done) this.linkSel = null;
-      else {
-        this.linkSelExtra.delete(next.value);
-        this._linkSel = next.value;
-      }
-    } else if (!this.linkSelExtra.delete(id)) this.linkSelExtra.add(id);
   }
 
   /** Every selected link id: the primary first, then the rest. */
@@ -4178,6 +4963,10 @@ export class Editor {
         return;
       }
     }
+    // A held-button gesture with no button down: the release happened where
+    // the page could not see it. Settle the gesture where it stands and
+    // treat this move as the hover it is.
+    if (e.buttons === 0 && this.gestureActive()) this.settleGesture();
     if (this.pan) {
       const rect = this.overlay.getBoundingClientRect();
       const dx =
@@ -4202,7 +4991,7 @@ export class Editor {
       const link = this.page.links.find((l) => l.id === ld.lid);
       if (link) {
         if (!ld.moved) {
-          this.snapshot();
+          this.snapshotForGesture();
           ld.moved = true;
         }
         let nx = Math.round(ld.ox + (pp.x - ld.startX));
@@ -4281,15 +5070,31 @@ export class Editor {
     }
     if (this.wpDrag) {
       const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      const wd = this.wpDrag;
       const link = this.page.links.find((l) => l.id === this.linkSel);
-      const wp = link?.waypoints?.[this.wpDrag.index];
-      if (wp) {
-        if (!this.wpDrag.moved) {
-          this.snapshot();
-          this.wpDrag.moved = true;
+      if (!link) return;
+      if (!wd.moved) {
+        // Still a click until the pointer has travelled: a press on a handle
+        // (or the presses of a double-click) must not bend or snap anything.
+        if (wd.start && dist(pp, wd.start) <= this.dragSlop()) return;
+        if (!wd.insert && !link.waypoints?.[wd.index]) return;
+        this.snapshotForGesture();
+        wd.moved = true;
+        if (wd.insert) {
+          const wps = link.waypoints ? [...link.waypoints] : [];
+          wps.splice(wd.index, 0, {
+            x: Math.round(wd.insert.x),
+            y: Math.round(wd.insert.y),
+          });
+          link.waypoints = wps;
         }
+      }
+      const wp = link.waypoints?.[wd.index];
+      if (wp) {
         wp.x = this.snapVal(pp.x);
         wp.y = this.snapVal(pp.y);
+        // Re-route the wire under the cursor (coalesced per frame).
+        this.scheduleArt();
         this.renderOverlay();
       }
       return;
@@ -4309,11 +5114,12 @@ export class Editor {
           this.hoverNode = over;
           this.renderOverlay();
         }
-        this.overlay.style.cursor = this.chevronHit(hp)
-          ? 'copy'
-          : this.connectionDotHit(hp)
-            ? 'crosshair'
-            : '';
+        const grab = this.connectAffordanceAt(hp);
+        this.overlay.style.cursor = !grab
+          ? ''
+          : grab.dir
+            ? 'copy'
+            : 'crosshair';
       }
       return;
     }
@@ -4324,7 +5130,7 @@ export class Editor {
       const wasMoved = this.drag.moved;
       if (Math.abs(rawX) > 1 || Math.abs(rawY) > 1) this.drag.moved = true;
       // Snapshot once, when the drag first commits to moving.
-      if (!wasMoved && this.drag.moved) this.snapshot();
+      if (!wasMoved && this.drag.moved) this.snapshotForGesture();
       const snap = this.computeSnap(this.drag, rawX, rawY);
       this.drag.dx = snap.dx;
       this.drag.dy = snap.dy;
@@ -4352,6 +5158,12 @@ export class Editor {
         return;
       }
     }
+    // The release of a button that started nothing (a right-click) ends
+    // nothing either, and is no part of a double-click.
+    if (e.button !== 0 && !this.gestureActive()) {
+      this.lastClick.t = 0;
+      return;
+    }
     // Detect a double-click from two stationary pointerups. Chrome suppresses
     // the native click/dblclick pair whenever the pointerdown target left the
     // DOM mid-gesture — which happens constantly here because renderOverlay()
@@ -4370,19 +5182,6 @@ export class Editor {
   private lastClick = { t: 0, x: 0, y: 0 };
   /** When a synthesized double-click last ran (guards the native handler). */
   private synthDblAt = 0;
-
-  /**
-   * True when this pointerdown looks like the second press of a double-click
-   * (rapid + stationary relative to the last click's release) — used to keep
-   * single-press gestures (waypoint insert) out of the double-click's way.
-   */
-  private isSecondClickDown(e: PointerEvent): boolean {
-    return (
-      Date.now() - this.lastClick.t < 450 &&
-      Math.hypot(e.clientX - this.lastClick.x, e.clientY - this.lastClick.y) <=
-        6
-    );
-  }
 
   /** True when this pointerup is the second stationary click of a double. */
   private detectSynthDblClick(e: PointerEvent): boolean {
@@ -4415,7 +5214,112 @@ export class Editor {
   }
 
   private finishUp(e: PointerEvent): void {
+    // Forget the gesture's pointer first: releasing the capture ourselves
+    // must not be mistaken for losing it.
+    this.gesturePointer = null;
     this.overlay.releasePointerCapture(e.pointerId);
+    this.endGesture({ x: e.clientX, y: e.clientY });
+  }
+
+  /** True while a pointer gesture is in flight (a press not yet released). */
+  private gestureActive(): boolean {
+    return !!(
+      this.pan ||
+      this.drag ||
+      this.marquee ||
+      this.wpDrag ||
+      this.labelDrag ||
+      this.dragLink ||
+      this.endDrag
+    );
+  }
+
+  /**
+   * `snapshot()` for the first change a gesture makes, remembering how to
+   * take it back (see `cancelGesture`).
+   */
+  private snapshotForGesture(): void {
+    const redo = this.redoStack;
+    this.snapshot();
+    this.gestureUndo = {
+      entry: this.undoStack[this.undoStack.length - 1]!,
+      redo,
+    };
+  }
+
+  /** Let go of the pointer capture the gesture in flight holds, if any. */
+  private releaseGesturePointer(): void {
+    const id = this.gesturePointer;
+    this.gesturePointer = null;
+    if (id === null) return;
+    try {
+      this.overlay.releasePointerCapture(id);
+    } catch {
+      // The pointer is already gone (that is why we are here).
+    }
+  }
+
+  /**
+   * End a gesture whose release never reached the page: keep what it has
+   * done so far (a moved node stays where it was dragged, a rubber band
+   * selects what it held) and drop what needed a release point (a link
+   * being drawn or re-attached connects to nothing).
+   */
+  private settleGesture(): void {
+    if (!this.gestureActive()) return;
+    this.releaseGesturePointer();
+    this.endGesture(null);
+  }
+
+  /**
+   * Abort the gesture in flight and put back whatever it changed: a dragged
+   * node, bend or label returns to where it was and the undo step the drag
+   * had pushed is taken off again, with the redo stack it had displaced. The
+   * selection stays. Returns false when no gesture was in flight.
+   */
+  cancelGesture(): boolean {
+    if (!this.gestureActive()) return false;
+    this.releaseGesturePointer();
+    this.abortGesture();
+    return true;
+  }
+
+  /** The work of `cancelGesture`, leaving the pointer capture as it is. */
+  private abortGesture(): void {
+    this.gesturePointer = null;
+    const undo = this.gestureUndo;
+    this.gestureUndo = null;
+    this.pan = null;
+    this.drag = null;
+    this.marquee = null;
+    this.zonePress = null;
+    this.wpDrag = null;
+    this.labelDrag = null;
+    this.dragLink = null;
+    this.endDrag = null;
+    this.guides = [];
+    this.labelGuides = [];
+    this.overlay.style.cursor = this.handCursor();
+    // Only if the gesture's own entry is still the newest: anything pushed
+    // on top of it since is not ours to remove.
+    if (undo && this.undoStack[this.undoStack.length - 1] === undo.entry) {
+      this.undoStack.pop();
+      this.redoStack = undo.redo;
+      this.restore(undo.entry);
+      this.renderArt();
+    }
+    this.renderOverlay();
+    this.fireSelect();
+  }
+
+  /**
+   * Finish the gesture in flight. `at` is where the pointer was released, in
+   * client coordinates; null when there was no release to speak of (see
+   * `settleGesture`), in which case nothing that depends on a release point
+   * happens.
+   */
+  private endGesture(at: { x: number; y: number } | null): void {
+    this.gestureUndo = null;
     if (this.pan) {
       this.pan = null;
       // Back to the hand cursor if Space is still held / Hand tool is on.
@@ -4458,6 +5362,9 @@ export class Editor {
           });
         this.renderArt();
         this.onChange();
+        // The link gained or moved a bend: let the shell refresh what it
+        // shows about it (bend count, "straighten").
+        this.fireLinkSelect();
       }
       this.wpDrag = null;
       this.renderOverlay();
@@ -4467,20 +5374,18 @@ export class Editor {
       const ed = this.endDrag;
       this.endDrag = null;
       this.overlay.style.cursor = '';
-      if (ed.moved) {
-        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      if (!at) {
+        // No release point: the end goes back where it was.
+      } else if (ed.moved) {
+        const pp = clientToUser(this.overlay, at.x, at.y);
         const target = this.endDropTarget(pp, ed);
         if (target) this.reconnectLink(ed.lid, ed.end, target);
       } else {
         // A click (no drag) on a handle that overlaps a node — likely when
         // zoomed far out — means "select that node", as it would unselected.
-        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+        const pp = clientToUser(this.overlay, at.x, at.y);
         const node = this.nodeAt(pp);
-        if (node) {
-          this.clearLinkSel();
-          this.sel = new Set([node]);
-          this.fireSelect();
-        }
+        if (node) this.setSelection({ nodes: [node] });
       }
       // Released over nothing: the link stays as it was.
       this.renderOverlay();
@@ -4489,11 +5394,13 @@ export class Editor {
     if (this.dragLink) {
       const dl = this.dragLink;
       this.dragLink = null;
-      if (dl.moved) {
+      if (!at) {
+        // No release point: nothing to connect to, and no chevron "click".
+      } else if (dl.moved) {
         // Released over a node or anchor → connect. Over empty space → offer
         // the create-and-connect picker (draw.io-style) when the shell
         // registered one; otherwise cancel as before.
-        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+        const pp = clientToUser(this.overlay, at.x, at.y);
         const target =
           this.nodeAt(pp) ??
           hitTestAnchor(this.page, pp.x, pp.y, this.anchorHitPad());
@@ -4501,8 +5408,8 @@ export class Editor {
         else if (!target && this.onConnectEmpty) {
           this.onConnectEmpty({
             from: dl.from,
-            clientX: e.clientX,
-            clientY: e.clientY,
+            clientX: at.x,
+            clientY: at.y,
             pageX: pp.x,
             pageY: pp.y,
           });
@@ -4530,6 +5437,13 @@ export class Editor {
             if (n) this.emitPatch('nodes', n.id, { set: { x: n.x, y: n.y } });
           }
         }
+        for (const id of this.drag.bends.keys()) {
+          const l = this.page.links.find((m) => m.id === id);
+          if (l?.waypoints)
+            this.emitPatch('links', l.id, {
+              set: { waypoints: structuredClone(l.waypoints) },
+            });
+        }
         this.guides = [];
         this.renderArt();
         this.onChange();
@@ -4540,21 +5454,27 @@ export class Editor {
       const zonePress = this.zonePress;
       this.zonePress = null;
       if (Math.abs(x1 - x0) <= 2 && Math.abs(y1 - y0) <= 2 && zonePress) {
-        // A plain click on a zone's empty space selects the zone.
-        this.zoneSel = zonePress;
-        this.fireZoneSelect();
+        // A plain click on a zone's empty space selects the zone (a click
+        // needs its release: a press that lost it selects nothing).
+        if (at) this.setSelection({ zone: zonePress });
       } else if (Math.abs(x1 - x0) > 2 || Math.abs(y1 - y0) > 2) {
-        for (const id of nodesInRect(this.page, x0, y0, x1, y1))
-          this.sel.add(id);
+        // The rubber band adds what it holds to the node + anchor selection
+        // the press left in place (empty unless the press was additive).
+        const nodes = new Set(this.sel);
+        // Only what is drawn: a node on a hidden layer inside the rect is
+        // not part of what the user rubber-banded.
+        for (const id of nodesInRect(this.hitPage(), x0, y0, x1, y1))
+          nodes.add(id);
         // Anchors whose point falls in the rect join the selection too.
+        const anchors = new Set(this.selAnchors);
         const xa = Math.min(x0, x1),
           xb = Math.max(x0, x1),
           ya = Math.min(y0, y1),
           yb = Math.max(y0, y1);
         for (const a of this.page.anchors)
           if (a.x >= xa && a.x <= xb && a.y >= ya && a.y <= yb)
-            this.selAnchors.add(a.id);
-        this.syncAnchorSel();
+            anchors.add(a.id);
+        this.setSelection({ nodes, anchors });
       }
       this.marquee = null;
     }
@@ -4648,6 +5568,36 @@ function midpoint(
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/**
+ * Remove the leader-line pointer of every callout among `nodes` whose target
+ * is not one of the `reachable` ids. A callout without a target is a plain
+ * note; one with a dangling target is a validation error.
+ */
+function dropStrayCalloutTargets(
+  nodes: NodeConfig[],
+  reachable: ReadonlySet<string>,
+): void {
+  for (const n of nodes)
+    if (
+      n.type === 'callout' &&
+      n.target !== undefined &&
+      !(typeof n.target === 'string' && reachable.has(n.target))
+    )
+      delete n.target;
+}
+
+/** True when two id sets hold the same ids. */
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
+
+/** True when the point lies inside the rect (edges included). */
+function rectHolds(r: BoundsRect, p: { x: number; y: number }): boolean {
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
 
 /** A readable default label for a freshly-added node. */

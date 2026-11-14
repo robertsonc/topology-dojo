@@ -17,6 +17,8 @@ import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { viewBoxAttr } from '../api/layout.js';
+import { ROOT_FONT_ATTR } from './fonts.js';
+import { captionSVG } from './caption.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
 import { withInterfaceLabels } from '../api/hardware.js';
@@ -245,7 +247,7 @@ function renderPageUnthemed(
   const flat = flattenViewer(topo._renderSVG(), opts.emphasis ?? []);
   const art = opts.theme === 'light' ? flat : stripRoleTags(flat);
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(page.viewBox)}" width="${vw}" height="${vh}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(page.viewBox)}" width="${vw}" height="${vh}"${ROOT_FONT_ATTR}>` +
     `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${themeBackground(opts.theme)}"/>` +
     art +
     `</svg>`
@@ -302,7 +304,9 @@ export function renderDocumentWithEngine(
   // Mirrors what the editor composites, so MCP/headless output matches the GUI.
   const overlay =
     (ws ? ws.overlay : '') +
-    documentOverlaySVG(ws ? ws.doc : doc, ws ? ws.overlayPage : page);
+    documentOverlaySVG(ws ? ws.doc : doc, ws ? ws.overlayPage : page) +
+    // The frame's narration, as the editor draws it on the canvas.
+    captionSVG(page);
   if (overlay) svg = svg.replace('</svg>', `${overlay}</svg>`);
   if (doc.palette) svg = applyPalette(svg, doc.palette);
   return applyRenderTheme(svg, opts.theme ?? 'dark');

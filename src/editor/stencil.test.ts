@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { captureStencil, nodesCentre, stencilViewBox } from './stencil.js';
+import {
+  captureStencil,
+  nodesCentre,
+  stampableLinks,
+  stencilViewBox,
+} from './stencil.js';
 import { cloneElements } from './clone.js';
 import type { NodeConfig, LinkConfig } from '../vendor/topology-ds.js';
 
@@ -55,6 +60,72 @@ describe('captureStencil', () => {
     expect(out.links).toHaveLength(1);
     expect(out.links[0]!.from).toBe('N0');
     expect(out.links[0]!.to).toBe('N1');
+  });
+});
+
+describe('stencil bends', () => {
+  const bent: LinkConfig[] = [
+    {
+      id: 'l1',
+      type: 'line',
+      from: 'a',
+      to: 'b',
+      waypoints: [{ x: 200, y: 120 }],
+    },
+  ];
+
+  it('stores bends relative to the group centre and stamps them with the nodes', () => {
+    // Nodes at (100,100) and (300,200): centre (200,150).
+    const st = captureStencil('S', nodes, bent);
+    expect(st.links[0]!.waypoints).toEqual([{ x: 0, y: -30 }]);
+    const stamped = cloneElements(
+      st.nodes,
+      stampableLinks(st.nodes, st.links),
+      {
+        nextNodeId: (() => {
+          let i = 0;
+          return () => `n${i++}`;
+        })(),
+        nextLinkId: () => 'l',
+        dx: 1000,
+        dy: 500,
+      },
+    );
+    // The bend keeps its place between the stamped nodes.
+    expect(stamped.nodes.map((n) => [n.x, n.y])).toEqual([
+      [900, 450],
+      [1100, 550],
+    ]);
+    expect(stamped.links[0]!.waypoints).toEqual([{ x: 1000, y: 470 }]);
+  });
+
+  it('stamps a link straight when its saved bends are in old page coordinates', () => {
+    // A stencil saved before bends were centred: nodes centred on (0,0), the
+    // bend still at its original page position far away.
+    const legacyNodes: NodeConfig[] = [
+      { id: 'a', type: 'ec', x: -100, y: -50 },
+      { id: 'b', type: 'ec', x: 100, y: 50 },
+    ];
+    const legacy: LinkConfig[] = [
+      {
+        id: 'l1',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        waypoints: [{ x: 2400, y: 1300 }],
+      },
+      {
+        id: 'l2',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        waypoints: [{ x: 0, y: 40 }],
+      },
+    ];
+    const out = stampableLinks(legacyNodes, legacy);
+    expect(out[0]).not.toHaveProperty('waypoints');
+    expect(out[0]).toMatchObject({ id: 'l1', from: 'a', to: 'b' });
+    expect(out[1]!.waypoints).toEqual([{ x: 0, y: 40 }]); // a centred one stays
   });
 });
 

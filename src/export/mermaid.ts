@@ -44,9 +44,19 @@ function idMaker(): (raw: string) => string {
   };
 }
 
-/** A label as a quoted Mermaid string. */
+/**
+ * A label as a quoted Mermaid string. Characters that would end the string or
+ * the construct around it are written as Mermaid entity codes: `#` first (so
+ * text that merely looks like a code is not read as one), the quote, and the
+ * pipe and closing bracket that delimit an edge label and a subgraph title.
+ */
 function quote(s: string): string {
-  return `"${s.replace(/"/g, '#quot;').replace(/\r?\n/g, '<br/>')}"`;
+  return `"${s
+    .replace(/#/g, '#35;')
+    .replace(/"/g, '#quot;')
+    .replace(/\|/g, '#124;')
+    .replace(/\]/g, '#93;')
+    .replace(/\r?\n/g, '<br/>')}"`;
 }
 
 function bracket(n: NodeConfig, label: string): string {

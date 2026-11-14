@@ -567,3 +567,101 @@ describe('resetHistory: a replaced document starts with no history', () => {
     expect(editor.page.nodes).toHaveLength(2);
   });
 });
+
+/* ── Bends travel with a block that moves as one piece ────────────────────── */
+
+describe('link bends follow when both ends move', () => {
+  type Priv = {
+    onDown: (e: Partial<PointerEvent>) => void;
+    onMove: (e: Partial<PointerEvent>) => void;
+    onUp: (e: Partial<PointerEvent>) => void;
+  };
+  const ev = (x: number, y: number, extra: Partial<PointerEvent> = {}) =>
+    ({
+      clientX: x,
+      clientY: y,
+      button: 0,
+      buttons: 1,
+      pointerId: 1,
+      pointerType: 'mouse',
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      preventDefault() {},
+      ...extra,
+    }) as Partial<PointerEvent>;
+
+  function bentEditor(): Editor {
+    const page = basePage();
+    page.nodes.push({ id: 'c', type: 'ec', x: 300, y: 300, label: 'C' });
+    page.links[0]!.waypoints = [{ x: 200, y: 150 }];
+    page.links.push({
+      id: 'bc',
+      type: 'line',
+      from: 'b',
+      to: 'c',
+      waypoints: [{ x: 360, y: 200 }],
+    });
+    const overlay = Object.assign(fakeSvg(), { getScreenCTM: () => null });
+    const editor = new Editor(fakeSvg(), overlay, page);
+    editor.snap = false;
+    return editor;
+  }
+  const bend = (editor: Editor, id: string) =>
+    editor.page.links.find((l) => l.id === id)!.waypoints;
+
+  it('dragging both ends moves the bend; a link with one end moved keeps its bend', () => {
+    const editor = bentEditor();
+    const priv = editor as unknown as Priv;
+    selectNodes(editor, ['a', 'b']);
+    priv.onDown(ev(100, 100, { shiftKey: false }));
+    // The press on a selected node keeps the selection and starts the drag.
+    priv.onMove(ev(140, 120));
+    expect(bend(editor, 'ab')).toEqual([{ x: 240, y: 170 }]); // live
+    priv.onUp(ev(140, 120, { buttons: 0 }));
+    expect(editor.page.nodes.map((n) => [n.id, n.x, n.y])).toEqual([
+      ['a', 140, 120],
+      ['b', 340, 120],
+      ['c', 300, 300],
+    ]);
+    expect(bend(editor, 'ab')).toEqual([{ x: 240, y: 170 }]);
+    // b–c has only one end in the dragged block: its bend stays where it was.
+    expect(bend(editor, 'bc')).toEqual([{ x: 360, y: 200 }]);
+    // One undo puts nodes and bend back together.
+    editor.undo();
+    expect(bend(editor, 'ab')).toEqual([{ x: 200, y: 150 }]);
+    expect(editor.page.nodes[0]).toMatchObject({ x: 100, y: 100 });
+  });
+
+  it('nudging both ends moves the bend with them', () => {
+    const editor = bentEditor();
+    selectNodes(editor, ['a', 'b']);
+    editor.nudge(10, -5);
+    expect(bend(editor, 'ab')).toEqual([{ x: 210, y: 145 }]);
+    expect(bend(editor, 'bc')).toEqual([{ x: 360, y: 200 }]);
+  });
+
+  it('aligning shifts a bend only when both ends moved by the same amount', () => {
+    const editor = bentEditor();
+    // b and c share x=300; aligning them left to... themselves moves neither.
+    selectNodes(editor, ['b', 'c']);
+    editor.alignSelection('left');
+    expect(bend(editor, 'bc')).toEqual([{ x: 360, y: 200 }]);
+    // Align a and b to the bottom: a moves 0, b moves 0 (same y) → no shift.
+    // Align a (y100) and c (y300) to top: only c moves, so a–b and b–c stay.
+    selectNodes(editor, ['a', 'c']);
+    editor.alignSelection('top');
+    expect(editor.page.nodes.find((n) => n.id === 'c')!.y).toBe(100);
+    expect(bend(editor, 'ab')).toEqual([{ x: 200, y: 150 }]);
+    expect(bend(editor, 'bc')).toEqual([{ x: 360, y: 200 }]);
+  });
+
+  it('a locked link is left alone', () => {
+    const editor = bentEditor();
+    editor.page.links[0]!.locked = true;
+    selectNodes(editor, ['a', 'b']);
+    editor.nudge(10, 10);
+    expect(bend(editor, 'ab')).toEqual([{ x: 200, y: 150 }]);
+  });
+});

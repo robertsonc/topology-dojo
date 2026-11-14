@@ -250,7 +250,8 @@ minimap provides an overview of content outside the current viewport.
   grid with **R** and snapping with **G**.
 - Use the arrow keys for a small nudge; hold Shift for a ten-times nudge.
 - Lock important items with **Ctrl/Cmd+L** or the context menu so an accidental
-  drag does not move them.
+  drag does not move them. A locked node also stays put through **tidy**,
+  **balance** and **arrange…**: the other nodes make room around it.
 - Use **[** and **]** for one-step stacking changes, or add Ctrl/Cmd to send an
   item fully back or front.
 
@@ -752,7 +753,11 @@ warnings for visual quality.
 - **balance** or **Shift+T**: tidy, align rows/columns, and center the result.
 - **arrange…**: rebuild the current page using **hierarchical**, **grid**,
   **circular**, or **force-directed** layout. (The **tiered** wiring-sheet
-  layout is available through MCP `layout_topology` only.)
+  layout is available through MCP `layout_topology` only.) On a page with
+  zones, each zone's members stay together: the algorithm arranges the nodes
+  inside each zone, and the zones are then packed side by side.
+- Locked nodes are never moved by tidy, balance or arrange. Balance lines a
+  row or column up on its locked member, and skips re-centring the page.
 - **fit to content**: resize the page around its current content, including
   zone boxes and labels placed outside their nodes. SVG, PNG, and PDF exports
   render the page frame; if drawn content still extends past it, the export is

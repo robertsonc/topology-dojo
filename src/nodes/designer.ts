@@ -17,6 +17,11 @@ import { renderCustomNode } from './render.js';
 import { nodeSpecToCode } from './codegen.js';
 import { engineDefs } from '../vendor/topology-ds.js';
 import { registerOverlay } from '../ui/overlay.js';
+import {
+  DEFAULT_TYPE_NAME,
+  replaceTypeQuestion,
+  type TypeNameCheck,
+} from '../ui/custom-type-name.js';
 
 /** Clipboard fallback for browsers/contexts without navigator.clipboard. */
 function fallbackCopy(text: string, done: (ok: boolean) => void): void {
@@ -57,17 +62,30 @@ function swatchRow(field: string, current: string): string {
   );
 }
 
+/** What the caller knows about type names that the designer does not. */
+export interface NodeDesignerNames {
+  /** A free name to start a new type with, based on the default one. */
+  suggest(base: string): string;
+  /** Whether a name may be saved: see `checkCustomTypeName`. */
+  check(name: string): TypeNameCheck;
+}
+
 /**
  * Open the designer. `initial` = a spec to edit, or null for a new one.
  * `onSave(spec)` is called with the finished spec; the dialog closes after.
+ * `names` keeps the type's name from colliding with another type's: a name
+ * the check refuses is not saved (the dialog says why), and one that would
+ * replace another custom type is saved only after asking.
  */
 export function openNodeDesigner(
   initial: CustomNodeSpec | null,
   onSave: (spec: CustomNodeSpec) => void,
+  names?: NodeDesignerNames,
 ): void {
   const spec: CustomNodeSpec = initial
     ? structuredClone(initial)
     : defaultSpec();
+  if (!initial && names) spec.typeName = names.suggest(spec.typeName);
 
   const root = document.createElement('div');
   root.className = 'nd-modal';
@@ -94,7 +112,8 @@ export function openNodeDesigner(
     <div class="nd-dialog" role="dialog" aria-modal="true" aria-label="Node Designer">
       <div class="nd-head">
         <span class="nd-title">Node Designer</span>
-        <input class="nd-name" id="nd-name" value="${esc(spec.typeName)}" placeholder="type name" aria-label="Type name"/>
+        <input class="nd-name" id="nd-name" value="${esc(spec.typeName)}" placeholder="type name" aria-label="Type name" aria-describedby="nd-name-msg"/>
+        <span class="nd-name-msg" id="nd-name-msg" role="alert"></span>
         <span class="nd-spacer"></span>
         <button class="nd-btn" id="nd-cancel">Cancel</button>
         <button class="nd-btn" id="nd-code" title="Copy a self-contained registerNodeType() snippet">Copy as code</button>
@@ -237,8 +256,24 @@ export function openNodeDesigner(
       draw();
     }),
   );
-  $<HTMLInputElement>('#nd-name').addEventListener('input', (e) => {
-    spec.typeName = (e.target as HTMLInputElement).value;
+  const nameInput = $<HTMLInputElement>('#nd-name');
+  const nameMsg = $<HTMLElement>('#nd-name-msg');
+  /** Check the name as it stands and show why it cannot be used, if so. */
+  const checkName = (): TypeNameCheck => {
+    const typed = spec.typeName.trim() || DEFAULT_TYPE_NAME;
+    const check: TypeNameCheck = names?.check(typed) ?? {
+      ok: true,
+      name: typed,
+      replaces: false,
+    };
+    nameMsg.textContent = check.ok ? '' : check.message;
+    if (check.ok) nameInput.removeAttribute('aria-invalid');
+    else nameInput.setAttribute('aria-invalid', 'true');
+    return check;
+  };
+  nameInput.addEventListener('input', () => {
+    spec.typeName = nameInput.value;
+    checkName();
   });
 
   $('#nd-cancel').addEventListener('click', close);
@@ -249,7 +284,10 @@ export function openNodeDesigner(
   // current design, copied to the clipboard. Save-into-document is unchanged.
   $<HTMLButtonElement>('#nd-code').addEventListener('click', () => {
     const btn = $<HTMLButtonElement>('#nd-code');
-    const named = { ...spec, typeName: spec.typeName.trim() || 'myNode' };
+    const named = {
+      ...spec,
+      typeName: spec.typeName.trim() || DEFAULT_TYPE_NAME,
+    };
     const code = nodeSpecToCode(named);
     const done = (ok: boolean): void => {
       btn.textContent = ok ? '✓ Copied' : 'Copy failed';
@@ -264,7 +302,13 @@ export function openNodeDesigner(
     else fallbackCopy(code, done);
   });
   $('#nd-save').addEventListener('click', () => {
-    spec.typeName = spec.typeName.trim() || 'myNode';
+    const check = checkName();
+    if (!check.ok) {
+      nameInput.focus();
+      return;
+    }
+    if (check.replaces && !confirm(replaceTypeQuestion(check.name))) return;
+    spec.typeName = check.name;
     onSave(spec);
     close();
   });

@@ -37,6 +37,9 @@ function fakeSvg(): SVGSVGElement {
     getAttribute() {
       return null;
     },
+    getScreenCTM() {
+      return null; // client coordinates are page coordinates (coords.ts)
+    },
     querySelector() {
       return null;
     },
@@ -205,6 +208,36 @@ describe('diffDocuments characterization (locks the fallback/referee)', () => {
   });
 });
 
+/** Drive a whole press → drag → release through the editor's pointer
+ * handlers (primary button), for gestures that only exist as pointer input. */
+function pointerDrag(
+  editor: Editor,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): void {
+  const priv = editor as unknown as {
+    onDown(ev: object): void;
+    onMove(ev: object): void;
+    onUp(ev: object): void;
+  };
+  const ev = (p: { x: number; y: number }, buttons: number): object => ({
+    clientX: p.x,
+    clientY: p.y,
+    button: 0,
+    buttons,
+    pointerId: 1,
+    pointerType: 'mouse',
+    shiftKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    preventDefault() {},
+  });
+  priv.onDown(ev(from, 1));
+  priv.onMove(ev({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, 1));
+  priv.onMove(ev(to, 1));
+  priv.onUp(ev(to, 0));
+}
+
 /* ── 2. Referee corpus ─────────────────────────────────────────────────────
  * Each case sets up an editor, runs a gesture, then asserts the emitted ops
  * reproduce the same document the snapshot diff would. `undoable` marks
@@ -239,10 +272,40 @@ const cases: GestureCase[] = [
         primary: 'a',
         dx: 40,
         dy: 20,
+        bends: new Map(),
       };
       priv.onUp({ pointerId: 1 });
     },
     undoable: false, // drag snapshots on first move; here we inject post-move state
+  },
+  {
+    name: 'drag-move a block carries the bends of its inner link (pointer up)',
+    setup: (e, page) => {
+      page.links[0]!.waypoints = [{ x: 175, y: 60 }];
+      (e as unknown as { sel: Set<string> }).sel = new Set(['a', 'b']);
+    },
+    run: (e) => {
+      const priv = e as unknown as {
+        drag: unknown;
+        onUp: (ev: { pointerId: number }) => void;
+      };
+      priv.drag = {
+        startX: 0,
+        startY: 0,
+        base: new Map([
+          ['a', { x: 100, y: 100 }],
+          ['b', { x: 250, y: 100 }],
+        ]),
+        anchors: new Set<string>(),
+        moved: true,
+        primary: 'a',
+        dx: 40,
+        dy: 20,
+        bends: new Map([['ab', [{ x: 175, y: 60 }]]]),
+      };
+      priv.onUp({ pointerId: 1 });
+    },
+    undoable: false, // post-move state injected, as for the single-node drag
   },
   {
     name: 'drag-move an anchor (pointer up)',
@@ -260,6 +323,7 @@ const cases: GestureCase[] = [
         primary: 'an1',
         dx: 10,
         dy: -30,
+        bends: new Map(),
       };
       priv.onUp({ pointerId: 1 });
     },
@@ -268,6 +332,22 @@ const cases: GestureCase[] = [
   {
     name: 'delete a node with cascade (deleteSelected)',
     setup: (e) => ((e as unknown as { sel: Set<string> }).sel = new Set(['b'])),
+    run: (e) => e.deleteSelected(),
+    undoable: true,
+  },
+  {
+    name: 'delete the node a callout points at (pointer cleared)',
+    setup: (e, page) => {
+      page.nodes.push({
+        id: 'note',
+        type: 'callout',
+        x: 400,
+        y: 300,
+        label: 'Note',
+        target: 'c',
+      });
+      (e as unknown as { sel: Set<string> }).sel = new Set(['c']);
+    },
     run: (e) => e.deleteSelected(),
     undoable: true,
   },
@@ -327,6 +407,24 @@ const cases: GestureCase[] = [
     undoable: true,
   },
   {
+    name: 'duplicate a node with the anchor its link ends on',
+    setup: (e, page) => {
+      page.links.push({ id: 'a-an', type: 'line', from: 'a', to: 'an1' });
+      (e as unknown as { sel: Set<string> }).sel = new Set(['a']);
+    },
+    run: (e) => e.duplicateSelection(),
+    undoable: true,
+  },
+  {
+    name: 'cut a node together with its anchor',
+    setup: (e, page) => {
+      page.links.push({ id: 'c-an', type: 'line', from: 'c', to: 'an1' });
+      (e as unknown as { sel: Set<string> }).sel = new Set(['c']);
+    },
+    run: (e) => e.cut(),
+    undoable: true,
+  },
+  {
     name: 'stamp stencil',
     run: (e) =>
       e.stampStencil(
@@ -361,6 +459,23 @@ const cases: GestureCase[] = [
   {
     name: 'swap link endpoints',
     setup: (e) => e.focusLink('ab'),
+    run: (e) => e.swapLink(),
+    undoable: true,
+  },
+  {
+    name: 'swap link endpoints carrying per-end data',
+    setup: (e, page) => {
+      Object.assign(page.links[0]!, {
+        fromLabel: 'Gi0/1',
+        toLabel: 'Gi0/2',
+        fromPort: 'e',
+        waypoints: [
+          { x: 150, y: 60 },
+          { x: 200, y: 140 },
+        ],
+      });
+      e.focusLink('ab');
+    },
     run: (e) => e.swapLink(),
     undoable: true,
   },
@@ -434,12 +549,31 @@ const cases: GestureCase[] = [
     undoable: false, // waypoint drag snapshots on first move; we inject post-move state
   },
   {
+    name: 'insert a bend by dragging a "+" handle (pointer gesture)',
+    setup: (e) => e.focusLink('ab'),
+    run: (e) => {
+      // a (100,100) → b (250,100): the "+" handle sits on their midpoint.
+      pointerDrag(e, { x: 175, y: 100 }, { x: 180, y: 180 });
+    },
+    undoable: true,
+  },
+  {
     name: 'straighten link (clear waypoints)',
     setup: (e, page) => {
       page.links[0]!.waypoints = [{ x: 200, y: 150 }];
       e.focusLink('ab');
     },
     run: (e) => e.straightenLink(),
+    undoable: true,
+  },
+  {
+    name: 'inline rename of a port label (renameElement link-from)',
+    run: (e) => e.renameElement('link-from', 'ab', 'ge-0/0/1'),
+    undoable: true,
+  },
+  {
+    name: 'inline rename of a flow path label (renameElement flow)',
+    run: (e) => e.renameElement('flow', 'f1', 'Primary'),
     undoable: true,
   },
   {
