@@ -2988,6 +2988,15 @@ export class Editor {
       },
       src.anchors,
     );
+    // A copied callout may keep pointing at an element of this page (the
+    // copy made alongside it, or the original it was copied from). Pasted
+    // onto a page that has no such element, the pointer would dangle.
+    const here = new Set(
+      [...this.page.nodes, ...this.page.anchors, ...nodes, ...anchors].map(
+        (el) => el.id,
+      ),
+    );
+    dropStrayCalloutTargets(nodes, here);
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
     this.page.anchors.push(...anchors);
@@ -3045,6 +3054,10 @@ export class Editor {
       dx: cx,
       dy: cy,
     });
+    // A stencil is a block of its own: a callout in it may point at another
+    // of its nodes, never at whatever on this page happens to carry the id
+    // its target had where the stencil was captured.
+    dropStrayCalloutTargets(nodes, new Set(nodes.map((n) => n.id)));
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
     this.emitAdds('nodes', nodes);
@@ -5471,6 +5484,24 @@ function midpoint(
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/**
+ * Remove the leader-line pointer of every callout among `nodes` whose target
+ * is not one of the `reachable` ids. A callout without a target is a plain
+ * note; one with a dangling target is a validation error.
+ */
+function dropStrayCalloutTargets(
+  nodes: NodeConfig[],
+  reachable: ReadonlySet<string>,
+): void {
+  for (const n of nodes)
+    if (
+      n.type === 'callout' &&
+      n.target !== undefined &&
+      !(typeof n.target === 'string' && reachable.has(n.target))
+    )
+      delete n.target;
 }
 
 /** True when two id sets hold the same ids. */

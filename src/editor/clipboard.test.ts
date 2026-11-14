@@ -265,3 +265,76 @@ describe('copy / cut / paste / duplicate carry anchors (CODE-07)', () => {
     }
   });
 });
+
+/* ── a callout's pointer ─────────────────────────────────────────────────── */
+
+function calloutPage(id = 'p1'): Page {
+  const page = twoNodes(id);
+  page.nodes.push({
+    id: 'note',
+    type: 'callout',
+    x: 300,
+    y: 300,
+    label: 'Note',
+    target: 'b',
+  });
+  return page;
+}
+
+describe('a copied callout keeps a pointer that leads somewhere', () => {
+  const callouts = (page: Page) =>
+    page.nodes.filter((n) => n.type === 'callout');
+
+  it('copied with its target, the copy points at the copied target', () => {
+    for (const run of [
+      (h: Harness) => {
+        h.editor.copySelection();
+        h.editor.paste();
+      },
+      (h: Harness) => h.editor.duplicateSelection(),
+    ]) {
+      const h = harness(calloutPage());
+      h.editor.selectAll();
+      run(h);
+      const page = h.editor.page;
+      const copyOfB = page.nodes.filter((n) => n.label === 'B')[1]!;
+      expect(callouts(page).map((n) => n.target)).toEqual(['b', copyOfB.id]);
+    }
+  });
+
+  it('copied on its own, it still points at the original on the same page', () => {
+    const h = harness(calloutPage());
+    h.editor.focusNode('note');
+    h.editor.copySelection();
+    h.editor.paste();
+    expect(callouts(h.editor.page).map((n) => n.target)).toEqual(['b', 'b']);
+  });
+
+  it('pasted onto a page without its target, the pointer is dropped', () => {
+    const p2 = blankPage('p2');
+    const h = harness(calloutPage());
+    h.editor.focusNode('note');
+    h.editor.copySelection();
+    h.editor.setPage(p2);
+    h.editor.paste();
+    expect(p2.nodes).toHaveLength(1);
+    expect('target' in p2.nodes[0]!).toBe(false);
+  });
+
+  it('a stamped stencil never points outside itself', () => {
+    const h = harness(calloutPage());
+    h.editor.stampStencil(
+      [
+        { id: 's', type: 'router', x: -60, y: 0, label: 'S' },
+        { id: 'in', type: 'callout', x: 60, y: 0, label: 'In', target: 's' },
+        // Captured with a target that was not part of the stencil; an
+        // element with that id happens to exist on this page.
+        { id: 'out', type: 'callout', x: 60, y: 80, label: 'Out', target: 'b' },
+      ],
+      [],
+    );
+    const stamped = h.editor.page.nodes.slice(-3);
+    expect(stamped[1]!.target).toBe(stamped[0]!.id);
+    expect('target' in stamped[2]!).toBe(false);
+  });
+});

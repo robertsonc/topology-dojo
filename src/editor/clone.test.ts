@@ -59,6 +59,33 @@ describe('cloneElements (copy / paste / duplicate)', () => {
     ]);
   });
 
+  it('re-points a callout at the copy of its target, and only then', () => {
+    let seq = 0;
+    const out = cloneElements(
+      [
+        ...nodes,
+        { id: 'in', type: 'callout', x: 0, y: 0, label: 'In', target: 'a' },
+        { id: 'out', type: 'callout', x: 0, y: 0, label: 'Out', target: 'z' },
+        // Not a callout: a field that merely shares the name is left alone.
+        { id: 'other', type: 'ec', x: 0, y: 0, target: 'a' },
+      ],
+      [],
+      {
+        nextNodeId: () => `N${seq++}`,
+        nextLinkId: () => 'L',
+        dx: 0,
+        dy: 0,
+      },
+    );
+    expect(out.nodes.map((n) => n.target)).toEqual([
+      undefined,
+      undefined,
+      'N0',
+      'z',
+      'a',
+    ]);
+  });
+
   it('returns no anchors when none are given', () => {
     const out = cloneElements(nodes, links, {
       nextNodeId: () => 'N',
