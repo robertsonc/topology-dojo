@@ -1228,6 +1228,8 @@ export class Editor {
         const p = ends[which];
         out += `<circle data-link-end="${which}" cx="${p.x}" cy="${p.y}" r="${s * 0.75}" fill="#0b0e14" stroke="${ACCENT}" stroke-width="2"/>`;
       }
+    // A locked link takes no bend edits, so it shows no bend handles either.
+    if (link.locked) return out;
     // "Add a bend" handles: hollow circle with a + on each segment.
     const adds = this.bendAddPoints(link, pts);
     for (let k = 0; k < adds.length; k++) {
@@ -2334,12 +2336,21 @@ export class Editor {
     this.renderOverlay();
   }
 
+  /**
+   * Delete the selection. Locked nodes and links are left on the page (and
+   * stay selected, so it is plain why they are still there): lock protects an
+   * element from Delete as it does from a drag. A locked link still goes when
+   * one of its endpoints is deleted, since it cannot exist without it.
+   */
   deleteSelected(): void {
+    const doomed = this.deletable();
+    // Nothing that Delete would remove (nothing selected, everything locked,
+    // or ids that are no longer on the page): no undo step to push.
     if (
-      this.sel.size === 0 &&
-      this.linkSel === null &&
-      this.selAnchors.size === 0 &&
-      this.zoneSel === null
+      doomed.nodes.size === 0 &&
+      doomed.links.size === 0 &&
+      doomed.anchors.size === 0 &&
+      doomed.zone === null
     )
       return;
     this.snapshot();
@@ -2363,23 +2374,18 @@ export class Editor {
       id: m.id,
       snap: { flowPathId: m.flowPathId } as Record<string, unknown>,
     }));
-    if (this.zoneSel !== null) {
-      // Deleting a zone removes the region annotation only — its member nodes
-      // (and their links) stay on the canvas.
-      this.page.zones = this.page.zones.filter((z) => z.id !== this.zoneSel);
-    }
-    if (this.linkSel !== null) {
-      const doomed = new Set(this.selectedLinkIds());
-      this.page.links = this.page.links.filter((l) => !doomed.has(l.id));
-    }
-    if (this.selAnchors.size > 0) {
+    // Deleting a zone removes the region annotation only — its member nodes
+    // (and their links) stay on the canvas.
+    if (doomed.zone !== null)
+      this.page.zones = this.page.zones.filter((z) => z.id !== doomed.zone);
+    if (doomed.links.size > 0)
+      this.page.links = this.page.links.filter((l) => !doomed.links.has(l.id));
+    if (doomed.anchors.size > 0)
       this.page.anchors = this.page.anchors.filter(
-        (a) => !this.selAnchors.has(a.id),
+        (a) => !doomed.anchors.has(a.id),
       );
-    }
-    if (this.sel.size > 0) {
-      this.page.nodes = this.page.nodes.filter((n) => !this.sel.has(n.id));
-    }
+    if (doomed.nodes.size > 0)
+      this.page.nodes = this.page.nodes.filter((n) => !doomed.nodes.has(n.id));
     // Cascade — the shared endpoint-removal semantics (pages/cascade.ts, also
     // behind the headless remove_element API): links, policy markers, zone
     // memberships, and flow-path waypoints/hops of vanished endpoints; a
@@ -2456,10 +2462,45 @@ export class Editor {
     }
     this.renderArt();
     this.onChange();
-    // Everything that was selected is gone.
+    // What was deleted leaves the selection; locked survivors stay in it.
     this.pruneSelection();
     this.renderOverlay();
     this.fireSelect();
+  }
+
+  /**
+   * What Delete would remove right now: the selected elements that exist on
+   * the page and are not locked.
+   */
+  private deletable(): {
+    nodes: Set<string>;
+    links: Set<string>;
+    anchors: Set<string>;
+    zone: string | null;
+  } {
+    const links = new Set(this.selectedLinkIds());
+    return {
+      nodes: new Set(
+        this.page.nodes
+          .filter((n) => this.sel.has(n.id) && n.locked !== true)
+          .map((n) => n.id),
+      ),
+      links: new Set(
+        this.page.links
+          .filter((l) => links.has(l.id) && l.locked !== true)
+          .map((l) => l.id),
+      ),
+      anchors: new Set(
+        this.page.anchors
+          .filter((a) => this.selAnchors.has(a.id))
+          .map((a) => a.id),
+      ),
+      zone:
+        this.zoneSel !== null &&
+        this.page.zones.some((z) => z.id === this.zoneSel)
+          ? this.zoneSel
+          : null,
+    };
   }
 
   /**
@@ -2710,18 +2751,25 @@ export class Editor {
    * Copy then delete the selection. What went to the clipboard leaves the
    * page: besides the selection, an anchor that was only carried along goes
    * too when the cut leaves it without any link (it would stay behind as a
-   * stray point, and the paste brings back its copy).
+   * stray point, and the paste brings back its copy). Locked elements are
+   * copied but stay where they are (see `deleteSelected`).
    */
   cut(): void {
     const block = this.carried();
     if (!block) return;
     this.clipboard = structuredClone(block);
-    const cutLinks = new Set(block.links.map((l) => l.id));
+    // The links the delete below takes with it: those with an end that goes
+    // (a locked node stays, and so do its links).
+    const doomed = this.deletable();
+    const goes = (id: string): boolean =>
+      doomed.nodes.has(id) || doomed.anchors.has(id);
     const orphaned = block.anchors
       .filter((a) => !this.selAnchors.has(a.id))
       .filter((a) =>
         this.page.links.every(
-          (l) => (l.from !== a.id && l.to !== a.id) || cutLinks.has(l.id),
+          (l) =>
+            (l.from !== a.id && l.to !== a.id) ||
+            goes(l.from === a.id ? l.to : l.from),
         ),
       );
     if (orphaned.length)
@@ -3085,26 +3133,29 @@ export class Editor {
     return this.linkSel !== null || this.sel.size === 1;
   }
 
+  /** The selected nodes and links (all of them): what Lock applies to. */
+  private lockTargets(): { nodes: NodeConfig[]; links: LinkConfig[] } {
+    const links = new Set(this.selectedLinkIds());
+    return {
+      nodes: this.page.nodes.filter((n) => this.sel.has(n.id)),
+      links: this.page.links.filter((l) => links.has(l.id)),
+    };
+  }
+
   /** Whether every selected node/link is locked (so the menu can label it). */
   selectionLocked(): boolean {
-    const targets: { locked?: boolean }[] = this.page.nodes.filter((n) =>
-      this.sel.has(n.id),
-    );
-    const link = this.linkSel
-      ? this.page.links.find((l) => l.id === this.linkSel)
-      : null;
-    if (link) targets.push(link);
+    const { nodes, links } = this.lockTargets();
+    const targets: { locked?: boolean }[] = [...nodes, ...links];
     return targets.length > 0 && targets.every((t) => t.locked === true);
   }
 
-  /** Toggle lock on the selected nodes + link (locks all unless all locked). */
+  /**
+   * Toggle lock on every selected node and link (locks all unless all are
+   * locked already), as one undo step.
+   */
   toggleLock(): void {
-    const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
-    const link = this.linkSel
-      ? this.page.links.find((l) => l.id === this.linkSel)
-      : null;
-    const targets: { locked?: boolean }[] = [...nodes];
-    if (link) targets.push(link);
+    const { nodes, links } = this.lockTargets();
+    const targets: { locked?: boolean }[] = [...nodes, ...links];
     if (targets.length === 0) return;
     const next = !targets.every((t) => t.locked === true);
     this.snapshot();
@@ -3112,7 +3163,7 @@ export class Editor {
       this.assignAndEmit('nodes', n as unknown as Record<string, unknown>, {
         locked: next,
       });
-    if (link)
+    for (const link of links)
       this.assignAndEmit('links', link as unknown as Record<string, unknown>, {
         locked: next,
       });
@@ -3291,15 +3342,22 @@ export class Editor {
     this.onChange();
   }
 
-  /** Whether the selected link has manual bend points (waypoints) to clear. */
+  /**
+   * Whether the selected link has manual bend points (waypoints) that can be
+   * cleared. A locked link's bends cannot, so the shell does not offer it.
+   */
   selectedLinkHasBends(): boolean {
-    return !!this.getSelectedLink()?.waypoints?.length;
+    const link = this.getSelectedLink();
+    return !!link && link.locked !== true && !!link.waypoints?.length;
   }
 
-  /** Straighten the selected link: drop its waypoints back to a direct route. */
+  /**
+   * Straighten the selected link: drop its waypoints back to a direct route.
+   * A locked link keeps its bends.
+   */
   straightenLink(): void {
     const link = this.getSelectedLink();
-    if (!link?.waypoints?.length) return;
+    if (!link?.waypoints?.length || link.locked === true) return;
     this.snapshot();
     delete link.waypoints;
     this.emitPatch('links', link.id, { unset: ['waypoints'] });
@@ -3381,56 +3439,89 @@ export class Editor {
     this.onChange();
   }
 
-  /** Align selected nodes' centers. Needs 2+ selected. */
+  /**
+   * Align selected nodes' centers. Needs 2+ selected. A locked node is not
+   * moved, but it still counts toward the line the others are sent to, so
+   * nodes can be aligned WITH a locked one. Nothing to move, nothing pushed
+   * on the undo stack.
+   */
   alignSelection(
     mode: 'left' | 'centerH' | 'right' | 'top' | 'middleV' | 'bottom',
   ): void {
     const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
     if (nodes.length < 2) return;
-    this.snapshot();
     const xs = nodes.map((n) => n.x);
     const ys = nodes.map((n) => n.y);
     const minX = Math.min(...xs),
       maxX = Math.max(...xs),
       minY = Math.min(...ys),
       maxY = Math.max(...ys);
-    for (const n of nodes) {
-      const bx = n.x;
-      const by = n.y;
-      if (mode === 'left') n.x = minX;
-      else if (mode === 'right') n.x = maxX;
-      else if (mode === 'centerH') n.x = Math.round((minX + maxX) / 2);
-      else if (mode === 'top') n.y = minY;
-      else if (mode === 'bottom') n.y = maxY;
-      else if (mode === 'middleV') n.y = Math.round((minY + maxY) / 2);
-      const fp = this.patchFromChange({ x: bx, y: by }, n, ['x', 'y']);
-      if (fp) this.emitPatch('nodes', n.id, fp);
-    }
-    this.renderArt();
-    this.renderOverlay();
-    this.onChange();
+    const target = (n: NodeConfig): { x: number; y: number } => ({
+      x:
+        mode === 'left'
+          ? minX
+          : mode === 'right'
+            ? maxX
+            : mode === 'centerH'
+              ? Math.round((minX + maxX) / 2)
+              : n.x,
+      y:
+        mode === 'top'
+          ? minY
+          : mode === 'bottom'
+            ? maxY
+            : mode === 'middleV'
+              ? Math.round((minY + maxY) / 2)
+              : n.y,
+    });
+    this.moveNodes(
+      nodes.filter((n) => n.locked !== true).map((n) => ({ n, ...target(n) })),
+    );
   }
 
-  /** Distribute selected nodes' centers evenly along an axis. Needs 3+ selected. */
+  /**
+   * Distribute selected nodes' centers evenly along an axis. Needs 3+
+   * selected. The two outermost nodes stay where they are, and so does a
+   * locked node between them: each is a fixed post, and the nodes between two
+   * posts are spread evenly across that gap.
+   */
   distributeSelection(axis: 'h' | 'v'): void {
     const nodes = this.page.nodes.filter((n) => this.sel.has(n.id));
     if (nodes.length < 3) return;
+    const at = (n: NodeConfig): number => (axis === 'h' ? n.x : n.y);
+    nodes.sort((a, b) => at(a) - at(b));
+    const moves: { n: NodeConfig; x: number; y: number }[] = [];
+    let post = 0;
+    for (let i = 1; i < nodes.length; i++) {
+      const fixed = i === nodes.length - 1 || nodes[i]!.locked === true;
+      if (!fixed) continue;
+      const from = at(nodes[post]!);
+      const step = (at(nodes[i]!) - from) / (i - post);
+      for (let k = post + 1; k < i; k++) {
+        const n = nodes[k]!;
+        const v = Math.round(from + step * (k - post));
+        moves.push(axis === 'h' ? { n, x: v, y: n.y } : { n, x: n.x, y: v });
+      }
+      post = i;
+    }
+    this.moveNodes(moves);
+  }
+
+  /**
+   * Move nodes to new positions as one undo step, emitting a patch for each
+   * that actually moves. Does nothing at all when none would.
+   */
+  private moveNodes(moves: { n: NodeConfig; x: number; y: number }[]): void {
+    const moving = moves.filter((m) => m.x !== m.n.x || m.y !== m.n.y);
+    if (moving.length === 0) return;
     this.snapshot();
-    nodes.sort((a, b) => (axis === 'h' ? a.x - b.x : a.y - b.y));
-    const first = nodes[0]!;
-    const last = nodes[nodes.length - 1]!;
-    const span = axis === 'h' ? last.x - first.x : last.y - first.y;
-    const step = span / (nodes.length - 1);
-    nodes.forEach((n, i) => {
-      const v = Math.round((axis === 'h' ? first.x : first.y) + step * i);
-      const before = axis === 'h' ? n.x : n.y;
-      if (axis === 'h') n.x = v;
-      else n.y = v;
-      if (v !== before)
-        this.emitPatch('nodes', n.id, {
-          set: axis === 'h' ? { x: v } : { y: v },
-        });
-    });
+    for (const { n, x, y } of moving) {
+      const before = { x: n.x, y: n.y };
+      n.x = x;
+      n.y = y;
+      const fp = this.patchFromChange(before, n, ['x', 'y']);
+      if (fp) this.emitPatch('nodes', n.id, fp);
+    }
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -3862,7 +3953,8 @@ export class Editor {
    */
   private tryWaypointGrab(p: { x: number; y: number }): boolean {
     const link = this.page.links.find((l) => l.id === this.linkSel);
-    if (!link) return false;
+    // A locked link's bends are not editable (and have no handles).
+    if (!link || link.locked) return false;
     const pts = linkPolyline(this.page, link);
     if (pts.length < 2) return false;
     const tol = this.handleSize() * 1.4;
@@ -3977,7 +4069,7 @@ export class Editor {
     // 1) Waypoint removal on the selected link keeps priority (existing gesture).
     if (this.linkSel) {
       const link = this.page.links.find((l) => l.id === this.linkSel);
-      if (link?.waypoints?.length) {
+      if (link?.waypoints?.length && !link.locked) {
         const p = clientToUser(this.overlay, clientX, clientY);
         const tol = this.handleSize() * 1.4;
         for (let i = 0; i < link.waypoints.length; i++) {
