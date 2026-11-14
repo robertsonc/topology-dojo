@@ -496,6 +496,7 @@ export class Editor {
       this.redoStack = stashed?.redo ?? [];
     }
     this.page = page;
+    this.endNudgeRun(); // a nudge run never continues on another page
     // The fresh page starts with nothing selected; the shell is told below,
     // unconditionally, because the page itself changed.
     this.setSelection(null, true);
@@ -531,12 +532,7 @@ export class Editor {
 
   /** Arrange the current page with a layout algorithm (grid/hierarchical/…). */
   layout(opts: AutoLayoutOptions): void {
-    this.snapshot();
-    const moved = layoutPage(this.page, opts);
-    if (moved === 0) {
-      this.undoStack.pop();
-      return;
-    }
+    if (!this.attempt(() => layoutPage(this.page, opts) > 0)) return;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -544,15 +540,15 @@ export class Editor {
 
   /** Auto-arrange the current page (grid-snap + de-overlap); page grows to fit. */
   tidy(): void {
-    this.snapshot();
-    // Don't clamp into the page — the page is effectively unlimited and grows to
-    // wrap the result, so a big topology spreads out instead of being squeezed.
-    const moved = tidyPage(this.page, { keepInBounds: false });
-    const grew = this.growPageToFit();
-    if (moved === 0 && !grew) {
-      this.undoStack.pop(); // nothing changed — don't pollute history
-      return;
-    }
+    const changed = this.attempt(() => {
+      // Don't clamp into the page — the page is effectively unlimited and
+      // grows to wrap the result, so a big topology spreads out instead of
+      // being squeezed.
+      const moved = tidyPage(this.page, { keepInBounds: false });
+      const grew = this.growPageToFit();
+      return moved > 0 || grew;
+    });
+    if (!changed) return;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -563,14 +559,14 @@ export class Editor {
    * returns how many labels moved. Hand-placed labels are left alone.
    */
   autoLabels(customNodes?: CustomNodeSpec[]): number {
-    this.snapshot();
-    const { changed } = autoPlaceLabels(this.page, {
-      ...(customNodes ? { customNodes } : {}),
+    let changed = 0;
+    const any = this.attempt(() => {
+      changed = autoPlaceLabels(this.page, {
+        ...(customNodes ? { customNodes } : {}),
+      }).changed;
+      return changed > 0;
     });
-    if (changed === 0) {
-      this.undoStack.pop(); // nothing changed — don't pollute history
-      return 0;
-    }
+    if (!any) return 0;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -579,14 +575,13 @@ export class Editor {
 
   /** Balance the layout: de-overlap, align rows/columns, centre; page grows to fit. */
   balance(): void {
-    this.snapshot();
-    const moved =
-      tidyPage(this.page, { keepInBounds: false }) + balancePage(this.page);
-    const grew = this.growPageToFit();
-    if (moved === 0 && !grew) {
-      this.undoStack.pop();
-      return;
-    }
+    const changed = this.attempt(() => {
+      const moved =
+        tidyPage(this.page, { keepInBounds: false }) + balancePage(this.page);
+      const grew = this.growPageToFit();
+      return moved > 0 || grew;
+    });
+    if (!changed) return;
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -2022,6 +2017,25 @@ export class Editor {
     this.redoStack = [];
   }
 
+  /**
+   * Run an edit that may turn out to change nothing (a tidy of an already
+   * tidy page). The edit works on the live page, so its undo step has to be
+   * pushed first; when the edit reports no change, history is put back
+   * exactly as it was — the undo stack, the redo stack the push had cleared,
+   * and a nudge run it had ended. Returns what the edit returned.
+   */
+  private attempt(edit: () => boolean): boolean {
+    const undo = [...this.undoStack];
+    const redo = this.redoStack;
+    const nudging = this.nudgeActive;
+    this.snapshot();
+    if (edit()) return true;
+    this.undoStack = undo;
+    this.redoStack = redo;
+    this.nudgeActive = nudging;
+    return false;
+  }
+
   /** Park the live stacks under the current page's id (see `setPage`). */
   private stashHistory(): void {
     this.histories.delete(this.page.id);
@@ -2233,6 +2247,7 @@ export class Editor {
     if (this.gestureActive()) return;
     const prev = this.undoStack.pop();
     if (prev === undefined) return;
+    this.endNudgeRun();
     // Undo/redo replace the page wholesale; emitting precise inverse ops isn't
     // worth the risk, so we drop any buffered intent and let the sync fall back
     // to the snapshot diff, which computes the correct net delta.
@@ -2248,12 +2263,24 @@ export class Editor {
     if (this.gestureActive()) return; // see undo
     const next = this.redoStack.pop();
     if (next === undefined) return;
+    this.endNudgeRun();
     this.pendingOps = [];
     this.undoStack.push(JSON.stringify(serialize(this.page)));
     this.restore(next);
     this.renderArt();
     this.onChange();
     this.afterHistoryStep();
+  }
+
+  /**
+   * End a run of arrow-key nudges, so the next nudge pushes its own undo
+   * step. Undo and redo call it: a nudge made right after an undo used to
+   * join the run the undo had just reverted, pushed no step of its own, and
+   * could not be undone.
+   */
+  private endNudgeRun(): void {
+    this.nudgeActive = false;
+    clearTimeout(this.nudgeTimer);
   }
 
   /**

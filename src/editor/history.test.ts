@@ -138,3 +138,89 @@ describe('undo and redo wait for a gesture in flight (CAN-16)', () => {
     expect(h.editor.page.nodes[0]).toMatchObject({ x: 300, y: 300 });
   });
 });
+
+describe('history holds only steps that changed something (CODE-08 / CODE-16)', () => {
+  it('Delete with nothing left to delete keeps redo', () => {
+    const h = harness(scene());
+    h.editor.setTool('link');
+    h.click(300, 300);
+    h.click(460, 500);
+    h.editor.setTool('select');
+    h.editor.undo(); // the new link is gone, and no longer selected
+    expect(h.editor.canRedo()).toBe(true);
+    h.editor.deleteSelected();
+    expect(h.editor.canRedo()).toBe(true);
+    expect(h.editor.historyDepth()).toBe(0);
+    h.editor.redo();
+    expect(h.editor.page.links).toHaveLength(2);
+  });
+
+  it('Delete on a selection that is already gone pushes nothing', () => {
+    const h = harness(scene());
+    h.editor.focusNode('a');
+    // The node disappears behind the editor's back (another client's edit).
+    h.editor.page.nodes = h.editor.page.nodes.filter((n) => n.id !== 'a');
+    h.editor.deleteSelected();
+    expect(h.editor.canUndo()).toBe(false);
+  });
+
+  it('a tidy, balance or layout that moves nothing keeps redo', () => {
+    for (const run of [
+      (h: ReturnType<typeof harness>) => h.editor.tidy(),
+      (h: ReturnType<typeof harness>) => h.editor.balance(),
+      (h: ReturnType<typeof harness>) => h.editor.layout({ algorithm: 'grid' }),
+      (h: ReturnType<typeof harness>) => h.editor.autoLabels(),
+    ]) {
+      const h = harness(scene());
+      run(h); // settle the layout first
+      run(h);
+      const depth = h.editor.historyDepth();
+      h.editor.focusNode('a');
+      h.editor.nudge(20, 0);
+      h.editor.undo();
+      expect(h.editor.canRedo()).toBe(true);
+      run(h); // nothing left to move
+      expect(h.editor.historyDepth()).toBe(depth);
+      expect(h.editor.canRedo()).toBe(true);
+    }
+  });
+
+  it('align and distribute that move nothing push nothing', () => {
+    const h = harness(scene());
+    h.editor.selectAll();
+    h.editor.alignSelection('top');
+    const depth = h.editor.historyDepth();
+    h.editor.alignSelection('top'); // already aligned
+    expect(h.editor.historyDepth()).toBe(depth);
+  });
+
+  it('nudge → undo → nudge inside the coalescing window is undoable', () => {
+    vi.useFakeTimers();
+    const h = harness(scene());
+    h.editor.focusNode('a');
+    h.editor.nudge(10, 0);
+    vi.advanceTimersByTime(100);
+    h.editor.undo();
+    expect(h.editor.page.nodes[0]!.x).toBe(300);
+    vi.advanceTimersByTime(100); // still within the 500 ms window
+    h.editor.nudge(10, 0);
+    expect(h.editor.page.nodes[0]!.x).toBe(310);
+    expect(h.editor.canUndo()).toBe(true);
+    h.editor.undo();
+    expect(h.editor.page.nodes[0]!.x).toBe(300);
+  });
+
+  it('a held arrow key is still one undo step', () => {
+    vi.useFakeTimers();
+    const h = harness(scene());
+    h.editor.focusNode('a');
+    for (let i = 0; i < 5; i++) {
+      h.editor.nudge(1, 0);
+      vi.advanceTimersByTime(40);
+    }
+    expect(h.editor.historyDepth()).toBe(1);
+    vi.advanceTimersByTime(600);
+    h.editor.nudge(1, 0);
+    expect(h.editor.historyDepth()).toBe(2);
+  });
+});
