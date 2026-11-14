@@ -26,6 +26,7 @@ import { clientToUser, userToClient } from './coords.js';
 import { balancePage, tidyPage } from '../api/tidy.js';
 import { layoutPage, type AutoLayoutOptions } from '../api/autolayout.js';
 import { cloneElements } from './clone.js';
+import { stampableLinks } from './stencil.js';
 import type { Page } from '../pages/model.js';
 import { cascadeEndpointRemoval } from '../pages/cascade.js';
 import type {
@@ -131,6 +132,11 @@ interface DragState {
   /** Effective (snapped) delta applied to the whole selection. */
   dx: number;
   dy: number;
+  /**
+   * Where the bends of the links INSIDE the moving block started: a link whose
+   * two ends both move keeps its shape, so its waypoints move with them.
+   */
+  bends: Map<string, { x: number; y: number }[]>;
 }
 
 /**
@@ -3058,12 +3064,16 @@ export class Editor {
       this.view.y + this.view.h / 2,
       srcNodes,
     );
-    const { nodes, links } = cloneElements(srcNodes, srcLinks, {
-      nextNodeId: () => this.newNodeId(),
-      nextLinkId: () => this.newLinkId(),
-      dx: cx,
-      dy: cy,
-    });
+    const { nodes, links } = cloneElements(
+      srcNodes,
+      stampableLinks(srcNodes, srcLinks),
+      {
+        nextNodeId: () => this.newNodeId(),
+        nextLinkId: () => this.newLinkId(),
+        dx: cx,
+        dy: cy,
+      },
+    );
     // A stencil is a block of its own: a callout in it may point at another
     // of its nodes, never at whatever on this page happens to carry the id
     // its target had where the stencil was captured.
@@ -3186,6 +3196,8 @@ export class Editor {
       a.y = Math.round(a.y + dy);
       this.emitPatch('anchors', a.id, { set: { x: a.x, y: a.y } });
     }
+    const nudged = new Set([...nodes, ...anchors].map((el) => el.id));
+    this.shiftCarriedBends((id) => (nudged.has(id) ? { dx, dy } : undefined));
     clearTimeout(this.nudgeTimer);
     this.nudgeTimer = setTimeout(() => (this.nudgeActive = false), 500);
     // Held arrow keys repeat faster than frames — coalesce the art render.
@@ -3627,13 +3639,17 @@ export class Editor {
     const moving = moves.filter((m) => m.x !== m.n.x || m.y !== m.n.y);
     if (moving.length === 0) return;
     this.snapshot();
+    const moved = new Map<string, { dx: number; dy: number }>();
     for (const { n, x, y } of moving) {
       const before = { x: n.x, y: n.y };
       n.x = x;
       n.y = y;
       const fp = this.patchFromChange(before, n, ['x', 'y']);
       if (fp) this.emitPatch('nodes', n.id, fp);
+      moved.set(n.id, { dx: n.x - before.x, dy: n.y - before.y });
     }
+    // A link whose two ends moved by the same amount keeps its shape.
+    this.shiftCarriedBends((id) => moved.get(id));
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -3769,7 +3785,55 @@ export class Editor {
         primary,
         dx: 0,
         dy: 0,
+        bends: new Map(
+          this.carriedLinks(base).map((l) => [
+            l.id,
+            l.waypoints!.map((w) => ({ x: w.x, y: w.y })),
+          ]),
+        ),
       };
+    }
+  }
+
+  /**
+   * The links that travel with a block of moving elements: both ends are in
+   * `moving` and the link has bends (and is not locked). A link with only one
+   * end in the block stays put — its other end is an anchor for the route.
+   */
+  private carriedLinks(moving: { has(id: string): boolean }): LinkConfig[] {
+    return this.page.links.filter(
+      (l) =>
+        !!l.waypoints?.length &&
+        l.locked !== true &&
+        moving.has(l.from) &&
+        moving.has(l.to),
+    );
+  }
+
+  /**
+   * After a set of elements moved, shift the bends of every link whose two
+   * ends moved by the SAME amount (so the link keeps its shape), and emit the
+   * change. `deltaOf` gives how far an element id moved, or undefined if it
+   * did not. Ends that moved differently leave the bends alone: there is no
+   * one right place for them.
+   */
+  private shiftCarriedBends(
+    deltaOf: (id: string) => { dx: number; dy: number } | undefined,
+  ): void {
+    for (const l of this.page.links) {
+      if (!l.waypoints?.length || l.locked === true) continue;
+      const a = deltaOf(l.from);
+      const b = deltaOf(l.to);
+      if (!a || !b || a.dx !== b.dx || a.dy !== b.dy) continue;
+      if (a.dx === 0 && a.dy === 0) continue;
+      l.waypoints = l.waypoints.map((w) => ({
+        ...w,
+        x: Math.round(w.x + a.dx),
+        y: Math.round(w.y + a.dy),
+      }));
+      this.emitPatch('links', l.id, {
+        set: { waypoints: structuredClone(l.waypoints) },
+      });
     }
   }
 
@@ -3792,6 +3856,15 @@ export class Editor {
         const n = this.page.nodes.find((m) => m.id === id);
         if (n) set(n, base);
       }
+    }
+    for (const [id, base] of this.drag.bends) {
+      const l = this.page.links.find((m) => m.id === id);
+      if (!l?.waypoints) continue;
+      l.waypoints = base.map((w, i) => {
+        const moved = { ...l.waypoints![i], x: w.x, y: w.y };
+        set(moved, w);
+        return moved;
+      });
     }
   }
 
@@ -5345,6 +5418,13 @@ export class Editor {
             const n = this.page.nodes.find((m) => m.id === id);
             if (n) this.emitPatch('nodes', n.id, { set: { x: n.x, y: n.y } });
           }
+        }
+        for (const id of this.drag.bends.keys()) {
+          const l = this.page.links.find((m) => m.id === id);
+          if (l?.waypoints)
+            this.emitPatch('links', l.id, {
+              set: { waypoints: structuredClone(l.waypoints) },
+            });
         }
         this.guides = [];
         this.renderArt();

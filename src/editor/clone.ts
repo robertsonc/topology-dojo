@@ -2,10 +2,11 @@
  * Pure element-cloning for copy / paste / duplicate.
  *
  * Clones a set of nodes and anchors (offset by dx/dy, fresh ids) and the links
- * whose two endpoints are both in that set, re-pointing them at the new ids.
- * Links to nodes/anchors outside the copied set are dropped — they have
- * nothing to reconnect to. A copied callout that points at a copied element
- * is re-pointed the same way. DOM-free, so it's unit-testable on its own.
+ * whose two endpoints are both in that set, re-pointing them at the new ids
+ * and shifting their bends (waypoints) by the same offset. Links to
+ * nodes/anchors outside the copied set are dropped — they have nothing to
+ * reconnect to. A copied callout that points at a copied element is
+ * re-pointed the same way. DOM-free, so it's unit-testable on its own.
  */
 import type {
   AnchorConfig,
@@ -67,7 +68,16 @@ export function cloneElements(
     const from = idMap.get(l.from);
     const to = idMap.get(l.to);
     if (from === undefined || to === undefined) continue; // only internal links
-    outLinks.push({ ...structuredClone(l), id: opts.nextLinkId(), from, to });
+    const copy = { ...structuredClone(l), id: opts.nextLinkId(), from, to };
+    // The copy's bends move with its nodes; left where they were, the copied
+    // link would run back through the original's waypoints.
+    if (Array.isArray(copy.waypoints))
+      copy.waypoints = copy.waypoints.map((p) => ({
+        ...p,
+        x: Math.round(p.x + opts.dx),
+        y: Math.round(p.y + opts.dy),
+      }));
+    outLinks.push(copy);
   }
   return { nodes: outNodes, links: outLinks, anchors: outAnchors };
 }

@@ -272,10 +272,40 @@ const cases: GestureCase[] = [
         primary: 'a',
         dx: 40,
         dy: 20,
+        bends: new Map(),
       };
       priv.onUp({ pointerId: 1 });
     },
     undoable: false, // drag snapshots on first move; here we inject post-move state
+  },
+  {
+    name: 'drag-move a block carries the bends of its inner link (pointer up)',
+    setup: (e, page) => {
+      page.links[0]!.waypoints = [{ x: 175, y: 60 }];
+      (e as unknown as { sel: Set<string> }).sel = new Set(['a', 'b']);
+    },
+    run: (e) => {
+      const priv = e as unknown as {
+        drag: unknown;
+        onUp: (ev: { pointerId: number }) => void;
+      };
+      priv.drag = {
+        startX: 0,
+        startY: 0,
+        base: new Map([
+          ['a', { x: 100, y: 100 }],
+          ['b', { x: 250, y: 100 }],
+        ]),
+        anchors: new Set<string>(),
+        moved: true,
+        primary: 'a',
+        dx: 40,
+        dy: 20,
+        bends: new Map([['ab', [{ x: 175, y: 60 }]]]),
+      };
+      priv.onUp({ pointerId: 1 });
+    },
+    undoable: false, // post-move state injected, as for the single-node drag
   },
   {
     name: 'drag-move an anchor (pointer up)',
@@ -293,6 +323,7 @@ const cases: GestureCase[] = [
         primary: 'an1',
         dx: 10,
         dy: -30,
+        bends: new Map(),
       };
       priv.onUp({ pointerId: 1 });
     },

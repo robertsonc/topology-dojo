@@ -106,4 +106,34 @@ describe('cloneElements (copy / paste / duplicate)', () => {
     out.nodes[0]!.label = 'changed';
     expect(nodes[0]!.label).toBe('A');
   });
+
+  it('moves the bends of a copied link with its nodes', () => {
+    const bent: LinkConfig[] = [
+      {
+        id: 'bent',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        waypoints: [
+          { x: 200, y: 150 },
+          { x: 250, y: 60 },
+        ],
+      },
+    ];
+    const out = cloneElements(nodes, bent, {
+      nextNodeId: () => 'n',
+      nextLinkId: () => 'l',
+      dx: 40,
+      dy: -20,
+    });
+    expect(out.links[0]!.waypoints).toEqual([
+      { x: 240, y: 130 },
+      { x: 290, y: 40 },
+    ]);
+    // The source link's bends are untouched.
+    expect(bent[0]!.waypoints).toEqual([
+      { x: 200, y: 150 },
+      { x: 250, y: 60 },
+    ]);
+  });
 });
