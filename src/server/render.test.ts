@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderDocumentToSVG } from './render.js';
 import { createDocument } from '../api/builder.js';
+import { sampleDocument } from '../pages/model.js';
 import { defaultSpec } from '../nodes/spec.js';
 
 describe('headless render (Node, no browser)', () => {
@@ -445,5 +446,16 @@ describe('flow paths that follow link geometry (#256)', () => {
     expect(d.startsWith('M200,200 L400,200')).toBe(true); // a→b: no link
     expect((d.match(/M/g) ?? []).length).toBe(1); // one continuous path
     expect(d).toMatch(/ Q/); // b→c: the curved link
+  });
+});
+
+describe('a standalone render names its typeface', () => {
+  it('puts the diagram font family on the root element', () => {
+    const root = /^<svg\b[^>]*>/.exec(
+      renderDocumentToSVG(sampleDocument()),
+    )![0];
+    expect(root).toContain(
+      `font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"`,
+    );
   });
 });

@@ -47,7 +47,18 @@ describe('pageToSVG backdrop framing', () => {
     const svg = pageToSVG(page('-120 -60 800 500'));
     expect(svg).toContain('<rect x="-120" y="-60" width="800" height="500"');
     // wrapper still rasterizes at the viewBox size
-    expect(svg).toContain('width="800" height="500"><rect');
+    expect(svg).toContain(
+      'viewBox="-120 -60 800 500" width="800" height="500"',
+    );
+  });
+
+  it('names the diagram typeface on the root, so labels are not serif', () => {
+    // A standalone SVG has no page CSS: without a family of its own, every
+    // <text> falls back to the viewer's default font.
+    const root = /^<svg\b[^>]*>/.exec(pageToSVG(page('0 0 800 500')))![0];
+    expect(root).toContain(
+      `font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"`,
+    );
   });
 });
 

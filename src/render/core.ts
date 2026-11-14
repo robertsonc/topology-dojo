@@ -17,6 +17,7 @@ import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { viewBoxAttr } from '../api/layout.js';
+import { ROOT_FONT_ATTR } from './fonts.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
 import { withInterfaceLabels } from '../api/hardware.js';
@@ -245,7 +246,7 @@ function renderPageUnthemed(
   const flat = flattenViewer(topo._renderSVG(), opts.emphasis ?? []);
   const art = opts.theme === 'light' ? flat : stripRoleTags(flat);
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(page.viewBox)}" width="${vw}" height="${vh}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(page.viewBox)}" width="${vw}" height="${vh}"${ROOT_FONT_ATTR}>` +
     `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${themeBackground(opts.theme)}"/>` +
     art +
     `</svg>`

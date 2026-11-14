@@ -9,6 +9,8 @@
 import { renderPageSVG, type RenderOptions } from '../vendor/topology-ds.js';
 import type { Page } from '../pages/model.js';
 import { viewBoxAttr } from '../api/layout.js';
+import { ROOT_FONT_ATTR } from '../render/fonts.js';
+import { embedDiagramFont } from './export-fonts.js';
 import {
   applyRenderTheme,
   resolveTheme,
@@ -44,7 +46,7 @@ export function pageToSVG(
   const { vx, vy, vw, vh } = viewBoxParts(page.viewBox);
   const theme = resolveTheme(opts);
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(page.viewBox)}" width="${vw}" height="${vh}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(page.viewBox)}" width="${vw}" height="${vh}"${ROOT_FONT_ATTR}>` +
     `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${themeBackground(theme)}"/>` +
     renderPageSVG(page, opts) +
     applyRenderTheme(extra, theme) +
@@ -67,12 +69,15 @@ const PNG_RASTERIZE_TIMEOUT_MS = 20_000;
  * guard). Shared by the PNG blob path and the PDF exporter so both inherit
  * the same failure behavior.
  */
-function svgToCanvas(svg: string, scale = 2): Promise<HTMLCanvasElement> {
+async function svgToCanvas(svg: string, scale = 2): Promise<HTMLCanvasElement> {
   if (!svg.includes('<svg')) {
-    return Promise.reject(new Error('SVG export produced invalid markup'));
+    throw new Error('SVG export produced invalid markup');
   }
   const m = /viewBox="([^"]*)"/.exec(svg);
   const { vw, vh } = viewBoxParts(m?.[1] ?? '');
+  // An SVG drawn through <img> is sealed off from the page: it cannot see the
+  // page's fonts, so the typeface travels inside it.
+  const source = await embedDiagramFont(svg);
   return new Promise((resolve, reject) => {
     const img = new Image();
     let settled = false;
@@ -107,7 +112,7 @@ function svgToCanvas(svg: string, scale = 2): Promise<HTMLCanvasElement> {
     };
     img.onerror = () =>
       finish(() => reject(new Error('failed to rasterize SVG')));
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(source);
   });
 }
 

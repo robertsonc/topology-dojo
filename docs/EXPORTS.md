@@ -64,6 +64,20 @@ does, with JetBrains Mono embedded because a Worker has no system fonts.
 - PDF is raster by design (like the browser exporter): the engine's SVG uses
   filters a vector converter would drop, so the PDF always matches the canvas.
 
+## Fonts
+
+The canvas takes its typeface (JetBrains Mono) from the page's CSS. A file on
+its own has no page CSS, so each export carries the font a different way:
+
+- **SVG** names the family on its root element: JetBrains Mono, then the
+  platform's fixed-width faces. A machine without JetBrains Mono draws the
+  labels in its own monospace face; the file stays small because no font is
+  embedded.
+- **PNG, PDF and copy-to-clipboard from the editor** embed the font into the
+  picture before it is rasterized, so they match the canvas on any machine.
+- **PNG and PDF from the MCP server** use the same typeface, embedded in the
+  server-side rasterizer.
+
 ## draw.io (`.drawio`) — "my team can still edit it"
 
 | Topology Dojo                                                   | draw.io                                                                                                                                                                                              |
