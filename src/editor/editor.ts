@@ -43,6 +43,7 @@ import {
   linkPolyline,
   type LinkShape,
   nodeBounds,
+  nodeCaptionRect,
   nodeHalf,
   nodesInRect,
   resolvePos,
@@ -1438,19 +1439,25 @@ export class Editor {
     return Math.max(3, (5 * this.view.w) / wpx);
   }
 
-  /** The four edge-midpoint connection points of a node, in user units. */
+  /**
+   * The edge-midpoint connection points of a node, in user units. A dot that
+   * would sit on the node's own caption is left out: the caption owns that
+   * spot (a press there selects, drags or renames the node), so a dot drawn
+   * on it could never be grabbed.
+   */
   private connectionDots(id: string): { x: number; y: number }[] {
     const n = this.page.nodes.find((m) => m.id === id);
     if (!n) return [];
     const b = nodeBounds(n);
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
+    const caption = nodeCaptionRect(n);
     return [
       { x: cx, y: b.y }, // top
       { x: b.x + b.w, y: cy }, // right
       { x: cx, y: b.y + b.h }, // bottom
       { x: b.x, y: cy }, // left
-    ];
+    ].filter((d) => !caption || !rectHolds(caption, d));
   }
 
   /**
@@ -1507,12 +1514,39 @@ export class Editor {
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
     const off = this.dotRadius() * 4.2;
-    return [
+    const out: { x: number; y: number; dir: 'n' | 'e' | 's' | 'w' }[] = [
       { x: cx, y: b.y - off, dir: 'n' },
       { x: b.x + b.w + off, y: cy, dir: 'e' },
       { x: cx, y: b.y + b.h + off, dir: 's' },
       { x: b.x - off, y: cy, dir: 'w' },
     ];
+    // A chevron whose press area would overlap the node's own caption moves
+    // out past the caption (wherever the caption is placed). Left where it
+    // was, a click on the node's name would create a node instead of
+    // selecting it, and the chevron would be drawn over the text.
+    const caption = nodeCaptionRect(n);
+    if (caption) {
+      const r = this.chevronGrab();
+      for (const c of out) {
+        if (
+          c.x + r < caption.x ||
+          c.x - r > caption.x + caption.w ||
+          c.y + r < caption.y ||
+          c.y - r > caption.y + caption.h
+        )
+          continue;
+        if (c.dir === 'n') c.y = caption.y - r;
+        else if (c.dir === 's') c.y = caption.y + caption.h + r;
+        else if (c.dir === 'w') c.x = caption.x - r;
+        else c.x = caption.x + caption.w + r;
+      }
+    }
+    return out;
+  }
+
+  /** Half-size of a chevron's press area, in user units (≈12 screen px). */
+  private chevronGrab(): number {
+    return this.dotRadius() * 2.4;
   }
 
   /** The chevron (node + direction) under `p`, on hovered/selected nodes. */
@@ -1520,7 +1554,7 @@ export class Editor {
     x: number;
     y: number;
   }): { id: string; dir: 'n' | 'e' | 's' | 'w' } | null {
-    const r = this.dotRadius() * 2.4;
+    const r = this.chevronGrab();
     for (const id of this.chevronNodeIds()) {
       for (const c of this.chevrons(id)) {
         if (Math.abs(p.x - c.x) <= r && Math.abs(p.y - c.y) <= r)
@@ -1528,6 +1562,23 @@ export class Editor {
       }
     }
     return null;
+  }
+
+  /**
+   * The connect affordance a press at `p` would grab: a quick-connect chevron
+   * (`dir` set) or a connection dot, on a hovered or selected node. A node
+   * caption under the pointer wins over both: the user is pointing at the
+   * name, so the press selects, drags or (double-click) renames that node.
+   */
+  private connectAffordanceAt(p: {
+    x: number;
+    y: number;
+  }): { id: string; dir?: 'n' | 'e' | 's' | 'w' } | null {
+    if (hitTestNodeLabel(this.hitPage(), p.x, p.y) !== null) return null;
+    const chevron = this.chevronHit(p);
+    if (chevron) return chevron;
+    const dot = this.connectionDotHit(p);
+    return dot === null ? null : { id: dot };
   }
 
   /** Nodes that show chevrons: the hovered node + a sole selected node. */
@@ -4016,34 +4067,23 @@ export class Editor {
     // node) drags out a link — no tool switch needed. Dot beats node-body so you
     // can link from the edge without moving the node. A quick-connect chevron
     // starts the same drag; released without moving it creates + connects a
-    // node in that direction instead (see finishUp).
+    // node in that direction instead (see finishUp). A node caption beats
+    // both (see connectAffordanceAt).
     if (this.tool === 'select' && !this.spaceHeld && !e.shiftKey) {
-      const chev = this.chevronHit(p);
-      if (chev) {
-        if (!this.sel.has(chev.id)) {
+      const grab = this.connectAffordanceAt(p);
+      if (grab) {
+        if (!this.sel.has(grab.id)) {
           this.sel.clear();
-          this.sel.add(chev.id);
+          this.sel.add(grab.id);
           this.fireSelect();
         }
         this.dragLink = {
-          from: chev.id,
+          from: grab.id,
           start: p,
           cursor: p,
           moved: false,
-          dir: chev.dir,
+          ...(grab.dir ? { dir: grab.dir } : {}),
         };
-        this.overlay.setPointerCapture(e.pointerId);
-        this.renderOverlay();
-        return;
-      }
-      const dotNode = this.connectionDotHit(p);
-      if (dotNode) {
-        if (!this.sel.has(dotNode)) {
-          this.sel.clear();
-          this.sel.add(dotNode);
-          this.fireSelect();
-        }
-        this.dragLink = { from: dotNode, start: p, cursor: p, moved: false };
         this.overlay.setPointerCapture(e.pointerId);
         this.renderOverlay();
         return;
@@ -4309,11 +4349,12 @@ export class Editor {
           this.hoverNode = over;
           this.renderOverlay();
         }
-        this.overlay.style.cursor = this.chevronHit(hp)
-          ? 'copy'
-          : this.connectionDotHit(hp)
-            ? 'crosshair'
-            : '';
+        const grab = this.connectAffordanceAt(hp);
+        this.overlay.style.cursor = !grab
+          ? ''
+          : grab.dir
+            ? 'copy'
+            : 'crosshair';
       }
       return;
     }
@@ -4648,6 +4689,11 @@ function midpoint(
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/** True when the point lies inside the rect (edges included). */
+function rectHolds(r: BoundsRect, p: { x: number; y: number }): boolean {
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
 
 /** A readable default label for a freshly-added node. */
