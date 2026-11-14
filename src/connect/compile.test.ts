@@ -365,9 +365,10 @@ describe('no delete on an empty, partial or failed fetch (packet E2)', () => {
    * fields shrink when a related record is missing from that read, its seed
    * position is written again, and a key the new state no longer sets is
    * left behind. They matter to partial-result handling (packet E3) and to
-   * any in-place importer (E4); they are pinned here so they cannot go
-   * unnoticed. When one changes, update the expectation rather than
-   * deleting the test. */
+   * any in-place importer (E4), and they are why the story compiler
+   * (src/stories) compiles every state afresh instead of converging one page
+   * into the next. They are pinned here so they cannot go unnoticed: when
+   * one changes, update the expectation rather than deleting the test. */
   describe('known limits of re-reading into a compiled document', () => {
     it('flows read without their tunnels are redrawn without the hub hop', async () => {
       const { doc, full } = await compiled();
