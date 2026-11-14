@@ -22,6 +22,7 @@ import { STORY_EPOCH, compileFlowStory } from './compile.js';
 import {
   ScenarioError,
   scenarioStates,
+  validateFlowScenario,
   type FabricState,
   type FlowScenario,
 } from './types.js';
@@ -192,6 +193,34 @@ describe('compileFlowStory', () => {
     expect(compileFlowStory(told).pages[1]!.caption).toBe(
       'The primary tunnel fails.',
     );
+  });
+
+  it('a three-step scenario — before, during, after — gives three pages', () => {
+    const scenario = workedExample();
+    scenario.steps.length = 3;
+    const doc = compileFlowStory(scenario);
+    expect(doc.pages.map((p) => p.name)).toEqual([
+      'Normal',
+      'Tunnel down',
+      'Reroute',
+    ]);
+    for (const page of doc.pages)
+      expect(problems(alone(doc, page))).toEqual([]);
+    // The smallest story there is: one appliance, one step, one page.
+    const one = compileFlowStory({
+      system: 'lab',
+      base: { appliances: [{ id: 'a', hostname: 'alone' }] },
+      steps: [{ name: 'Only' }],
+    });
+    expect(one.title).toBe('Flow story');
+    expect(one.pages).toHaveLength(1);
+    expect(one.pages[0]).toMatchObject({
+      id: 'story-1',
+      name: 'Only',
+      viewBox: '0 0 1050 700',
+      caption: '1 appliance, 0 tunnels (all up), 0 flows.',
+    });
+    expect(problems(one)).toEqual([]);
   });
 
   it('draws each page as the flow compiler draws that state', () => {
@@ -800,6 +829,52 @@ describe('failure-moment annotations', () => {
     );
   });
 
+  it('a first step that already changes something is marked against the base', () => {
+    const scenario = workedExample();
+    scenario.steps = [scenario.steps[1]!]; // "Tunnel down", with no "Normal"
+    const [page] = compileFlowStory(scenario).pages;
+    expect(page!.policyMarkers).toEqual([downMarker]);
+    expect(page!.emphasis).toContain(primaryLink);
+    expect(page!.caption).toBe(
+      'Tunnel amer-br01-ec to amer-hub01-ec (Default) goes down.',
+    );
+  });
+
+  it('a flow changed and removed in the same step still compiles', () => {
+    const scenario = workedExample();
+    const web = { ...call(BACKUP), id: 'web-1', srcIp: '10.1.1.21' };
+    scenario.steps = [
+      { name: 'Normal' },
+      {
+        name: 'Churn',
+        changes: [
+          { kind: 'set-flow', flow: CALL, set: { outboundTunnel: BACKUP } },
+          { kind: 'remove-flow', flow: CALL },
+          { kind: 'add-flow', flow: web },
+          {
+            kind: 'set-flow',
+            flow: { applianceId: 'amer-br01', flowId: 'web-1' },
+            set: { outboundTunnel: PRIMARY },
+          },
+          {
+            kind: 'remove-flow',
+            flow: { applianceId: 'amer-br01', flowId: 'web-1' },
+          },
+        ],
+      },
+    ];
+    const doc = compileFlowStory(scenario);
+    expect(doc.pages[1]!.flowPaths).toEqual([]);
+    expect(doc.pages[1]!.caption).toBe(
+      'voip 10.1.1.20 to 10.0.0.80 changes. ' +
+        'voip 10.1.1.20 to 10.0.0.80 ends. ' +
+        'voip 10.1.1.21 to 10.0.0.80 starts, via amer-hub02-ec. ' +
+        'A flow changes. ' +
+        'A flow ends.',
+    );
+    expect(problems(doc)).toEqual([]);
+  });
+
   it('reaches the picture: every page renders, and the failure is drawn', () => {
     const doc = compileFlowStory(workedExample());
     const svgs = doc.pages.map((_, i) =>
@@ -824,5 +899,139 @@ describe('failure-moment annotations', () => {
       true,
       false,
     ]);
+  });
+});
+
+/* ── any scenario ───────────────────────────────────────────────────────
+ * Seeded random scenarios over random generator fabrics. Whatever the
+ * steps do, the story must compile, every page must be clean and
+ * self-contained, and no node may move.
+ */
+describe('any valid scenario', () => {
+  /** A small deterministic generator, so a failure can be replayed. */
+  function random(seed: number) {
+    let state = seed;
+    const next = (): number => {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      return state / 2 ** 32;
+    };
+    return {
+      chance: (p: number): boolean => next() < p,
+      pick: <T>(items: readonly T[]): T =>
+        items[Math.floor(next() * items.length)]!,
+      upTo: (n: number): number => Math.floor(next() * (n + 1)),
+    };
+  }
+
+  function randomScenario(seed: number): FlowScenario {
+    const r = random(seed);
+    const fabric = sdwanFabricRecords({
+      vendor: r.pick(['edgeconnect', 'juniper']),
+      detail: r.pick(['site', 'device']),
+      regions: r.pick([1, 1, 2]),
+      hubsPerRegion: r.pick([1, 2]),
+      branchesPerRegion: r.pick([1, 2, 3, 5]),
+      branchHa: r.chance(0.3),
+      transports: r.pick([['inet'], ['inet', 'mpls'], ['inet', 'lte']]),
+    });
+    for (const appliance of fabric.appliances)
+      if (r.chance(0.3)) appliance.reachable = r.chance(0.8);
+    const tunnels = [...fabric.overlay, ...fabric.underlay];
+    const ips = ['10.0.0.1', '10.0.0.2', '10.1.1.1', '10.1.1.2', '172.16.9.9'];
+    let made = 0;
+    const flow = (): FlowRecord => {
+      const tunnel = r.pick(tunnels);
+      return {
+        id: `f${made++}`,
+        applianceId: r.chance(0.8) ? tunnel.from : tunnel.to,
+        active: r.chance(0.8),
+        application: r.pick(['voip', 'web', 'backup']),
+        srcIp: r.pick(ips),
+        srcPort: 1000 + made, // one conversation each: never deduped
+        ...(r.chance(0.8) ? { dstIp: r.pick(ips) } : {}),
+        ...(r.chance(0.8)
+          ? r.chance(0.8)
+            ? { outboundTunnel: tunnel.id }
+            : { inboundTunnel: tunnel.id }
+          : {}),
+      };
+    };
+    const live = Array.from({ length: r.upTo(3) }, flow);
+    const scenario: FlowScenario = {
+      system: SYNTHETIC_SYSTEM,
+      base: { ...fabric, flows: structuredClone(live) },
+      steps: [],
+    };
+    for (let step = 0; step <= r.upTo(4); step++) {
+      const changes: NonNullable<FlowScenario['steps'][number]['changes']> = [];
+      for (let change = r.upTo(3); change > 0; change--) {
+        const subject = live.length ? r.pick(live) : undefined;
+        const ref = subject && {
+          applianceId: subject.applianceId,
+          flowId: subject.id,
+        };
+        const kind = r.pick([
+          'set-tunnel',
+          'set-tunnel',
+          'set-appliance',
+          'add-flow',
+          'remove-flow',
+          'set-flow',
+          'set-flow',
+        ] as const);
+        if (kind === 'set-tunnel')
+          changes.push({
+            kind,
+            tunnelId: r.pick(tunnels).id,
+            set: { status: r.pick(['down', 'up', 'degraded']) },
+          });
+        else if (kind === 'set-appliance')
+          changes.push({
+            kind,
+            applianceId: r.pick(fabric.appliances).id,
+            set: { reachable: r.chance(0.5) },
+          });
+        else if (kind === 'add-flow') {
+          live.push(flow());
+          changes.push({ kind, flow: structuredClone(live.at(-1)!) });
+        } else if (kind === 'remove-flow' && ref) {
+          live.splice(live.indexOf(subject), 1);
+          changes.push({ kind, flow: ref });
+        } else if (kind === 'set-flow' && ref) {
+          const other = tunnels.filter(
+            (t) =>
+              t.from === subject.applianceId || t.to === subject.applianceId,
+          );
+          changes.push({
+            kind,
+            flow: ref,
+            set: { outboundTunnel: r.pick(other).id },
+          });
+        }
+      }
+      scenario.steps.push({ name: `Step ${step + 1}`, changes });
+    }
+    return scenario;
+  }
+
+  it('compiles to clean, still, self-contained pages — 60 seeded scenarios', () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const scenario = randomScenario(seed);
+      const at = `seed ${seed}`;
+      expect(validateFlowScenario(scenario), at).toEqual([]);
+      const doc = compileFlowStory(scenario);
+      expect(doc.pages, at).toHaveLength(scenario.steps.length);
+      expect(problems(doc), at).toEqual([]);
+      for (const a of doc.pages)
+        for (const b of doc.pages) expect(moved(a, b).moved, at).toBe(0);
+      const owners = doc.pages.map((page) => objectsIn(page));
+      for (let a = 0; a < owners.length; a++)
+        for (let b = a + 1; b < owners.length; b++)
+          for (const object of owners[a]!)
+            expect(owners[b]!.has(object), at).toBe(false);
+      expect(JSON.stringify(compileFlowStory(scenario)), at).toBe(
+        JSON.stringify(doc),
+      );
+    }
   });
 });

@@ -166,22 +166,22 @@ function describeChange(
       const via = farEnd(after, change.flow);
       return `${flowName(change.flow)} starts${via ? `, via ${hostname(after, via)}` : ''}.`;
     }
-    case 'remove-flow': {
-      const flow = before.flows.find((f) => flowMatches(f, change.flow));
-      return `${flow ? flowName(flow) : 'A flow'} ends.`;
-    }
+    case 'remove-flow':
+      return `${flowName(before.flows.find((f) => flowMatches(f, change.flow)))} ends.`;
     case 'set-flow': {
       const was = before.flows.find((f) => flowMatches(f, change.flow));
-      const now = after.flows.find((f) => flowMatches(f, change.flow))!;
+      const now = after.flows.find((f) => flowMatches(f, change.flow));
+      // A flow can be changed and removed (or added) in one step: say what
+      // can still be said of it.
+      if (!was || !now) return `${flowName(now ?? was)} changes.`;
       const name = flowName(now);
       const via = farEnd(after, now);
-      if (was && via && farEnd(before, was) !== via)
+      if (via && farEnd(before, was) !== via)
         return `${name} reroutes via ${hostname(after, via)}.`;
-      if (was && via && riddenTunnel(was) !== riddenTunnel(now))
+      if (via && riddenTunnel(was) !== riddenTunnel(now))
         return `${name} moves to another tunnel to ${hostname(after, via)}.`;
       if (change.set.active === false) return `${name} ends; its trace stays.`;
-      if (change.set.active === true && was && !was.active)
-        return `${name} resumes.`;
+      if (change.set.active === true && !was.active) return `${name} resumes.`;
       return `${name} changes: ${describePatch(change.set)}.`;
     }
   }
@@ -210,8 +210,9 @@ function tunnelName(state: FabricState, t: TunnelRecord): string {
   }`;
 }
 
-/** `voip 10.1.1.20 to 10.0.0.80` */
-function flowName(flow: FlowRecord): string {
+/** `voip 10.1.1.20 to 10.0.0.80`; `A flow` for one that came and went. */
+function flowName(flow: FlowRecord | undefined): string {
+  if (!flow) return 'A flow';
   const what = flow.application ?? flow.protocol ?? 'flow';
   return flow.srcIp && flow.dstIp
     ? `${what} ${flow.srcIp} to ${flow.dstIp}`
