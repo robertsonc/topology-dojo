@@ -4456,7 +4456,13 @@ function startRename(i: number, span: HTMLElement): void {
   span.replaceWith(input);
   input.focus();
   input.select();
+  // Once only: redrawing the strip removes this input, and a removed input
+  // that had focus fires blur — which would save the text Escape just
+  // cancelled.
+  let done = false;
   const commit = (save: boolean): void => {
+    if (done) return;
+    done = true;
     if (save) page.name = input.value.trim() || page.name;
     renderFilmstrip();
     if (save) markDirty();
