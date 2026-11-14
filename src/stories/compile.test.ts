@@ -218,7 +218,7 @@ describe('compileFlowStory', () => {
       id: 'story-1',
       name: 'Only',
       viewBox: '0 0 1050 700',
-      caption: '1 appliance, 0 tunnels (all up), 0 flows.',
+      caption: '1 appliance, no tunnels, no flows.',
     });
     expect(problems(one)).toEqual([]);
   });
@@ -519,8 +519,13 @@ describe('the frame fits other fabrics too', () => {
     };
     const doc = compileFlowStory(snapshot);
     expect(problems(doc)).toEqual([]);
-    // Per-appliance views of one conversation collapse, as in the one-shot.
+    // Per-appliance views of one conversation collapse, as in the one-shot,
+    // and the caption counts what the page draws: two paths, not the three
+    // records they came from.
     expect(doc.pages[0]!.flowPaths).toHaveLength(2);
+    expect(doc.pages[0]!.caption).toBe(
+      '3 appliances, 5 tunnels (2 down), 2 flows.',
+    );
 
     // The same fabric as a mesh: no hub role, two appliances in one site.
     for (const a of appliances) delete a.role;

@@ -33,7 +33,7 @@ import {
 import type { FlowRecord, TunnelRecord } from '../connect/types.js';
 import { emptyDocument } from '../api/builder.js';
 import { TEXT_LIMITS } from '../api/text.js';
-import type { TopologyDocument } from '../pages/model.js';
+import type { Page, TopologyDocument } from '../pages/model.js';
 import { annotateStep } from './annotate.js';
 import { layOutFrame } from './frame.js';
 import {
@@ -78,7 +78,7 @@ export function compileFlowStory(scenario: FlowScenario): TopologyDocument {
       const at = frame.positions.get(node.id);
       if (at) Object.assign(node, at);
     }
-    const caption = step.caption ?? describeStep(step, before, after);
+    const caption = step.caption ?? describeStep(step, before, after, page);
     if (caption) page.caption = caption;
     const duration = step.duration ?? scenario.playback?.duration;
     if (duration !== undefined) page.duration = duration;
@@ -110,9 +110,10 @@ function describeStep(
   step: ScenarioStep,
   before: FabricState,
   after: FabricState,
+  page: Page,
 ): string {
   const changes = step.changes ?? [];
-  if (!changes.length) return describeState(after);
+  if (!changes.length) return describePage(page, after);
   const sentences = changes.map((c) => describeChange(c, before, after));
   // Whole sentences only, within the caption limit: the ones that do not
   // fit are counted, not cut.
@@ -129,18 +130,25 @@ function describeStep(
   return caption;
 }
 
-function describeState(state: FabricState): string {
-  const tunnels = [...state.underlay, ...state.overlay];
-  const down = tunnels.filter((t) => t.status === 'down').length;
+/**
+ * A step with no changes: what the page shows. Counted from the page, not
+ * from the records — a live base may hold tunnels and flows the flow
+ * compiler does not draw.
+ */
+function describePage(page: Page, state: FabricState): string {
   const count = (n: number, noun: string): string =>
-    `${n} ${noun}${n === 1 ? '' : 's'}`;
-  return `${count(state.appliances.length, 'appliance')}, ${count(
-    tunnels.length,
-    'tunnel',
-  )} (${down ? `${down} down` : 'all up'}), ${count(
-    dedupeFlows(state.flows).length,
-    'flow',
-  )}.`;
+    `${n || 'no'} ${noun}${n === 1 ? '' : 's'}`;
+  const appliances = page.nodes.filter((n) => n.source?.kind === 'appliance');
+  const tunnels = page.links.filter((l) => l.source?.kind === 'tunnel');
+  const down = tunnels.filter(
+    (link) => findTunnel(state, link.source?.id)?.status === 'down',
+  ).length;
+  const health = tunnels.length ? ` (${down ? `${down} down` : 'all up'})` : '';
+  return [
+    count(appliances.length, 'appliance'),
+    count(tunnels.length, 'tunnel') + health,
+    `${count(page.flowPaths.length, 'flow')}.`,
+  ].join(', ');
 }
 
 function describeChange(
