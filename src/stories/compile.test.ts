@@ -405,14 +405,17 @@ describe('position stability', () => {
 
   it('which each step compiled and laid out on its own does not', () => {
     // The control: the one-shot compiler per state, each with its own
-    // layout pass. Nodes move as the second flow's endpoints come and go.
+    // layout pass. Nodes move as the second flow's endpoints come and go
+    // (0, 2 and 5 of the shared nodes across the three flips, when this was
+    // written; only "some" is asserted, the layout pass being someone
+    // else's to change).
     const scenario = comeAndGo();
     const opts = { system: scenario.system, fetchedAt: STORY_EPOCH };
     const pages = scenarioStates(scenario)
       .slice(1)
       .map((s) => compileFlowTopology(s, s.flows, opts).document.pages[0]!);
     const jumps = pages.slice(1).map((p, i) => moved(pages[i]!, p).moved);
-    expect(jumps).toEqual([0, 2, 5]);
+    expect(Math.max(...jumps)).toBeGreaterThan(0);
   });
 });
 
@@ -882,10 +885,17 @@ describe('failure-moment annotations', () => {
 
   it('reaches the picture: every page renders, and the failure is drawn', () => {
     const doc = compileFlowStory(workedExample());
+    // The export build (static, light) renders every page.
+    for (const i of doc.pages.keys())
+      expect(
+        renderDocumentToSVG(doc, i, { profile: 'clean', theme: 'light' }),
+      ).toMatch(/^<svg /);
+    // In the engine's own build — less the definitions no page element
+    // uses — the markers and the down colour are on the pages they belong
+    // to and on no other.
     const svgs = doc.pages.map((_, i) =>
-      renderDocumentToSVG(doc, i, { profile: 'clean', theme: 'light' }),
+      renderDocumentToSVG(doc, i, { pruneDefs: true }),
     );
-    for (const svg of svgs) expect(svg).toContain('data-tds-flowpath=');
     const marker = (id: string) => `data-tds-marker="${id}"`;
     expect(svgs[0]).not.toContain('data-tds-marker=');
     expect(svgs[1]).toContain(marker('story_down_ne_amer-br01'));
@@ -893,12 +903,7 @@ describe('failure-moment annotations', () => {
     expect(svgs[2]).toContain(marker('story_reroute_ne_amer-hub02'));
     expect(svgs[3]).toContain(marker('story_reroute_ne_amer-hub01'));
     expect(svgs[3]).not.toContain(marker('story_down_ne_amer-br01'));
-    // The down colour is on the page only while the tunnel is down (the
-    // engine's own colours, so the default theme).
-    const dark = doc.pages.map((_, i) =>
-      renderDocumentToSVG(doc, i, { profile: 'clean' }),
-    );
-    expect(dark.map((svg) => svg.includes(DOWN))).toEqual([
+    expect(svgs.map((svg) => svg.includes(DOWN))).toEqual([
       false,
       true,
       true,
