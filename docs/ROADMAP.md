@@ -151,8 +151,10 @@ packet-level ordering and what can run in parallel):
    shipped and tested against injectable mocks, but has never been run against
    a real or recorded Orchestrator payload, and there's no GUI surface for a
    human to trigger/review a live import (today it's MCP-tool-only). Packets:
-   E1–E7. **Not started** (2026-11-13); the tools are additionally gated by
-   `LIVE_DATA_ENABLED`, off in both environments.
+   E1–E7. **E2 done** (2026-11-14): the no-delete safeguard is now a test
+   (`src/connect/compile.test.ts`), with what a re-read still gets wrong
+   pinned beside it. E1 and E3–E7 are not started; the tools are additionally
+   gated by `LIVE_DATA_ENABLED`, off in both environments.
 6. **Time-aware flow and failure storytelling** — the flow compiler already
    produces animated, per-hop flow paths for a point-in-time fabric snapshot;
    there's no scenario model for "walk through this fabric before, during,
@@ -397,7 +399,8 @@ so a future contributor doesn't have to re-litigate them:
   failed fetch must never be interpreted as "this appliance/tunnel/flow no
   longer exists" and cascade-delete it. Any future live-import hardening work
   (initiative 5, EdgeConnect) must preserve this — a real vendor API's
-  transient failure is not evidence of a topology change.
+  transient failure is not evidence of a topology change. Enforced by test
+  since packet E2 (`src/connect/compile.test.ts`).
 - **A separate viewer/presenter codebase.** The editor and any renderer share
   one render path (`flattenViewer`); no second, divergent presentation
   engine.

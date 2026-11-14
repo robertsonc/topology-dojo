@@ -1420,6 +1420,75 @@ describe('MCP tools', () => {
     expect(svg).not.toContain('data-tds-link="lk_ut_77_inet"'); // underlay hidden
   });
 
+  // Packet E2: the tool reads the whole fabric before it compiles, and every
+  // run stores a new topology, so no fetch — empty or failing — can reach a
+  // document an earlier run produced.
+  it('build_flow_topology leaves an earlier build untouched when a later fetch is empty or fails', async () => {
+    const build = (provider: MockProvider) =>
+      createTools(store, { renderDocument: renderDocumentToSVG, provider })
+        .find((t) => t.name === 'build_flow_topology')!
+        .handler({ includeEnded: true });
+
+    const first = (await build(new MockProvider())) as { topologyId: string };
+    const before = structuredClone(store.get(first.topologyId));
+    expect(before.pages[0]!.nodes).toHaveLength(7);
+    expect(before.pages[0]!.flowPaths).toHaveLength(2);
+
+    // The fabric answers with nothing at all: that is a new, empty topology
+    // under a new id — never a refresh that empties the first one.
+    class Silent extends MockProvider {
+      override getAppliances() {
+        return Promise.resolve([]);
+      }
+      override getTunnels() {
+        return Promise.resolve([]);
+      }
+      override getOverlayPolicies() {
+        return Promise.resolve([]);
+      }
+      override getFlows() {
+        return Promise.resolve([]);
+      }
+    }
+    const empty = (await build(new Silent())) as {
+      topologyId: string;
+      appliances: number;
+      tunnels: number;
+      flowsCompiled: number;
+    };
+    expect(empty).toMatchObject({
+      appliances: 0,
+      tunnels: 0,
+      flowsCompiled: 0,
+    });
+    expect(empty.topologyId).not.toBe(first.topologyId);
+    expect(store.get(first.topologyId)).toEqual(before);
+
+    // A call throws partway — appliances and underlay answered, overlay did
+    // not: the tool rejects, stores nothing, and the first build is intact.
+    class NoOverlay extends MockProvider {
+      override getTunnels(scope: 'underlay' | 'overlay') {
+        return scope === 'overlay'
+          ? Promise.reject(new Error('overlay tunnels: HTTP 503'))
+          : super.getTunnels(scope);
+      }
+    }
+    const stored = store.list().length;
+    await expect(build(new NoOverlay())).rejects.toThrow(/HTTP 503/);
+    expect(store.list()).toHaveLength(stored);
+    expect(store.get(first.topologyId)).toEqual(before);
+
+    // The flow tables fail after the whole fabric was read: same outcome.
+    class NoFlows extends MockProvider {
+      override getFlows(): Promise<never> {
+        return Promise.reject(new Error('flow tables: timeout'));
+      }
+    }
+    await expect(build(new NoFlows())).rejects.toThrow(/timeout/);
+    expect(store.list()).toHaveLength(stored);
+    expect(store.get(first.topologyId)).toEqual(before);
+  });
+
   it('declares layers, tags elements, and renders a filtered layer view', () => {
     const { id } = call('create_topology', { title: 'Fabric' }) as {
       id: string;

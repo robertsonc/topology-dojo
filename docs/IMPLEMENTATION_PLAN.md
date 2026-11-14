@@ -30,7 +30,7 @@ failure storytelling (T).
 | O          | O3 done; O1 and O2 are human-only and have no completion evidence in the repository | `CLOUDFLARE_OPERATOR_RUNBOOK.md` checklist unchecked; `GAME_DAY.md` "no game day has been executed yet" |
 | A          | Done — A1–A6 merged as PR #243 (`5de7813`, 2026-08-19)                              | `src/agent-activity/`, `worker/agent-activity.ts`, `worker/admin-api.ts`                                |
 | B          | Done 2026-11-14, re-scoped to parametric starter templates (see Initiative B)       | `src/api/templates.ts`, `src/ui/template-wizard.ts`, `params` on `create_from_template`                 |
-| E          | Not started                                                                         | No `fixtures/edgeconnect/`, no `src/connect/edgeconnect.test.ts`, no `worker/live-import-api.ts`        |
+| E          | E2 done (2026-11-14, test-only); E1 and E3–E7 not started                           | `src/connect/compile.test.ts` (E2); no `fixtures/edgeconnect/`, no `worker/live-import-api.ts`          |
 | T          | Not started                                                                         | No `src/stories/`, no `compile_flow_story` tool                                                         |
 
 What changed around the unstarted packets since July — revalidate before
@@ -979,6 +979,28 @@ what already exists rather than building new provider machinery.
   prior compiled elements survive unchanged.
 - **Acceptance criteria:** The test exists and passes; **this packet must
   land before T2 starts** (shared-file hotspot on `compile.ts`).
+- **Status (2026-11-14): done, test-only.** The audit found no removal in
+  `src/connect/compile.ts`: every write is `upsertBySource` (create, or
+  patch by source identity), and no production caller converges into an
+  existing document — `build_flow_topology` reads the whole fabric, compiles
+  a new document and stores it under a new id. Tests:
+  `src/connect/compile.test.ts` ("no delete on an empty, partial or failed
+  fetch": an empty read is byte-identical; all 32 combinations of empty
+  collections and a throw at each provider call keep every element; a
+  missing collection's elements are untouched) and the `build_flow_topology`
+  case in `src/mcp/tools.test.ts`. The audit also found four ways a re-read
+  rewrites an element that _is_ returned. None is a deletion and
+  `compile.ts` was not changed; each is pinned under "known limits" in the
+  same suite and belongs to E3 or to whichever packet first converges in
+  place (E4):
+  - a flow read without its tunnel records loses its egress waypoint and
+    that hop's tunnel data (`compileFlow` finds the far end only through
+    the tunnel record);
+  - a partial appliance list shrinks a site zone to the members it returned
+    (the absent appliance keeps its node);
+  - every re-read writes the seed `x`/`y` again, undoing the layout;
+  - a key the new state no longer sets is left behind (a tunnel that comes
+    back up keeps `opacity: 0.6`).
 
 ### E3 — Retry / partial-failure / staleness handling
 
@@ -1300,8 +1322,8 @@ here and would need its own evidence-triggered justification.
 ## Packet register (flat index)
 
 _Full specs are in each initiative's section above; this is a cross-reference
-index only. Status at 2026-11-13: N, O3 and A are done; O1/O2 await human
-evidence; every B, E and T packet is not started._
+index only. Status at 2026-11-14: N, O3, A and E2 are done; O1/O2 await human
+evidence; every other B, E and T packet is not started._
 
 | Packet | Initiative        | Depends on | Migration? | New flag/tool/secret?      | Human action?                            |
 | ------ | ----------------- | ---------- | ---------- | -------------------------- | ---------------------------------------- |
@@ -1325,7 +1347,7 @@ evidence; every B, E and T packet is not started._
 | B6     | Briefs/templates  | B3, B4     | No         | No                         | No — **done, re-scoped 2026-11-14**      |
 | B7     | Briefs/templates  | B5, B6     | No         | No                         | No — **done, re-scoped 2026-11-14**      |
 | E1     | EdgeConnect       | —          | No         | No                         | Real API access, ideally                 |
-| E2     | EdgeConnect       | —          | No         | No                         | No                                       |
+| E2     | EdgeConnect       | —          | No         | No                         | No — **done** (tests only)               |
 | E3     | EdgeConnect       | —          | No         | No                         | No                                       |
 | E4     | EdgeConnect       | E1, E2, E3 | No         | No                         | No                                       |
 | E5     | EdgeConnect       | —          | No         | New secret (staging)       | **Yes, 100%**                            |

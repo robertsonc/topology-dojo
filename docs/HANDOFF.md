@@ -131,7 +131,7 @@ Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 | O   | Cloudflare alerting + production game day   | Repo-side done 2026-07-19; O1/O2 human halves outstanding | None — human can start immediately                                       |
 | A   | Agent activity + explainability             | Implemented A1–A6; shipped (PR #243, live `5de7813`)      | None — reuses `ANALYTICS_ENABLED`; no new DO/migration                   |
 | B   | Guided topology briefs + semantic templates | Not started (see note)                                    | None — soft dependency on N landing                                      |
-| E   | EdgeConnect live-import hardening + UI      | Not started                                               | None — soft dependency on N landing                                      |
+| E   | EdgeConnect live-import hardening + UI      | E2 done 2026-11-14 (tests); E1, E3–E7 not started         | None — soft dependency on N landing                                      |
 | T   | Time-aware flow/failure storytelling        | Not started                                               | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
 
 Status verified 2026-11-13 at `e99b012`: none of B's, E's or T's planned
@@ -172,9 +172,17 @@ production incident or a launch-blocking finding in this repo's history:
 - **Never treat a transient provider-fetch failure as deletion evidence.**
   The flow compiler's `upsertBySource` model updates/creates from what a
   provider _returns_; an empty or failed fetch must never cascade-delete
-  previously-compiled elements. This is enforced by a specific test
-  (`IMPLEMENTATION_PLAN.md` packet E2) precisely because it's an easy mistake
-  to make when "simplifying" sync logic.
+  previously-compiled elements. This is enforced by tests (packet E2),
+  precisely because it's an easy mistake to make when "simplifying" sync
+  logic: `src/connect/compile.test.ts` ("no delete on an empty, partial or
+  failed fetch") converges every combination of empty collections, and every
+  mid-read failure, onto a compiled document and finds every element still
+  there; the `build_flow_topology` case in `src/mcp/tools.test.ts` proves a
+  later fetch cannot reach an earlier build. The same suite pins what
+  re-reading into a compiled document still gets wrong (not deletions:
+  positions re-seeded, a restored tunnel left dimmed, a flow path or site
+  zone shrunk by a partial read) — read it before building an in-place
+  importer.
 - **No raw prompt/conversation logging, anywhere.** The authoring-profile
   learner and the planned agent-explainability work both operate on
   structured, deterministic feature extraction from document _operations_ —
