@@ -10,7 +10,7 @@ current product and release pipeline. A result is not considered verified just
 because a case appears in this plan: §4 records the automated evidence verified
 on 2026-08-09, while cases marked **Required** still need execution against the
 named environment and source SHA. §7.9–§7.14 were added on 2026-11-14 for the
-work merged since that baseline; the tests they name were run at `663ebf6`
+work merged since that baseline; the tests they name were run at `af6a9ca`
 (§4.3).
 
 Authoritative companion documents:
@@ -195,7 +195,7 @@ through a real DOM.
 | Visual/responsive |      4 | Three Linux screenshot baselines; one 480×800 control-reachability check        |
 | **Total**         | **11** | Chromium only; Vite dev server with Worker network behavior mocked where needed |
 
-### 4.3 Local run at `663ebf6` (2026-11-14)
+### 4.3 Local run at `af6a9ca` (2026-11-14)
 
 Run while §7.9–§7.14 were written, in a Linux sandbox with Node 22.23.4 and
 LibreOffice installed. Like §4 it is a point-in-time record, not release
@@ -643,7 +643,7 @@ in tool arguments, logs, screenshots, or artifacts.
 - `npm ci`, Wrangler isolation, app+Worker typecheck, all Vitest tests, lint,
   build, and the Linux CI jobs (`check`, `e2e`, `visio`) are green on that
   SHA. The Chromium job must pass every current case (120 in 27 spec files at
-  `663ebf6`), including the three screenshot comparisons; a local run without
+  `af6a9ca`), including the three screenshot comparisons; a local run without
   the Linux baselines is diagnostic evidence only unless an explicit exception
   is approved.
 - The staging deployment was performed by the authorized workflow, reports the

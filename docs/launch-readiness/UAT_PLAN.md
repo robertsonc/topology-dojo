@@ -160,7 +160,7 @@ Before the UAT lead opens a cycle:
    identifier.
 2. Required QA gates in the [QA test plan](./QA_TEST_PLAN.md) are green on the
    candidate. This includes the Linux CI jobs and every current Chromium case
-   (120 in 27 spec files at `663ebf6`), including the three screenshot
+   (120 in 27 spec files at `af6a9ca`), including the three screenshot
    comparisons. Any exception has a written risk decision from the QA and
    product owners; a local browser run is not the canonical entry gate.
 3. The isolated staging deployment serves the candidate SHA and uses staging
