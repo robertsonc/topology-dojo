@@ -82,6 +82,11 @@ export async function initRasterizer(
  * that turn up in network diagrams ("LTE1→INET1", "10.0.0.1 → 10.0.0.2"); the
  * ASCII pairs draw as arrows too, because the typeface joins them into one
  * glyph. Written as XML entities where the text needs it.
+ *
+ * This is a stopgap for the characters that have a faithful spelling. The
+ * emoji most policy-marker icons use (🔍 🔒 👁 …) have none and still print as
+ * boxes here: that needs a symbol font in `fonts.generated.ts`, or the icons
+ * drawn as paths.
  */
 const UNDRAWABLE: Readonly<Record<string, string>> = {
   '\u2192': '-&gt;', // →
@@ -94,6 +99,11 @@ const UNDRAWABLE: Readonly<Record<string, string>> = {
   '\u27F5': '&lt;--', // ⟵
   '\u279C': '-&gt;', // ➜
   '\u2794': '-&gt;', // ➔
+  // Policy-marker icons that have a faithful spelling (deny, redirect, NAT).
+  '\u2715': '\u00D7', // ✕ → ×
+  '\u2716': '\u00D7', // ✖ → ×
+  '\u21AA': '-&gt;', // ↪
+  '\u21C4': '&lt;-&gt;', // ⇄
 };
 const UNDRAWABLE_RE = new RegExp(`[${Object.keys(UNDRAWABLE).join('')}]`, 'g');
 

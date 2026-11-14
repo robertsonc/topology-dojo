@@ -18,6 +18,10 @@ describe('drawableText', () => {
     expect(drawableText('a ← b ↔ c ⇒ d')).toBe('a &lt;- b &lt;-&gt; c =&gt; d');
   });
 
+  it('spells the deny, redirect and NAT marker icons', () => {
+    expect(drawableText('✕ ↪ ⇄')).toBe('× -&gt; &lt;-&gt;');
+  });
+
   it('keeps the markup well formed and leaves everything else alone', () => {
     const out = drawableText(svg('up ↑ down ↓ é ü — ok'));
     expect(out).toBe(svg('up ↑ down ↓ é ü — ok'));
