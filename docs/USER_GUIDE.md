@@ -1418,7 +1418,9 @@ The complete tool table and connection details are in the
    arrangement is appropriate.
 8. Call **inspect_render** for a compact final visual-quality report covering
    crop, labels, link routing, and density.
-9. Call **render_svg** once the inspection is clean. Use
+9. Call **render_svg** once the inspection is clean. It returns the clean
+   build by default: static, and without the renderer's unused definitions
+   (`profile: "full"` returns the animated build). Use
    **export_flipbook** for all pages, **export_topology** for a file (PNG,
    PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedule), **view_topology**
    to show the diagram inline in a host that supports MCP Apps, or hosted

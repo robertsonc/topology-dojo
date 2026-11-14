@@ -162,8 +162,11 @@ an id. The usual draft-building flow is:
    with `tidy_topology` / `balance_topology`.
 4. `inspect_render` → a compact visual-quality report (crop, label legibility,
    link routing, density) — the cheap final QA step before rendering.
-5. `render_svg` → a standalone SVG string (large — render once at the end,
-   after the inspection report is clean, not after every edit).
+5. `render_svg` → a standalone SVG string. The default `profile: "clean"` is
+   the static build with only the definitions the drawing uses (half the
+   size or less on small pages; `profile: "full"` is the animated build).
+   Still large: render once at the end, after the inspection report is
+   clean, not after every edit.
 6. `get_topology` / `import_topology` → round-trip the document JSON, which is
    the portable, canonical contract (server state is just a convenience).
    `get_topology` also offers `summary:true` (compact counts), `sources:true`
@@ -329,7 +332,7 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                              |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force / tiered — rows by declared tiers, `mirror`, `tierZones`)                        |
 | `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                              |
-| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"` for a light page)                                         |
+| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"`; `profile: "clean"` default, `"full"` = animated)         |
 | `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations (`theme: "light"` optional)                                                      |
 | `export_topology`                                      | Files: PNG / PDF (print-true, ANSI + A-series), draw.io, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid, cable schedule — see [Exports](#exports) |
 | `list_hardware` _(catalog)_                            | Search real hardware models: port summary, SKUs, panel confidence, GA eligibility                                                             |

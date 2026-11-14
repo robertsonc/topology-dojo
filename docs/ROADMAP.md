@@ -169,17 +169,21 @@ packets:
   (`src/testing/contrast.ts`, `src/testing/light-probe.ts`). Brief and
   outcome: [`futures/light-theme-contrast.md`](futures/light-theme-contrast.md).
 
-- **Clean render profile for exports and the inline view** — measured on a
-  7-node / 6-link template: the SVG defines 29 filters but references 3
-  (`tds-glow`, `tds-dof-blur`, `tds-depth-lift`); `<defs>` is ~41% of a
-  `calm` render (14 KB of 34 KB), and the default render carries 50
-  `<animate>` elements (2 under `calm`). `render_svg` and `view_topology` do
-  not expose `calm`, so agents pay for the animated build in context and
-  transfer. Scope: emit only referenced defs, add a `profile: "clean"`
-  render option (flat per `flattenViewer`, no background animation, no
-  unused defs), and make it the default for `render_svg`, `view_topology`,
-  PNG and PDF. Not started (no `profile` render option exists at `e99b012`). The editable exports (draw.io / Visio / PowerPoint shapes)
-  are built from the export scene, not the SVG, so they are unaffected.
+- ~~**Clean render profile for exports and the inline view**~~ — **shipped
+  2026-11-14**: a `profile: "clean"` render option (static, only the
+  `<defs>` entries the drawing references, coordinates to two decimals) is
+  the default for `render_svg` and `view_topology`; `render_svg` takes
+  `profile: "full"` for the animated build. PNG and PDF render calm with
+  unused definitions pruned, which is pixel-identical to before, and
+  `export_flipbook` keeps its animation but prunes each frame. Measured:
+  the sample scene 31.3 KB to 11.1 KB, the hub-and-spoke template 39.7 KB
+  to 17.7 KB, a generated 3-region SD-WAN fabric 172.6 KB to 113.5 KB. The
+  engine's 35-entry definition table (14 KB) was almost entirely
+  unreferenced after flattening. What is left on a large fabric is
+  per-link markup: a tunnel draws ten stacked translucent strokes for its
+  glow (about 2.5 KB each), which the clean profile deliberately keeps
+  because it is the tunnel's look. The canvas and the browser's own SVG
+  export are unchanged.
 - ~~**Link anchor box on by default for new documents**~~ — **shipped
   2026-11-14**: pages created through the authoring API (`create_topology`,
   `add_page`, the templates, `generate_sdwan_topology`,

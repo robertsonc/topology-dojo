@@ -12,7 +12,7 @@ _Last reviewed 2026-11-13 against `main` at `e99b012`._
 
 | Format                      | Direction | Editable in the target tool | Fidelity                                      | Where it runs                    |
 | --------------------------- | --------- | --------------------------- | --------------------------------------------- | -------------------------------- |
-| SVG                         | export    | (vector art)                | Pixel-identical to the canvas                 | browser, MCP `render_svg`        |
+| SVG                         | export    | (vector art)                | As drawn on the canvas; MCP default is static | browser, MCP `render_svg`        |
 | PNG                         | export    | no                          | Pixel-identical; print DPI stamped            | browser, MCP (server-side resvg) |
 | PDF                         | export    | no                          | Pixel-identical raster on real paper sizes    | browser, MCP (server-side resvg) |
 | draw.io                     | both      | yes                         | Structure + geometry; generic outlines        | browser, MCP                     |

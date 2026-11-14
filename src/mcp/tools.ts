@@ -2271,7 +2271,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. `theme: "light"` renders for a light page (light backdrop, dark text, light cards, accents darkened for contrast) — for slides, docs and print; the default "dark" is the canvas look. NOTE: the returned SVG is large (often 20–300KB) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. `theme: "light"` renders for a light page (light backdrop, dark text, light cards, accents darkened for contrast) — for slides, docs and print; the default "dark" is the canvas look. NOTE: even the default clean build is large (often 10–150KB; map backdrops add far more) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -2284,11 +2284,18 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .optional()
           .describe('Layer ids to draw (omit for the layers’ defaults).'),
         theme: renderTheme,
+        profile: z
+          .enum(['clean', 'full'])
+          .optional()
+          .describe(
+            'clean (default): static, only the definitions the drawing uses — far smaller. full: the animated build (flow particles, link dots).',
+          ),
       },
       handler: (a) =>
         withHardware(store.get(String(a.topologyId)), deps.catalog, (doc, hw) =>
           assertExportWithinLimit(
             deps.renderDocument(doc, (a.pageIndex as number | undefined) ?? 0, {
+              profile: a.profile === 'full' ? 'full' : 'clean',
               ...(a.visibleLayers !== undefined
                 ? { visibleLayers: a.visibleLayers as string[] }
                 : {}),
@@ -2312,6 +2319,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               doc,
               (d, i) =>
                 deps.renderDocument(d, i, {
+                  // Animated, but without the unused definitions each page
+                  // would otherwise repeat.
+                  pruneDefs: true,
                   ...themeOpt(a),
                   ...(hw.hardware ? { hardware: hw.hardware } : {}),
                 }),

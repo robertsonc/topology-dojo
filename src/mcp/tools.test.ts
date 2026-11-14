@@ -154,6 +154,26 @@ describe('MCP tools', () => {
     expect(doc.pages[0]!.nodes[0]!.y).toBe(doc.pages[0]!.nodes[1]!.y);
   });
 
+  it('render_svg returns the clean build by default and the animated one on request', () => {
+    const { id } = call('create_from_template', {
+      template: 'sdwan-branch',
+    }) as { id: string };
+    const clean = call('render_svg', { topologyId: id }) as string;
+    const full = call('render_svg', {
+      topologyId: id,
+      profile: 'full',
+    }) as string;
+    expect(clean).toMatch(/^<svg/);
+    expect(clean).not.toMatch(/<animate/);
+    expect(full).toMatch(/<animate/);
+    // The animated build is what render_svg used to return.
+    expect(full).toBe(renderDocumentToSVG(store.get(id), 0));
+    expect(clean.length).toBeLessThan(full.length / 2);
+    expect(call('render_svg', { topologyId: id, profile: 'clean' })).toBe(
+      clean,
+    );
+  });
+
   it('sets the legend + brand palette, and render_svg applies both', () => {
     const { id } = call('create_topology', {}) as { id: string };
     call('add_node', {
@@ -1991,6 +2011,10 @@ describe('MCP tools', () => {
 
     const html = call('export_flipbook', { topologyId: id }) as string;
     expect(html.startsWith('<!doctype html>')).toBe(true);
+    // Each frame carries only the definitions it uses (the unused part of the
+    // engine's table is ~14 KB per page), and is still the animated build.
+    expect(html).not.toContain('id="tds-glow-strong"');
+    expect(html).toContain('id="tds-grid"');
     expect(html).toContain('data-name="Setup"');
     expect(html).toContain('"duration":1500');
     expect(html).toContain('"transition":"fade"');
