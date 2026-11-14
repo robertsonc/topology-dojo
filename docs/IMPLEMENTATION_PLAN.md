@@ -29,9 +29,9 @@ failure storytelling (T).
 | N          | Done (N1–N3)                                                                        | This document set; `DISCREPANCY_REGISTER.md`                                                            |
 | O          | O3 done; O1 and O2 are human-only and have no completion evidence in the repository | `CLOUDFLARE_OPERATOR_RUNBOOK.md` checklist unchecked; `GAME_DAY.md` "no game day has been executed yet" |
 | A          | Done — A1–A6 merged as PR #243 (`5de7813`, 2026-08-19)                              | `src/agent-activity/`, `worker/agent-activity.ts`, `worker/admin-api.ts`                                |
-| B          | Not started                                                                         | No `src/briefs/`, no `create_from_brief` tool                                                           |
-| E          | Not started                                                                         | No `fixtures/edgeconnect/`, no `src/connect/edgeconnect.test.ts`, no `worker/live-import-api.ts`        |
-| T          | Not started                                                                         | No `src/stories/`, no `compile_flow_story` tool                                                         |
+| B          | Done 2026-11-14, re-scoped to parametric starter templates (see Initiative B)       | `src/api/templates.ts`, `src/ui/template-wizard.ts`, `params` on `create_from_template`                 |
+| E          | E2 done (2026-11-14, test-only); E1 and E3–E7 not started                           | `src/connect/compile.test.ts` (E2); no `fixtures/edgeconnect/`, no `worker/live-import-api.ts`          |
+| T          | T1–T3 done (2026-11-14, library only); T4 held; T5–T7 not started                   | `src/stories/` (`types`, `compile`, `frame`, `annotate` + tests); no `compile_flow_story` tool          |
 
 What changed around the unstarted packets since July — revalidate before
 starting any of them:
@@ -43,6 +43,8 @@ starting any of them:
   `TopologyBrief` contract. B1–B4 should be re-scoped against it (extend
   that pattern to more archetypes, or generalize it) instead of built
   beside it. The six static starter templates are unchanged.
+  _Done that way on 2026-11-14: see "Re-scope (2026-11-14)" under
+  Initiative B. Four of the six templates now take parameters._
 - **E and T: a flag now exists.** The live-fabric tools are gated by
   `LIVE_DATA_ENABLED` (opt-in, `"false"` in both environments) plus an
   optional `LIVE_DATA_GITHUB_IDS` allowlist, in addition to the `ORCH_*`
@@ -183,7 +185,7 @@ Per-initiative call-outs, consolidated:
 | N (docs)              | No                                                                                                                   | No             | No                                                      | No                                                                                                                                                       | No                                                                                          | No                                                                                        |
 | O (alerting/game day) | No                                                                                                                   | No             | No                                                      | No                                                                                                                                                       | No                                                                                          | **Yes** — O1 (Cloudflare dashboard config) and O2 (running the drill) are both human-only |
 | A (explainability)    | No — reuses `AnalyticsLog` (v5) for the owner-scoped index and `TopologyMcp`'s own per-session storage for the trail | No             | No — HTTP-only admin routes, no MCP surface planned     | No                                                                                                                                                       | **Open decision**: reuse `ANALYTICS_ENABLED` (recommended) or introduce a new flag — see A1 | Only if a new flag is introduced                                                          |
-| B (briefs/templates)  | No                                                                                                                   | No             | **Yes** — `create_from_brief` (name TBD by implementer) | No                                                                                                                                                       | No                                                                                          | No                                                                                        |
+| B (briefs/templates)  | No                                                                                                                   | No             | No — re-scoped: `params` on `create_from_template` only | No                                                                                                                                                       | No                                                                                          | No                                                                                        |
 | E (EdgeConnect)       | No                                                                                                                   | No             | No (uses existing live-fabric tools)                    | **Yes, if verifying against a real Orchestrator** — `ORCH_BASE_URL`/`ORCH_API_KEY` on staging only (never production without an explicit human decision) | No                                                                                          | **Yes** — E5 (secret provisioning) is human-only                                          |
 | T (storytelling)      | No                                                                                                                   | No             | **Yes** — `compile_flow_story` (name TBD)               | No                                                                                                                                                       | No                                                                                          | No                                                                                        |
 
@@ -675,6 +677,50 @@ evidence-triggered — see `ROADMAP.md`).
 
 ## Initiative B — Guided topology briefs and semantic templates
 
+### Re-scope (2026-11-14) — done as parametric templates
+
+Initiative B is **done, re-scoped**. The packets below are kept as they were
+written in July; this section records what was built instead, and why.
+
+**Why.** The packets describe a new "brief" contract beside the templates: a
+`TopologyBrief` type, a `compileBrief` compiler, a `create_from_brief` tool
+and a second wizard. By November the SD-WAN generator (proposal 0010) had
+shipped that shape for one archetype, with a contract worth copying rather
+than duplicating, and the MCP tool list had reached its size budget
+(`src/mcp/token-budget.test.ts`). `ROADMAP.md` asked for B to be re-scoped
+against the generator first.
+
+**What.** The starter templates themselves take parameters. An agent or a
+person asks for "a spine-leaf fabric with 4 spines and 12 leaves" or "hub and
+spoke with 2 hubs and 9 sites" through the tool and the menu that already
+existed, and gets a laid-out, validated document.
+
+| Packet | As planned                                                | As built                                                                                                                                                                                                                                                                                                                                                    |
+| ------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1     | `TopologyBrief` types aligned with the profile archetypes | Parameter specs on each template (`TemplateParamSpec` in `src/api/templates.ts`). No brief type, and no alignment with `src/profile/features.ts`: its `Archetype` is detected from graph structure and does not map onto the templates (`detectArchetype` reads the three-tier template as `leaf-spine`, and a 4 × 12 spine-leaf fabric as `hub-and-spoke`) |
+| B2     | `compileBrief` for three archetypes                       | `generateTemplate` / `resolveTemplateParams`, copying the SD-WAN generator's contract: defaults and bounds in one resolve step, an error that names the bad field, deterministic output, a `{doc, template, params, stats}` result. Four templates are parametric: `hub-spoke`, `spine-leaf`, `three-tier`, `firewall-dmz`                                  |
+| B3     | New tool `create_from_brief`                              | No new tool. `create_from_template` takes an optional `params` object; `list_templates` returns each template's parameter schema in its result (93 bytes added to the tool list)                                                                                                                                                                            |
+| B4     | "New from brief" wizard                                   | Choosing a parametric template in **＋ template…** opens a parameter dialog (`src/ui/template-wizard.ts`): questions, live preview and counts, Create, Escape. A template without parameters starts as before                                                                                                                                               |
+| B5     | More archetypes, SD-WAN first                             | No second SD-WAN generator: `list_templates` returns a `generators` entry pointing to `generate_sdwan_topology`                                                                                                                                                                                                                                             |
+| B6     | Guardrail test over every archetype                       | One test over every template at every parameter value: `validateDocument`, `analyzeLayout` and `inspectPage` report no problems (`src/api/templates.test.ts`). A value that cannot be made clean lowers the parameter's maximum; the test is not loosened                                                                                                   |
+| B7     | Docs, gate, rollout                                       | `USER_GUIDE.md` §10 and §16, `src/mcp/README.md`, `ROADMAP.md`, this section                                                                                                                                                                                                                                                                                |
+
+**Kept from the plan:** no new Durable Object, flag, secret or migration; the
+compile, lay out, validate discipline; one implementation behind both the MCP
+tool and the editor.
+
+**Compatibility.** Template ids are unchanged. A template called with no
+parameters builds the document it built before, checked against a frozen copy
+(`fixtures/templates/original.json`). The one difference is deliberate: the
+"Edge firewall" label of `firewall-dmz` now wraps onto two lines, because on
+one line the firewall-to-core link was drawn through its end (a problem
+`inspect_render` reported on the original template). `list_templates` now
+returns an object, `{ templates, generators }`, where it returned an array.
+
+**Not done:** free-form natural-language briefs; parameters for
+`sdwan-branch` and `ztna`; the reusable component libraries listed under
+"Deferred work" below.
+
 **Goal:** Replace "pick one of 6 static templates" with a structured "brief"
 (archetype + parameters) that compiles into a scaffolded, validated starting
 document — usable identically by a human (a form) and an agent (an MCP tool).
@@ -933,6 +979,28 @@ what already exists rather than building new provider machinery.
   prior compiled elements survive unchanged.
 - **Acceptance criteria:** The test exists and passes; **this packet must
   land before T2 starts** (shared-file hotspot on `compile.ts`).
+- **Status (2026-11-14): done, test-only.** The audit found no removal in
+  `src/connect/compile.ts`: every write is `upsertBySource` (create, or
+  patch by source identity), and no production caller converges into an
+  existing document — `build_flow_topology` reads the whole fabric, compiles
+  a new document and stores it under a new id. Tests:
+  `src/connect/compile.test.ts` ("no delete on an empty, partial or failed
+  fetch": an empty read is byte-identical; all 32 combinations of empty
+  collections and a throw at each provider call keep every element; a
+  missing collection's elements are untouched) and the `build_flow_topology`
+  case in `src/mcp/tools.test.ts`. The audit also found four ways a re-read
+  rewrites an element that _is_ returned. None is a deletion and
+  `compile.ts` was not changed; each is pinned under "known limits" in the
+  same suite and belongs to E3 or to whichever packet first converges in
+  place (E4):
+  - a flow read without its tunnel records loses its egress waypoint and
+    that hop's tunnel data (`compileFlow` finds the far end only through
+    the tunnel record);
+  - a partial appliance list shrinks a site zone to the members it returned
+    (the absent appliance keeps its node);
+  - every re-read writes the seed `x`/`y` again, undoing the layout;
+  - a key the new state no longer sets is left behind (a tunnel that comes
+    back up keeps `opacity: 0.6`).
 
 ### E3 — Retry / partial-failure / staleness handling
 
@@ -1109,6 +1177,18 @@ pattern.
 - **Acceptance criteria:** Each step's delta description is expressive enough
   to represent "a tunnel goes down" and "a flow reroutes" without needing a
   future breaking change.
+- **Status (2026-11-14): done**, as `src/stories/types.ts` (not `model.ts`),
+  with a validator the spec did not ask for. A `FlowScenario` is `system`,
+  a `base` of plain fabric records (appliances, underlay, overlay, policies,
+  flows — from a provider snapshot or from `sdwanFabricRecords`, the
+  generator's fabric; no provider is involved) and ordered named `steps`.
+  A step's `changes` are a union on `kind`: `set-tunnel`, `set-appliance`
+  and `set-flow` carry a patch of the record (`{ status: 'down' }`,
+  `{ outboundTunnel: … }`), `add-flow` and `remove-flow` a record or a
+  `FlowRef`. A new record field needs no new kind, and a new kind is an
+  addition. `validateFlowScenario` checks every change against the state it
+  meets and returns problems that name the step and the field;
+  `scenarioStates` gives the fabric after each step.
 
 ### T2 — Story compiler
 
@@ -1139,6 +1219,37 @@ pattern.
 - **Acceptance criteria:** Deleting or corrupting one page in a compiled
   scenario has zero effect on the others (proves independence, not just
   by-construction claim).
+- **Status (2026-11-14): done** — `compileFlowStory` in
+  `src/stories/compile.ts`, with `src/stories/frame.ts`.
+  **No inheritance — reviewers, check this first.** The scenario's steps are
+  changes; the document's pages are not. The compiler applies the changes to
+  plain records to get the fabric state at each step and compiles every
+  state from scratch. No page is stored as a difference from another, none
+  refers to another, and none is derived from another page's content. The
+  tests assert that no object is reachable from two pages, that rewriting or
+  deleting one page leaves the others byte-identical and valid, and that
+  the same scenario compiles to the same bytes. Every page of the worked
+  example, and of seven other fabric shapes, has no validation or layout
+  problem, warnings included.
+  Where it departs from the spec above, and why:
+  - It composes `compileFabric` + `compileFlow` (the two calls
+    `compileFlowTopology` makes) rather than `compileFlowTopology` itself,
+    because the one-shot's layout pass cannot be shared between pages.
+    `src/connect/compile.ts` is unchanged; `generate.ts` gained one accessor
+    (`sdwanFabricRecords`).
+  - Positions come from one frame laid out before any page: every state is
+    compiled onto a throwaway page so it holds every node of the story, the
+    nodes are placed once (spokes in a column, hubs facing them, endpoints
+    beside their appliance), and each page copies its x/y from it. A node is
+    at the same place on every page it is on. Laid out one by one, the
+    one-shot moves nodes whenever a flow comes or goes (0, 2 and 5 of the
+    shared nodes across the three flips of the test scenario), and with
+    site zones it packs every site into one row, so tunnels run through the
+    appliances between their ends.
+  - Converging one page into the next (`compileFabric(…, into)`) was
+    rejected: it re-seeds positions and leaves stale keys — the E2 "known
+    limits".
+  - A frame is one column a side, so a large fabric makes a tall page.
 
 ### T3 — Failure-moment annotations
 
@@ -1162,6 +1273,15 @@ pattern.
   marker(s) on the expected element(s).
 - **Acceptance criteria:** A viewer can visually identify what changed
   between two adjacent scenario pages without needing prose explanation.
+- **Status (2026-11-14): done** — `src/stories/annotate.ts`. No marker type
+  was added and `src/api/catalog.ts` is unchanged. On every page where it
+  holds: an unreachable appliance has `status: 'down'` (reachable: `'ok'`),
+  a down tunnel puts one `deny` marker on the appliance it leaves from, and
+  a flow that cannot flow (down tunnel, dead appliance) is drawn stopped in
+  the down colour. On the page of the step that made it: a flow on another
+  tunnel puts one `redirect` marker on the appliance it now leaves through,
+  and the page's `emphasis` holds whatever the step's changes touched.
+  Pages also carry a caption written from the changes.
 
 ### T4 — MCP tool `compile_flow_story`
 
@@ -1182,6 +1302,11 @@ pattern.
   will force the table update).
 - **Acceptance criteria:** An agent with live-fabric access can produce a
   multi-page failure-scenario flipbook in one call.
+- **Status (2026-11-14): held, on purpose.** The MCP tool list has a hard
+  size budget and the live-fabric tools are off in production. One premise
+  above no longer holds: `compileFlowStory` needs no provider (the scenario
+  carries its base, which may be the SD-WAN generator's fabric), so gating
+  the tool on `deps.provider` is a choice, not a requirement.
 
 ### T5 — GUI scenario-timeline authoring affordance
 
@@ -1254,8 +1379,8 @@ here and would need its own evidence-triggered justification.
 ## Packet register (flat index)
 
 _Full specs are in each initiative's section above; this is a cross-reference
-index only. Status at 2026-11-13: N, O3 and A are done; O1/O2 await human
-evidence; every B, E and T packet is not started._
+index only. Status at 2026-11-14: N, O3, A, E2 and T1–T3 are done; O1/O2 await
+human evidence; T4 is held; every other B, E and T packet is not started._
 
 | Packet | Initiative        | Depends on | Migration? | New flag/tool/secret?      | Human action?                            |
 | ------ | ----------------- | ---------- | ---------- | -------------------------- | ---------------------------------------- |
@@ -1271,24 +1396,24 @@ evidence; every B, E and T packet is not started._
 | A4     | Explainability    | A3         | No         | No                         | No — **done (PR #243)**                  |
 | A5     | Explainability    | A3         | No         | No                         | No — **done (PR #243)**                  |
 | A6     | Explainability    | A4, A5     | No         | No                         | **Done** — merged as PR #243 (`5de7813`) |
-| B1     | Briefs/templates  | —          | No         | No                         | No                                       |
-| B2     | Briefs/templates  | B1         | No         | No                         | No                                       |
-| B3     | Briefs/templates  | B2         | No         | New tool                   | No                                       |
-| B4     | Briefs/templates  | B2         | No         | No                         | No                                       |
-| B5     | Briefs/templates  | B2         | No         | No                         | No                                       |
-| B6     | Briefs/templates  | B3, B4     | No         | No                         | No                                       |
-| B7     | Briefs/templates  | B5, B6     | No         | No                         | Deploy approval                          |
+| B1     | Briefs/templates  | —          | No         | No                         | No — **done, re-scoped 2026-11-14**      |
+| B2     | Briefs/templates  | B1         | No         | No                         | No — **done, re-scoped 2026-11-14**      |
+| B3     | Briefs/templates  | B2         | No         | No (re-scoped)             | No — **done, re-scoped 2026-11-14**      |
+| B4     | Briefs/templates  | B2         | No         | No                         | No — **done, re-scoped 2026-11-14**      |
+| B5     | Briefs/templates  | B2         | No         | No                         | No — **done, re-scoped 2026-11-14**      |
+| B6     | Briefs/templates  | B3, B4     | No         | No                         | No — **done, re-scoped 2026-11-14**      |
+| B7     | Briefs/templates  | B5, B6     | No         | No                         | No — **done, re-scoped 2026-11-14**      |
 | E1     | EdgeConnect       | —          | No         | No                         | Real API access, ideally                 |
-| E2     | EdgeConnect       | —          | No         | No                         | No                                       |
+| E2     | EdgeConnect       | —          | No         | No                         | No — **done** (tests only)               |
 | E3     | EdgeConnect       | —          | No         | No                         | No                                       |
 | E4     | EdgeConnect       | E1, E2, E3 | No         | No                         | No                                       |
 | E5     | EdgeConnect       | —          | No         | New secret (staging)       | **Yes, 100%**                            |
 | E6     | EdgeConnect       | —          | No         | No                         | No                                       |
 | E7     | EdgeConnect       | E4, E5, E6 | No         | No                         | Deploy approval                          |
-| T1     | Storytelling      | —          | No         | No                         | No                                       |
-| T2     | Storytelling      | T1, **E2** | No         | No                         | No                                       |
-| T3     | Storytelling      | T2         | No         | No                         | No                                       |
-| T4     | Storytelling      | T2         | No         | New tool                   | No                                       |
+| T1     | Storytelling      | —          | No         | No                         | No — **done**                            |
+| T2     | Storytelling      | T1, **E2** | No         | No                         | No — **done**                            |
+| T3     | Storytelling      | T2         | No         | No                         | No — **done**                            |
+| T4     | Storytelling      | T2         | No         | New tool                   | No — **held** (tool budget)              |
 | T5     | Storytelling      | T3, T4     | No         | No                         | No                                       |
 | T6     | Storytelling      | T5         | No         | No                         | No                                       |
 | T7     | Storytelling      | T6         | No         | No                         | Deploy approval                          |

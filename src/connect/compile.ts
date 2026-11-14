@@ -155,6 +155,15 @@ export function compileFabric(
     [records.underlay, 'underlay'],
     [records.overlay, 'overlay'],
   ];
+  // An overlay tunnel is labelled with its overlay (BIO) name only when that
+  // tells tunnels apart. With one overlay in the fabric the name is the same
+  // on every tunnel: nine identical chips piled up at the hub, hiding each
+  // other and the nodes under them. It then stays on the link as metadata
+  // (Properties, hover) and the label is left to say something per-tunnel.
+  const overlayNames = new Set(
+    records.overlay.map((t) => t.overlay).filter((o): o is string => !!o),
+  );
+  const labelOverlays = overlayNames.size > 1;
   for (const [list, scope] of tunnels)
     for (const t of list) {
       const from = findNodeBySource(page, opts.system, 'appliance', t.from);
@@ -169,14 +178,16 @@ export function compileFabric(
         to,
         layer: FABRIC_LAYERS[scope],
         color: down ? COLORS.down : up,
-        label:
-          scope === 'underlay'
-            ? (t.fromInterface ?? t.alias ?? t.id)
-            : (t.overlay ?? t.alias ?? t.id),
+        ...(scope === 'underlay'
+          ? { label: t.fromInterface ?? t.alias ?? t.id }
+          : labelOverlays || !t.overlay
+            ? { label: t.overlay ?? t.alias ?? t.id }
+            : {}),
         ...(down ? { opacity: 0.6 } : {}),
         meta: {
           ...(t.status ? { status: t.status } : {}),
           ...(t.alias ? { alias: t.alias } : {}),
+          ...(scope === 'overlay' && t.overlay ? { overlay: t.overlay } : {}),
         },
       });
     }

@@ -12,7 +12,13 @@
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
 import { LAYOUT_RULES, nodeFootprint, parseViewBox } from './layout.js';
-import { carryAttachments, tidyPage } from './tidy.js';
+import {
+  carryAttachments,
+  isLocked,
+  scopedPages,
+  tidyPage,
+  type PageScope,
+} from './tidy.js';
 import {
   mirrorPairKey,
   pinPortsByTier,
@@ -480,8 +486,9 @@ function applyAlgorithm(
  * together (a compact grid per zone), then pack the zones and the remaining
  * free nodes as non-overlapping blocks. Block reserves mirror the engine's
  * zone box (member centers padded by `gridPad`+`zonePadding`), so adjacent
- * zones never overlap. The chosen algorithm governs the no-zone path; with
- * zones it influences only the (grid) intra-cluster arrangement for now.
+ * zones never overlap. The chosen algorithm arranges the members INSIDE each
+ * zone (a hierarchy, a ring, a relaxed mesh, or the compact grid); the zones
+ * themselves are always packed as blocks.
  */
 
 /** All node ids belonging to a zone and its descendant zones. */
@@ -520,6 +527,51 @@ function gridCluster(
   return { centerW: (cols - 1) * cw, centerH: (rows - 1) * ch };
 }
 
+/**
+ * Arrange one zone's members with the chosen algorithm, compactly; centers
+ * start at (0,0). The algorithm sees only this zone: its members and the links
+ * between them, on a frame just large enough to hold them.
+ */
+function arrangeCluster(
+  page: Page,
+  members: NodeConfig[],
+  spacing: number,
+  opts: AutoLayoutOptions,
+): { centerW: number; centerH: number } {
+  if (opts.algorithm === 'grid' || members.length < 3)
+    return gridCluster(members, spacing);
+  const ids = new Set(members.map((n) => n.id));
+  const sub: Page = {
+    ...page,
+    nodes: members,
+    links: page.links.filter((l) => ids.has(l.from) && ids.has(l.to)),
+    anchors: [],
+    zones: [],
+    flowPaths: [],
+    policyMarkers: [],
+  };
+  const { cw, ch } = cell(sub, spacing);
+  const side =
+    Math.ceil(Math.sqrt(members.length)) * Math.max(cw, ch) * 2 +
+    2 * LAYOUT_RULES.edgeMargin;
+  applyAlgorithm(sub, [0, 0, side, side], spacing, opts);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const n of members) {
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x);
+    maxY = Math.max(maxY, n.y);
+  }
+  for (const n of members) {
+    n.x -= minX;
+    n.y -= minY;
+  }
+  return { centerW: maxX - minX, centerH: maxY - minY };
+}
+
 interface LayoutBlock {
   nodes: NodeConfig[];
   /** Reserve extents from the member-center origin to the block's edges. */
@@ -529,7 +581,12 @@ interface LayoutBlock {
   b: number;
 }
 
-function zoneAwareLayout(page: Page, vb: number[], spacing: number): void {
+function zoneAwareLayout(
+  page: Page,
+  vb: number[],
+  spacing: number,
+  opts: AutoLayoutOptions,
+): void {
   const [vx, vy, vw, vh] = vb as [number, number, number, number];
   const m = LAYOUT_RULES.edgeMargin;
   const zones = page.zones ?? [];
@@ -552,7 +609,7 @@ function zoneAwareLayout(page: Page, vb: number[], spacing: number): void {
   for (const z of topZones) {
     const members = page.nodes.filter((n) => assigned.get(n.id) === z.id);
     if (!members.length) continue;
-    const { centerW, centerH } = gridCluster(members, spacing);
+    const { centerW, centerH } = arrangeCluster(page, members, spacing, opts);
     blocks.push({
       nodes: members,
       l: insetX,
@@ -611,8 +668,19 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
   // Tiered rows are the structure a wiring sheet's zones follow (tier
   // bands), so the zone-aware packer must not override them.
   if (opts.algorithm !== 'tiered' && (page.zones?.length ?? 0) > 0)
-    zoneAwareLayout(page, vb, spacing);
+    zoneAwareLayout(page, vb, spacing, opts);
   else applyAlgorithm(page, vb, spacing, opts);
+
+  // A locked node stays exactly where it was: the algorithm arranged the
+  // others, and the tidy pass below moves them clear of it.
+  const origById = new Map(orig.map((o) => [o.id, o]));
+  for (const n of page.nodes) {
+    const o = origById.get(n.id);
+    if (o && isLocked(n)) {
+      n.x = o.x;
+      n.y = o.y;
+    }
+  }
 
   // Anchors and manual waypoints must follow the algorithm's wholesale node
   // movement, keyed by the positions captured before it ran — the tidy
@@ -635,14 +703,16 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
   return moved;
 }
 
-/** Arrange every page of a document; returns how many nodes moved. */
+/** Arrange a document's pages (all, or `scope.pageIndex`); returns how many
+ * nodes moved. */
 export function layoutDocument(
   doc: TopologyDocument,
   opts: AutoLayoutOptions,
+  scope: PageScope = {},
 ): AutoLayoutResult {
   let movedNodes = 0;
   registerHitBoxes(doc.customNodes);
-  for (const page of doc.pages) {
+  for (const page of scopedPages(doc, scope)) {
     let o = opts;
     if (opts.algorithm === 'tiered') {
       // Fill in the document's tiers and keep the margins the page's

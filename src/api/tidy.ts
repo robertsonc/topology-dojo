@@ -113,6 +113,11 @@ export function carryAttachments(page: Page, origNodes: NodeSnapshot[]): void {
   }
 }
 
+/** A node its owner locked in place: no layout pass may move it. */
+export function isLocked(n: NodeConfig): boolean {
+  return (n as { locked?: boolean }).locked === true;
+}
+
 /** Tidy a single page's node positions in place; returns the count of nodes moved. */
 export function tidyPage(page: Page, opts: TidyOptions = {}): number {
   const grid = LAYOUT_RULES.gridStep;
@@ -136,8 +141,11 @@ export function tidyPage(page: Page, opts: TidyOptions = {}): number {
     n.y = clampTo(n.y, vy + margin + topOff, vy + vh - margin - botOff, cy);
   };
 
+  // A locked node is where its owner put it: it is never snapped, pushed or
+  // clamped. Its neighbours make all the room instead.
   if (snap)
     for (const n of nodes) {
+      if (isLocked(n)) continue;
       n.x = Math.round(n.x / grid) * grid;
       n.y = Math.round(n.y / grid) * grid;
     }
@@ -148,9 +156,16 @@ export function tidyPage(page: Page, opts: TidyOptions = {}): number {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i]!,
           b = nodes[j]!;
+        const aLocked = isLocked(a);
+        const bLocked = isLocked(b);
+        if (aLocked && bLocked) continue; // neither may move
         const gap = rectGap(nodeFootprint(a), nodeFootprint(b));
         if (gap >= minGap) continue;
-        const push = (minGap - gap) / 2 + 0.5;
+        // Split the separation between the two, or give it all to the one
+        // that may move.
+        const need = minGap - gap + 1;
+        const pushA = aLocked ? 0 : bLocked ? need : need / 2;
+        const pushB = bLocked ? 0 : aLocked ? need : need / 2;
         let dx = a.x - b.x,
           dy = a.y - b.y;
         if (dx === 0 && dy === 0) {
@@ -158,14 +173,14 @@ export function tidyPage(page: Page, opts: TidyOptions = {}): number {
           dy = 0;
         }
         const len = Math.hypot(dx, dy) || 1;
-        a.x += (dx / len) * push;
-        a.y += (dy / len) * push;
-        b.x -= (dx / len) * push;
-        b.y -= (dy / len) * push;
+        a.x += (dx / len) * pushA;
+        a.y += (dy / len) * pushA;
+        b.x -= (dx / len) * pushB;
+        b.y -= (dy / len) * pushB;
         moved = true;
       }
     }
-    if (keepInBounds) for (const n of nodes) clampNode(n);
+    if (keepInBounds) for (const n of nodes) if (!isLocked(n)) clampNode(n);
     if (!moved) break;
   }
 
@@ -255,8 +270,17 @@ export function balancePage(page: Page, opts: BalanceOptions = {}): number {
     );
     for (const c of clusters) {
       const prev = c.indices.map((k) => nodes[k]![axis]);
+      // A locked member is the row/column the others join; two locked
+      // members that disagree leave the cluster as it is.
+      const pinned = new Set(
+        c.indices
+          .filter((k) => isLocked(nodes[k]!))
+          .map((k) => nodes[k]![axis]),
+      );
+      if (pinned.size > 1) continue;
+      const target = pinned.size === 1 ? [...pinned][0]! : c.mean;
       const before = overlapPairs();
-      for (const k of c.indices) nodes[k]![axis] = c.mean;
+      for (const k of c.indices) nodes[k]![axis] = target;
       if (overlapPairs() > before)
         c.indices.forEach((k, ci) => {
           nodes[k]![axis] = prev[ci]!;
@@ -268,7 +292,8 @@ export function balancePage(page: Page, opts: BalanceOptions = {}): number {
 
   // Centre the layout's footprint bounding box within the page margins — a
   // uniform shift, so pairwise gaps (and the overlap guarantee) are preserved.
-  if (opts.center ?? true) {
+  // (A uniform shift moves every node, so it is skipped when one is locked.)
+  if ((opts.center ?? true) && !nodes.some(isLocked)) {
     const [vx, vy, vw, vh] = parseViewBox(page.viewBox);
     let minX = Infinity,
       minY = Infinity,
@@ -313,15 +338,41 @@ export function balanceLayout(
   return next;
 }
 
-/** Tidy every page of a document in place; returns a before/after summary. */
+/**
+ * Which pages a document-level layout pass touches: one page, or (the
+ * default) all of them. A hand-arranged page must not be rearranged because
+ * another page needed tidying.
+ */
+export interface PageScope {
+  /** 0-based page to arrange; omit for every page. */
+  pageIndex?: number;
+}
+
+/** The pages in scope. Throws when `pageIndex` names no page. */
+export function scopedPages(
+  doc: TopologyDocument,
+  scope: PageScope = {},
+): Page[] {
+  if (scope.pageIndex === undefined) return doc.pages;
+  const page = doc.pages[scope.pageIndex];
+  if (!page)
+    throw new Error(
+      `no page at index ${scope.pageIndex} (the document has ${doc.pages.length})`,
+    );
+  return [page];
+}
+
+/** Tidy a document's pages in place; returns a before/after summary. */
 export function tidyDocument(
   doc: TopologyDocument,
   opts: TidyOptions = {},
+  scope: PageScope = {},
 ): TidyResult {
   registerHitBoxes(doc.customNodes);
+  const pages = scopedPages(doc, scope);
   const before = analyzeLayout(doc).length;
   let movedNodes = 0;
-  for (const page of doc.pages) movedNodes += tidyPage(page, opts);
+  for (const page of pages) movedNodes += tidyPage(page, opts);
   const after = analyzeLayout(doc).length;
   return { movedNodes, before, after };
 }
@@ -345,11 +396,13 @@ export function tidyLayout(
 export function balanceDocument(
   doc: TopologyDocument,
   opts: BalanceOptions = {},
+  scope: PageScope = {},
 ): TidyResult {
   registerHitBoxes(doc.customNodes);
+  const pages = scopedPages(doc, scope);
   const before = analyzeLayout(doc).length;
   let movedNodes = 0;
-  for (const page of doc.pages) {
+  for (const page of pages) {
     const orig = page.nodes.map((n) => ({ x: n.x, y: n.y }));
     tidyPage(page);
     balancePage(page, opts);

@@ -131,8 +131,8 @@ Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 | O   | Cloudflare alerting + production game day   | Repo-side done 2026-07-19; O1/O2 human halves outstanding | None — human can start immediately                                       |
 | A   | Agent activity + explainability             | Implemented A1–A6; shipped (PR #243, live `5de7813`)      | None — reuses `ANALYTICS_ENABLED`; no new DO/migration                   |
 | B   | Guided topology briefs + semantic templates | Not started (see note)                                    | None — soft dependency on N landing                                      |
-| E   | EdgeConnect live-import hardening + UI      | Not started                                               | None — soft dependency on N landing                                      |
-| T   | Time-aware flow/failure storytelling        | Not started                                               | Packet E2 specifically (shared-file hotspot on `src/connect/compile.ts`) |
+| E   | EdgeConnect live-import hardening + UI      | E2 done 2026-11-14 (tests); E1, E3–E7 not started         | None — soft dependency on N landing                                      |
+| T   | Time-aware flow/failure storytelling        | T1–T3 done 2026-11-14 (library); T4 held, T5–T7 not begun | T4 held: MCP tool-list budget; the live-data tools are off in production |
 
 Status verified 2026-11-13 at `e99b012`: none of B's, E's or T's planned
 modules or tools exist (`src/briefs/`, `src/stories/`, `create_from_brief`,
@@ -143,6 +143,14 @@ compiler with an MCP tool and a GUI wizard (`src/connect/generate.ts`,
 before starting B1. Work since August has been driven by proposals
 0005–0011 and `futures/hw-catalog.md` rather than this table; proposal 0009
 (status: Proposed) would re-cut _Now/Next_ if accepted.
+
+Since that check (2026-11-14): packet E2 is done as tests, and
+`src/stories/` now holds T1–T3 — the scenario contract, the story compiler
+and the failure-moment annotations — as a library with no caller yet.
+`compile_flow_story` (T4) is deliberately not built: the MCP tool list has a
+hard size budget and the live-data tools are off in production. Before
+starting T4, note that a story needs no provider (its scenario carries the
+base fabric), so the gate the packet assumed does not follow.
 
 Before starting a July implementation packet, revalidate its premise against
 `ROADMAP.md`, `CAPABILITY_MATRIX.md`, and current code. O1/O2 remain explicitly
@@ -161,8 +169,10 @@ production incident or a launch-blocking finding in this repo's history:
   inheritance, ever.** This is a locked architecture decision
   (`docs/decisions/0001-flipbook-vs-beats.md`, `DESIGN.md` #1). If a feature
   seems to need one page to reference/inherit from another, that's a design
-  smell — see how the time-aware-storytelling initiative (T) works around
-  this by fully compiling each page independently.
+  smell — see how the scenario-story compiler (`src/stories/compile.ts`,
+  initiative T) keeps to it: its _input_ is a base plus changes, but every
+  page is compiled from scratch from its own fabric state, and pages have
+  only element ids and node positions in common.
 - **Agents never write silently.** Every agent mutation to a shared
   workspace is either a reviewable proposal or a time-bounded,
   browser-granted, page-scoped lease commit — no "just write it" path exists
@@ -172,9 +182,17 @@ production incident or a launch-blocking finding in this repo's history:
 - **Never treat a transient provider-fetch failure as deletion evidence.**
   The flow compiler's `upsertBySource` model updates/creates from what a
   provider _returns_; an empty or failed fetch must never cascade-delete
-  previously-compiled elements. This is enforced by a specific test
-  (`IMPLEMENTATION_PLAN.md` packet E2) precisely because it's an easy mistake
-  to make when "simplifying" sync logic.
+  previously-compiled elements. This is enforced by tests (packet E2),
+  precisely because it's an easy mistake to make when "simplifying" sync
+  logic: `src/connect/compile.test.ts` ("no delete on an empty, partial or
+  failed fetch") converges every combination of empty collections, and every
+  mid-read failure, onto a compiled document and finds every element still
+  there; the `build_flow_topology` case in `src/mcp/tools.test.ts` proves a
+  later fetch cannot reach an earlier build. The same suite pins what
+  re-reading into a compiled document still gets wrong (not deletions:
+  positions re-seeded, a restored tunnel left dimmed, a flow path or site
+  zone shrunk by a partial read) — read it before building an in-place
+  importer.
 - **No raw prompt/conversation logging, anywhere.** The authoring-profile
   learner and the planned agent-explainability work both operate on
   structured, deterministic feature extraction from document _operations_ —
@@ -258,6 +276,7 @@ reviewed Darwin baselines are deliberately added. See `launch-readiness/QA_TEST_
 | MCP tools (both transports)      | `src/mcp/tools.ts` (source of truth), `src/mcp/{export-tools,hardware-tools}.ts`, `src/mcp/register.ts`, `src/mcp/server.ts` (stdio), `worker/mcp.ts` (remote)                  |
 | Connector/flow-compiler platform | `src/connect/{types,mock,edgeconnect,compile}.ts`                                                                                                                               |
 | SD-WAN generator + wizard        | `src/connect/generate.ts`, `src/ui/sdwan-wizard.ts`, `src/render/backdrops.ts` (proposal 0010)                                                                                  |
+| Scenario stories (library only)  | `src/stories/{types,compile,frame,annotate}.ts` (initiative T, packets T1–T3)                                                                                                   |
 | Export / import formats          | `src/export/` (scene, PNG, PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedule), `src/import/`, `worker/raster.ts`; contract in `docs/EXPORTS.md`                          |
 | Hardware catalog + wire sheets   | `catalog/` (data, schema, Python reference tools), `src/catalog/`, `src/api/hardware.ts`, `src/render/wiresheet.ts`, `worker/catalog.ts`, `scripts/catalog-*.ts`                |
 | API keys (proposal 0005)         | `worker/api-keys.ts`, `worker/api-keys-page.ts`, `src/server/api-key.ts`                                                                                                        |

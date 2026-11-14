@@ -212,6 +212,13 @@ describe('view_topology', () => {
       formats: ['drawio', 'vsdx', 'pptx', 'mermaid', 'cable-schedule'],
     });
     expect(String(r.meta!['topology-dojo/svg'])).toMatch(/^<svg/);
+    // The view gets the clean build: static, without the unused definitions.
+    const svg = String(r.meta!['topology-dojo/svg']);
+    expect(svg).not.toMatch(/<animate/);
+    expect(svg).not.toContain('id="tds-glow-strong"');
+    expect(svg.length).toBeLessThan(
+      renderDocumentToSVG(store.get(id), 0).length / 2,
+    );
   });
 });
 

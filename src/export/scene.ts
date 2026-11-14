@@ -82,6 +82,13 @@ export interface SceneNode {
   stroke: string;
   /** Pale fill derived from the accent (#rrggbb). */
   fill: string;
+  /**
+   * The colour the element was given (#rrggbb), absent when it has none and
+   * `stroke` is only the export's neutral default. A format that can carry it
+   * separately (draw.io) uses it so a round trip does not turn "no colour"
+   * into "grey".
+   */
+  authoredColor?: string;
   /** Layer id ('' = base). */
   layer: string;
   /** Innermost zone that lists this node, if any. */
@@ -106,6 +113,8 @@ export interface SceneZone {
   h: number;
   stroke: string;
   fill: string;
+  /** See `SceneNode.authoredColor`. */
+  authoredColor?: string;
   dash: SceneDash;
   labelPosition: 'top' | 'bottom';
   layer: string;
@@ -144,6 +153,8 @@ export interface SceneLink {
   layer: string;
   /** Declared link-style id (wire class), when used. */
   style?: string;
+  /** See `SceneNode.authoredColor`. */
+  authoredColor?: string;
 }
 
 export interface ScenePage {
@@ -369,6 +380,7 @@ function sceneNode(
     layer: str(n.layer),
   };
   if (zone) out.zone = zone;
+  if (hexColor(n.color, '')) out.authoredColor = stroke;
   if (n.type === 'image') {
     const src = str(n.imageHref).trim();
     if (
@@ -464,6 +476,7 @@ function scenePage(
       layer: layerOf(z.layer),
     };
     if (z.parentZone && zoneIds.has(z.parentZone)) sz.parent = z.parentZone;
+    if (hexColor(z.color, '')) sz.authoredColor = stroke;
     sceneZones.push(sz);
   }
   // Parents before children, so formats that nest containers can emit in order.
@@ -537,6 +550,7 @@ function scenePage(
       layer: layerOf(l.layer),
     };
     if (def) sl.style = def.id;
+    if (hexColor(l.color, '')) sl.authoredColor = sl.color;
     links.push(sl);
   }
 
