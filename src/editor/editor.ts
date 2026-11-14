@@ -2463,6 +2463,13 @@ export class Editor {
       id: m.id,
       snap: { flowPathId: m.flowPathId } as Record<string, unknown>,
     }));
+    // Callouts that point at something: the cascade clears the pointer of
+    // one whose target is deleted.
+    const pointing = new Set(
+      this.page.nodes
+        .filter((n) => n.type === 'callout' && n.target !== undefined)
+        .map((n) => n.id),
+    );
     // Deleting a zone removes the region annotation only — its member nodes
     // (and their links) stay on the canvas.
     if (doomed.zone !== null)
@@ -2549,6 +2556,9 @@ export class Editor {
         );
       if (fp) this.emitPatch('policyMarkers', m.id, fp);
     }
+    for (const n of this.page.nodes)
+      if (pointing.has(n.id) && n.target === undefined)
+        this.emitPatch('nodes', n.id, { unset: ['target'] });
     this.renderArt();
     this.onChange();
     // What was deleted leaves the selection; locked survivors stay in it.

@@ -305,6 +305,22 @@ const cases: GestureCase[] = [
     undoable: true,
   },
   {
+    name: 'delete the node a callout points at (pointer cleared)',
+    setup: (e, page) => {
+      page.nodes.push({
+        id: 'note',
+        type: 'callout',
+        x: 400,
+        y: 300,
+        label: 'Note',
+        target: 'c',
+      });
+      (e as unknown as { sel: Set<string> }).sel = new Set(['c']);
+    },
+    run: (e) => e.deleteSelected(),
+    undoable: true,
+  },
+  {
     name: 'inspector commit on a node (updateNode)',
     setup: (e) => e.focusNode('a'),
     run: (e) => e.updateNode({ label: 'Renamed', color: '#ff0000' }),
