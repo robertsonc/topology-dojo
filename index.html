@@ -1040,7 +1040,11 @@
         position: relative;
         flex: 1 1 auto;
         min-width: 0;
+        /* `clip`, not just `hidden`: a hidden box can still be scrolled by
+           focus moving to something outside it, which would slide the canvas
+           and its floating panels away with no way to scroll back. */
         overflow: hidden;
+        overflow: clip;
       }
       /* Full-height left rail: header + search at the top, scrollable node list
          filling the middle, minimap docked at the bottom. */
@@ -2075,6 +2079,17 @@
         height: 100%;
         width: 100%;
       }
+      /* The vendored theme styles .tds-root as a whole page: at least one
+         viewport tall, with page gutters. Here it is only the canvas's box
+         inside the stage, so both are reset — otherwise the canvas is taller
+         than the stage and its bottom edge (and anything docked there) is
+         drawn below the window. */
+      .stage .tds-root {
+        min-height: 0;
+        padding: 0;
+        overflow: hidden;
+        overflow: clip;
+      }
       /* The legacy .tds-canvas-row is a flexbox (it expected a sidebar); make it
          a plain block so the canvas fills the stage instead of collapsing. */
       .stage .tds-canvas-row {
@@ -2099,36 +2114,51 @@
         touch-action: none;
       }
 
-      /* Frames strip — a floating overlay anchored at the canvas's bottom-left
-         (same model as the palette rail), not a docked row: toggling it never
-         resizes or reflows the canvas. Structure:
+      /* The canvas's bottom band — a floating overlay anchored at the canvas's
+         bottom edge (same model as the palette rail), not a docked row:
+         toggling the strip never resizes or reflows the canvas. Structure:
+           .canvas-dock > [.frames-dock][.canvas-ctrls]
            .frames-dock > [.frames-toggle pill][.frames-reveal > .filmstrip]
-         It sits just right of the nodes rail (12 + 162 + 12) so neither the
-         pill nor the strip ever overlaps the palette; when the palette
-         collapses (its bottom edge freed) the dock slides home to the shared
-         12px edge margin. `right: 12px` caps the strip at the canvas width
-         minus margins; extra frames scroll horizontally inside the strip. */
-      .frames-dock {
+         It sits just right of the nodes rail (12 + 162 + 12) so nothing in it
+         ever overlaps the palette; when the palette collapses (its bottom edge
+         freed) the dock slides home to the shared 12px edge margin.
+         `right: 12px` caps the band at the canvas width minus margins; extra
+         frames scroll horizontally inside the strip.
+         The strip and the view controls share one row while both fit. When
+         they do not (a narrow canvas, many frames), the controls wrap onto a
+         row of their own above the strip — `wrap-reverse` stacks rows upward
+         from the bottom edge — so neither ever covers the other. */
+      .canvas-dock {
         position: absolute;
         left: 186px;
         right: 12px;
         bottom: 12px;
         z-index: 6; /* palette tier — floating panels over the canvas */
         display: flex;
+        flex-wrap: wrap-reverse;
         align-items: center;
         gap: 8px;
-        /* The dock spans the canvas width; only its children take events, so
+        /* The dock spans the canvas width; only its controls take events, so
            canvas clicks/wheel in the empty span behave as bare canvas. */
         pointer-events: none;
       }
-      .frames-dock > * {
+      .frames-dock {
+        flex: 0 1 auto;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        pointer-events: none;
+      }
+      .frames-dock > *,
+      .canvas-ctrls {
         pointer-events: auto;
       }
       /* Note: the palette rail renders 162px wide at every viewport size (the
          max-width:700px shrink rule above predates the rail's base rule in
          source order, so the base width wins), so a single 186px offset keeps
          the dock clear of it at any window size. */
-      .palette.collapsed ~ .frames-dock {
+      .palette.collapsed ~ .canvas-dock {
         left: 12px;
       }
       .frames-toggle {
@@ -2162,6 +2192,7 @@
       .frames-reveal {
         flex: 0 1 auto;
         min-width: 0;
+        max-width: 100%;
         overflow: hidden;
       }
       .filmstrip {
@@ -2185,10 +2216,15 @@
         transform: translateX(calc(-100% - 24px));
       }
       /* Hidden (and hit-transparent) once the slide finishes; visibility flips
-         back instantly on expand so the slide-in is visible. */
+         back instantly on expand so the slide-in is visible. The hidden strip
+         also gives up its width then, so the view controls can share the
+         pill's row instead of staying wrapped above a strip nobody can see. */
       .frames-dock.collapsed .frames-reveal {
         visibility: hidden;
-        transition: visibility 0s 0.18s;
+        max-width: 0;
+        transition:
+          visibility 0s 0.18s,
+          max-width 0s 0.18s;
       }
       @media (prefers-reduced-motion: reduce) {
         .filmstrip,
@@ -2894,12 +2930,12 @@
         color: var(--muted);
       }
 
-      /* On-canvas zoom / pan controls (bottom-left of the canvas). */
+      /* On-canvas zoom / pan controls: the right-hand end of the canvas's
+         bottom band (.canvas-dock, above), so they stay clear of the node
+         library on the left and of the frames strip. */
       .canvas-ctrls {
-        position: absolute;
-        left: 12px;
-        bottom: 12px;
-        z-index: 9;
+        flex: none;
+        margin-left: auto;
         display: flex;
         align-items: center;
         gap: 4px;

@@ -265,20 +265,25 @@ app.innerHTML = `
           <div class="tds-canvas canvas-host">
             <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
             <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
-            <div class="canvas-ctrls" id="canvasCtrls">
-              <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">✋</button>
-              <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
-              <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)" aria-label="Zoom level — fit view">100%</button>
-              <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
-              <button class="cc-btn" id="ccFit" title="Fit to content (0)" aria-label="Fit to content">⤢</button>
-            </div>
           </div>
         </div>
       </div>
-      <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
-        <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="Hide frames (F)">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">◂</span></button>
-        <div class="frames-reveal">
-          <div class="filmstrip scroll-slim" id="filmstrip"></div>
+      <!-- The canvas's bottom band, floating over it to the right of the node
+           library: the frames strip, then the view controls. They share one
+           row while both fit; otherwise the controls sit above the strip. -->
+      <div class="canvas-dock" id="canvas-dock">
+        <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
+          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="Hide frames (F)">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">◂</span></button>
+          <div class="frames-reveal">
+            <div class="filmstrip scroll-slim" id="filmstrip"></div>
+          </div>
+        </div>
+        <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Canvas view">
+          <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">✋</button>
+          <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+          <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)" aria-label="Zoom level — fit view">100%</button>
+          <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+          <button class="cc-btn" id="ccFit" title="Fit to content (0)" aria-label="Fit to content">⤢</button>
         </div>
       </div>
     </div>
@@ -835,13 +840,14 @@ editor.setViewInsets(() => {
     const r = insp.getBoundingClientRect();
     if (r.width > 0) right = Math.max(right, canvas.right - r.left + 12);
   }
-  // The expanded frames strip floats over the canvas bottom; reserve that band
-  // so a fit never tucks content behind it. Collapsed (a small pill) it costs
-  // nothing. The minimap docks in the left rail and reserves nothing.
+  // The bottom band (frames strip + view controls) floats over the canvas;
+  // reserve it so a fit never tucks content behind it. The view controls are
+  // always there, so the band is reserved with the strip collapsed too. The
+  // minimap docks in the left rail and reserves nothing.
   let bottom = 0;
-  const frames = document.getElementById('frames-dock');
-  if (frames && !frames.classList.contains('collapsed')) {
-    const r = frames.getBoundingClientRect();
+  const dock = document.getElementById('canvas-dock');
+  if (dock) {
+    const r = dock.getBoundingClientRect();
     if (r.height > 0) bottom = Math.max(0, canvas.bottom - r.top + 12);
   }
   // Never surrender more than ~60% of the canvas to a panel.
