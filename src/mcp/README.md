@@ -180,6 +180,38 @@ compact **index** (type names/categories only); request editable fields with
 full fields for just the types the task needs (pass a `topologyId` to include
 that document's custom node types).
 
+The field replies define each field **once**: `nodeFields.defs` /
+`linkFields.defs` map a field key to its definition, `common` names the keys
+every listed type has, and each type's `fields` lists only its extra keys (an
+entry given as an object is that type's own definition of the key). So a
+type's editable fields are `common` plus its own `fields`.
+
+### Operations that are not tools
+
+Every agent pays for the whole tool list at the start of a session, so the
+document setters most diagrams never use are **operations only**:
+`set_legend`, `set_palette`, `set_sheet`, `define_link_style`, `define_tier`,
+`define_bundle`, `set_port_table`, `define_node_type` and `set_node_metadata`.
+They are not in the tool list. Run them through `edit_topology`:
+
+```jsonc
+// 1. Once per operation you need: its description and argument schema.
+describe_operations({ "operations": ["set_sheet", "define_tier"] })
+// 2. Then use them like any other batch operation.
+edit_topology({
+  "topologyId": "t…",
+  "operations": [
+    { "op": "set_sheet", "size": "a3" },
+    { "op": "define_tier", "tierId": "core", "name": "Core" }
+  ]
+})
+```
+
+`describe_operations` with no arguments lists every operation with a one-line
+summary. Calling one of these names directly as a tool still works (existing
+scripts keep running, and validation hints such as "declare it with
+`define_tier`" can be followed literally); they are only left out of the list.
+
 ### Link anchor box (experimental)
 
 Links attach to the edge of the node icon by default, so a south-attached
@@ -251,7 +283,10 @@ to the task's affected region and change summaries, not total document size.
 
 ## Tools
 
-The servers define 72 tools; a session sees the subset its runtime enables.
+The servers define 73 tools; a session sees the subset its runtime enables.
+Nine of them are **operations only** _(op)_: they are not in the tool list and
+run as `edit_topology` operations, with their arguments served on demand by
+`describe_operations` (see [Operations](#operations-that-are-not-tools)).
 The _(live-data)_ tools need a provider; the share, workspace
 (`WORKSPACE_ENABLED`) and authoring-preference (`PROFILES_ENABLED`) tools
 exist only on the hosted server; and an API key registers only the groups in
@@ -270,18 +305,19 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                                                 |
 | `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                                                              |
 | `edit_topology`                                        | **Batch**: many authoring operations in one call (atomic, ordered) — preferred for building diagrams; reports `created` for upsert ops        |
+| `describe_operations`                                  | Arguments for `edit_topology` operations: an index of all of them, or the full description + schema of the ones named                         |
 | `update_element` / `remove_element`                    | Patch any element in place; remove (with dependent cleanup)                                                                                   |
 | `upsert_by_source`                                     | Converge an element onto external data by source identity                                                                                     |
 | `define_layer`                                         | Declare a document layer (underlay / overlay / policy / service); `opacity` dims the plane                                                    |
-| `define_bundle`                                        | Declare a LAG / ECMP / ICL bundle name’s kind; links name bundles per end (`fromBundle` / `toBundle`), pills get outlines                     |
-| `define_tier`                                          | Declare a wiring-sheet tier (role row, top → bottom); nodes opt in with `tier`, `layout_topology` "tiered" rows them                          |
-| `define_link_style`                                    | Declare a wire class (colour / width / dash) links name via `style`; `preset: "ethernet-media"` loads the 11 Ethernet media classes           |
-| `define_node_type`                                     | Add a custom node type (merged over defaults)                                                                                                 |
-| `set_port_table`                                       | Draw a derived port table (Port / LAG / PHY / Peer\|Port) in the page margin beside nodes, built from their links                             |
-| `set_node_metadata`                                    | Attach k/v metadata to a node (serial, version, hostname, site…)                                                                              |
-| `set_legend`                                           | Toggle + position the auto-generated symbol legend / key; `columns` / `title` lay it out as a drawing-sheet Key strip                         |
-| `set_palette`                                          | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                                                        |
-| `set_sheet`                                            | Drawing-sheet frame: paper size (sets page viewBoxes), border, top title, bottom-right title block (`clear` removes)                          |
+| `define_bundle` _(op)_                                 | Declare a LAG / ECMP / ICL bundle name’s kind; links name bundles per end (`fromBundle` / `toBundle`), pills get outlines                     |
+| `define_tier` _(op)_                                   | Declare a wiring-sheet tier (role row, top → bottom); nodes opt in with `tier`, `layout_topology` "tiered" rows them                          |
+| `define_link_style` _(op)_                             | Declare a wire class (colour / width / dash) links name via `style`; `preset: "ethernet-media"` loads the 11 Ethernet media classes           |
+| `define_node_type` _(op)_                              | Add a custom node type (merged over defaults)                                                                                                 |
+| `set_port_table` _(op)_                                | Draw a derived port table (Port / LAG / PHY / Peer\|Port) in the page margin beside nodes, built from their links                             |
+| `set_node_metadata` _(op)_                             | Attach k/v metadata to a node (serial, version, hostname, site…)                                                                              |
+| `set_legend` _(op)_                                    | Toggle + position the auto-generated symbol legend / key; `columns` / `title` lay it out as a drawing-sheet Key strip                         |
+| `set_palette` _(op)_                                   | Brand palette — recolour canvas accents + chrome (hex; `clear` resets)                                                                        |
+| `set_sheet` _(op)_                                     | Drawing-sheet frame: paper size (sets page viewBoxes), border, top title, bottom-right title block (`clear` removes)                          |
 | `layout_guidelines`                                    | Ground-truth layout rules + prose (read before placing nodes)                                                                                 |
 | `validate_topology`                                    | Semantic **and layout** checks (overlaps, crowding, off-page); hardware-catalog cabling rules on bound nodes                                  |
 | `tidy_topology`                                        | Auto-arrange: grid-snap + de-overlap + keep in bounds                                                                                         |

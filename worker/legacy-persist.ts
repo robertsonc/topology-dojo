@@ -19,6 +19,7 @@
  */
 export const NO_LEGACY_PERSIST_TOOLS: ReadonlySet<string> = new Set<string>([
   'describe_capabilities',
+  'describe_operations',
   'list_topologies',
   'list_templates',
   'get_topology',

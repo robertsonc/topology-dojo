@@ -34,10 +34,13 @@ are off in production: `API_KEYS_ENABLED` (on in staging) and
 - Connect an AI agent through the same catalog-driven API the GUI uses. Local
   stdio is process-local and has no hosted account, OAuth, or Durable Object;
   remote `/mcp` uses OAuth 2.1 with GitHub and owner-isolated Durable Object
-  storage. There are 72 possible tool registrations at `e99b012` (43 with
-  no optional dependency; the rest are the hardware-catalog, share,
-  workspace, authoring-guidance and live-fabric groups); actual discovery
-  varies by runtime, flags, API-key scopes, and provider.
+  storage. There are 64 possible tool registrations (35 with no optional
+  dependency; the rest are the hardware-catalog, share, workspace,
+  authoring-guidance and live-fabric groups), plus nine document setters
+  that are `edit_topology` operations only, kept out of the tool list to
+  hold down what every agent session loads (`src/mcp/token-budget.test.ts`
+  ratchets the size); actual discovery varies by runtime, flags, API-key
+  scopes, and provider.
 - **Collaborate with that agent in a shared workspace**: the agent proposes
   changes as one attributed revision (review/accept/reject, including a
   selective/partial accept), or — with a browser-granted, revocable

@@ -50,6 +50,7 @@ describe('MCP tools', () => {
         'define_tier',
         'delete_topology',
         'describe_capabilities',
+        'describe_operations',
         'edit_topology',
         'export_flipbook',
         'export_topology',

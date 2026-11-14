@@ -1469,13 +1469,21 @@ Workspace limits include:
 
 ### Tool groups
 
+Nine document setters are **operations only**: `set_legend`, `set_palette`,
+`set_sheet`, `define_link_style`, `define_tier`, `define_bundle`,
+`set_port_table`, `define_node_type`, and `set_node_metadata`. They are not in
+the tool list an agent loads; the agent runs them as `edit_topology`
+operations and reads their arguments from `describe_operations` when it needs
+one. This keeps the always-loaded tool list small. Where this guide says
+"MCP: `set_sheet`" (and similar), that is the operation name.
+
 | Task                         | Principal tools                                                                                                                                                                                                                                                                                      |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Discover                     | **describe_capabilities**, **layout_guidelines**, **list_templates**                                                                                                                                                                                                                                 |
 | Create/manage private drafts | **create_topology**, **list_topologies**, **get_topology**, **delete_topology**, **create_from_template**, **generate_sdwan_topology**, **import_topology**                                                                                                                                          |
-| Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**, **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                                        |
+| Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**; operations **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                             |
 | Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                                            |
-| Edit content                 | **edit_topology**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**, **define_link_style**, **define_tier**, **define_bundle**, **set_port_table**                                                                                               |
+| Edit content                 | **edit_topology**, **describe_operations**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**, **define_link_style**, **define_tier**, **define_bundle**, **set_port_table**                                                                      |
 | Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **auto_place_labels**, **inspect_render**                                                                                                                                                                       |
 | Output                       | **render_svg**, **export_flipbook**, **export_topology**, **view_topology**, hosted **share_topology** / **list_shares** / **unpublish_topology**                                                                                                                                                    |
 | Hardware catalog             | **list_hardware**, **describe_hardware**, **bind_hardware**, **assign_interfaces**, **catalog_diff**                                                                                                                                                                                                 |
