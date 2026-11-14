@@ -16,6 +16,7 @@ import { customHitBox, renderCustomNode } from '../nodes/render.js';
 import { STOCK_NODE_SPECS } from '../nodes/stock.js';
 import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
+import { viewBoxAttr } from '../api/layout.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
 import { withInterfaceLabels } from '../api/hardware.js';
@@ -244,7 +245,7 @@ function renderPageUnthemed(
   const flat = flattenViewer(topo._renderSVG(), opts.emphasis ?? []);
   const art = opts.theme === 'light' ? flat : stripRoleTags(flat);
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(page.viewBox)}" width="${vw}" height="${vh}">` +
     `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${themeBackground(opts.theme)}"/>` +
     art +
     `</svg>`
@@ -279,8 +280,10 @@ export function renderDocumentWithEngine(
   if (ws)
     for (const [type, box] of ws.types) {
       E.registerNodeType(type, {
-        render: (x: number, y: number, cfg: { __wsArt?: string }) =>
-          `<g transform="translate(${x} ${y})">${cfg.__wsArt ?? ''}</g>`,
+        // The panel art comes from the layout by node id, never from the
+        // node config (see WiresheetLayout.art).
+        render: (x: number, y: number, cfg: { id?: string }) =>
+          `<g transform="translate(${x} ${y})">${ws.art.get(cfg.id ?? '') ?? ''}</g>`,
         hitBox: box,
       });
     }

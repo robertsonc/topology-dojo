@@ -195,7 +195,7 @@ export function legendBodySVG(
     const cy = L.top + row * ROW_H + ROW_H / 2;
     const sx = PAD + col * (L.colW + PAD);
     if (it.shape === 'bar')
-      s += `<rect x="${sx}" y="${cy - 4}" width="${SWATCH}" height="8" rx="2" fill="${it.color}"/>`;
+      s += `<rect x="${sx}" y="${cy - 4}" width="${SWATCH}" height="8" rx="2" fill="${escXml(it.color)}"/>`;
     else if (it.shape === 'line') {
       const dash =
         it.dash === 'dashed'
@@ -203,11 +203,11 @@ export function legendBodySVG(
           : it.dash === 'dotted'
             ? ' stroke-dasharray="2 3"'
             : '';
-      s += `<line x1="${sx}" y1="${cy}" x2="${sx + LINE_SWATCH}" y2="${cy}" stroke="${it.color}" stroke-width="${it.width ?? 1.6}"${dash}/>`;
+      s += `<line x1="${sx}" y1="${cy}" x2="${sx + LINE_SWATCH}" y2="${cy}" stroke="${escXml(it.color)}" stroke-width="${Number.isFinite(it.width) ? it.width : 1.6}"${dash}/>`;
     } else if (it.shape === 'bundle')
-      s += `<rect x="${sx + 6}" y="${cy - 6}" width="12" height="12" rx="6" fill="none" stroke="${it.color}" stroke-width="1"${it.dash === 'dashed' ? ' stroke-dasharray="3 2"' : ''}/>`;
+      s += `<rect x="${sx + 6}" y="${cy - 6}" width="12" height="12" rx="6" fill="none" stroke="${escXml(it.color)}" stroke-width="1"${it.dash === 'dashed' ? ' stroke-dasharray="3 2"' : ''}/>`;
     else
-      s += `<circle cx="${sx + SWATCH / 2}" cy="${cy}" r="5" fill="${it.color}"/>`;
+      s += `<circle cx="${sx + SWATCH / 2}" cy="${cy}" r="5" fill="${escXml(it.color)}"/>`;
     s +=
       `<text x="${sx + L.swatch + 6}" y="${cy + 3.5}" font-size="11" ` +
       `font-family="ui-monospace,monospace" fill="#e6e8e9">${escXml(it.label)}</text>`;

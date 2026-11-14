@@ -493,3 +493,17 @@ describe('default node labels', () => {
     ]);
   });
 });
+
+describe('ids are data, not markup, in the overlay', () => {
+  it('escapes an anchor id in its handle', () => {
+    const p = basePage('p1');
+    p.anchors.push({ id: 'k"><pwn>', x: 10, y: 20 });
+    const overlay = fakeSvg();
+    const editor = new Editor(fakeSvg(), overlay, p);
+    editor.setPage(p);
+    expect(overlay.innerHTML).toContain(
+      'data-anchor-id="k&quot;&gt;&lt;pwn&gt;"',
+    );
+    expect(overlay.innerHTML).not.toContain('<pwn>');
+  });
+});

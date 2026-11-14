@@ -8,6 +8,7 @@
  */
 import { renderPageSVG, type RenderOptions } from '../vendor/topology-ds.js';
 import type { Page } from '../pages/model.js';
+import { viewBoxAttr } from '../api/layout.js';
 import {
   applyRenderTheme,
   resolveTheme,
@@ -43,7 +44,7 @@ export function pageToSVG(
   const { vx, vy, vw, vh } = viewBoxParts(page.viewBox);
   const theme = resolveTheme(opts);
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${page.viewBox}" width="${vw}" height="${vh}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(page.viewBox)}" width="${vw}" height="${vh}">` +
     `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${themeBackground(theme)}"/>` +
     renderPageSVG(page, opts) +
     applyRenderTheme(extra, theme) +

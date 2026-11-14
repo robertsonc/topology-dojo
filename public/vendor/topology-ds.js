@@ -13,6 +13,74 @@ function _esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/* ── Untrusted element configs ───────────────────────────────────────
+   A node/link/zone/flow/marker config can come from a document the user did
+   not write: an opened file, an import, a share link. The draw code builds
+   markup by interpolation, and only free text is escaped where it is drawn —
+   colours, sizes, enums, paths and URLs are written straight into attributes.
+   So every config is made safe ONCE, on the way in (node(), link(), zone(),
+   flowPath(), policyMarker(), anchor()): any string that is not free text and
+   not an id has its `"`, `<` and `>` turned into entities. In an attribute or
+   in text the browser decodes them back, so a legitimate value is unchanged,
+   and a hostile one can no longer close the attribute or open a tag.
+
+   _TEXT_KEYS: free text that EVERY sink passes through _esc() — left alone
+   here so it is not escaped twice. A new text property must either be added
+   here and escaped where drawn, or left out (and it is escaped here instead).
+   _REF_KEYS: ids and id lists, compared and looked up as-is, so they must
+   stay verbatim; they are escaped at the few places an id is written out. */
+const _TEXT_KEYS = new Set([
+  'label', 'sublabel', 'sub1', 'sub2', 'user', 'host', 'role', 'reason',
+  'tooltip', 'href', 'body', 'text', 'description', 'bandwidth', 'subnet',
+  'vlan', 'transport', 'fromLabel', 'toLabel', 'icon', 'title', 'name',
+  'imageHref',
+]);
+const _REF_KEYS = new Set([
+  'id', 'from', 'to', 'nodes', 'waypoints', 'nodeId', 'linkId', 'parent',
+]);
+/** A finite number, or undefined (so the caller's default applies) — for
+ * config values that go into arithmetic and would otherwise throw or NaN. */
+function _num(v) {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+/** A viewBox is numbers and separators and nothing else; it is written into
+ * markup as is, so anything else falls back to the default frame. */
+function _safeViewBox(vb) {
+  return typeof vb === 'string' && /^[\d\s.,eE+-]+$/.test(vb) ? vb : '0 0 1050 700';
+}
+/** An id as the contents of a double-quoted CSS attribute-selector string. */
+function _cssStr(id) {
+  return String(id).replace(/["\\]/g, '\\$&');
+}
+const _UNSAFE_CFG_RE = /["<>]/;
+function _safeCfg(v, verbatim) {
+  if (typeof v === 'string') {
+    return verbatim || !_UNSAFE_CFG_RE.test(v)
+      ? v
+      : v.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  if (Array.isArray(v)) {
+    let out = null;
+    for (let i = 0; i < v.length; i++) {
+      const safe = _safeCfg(v[i], verbatim);
+      if (safe !== v[i]) { out = out || v.slice(); out[i] = safe; }
+    }
+    return out || v;
+  }
+  if (v && typeof v === 'object') {
+    // Copy on write: a config with nothing to fix is returned as it came (no
+    // allocation), and the caller's object is never changed.
+    let out = null;
+    for (const k of Object.keys(v)) {
+      if (_TEXT_KEYS.has(k)) continue;
+      const safe = _safeCfg(v[k], _REF_KEYS.has(k));
+      if (safe !== v[k]) { out = out || { ...v }; out[k] = safe; }
+    }
+    return out || v;
+  }
+  return v;
+}
+
 /* ── Wire-label pills ────────────────────────────────────────────────
    Metrics + placement rules for link centre labels, flow-path labels and
    policy-marker labels. MIRROR OF src/render/wire-labels.ts — the inspector
@@ -258,7 +326,7 @@ class TopologyDesigner {
   constructor(cfg = {}) {
     this.title    = cfg.title    || 'Network Topology';
     this.subtitle = cfg.subtitle || '';
-    this.viewBox  = cfg.viewBox  || '0 0 1050 700';
+    this.viewBox  = _safeViewBox(cfg.viewBox);
     this.phaseMs      = cfg.phaseMs      || 600;
     this.drawDuration = cfg.drawDuration || 0.7;   // stroke draw-in (seconds)
     this.fadeDuration = cfg.fadeDuration || 0.55;   // phase-in fade  (seconds)
@@ -452,6 +520,7 @@ class TopologyDesigner {
    *   variant: (ec only) 'generic'|'virtual'|'physical'|'aws'|'azure'|'gcp'|'oracle'|'axis'
    */
   node(id, cfg) {
+    cfg = _safeCfg(cfg);
     if (this._graph) {
       this._graph.addNode(id, cfg);
     } else {
@@ -467,6 +536,7 @@ class TopologyDesigner {
    * @param {object} pos - { x, y }
    */
   anchor(id, pos) {
+    pos = _safeCfg(pos);
     if (this._graph) {
       this._graph.addAnchor(id, pos);
     } else {
@@ -488,6 +558,7 @@ class TopologyDesigner {
    *   labelOffset: optional {x,y} — x shifts along the line, y shifts perpendicular
    */
   link(id, cfg) {
+    cfg = _safeCfg(cfg);
     if (this._graph) {
       this._graph.addLink(id, cfg);
     } else {
@@ -680,6 +751,7 @@ class TopologyDesigner {
    *   direction: 'forward'|'reverse'|'bidirectional' (default 'forward')
    */
   flowPath(id, cfg) {
+    cfg = _safeCfg(cfg);
     cfg.id = id;
     this._flowPaths.set(id, cfg);
     return this;
@@ -701,6 +773,7 @@ class TopologyDesigner {
    *   type: 'inspect'|'allow'|'deny'|'redirect'|'encrypt'|'decrypt'|'nat'|'load-balance'|'log'
    */
   policyMarker(id, cfg) {
+    cfg = _safeCfg(cfg);
     cfg.id = id;
     this._policyMarkers.set(id, cfg);
     return this;
@@ -729,6 +802,7 @@ class TopologyDesigner {
    *   labelAlign: 'left'|'center'|'right' (default 'left')
    */
   zone(id, cfg) {
+    cfg = _safeCfg(cfg);
     cfg.id = id;
     if (!cfg.color) cfg.color = '#7d8a92';
     if (!cfg.borderStyle) cfg.borderStyle = 'dashed';
@@ -1016,7 +1090,8 @@ class TopologyDesigner {
 
     // Patch individual elements in-place
     for (const elemId of dirty) {
-      const inner = svg.querySelector(`[data-tds-node="${elemId}"], [data-tds-link="${elemId}"]`);
+      const sel = _cssStr(elemId);
+      const inner = svg.querySelector(`[data-tds-node="${sel}"], [data-tds-link="${sel}"]`);
 
       // Compute new SVG for this element
       const newSvg = this._renderSingleElement(elemId);
@@ -1076,7 +1151,7 @@ class TopologyDesigner {
       const halo = this._haloForNode(nodeCfg);
 
       // Resolve overlay cloud spans to actual positions BEFORE rendering
-      if (nodeCfg.type === 'overlayCloud' && nodeCfg.spans) {
+      if (nodeCfg.type === 'overlayCloud' && Array.isArray(nodeCfg.spans)) {
         nodeCfg._resolvedSpans = nodeCfg.spans.map(id => this._pos(id));
       }
 
@@ -1118,13 +1193,13 @@ class TopologyDesigner {
 
       nodeSvg = this._focusWrap(elemId, halo, nodeSvg);
       const iso3dAttr = nodeCfg.type && typeof nodeCfg.type === 'string' && nodeCfg.type.startsWith('iso:') ? ' data-tds-iso3d="true"' : '';
-      return this._pw(stepId, phaseNum, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">`, nodeSvg, '</g>'));
+      return this._pw(stepId, phaseNum, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${_esc(elemId)}"${iso3dAttr} style="cursor:pointer">`, nodeSvg, '</g>'));
     }
 
     const linkCfg = this._links.get(elemId);
     if (linkCfg) {
       const linkSvg = this._renderLinkSVG(linkCfg, stepId, phaseNum);
-      return linkSvg ? _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer">`, linkSvg, '</g>') : '';
+      return linkSvg ? _hrefTipWrap(linkCfg, `<g data-tds-link="${_esc(elemId)}" style="cursor:pointer">`, linkSvg, '</g>') : '';
     }
 
     return '';
@@ -3368,7 +3443,7 @@ ${grid}`;
    */
   static renderOverlayCloud(x, y, cfg = {}) {
     const { label = '', color = '#7764fc', sub1 = '', padding = 90 } = cfg;
-    const spanPositions = cfg._resolvedSpans || cfg.spans || [];
+    const spanPositions = cfg._resolvedSpans || (Array.isArray(cfg.spans) ? cfg.spans : []);
     const gf = TopologyDesigner._glowForColorStatic(color);
     let s = '';
     if (spanPositions.length >= 2 && typeof spanPositions[0] === 'object') {
@@ -4340,7 +4415,7 @@ ${grid}`;
     if (sublabelText) {
       s += `<text x="${labelX}" y="${subY}" text-anchor="${anchor}" fill="${c}" font-size="7" opacity="${this._ta('.5')}">${_esc(sublabelText)}</text>`;
     }
-    return _hrefTipWrap(zone, `<g class="tds-zone" data-zone-id="${zone.id}">`, s, '</g>');
+    return _hrefTipWrap(zone, `<g class="tds-zone" data-zone-id="${_esc(zone.id)}">`, s, '</g>');
   }
 
   /** WAN/LAN zone indicator beside EC */
@@ -4611,14 +4686,14 @@ ${grid}`;
       const w = chipW(fromLabel);
       s += this._scaleLabel(`<g opacity="${op}">` +
         `<rect x="${bx - w / 2}" y="${by - 8}" width="${w}" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
-        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${fromLabel}</text></g>`, bx, by, scale);
+        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${_esc(fromLabel)}</text></g>`, bx, by, scale);
     }
     if (toLabel) {
       const bx = x2 - dx + px + (to.x || 0), by = y2 - dy + py + (to.y || 0);
       const w = chipW(toLabel);
       s += this._scaleLabel(`<g opacity="${op}">` +
         `<rect x="${bx - w / 2}" y="${by - 8}" width="${w}" height="14" rx="3" fill="url(#tds-labelGlass)" stroke="rgba(255,255,255,.06)" stroke-width=".4"/>` +
-        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${toLabel}</text></g>`, bx, by, scale);
+        `<text x="${bx}" y="${by + 3}" text-anchor="middle" fill="${color}" font-size="7" font-weight="600" opacity=".9">${_esc(toLabel)}</text></g>`, bx, by, scale);
     }
     return s;
   }
@@ -4988,7 +5063,7 @@ ${grid}`;
     // Per-link label size multiplier (1 = default), threaded into every label
     // renderer below so all of this link's labels scale uniformly.
     const labelScale = this._labelScaleOf(linkCfg);
-    const _flow = { speed: linkCfg.flowSpeed, particles: linkCfg.flowParticles, reverse: linkCfg.reverseFlow };
+    const _flow = { speed: _num(linkCfg.flowSpeed), particles: _num(linkCfg.flowParticles), reverse: linkCfg.reverseFlow };
     let svg = '';
 
     switch (linkCfg.type) {
@@ -5338,7 +5413,7 @@ ${grid}`;
             const halo = this._haloForNode(nodeCfg);
 
             // Resolve overlay cloud spans to actual positions BEFORE rendering
-            if (nodeCfg.type === 'overlayCloud' && nodeCfg.spans) {
+            if (nodeCfg.type === 'overlayCloud' && Array.isArray(nodeCfg.spans)) {
               nodeCfg._resolvedSpans = nodeCfg.spans.map(id => this._pos(id));
             }
 
@@ -5401,9 +5476,9 @@ ${grid}`;
             const iso3dAttr = nodeCfg.type && typeof nodeCfg.type === 'string' && nodeCfg.type.startsWith('iso:') ? ' data-tds-iso3d="true"' : '';
             if (ghostOp !== null) {
               op = ghostOp;
-              svg += this._pw(step.id, p, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer" filter="url(#tds-ghost)">`, nodeSvg, '</g>'));
+              svg += this._pw(step.id, p, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${_esc(elemId)}"${iso3dAttr} style="cursor:pointer" filter="url(#tds-ghost)">`, nodeSvg, '</g>'));
             } else {
-              svg += this._pw(step.id, p, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${elemId}"${iso3dAttr} style="cursor:pointer">`, nodeSvg, '</g>'));
+              svg += this._pw(step.id, p, op, _hrefTipWrap(nodeCfg, `<g data-tds-node="${_esc(elemId)}"${iso3dAttr} style="cursor:pointer">`, nodeSvg, '</g>'));
             }
             continue;
           }
@@ -5423,9 +5498,9 @@ ${grid}`;
                 wrappedLink = `<g filter="${temporal.filter}">${linkSvg}</g>`;
               }
               if (ghostOp !== null) {
-                svg += _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer" filter="url(#tds-ghost)" opacity="${ghostOp}">`, wrappedLink, '</g>');
+                svg += _hrefTipWrap(linkCfg, `<g data-tds-link="${_esc(elemId)}" style="cursor:pointer" filter="url(#tds-ghost)" opacity="${ghostOp}">`, wrappedLink, '</g>');
               } else {
-                svg += _hrefTipWrap(linkCfg, `<g data-tds-link="${elemId}" style="cursor:pointer">`, wrappedLink, '</g>');
+                svg += _hrefTipWrap(linkCfg, `<g data-tds-link="${_esc(elemId)}" style="cursor:pointer">`, wrappedLink, '</g>');
               }
               // Security violation overlay
               svg += this._renderViolationOverlay(elemId);
@@ -5601,7 +5676,7 @@ ${grid}`;
           fpSvg += this._pillSVG('flow', pill, color, '');
         }
 
-        svg += `<g data-tds-flowpath="${fpId}" opacity="${fpOpacity}">${fpSvg}</g>`;
+        svg += `<g data-tds-flowpath="${_esc(fpId)}" opacity="${fpOpacity}">${fpSvg}</g>`;
       }
     }
 
@@ -5649,7 +5724,7 @@ ${grid}`;
           const color = m.color || '#65aef9';
           const icon = m.icon || _mIcons[m.type] || '\u2022';
           let mSvg = `<circle cx="${mx}" cy="${my}" r="10" fill="rgba(0,0,0,.6)" stroke="${color}" stroke-width="1"/>`;
-          mSvg += `<text x="${mx}" y="${my + 4}" text-anchor="middle" fill="${color}" font-size="10" font-weight="700">${icon}</text>`;
+          mSvg += `<text x="${mx}" y="${my + 4}" text-anchor="middle" fill="${color}" font-size="10" font-weight="700">${_esc(icon)}</text>`;
           if (m.label) {
             // Label pill hangs below the badge (up to 2 lines, 8px), slid
             // along the stacking axis if it collides (see _placePill).
@@ -5659,7 +5734,7 @@ ${grid}`;
             const pill = this._placePill('marker', mId, m.label, mx, my + WIRE_LABEL_MARKER_GAP + ph / 2, p.dir, 1, m.labelWidth);
             mSvg += this._pillSVG('marker', pill, color, ' opacity=".9"');
           }
-          svg += `<g data-tds-marker="${mId}" opacity="${layerOp}">${mSvg}</g>`;
+          svg += `<g data-tds-marker="${_esc(mId)}" opacity="${layerOp}">${mSvg}</g>`;
         });
       }
     }
@@ -5668,10 +5743,10 @@ ${grid}`;
     // Only show anchors after step 0 to keep canvas blank for progressive reveal
     if (this.step > 0) {
       for (const [id, pos] of this._anchors) {
-        svg += `<g data-tds-anchor="${id}" style="cursor:grab">` +
+        svg += `<g data-tds-anchor="${_esc(id)}" style="cursor:grab">` +
           `<circle cx="${pos.x}" cy="${pos.y}" r="6" fill="rgba(101,174,249,.15)" stroke="#65aef9" stroke-width=".5" opacity=".4"/>` +
           `<circle cx="${pos.x}" cy="${pos.y}" r="2" fill="#65aef9" opacity=".6"/>` +
-          (this.showNodeIds ? `<text x="${pos.x + 8}" y="${pos.y + 3}" fill="#65aef9" font-size="6" opacity=".5">${id}</text>` : '') +
+          (this.showNodeIds ? `<text x="${pos.x + 8}" y="${pos.y + 3}" fill="#65aef9" font-size="6" opacity=".5">${_esc(id)}</text>` : '') +
           `</g>`;
       }
     }
@@ -6703,7 +6778,7 @@ ${this._glossary.length ? `<div class="tds-modal-backdrop" id="tds-modalBg" role
    */
   _interpolatePositionInline(nodeId, fromX, fromY, toX, toY) {
     requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-tds-node="${nodeId}"]`);
+      const el = document.querySelector(`[data-tds-node="${_cssStr(nodeId)}"]`);
       if (!el) return;
       const dx = toX - fromX, dy = toY - fromY;
       el.style.transition = `transform ${this._interpolationDuration}ms cubic-bezier(.4,0,.2,1)`;
@@ -7436,7 +7511,7 @@ ${this._glossary.length ? `<div class="tds-modal-backdrop" id="tds-modalBg" role
 
     if (data.title) this.title = data.title;
     if (data.subtitle) this.subtitle = data.subtitle;
-    if (data.viewBox) this.viewBox = data.viewBox;
+    if (data.viewBox) this.viewBox = _safeViewBox(data.viewBox);
     if (data.phaseMs) this.phaseMs = data.phaseMs;
     if (data.drawDuration) this.drawDuration = data.drawDuration;
     if (data.fadeDuration) this.fadeDuration = data.fadeDuration;

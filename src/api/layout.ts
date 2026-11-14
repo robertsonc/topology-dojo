@@ -272,6 +272,18 @@ export function rectGap(a: BoundsRect, b: BoundsRect): number {
   return Math.hypot(dx, dy);
 }
 
+/**
+ * A page's viewBox as text that is safe to write into an attribute: the
+ * stored string when it holds nothing but numbers and separators (so normal
+ * output is unchanged, byte for byte), otherwise rebuilt from its parsed
+ * numbers. `parseDoc` already stores the canonical form; this is the guard at
+ * the place the string is written out.
+ */
+export function viewBoxAttr(vb: unknown): string {
+  if (typeof vb === 'string' && /^[\d\s.,eE+-]+$/.test(vb)) return vb;
+  return parseViewBox(typeof vb === 'string' ? vb : '').join(' ');
+}
+
 export function parseViewBox(vb: string): [number, number, number, number] {
   const p = vb.split(/\s+/).map(Number);
   // `?? ` alone doesn't guard NaN (Number('800px') is NaN, which is not

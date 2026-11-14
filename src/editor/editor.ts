@@ -1694,7 +1694,7 @@ export class Editor {
       const c = sel ? ACCENT : MUTED;
       const r = 5;
       out +=
-        `<g data-anchor-id="${a.id}">` +
+        `<g data-anchor-id="${escXmlAttr(a.id)}">` +
         `<path d="M${a.x},${a.y - r} L${a.x + r},${a.y} L${a.x},${a.y + r} L${a.x - r},${a.y} Z" fill="${sel ? ACCENT : 'none'}" fill-opacity="${sel ? 0.25 : 0}" stroke="${c}" stroke-width="1.5"/>` +
         `<circle cx="${a.x}" cy="${a.y}" r="1.5" fill="${c}"/>` +
         `</g>`;

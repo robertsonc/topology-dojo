@@ -132,8 +132,15 @@ export interface WiresheetLayout {
   doc: TopologyDocument;
   /** Overlay drawn over the engine art. */
   overlay: string;
-  /** Panel node types this page uses: type → { art per node, hit box }. */
+  /** Panel node types this page uses: type → hit box. */
   types: Map<string, { rx: number; ry: number }>;
+  /**
+   * The drawn panel of each bound node, by node id. Markup the renderer
+   * writes out as is, so it travels HERE and never on a node config: a config
+   * is document-shaped data, and nothing a document can carry may reach the
+   * page unescaped.
+   */
+  art: Map<string, string>;
 }
 
 /** Lead length past the pill, and pill metrics (match the W4 pills). */
@@ -465,6 +472,7 @@ export function wiresheetLayout(
     usedPorts.set(e.nodeId, s);
   }
   const types = new Map<string, { rx: number; ry: number }>();
+  const panelArt = new Map<string, string>();
   let prefixN = 0;
   const { portLabels: _pills, ...pageRest } = page;
   const enginePage: Page = {
@@ -503,13 +511,13 @@ export function wiresheetLayout(
             `font-family="ui-monospace,monospace" fill="#b1b9be">${m}</text>`;
       }
       art += `</g>`;
+      panelArt.set(n.id, art);
       const { label: _label, sublabel: _sub, ...rest } = n;
       return {
         ...rest,
         type: p.type,
         label: '',
         linkAttach: { pad: 0 },
-        __wsArt: art,
       } as NodeConfig;
     }),
     links: page.links.map((l) => {
@@ -785,5 +793,6 @@ export function wiresheetLayout(
     doc: outDoc,
     overlay: ov,
     types,
+    art: panelArt,
   };
 }
