@@ -114,6 +114,10 @@ import {
   parseNumberField,
 } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
+import { canvasKeyCommand, type CanvasKeyCommand } from './ui/canvas-keys.js';
+import { enablePaletteDrag } from './ui/palette-drag.js';
+import { findInDocument, type FindMatch } from './ui/find.js';
+import type { WheelMode } from './editor/wheel.js';
 import { importConfirmText } from './ui/replace-document.js';
 import { problemsDockView } from './ui/problems-dock.js';
 import {
@@ -2153,71 +2157,48 @@ problemsToggle.addEventListener('click', () =>
 statusReady = true;
 renderProblems();
 
-/* Find / jump-to-element (Ctrl+F) — search nodes by label / id / type and jump. */
+/* Find / jump-to-element (Ctrl+F): nodes, links and zones on every frame
+ * (see src/ui/find.ts for what matches). Choosing a match goes to its frame
+ * and selects it. */
 let findEl: HTMLDivElement | null = null;
-let findMatches: { id: string; label: string; type: string }[] = [];
+let findMatches: FindMatch[] = [];
 let findSel = 0;
 
 function closeFind(): void {
   findEl?.remove();
   findEl = null;
 }
-function jumpFind(id: string): void {
-  editor.focusNode(id);
+function jumpFind(match: FindMatch): void {
   closeFind();
+  if (match.pageIndex !== current) choosePage(match.pageIndex);
+  editor.selectElement(match.kind, match.id, { center: true });
 }
 function renderFindResults(): void {
   const list = findEl?.querySelector<HTMLElement>('.find-results');
   if (!list) return;
   if (findMatches.length === 0) {
-    list.innerHTML = `<div class="find-empty">No matching nodes</div>`;
+    list.innerHTML = `<div class="find-empty">Nothing matches</div>`;
     return;
   }
   list.innerHTML = findMatches
-    .map(
-      (m, i) =>
-        `<div class="find-item ${i === findSel ? 'on' : ''}" data-id="${esc(m.id)}"><span>${esc(m.label)}</span><span class="fi-type">${esc(m.type)}</span></div>`,
-    )
+    .map((m, i) => {
+      // A match on another frame says which.
+      const where =
+        m.pageIndex === current
+          ? ''
+          : ` · ${doc.pages[m.pageIndex]?.name ?? `Frame ${m.pageIndex + 1}`}`;
+      return `<div class="find-item ${i === findSel ? 'on' : ''}" data-i="${i}"><span>${esc(m.label)}</span><span class="fi-type">${esc(m.detail + where)}</span></div>`;
+    })
     .join('');
-  list
-    .querySelectorAll<HTMLElement>('.find-item')
-    .forEach((el) =>
-      el.addEventListener('click', () => jumpFind(el.dataset.id!)),
-    );
+  list.querySelectorAll<HTMLElement>('.find-item').forEach((el) =>
+    el.addEventListener('click', () => {
+      const m = findMatches[Number(el.dataset.i)];
+      if (m) jumpFind(m);
+    }),
+  );
 }
 function runFindQuery(q: string): void {
-  const s = q.trim().toLowerCase();
-  // Match label / id / type / sublabel — and metadata keys AND values, so a
-  // node is findable by the IP, hostname, serial, etc. stored on it. The
-  // shown "type" slot carries the match reason when it came from metadata.
-  const reasonFor = (n: (typeof editor.page.nodes)[number]): string | null => {
-    if (!s) return n.type;
-    if (
-      (n.label ?? '').toLowerCase().includes(s) ||
-      n.id.toLowerCase().includes(s) ||
-      n.type.toLowerCase().includes(s)
-    )
-      return n.type;
-    if (((n.sublabel as string) ?? '').toLowerCase().includes(s))
-      return `${n.type} · ${String(n.sublabel)}`;
-    for (const [k, v] of Object.entries(n.meta ?? {})) {
-      if (k.toLowerCase().includes(s) || String(v).toLowerCase().includes(s))
-        return `${n.type} · ${k}: ${String(v)}`;
-    }
-    return null;
-  };
-  findMatches = editor.page.nodes
-    .map((n) => ({ n, reason: reasonFor(n) }))
-    .filter(
-      (x): x is { n: (typeof editor.page.nodes)[number]; reason: string } =>
-        x.reason !== null,
-    )
-    .slice(0, 50)
-    .map(({ n, reason }) => ({
-      id: n.id,
-      label: n.label || '(no label)',
-      type: reason,
-    }));
+  findMatches = findInDocument(doc.pages, q, current);
   findSel = 0;
   renderFindResults();
 }
@@ -2229,7 +2210,7 @@ function openFind(): void {
   findEl = document.createElement('div');
   findEl.className = 'find';
   findEl.innerHTML =
-    `<input type="text" placeholder="Find node by label / id / type / metadata…" aria-label="Find node by label, id, type, or metadata" />` +
+    `<input type="text" placeholder="Find a node, link or zone on any frame…" aria-label="Find a node, link or zone on any frame, by label, id, type or metadata" />` +
     `<div class="find-results scroll-slim"></div>`;
   app.appendChild(findEl);
   const input = findEl.querySelector('input')!;
@@ -2250,7 +2231,7 @@ function openFind(): void {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const m = findMatches[findSel];
-      if (m) jumpFind(m.id);
+      if (m) jumpFind(m);
     }
   });
   input.focus();
@@ -4353,22 +4334,41 @@ function buildPalette(): void {
   }
   paletteList.innerHTML = html;
 
-  paletteList.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) =>
-    b.addEventListener('click', () => {
-      // The Image entry opens a file picker instead of dropping a bare
-      // placeholder — the common intent is "put THIS picture on the canvas".
-      if (b.dataset.type === 'image') {
-        imageFileInput.click();
-        return;
-      }
+  paletteList
+    .querySelectorAll<HTMLButtonElement>('[data-type]')
+    .forEach((b) => {
+      const type = b.dataset.type!;
       const variant = b.dataset.variant;
-      editor.addNode(
-        b.dataset.type!,
-        undefined,
-        variant ? { variant } : undefined,
-      );
-    }),
-  );
+      const extra = variant ? { variant } : undefined;
+      b.addEventListener('click', () => {
+        // The Image entry opens a file picker instead of dropping a bare
+        // placeholder — the common intent is "put THIS picture on the canvas".
+        if (type === 'image') {
+          imageFileInput.click();
+          return;
+        }
+        editor.addNode(type, undefined, extra);
+      });
+      // Dragged onto the canvas, the node lands where it is dropped; onto a
+      // link, it is inserted into the link. (An image needs its file first.)
+      if (type !== 'image')
+        enablePaletteDrag(b, {
+          overCanvas: (x, y) => {
+            const el = document.elementFromPoint(x, y);
+            return el !== null && canvasHost.contains(el);
+          },
+          linkAt: (x, y) => editor.linkAtClient(x, y),
+          markLink: (id) => editor.setDropLink(id),
+          drop: (x, y, linkId) => {
+            const at = editor.clientToPage(x, y);
+            const inserted =
+              linkId !== null &&
+              editor.insertNodeOnLink(linkId, type, at, extra) !== null;
+            // A locked link takes no insert: the node lands beside it.
+            if (!inserted) editor.addNodeAt(type, at, undefined, extra);
+          },
+        });
+    });
   paletteList.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((b) =>
     b.addEventListener('click', () => {
       const spec = doc.customNodes.find((c) => c.typeName === b.dataset.edit);
@@ -4855,6 +4855,10 @@ displayPop.innerHTML =
   `</select></label>` +
   `<label class="dp-row dp-check"><input type="checkbox" id="dpGlass"/><span>Panel blur (glass)</span></label>` +
   `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (C) pauses those.</div>` +
+  `<label class="dp-row">Wheel<select id="dpWheel">` +
+  `<option value="auto">Auto</option><option value="zoom">Always zoom</option><option value="pan">Always pan</option>` +
+  `</select></label>` +
+  `<div class="dp-note">Auto: a mouse wheel zooms, a trackpad’s two-finger slide pans. Pinch or Ctrl/Cmd+wheel always zooms; Shift+wheel pans sideways.</div>` +
   `<div class="dp-h dp-h2">Brand palette</div>` +
   `<div class="dp-swatches" id="dpPresets"></div>` +
   `<label class="dp-row">Accent<input type="color" id="dpAccent"/></label>` +
@@ -4864,6 +4868,7 @@ displayPop.innerHTML =
 document.body.appendChild(displayPop);
 const dpAmbient = displayPop.querySelector<HTMLSelectElement>('#dpAmbient')!;
 const dpGlass = displayPop.querySelector<HTMLInputElement>('#dpGlass')!;
+const dpWheel = displayPop.querySelector<HTMLSelectElement>('#dpWheel')!;
 const dpPresets = displayPop.querySelector<HTMLDivElement>('#dpPresets')!;
 const dpAccent = displayPop.querySelector<HTMLInputElement>('#dpAccent')!;
 const dpSecondary = displayPop.querySelector<HTMLInputElement>('#dpSecondary')!;
@@ -4900,6 +4905,28 @@ dpAmbient.addEventListener('change', () =>
   applyAmbient(dpAmbient.value as 'off' | 'static' | 'animated'),
 );
 dpGlass.addEventListener('change', () => applyGlass(dpGlass.checked));
+
+/* What a plain wheel event does on the canvas. The default guesses the device
+ * (a mouse wheel zooms, a trackpad's two-finger slide pans); the guess cannot
+ * be right for every device, so the user can pin it. A view preference of
+ * this browser, like the theme: not part of the document. */
+const WHEEL_KEY = 'tds-wheel-mode';
+const isWheelMode = (v: unknown): v is WheelMode =>
+  v === 'auto' || v === 'zoom' || v === 'pan';
+function applyWheelMode(mode: WheelMode): void {
+  editor.setWheelMode(mode);
+  dpWheel.value = mode;
+  try {
+    localStorage.setItem(WHEEL_KEY, mode);
+  } catch {
+    // storage unavailable — non-fatal
+  }
+}
+const storedWheel = localStorage.getItem(WHEEL_KEY);
+applyWheelMode(isWheelMode(storedWheel) ? storedWheel : 'auto');
+dpWheel.addEventListener('change', () => {
+  if (isWheelMode(dpWheel.value)) applyWheelMode(dpWheel.value);
+});
 
 /* ── Brand palette (#7) ──────────────────────────────────────────────
  * A document-level palette that recolours the canvas accents (via a render-time
@@ -5075,6 +5102,8 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl/Cmd+Z', 'Undo'],
       ['Ctrl/Cmd+Shift+Z · Ctrl+Y', 'Redo'],
       ['Ctrl/Cmd+C / X / V', 'Copy / Cut / Paste'],
+      ['Ctrl/Cmd+Shift+V', 'Paste in place (same position, any frame)'],
+      ['F2 / Enter', 'Rename the selected node, link or zone'],
       ['Ctrl/Cmd+Alt+C', 'Copy format (format painter)'],
       ['Ctrl/Cmd+Alt+V', 'Paste format onto selection'],
       ['Ctrl/Cmd+D', 'Duplicate'],
@@ -5095,10 +5124,16 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
   {
     group: 'Canvas',
     items: [
-      ['Wheel', 'Zoom to cursor'],
+      ['Wheel', 'Zoom to cursor (mouse) / pan (trackpad)'],
+      ['Pinch · Ctrl/Cmd+wheel', 'Zoom to cursor'],
+      ['Shift+wheel', 'Pan sideways'],
       ['Space / Middle-drag', 'Pan'],
-      ['0', 'Fit to content'],
-      ['Ctrl/Cmd+F', 'Find / jump to node'],
+      ['+ / -', 'Zoom in / out'],
+      ['0 · Shift+1', 'Fit to content'],
+      ['Shift+0', 'Zoom to 100%'],
+      ['Shift+2', 'Zoom to selection'],
+      ['Ctrl/Cmd+S / O', 'Download JSON / open a file'],
+      ['Ctrl/Cmd+F', 'Find a node, link or zone on any frame'],
       ['R', 'Toggle grid'],
       ['G', 'Toggle snap'],
       ['M / P', 'Toggle minimap / properties'],
@@ -5661,6 +5696,38 @@ document.addEventListener('change', (e) => {
   if (release) releaseFocus(el);
 });
 
+/** Frame the selection clear of the panels; the whole content when nothing
+ * is selected. */
+function zoomToSelection(): void {
+  fitLeftInset = 0;
+  if (editor.zoomToSelection()) settleFit();
+  else fitView();
+}
+
+function runCanvasCommand(command: CanvasKeyCommand): void {
+  switch (command) {
+    case 'zoom-in':
+      return editor.zoomIn();
+    case 'zoom-out':
+      return editor.zoomOut();
+    case 'zoom-100':
+      return editor.zoomTo(1);
+    case 'zoom-fit':
+      return fitView();
+    case 'zoom-selection':
+      return zoomToSelection();
+    case 'rename':
+      editor.beginRename();
+      return;
+    case 'paste-in-place':
+      return editor.paste({ inPlace: true });
+    case 'save':
+      return downloadDocJSON();
+    case 'open':
+      return fileInput.click();
+  }
+}
+
 window.addEventListener('keydown', (e) => {
   if (overlayActive()) return;
   // A key that confirms or discards an IME candidate is never a shortcut.
@@ -5681,6 +5748,15 @@ window.addEventListener('keydown', (e) => {
   if (e.key === ' ') {
     e.preventDefault();
     editor.setSpacePan(true);
+    return;
+  }
+
+  // View, rename and file shortcuts (see src/ui/canvas-keys.ts). Checked
+  // before the copy / paste block: Ctrl+Shift+V is "paste in place".
+  const command = canvasKeyCommand(e, focus === 'canvas');
+  if (command) {
+    e.preventDefault();
+    runCanvasCommand(command);
     return;
   }
 
@@ -5997,11 +6073,19 @@ function closeCtxMenu(): void {
   releaseCtxOverlay = null;
 }
 
-function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
+function ctxItemsFor(
+  kind: 'node' | 'link' | 'empty',
+  at: { x: number; y: number },
+): CtxItem[] {
   if (kind === 'node') {
     const lockLabel = editor.selectionLocked() ? 'Unlock' : 'Lock';
     return [
+      // Rename is for one node; a multi-selection has no single label.
+      ...(editor.getSelectedNode()
+        ? [{ label: 'Rename', run: () => void editor.beginRename() }]
+        : []),
       { label: 'Duplicate', run: () => editor.duplicateSelection() },
+      { label: 'Cut', run: () => editor.cut() },
       { label: 'Copy', run: () => editor.copySelection() },
       {
         label: 'Copy as image',
@@ -6086,7 +6170,18 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
     ];
   }
   return [
-    { label: 'Paste', run: () => editor.paste(), disabled: !editor.canPaste() },
+    // At the point that was right-clicked, as a block centred on it.
+    {
+      label: 'Paste here',
+      run: () => editor.paste({ at }),
+      disabled: !editor.canPaste(),
+    },
+    // At the coordinates it was copied from: the same place on another frame.
+    {
+      label: 'Paste in place',
+      run: () => editor.paste({ inPlace: true }),
+      disabled: !editor.canPaste(),
+    },
     { label: 'Select all', run: () => editor.selectAll() },
     {
       label: 'Copy frame as image',
@@ -6116,7 +6211,7 @@ function openCtxMenu(clientX: number, clientY: number): void {
   closeCtxMenu();
   const hit = editor.pickAt(clientX, clientY);
   renderInspector();
-  const items = ctxItemsFor(hit.kind);
+  const items = ctxItemsFor(hit.kind, editor.clientToPage(clientX, clientY));
 
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
