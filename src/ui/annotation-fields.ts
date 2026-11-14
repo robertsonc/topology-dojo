@@ -75,3 +75,28 @@ export function enumFieldOptions(
 export function enumFieldValue(selected: string): string | undefined {
   return selected === '' ? undefined : selected;
 }
+
+/**
+ * The text to show for a field that holds an object rather than something
+ * typed — an element's `source` reference above all, which an importer sets
+ * so a re-import updates the element instead of duplicating it. Returns null
+ * when there is nothing stored (no row is drawn).
+ *
+ * Such a field is displayed, never put in a text box: a text box shows
+ * "[object Object]", and the first keystroke replaces the object with a
+ * string.
+ */
+export function recordFieldText(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object') return String(value);
+  const part = (v: unknown): string =>
+    typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
+  if (Array.isArray(value)) return value.map(part).join(', ');
+  const record = value as Record<string, unknown>;
+  // A source reference reads as "system · kind · id".
+  if ('system' in record && 'kind' in record && 'id' in record)
+    return [record.system, record.kind, record.id].map(part).join(' · ');
+  return Object.entries(record)
+    .map(([k, v]) => `${k}: ${part(v)}`)
+    .join(' · ');
+}

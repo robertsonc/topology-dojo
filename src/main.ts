@@ -121,6 +121,7 @@ import {
   booleanFieldChecked,
   enumFieldOptions,
   enumFieldValue,
+  recordFieldText,
 } from './ui/annotation-fields.js';
 import { exportRenderOptions } from './ui/export-options.js';
 import { exportReport, type ExportState } from './ui/export-status.js';
@@ -3816,9 +3817,28 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
     }
     case 'ref':
       return `<label class="${rowClass(f)}"><span>${f.label}${req}</span><input data-akey="${f.key}" value="${esc(String(v ?? ''))}" placeholder="id"/></label>`;
+    case 'record':
+      return readOnlyFieldRow(f, v);
     default:
+      // A text field whose stored value is an object is shown, not edited:
+      // a text box would read "[object Object]" and overwrite it when typed in.
+      if (typeof v === 'object' && v !== null) return readOnlyFieldRow(f, v);
       return `<label class="${rowClass(f)}"><span>${f.label}</span><input data-akey="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
   }
+}
+
+/**
+ * A field that holds an object (an element's `source` reference, set by the
+ * import it came from): its value is displayed, with nothing to type into.
+ * No row at all while the field is unset.
+ */
+function readOnlyFieldRow(f: FieldSpec, v: unknown): string {
+  const text = recordFieldText(v);
+  if (text === null) return '';
+  return (
+    `<div class="${rowClass(f)}"><span>${f.label}</span>` +
+    `<span class="insp-val" data-asource title="Set by the import this element came from; not editable here">${esc(text)}</span></div>`
+  );
 }
 
 /** The focused editor for a single selected zone (reuses annotation wiring). */

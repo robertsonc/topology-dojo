@@ -4,6 +4,7 @@ import {
   booleanFieldChecked,
   enumFieldOptions,
   enumFieldValue,
+  recordFieldText,
 } from './annotation-fields.js';
 
 const zoneField = (key: string) =>
@@ -91,5 +92,40 @@ describe('enumFieldValue', () => {
   it('clears the field for the empty choice', () => {
     expect(enumFieldValue('')).toBeUndefined();
     expect(enumFieldValue('world')).toBe('world');
+  });
+});
+
+describe('recordFieldText', () => {
+  it('draws nothing for an unset field', () => {
+    expect(recordFieldText(undefined)).toBeNull();
+    expect(recordFieldText(null)).toBeNull();
+  });
+
+  it('reads a source reference as system, kind and id', () => {
+    expect(
+      recordFieldText({
+        system: 'edgeconnect',
+        kind: 'site',
+        id: '42',
+        fetchedAt: '2026-01-01T00:00:00Z',
+      }),
+    ).toBe('edgeconnect · site · 42');
+  });
+
+  it('never yields "[object Object]"', () => {
+    const texts = [
+      recordFieldText({ provider: 'x', ref: 'y' }),
+      recordFieldText({ nested: { deep: true } }),
+      recordFieldText([{ a: 1 }]),
+    ];
+    expect(texts[0]).toBe('provider: x · ref: y');
+    expect(texts[1]).toBe('nested: {"deep":true}');
+    expect(texts[2]).toBe('{"a":1}');
+    for (const text of texts) expect(text).not.toContain('[object');
+  });
+
+  it('shows a plain value as it is', () => {
+    // What the old text box left behind when it overwrote a reference.
+    expect(recordFieldText('edgeconnect')).toBe('edgeconnect');
   });
 });

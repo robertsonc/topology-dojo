@@ -324,3 +324,96 @@ test('ticking "Show key" reveals the key options at once', async ({ page }) => {
   await page.locator('#p-legend').click();
   await expect(page.locator('#p-legend-cols')).toHaveCount(0);
 });
+
+/* ── source references ───────────────────────────────────────────────────── */
+
+/** A document whose zone, flow path and marker each mirror an object in
+ * another system (their `source` is an object, not text). */
+const SOURCED_DOCUMENT = {
+  title: 'Imported fabric',
+  pages: [
+    {
+      id: 'p-src',
+      name: 'Fabric',
+      viewBox: '0 0 1050 700',
+      nodes: [
+        { id: 'a', type: 'router', x: 300, y: 300, label: 'A' },
+        { id: 'b', type: 'router', x: 520, y: 300, label: 'B' },
+      ],
+      links: [{ id: 'a-b', type: 'line', from: 'a', to: 'b' }],
+      anchors: [],
+      zones: [
+        {
+          id: 'z1',
+          label: 'Site',
+          nodes: ['a', 'b'],
+          source: { system: 'edgeconnect', kind: 'site', id: '42' },
+        },
+      ],
+      flowPaths: [
+        {
+          id: 'f1',
+          label: 'Flow',
+          waypoints: ['a', 'b'],
+          source: { system: 'edgeconnect', kind: 'flow', id: 'f-9' },
+        },
+      ],
+      policyMarkers: [
+        {
+          id: 'm1',
+          nodeId: 'a',
+          type: 'inspect',
+          source: { system: 'edgeconnect', kind: 'policy', id: 'p-7' },
+        },
+      ],
+    },
+  ],
+  customNodes: [],
+};
+
+test('an annotation source reference is shown, never edited as text', async ({
+  page,
+}) => {
+  page.on('dialog', (d) => void d.accept());
+  await bootEditor(page);
+  await page.locator('#fInput').setInputFiles({
+    name: 'sourced.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(SOURCED_DOCUMENT)),
+  });
+  await expect(page.locator('#page-canvas [data-tds-node]')).toHaveCount(2);
+
+  for (const [collection, id, ref] of [
+    ['zones', 'z1', 'edgeconnect · site · 42'],
+    ['flowPaths', 'f1', 'edgeconnect · flow · f-9'],
+    ['policyMarkers', 'm1', 'edgeconnect · policy · p-7'],
+  ] as const) {
+    const { editor } = await openAnnotation(page, collection);
+    // Nothing in the editor shows an object as text…
+    await expect(editor).not.toContainText('[object Object]');
+    for (const input of await editor.locator('input').all())
+      expect(await input.inputValue()).not.toContain('[object');
+    // …the reference is shown, and there is no field to type over it.
+    await expect(editor.locator('[data-asource]')).toHaveText(ref);
+    await expect(editor.locator('[data-akey="source"]')).toHaveCount(0);
+
+    // Editing something else in the editor leaves the reference whole.
+    await editor
+      .locator('[data-aswatch="color"] [data-color="#7764fc"]')
+      .click();
+    const saved = await savedElement(page, collection, id);
+    expect(saved.color).toBe('#7764fc');
+    expect(saved.source).toEqual(
+      SOURCED_DOCUMENT.pages[0]![collection][0]!.source,
+    );
+  }
+});
+
+test('an annotation without a source reference shows no source row', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const { editor } = await openAnnotation(page, 'zones');
+  await expect(editor.locator('[data-akey="source"]')).toHaveCount(0);
+  await expect(editor.locator('[data-asource]')).toHaveCount(0);
+});
