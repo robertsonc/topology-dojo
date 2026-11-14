@@ -3398,6 +3398,12 @@ ${grid}`;
     const uc = isAuth ? '#01a982' : '#deb146';
     const t = isAuth ? 'AUTHENTICATED' : 'IDENTIFIED';
     const w = 194, h = 73;
+    // (x, y) is the card's CENTRE, as it is for every other node type and as
+    // the hit box, the selection frame, link attachment, zones and layout all
+    // assume. (The card used to be drawn with its top-left corner there, so
+    // links stopped short of it and its frame sat up-left of the art.)
+    x -= w / 2;
+    y -= h / 2;
     const gf = isAuth ? 'tds-glow-green' : 'tds-glow-gold';
     const userName = cfg.user || 'User';
     const hostName = cfg.host || 'Host';
