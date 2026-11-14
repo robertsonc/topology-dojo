@@ -290,6 +290,17 @@ export class Editor {
 
   private drag: DragState | null = null;
   /**
+   * The pointer whose press started the gesture in flight (it holds the
+   * overlay's pointer capture), or null when no gesture is.
+   */
+  private gesturePointer: number | null = null;
+  /**
+   * The undo entry the gesture in flight pushed when it first changed the
+   * page, and the redo stack that entry replaced: what `cancelGesture` puts
+   * back so a cancelled gesture leaves no trace in history.
+   */
+  private gestureUndo: { entry: string; redo: string[] } | null = null;
+  /**
    * A press on a bend handle of the selected link. `index` is the waypoint
    * being dragged; with `insert` set the press was on a segment's "+" handle
    * and the waypoint does not exist yet — it is inserted at `index`, at that
@@ -495,6 +506,9 @@ export class Editor {
     this.drag = null;
     this.marquee = null;
     this.wpDrag = null;
+    this.labelDrag = null;
+    this.gesturePointer = null;
+    this.gestureUndo = null;
     this.linkStart = null;
     this.dragLink = null;
     this.endDrag = null;
@@ -2445,8 +2459,13 @@ export class Editor {
     this.fireSelect();
   }
 
-  /** Clear node + link + anchor + zone selection (Esc). */
+  /**
+   * Esc: cancel the gesture in flight if there is one (the drag is taken
+   * back and the selection stays); otherwise clear the node + link + anchor
+   * + zone selection.
+   */
   clearSelection(): void {
+    if (this.cancelGesture()) return;
     this.clearSpotlight();
     const had = this.selectionCount() > 0 || this.zoneSel !== null;
     this.setSelection(null);
@@ -3773,7 +3792,25 @@ export class Editor {
         this.touches.delete(e.pointerId);
         if (this.touches.size < 2) this.pinch = null;
       }
+      // The system took the pointer away (palm rejection, a system gesture):
+      // whatever it was doing is void.
+      if (this.gesturePointer === null || e.pointerId === this.gesturePointer)
+        this.cancelGesture();
     });
+    // A gesture normally ends with pointerup. When the button comes up where
+    // the page cannot see it (over another window after Alt+Tab, a native
+    // menu) no pointerup ever arrives, and the gesture would stay armed: the
+    // node would follow the pointer with no button held. These two events,
+    // and a pointermove with no button down (see onMove), are the signs of
+    // that; each settles the gesture where it stands.
+    this.overlay.addEventListener('lostpointercapture', (e) => {
+      if (e.pointerId === this.gesturePointer) this.settleGesture();
+    });
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+    )
+      window.addEventListener('blur', () => this.settleGesture());
     this.overlay.addEventListener('pointerleave', () => {
       if (this.hoverNode !== null) {
         this.hoverNode = null;
@@ -4352,6 +4389,16 @@ export class Editor {
   }
 
   private onDown(e: PointerEvent): void {
+    // A gesture still in flight when a new press arrives lost its release
+    // (see bind): settle it before starting the next one. A second finger is
+    // different: it turns the gesture into a pinch (see press).
+    if (e.pointerType !== 'touch' && this.gestureActive()) this.settleGesture();
+    const before = this.gestureActive();
+    this.press(e);
+    if (!before && this.gestureActive()) this.gesturePointer = e.pointerId;
+  }
+
+  private press(e: PointerEvent): void {
     this.clearSpotlight();
     // Touch: track fingers; a second finger starts a pinch (zoom + pan) and
     // cancels whatever single-finger gesture was in flight, uncommitted.
@@ -4615,6 +4662,10 @@ export class Editor {
         return;
       }
     }
+    // A held-button gesture with no button down: the release happened where
+    // the page could not see it. Settle the gesture where it stands and
+    // treat this move as the hover it is.
+    if (e.buttons === 0 && this.gestureActive()) this.settleGesture();
     if (this.pan) {
       const rect = this.overlay.getBoundingClientRect();
       const dx =
@@ -4639,7 +4690,7 @@ export class Editor {
       const link = this.page.links.find((l) => l.id === ld.lid);
       if (link) {
         if (!ld.moved) {
-          this.snapshot();
+          this.snapshotForGesture();
           ld.moved = true;
         }
         let nx = Math.round(ld.ox + (pp.x - ld.startX));
@@ -4726,7 +4777,7 @@ export class Editor {
         // (or the presses of a double-click) must not bend or snap anything.
         if (wd.start && dist(pp, wd.start) <= this.dragSlop()) return;
         if (!wd.insert && !link.waypoints?.[wd.index]) return;
-        this.snapshot();
+        this.snapshotForGesture();
         wd.moved = true;
         if (wd.insert) {
           const wps = link.waypoints ? [...link.waypoints] : [];
@@ -4778,7 +4829,7 @@ export class Editor {
       const wasMoved = this.drag.moved;
       if (Math.abs(rawX) > 1 || Math.abs(rawY) > 1) this.drag.moved = true;
       // Snapshot once, when the drag first commits to moving.
-      if (!wasMoved && this.drag.moved) this.snapshot();
+      if (!wasMoved && this.drag.moved) this.snapshotForGesture();
       const snap = this.computeSnap(this.drag, rawX, rawY);
       this.drag.dx = snap.dx;
       this.drag.dy = snap.dy;
@@ -4856,7 +4907,106 @@ export class Editor {
   }
 
   private finishUp(e: PointerEvent): void {
+    // Forget the gesture's pointer first: releasing the capture ourselves
+    // must not be mistaken for losing it.
+    this.gesturePointer = null;
     this.overlay.releasePointerCapture(e.pointerId);
+    this.endGesture({ x: e.clientX, y: e.clientY });
+  }
+
+  /** True while a pointer gesture is in flight (a press not yet released). */
+  private gestureActive(): boolean {
+    return !!(
+      this.pan ||
+      this.drag ||
+      this.marquee ||
+      this.wpDrag ||
+      this.labelDrag ||
+      this.dragLink ||
+      this.endDrag
+    );
+  }
+
+  /**
+   * `snapshot()` for the first change a gesture makes, remembering how to
+   * take it back (see `cancelGesture`).
+   */
+  private snapshotForGesture(): void {
+    const redo = this.redoStack;
+    this.snapshot();
+    this.gestureUndo = {
+      entry: this.undoStack[this.undoStack.length - 1]!,
+      redo,
+    };
+  }
+
+  /** Let go of the pointer capture the gesture in flight holds, if any. */
+  private releaseGesturePointer(): void {
+    const id = this.gesturePointer;
+    this.gesturePointer = null;
+    if (id === null) return;
+    try {
+      this.overlay.releasePointerCapture(id);
+    } catch {
+      // The pointer is already gone (that is why we are here).
+    }
+  }
+
+  /**
+   * End a gesture whose release never reached the page: keep what it has
+   * done so far (a moved node stays where it was dragged, a rubber band
+   * selects what it held) and drop what needed a release point (a link
+   * being drawn or re-attached connects to nothing).
+   */
+  private settleGesture(): void {
+    if (!this.gestureActive()) return;
+    this.releaseGesturePointer();
+    this.endGesture(null);
+  }
+
+  /**
+   * Abort the gesture in flight and put back whatever it changed: a dragged
+   * node, bend or label returns to where it was and the undo step the drag
+   * had pushed is taken off again, with the redo stack it had displaced. The
+   * selection stays. Returns false when no gesture was in flight.
+   */
+  cancelGesture(): boolean {
+    if (!this.gestureActive()) return false;
+    this.releaseGesturePointer();
+    const undo = this.gestureUndo;
+    this.gestureUndo = null;
+    this.pan = null;
+    this.drag = null;
+    this.marquee = null;
+    this.zonePress = null;
+    this.wpDrag = null;
+    this.labelDrag = null;
+    this.dragLink = null;
+    this.endDrag = null;
+    this.guides = [];
+    this.labelGuides = [];
+    this.overlay.style.cursor = this.handCursor();
+    // Only if the gesture's own entry is still the newest: anything pushed
+    // on top of it since is not ours to remove.
+    if (undo && this.undoStack[this.undoStack.length - 1] === undo.entry) {
+      this.undoStack.pop();
+      this.redoStack = undo.redo;
+      this.restore(undo.entry);
+      this.renderArt();
+    }
+    this.renderOverlay();
+    this.fireSelect();
+    return true;
+  }
+
+  /**
+   * Finish the gesture in flight. `at` is where the pointer was released, in
+   * client coordinates; null when there was no release to speak of (see
+   * `settleGesture`), in which case nothing that depends on a release point
+   * happens.
+   */
+  private endGesture(at: { x: number; y: number } | null): void {
+    this.gestureUndo = null;
     if (this.pan) {
       this.pan = null;
       // Back to the hand cursor if Space is still held / Hand tool is on.
@@ -4911,14 +5061,16 @@ export class Editor {
       const ed = this.endDrag;
       this.endDrag = null;
       this.overlay.style.cursor = '';
-      if (ed.moved) {
-        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      if (!at) {
+        // No release point: the end goes back where it was.
+      } else if (ed.moved) {
+        const pp = clientToUser(this.overlay, at.x, at.y);
         const target = this.endDropTarget(pp, ed);
         if (target) this.reconnectLink(ed.lid, ed.end, target);
       } else {
         // A click (no drag) on a handle that overlaps a node — likely when
         // zoomed far out — means "select that node", as it would unselected.
-        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+        const pp = clientToUser(this.overlay, at.x, at.y);
         const node = this.nodeAt(pp);
         if (node) this.setSelection({ nodes: [node] });
       }
@@ -4929,11 +5081,13 @@ export class Editor {
     if (this.dragLink) {
       const dl = this.dragLink;
       this.dragLink = null;
-      if (dl.moved) {
+      if (!at) {
+        // No release point: nothing to connect to, and no chevron "click".
+      } else if (dl.moved) {
         // Released over a node or anchor → connect. Over empty space → offer
         // the create-and-connect picker (draw.io-style) when the shell
         // registered one; otherwise cancel as before.
-        const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+        const pp = clientToUser(this.overlay, at.x, at.y);
         const target =
           this.nodeAt(pp) ??
           hitTestAnchor(this.page, pp.x, pp.y, this.anchorHitPad());
@@ -4941,8 +5095,8 @@ export class Editor {
         else if (!target && this.onConnectEmpty) {
           this.onConnectEmpty({
             from: dl.from,
-            clientX: e.clientX,
-            clientY: e.clientY,
+            clientX: at.x,
+            clientY: at.y,
             pageX: pp.x,
             pageY: pp.y,
           });
@@ -4980,8 +5134,9 @@ export class Editor {
       const zonePress = this.zonePress;
       this.zonePress = null;
       if (Math.abs(x1 - x0) <= 2 && Math.abs(y1 - y0) <= 2 && zonePress) {
-        // A plain click on a zone's empty space selects the zone.
-        this.setSelection({ zone: zonePress });
+        // A plain click on a zone's empty space selects the zone (a click
+        // needs its release: a press that lost it selects nothing).
+        if (at) this.setSelection({ zone: zonePress });
       } else if (Math.abs(x1 - x0) > 2 || Math.abs(y1 - y0) > 2) {
         // The rubber band adds what it holds to the node + anchor selection
         // the press left in place (empty unless the press was additive).
