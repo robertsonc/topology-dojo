@@ -73,6 +73,7 @@ import { captionSVG } from './editor/caption.js';
 import { applyRenderTheme, type RenderTheme } from './render/theme.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
 import { openSdwanWizard } from './ui/sdwan-wizard.js';
+import { openTemplateWizard } from './ui/template-wizard.js';
 import { pageLinkTarget } from './api/page-link.js';
 /** Template-picker value that opens the SD-WAN generator instead. */
 const SDWAN_WIZARD = '__sdwan';
@@ -1461,6 +1462,26 @@ templateSel.addEventListener('change', () => {
     });
     return;
   }
+  // A parametric template asks for its parameters first (and confirms on
+  // Create); one without parameters falls through to the plain path below.
+  if (
+    openTemplateWizard(id, {
+      mount: app,
+      render: (generated) =>
+        pageToSVG(generated.pages[0]!, {
+          layers: generated.layers,
+          calm: true,
+          theme: currentTheme(),
+        }),
+      onCreate: (generated) => {
+        if (!confirm('Start from this template? Unsaved changes are lost.'))
+          return;
+        if (!closeWorkspaceForDocumentReplacement()) return;
+        loadDoc(generated);
+      },
+    })
+  )
+    return;
   if (!confirm('Start from this template? Unsaved changes are lost.')) return;
   if (!closeWorkspaceForDocumentReplacement()) return;
   loadDoc(buildTemplate(id));
