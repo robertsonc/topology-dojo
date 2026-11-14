@@ -206,10 +206,15 @@ available. On a phone-width viewport (640px and below) the Node library and
 Properties panel start collapsed, and Properties opens as a drawer over the
 canvas so the drawing surface stays visible and reachable.
 
-Use **Ctrl/Cmd+F** to search node labels, identifiers, types, sublabels, and
-metadata keys/values (find a node by the IP address, hostname, or model stored
-on it — the result row shows why it matched), then jump to a result. The
-minimap provides an overview of content outside the current viewport.
+Use **Ctrl/Cmd+F** to find a node, link or zone on any frame. Nodes are
+searched by label, identifier, type, sublabel, and metadata keys/values (find
+a node by the IP address, hostname, or model stored on it); links by label,
+port label, identifier, type and metadata; zones by label. Matches on the
+current frame come first, a match on another frame names its frame, and
+choosing one goes to that frame, selects the element and centres it. With the
+box empty it lists the current frame's nodes.
+
+The minimap provides an overview of content outside the current viewport.
 
 ## 5. Build and edit a topology
 
@@ -235,11 +240,19 @@ minimap provides an overview of content outside the current viewport.
 
 - Type in **Search nodes…** to filter by name, type, category, or known aliases.
 - Click a catalog item to add it near the center of the visible page.
+- **Drag a catalog item onto the canvas** to place it where you drop it. A
+  ghost of the item follows the pointer. Drop it **on a link** to insert the
+  node into that link: the link is marked while you are over it, and A—B
+  becomes A—new—B, with both halves keeping the link's type and style and each
+  end keeping its own port label and interface. Press Escape, or release
+  anywhere off the canvas, to cancel. (Mouse and pen; on a touch screen tap
+  the item.)
 - **Double-click empty canvas** to open the quick-add picker: type to filter
   the same catalog, then press Enter (or click) to place that node exactly at
   the double-clicked point.
 - **Double-click a node, link, or zone** to rename it in place: a small input
-  opens over the element; Enter commits, Escape cancels.
+  opens over the element; Enter commits, Escape cancels. With one of them
+  selected, **F2** or **Enter** opens the same input from the keyboard.
 - **Hover a node** to reveal four directional chevrons beyond its connection
   dots. Click one to create a same-type node one step away in that direction,
   already linked back and ready for its label. Drag from a chevron (or a
@@ -250,7 +263,8 @@ minimap provides an overview of content outside the current viewport.
   grid with **R** and snapping with **G**.
 - Use the arrow keys for a small nudge; hold Shift for a ten-times nudge.
 - Lock important items with **Ctrl/Cmd+L** or the context menu so an accidental
-  drag does not move them.
+  drag does not move them. A locked node also stays put through **tidy**,
+  **balance** and **arrange…**: the other nodes make room around it.
 - Use **[** and **]** for one-step stacking changes, or add Ctrl/Cmd to send an
   item fully back or front.
 
@@ -293,18 +307,26 @@ order. Use **Straighten (clear bends)** to remove all manual waypoints.
 Either way, waypoints are kept and a pinned port on the moved end is cleared.
 Self-loops are refused.
 
-### Link anchor box (experimental)
+### Link anchor box
 
-By default a link attaches to the edge of the node icon, so a link leaving the
-bottom of a node runs straight through its label. The **Link anchor box**
-option (page Properties, under Crossings; off unless you turn it on) makes
-links attach to a box around the node instead: the icon's hit box padded by
+In the classic attachment a link meets the edge of the node icon, so a link
+leaving the bottom of a node runs straight through its label. The **Link
+anchor box** (page Properties, under Crossings) makes links attach to a box
+around the node instead: the icon's hit box padded by
 **Box padding** (6 px unless set) on every side, with the side that carries
 the label extended past the label text. Ports pin to that box; auto endpoints
 leave through its faces (round icons keep a round outline, padded, except on
 the label side). Each node's Properties has the same switch under Advanced to
 override the page setting for that node only, and a selected node shows its
 anchor box as a faint dashed outline.
+
+The anchor box is **on, with Distribute ends, for new work**: a **new**
+document, the starter templates, the SD-WAN generator, and anything an agent
+creates over MCP (`create_topology`, `add_page`, `build_flow_topology`,
+`create_workspace`). A frame added with **+ frame** follows the frame you are
+on. Documents saved before this, the first-run sample scene, and imported
+files keep the classic attachment until you turn the switch on; nothing is
+re-routed behind your back.
 
 **Distribute ends** spreads every link endpoint on a node side into evenly
 spaced slots, ordered by where the links go, so a stack of links into one side
@@ -315,7 +337,7 @@ it attaches to (0 = centre, ±1 = the ends) for side ports and auto endpoints;
 corner ports ignore it. A corner port (top-left and friends) is an exact pin:
 a side port still moves along its side into a slot under Distribute, a corner
 port never does, and Problems says so for each such link end. These fields
-only take effect while the anchor box is active for that node. The feature is experimental: documents without it render
+only take effect while the anchor box is active for that node. Documents without it render
 exactly as before, and `inspect_render` / Problems measure the drawn geometry
 either way. With **Distribute** on, the link ends on one side of a node are
 ordered by the direction of each link, so neighbouring links fan out without
@@ -362,7 +384,15 @@ positions around its auto position; the center cell restores auto placement.
   all of them; endpoints, bends, labels, and interfaces edit the primary only.
 - Drag on empty canvas in **select** mode to marquee-select.
 - Use **Ctrl/Cmd+A** to select all.
-- Use **Ctrl/Cmd+C**, **X**, and **V** for copy, cut, and paste.
+- Use **Ctrl/Cmd+C**, **X**, and **V** for copy, cut, and paste. A paste lands
+  one step down and to the right of where it was copied from; repeated pastes
+  step on instead of stacking. When that spot is out of view (you panned
+  away, or pasted onto another frame) it lands in the middle of the view.
+- **Ctrl/Cmd+Shift+V** pastes **in place**: at the exact coordinates it was
+  copied from. Use it to put the same device at the same position on another
+  frame of a flipbook.
+- Right-click empty canvas and choose **Paste here** to place the copy,
+  centred as a block, at that point.
 - Use **Ctrl/Cmd+D** to duplicate.
 - Copy only appearance with **Ctrl/Cmd+Alt+C**, then select compatible targets
   and use **Ctrl/Cmd+Alt+V**. The Properties panel also shows **copy** and
@@ -383,8 +413,11 @@ the filmstrip.
 
 Right-click a node selection for:
 
-- **Duplicate**, **Copy**, **Copy format**, and **Paste format**;
+- **Rename** (one node), **Duplicate**, **Cut**, **Copy**, **Copy format**,
+  and **Paste format**;
 - **Emphasize on this frame**;
+- **Analyze path**, when exactly two nodes are selected (see
+  [Analyze a path between two nodes](#analyze-a-path-between-two-nodes));
 - **Group into zone**, **Save as stencil…**, and **Add policy marker**;
 - **Bring to front**, **Send to back**, **Lock** or **Unlock**, and **Delete**.
 
@@ -394,8 +427,9 @@ Right-click a link for:
 - format painting and frame emphasis;
 - stacking, lock, and delete actions.
 
-Right-click empty canvas for **Paste**, **Select all**, **Tidy layout**,
-**Balance layout**, **Auto-place labels**, and **Fit page to content**.
+Right-click empty canvas for **Paste here**, **Paste in place**,
+**Select all**, **Tidy layout**, **Balance layout**, **Auto-place labels**, and
+**Fit page to content**.
 
 **Auto-place labels** moves each node's label (its **Placement**) to the side
 crossed by the fewest links, so a hub whose links fan downward gets its name
@@ -419,6 +453,8 @@ focus inside the open overlay and restore focus when closed.
 | Ctrl/Cmd+Z                         | Undo                                                                          |
 | Ctrl/Cmd+Shift+Z or Ctrl+Y         | Redo                                                                          |
 | Ctrl/Cmd+C, X, V                   | Copy, cut, paste                                                              |
+| Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any frame)                               |
+| F2 or Enter                        | Rename the selected node, link or zone                                        |
 | Ctrl/Cmd+Alt+C                     | Copy format                                                                   |
 | Ctrl/Cmd+Alt+V                     | Paste format onto the selection                                               |
 | Ctrl/Cmd+D                         | Duplicate                                                                     |
@@ -431,9 +467,17 @@ focus inside the open overlay and restore focus when closed.
 | Arrow keys                         | Nudge; Shift makes the step ten times larger                                  |
 | Left/Right Arrow with no selection | Move to the previous or next page                                             |
 | Mouse wheel                        | Zoom toward the cursor                                                        |
+| Two-finger slide (trackpad)        | Pan                                                                           |
+| Pinch (trackpad), Ctrl/Cmd+wheel   | Zoom toward the cursor                                                        |
+| Shift+wheel                        | Pan sideways                                                                  |
 | Space-drag or middle-drag          | Pan                                                                           |
-| 0                                  | Fit to content                                                                |
-| Ctrl/Cmd+F                         | Find and jump to a node (labels, ids, types, metadata)                        |
+| + or -                             | Zoom in or out                                                                |
+| 0 or Shift+1                       | Fit to content                                                                |
+| Shift+0                            | Zoom to 100% (one page unit per pixel)                                        |
+| Shift+2                            | Zoom to the selection (fit to content when nothing is selected)               |
+| Ctrl/Cmd+S                         | Download the document as JSON                                                 |
+| Ctrl/Cmd+O                         | Open a file                                                                   |
+| Ctrl/Cmd+F                         | Find a node, link or zone on any frame and jump to it                         |
 | Double-click node/link/zone        | Rename in place (Enter commits, Escape cancels)                               |
 | Double-click empty canvas          | Quick-add: type to pick a node type, Enter places it                          |
 | Ctrl/Cmd+click                     | Follow an element's hyperlink (when `href` is set)                            |
@@ -451,6 +495,9 @@ focus inside the open overlay and restore focus when closed.
 
 Canvas shortcuts are suppressed while typing in an input and while a dialog or
 menu owns focus.
+
+Zoom deliberately does not use Ctrl/Cmd with plus, minus and zero: those stay
+the browser's own page zoom, for anyone who needs the whole interface larger.
 
 ## 6. Node library and Properties
 
@@ -752,7 +799,11 @@ warnings for visual quality.
 - **balance** or **Shift+T**: tidy, align rows/columns, and center the result.
 - **arrange…**: rebuild the current page using **hierarchical**, **grid**,
   **circular**, or **force-directed** layout. (The **tiered** wiring-sheet
-  layout is available through MCP `layout_topology` only.)
+  layout is available through MCP `layout_topology` only.) On a page with
+  zones, each zone's members stay together: the algorithm arranges the nodes
+  inside each zone, and the zones are then packed side by side.
+- Locked nodes are never moved by tidy, balance or arrange. Balance lines a
+  row or column up on its locked member, and skips re-centring the page.
 - **fit to content**: resize the page around its current content, including
   zone boxes and labels placed outside their nodes. SVG, PNG, and PDF exports
   render the page frame; if drawn content still extends past it, the export is
@@ -809,6 +860,48 @@ With nothing selected, use the **Frame** section:
 You can also select elements, right-click, and choose
 **Emphasize on this frame**.
 
+### Analyze a path between two nodes
+
+Select two nodes (click one, then Shift-click or Ctrl-click the other) and
+choose **Analyze path** from the right-click menu, or **⇢ analyze path** under
+**Selection** in Properties. The editor traces the routes between them over
+the links the frame draws and spotlights the shortest: its nodes and links at
+full strength, everything else dimmed. The first node you selected is the
+start.
+
+A bar under the toolbar says what was found, for example
+`Path: User -> App · 3 hops via EC-Branch, EC-Hub`, and offers:
+
+| Control         | What it does                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| **‹** / **›**   | Step through the alternative routes, shortest first (shown when there is more than one).    |
+| **⇄**           | Trace the other way round. The route is the same; a flow added from it runs from the start. |
+| **★ emphasize** | Keep the spotlight as this frame's emphasis (one undo step).                                |
+| **⇢ add flow**  | Add a flow path along the route, labelled with its ends and hop count.                      |
+| **⧉ new frame** | Copy the frame, with the route emphasized and captioned, as the next frame of the flipbook. |
+| **×** or Escape | Close the bar. The spotlight goes with it.                                                  |
+
+Tracing is a read: until you choose one of the three keep actions nothing in
+the document changes, and exports and the saved file are unaffected. While the
+bar is open the path is traced again after every edit, so deleting a link
+shows at once what the route becomes, or that there no longer is one.
+
+What counts as a path:
+
+- Only what the frame draws. A link on a hidden layer is not part of any
+  route; when the two nodes are joined only through hidden layers the bar
+  names the layers to show.
+- Links run both ways, whatever their from and to. Several links between the
+  same two nodes are one hop.
+- A link of type **blocked**, a link or tunnel marked down, and a node marked
+  down are avoided. When every route crosses one, the routes are still shown
+  and the bar says so.
+- When there is no path the bar says why: one of the nodes has no usable
+  link, or the two sit in separate groups of linked elements.
+
+Agents use **analyze_path** for the same answer; its `show` option
+(`emphasis`, `flow`, `page`) matches the three keep actions.
+
 ## 10. Starter templates
 
 The **＋ template…** menu creates a new document from one of six built-in
@@ -824,6 +917,48 @@ templates:
 Starting from a template replaces the active canvas after confirmation. Download
 the current JSON first if it must be retained. A connected Agent Workspace must
 be closed before replacing the document.
+
+### Template parameters
+
+Four of the templates take parameters. Choosing one opens a small dialog with
+a question per parameter, a live preview, and the node and link counts that
+will land on the canvas. A parameter with a few values is a row of buttons; one
+with a long range is a slider (drag it, or use the arrow keys). **Create
+diagram** asks for the usual confirmation and then replaces the canvas;
+**Cancel**, **✕** or **Esc** closes the dialog and changes nothing. The dialog
+opens on the template's defaults, which build the same diagram the template
+built before it took parameters.
+
+| Template           | Parameter         | Values   | Default | What it changes                                     |
+| ------------------ | ----------------- | -------- | ------- | --------------------------------------------------- |
+| Three-tier web app | Web servers       | 1–6      | 2       | Web servers behind the firewall                     |
+|                    | App servers       | 1–4      | 1       | App servers; every web server reaches each one      |
+| Firewall + DMZ     | DMZ servers       | 1–6      | 2       | Servers in the DMZ: web, mail, DNS, proxy, VPN, FTP |
+|                    | Internal firewall | No / Yes | No      | A second firewall between the DMZ and the core      |
+| Spine-leaf fabric  | Spines            | 1–4      | 2       | Spine switches; every leaf uplinks to each one      |
+|                    | Leaves            | 2–16     | 4       | Leaf switches                                       |
+| Hub and spoke      | Hubs              | 1–2      | 1       | With two hubs, every site tunnels to both           |
+|                    | Sites             | 2–24     | 6       | Branch sites around the hub                         |
+
+**SD-WAN branch** and **ZTNA user-to-app** have no parameters and start
+straight from the confirmation, as before.
+
+Every combination is laid out and passes validation and the render inspection
+with no problems, so there is nothing to tidy first. Two things change with
+size:
+
+- **The page grows.** A fabric with more than seven leaves, a ring that its
+  sites fill, or a tall DMZ or tier stack gets a canvas larger than the
+  standard 1050 × 700. Press **0** (**Fit view**) to see all of it.
+- **Wide fans are pinned.** In a larger diagram the links of a fan or mesh
+  leave from the facing sides of their nodes (a spine's bottom edge to a leaf's
+  top edge) so they do not run under neighbouring nodes. They are ordinary
+  links with **From side** and **To side** set; change or clear the sides in
+  Properties like any other link.
+
+An agent passes the same parameters to **create_from_template** (see
+[MCP and agent workflows](#16-mcp-and-agent-workflows)) and gets the same
+document.
 
 ### Generate an SD-WAN fabric
 
@@ -1115,7 +1250,8 @@ These controls are local view preferences:
 - grid and snap;
 - **Calm canvas**;
 - on-canvas problem badges;
-- **Display settings** for **Ambient backdrop** and **Panel blur (glass)**;
+- **Display settings** for **Ambient backdrop**, **Panel blur (glass)** and
+  what the **Wheel** does;
 - panel visibility and sizing.
 
 In **Display settings**, Ambient backdrop can be **Animated**, **Static**, or
@@ -1125,9 +1261,27 @@ Flow particles are separate; **Calm canvas** pauses glow and flow animation.
 If no Calm preference has been stored, the editor follows the operating
 system's reduced-motion preference. The user can still toggle Calm afterward.
 
-On a touch screen or trackpad, a two-finger pinch zooms about the gesture's
-midpoint and a two-finger drag pans; single-finger editing is unchanged. Full
-mobile editing remains undeclared (see the limitations section).
+On a touch screen, a two-finger pinch zooms about the gesture's midpoint and a
+two-finger drag pans; single-finger editing is unchanged. Full mobile editing
+remains undeclared (see the limitations section).
+
+**Wheel** in Display settings says what a plain wheel event does on the
+canvas:
+
+| Setting         | A mouse wheel | A trackpad's two-finger slide |
+| --------------- | ------------- | ----------------------------- |
+| **Auto**        | zooms         | pans                          |
+| **Always zoom** | zooms         | zooms                         |
+| **Always pan**  | scrolls       | pans                          |
+
+In every setting a trackpad pinch and Ctrl/Cmd+wheel zoom toward the cursor,
+and Shift+wheel pans sideways. **Auto** has to guess which device sent the
+event, because the browser does not say. If the guess is wrong for your mouse
+or trackpad (the wheel scrolls when you expected a zoom, or the reverse), pick
+one of the other two. The choice is remembered in this browser.
+
+The zoom percentage is the size on screen: at 100% one page unit is one
+pixel, whatever the page's canvas size is.
 
 ### Brand palette
 
@@ -1397,6 +1551,10 @@ The complete tool table and connection details are in the
    task archetype and relevant workspace ID.
 3. Call **layout_guidelines** before placing a large diagram.
 4. Use **create_topology**, **create_from_template**, or **import_topology**.
+   **list_templates** lists each template's parameters (name, type, range,
+   default); pass them as `params`, for example
+   `{"template": "hub-spoke", "params": {"hubs": 2, "sites": 9}}`. For an
+   SD-WAN fabric use **generate_sdwan_topology** instead.
 5. Prefer one atomic **edit_topology** batch over many one-element calls. A
    private-draft batch accepts at most 200 ordered operations.
 6. Call **validate_topology**.
@@ -1405,7 +1563,9 @@ The complete tool table and connection details are in the
    arrangement is appropriate.
 8. Call **inspect_render** for a compact final visual-quality report covering
    crop, labels, link routing, and density.
-9. Call **render_svg** once the inspection is clean. Use
+9. Call **render_svg** once the inspection is clean. It returns the clean
+   build by default: static, and without the renderer's unused definitions
+   (`profile: "full"` returns the animated build). Use
    **export_flipbook** for all pages, **export_topology** for a file (PNG,
    PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedule), **view_topology**
    to show the diagram inline in a host that supports MCP Apps, or hosted
@@ -1475,9 +1635,10 @@ Workspace limits include:
 
 ### Tool groups
 
-Nine document setters are **operations only**: `set_legend`, `set_palette`,
+Ten document setters are **operations only**: `set_legend`, `set_palette`,
 `set_sheet`, `define_link_style`, `define_tier`, `define_bundle`,
-`set_port_table`, `define_node_type`, and `set_node_metadata`. They are not in
+`set_port_table`, `define_node_type`, `set_node_metadata`, and
+`set_document_title`. They are not in
 the tool list an agent loads; the agent runs them as `edit_topology`
 operations and reads their arguments from `describe_operations` when it needs
 one. This keeps the always-loaded tool list small. Where this guide says
@@ -1487,10 +1648,10 @@ one. This keeps the always-loaded tool list small. Where this guide says
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Discover                     | **describe_capabilities**, **layout_guidelines**, **list_templates**                                                                                                                                                                                                                                 |
 | Create/manage private drafts | **create_topology**, **list_topologies**, **get_topology**, **delete_topology**, **create_from_template**, **generate_sdwan_topology**, **import_topology**                                                                                                                                          |
-| Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**; operations **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                             |
+| Document/page settings       | **add_page**, **set_page_properties**; operations **set_document_title**, **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                             |
 | Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                                            |
 | Edit content                 | **edit_topology**, **describe_operations**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**, **define_link_style**, **define_tier**, **define_bundle**, **set_port_table**                                                                      |
-| Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **auto_place_labels**, **inspect_render**                                                                                                                                                                       |
+| Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **auto_place_labels**, **analyze_path**, **inspect_render**                                                                                                                                                     |
 | Output                       | **render_svg**, **export_flipbook**, **export_topology**, **view_topology**, hosted **share_topology** / **list_shares** / **unpublish_topology**                                                                                                                                                    |
 | Hardware catalog             | **list_hardware**, **describe_hardware**, **bind_hardware**, **assign_interfaces**, **catalog_diff**                                                                                                                                                                                                 |
 | Workspace                    | **create_workspace**, **list_workspaces**, **get_workspace_manifest**, **get_workspace_document**, **describe_workspace_operations**, **get_workspace_changes**, **get_workspace_elements**, **propose_workspace_changes**, **apply_workspace_changes**, **create_checkpoint**, **list_checkpoints** |

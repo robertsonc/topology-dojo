@@ -20,6 +20,7 @@ import {
   applyPalette,
   engineDefs,
   renderPageSVG,
+  type RenderOptions,
 } from './vendor/topology-ds.js';
 import {
   blankPage,
@@ -72,6 +73,7 @@ import { captionSVG } from './editor/caption.js';
 import { applyRenderTheme, type RenderTheme } from './render/theme.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
 import { openSdwanWizard } from './ui/sdwan-wizard.js';
+import { openTemplateWizard } from './ui/template-wizard.js';
 import { pageLinkTarget } from './api/page-link.js';
 /** Template-picker value that opens the SD-WAN generator instead. */
 const SDWAN_WIZARD = '__sdwan';
@@ -91,12 +93,64 @@ import {
   defaultPanelCollapsed,
   isMobileLayoutWidth,
 } from './ui/mobile-layout.js';
+import {
+  editorInsets,
+  fitInsets,
+  leftInsetShift,
+  type PanelBox,
+} from './ui/fit-insets.js';
+import {
+  escapeReleasesFocus,
+  focusKind,
+  releasesFocusAfterChange,
+  routeKey,
+  type FocusFacts,
+} from './ui/key-routing.js';
+import {
+  boundsAttrs,
+  findField,
+  numberBounds,
+  numberFieldText,
+  parseNumberField,
+} from './ui/number-field.js';
+import { isImeKey } from './ui/ime.js';
+import { canvasKeyCommand, type CanvasKeyCommand } from './ui/canvas-keys.js';
+import { enablePaletteDrag } from './ui/palette-drag.js';
+import { findInDocument, type FindMatch } from './ui/find.js';
+import type { WheelMode } from './editor/wheel.js';
+import { importConfirmText } from './ui/replace-document.js';
+import { problemsDockView } from './ui/problems-dock.js';
+import {
+  typeOptionGroups,
+  type TypeChoice,
+  type TypeOption,
+} from './ui/type-options.js';
+import { saveChip, type SaveChip } from './ui/save-status.js';
+import { checkCustomTypeName, uniqueTypeName } from './ui/custom-type-name.js';
+import {
+  booleanFieldChecked,
+  enumFieldOptions,
+  enumFieldValue,
+  recordFieldText,
+} from './ui/annotation-fields.js';
+import { exportRenderOptions } from './ui/export-options.js';
+import { exportReport, type ExportState } from './ui/export-status.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
-import { genId } from './api/builder.js';
+import { DEFAULT_LINK_ATTACH, genId } from './api/builder.js';
+import {
+  analyzePath,
+  pathCaption,
+  pathEmphasis,
+  pathFlow,
+  pathLabel,
+} from './api/path.js';
+import { TEXT_LIMITS } from './api/text.js';
+import { pathPanelView } from './ui/path-panel.js';
 import { computeBadgePlacements } from './editor/problem-badges.js';
 import {
+  LINK_ATTACH_FIELDS,
   filterNodeCatalog,
   getAnnotationType,
   getLinkType,
@@ -180,6 +234,9 @@ app.innerHTML = `
       </div>
       <input type="file" id="fInput" accept="application/json,.json,.drawio,.xml,.mmd,.mermaid,.csv,.txt" hidden />
       <span class="saved" id="saved"></span>
+      <!-- Spoken when a save fails or another tab's version arrives: the
+           chip is a button then, so the alert has to be a region of its own. -->
+      <span class="visually-hidden" id="saveAlert" role="alert"></span>
     </div>
     <div class="bar-right">
       <div class="tgroup">
@@ -265,20 +322,25 @@ app.innerHTML = `
           <div class="tds-canvas canvas-host">
             <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
             <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
-            <div class="canvas-ctrls" id="canvasCtrls">
-              <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">✋</button>
-              <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
-              <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)" aria-label="Zoom level — fit view">100%</button>
-              <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
-              <button class="cc-btn" id="ccFit" title="Fit to content (0)" aria-label="Fit to content">⤢</button>
-            </div>
           </div>
         </div>
       </div>
-      <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
-        <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="Hide frames (F)">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">◂</span></button>
-        <div class="frames-reveal">
-          <div class="filmstrip scroll-slim" id="filmstrip"></div>
+      <!-- The canvas's bottom band, floating over it to the right of the node
+           library: the frames strip, then the view controls. They share one
+           row while both fit; otherwise the controls sit above the strip. -->
+      <div class="canvas-dock" id="canvas-dock">
+        <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
+          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="Hide frames (F)">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">◂</span></button>
+          <div class="frames-reveal">
+            <div class="filmstrip scroll-slim" id="filmstrip"></div>
+          </div>
+        </div>
+        <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Canvas view">
+          <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">✋</button>
+          <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+          <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)" aria-label="Zoom level — fit view">100%</button>
+          <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+          <button class="cc-btn" id="ccFit" title="Fit to content (0)" aria-label="Fit to content">⤢</button>
         </div>
       </div>
     </div>
@@ -293,6 +355,7 @@ app.innerHTML = `
           <button class="problems-toggle" id="problems-toggle" title="Validation + layout problems">
             <span class="pt-label">Problems</span>
             <span class="prob-count" id="prob-count">0</span>
+            <span class="prob-hidden-note" id="prob-hidden-note"></span>
             <span class="pt-chev" aria-hidden="true">▸</span>
           </button>
           <div class="problems scroll-slim" id="problems"></div>
@@ -317,6 +380,7 @@ const framesDock = app.querySelector<HTMLDivElement>('#frames-dock')!;
 const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
 const savedEl = app.querySelector<HTMLElement>('#saved')!;
+const saveAlertEl = app.querySelector<HTMLElement>('#saveAlert')!;
 
 /* Autosave to localStorage (debounced) whenever the document changes.
  *
@@ -360,17 +424,30 @@ function flushAutosave(): void {
 // slot is never empty while the app is open. It writes over nothing.
 if (!restoredDoc) saveSerialized(serializeDoc(doc), 'local');
 
+/** Show a save state in the toolbar chip, and announce it when it is a
+ * warning. */
+function showSaveChip(chip: SaveChip): void {
+  savedEl.textContent = chip.text;
+  savedEl.title = chip.title;
+  savedEl.classList.toggle('save-failed', chip.state === 'failed');
+  savedEl.classList.toggle('save-stale', chip.state === 'stale');
+  if (chip.actionable) {
+    savedEl.setAttribute('role', 'button');
+    savedEl.tabIndex = 0;
+  } else {
+    savedEl.removeAttribute('role');
+    savedEl.removeAttribute('tabindex');
+  }
+  // Written only when it changes: every edit made while storage is failing
+  // fails again, and re-writing the alert would repeat it each time.
+  if (saveAlertEl.textContent !== chip.announcement)
+    saveAlertEl.textContent = chip.announcement;
+}
+
 /** Another tab saved a different document to this tab's slot. Say so, and
  * offer to load it; editing here instead keeps this tab's version. */
 function reportChangedElsewhere(): void {
-  savedEl.textContent = '⚠ changed in another tab — load it';
-  savedEl.title =
-    'Another tab saved a different version of this document. Click to load ' +
-    'it here. If you keep editing in this tab, this tab’s version is saved.';
-  savedEl.classList.remove('save-failed');
-  savedEl.classList.add('save-stale');
-  savedEl.setAttribute('role', 'button');
-  savedEl.tabIndex = 0;
+  showSaveChip(saveChip('stale'));
 }
 function loadFromOtherTab(): void {
   const latest = loadLocal(activeSlot);
@@ -381,26 +458,12 @@ function loadFromOtherTab(): void {
 
 /** Reflect a persistence attempt in the status chip. */
 function reportSave(ok: boolean, okText?: string): void {
-  savedEl.classList.remove('save-stale');
-  if (ok) {
-    savedEl.textContent =
-      okText ?? (activeSlot === 'shared' ? '✓ saved · shared copy' : '✓ saved');
-    savedEl.title =
-      activeSlot === 'shared'
-        ? 'Autosaved separately — your own document is untouched'
-        : 'Autosaved to this browser';
-    savedEl.classList.remove('save-failed');
-    savedEl.removeAttribute('role');
-    savedEl.removeAttribute('tabindex');
-  } else {
-    savedEl.textContent = '⚠ not saved — download JSON';
-    savedEl.title =
-      'Browser storage failed (full or unavailable). ' +
-      'Click to download the document as JSON so no work is lost.';
-    savedEl.classList.add('save-failed');
-    savedEl.setAttribute('role', 'button');
-    savedEl.tabIndex = 0;
-  }
+  showSaveChip(
+    saveChip(ok ? 'saved' : 'failed', {
+      shared: activeSlot === 'shared',
+      ...(okText ? { okText } : {}),
+    }),
+  );
 }
 function savedChipAction(): boolean {
   if (savedEl.classList.contains('save-failed')) downloadDocJSON();
@@ -428,12 +491,43 @@ function onDocChange(): void {
   renderStatus();
   renderMinimap();
   renderProblems();
+  refreshInspectorAfterChange();
+  // A path on show is traced again: the edit may have changed the answer.
+  if (pathSession) renderPathBar();
   markDirty();
 }
 
 // Guards the status bar from rendering before `editor`/`statusbar` are set up
 // (the Editor constructor fires onView during construction).
 let statusReady = false;
+/** The path analysis on show, if any (see "Path analysis" further down).
+ * Declared here because `onDocChange` reads it and runs during start-up. */
+let pathSession: {
+  from: string;
+  to: string;
+  /** Which of the routes found is on show. */
+  index: number;
+  /** The frame it was asked on; it does not follow to another frame. */
+  pageId: string;
+} | null = null;
+/** Set once the inspector has been drawn for the first time. */
+let inspectorReady = false;
+
+/**
+ * Keep Properties in step with a change made outside it. A link bent on the
+ * canvas, a node dragged or nudged, an undo: the editor reports the change
+ * but not a new selection, so the panel would go on showing the old bends,
+ * position or values until the element was selected again.
+ *
+ * While focus is inside the panel the change is the panel's own (a field
+ * being typed in, a control just used), and its handlers already redraw what
+ * needs it — redrawing here too would take the field out from under the
+ * caret.
+ */
+function refreshInspectorAfterChange(): void {
+  if (!inspectorReady || inspector.contains(document.activeElement)) return;
+  renderInspector();
+}
 
 const editor = new Editor(
   artSvg,
@@ -451,19 +545,22 @@ const editor = new Editor(
   onZoneSelectChange,
 );
 
-/*
- * Tell the editor how much of the canvas the floating panels cover, so
- * fit-to-content frames the *visible* area and never tucks edge content behind
- * the inspector or minimap. Recomputed on each fit (panels collapse/expand).
+/**
+ * The document-level overlays drawn over a page — the key (legend), the sheet
+ * frame, the caption — recoloured for the brand palette like the art beneath
+ * them, so the key's swatches match what they are the key to. The theme is
+ * applied by whoever composites them: the canvas hook below, or `pageToSVG`
+ * for an export.
  */
+function pageOverlay(page: Page): string {
+  const overlay = documentOverlaySVG(doc, page) + captionSVG(page);
+  return doc.palette ? applyPalette(overlay, doc.palette) : overlay;
+}
 // Draw the auto-legend (B.1) on the canvas — recomputed each overlay paint from
 // the elements in use, so it tracks edits live. Off unless the document opts in.
 // Themed like the art (#264) so the on-canvas legend/caption read in light mode.
 editor.setOverlayExtra(() =>
-  applyRenderTheme(
-    documentOverlaySVG(doc, editor.page) + captionSVG(editor.page),
-    currentTheme(),
-  ),
+  applyRenderTheme(pageOverlay(editor.page), currentTheme()),
 );
 
 // Feed declared layers (with their visibility/opacity, B.3) into every render so
@@ -525,6 +622,8 @@ function openInlineLabelEditor(req: InlineEditRequest): void {
   input.addEventListener('blur', () => commit(true));
   input.addEventListener('keydown', (e) => {
     e.stopPropagation();
+    // Enter / Escape that confirm or discard an IME candidate are not ours.
+    if (isImeKey(e)) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       commit(true);
@@ -544,7 +643,7 @@ editor.setOpenHrefHandler((href) => {
   const target = pageLinkTarget(href);
   if (target !== null) {
     const i = doc.pages.findIndex((p) => p.id === target);
-    if (i >= 0) selectPage(i);
+    if (i >= 0) choosePage(i);
     return;
   }
   window.open(href, '_blank', 'noopener');
@@ -630,6 +729,7 @@ function openQuickAdd(req: InlineEditRequest, connectFrom?: string): void {
   });
   input.addEventListener('keydown', (e) => {
     e.stopPropagation();
+    if (isImeKey(e)) return; // the key belongs to an IME composition
     if (e.key === 'Escape') {
       e.preventDefault();
       closeQuickAdd();
@@ -803,6 +903,9 @@ miniBar.addEventListener('change', (e) => {
 overlaySvg.addEventListener('pointerdown', () => {
   miniBarSuppressed = true;
   miniBar.hidden = true;
+  // Working on the canvas ends flipbook playback: each flip would otherwise
+  // drop the selection and switch the frame under the pointer.
+  stopPlayback();
 });
 overlaySvg.addEventListener('pointerup', () => {
   miniBarSuppressed = false;
@@ -827,31 +930,64 @@ editor.setConnectEmptyHandler((req) =>
   ),
 );
 
+/*
+ * Tell the editor how much of the canvas the floating panels cover, so
+ * fit-to-content frames the *visible* area and never tucks edge content behind
+ * the node library, the bottom band or the properties drawer. Recomputed on
+ * each fit (panels collapse/expand).
+ */
+/** A floating panel's box, or null while it is collapsed or not laid out. */
+const openPanelBox = (id: string): PanelBox | null => {
+  const el = document.getElementById(id);
+  if (!el || el.classList.contains('collapsed')) return null;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 ? r : null;
+};
+/** The left inset the editor's latest fit was computed with (see fitView). */
+let fitLeftInset = 0;
 editor.setViewInsets(() => {
-  const canvas = overlaySvg.getBoundingClientRect();
-  let right = 0;
-  const insp = document.getElementById('inspector-wrap');
-  if (insp && !insp.classList.contains('collapsed')) {
-    const r = insp.getBoundingClientRect();
-    if (r.width > 0) right = Math.max(right, canvas.right - r.left + 12);
-  }
-  // The expanded frames strip floats over the canvas bottom; reserve that band
-  // so a fit never tucks content behind it. Collapsed (a small pill) it costs
-  // nothing. The minimap docks in the left rail and reserves nothing.
-  let bottom = 0;
-  const frames = document.getElementById('frames-dock');
-  if (frames && !frames.classList.contains('collapsed')) {
-    const r = frames.getBoundingClientRect();
-    if (r.height > 0) bottom = Math.max(0, canvas.bottom - r.top + 12);
-  }
-  // Never surrender more than ~60% of the canvas to a panel.
-  return {
-    right: Math.max(0, Math.min(right, canvas.width * 0.6)),
-    bottom: Math.max(0, Math.min(bottom, canvas.height * 0.6)),
-  };
+  const insets = fitInsets({
+    canvas: overlaySvg.getBoundingClientRect(),
+    palette: openPanelBox('palette'),
+    inspector: openPanelBox('inspector-wrap'),
+    // The view controls are always in the bottom band, so it is reserved
+    // with the frames strip collapsed too.
+    dock: openPanelBox('canvas-dock'),
+  });
+  fitLeftInset = insets.left;
+  return editorInsets(insets);
 });
+/*
+ * The editor's fit takes a right and a bottom inset and centres the content
+ * in what is left, measured from the canvas's left edge — it has no notion of
+ * a panel on the left. So the left inset reaches it folded into the right one
+ * (which gets the scale right), and once the editor has fitted, the view is
+ * moved here so the content sits past the node library instead of under it.
+ * Every fit the shell asks for goes through fitView / showPage for that.
+ */
+function settleFit(): void {
+  const left = fitLeftInset;
+  fitLeftInset = 0;
+  const width = overlaySvg.getBoundingClientRect().width;
+  const view = editor.getView();
+  const shift = leftInsetShift(view.w, width, left);
+  if (shift > 0) editor.panTo(view.x + view.w / 2 - shift, view.y + view.h / 2);
+}
+/** Fit the view to the page's content, clear of the floating panels. */
+function fitView(): void {
+  fitLeftInset = 0;
+  editor.resetView();
+  settleFit();
+}
+/** Show a page in the editor, fitted clear of the floating panels. */
+function showPage(page: Page): void {
+  fitLeftInset = 0;
+  closePathBar(); // a path belongs to the frame it was traced on
+  editor.setPage(page);
+  settleFit();
+}
 // Initial fit once the canvas has real dimensions (constructor ran pre-layout).
-requestAnimationFrame(() => editor.resetView());
+requestAnimationFrame(fitView);
 
 /* Replace the whole document (open / new) and refresh everything.
  * `slot` is the autosave destination: every explicit replacement (new, open,
@@ -903,7 +1039,7 @@ function loadDoc(
   buildPalette();
   // Adopt the incoming document's brand palette (canvas + chrome + inputs).
   applyBrandPalette(doc.palette, false);
-  editor.setPage(doc.pages[current]!);
+  showPage(doc.pages[current]!);
   renderFilmstrip();
   renderProblems();
   if (sync) markDirty();
@@ -1072,7 +1208,11 @@ app.querySelector('#fNew')?.addEventListener('click', () => {
   if (!closeWorkspaceForDocumentReplacement()) return;
   loadDoc({
     title: 'Untitled',
-    pages: [blankPage('Frame 1')],
+    // A new document starts with the link anchor box on, like one an agent
+    // creates (DEFAULT_LINK_ATTACH); the page's Properties turn it off.
+    pages: [
+      { ...blankPage('Frame 1'), linkAttach: { ...DEFAULT_LINK_ATTACH } },
+    ],
     customNodes: [],
   });
   // An anonymous visitor (in from a share link) has just started a document
@@ -1088,23 +1228,24 @@ app.querySelector('#fSave')?.addEventListener('click', downloadDocJSON);
  * failure so a swallowed download is never the only outcome. */
 const exportStatus = app.querySelector<HTMLElement>('#exportStatus')!;
 const pngBtn = app.querySelector<HTMLButtonElement>('#fPng');
-function reportExport(
-  state: 'ok' | 'pending' | 'error',
-  message: string,
-  detail?: string,
-): void {
-  exportStatus.textContent = message;
-  exportStatus.title = detail ?? message;
+/** Show how export `kind` is going in the status chip (and to a screen
+ * reader: the chip is a polite live region). */
+function reportExport(kind: string, state: ExportState, detail?: string): void {
+  const report = exportReport(kind, state, detail);
+  exportStatus.textContent = report.message;
+  exportStatus.title = report.detail;
   exportStatus.classList.toggle('export-ok', state === 'ok');
   exportStatus.classList.toggle('export-pending', state === 'pending');
   exportStatus.classList.toggle('export-failed', state === 'error');
 }
+/** The file name stem for a whole-document export. */
+function docBase(): string {
+  return (doc.title || 'topology').replace(/[^\w.-]+/g, '_');
+}
+/** The file name stem for a single-frame export. */
 function exportBase(): string {
   const page = doc.pages[current]!;
-  return `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
-}
-function exportExtra(page: Page): string {
-  return documentOverlaySVG(doc, page) + captionSVG(page);
+  return `${docBase()}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
 }
 app.querySelector('#fSvg')?.addEventListener('click', () => {
   const page = framed(doc.pages[current]!);
@@ -1113,19 +1254,13 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
     exportPageSVG(
       filename,
       page,
-      {
-        calm: editor.calm,
-        layers: doc.layers,
-        linkStyles: doc.linkStyles,
-        emphasis: page.emphasis,
-        theme: currentTheme(),
-      },
-      exportExtra(page),
+      { ...pageOpts(page), calm: editor.calm },
+      pageOverlay(page),
     );
-    reportExport('ok', '✓ exported svg', filename);
+    reportExport('svg', 'ok', filename);
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'SVG export failed.';
-    reportExport('error', '⚠ svg export failed', detail);
+    reportExport('svg', 'error', detail);
   }
 });
 app.querySelector('#fPng')?.addEventListener('click', () => {
@@ -1133,17 +1268,12 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
   const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.png`;
   if (pngBtn) pngBtn.disabled = true;
-  reportExport('pending', '… exporting png', filename);
-  void exportPagePNG(filename, page, 2, exportExtra(page), {
-    layers: doc.layers,
-    linkStyles: doc.linkStyles,
-    emphasis: page.emphasis,
-    theme: currentTheme(),
-  })
-    .then(() => reportExport('ok', '✓ exported png', filename))
+  reportExport('png', 'pending', filename);
+  void exportPagePNG(filename, page, 2, pageOverlay(page), pageOpts(page))
+    .then(() => reportExport('png', 'ok', filename))
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'PNG export failed.';
-      reportExport('error', '⚠ png export failed', detail);
+      reportExport('png', 'error', detail);
     })
     .finally(() => {
       if (pngBtn) pngBtn.disabled = false;
@@ -1162,23 +1292,16 @@ const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
 function framed(page: Page): Page {
   return doc.sheet ? page : pageFramedForExport(page);
 }
-function pageExtra(page: Page): string {
-  return documentOverlaySVG(doc, page) + captionSVG(page);
+/* Everything drawn off the canvas — every export, the clipboard copy,
+ * Present — uses these options, so it carries what the canvas shows: the
+ * layers, the link styles, the frame's emphasis, the brand palette, and the
+ * editor's current light/dark toggle (#264: a light canvas exports light). */
+function pageOpts(page: Page): RenderOptions {
+  return exportRenderOptions(doc, page, currentTheme());
 }
-/* Exports follow the editor's current light/dark toggle (#264): a light
- * canvas exports light, a dark canvas exports dark. */
-function pageOpts(page: Page): {
-  layers: typeof doc.layers;
-  linkStyles: typeof doc.linkStyles;
-  emphasis?: string[];
-  theme: RenderTheme;
-} {
-  return {
-    layers: doc.layers,
-    linkStyles: doc.linkStyles,
-    ...(page.emphasis ? { emphasis: page.emphasis } : {}),
-    theme: currentTheme(),
-  };
+/** The same for a selection-only crop, which has no frame emphasis. */
+function selectionOpts(): RenderOptions {
+  return exportRenderOptions(doc, {}, currentTheme());
 }
 /** PDF paper size from the sheet frame (W6), when a standard size is set. */
 function paperSpec(): { paper?: { w: number; h: number } } {
@@ -1191,8 +1314,14 @@ function selectionAsPage(): Page | null {
   if (!sel || sel.nodes.length === 0) return null;
   return selectionPage(doc.pages[current]!, sel.nodes, sel.links);
 }
-async function runExport(kind: string): Promise<void> {
+/** Run one export from the menu. Resolves with the name of the file it
+ * downloaded (nothing for a clipboard copy); rejects with the reason. */
+async function runExport(kind: string): Promise<string | undefined> {
   const page = doc.pages[current]!;
+  const save = (filename: string, blob: Blob): string => {
+    downloadBlob(filename, blob);
+    return filename;
+  };
   switch (kind) {
     case 'pdf-page': {
       const whole = framed(page);
@@ -1200,27 +1329,22 @@ async function runExport(kind: string): Promise<void> {
         {
           page: whole,
           opts: pageOpts(whole),
-          extra: pageExtra(whole),
+          extra: pageOverlay(whole),
           ...paperSpec(),
         },
       ]);
-      downloadBlob(`${exportBase()}.pdf`, blob);
-      return;
+      return save(`${exportBase()}.pdf`, blob);
     }
     case 'pdf-all': {
       const blob = await pagesToPDFBlob(
         doc.pages.map(framed).map((p) => ({
           page: p,
           opts: pageOpts(p),
-          extra: pageExtra(p),
+          extra: pageOverlay(p),
           ...paperSpec(),
         })),
       );
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.pdf`,
-        blob,
-      );
-      return;
+      return save(`${docBase()}.pdf`, blob);
     }
     case 'flipbook': {
       const html = exportFlipbookHTML(
@@ -1230,37 +1354,34 @@ async function runExport(kind: string): Promise<void> {
           return pageToSVG(
             p,
             { ...pageOpts(p), calm: editor.calm },
-            pageExtra(p),
+            pageOverlay(p),
           );
         },
         { theme: currentTheme() },
       );
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_flipbook.html`,
+      return save(
+        `${docBase()}_flipbook.html`,
         new Blob([html], { type: 'text/html' }),
       );
-      return;
     }
     case 'drawio': {
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.drawio`,
+      return save(
+        `${docBase()}.drawio`,
         new Blob([documentToDrawioXML(doc)], { type: 'application/xml' }),
       );
-      return;
     }
     case 'vsdx': {
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.vsdx`,
+      return save(
+        `${docBase()}.vsdx`,
         new Blob([documentToVsdx(doc)], {
           type: 'application/vnd.ms-visio.drawing',
         }),
       );
-      return;
     }
     case 'pptx':
     case 'pptx-layers': {
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.pptx`,
+      return save(
+        `${docBase()}.pptx`,
         new Blob(
           [
             documentToPptx(doc, {
@@ -1272,47 +1393,64 @@ async function runExport(kind: string): Promise<void> {
           },
         ),
       );
-      return;
     }
     case 'mermaid': {
-      downloadBlob(
+      return save(
         `${exportBase()}.mmd`,
         new Blob([documentToMermaid(doc, current)], { type: 'text/plain' }),
       );
-      return;
     }
     case 'copy-png':
-      await copyPagePNG(framed(page), pageExtra(framed(page)), pageOpts(page));
-      return;
+      await copyPagePNG(
+        framed(page),
+        pageOverlay(framed(page)),
+        pageOpts(page),
+      );
+      return undefined;
     case 'svg-selection': {
       const sp = selectionAsPage();
-      if (!sp) throw new Error('select one or more nodes first');
-      exportPageSVG(`${exportBase()}_selection.svg`, sp, {
-        calm: true,
-        layers: doc.layers,
-        linkStyles: doc.linkStyles,
-        theme: currentTheme(),
-      });
-      return;
+      if (!sp) throw new Error('Select one or more nodes first.');
+      const filename = `${exportBase()}_selection.svg`;
+      exportPageSVG(filename, sp, { ...selectionOpts(), calm: true });
+      return filename;
     }
     case 'png-selection': {
       const sp = selectionAsPage();
-      if (!sp) throw new Error('select one or more nodes first');
-      await exportPagePNG(`${exportBase()}_selection.png`, sp, 2, '', {
-        layers: doc.layers,
-        linkStyles: doc.linkStyles,
-        theme: currentTheme(),
-      });
-      return;
+      if (!sp) throw new Error('Select one or more nodes first.');
+      const filename = `${exportBase()}_selection.png`;
+      await exportPagePNG(filename, sp, 2, '', selectionOpts());
+      return filename;
     }
   }
+  throw new Error(`unknown export "${kind}"`);
+}
+/** Copy an image to the clipboard from the canvas's right-click menu,
+ * reporting through the same chip as the toolbar's exports. */
+function copyImage(copy: () => Promise<void>): void {
+  reportExport('copy-png', 'pending');
+  copy().then(
+    () => reportExport('copy-png', 'ok'),
+    (err: unknown) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      reportExport('copy-png', 'error', detail);
+      alert(`Copy failed: ${detail}`);
+    },
+  );
 }
 exportSel.addEventListener('change', () => {
   const kind = exportSel.value;
   exportSel.value = '';
   if (!kind) return;
-  void runExport(kind).catch((err) =>
-    alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`),
+  // The chip says what is happening from the start, so a stale message from
+  // an earlier export never stands in for this one's outcome.
+  reportExport(kind, 'pending');
+  runExport(kind).then(
+    (filename) => reportExport(kind, 'ok', filename),
+    (err: unknown) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      reportExport(kind, 'error', detail);
+      alert(`Export failed: ${detail}`);
+    },
   );
 });
 /* New from a starter template. */
@@ -1350,6 +1488,26 @@ templateSel.addEventListener('change', () => {
     });
     return;
   }
+  // A parametric template asks for its parameters first (and confirms on
+  // Create); one without parameters falls through to the plain path below.
+  if (
+    openTemplateWizard(id, {
+      mount: app,
+      render: (generated) =>
+        pageToSVG(generated.pages[0]!, {
+          layers: generated.layers,
+          calm: true,
+          theme: currentTheme(),
+        }),
+      onCreate: (generated) => {
+        if (!confirm('Start from this template? Unsaved changes are lost.'))
+          return;
+        if (!closeWorkspaceForDocumentReplacement()) return;
+        loadDoc(generated);
+      },
+    })
+  )
+    return;
   if (!confirm('Start from this template? Unsaved changes are lost.')) return;
   if (!closeWorkspaceForDocumentReplacement()) return;
   loadDoc(buildTemplate(id));
@@ -1380,19 +1538,7 @@ fileInput.addEventListener('change', async () => {
       return;
     }
     const { document, warnings } = classified.result;
-    const shown = warnings.slice(0, 8);
-    const summary =
-      `Imported from ${what}: ${document!.pages[0]!.nodes.length} node(s), ` +
-      `${document!.pages[0]!.links.length} link(s), ${warnings.length} warning(s)` +
-      (shown.length
-        ? ':\n' +
-          shown.map((w) => `- ${w}`).join('\n') +
-          (warnings.length > shown.length
-            ? `\n+ ${warnings.length - shown.length} more`
-            : '')
-        : '') +
-      '\nLoad it?';
-    if (!confirm(summary)) return;
+    if (!confirm(importConfirmText(what, document!, warnings))) return;
     if (!closeWorkspaceForDocumentReplacement()) return;
     loadDoc(document!);
     return;
@@ -1405,18 +1551,12 @@ fileInput.addEventListener('change', async () => {
       return;
     }
     const { document, warnings } = classified.result;
-    const shown = warnings.slice(0, 8);
-    const summary =
-      `Converted from legacy Topology Studio: ${document.pages.length} page(s), ${warnings.length} warning(s)` +
-      (shown.length
-        ? ':\n' +
-          shown.map((w) => `- ${w}`).join('\n') +
-          (warnings.length > shown.length
-            ? `\n+ ${warnings.length - shown.length} more`
-            : '')
-        : '') +
-      '\nLoad it?';
-    if (!confirm(summary)) return;
+    const question = importConfirmText(
+      'converted Topology Studio file',
+      document,
+      warnings,
+    );
+    if (!confirm(question)) return;
     if (!closeWorkspaceForDocumentReplacement()) return;
     loadDoc(document);
     return;
@@ -1477,10 +1617,8 @@ app
 app
   .querySelector('#ccZoomOut')!
   .addEventListener('click', () => editor.zoomOut());
-ccZoom.addEventListener('click', () => editor.resetView());
-app
-  .querySelector('#ccFit')!
-  .addEventListener('click', () => editor.resetView());
+ccZoom.addEventListener('click', fitView);
+app.querySelector('#ccFit')!.addEventListener('click', fitView);
 
 /** Reflect undo/redo availability + live zoom % in the chrome. */
 function refreshChrome(): void {
@@ -1504,18 +1642,19 @@ selectBySel.addEventListener('change', () => {
 /* Status bar — live tool / cursor / element counts / zoom. */
 const statusbar = app.querySelector<HTMLElement>('#statusbar')!;
 let cursor: { x: number; y: number } | null = null;
-// Latest problem tallies, shared with the always-visible status-bar indicator so
-// it stays in sync with the pinned Problems panel without recomputing here.
-let lastProblems = { errors: 0, warnings: 0 };
+// What the Problems dock last showed, shared with the always-visible status-bar
+// indicator so it stays in sync with the dock without recomputing here.
+let problemsView = problemsDockView({
+  visible: 0,
+  errors: 0,
+  hidden: 0,
+  collapsedPref: null,
+});
 function statusProblemsHTML(): string {
-  const { errors, warnings } = lastProblems;
-  const total = errors + warnings;
-  const cls = errors ? 'has-error' : warnings ? 'has-warn' : '';
-  const label = total ? `⚠ ${total}` : '✓';
-  const title = total
-    ? `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'} — open Problems`
-    : 'No problems';
-  return `<button class="sb-problems ${cls}" id="sb-problems" title="${title}" aria-label="${title}">${label}</button>`;
+  const { severity, statusLabel, statusTitle } = problemsView;
+  const cls =
+    severity === 'error' ? 'has-error' : severity === 'warn' ? 'has-warn' : '';
+  return `<button class="sb-problems ${cls}" id="sb-problems" title="${esc(statusTitle)}" aria-label="${esc(statusTitle)}">${esc(statusLabel)}</button>`;
 }
 function renderStatus(): void {
   if (!statusReady) return; // editor / statusbar not wired yet
@@ -1702,6 +1841,7 @@ const problemsToggle =
   app.querySelector<HTMLButtonElement>('#problems-toggle')!;
 const problemsPanel = app.querySelector<HTMLDivElement>('#problems')!;
 const probCount = app.querySelector<HTMLSpanElement>('#prob-count')!;
+const probHiddenNote = app.querySelector<HTMLSpanElement>('#prob-hidden-note')!;
 
 /** Locate the element a problem refers to on the CURRENT page (feeds the canvas
  * badge layer, which only glyphs elements on the page being viewed). */
@@ -1864,6 +2004,9 @@ let badgesVisible = localStorage.getItem(BADGES_KEY) !== '0';
 
 editor.setOnBadgeClick((kind, id) => {
   selectProblemTarget({ kind, id });
+  // A click on a badge asks what the problem is: open the dock on it.
+  setInspectorCollapsed(false);
+  setProblemsCollapsed(false);
   const row = problemsPanel.querySelector<HTMLButtonElement>(
     `[data-prob-kind="${kind}"][data-prob-id="${CSS.escape(id)}"]`,
   );
@@ -1879,6 +2022,7 @@ let problemsPref: boolean | null =
     : localStorage.getItem('tds-problems-collapsed') === '1';
 function applyProblemsCollapsed(collapsed: boolean): void {
   problemsDock.classList.toggle('collapsed', collapsed);
+  problemsToggle.setAttribute('aria-expanded', String(!collapsed));
   const chev = problemsToggle.querySelector('.pt-chev');
   if (chev) chev.textContent = collapsed ? '▸' : '▾';
 }
@@ -1907,15 +2051,20 @@ function renderProblems(): void {
   const problems = all.filter((p) => !hiddenProblems.has(problemKey(p)));
   const hiddenCount = all.length - problems.length;
   const errors = problems.filter((p) => p.level === 'error').length;
-  const warnings = problems.length - errors;
+  problemsView = problemsDockView({
+    visible: problems.length,
+    errors,
+    hidden: hiddenCount,
+    collapsedPref: problemsPref,
+  });
 
-  // Header count badge + severity tint on the pinned dock.
-  problemsDock.classList.toggle('has-error', errors > 0);
-  problemsDock.classList.toggle('has-warn', errors === 0 && warnings > 0);
-  probCount.textContent = String(problems.length);
+  // Header: count badge, how many are hidden, severity tint on the dock.
+  problemsDock.classList.toggle('has-error', problemsView.severity === 'error');
+  problemsDock.classList.toggle('has-warn', problemsView.severity === 'warn');
+  probCount.textContent = problemsView.count;
+  probHiddenNote.textContent = problemsView.hiddenNote;
 
   // Keep the always-visible status-bar indicator in sync.
-  lastProblems = { errors, warnings };
   renderStatus();
 
   const listed = showHiddenProblems ? all : problems;
@@ -1987,11 +2136,9 @@ function renderProblems(): void {
       renderProblems();
     });
 
-  // Auto-collapse when everything is clean; otherwise honour the user's explicit
-  // preference (default: expanded so problems are visible when they appear).
-  applyProblemsCollapsed(
-    problems.length === 0 ? true : (problemsPref ?? false),
-  );
+  // Closed when there is nothing to list; otherwise where the user left it
+  // (closed until they first open it — see problemsDockView).
+  applyProblemsCollapsed(problemsView.collapsed);
 
   // Badge layer reuses the same (visible) `problems` list + `problemLocate`
   // mapping (the current-page locate) — one computation feeds both surfaces,
@@ -2010,71 +2157,48 @@ problemsToggle.addEventListener('click', () =>
 statusReady = true;
 renderProblems();
 
-/* Find / jump-to-element (Ctrl+F) — search nodes by label / id / type and jump. */
+/* Find / jump-to-element (Ctrl+F): nodes, links and zones on every frame
+ * (see src/ui/find.ts for what matches). Choosing a match goes to its frame
+ * and selects it. */
 let findEl: HTMLDivElement | null = null;
-let findMatches: { id: string; label: string; type: string }[] = [];
+let findMatches: FindMatch[] = [];
 let findSel = 0;
 
 function closeFind(): void {
   findEl?.remove();
   findEl = null;
 }
-function jumpFind(id: string): void {
-  editor.focusNode(id);
+function jumpFind(match: FindMatch): void {
   closeFind();
+  if (match.pageIndex !== current) choosePage(match.pageIndex);
+  editor.selectElement(match.kind, match.id, { center: true });
 }
 function renderFindResults(): void {
   const list = findEl?.querySelector<HTMLElement>('.find-results');
   if (!list) return;
   if (findMatches.length === 0) {
-    list.innerHTML = `<div class="find-empty">No matching nodes</div>`;
+    list.innerHTML = `<div class="find-empty">Nothing matches</div>`;
     return;
   }
   list.innerHTML = findMatches
-    .map(
-      (m, i) =>
-        `<div class="find-item ${i === findSel ? 'on' : ''}" data-id="${esc(m.id)}"><span>${esc(m.label)}</span><span class="fi-type">${esc(m.type)}</span></div>`,
-    )
+    .map((m, i) => {
+      // A match on another frame says which.
+      const where =
+        m.pageIndex === current
+          ? ''
+          : ` · ${doc.pages[m.pageIndex]?.name ?? `Frame ${m.pageIndex + 1}`}`;
+      return `<div class="find-item ${i === findSel ? 'on' : ''}" data-i="${i}"><span>${esc(m.label)}</span><span class="fi-type">${esc(m.detail + where)}</span></div>`;
+    })
     .join('');
-  list
-    .querySelectorAll<HTMLElement>('.find-item')
-    .forEach((el) =>
-      el.addEventListener('click', () => jumpFind(el.dataset.id!)),
-    );
+  list.querySelectorAll<HTMLElement>('.find-item').forEach((el) =>
+    el.addEventListener('click', () => {
+      const m = findMatches[Number(el.dataset.i)];
+      if (m) jumpFind(m);
+    }),
+  );
 }
 function runFindQuery(q: string): void {
-  const s = q.trim().toLowerCase();
-  // Match label / id / type / sublabel — and metadata keys AND values, so a
-  // node is findable by the IP, hostname, serial, etc. stored on it. The
-  // shown "type" slot carries the match reason when it came from metadata.
-  const reasonFor = (n: (typeof editor.page.nodes)[number]): string | null => {
-    if (!s) return n.type;
-    if (
-      (n.label ?? '').toLowerCase().includes(s) ||
-      n.id.toLowerCase().includes(s) ||
-      n.type.toLowerCase().includes(s)
-    )
-      return n.type;
-    if (((n.sublabel as string) ?? '').toLowerCase().includes(s))
-      return `${n.type} · ${String(n.sublabel)}`;
-    for (const [k, v] of Object.entries(n.meta ?? {})) {
-      if (k.toLowerCase().includes(s) || String(v).toLowerCase().includes(s))
-        return `${n.type} · ${k}: ${String(v)}`;
-    }
-    return null;
-  };
-  findMatches = editor.page.nodes
-    .map((n) => ({ n, reason: reasonFor(n) }))
-    .filter(
-      (x): x is { n: (typeof editor.page.nodes)[number]; reason: string } =>
-        x.reason !== null,
-    )
-    .slice(0, 50)
-    .map(({ n, reason }) => ({
-      id: n.id,
-      label: n.label || '(no label)',
-      type: reason,
-    }));
+  findMatches = findInDocument(doc.pages, q, current);
   findSel = 0;
   renderFindResults();
 }
@@ -2086,12 +2210,13 @@ function openFind(): void {
   findEl = document.createElement('div');
   findEl.className = 'find';
   findEl.innerHTML =
-    `<input type="text" placeholder="Find node by label / id / type / metadata…" aria-label="Find node by label, id, type, or metadata" />` +
+    `<input type="text" placeholder="Find a node, link or zone on any frame…" aria-label="Find a node, link or zone on any frame, by label, id, type or metadata" />` +
     `<div class="find-results scroll-slim"></div>`;
   app.appendChild(findEl);
   const input = findEl.querySelector('input')!;
   input.addEventListener('input', () => runFindQuery(input.value));
   input.addEventListener('keydown', (e) => {
+    if (isImeKey(e)) return; // the key belongs to an IME composition
     if (e.key === 'Escape') {
       e.preventDefault();
       closeFind();
@@ -2106,7 +2231,7 @@ function openFind(): void {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const m = findMatches[findSel];
-      if (m) jumpFind(m.id);
+      if (m) jumpFind(m);
     }
   });
   input.focus();
@@ -2414,7 +2539,7 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         swatchRow(f.key, v as string | undefined),
       );
     case 'number':
-      return `<label class="${row}"><span>${f.label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${f.range ? ` min="${f.range[0]}" max="${f.range[1]}" step="any"` : ''}/></label>`;
+      return `<label class="${row}"><span>${f.label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
     case 'object': {
       // An enable switch on the field itself (checked = the object present,
       // at its defaults), then its nested fields as dotted keys
@@ -2449,7 +2574,7 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
 /**
  * The element patch for one inspector edit. A dotted key addresses a nested
  * `object` field ("linkAttach.pad"): the current object is copied and the
- * sub-field set (a blank / NaN number clears it). A boolean on an `object`
+ * sub-field set (an unset / blank / NaN value clears it). A boolean on an `object`
  * field itself is its enable switch: true → `{}` (on, at the defaults),
  * false → the field cleared. Plain keys patch as before.
  */
@@ -2472,7 +2597,11 @@ function fieldPatch(
     typeof cur === 'object' && cur !== null
       ? { ...(cur as Record<string, unknown>) }
       : {};
-  if (val === '' || (typeof val === 'number' && Number.isNaN(val)))
+  if (
+    val === undefined ||
+    val === '' ||
+    (typeof val === 'number' && Number.isNaN(val))
+  )
     delete next[child];
   else next[child] = val;
   return { [parent]: next };
@@ -2541,19 +2670,24 @@ function wireMeta(_meta?: Record<string, string | number | boolean>): void {
     ?.addEventListener('click', add);
   addRow?.querySelectorAll<HTMLInputElement>('input').forEach((i) =>
     i.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') add();
+      if (e.key === 'Enter' && !isImeKey(e)) add();
     }),
   );
 }
 
-function typeRow(current: string, types: string[]): string {
-  const opts = types.includes(current) ? types : [current, ...types];
-  return `<label class="insp-row"><span>Type</span><select id="i-type">${opts
-    .map(
-      (t) =>
-        `<option value="${esc(t)}" ${t === current ? 'selected' : ''}>${esc(t)}</option>`,
+/** The Type dropdown: types by their library label, under the library's
+ * category headings (see typeOptionGroups). */
+function typeRow(current: string, choices: readonly TypeChoice[]): string {
+  const option = (o: TypeOption): string =>
+    `<option value="${esc(o.value)}"${o.selected ? ' selected' : ''}>${esc(o.label)}</option>`;
+  const body = typeOptionGroups(current, choices)
+    .map((g) =>
+      g.group === null
+        ? g.options.map(option).join('')
+        : `<optgroup label="${esc(g.group)}">${g.options.map(option).join('')}</optgroup>`,
     )
-    .join('')}</select></label>`;
+    .join('');
+  return `<label class="insp-row"><span>Type</span><select id="i-type">${body}</select></label>`;
 }
 
 /** A named, ordered bucket of catalog field keys for the inspector. */
@@ -2737,8 +2871,8 @@ function propertiesHtml(): string {
     `<option value="chip"${page.portLabels !== 'pill' ? ' selected' : ''}>chip beside the wire</option>` +
     `<option value="pill"${page.portLabels === 'pill' ? ' selected' : ''}>pill on the node edge</option>` +
     `</select></label>` +
-    // Experimental link anchor box — page-level; nodes may override it.
-    `<label class="insp-row" title="Experimental: links attach to a padded box that clears the node label instead of the icon edge. Nodes can override it in their Properties."><span>Link anchor box</span><input type="checkbox" id="p-attach"${page.linkAttach ? ' checked' : ''}/></label>` +
+    // Link anchor box — page-level; nodes may override it.
+    `<label class="insp-row" title="Links attach to a padded box that clears the node label instead of the icon edge. On for new documents; nodes can override it in their Properties."><span>Link anchor box</span><input type="checkbox" id="p-attach"${page.linkAttach ? ' checked' : ''}/></label>` +
     (page.linkAttach
       ? `<label class="insp-row"><span>Box padding</span><input type="number" id="p-attach-pad" min="0" max="200" step="any" placeholder="6" value="${page.linkAttach.pad ?? ''}"/></label>` +
         `<label class="insp-row" title="Spread every link endpoint on a node side into evenly spaced slots"><span>Distribute ends</span><input type="checkbox" id="p-attach-dist"${page.linkAttach.distribute ? ' checked' : ''}/></label>`
@@ -2870,9 +3004,24 @@ function wireProperties(): void {
   const wIn = inspector.querySelector<HTMLInputElement>('#p-w');
   const hIn = inspector.querySelector<HTMLInputElement>('#p-h');
   const applySize = (): void => {
-    const [vx, vy] = editor.page.viewBox.split(/\s+/).map(Number);
-    const w = Math.max(1, Math.round(Number(wIn?.value)) || 0);
-    const h = Math.max(1, Math.round(Number(hIn?.value)) || 0);
+    if (!wIn || !hIn) return;
+    const [vx, vy, vw, vh] = editor.page.viewBox.split(/\s+/).map(Number);
+    // A canvas always has a size: a blank, zero or negative entry is not one,
+    // so the field goes back to the size the page has.
+    const size = (input: HTMLInputElement, now: number | undefined): number => {
+      const parsed = parseNumberField(
+        input.value,
+        { min: 0, exclusiveMin: true },
+        { required: true, badInput: input.validity.badInput },
+      );
+      const px = parsed.kind === 'value' ? Math.round(parsed.value) : 0;
+      return px >= 1 ? px : now || 0;
+    };
+    const w = size(wIn, vw);
+    const h = size(hIn, vh);
+    wIn.value = String(w);
+    hIn.value = String(h);
+    if (w === vw && h === vh) return;
     editor.setViewBox(`${vx || 0} ${vy || 0} ${w} ${h}`);
   };
   wIn?.addEventListener('change', applySize);
@@ -2912,7 +3061,7 @@ function wireProperties(): void {
       portLabels: portLabels.value === 'pill' ? 'pill' : undefined,
     });
   });
-  // Link anchor box (experimental) — page-level; the art redraws on change.
+  // Link anchor box — page-level; the art redraws on change.
   const attachOn = inspector.querySelector<HTMLInputElement>('#p-attach');
   attachOn?.addEventListener('change', () => {
     editor.updatePageProps({
@@ -2921,14 +3070,19 @@ function wireProperties(): void {
     renderInspector();
   });
   const attachPad = inspector.querySelector<HTMLInputElement>('#p-attach-pad');
-  attachPad?.addEventListener('input', () => {
-    const v = Number(attachPad.value);
-    const next = { ...editor.page.linkAttach };
-    if (attachPad.value === '' || !Number.isFinite(v)) delete next.pad;
-    else next.pad = Math.max(0, v);
-    editor.updatePageProps({ linkAttach: next }, !editing);
-    editing = true;
-  });
+  if (attachPad)
+    wireNumberInput(
+      attachPad,
+      LINK_ATTACH_FIELDS.find((f) => f.key === 'pad'),
+      (val) => {
+        const next = { ...editor.page.linkAttach };
+        if (val === undefined) delete next.pad;
+        else next.pad = val;
+        editor.updatePageProps({ linkAttach: next }, !editing);
+        editing = true;
+      },
+      () => editor.page.linkAttach?.pad,
+    );
   const attachDist =
     inspector.querySelector<HTMLInputElement>('#p-attach-dist');
   attachDist?.addEventListener('change', () => {
@@ -2943,6 +3097,7 @@ function wireProperties(): void {
     doc.legend = { ...doc.legend, show: legendOn.checked };
     editor.redrawOverlay();
     markDirty();
+    renderInspector(); // the key's own options appear / go with it
   });
   const legendPos = inspector.querySelector<HTMLSelectElement>('#p-legend-pos');
   legendPos?.addEventListener('change', () => {
@@ -2997,7 +3152,7 @@ function wireSheet(): void {
     const vb = sheetViewBox(sh().size, sh().orientation);
     if (!vb) return;
     for (const p of doc.pages) p.viewBox = vb;
-    editor.setPage(doc.pages[current]!);
+    showPage(doc.pages[current]!);
   };
   inspector
     .querySelector<HTMLSelectElement>('#p-sheet-size')
@@ -3155,24 +3310,22 @@ function renderInspector(): void {
   let html = '';
   if (node) {
     const info = getNodeType(node.type, doc.customNodes);
-    const types = nodeCatalog(doc.customNodes).map((n) => n.type);
     html +=
       `<div class="insp-h">Node</div>` +
-      typeRow(node.type, types) +
+      typeRow(node.type, nodeCatalog(doc.customNodes)) +
       groupedFieldsHtml(info, node as Record<string, unknown>, NODE_GROUPS) +
       metaHtml(node.meta) +
       arrangeRow() +
       formatRow();
   } else if (link) {
     const info = getLinkType(link.type);
-    const types = linkCatalog().map((l) => l.type);
     const linkCount = editor.selectedLinkIds().length;
     html +=
       `<div class="insp-h">Link</div>` +
       (linkCount > 1
         ? `<div class="insp-hint">${linkCount} links selected. Type, colour, style and layer changes apply to all; everything else edits this one.</div>`
         : '') +
-      typeRow(link.type, types) +
+      typeRow(link.type, linkCatalog()) +
       endpointRow('from', link.from, link.to) +
       endpointRow('to', link.to, link.from) +
       `<div class="insp-row"><span>Endpoints</span><span class="insp-btns"><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button>${
@@ -3202,6 +3355,9 @@ function renderInspector(): void {
     if (editor.selectionCount() > 1)
       html +=
         `<div class="insp-h">Selection (${editor.selectionCount()} nodes)</div>` +
+        (canAnalyzePath()
+          ? `<div class="insp-row"><span>Path</span><span class="insp-btns"><button class="tbtn ab" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">⇢ analyze path</button></span></div>`
+          : '') +
         formatRow();
     // Nothing (singly) selected — show document + page properties.
     html += propertiesHtml();
@@ -3216,37 +3372,50 @@ function renderInspector(): void {
       editor.updateNode({ type: t });
       renderInspector();
     });
-    wireFields((key, val, commit) => {
-      const info = getNodeType(node.type, doc.customNodes);
-      editor.updateNode(
-        fieldPatch(
-          info,
-          editor.getSelectedNode() as Record<string, unknown> | undefined,
-          key,
-          val,
-        ) as Record<string, unknown>,
-        commit,
-      );
-      // An `object` field's enable switch shows/hides its nested rows.
-      if (info?.fields.find((f) => f.key === key)?.kind === 'object')
-        renderInspector();
-    });
+    wireFields(
+      (key, val, commit) => {
+        const info = getNodeType(node.type, doc.customNodes);
+        editor.updateNode(
+          fieldPatch(
+            info,
+            editor.getSelectedNode() as Record<string, unknown> | undefined,
+            key,
+            val,
+          ) as Record<string, unknown>,
+          commit,
+        );
+        // An `object` field's enable switch shows/hides its nested rows.
+        if (info?.fields.find((f) => f.key === key)?.kind === 'object')
+          renderInspector();
+      },
+      {
+        fields: () => getNodeType(node.type, doc.customNodes)?.fields,
+        current: () =>
+          editor.getSelectedNode() as Record<string, unknown> | null,
+      },
+    );
     wireMeta(node.meta);
   } else if (link) {
     wireType((t) => {
       editor.updateLink({ type: t });
       renderInspector();
     });
-    wireFields((key, val, commit) =>
-      editor.updateLink(
-        fieldPatch(
-          getLinkType(link.type),
-          editor.getSelectedLink() as Record<string, unknown> | undefined,
-          key,
-          val,
-        ) as Record<string, unknown>,
-        commit,
-      ),
+    wireFields(
+      (key, val, commit) =>
+        editor.updateLink(
+          fieldPatch(
+            getLinkType(link.type),
+            editor.getSelectedLink() as Record<string, unknown> | undefined,
+            key,
+            val,
+          ) as Record<string, unknown>,
+          commit,
+        ),
+      {
+        fields: () => getLinkType(link.type)?.fields,
+        current: () =>
+          editor.getSelectedLink() as Record<string, unknown> | null,
+      },
     );
     for (const end of ['from', 'to'] as const)
       inspector
@@ -3267,14 +3436,22 @@ function renderInspector(): void {
   } else if (anchor) {
     const ax = inspector.querySelector<HTMLInputElement>('#a-x');
     const ay = inspector.querySelector<HTMLInputElement>('#a-y');
-    ax?.addEventListener('input', () => {
-      editor.updateAnchor({ x: Number(ax.value) }, !editing);
-      editing = true;
-    });
-    ay?.addEventListener('input', () => {
-      editor.updateAnchor({ y: Number(ay.value) }, !editing);
-      editing = true;
-    });
+    // An anchor always has a position: a cleared field keeps the old one.
+    for (const [input, axis] of [
+      [ax, 'x'],
+      [ay, 'y'],
+    ] as const)
+      if (input)
+        wireNumberInput(
+          input,
+          { key: axis, label: axis, kind: 'number', required: true },
+          (val) => {
+            if (val === undefined) return;
+            editor.updateAnchor({ [axis]: val }, !editing);
+            editing = true;
+          },
+          () => editor.getSelectedAnchor()?.[axis],
+        );
     inspector.querySelector('#a-del')?.addEventListener('click', () => {
       editor.deleteSelected();
       renderInspector();
@@ -3372,6 +3549,9 @@ function formatRow(): string {
 }
 
 function wireFormatRow(): void {
+  inspector
+    .querySelector('#i-path')
+    ?.addEventListener('click', analyzeSelectedPath);
   inspector.querySelector('#i-copyfmt')?.addEventListener('click', () => {
     editor.copyFormat();
     renderInspector(); // paste becomes available
@@ -3390,9 +3570,57 @@ function wireType(onChange: (t: string) => void): void {
     );
 }
 
-/** Wire every catalog-rendered field control to the given setter. */
+/** The value stored under an inspector key ("opacity", "linkAttach.pad"). */
+function storedValue(
+  el: Record<string, unknown> | null | undefined,
+  key: string,
+): unknown {
+  let cur: unknown = el;
+  for (const part of key.split('.'))
+    cur =
+      typeof cur === 'object' && cur !== null
+        ? (cur as Record<string, unknown>)[part]
+        : undefined;
+  return cur;
+}
+
+/**
+ * Wire one number input. Each keystroke is read by `parseNumberField`: a
+ * cleared field unsets the property (`undefined`), an out-of-range number is
+ * clamped, and text that is no usable number stores nothing. Leaving the
+ * field then shows what is stored, so a clamped or refused entry does not
+ * linger looking as if it had been accepted.
+ */
+function wireNumberInput(
+  el: HTMLInputElement,
+  spec: FieldSpec | undefined,
+  set: (val: number | undefined) => void,
+  stored: () => unknown,
+): void {
+  const bounds = spec ? numberBounds(spec) : {};
+  el.addEventListener('input', () => {
+    const parsed = parseNumberField(el.value, bounds, {
+      required: spec?.required,
+      badInput: el.validity.badInput,
+    });
+    if (parsed.kind === 'invalid') return;
+    set(parsed.kind === 'value' ? parsed.value : undefined);
+  });
+  el.addEventListener('change', () => {
+    el.value = numberFieldText(stored());
+  });
+}
+
+/**
+ * Wire every catalog-rendered field control to the given setter. `source`
+ * gives the element's field specs and its current state, for number fields.
+ */
 function wireFields(
   set: (key: string, val: unknown, commit: boolean) => void,
+  source: {
+    fields: () => FieldSpec[] | undefined;
+    current: () => Record<string, unknown> | null | undefined;
+  },
 ): void {
   inspector
     .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-key]')
@@ -3402,10 +3630,19 @@ function wireFields(
         el.addEventListener('change', () => set(key, el.value, true));
       } else if (el.type === 'checkbox') {
         el.addEventListener('change', () => set(key, el.checked, true));
+      } else if (el.dataset.kind === 'number') {
+        wireNumberInput(
+          el,
+          findField(source.fields(), key),
+          (val) => {
+            set(key, val, !editing);
+            editing = true;
+          },
+          () => storedValue(source.current(), key),
+        );
       } else {
-        const num = el.dataset.kind === 'number';
         el.addEventListener('input', () => {
-          set(key, num ? Number(el.value) : el.value, !editing);
+          set(key, el.value, !editing);
           editing = true;
         });
       }
@@ -3581,13 +3818,18 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
   // same 3×3 placement picker a link label has; wired in renderAnnotations.
   if (f.widget === 'compass') return compassControl(f, v, 'data-akey');
   switch (f.kind) {
+    case 'boolean':
+      // A real checkbox: typed into a text box, "false" is stored as a string,
+      // which the renderer reads as on.
+      return `<label class="${rowClass(f)}"><span>${f.label}${f.animation ? ' ⟳' : ''}</span><input type="checkbox" data-akey="${f.key}" ${booleanFieldChecked(f.key, v) ? 'checked' : ''}/></label>`;
     case 'enum':
-      return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${(
-        f.options ?? []
+      return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${enumFieldOptions(
+        f,
+        v,
       )
         .map(
           (o) =>
-            `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${o}</option>`,
+            `<option value="${esc(o.value)}"${o.selected ? ' selected' : ''}>${esc(o.label)}</option>`,
         )
         .join('')}</select></label>`;
     case 'color':
@@ -3600,7 +3842,7 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         aswatchRow(f.key, v as string | undefined),
       );
     case 'number':
-      return `<label class="insp-row"><span>${f.label}</span><input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}" placeholder="auto"/></label>`;
+      return `<label class="insp-row"><span>${f.label}</span><input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
     case 'refs': {
       const ids = Array.isArray(v) ? (v as string[]) : [];
       const hint =
@@ -3617,9 +3859,28 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
     }
     case 'ref':
       return `<label class="${rowClass(f)}"><span>${f.label}${req}</span><input data-akey="${f.key}" value="${esc(String(v ?? ''))}" placeholder="id"/></label>`;
+    case 'record':
+      return readOnlyFieldRow(f, v);
     default:
+      // A text field whose stored value is an object is shown, not edited:
+      // a text box would read "[object Object]" and overwrite it when typed in.
+      if (typeof v === 'object' && v !== null) return readOnlyFieldRow(f, v);
       return `<label class="${rowClass(f)}"><span>${f.label}</span><input data-akey="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
   }
+}
+
+/**
+ * A field that holds an object (an element's `source` reference, set by the
+ * import it came from): its value is displayed, with nothing to type into.
+ * No row at all while the field is unset.
+ */
+function readOnlyFieldRow(f: FieldSpec, v: unknown): string {
+  const text = recordFieldText(v);
+  if (text === null) return '';
+  return (
+    `<div class="${rowClass(f)}"><span>${f.label}</span>` +
+    `<span class="insp-val" data-asource title="Set by the import this element came from; not editable here">${esc(text)}</span></div>`
+  );
 }
 
 /** The focused editor for a single selected zone (reuses annotation wiring). */
@@ -3637,6 +3898,16 @@ function zoneEditorHtml(zone: { id: string }): string {
     `</details>`
   );
 }
+
+/**
+ * Which annotation editors are open, and which of their groups are closed —
+ * kept across the inspector's re-renders. A swatch, compass cell or chip
+ * click inside an editor re-renders the inspector; without this the editor
+ * being worked in snapped shut after every click.
+ */
+const annoOpen = new Set<string>();
+const annoGroupClosed = new Set<string>();
+const annoKey = (col: string, id: string): string => `${col}:${id}`;
 
 function annotationsHtml(skipId?: string): string {
   const page = editor.page;
@@ -3661,7 +3932,7 @@ function annotationsHtml(skipId?: string): string {
     );
     if (!items.length) continue;
     html +=
-      `<details class="anno-group" open data-agroup="${g.col}">` +
+      `<details class="anno-group"${annoGroupClosed.has(g.col) ? '' : ' open'} data-agroup="${g.col}">` +
       `<summary class="anno-group-h">${esc(info.label)}s<span class="anno-count">${items.length}</span></summary>`;
     for (const item of items) {
       const cfg = item as Record<string, unknown>;
@@ -3673,7 +3944,7 @@ function annotationsHtml(skipId?: string): string {
             `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">⧉</button>`
           : '';
       html +=
-        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}">` +
+        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
         `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">✕</button></summary>` +
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
         `</details>`;
@@ -3750,95 +4021,136 @@ function wireAnnotations(): void {
       renderInspector();
     }),
   );
-  inspector.querySelectorAll<HTMLElement>('details.anno').forEach((host) => {
-    const col = host.dataset.acol as AnnoCol;
-    const id = host.dataset.aid!;
-    const setA = (key: string, val: unknown, commit: boolean): void =>
-      editor.updateAnnotation(col, id, { [key]: val }, commit);
-    host
-      .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-akey]')
-      .forEach((el) => {
-        const key = el.dataset.akey!;
-        if (el instanceof HTMLSelectElement) {
-          el.addEventListener('change', () => setA(key, el.value, true));
-        } else {
-          const kind = el.dataset.akind;
-          el.addEventListener('input', () => {
-            let val: unknown = el.value;
-            if (kind === 'number') val = Number(el.value);
-            else if (kind === 'refs')
-              val = el.value.split(/[\s,]+/).filter(Boolean);
-            setA(key, val, !editing);
-            editing = true;
-          });
-        }
-      });
-    // Compass placement picker on a point field (flow-path labelOffset):
-    // click a cell to write its preset offset, the centre to clear it.
-    host
-      .querySelectorAll<HTMLElement>('.compass[data-akey]')
-      .forEach((grid) => {
-        const key = grid.dataset.akey!;
-        const spec: FieldSpec = { key, label: key, kind: 'point' };
-        grid.querySelectorAll<HTMLButtonElement>('[data-cval]').forEach((b) =>
-          b.addEventListener('click', (e) => {
-            e.preventDefault();
-            setA(key, compassValueOf(spec, b.dataset.cval ?? ''), true);
+  inspector
+    .querySelectorAll<HTMLDetailsElement>('details.anno-group')
+    .forEach((group) =>
+      group.addEventListener('toggle', () => {
+        const col = group.dataset.agroup!;
+        if (group.open) annoGroupClosed.delete(col);
+        else annoGroupClosed.add(col);
+      }),
+    );
+  inspector
+    .querySelectorAll<HTMLDetailsElement>('details.anno')
+    .forEach((host) => {
+      const col = host.dataset.acol as AnnoCol;
+      const id = host.dataset.aid!;
+      // The focused zone editor (a zone clicked on the canvas) is always open
+      // and is not part of the list; only the list's editors are remembered.
+      if (!host.classList.contains('selected'))
+        host.addEventListener('toggle', () => {
+          if (host.open) annoOpen.add(annoKey(col, id));
+          else annoOpen.delete(annoKey(col, id));
+        });
+      const setA = (key: string, val: unknown, commit: boolean): void =>
+        editor.updateAnnotation(col, id, { [key]: val }, commit);
+      const annoFields = getAnnotationType(
+        ANNO_GROUPS.find((g) => g.col === col)!.kind,
+      )?.fields;
+      host
+        .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-akey]')
+        .forEach((el) => {
+          const key = el.dataset.akey!;
+          if (el instanceof HTMLSelectElement) {
+            // The empty choice ("None" / "Default") clears the field.
+            el.addEventListener('change', () =>
+              setA(key, enumFieldValue(el.value), true),
+            );
+          } else if (el.type === 'checkbox') {
+            el.addEventListener('change', () => setA(key, el.checked, true));
+          } else if (el.dataset.akind === 'number') {
+            wireNumberInput(
+              el,
+              findField(annoFields, key),
+              (val) => {
+                setA(key, val, !editing);
+                editing = true;
+              },
+              () =>
+                storedValue(
+                  (editor.page[col] as { id: string }[]).find(
+                    (a) => a.id === id,
+                  ) as Record<string, unknown> | undefined,
+                  key,
+                ),
+            );
+          } else {
+            const kind = el.dataset.akind;
+            el.addEventListener('input', () => {
+              let val: unknown = el.value;
+              if (kind === 'refs')
+                val = el.value.split(/[\s,]+/).filter(Boolean);
+              setA(key, val, !editing);
+              editing = true;
+            });
+          }
+        });
+      // Compass placement picker on a point field (flow-path labelOffset):
+      // click a cell to write its preset offset, the centre to clear it.
+      host
+        .querySelectorAll<HTMLElement>('.compass[data-akey]')
+        .forEach((grid) => {
+          const key = grid.dataset.akey!;
+          const spec: FieldSpec = { key, label: key, kind: 'point' };
+          grid.querySelectorAll<HTMLButtonElement>('[data-cval]').forEach((b) =>
+            b.addEventListener('click', (e) => {
+              e.preventDefault();
+              setA(key, compassValueOf(spec, b.dataset.cval ?? ''), true);
+              renderInspector();
+            }),
+          );
+        });
+      host.querySelectorAll<HTMLElement>('[data-aswatch]').forEach((group) => {
+        const key = group.dataset.aswatch!;
+        group.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
+          b.addEventListener('click', () => {
+            setA(key, b.dataset.color!, true);
             renderInspector();
           }),
         );
       });
-    host.querySelectorAll<HTMLElement>('[data-aswatch]').forEach((group) => {
-      const key = group.dataset.aswatch!;
-      group.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
-        b.addEventListener('click', () => {
-          setA(key, b.dataset.color!, true);
+      // Refs editor (flow waypoints / zone members): add by node picker, reorder
+      // with ‹ ›, remove with ✕ — all by chip position so duplicates behave.
+      host.querySelectorAll<HTMLElement>('.refchips').forEach((box) => {
+        const key = box.dataset.refkey!;
+        const ids = (): string[] =>
+          [...box.querySelectorAll<HTMLElement>('.refchip')].map(
+            (c) => c.dataset.id!,
+          );
+        const commit = (next: string[]): void => {
+          setA(key, next, true);
           renderInspector();
-        }),
-      );
-    });
-    // Refs editor (flow waypoints / zone members): add by node picker, reorder
-    // with ‹ ›, remove with ✕ — all by chip position so duplicates behave.
-    host.querySelectorAll<HTMLElement>('.refchips').forEach((box) => {
-      const key = box.dataset.refkey!;
-      const ids = (): string[] =>
-        [...box.querySelectorAll<HTMLElement>('.refchip')].map(
-          (c) => c.dataset.id!,
+        };
+        const indexOfChip = (el: HTMLElement): number =>
+          [...box.querySelectorAll<HTMLElement>('.refchip')].indexOf(el);
+        box
+          .querySelector<HTMLSelectElement>('.refadd')
+          ?.addEventListener('change', (e) => {
+            const sel = e.target as HTMLSelectElement;
+            if (sel.value) commit([...ids(), sel.value]);
+          });
+        box.querySelectorAll<HTMLButtonElement>('[data-refdel]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            e.preventDefault();
+            const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
+            const next = ids();
+            next.splice(i, 1);
+            commit(next);
+          }),
         );
-      const commit = (next: string[]): void => {
-        setA(key, next, true);
-        renderInspector();
-      };
-      const indexOfChip = (el: HTMLElement): number =>
-        [...box.querySelectorAll<HTMLElement>('.refchip')].indexOf(el);
-      box
-        .querySelector<HTMLSelectElement>('.refadd')
-        ?.addEventListener('change', (e) => {
-          const sel = e.target as HTMLSelectElement;
-          if (sel.value) commit([...ids(), sel.value]);
-        });
-      box.querySelectorAll<HTMLButtonElement>('[data-refdel]').forEach((b) =>
-        b.addEventListener('click', (e) => {
-          e.preventDefault();
-          const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
-          const next = ids();
-          next.splice(i, 1);
-          commit(next);
-        }),
-      );
-      box.querySelectorAll<HTMLButtonElement>('[data-refmove]').forEach((b) =>
-        b.addEventListener('click', (e) => {
-          e.preventDefault();
-          const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
-          const j = i + Number(b.dataset.refmove);
-          const next = ids();
-          if (j < 0 || j >= next.length) return;
-          [next[i], next[j]] = [next[j]!, next[i]!];
-          commit(next);
-        }),
-      );
+        box.querySelectorAll<HTMLButtonElement>('[data-refmove]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            e.preventDefault();
+            const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
+            const j = i + Number(b.dataset.refmove);
+            const next = ids();
+            if (j < 0 || j >= next.length) return;
+            [next[i], next[j]] = [next[j]!, next[i]!];
+            commit(next);
+          }),
+        );
+      });
     });
-  });
 }
 
 /* Node palette — driven by the catalog; grouped by category. Click to add.
@@ -3848,8 +4160,32 @@ const paletteList = app.querySelector<HTMLElement>('#palette-list')!;
 const paletteSearch = app.querySelector<HTMLInputElement>('#palette-search')!;
 let paletteQuery = '';
 
+/**
+ * Open the Node Designer on a custom type (or a new one), with the name rules
+ * this document imposes: never a built-in or stock type's name — registering
+ * a custom type under one replaces that type's art everywhere — and another
+ * custom type's name only after asking.
+ */
+function designNode(initial: CustomNodeSpec | null): void {
+  const reserved = nodeCatalog().map((t) => t.type);
+  const custom = (): string[] => doc.customNodes.map((c) => c.typeName);
+  openNodeDesigner(initial, upsertCustomNode, {
+    suggest: (base) => uniqueTypeName(base, [...reserved, ...custom()]),
+    check: (name) =>
+      checkCustomTypeName({
+        name,
+        editing: initial?.typeName ?? null,
+        reserved,
+        custom: custom(),
+      }),
+  });
+}
+
 /** Add or replace a custom node type, re-register it, and refresh the UI. */
 function upsertCustomNode(spec: CustomNodeSpec): void {
+  // The designer refuses these names; this keeps the rule for any other
+  // caller, since a built-in type can not be got back once it is shadowed.
+  if (getNodeType(spec.typeName)) return;
   const i = doc.customNodes.findIndex((c) => c.typeName === spec.typeName);
   if (i >= 0) doc.customNodes[i] = spec;
   else doc.customNodes.push(spec);
@@ -3998,31 +4334,50 @@ function buildPalette(): void {
   }
   paletteList.innerHTML = html;
 
-  paletteList.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) =>
-    b.addEventListener('click', () => {
-      // The Image entry opens a file picker instead of dropping a bare
-      // placeholder — the common intent is "put THIS picture on the canvas".
-      if (b.dataset.type === 'image') {
-        imageFileInput.click();
-        return;
-      }
+  paletteList
+    .querySelectorAll<HTMLButtonElement>('[data-type]')
+    .forEach((b) => {
+      const type = b.dataset.type!;
       const variant = b.dataset.variant;
-      editor.addNode(
-        b.dataset.type!,
-        undefined,
-        variant ? { variant } : undefined,
-      );
-    }),
-  );
+      const extra = variant ? { variant } : undefined;
+      b.addEventListener('click', () => {
+        // The Image entry opens a file picker instead of dropping a bare
+        // placeholder — the common intent is "put THIS picture on the canvas".
+        if (type === 'image') {
+          imageFileInput.click();
+          return;
+        }
+        editor.addNode(type, undefined, extra);
+      });
+      // Dragged onto the canvas, the node lands where it is dropped; onto a
+      // link, it is inserted into the link. (An image needs its file first.)
+      if (type !== 'image')
+        enablePaletteDrag(b, {
+          overCanvas: (x, y) => {
+            const el = document.elementFromPoint(x, y);
+            return el !== null && canvasHost.contains(el);
+          },
+          linkAt: (x, y) => editor.linkAtClient(x, y),
+          markLink: (id) => editor.setDropLink(id),
+          drop: (x, y, linkId) => {
+            const at = editor.clientToPage(x, y);
+            const inserted =
+              linkId !== null &&
+              editor.insertNodeOnLink(linkId, type, at, extra) !== null;
+            // A locked link takes no insert: the node lands beside it.
+            if (!inserted) editor.addNodeAt(type, at, undefined, extra);
+          },
+        });
+    });
   paletteList.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((b) =>
     b.addEventListener('click', () => {
       const spec = doc.customNodes.find((c) => c.typeName === b.dataset.edit);
-      if (spec) openNodeDesigner(spec, upsertCustomNode);
+      if (spec) designNode(spec);
     }),
   );
   paletteList
     .querySelector('#pDesign')
-    ?.addEventListener('click', () => openNodeDesigner(null, upsertCustomNode));
+    ?.addEventListener('click', () => designNode(null));
   paletteList
     .querySelectorAll<HTMLButtonElement>('[data-stencil]')
     .forEach((b) =>
@@ -4043,7 +4398,7 @@ paletteSearch.addEventListener('input', () => {
   buildPalette();
 });
 paletteSearch.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && paletteSearch.value) {
+  if (e.key === 'Escape' && paletteSearch.value && !isImeKey(e)) {
     e.stopPropagation();
     paletteSearch.value = '';
     paletteQuery = '';
@@ -4212,8 +4567,7 @@ function renderFilmstrip(): void {
     el.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-del]') || t.tagName === 'INPUT') return;
-      stopPlayback(); // a manual frame choice takes over from the player
-      selectPage(i);
+      choosePage(i);
     });
     el.addEventListener('dragstart', (e) => {
       dragFrom = i;
@@ -4244,7 +4598,13 @@ function renderFilmstrip(): void {
       playTimer !== null ? stopPlayback() : startPlayback(),
     );
   strip.querySelector('#addPage')?.addEventListener('click', () => {
-    doc.pages.push(blankPage(`Frame ${doc.pages.length + 1}`));
+    // A new frame attaches links the way the frame you are on does, so one
+    // document does not mix the two attachment styles by accident.
+    const attach = doc.pages[current]?.linkAttach;
+    doc.pages.push({
+      ...blankPage(`Frame ${doc.pages.length + 1}`),
+      ...(attach ? { linkAttach: { ...attach } } : {}),
+    });
     gotoPage(doc.pages.length - 1);
     markDirty();
   });
@@ -4267,7 +4627,7 @@ function renderFilmstrip(): void {
 function gotoPage(i: number): void {
   stopPlayback();
   current = i;
-  editor.setPage(doc.pages[current]!);
+  showPage(doc.pages[current]!);
   renderFilmstrip();
   renderProblems();
 }
@@ -4281,13 +4641,20 @@ function startRename(i: number, span: HTMLElement): void {
   span.replaceWith(input);
   input.focus();
   input.select();
+  // Once only: redrawing the strip removes this input, and a removed input
+  // that had focus fires blur — which would save the text Escape just
+  // cancelled.
+  let done = false;
   const commit = (save: boolean): void => {
+    if (done) return;
+    done = true;
     if (save) page.name = input.value.trim() || page.name;
     renderFilmstrip();
     if (save) markDirty();
   };
   input.addEventListener('blur', () => commit(true));
   input.addEventListener('keydown', (e) => {
+    if (isImeKey(e)) return; // the key belongs to an IME composition
     if (e.key === 'Enter') input.blur();
     else if (e.key === 'Escape') commit(false);
   });
@@ -4336,7 +4703,7 @@ function deletePage(i: number): void {
   };
   if (current >= doc.pages.length) current = doc.pages.length - 1;
   else if (i < current) current -= 1;
-  editor.setPage(doc.pages[current]!);
+  showPage(doc.pages[current]!);
   renderFilmstrip();
   markDirty();
 }
@@ -4352,10 +4719,21 @@ function reorderPage(from: number, to: number): void {
   markDirty();
 }
 
+/**
+ * Show the frame the user picked — a click on its chip, an arrow key, a page
+ * link. A choice made by hand takes over from the flipbook player, which
+ * would otherwise flip away from it a moment later.
+ */
+function choosePage(i: number): void {
+  stopPlayback();
+  selectPage(i);
+}
+
+/** Show a frame without rebuilding the strip (the player's own step too). */
 function selectPage(i: number): void {
   if (i < 0 || i >= doc.pages.length) return;
   current = i;
-  editor.setPage(doc.pages[current]!);
+  showPage(doc.pages[current]!);
   // Report the new page to the workspace presence socket (Packet S1).
   workspacePanelHandle.notifyPageChanged();
   // Update highlight without rebuilding the strip (so dblclick-rename survives).
@@ -4477,6 +4855,10 @@ displayPop.innerHTML =
   `</select></label>` +
   `<label class="dp-row dp-check"><input type="checkbox" id="dpGlass"/><span>Panel blur (glass)</span></label>` +
   `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (C) pauses those.</div>` +
+  `<label class="dp-row">Wheel<select id="dpWheel">` +
+  `<option value="auto">Auto</option><option value="zoom">Always zoom</option><option value="pan">Always pan</option>` +
+  `</select></label>` +
+  `<div class="dp-note">Auto: a mouse wheel zooms, a trackpad’s two-finger slide pans. Pinch or Ctrl/Cmd+wheel always zooms; Shift+wheel pans sideways.</div>` +
   `<div class="dp-h dp-h2">Brand palette</div>` +
   `<div class="dp-swatches" id="dpPresets"></div>` +
   `<label class="dp-row">Accent<input type="color" id="dpAccent"/></label>` +
@@ -4486,6 +4868,7 @@ displayPop.innerHTML =
 document.body.appendChild(displayPop);
 const dpAmbient = displayPop.querySelector<HTMLSelectElement>('#dpAmbient')!;
 const dpGlass = displayPop.querySelector<HTMLInputElement>('#dpGlass')!;
+const dpWheel = displayPop.querySelector<HTMLSelectElement>('#dpWheel')!;
 const dpPresets = displayPop.querySelector<HTMLDivElement>('#dpPresets')!;
 const dpAccent = displayPop.querySelector<HTMLInputElement>('#dpAccent')!;
 const dpSecondary = displayPop.querySelector<HTMLInputElement>('#dpSecondary')!;
@@ -4522,6 +4905,28 @@ dpAmbient.addEventListener('change', () =>
   applyAmbient(dpAmbient.value as 'off' | 'static' | 'animated'),
 );
 dpGlass.addEventListener('change', () => applyGlass(dpGlass.checked));
+
+/* What a plain wheel event does on the canvas. The default guesses the device
+ * (a mouse wheel zooms, a trackpad's two-finger slide pans); the guess cannot
+ * be right for every device, so the user can pin it. A view preference of
+ * this browser, like the theme: not part of the document. */
+const WHEEL_KEY = 'tds-wheel-mode';
+const isWheelMode = (v: unknown): v is WheelMode =>
+  v === 'auto' || v === 'zoom' || v === 'pan';
+function applyWheelMode(mode: WheelMode): void {
+  editor.setWheelMode(mode);
+  dpWheel.value = mode;
+  try {
+    localStorage.setItem(WHEEL_KEY, mode);
+  } catch {
+    // storage unavailable — non-fatal
+  }
+}
+const storedWheel = localStorage.getItem(WHEEL_KEY);
+applyWheelMode(isWheelMode(storedWheel) ? storedWheel : 'auto');
+dpWheel.addEventListener('change', () => {
+  if (isWheelMode(dpWheel.value)) applyWheelMode(dpWheel.value);
+});
 
 /* ── Brand palette (#7) ──────────────────────────────────────────────
  * A document-level palette that recolours the canvas accents (via a render-time
@@ -4580,6 +4985,7 @@ function applyBrandPalette(
   const eff = p && p.id !== 'default' ? p : undefined;
   doc.palette = eff;
   editor.setPalette(eff);
+  editor.redrawOverlay(); // the key drawn over the page is recoloured too
   setChromeAccent(eff ? (eff.chrome ?? eff.accent) : undefined);
   syncPaletteInputs(eff);
   renderMinimap();
@@ -4607,6 +5013,35 @@ for (const inp of [dpAccent, dpSecondary, dpChrome])
 // Reflect whatever the booted document already carries.
 applyBrandPalette(doc.palette, false);
 
+/**
+ * Close a popover when a pointer is pressed anywhere outside it. Its own
+ * button is left alone: that button's click toggles the popover.
+ *
+ * A press, not a click: a press on the canvas often never becomes a click
+ * (the editor redraws what was pressed), and a popover left open keeps every
+ * canvas shortcut switched off — with nothing on screen to say why.
+ */
+function closeOnOutsidePress(
+  popover: HTMLElement,
+  button: HTMLElement,
+  close: () => void,
+): void {
+  window.addEventListener(
+    'pointerdown',
+    (e) => {
+      const target = e.target as Node | null;
+      if (
+        !popover.hidden &&
+        target &&
+        !popover.contains(target) &&
+        !button.contains(target)
+      )
+        close();
+    },
+    true,
+  );
+}
+
 let releaseDisplayOverlay: (() => void) | null = null;
 function closeDisplayPop(): void {
   displayPop.hidden = true;
@@ -4630,14 +5065,7 @@ displayBtn.addEventListener('click', (e) => {
     });
   } else closeDisplayPop();
 });
-document.addEventListener('click', (e) => {
-  if (
-    !displayPop.hidden &&
-    e.target !== displayBtn &&
-    !displayPop.contains(e.target as Node)
-  )
-    closeDisplayPop();
-});
+closeOnOutsidePress(displayPop, displayBtn, closeDisplayPop);
 
 app
   .querySelector('#tDelete')
@@ -4655,7 +5083,7 @@ layoutSel.addEventListener('change', () => {
       algorithm: algorithm as 'grid' | 'hierarchical' | 'circular' | 'force',
     });
 });
-app.querySelector('#tFit')?.addEventListener('click', () => editor.resetView());
+app.querySelector('#tFit')?.addEventListener('click', fitView);
 
 /* ── Keyboard-shortcut help overlay (?) ────────────────────────────── */
 const SHORTCUTS: { group: string; items: [string, string][] }[] = [
@@ -4674,6 +5102,8 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl/Cmd+Z', 'Undo'],
       ['Ctrl/Cmd+Shift+Z · Ctrl+Y', 'Redo'],
       ['Ctrl/Cmd+C / X / V', 'Copy / Cut / Paste'],
+      ['Ctrl/Cmd+Shift+V', 'Paste in place (same position, any frame)'],
+      ['F2 / Enter', 'Rename the selected node, link or zone'],
       ['Ctrl/Cmd+Alt+C', 'Copy format (format painter)'],
       ['Ctrl/Cmd+Alt+V', 'Paste format onto selection'],
       ['Ctrl/Cmd+D', 'Duplicate'],
@@ -4694,10 +5124,16 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
   {
     group: 'Canvas',
     items: [
-      ['Wheel', 'Zoom to cursor'],
+      ['Wheel', 'Zoom to cursor (mouse) / pan (trackpad)'],
+      ['Pinch · Ctrl/Cmd+wheel', 'Zoom to cursor'],
+      ['Shift+wheel', 'Pan sideways'],
       ['Space / Middle-drag', 'Pan'],
-      ['0', 'Fit to content'],
-      ['Ctrl/Cmd+F', 'Find / jump to node'],
+      ['+ / -', 'Zoom in / out'],
+      ['0 · Shift+1', 'Fit to content'],
+      ['Shift+0', 'Zoom to 100%'],
+      ['Shift+2', 'Zoom to selection'],
+      ['Ctrl/Cmd+S / O', 'Download JSON / open a file'],
+      ['Ctrl/Cmd+F', 'Find a node, link or zone on any frame'],
       ['R', 'Toggle grid'],
       ['G', 'Toggle snap'],
       ['M / P', 'Toggle minimap / properties'],
@@ -4813,7 +5249,7 @@ function openPresent(): void {
     stage.innerHTML = pageToSVG(
       page,
       { ...pageOpts(page), calm: editor.calm },
-      pageExtra(page),
+      pageOverlay(page),
     );
     if (fade && page.transition === 'fade') {
       stage.classList.remove('present-fade');
@@ -5074,11 +5510,8 @@ function wireAccountMenu(login: string): void {
     if (menu.hidden) open();
     else close();
   });
-  // Dismiss on outside click (Esc is handled by the overlay primitive).
-  document.addEventListener('click', (e) => {
-    if (!menu.hidden && e.target !== chip && !menu.contains(e.target as Node))
-      close();
-  });
+  // Dismiss on an outside press (Esc is handled by the overlay primitive).
+  closeOnOutsidePress(menu, chip, close);
   // Sign out via an explicit navigation — robust even if the anchor default is
   // ever intercepted; the localStorage autosave preserves the open document.
   menu.querySelector('a[href="/logout"]')?.addEventListener('click', (e) => {
@@ -5151,16 +5584,13 @@ function wireSignInChip(): void {
     if (menu.hidden) open(SIGN_IN_PROMPT);
     else close();
   });
-  document.addEventListener('click', (e) => {
-    if (!menu.hidden && e.target !== chip && !menu.contains(e.target as Node))
-      close();
-  });
+  closeOnOutsidePress(menu, chip, close);
   // Flush the autosave before leaving, so the document is there on return.
   menu.querySelector('#signInGo')?.addEventListener('click', () => {
     flushAutosave();
   });
-  // Deferred a tick: the click that triggered the prompt is still bubbling
-  // to the outside-click listener above, which would close it at once.
+  // Deferred a tick, so the prompt opens after whatever the triggering click
+  // was doing (replacing the document, closing a dialog) has finished.
   promptSignIn = (text = SIGN_IN_PROMPT) => {
     setTimeout(() => open(text), 0);
   };
@@ -5197,22 +5627,115 @@ async function showUserChip(): Promise<void> {
 }
 void showUserChip();
 
-/* Keyboard. Shortcuts are suppressed while typing in a form field so they don't
- * hijack the inspector / rename inputs (and Ctrl+C/V do native text edit there),
- * and while any overlay (dialog / panel / popover / context menu) owns
- * interaction — a Delete pressed in a modal must never reach the canvas (#209).
- * The overlay primitive handles Escape/Tab itself, capture-phase. */
+/* Keyboard. Every key press is routed by one rule (src/ui/key-routing.ts):
+ * a text field has the keyboard to itself; a focused select / checkbox /
+ * slider keeps the plain keys it uses; a button keeps them while the user is
+ * moving around by keyboard, so Space and Enter press it; and everything else
+ * — plus Escape and Ctrl/Cmd combinations from any control — is a canvas
+ * shortcut. Shortcuts are also off while any overlay (dialog / panel /
+ * popover / context menu) owns interaction — a Delete pressed in a modal must
+ * never reach the canvas (#209). The overlay primitive handles Escape/Tab
+ * itself, capture-phase. */
+
+/** Whether the user is moving focus by keyboard: true once Tab has moved it,
+ * false once a pointer is pressed. Starts true, so a control focused before
+ * any input (by assistive technology, say) is treated as keyboard focus. */
+let keyboardNav = true;
+/** What the last key press went to, if no pointer was pressed since — tells
+ * a value changed by its control's own keys from a mouse pick. */
+let lastKeyTarget: EventTarget | null = null;
+/** An Escape keydown reached the page and its keyup has not come yet. */
+let escapeDownSeen = false;
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph']);
+
+function focusFactsOf(el: Element): FocusFacts {
+  return {
+    tag: el.tagName,
+    type: el instanceof HTMLInputElement ? el.type : null,
+    editable: el instanceof HTMLElement && el.isContentEditable,
+    role: el.getAttribute('role'),
+    tabindex: el.hasAttribute('tabindex'),
+    href: el.hasAttribute('href'),
+  };
+}
+/** Take keyboard focus off a control, handing the keyboard to the canvas. */
+function releaseFocus(el: EventTarget | null): void {
+  if (el instanceof HTMLElement && document.activeElement === el) el.blur();
+}
+
+window.addEventListener(
+  'pointerdown',
+  () => {
+    keyboardNav = false;
+    lastKeyTarget = null;
+    escapeDownSeen = false;
+  },
+  true,
+);
+window.addEventListener(
+  'keydown',
+  (e) => {
+    if (e.key === 'Tab') keyboardNav = true;
+    if (e.key === 'Escape') escapeDownSeen = true;
+    if (!MODIFIER_KEYS.has(e.key)) lastKeyTarget = e.target;
+  },
+  true,
+);
+// A select or checkbox changed with the pointer gives the keyboard back to the
+// canvas, so the next Delete or V is a shortcut again (a select would even
+// take "V" as type-ahead and pick an option). Listening on the document runs
+// this after the control's own change handlers.
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!(el instanceof Element)) return;
+  const release = releasesFocusAfterChange({
+    focus: focusFactsOf(el),
+    byKeyboard: lastKeyTarget === el,
+    overlayOpen: overlayActive(),
+  });
+  if (release) releaseFocus(el);
+});
+
+/** Frame the selection clear of the panels; the whole content when nothing
+ * is selected. */
+function zoomToSelection(): void {
+  fitLeftInset = 0;
+  if (editor.zoomToSelection()) settleFit();
+  else fitView();
+}
+
+function runCanvasCommand(command: CanvasKeyCommand): void {
+  switch (command) {
+    case 'zoom-in':
+      return editor.zoomIn();
+    case 'zoom-out':
+      return editor.zoomOut();
+    case 'zoom-100':
+      return editor.zoomTo(1);
+    case 'zoom-fit':
+      return fitView();
+    case 'zoom-selection':
+      return zoomToSelection();
+    case 'rename':
+      editor.beginRename();
+      return;
+    case 'paste-in-place':
+      return editor.paste({ inPlace: true });
+    case 'save':
+      return downloadDocJSON();
+    case 'open':
+      return fileInput.click();
+  }
+}
+
 window.addEventListener('keydown', (e) => {
   if (overlayActive()) return;
-  const t = e.target as HTMLElement | null;
-  if (
-    t &&
-    (t.tagName === 'INPUT' ||
-      t.tagName === 'SELECT' ||
-      t.tagName === 'TEXTAREA' ||
-      t.isContentEditable)
-  )
-    return;
+  // A key that confirms or discards an IME candidate is never a shortcut.
+  if (isImeKey(e)) return;
+  const target = e.target instanceof Element ? e.target : null;
+  const focus = target ? focusKind(focusFactsOf(target)) : 'canvas';
+  if (routeKey(e, focus, keyboardNav) === 'focus') return;
+  if (e.key === 'Escape' && escapeReleasesFocus(focus)) releaseFocus(target);
 
   // ? (Shift+/) opens the shortcut reference (Esc closes it via the overlay).
   if (e.key === '?') {
@@ -5225,6 +5748,15 @@ window.addEventListener('keydown', (e) => {
   if (e.key === ' ') {
     e.preventDefault();
     editor.setSpacePan(true);
+    return;
+  }
+
+  // View, rename and file shortcuts (see src/ui/canvas-keys.ts). Checked
+  // before the copy / paste block: Ctrl+Shift+V is "paste in place".
+  const command = canvasKeyCommand(e, focus === 'canvas');
+  if (command) {
+    e.preventDefault();
+    runCanvasCommand(command);
     return;
   }
 
@@ -5315,12 +5847,14 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
   if (e.key === 't') editor.tidy();
   if (e.key === 'T') editor.balance(); // Shift+T
-  if (e.key === '0') editor.resetView();
+  if (e.key === '0') fitView();
   if (e.key === 'l' || e.key === 'L') setTool('link');
   if (e.key === 'v' || e.key === 'V') setTool('select');
   if (e.key === 'a' || e.key === 'A') setTool('anchor');
   if (e.key === 'h' || e.key === 'H') setHand(!editor.isHandActive());
   if (e.key === 'Escape') {
+    stopPlayback();
+    closePathBar();
     editor.clearSelection();
     setTool('select');
   }
@@ -5334,10 +5868,193 @@ window.addEventListener('keydown', (e) => {
       else if (e.key === 'ArrowRight') editor.nudge(s, 0);
       else if (e.key === 'ArrowUp') editor.nudge(0, -s);
       else if (e.key === 'ArrowDown') editor.nudge(0, s);
-    } else if (e.key === 'ArrowRight') selectPage(current + 1);
-    else if (e.key === 'ArrowLeft') selectPage(current - 1);
+    } else if (e.key === 'ArrowRight') choosePage(current + 1);
+    else if (e.key === 'ArrowLeft') choosePage(current - 1);
   }
 });
+
+/* ── Path analysis ("visual traceroute") ──────────────────────────────
+ * Two selected nodes → the routes between them over the links this frame
+ * draws, by `analyzePath`: the function behind the `analyze_path` tool, so a
+ * person and an agent get the same answer from the same page.
+ *
+ * Asking is a read. The route is spotlit as a PREVIEW (the editor draws the
+ * frame as if it were emphasized; nothing is stored), and the bar offers the
+ * three ways to keep it, each the tool's `show` option of the same name:
+ * emphasize this frame, add a flow along the route, or copy the frame with
+ * the route spotlit and captioned. While the bar is open the path is traced
+ * again after every edit, so removing a link shows what the route becomes. */
+
+/** Exactly two nodes are selected (and so there is a path to ask about). */
+function canAnalyzePath(): boolean {
+  return editor.selectedNodeIds().length === 2 && editor.selectionCount() === 2;
+}
+
+function analyzeSelectedPath(): void {
+  if (!canAnalyzePath()) return;
+  const [from, to] = editor.selectedNodeIds() as [string, string];
+  pathSession = { from, to, index: 0, pageId: editor.page.id };
+  renderPathBar();
+}
+
+let pathBar: {
+  el: HTMLDivElement;
+  title: HTMLDivElement;
+  notes: HTMLDivElement;
+  count: HTMLSpanElement;
+  buttons: Record<string, HTMLButtonElement>;
+} | null = null;
+
+function closePathBar(): void {
+  if (!pathSession && !pathBar) return;
+  pathSession = null;
+  pathBar?.el.remove();
+  pathBar = null;
+  editor.previewEmphasis(null);
+}
+
+/** The route on show, traced now (null when there is none). */
+function shownPath(): ReturnType<typeof pathPanelView> | null {
+  if (!pathSession || editor.page.id !== pathSession.pageId) return null;
+  const analysis = analyzePath(editor.page, pathSession.from, pathSession.to, {
+    layers: doc.layers,
+  });
+  // An end that is no longer on the frame (deleted since): nothing to show.
+  if (analysis.status === 'unknown') return null;
+  return pathPanelView(editor.page, analysis, pathSession.index);
+}
+
+const PATH_ACTIONS: {
+  key: string;
+  text: string;
+  title: string;
+  /** Needs a route to act on. */
+  route: boolean;
+}[] = [
+  { key: 'prev', text: '‹', title: 'Previous route', route: true },
+  { key: 'next', text: '›', title: 'Next route', route: true },
+  {
+    key: 'swap',
+    text: '⇄',
+    title: 'Trace the other way (the flow runs from the first node)',
+    route: false,
+  },
+  {
+    key: 'keep',
+    text: '★ emphasize',
+    title: 'Keep this spotlight on the frame',
+    route: true,
+  },
+  {
+    key: 'flow',
+    text: '⇢ add flow',
+    title: 'Add a flow along this route',
+    route: true,
+  },
+  {
+    key: 'frame',
+    text: '⧉ new frame',
+    title: 'Copy this frame with the route spotlit and captioned',
+    route: true,
+  },
+  { key: 'close', text: '×', title: 'Close path analysis', route: false },
+];
+
+function runPathAction(key: string): void {
+  const session = pathSession;
+  if (!session) return;
+  if (key === 'close') return closePathBar();
+  if (key === 'swap') {
+    pathSession = { ...session, from: session.to, to: session.from, index: 0 };
+    return renderPathBar();
+  }
+  const view = shownPath();
+  const route = view?.route;
+  if (!view || !route) return;
+  const page = editor.page;
+  if (key === 'prev' || key === 'next') {
+    session.index = view.index + (key === 'next' ? 1 : -1);
+    renderPathBar();
+  } else if (key === 'keep') {
+    editor.setEmphasis(pathEmphasis(route));
+  } else if (key === 'flow') {
+    editor.addFlowPath({ id: genId('fp'), ...pathFlow(page, route) });
+    renderInspector();
+  } else if (key === 'frame') {
+    const copy = duplicatePage(
+      page,
+      `Path: ${pathLabel(page, route)}`.slice(0, TEXT_LIMITS.name),
+    );
+    copy.emphasis = pathEmphasis(route);
+    copy.caption = pathCaption(page, route);
+    doc.pages.splice(current + 1, 0, copy);
+    gotoPage(current + 1); // closes the bar: the new frame carries the route
+    markDirty();
+  }
+}
+
+function renderPathBar(): void {
+  const view = shownPath();
+  if (!view || !pathSession) return closePathBar();
+  pathSession.index = view.index;
+  editor.previewEmphasis(view.route ? pathEmphasis(view.route) : null);
+
+  if (!pathBar) {
+    const el = document.createElement('div');
+    el.className = 'path-bar';
+    el.setAttribute('role', 'region');
+    el.setAttribute('aria-label', 'Path analysis');
+    const text = document.createElement('div');
+    text.className = 'path-text';
+    text.setAttribute('role', 'status');
+    const title = document.createElement('div');
+    title.className = 'path-title';
+    const notes = document.createElement('div');
+    notes.className = 'path-notes';
+    text.append(title, notes);
+    const actions = document.createElement('div');
+    actions.className = 'path-actions';
+    const count = document.createElement('span');
+    count.className = 'path-count';
+    const buttons: Record<string, HTMLButtonElement> = {};
+    for (const a of PATH_ACTIONS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tbtn';
+      b.dataset.path = a.key;
+      b.textContent = a.text;
+      b.title = a.title;
+      b.setAttribute('aria-label', a.title);
+      b.addEventListener('click', () => runPathAction(a.key));
+      buttons[a.key] = b;
+      actions.append(b);
+      if (a.key === 'prev') actions.append(count);
+    }
+    el.append(text, actions);
+    // Escape closes it from anywhere, a focused button of the bar included:
+    // Escape reaches the canvas's handler from every control (key-routing).
+    app.appendChild(el);
+    pathBar = { el, title, notes, count, buttons };
+  }
+
+  // Text only, never markup: labels come from the document.
+  pathBar.el.classList.toggle('none', !view.found);
+  pathBar.title.textContent = view.title;
+  pathBar.notes.textContent = view.notes.join(' ');
+  pathBar.notes.hidden = view.notes.length === 0;
+  const many = view.count > 1;
+  pathBar.count.textContent = many ? `${view.index + 1} / ${view.count}` : '';
+  pathBar.count.hidden = !many;
+  for (const a of PATH_ACTIONS) {
+    const b = pathBar.buttons[a.key]!;
+    b.hidden = a.route && !view.found;
+    if (a.key === 'prev' || a.key === 'next') {
+      b.hidden = !many;
+      b.disabled =
+        a.key === 'prev' ? view.index === 0 : view.index === view.count - 1;
+    }
+  }
+}
 
 /* Right-click context menu — adaptive to whatever is under the cursor. Every
  * item maps to an existing editor command (nothing UI-only here): the menu is a
@@ -5356,25 +6073,25 @@ function closeCtxMenu(): void {
   releaseCtxOverlay = null;
 }
 
-function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
+function ctxItemsFor(
+  kind: 'node' | 'link' | 'empty',
+  at: { x: number; y: number },
+): CtxItem[] {
   if (kind === 'node') {
     const lockLabel = editor.selectionLocked() ? 'Unlock' : 'Lock';
     return [
+      // Rename is for one node; a multi-selection has no single label.
+      ...(editor.getSelectedNode()
+        ? [{ label: 'Rename', run: () => void editor.beginRename() }]
+        : []),
       { label: 'Duplicate', run: () => editor.duplicateSelection() },
+      { label: 'Cut', run: () => editor.cut() },
       { label: 'Copy', run: () => editor.copySelection() },
       {
         label: 'Copy as image',
         run: () => {
           const sp = selectionAsPage();
-          if (!sp) return;
-          void copyPagePNG(sp, '', {
-            layers: doc.layers,
-            linkStyles: doc.linkStyles,
-          }).catch((err) =>
-            alert(
-              `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
-            ),
-          );
+          if (sp) copyImage(() => copyPagePNG(sp, '', selectionOpts()));
         },
       },
       {
@@ -5395,6 +6112,10 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
         label: 'Emphasize on this frame',
         run: () => editor.emphasizeSelection(),
       },
+      // Two nodes: the routes between them (the "visual traceroute").
+      ...(canAnalyzePath()
+        ? [{ label: 'Analyze path', run: analyzeSelectedPath }]
+        : []),
       { label: 'Group into zone', run: () => addAnnotation('zone') },
       { label: 'Save as stencil…', run: () => saveSelectionAsStencil() },
       { label: 'Add policy marker', run: () => addAnnotation('policyMarker') },
@@ -5449,17 +6170,24 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
     ];
   }
   return [
-    { label: 'Paste', run: () => editor.paste(), disabled: !editor.canPaste() },
+    // At the point that was right-clicked, as a block centred on it.
+    {
+      label: 'Paste here',
+      run: () => editor.paste({ at }),
+      disabled: !editor.canPaste(),
+    },
+    // At the coordinates it was copied from: the same place on another frame.
+    {
+      label: 'Paste in place',
+      run: () => editor.paste({ inPlace: true }),
+      disabled: !editor.canPaste(),
+    },
     { label: 'Select all', run: () => editor.selectAll() },
     {
       label: 'Copy frame as image',
       run: () => {
         const page = doc.pages[current]!;
-        void copyPagePNG(page, pageExtra(page), pageOpts(page)).catch((err) =>
-          alert(
-            `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
+        copyImage(() => copyPagePNG(page, pageOverlay(page), pageOpts(page)));
       },
     },
     { sep: true },
@@ -5483,7 +6211,7 @@ function openCtxMenu(clientX: number, clientY: number): void {
   closeCtxMenu();
   const hit = editor.pickAt(clientX, clientY);
   renderInspector();
-  const items = ctxItemsFor(hit.kind);
+  const items = ctxItemsFor(hit.kind, editor.clientToPage(clientX, clientY));
 
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
@@ -5567,6 +6295,19 @@ window.addEventListener('resize', () => {
 // Release hand mode when Space lifts (or the window loses focus while held).
 window.addEventListener('keyup', (e) => {
   if (e.key === ' ') editor.setSpacePan(false);
+  if (e.key !== 'Escape') return;
+  // A select's open menu takes the Escape keydown that closes it: the page
+  // gets only this keyup. A menu opened with the pointer and dismissed that
+  // way must not keep the keyboard, or the next letter is type-ahead for it.
+  const menuClosed = !escapeDownSeen;
+  escapeDownSeen = false;
+  if (
+    menuClosed &&
+    !keyboardNav &&
+    !overlayActive() &&
+    e.target instanceof HTMLSelectElement
+  )
+    releaseFocus(e.target);
 });
 window.addEventListener('blur', () => editor.setSpacePan(false));
 
@@ -5578,5 +6319,6 @@ function esc(s: string): string {
 
 renderFilmstrip();
 renderInspector();
+inspectorReady = true;
 renderStatus();
 renderMinimap();

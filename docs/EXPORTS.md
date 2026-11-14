@@ -12,7 +12,7 @@ _Last reviewed 2026-11-13 against `main` at `e99b012`._
 
 | Format                      | Direction | Editable in the target tool | Fidelity                                      | Where it runs                    |
 | --------------------------- | --------- | --------------------------- | --------------------------------------------- | -------------------------------- |
-| SVG                         | export    | (vector art)                | Pixel-identical to the canvas                 | browser, MCP `render_svg`        |
+| SVG                         | export    | (vector art)                | As drawn on the canvas; MCP default is static | browser, MCP `render_svg`        |
 | PNG                         | export    | no                          | Pixel-identical; print DPI stamped            | browser, MCP (server-side resvg) |
 | PDF                         | export    | no                          | Pixel-identical raster on real paper sizes    | browser, MCP (server-side resvg) |
 | draw.io                     | both      | yes                         | Structure + geometry; generic outlines        | browser, MCP                     |
@@ -64,6 +64,32 @@ does, with JetBrains Mono embedded because a Worker has no system fonts.
 - PDF is raster by design (like the browser exporter): the engine's SVG uses
   filters a vector converter would drop, so the PDF always matches the canvas.
 
+## Captions
+
+A frame's caption is drawn at the bottom of the frame in every render and
+export, by the editor and by the MCP server alike (`render_svg`, PNG, PDF,
+flipbook frames). A long caption wraps to the frame's width, up to six lines,
+and its panel grows upward; explicit line breaks are kept.
+
+## Fonts
+
+The canvas takes its typeface (JetBrains Mono) from the page's CSS. A file on
+its own has no page CSS, so each export carries the font a different way:
+
+- **SVG** names the family on its root element: JetBrains Mono, then the
+  platform's fixed-width faces. A machine without JetBrains Mono draws the
+  labels in its own monospace face; the file stays small because no font is
+  embedded.
+- **PNG, PDF and copy-to-clipboard from the editor** embed the font into the
+  picture before it is rasterized, so they match the canvas on any machine.
+- **PNG and PDF from the MCP server** use the same typeface, embedded in the
+  server-side rasterizer. That rasterizer has no other font to fall back on,
+  so the arrows the typeface lacks (`→`, `←`, `↔`, `⇒` and their relatives)
+  are drawn from their ASCII spellings (`->`, `<-`, …), which the typeface
+  joins into arrow glyphs. Any other character it lacks, such as CJK text,
+  still prints as an empty box there; the editor's own exports do not have
+  this limit.
+
 ## draw.io (`.drawio`) — "my team can still edit it"
 
 | Topology Dojo                                                   | draw.io                                                                                                                                                                                              |
@@ -81,6 +107,13 @@ does, with JetBrains Mono embedded because a Worker has no system fonts.
 
 A zone member on a different layer than its zone stays a top-level cell of
 its own layer (draw.io children always share their container's layer).
+
+An element with no colour of its own is drawn in a neutral grey, since
+draw.io needs some stroke. The file also records which elements actually had
+a colour (`dojoColor`), the document title and each page's caption, so opening
+an untouched export gives back the same diagram: an uncoloured device stays
+uncoloured rather than turning grey. draw.io keeps the per-element data when
+it saves; it drops the caption, which has no draw.io equivalent.
 
 ## Visio (`.vsdx`) — the enterprise must-have
 
@@ -128,6 +161,11 @@ Mermaid classes (`class r1 router` + a `classDef` for the accent colour).
 Import reads those classes back as node types, splits `<br/>` labels into
 label + sublabel, nests subgraphs as `parentZone`, then auto-lays the graph
 out. Mermaid has no coordinates, layers, port labels or metadata — those drop.
+
+Labels are written as quoted strings, with the characters that would end
+them as Mermaid entity codes (`#quot;`, `#124;` for a pipe, `#93;` for a
+closing bracket, `#35;` for `#`), and read back the same way on nodes, links
+and subgraph titles.
 
 ## Wire-sheet pages
 
@@ -206,6 +244,8 @@ header row, autofilter, sized columns.
   the matching basic shape; text cells → text nodes; images → image nodes;
 - edges → links with routing, dash, colour, width and waypoints; edge-end
   labels → port labels; an end not attached to a shape → an anchor;
+- colour: a shape's stroke, except in a file this app exported, where only
+  the colours the elements really had are read back;
 - `<object>` / `<UserObject>` data → node metadata; `link` / `tooltip` kept.
 
 Dropped with a warning: custom (Node Designer) types the file names but the

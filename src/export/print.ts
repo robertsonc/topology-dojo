@@ -105,7 +105,14 @@ export function exportPng(
   opts: PrintOptions,
 ): PngExport {
   const [index] = pageIndices(doc, pageIndex);
-  const svg = render(doc, index!, { ...(opts.render ?? {}), calm: true });
+  const svg = render(doc, index!, {
+    ...(opts.render ?? {}),
+    // Static, and without the unused definitions (pixel-identical: an
+    // unreferenced definition draws nothing). Not the full `clean`
+    // profile, whose coordinate rounding would nudge antialiasing.
+    calm: true,
+    pruneDefs: true,
+  });
   const size = svgSize(svg);
   const paper = paperFor(doc, opts.paper, opts.orientation);
   const asked = clampDpi(opts.dpi);
@@ -147,7 +154,14 @@ export function exportPdf(
   let reduced = false;
   let minDpi = dpi;
   for (const i of indices) {
-    const svg = render(doc, i, { ...(opts.render ?? {}), calm: true });
+    const svg = render(doc, i, {
+      ...(opts.render ?? {}),
+      // Static, and without the unused definitions (pixel-identical: an
+      // unreferenced definition draws nothing). Not the full `clean`
+      // profile, whose coordinate rounding would nudge antialiasing.
+      calm: true,
+      pruneDefs: true,
+    });
     const size = svgSize(svg);
     // No paper: print the frame at its true CSS size (96 px = 1 in = 72 pt).
     const paper = paperOpt ?? { w: size.w * 0.75, h: size.h * 0.75 };
