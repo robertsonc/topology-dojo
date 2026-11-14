@@ -317,6 +317,9 @@ function themeOpt(a: Record<string, unknown>): {
     ? { theme: a.theme as RenderOptions['theme'] }
     : {};
 }
+/** The most findings validate_topology lists in one result (errors first). */
+export const MAX_VALIDATE_PROBLEMS = 60;
+
 const pageIndex = z
   .number()
   .int()
@@ -2096,10 +2099,31 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         const semantic = validateDocument(doc);
         const layout = analyzeLayout(doc);
         const result = (hw: CatalogValidation | null) => {
-          const problems = [...semantic, ...(hw?.errors ?? []), ...layout];
+          const all = [...semantic, ...(hw?.errors ?? []), ...layout];
+          // A large, badly laid-out document has hundreds of findings; all of
+          // them would be tens of kilobytes in the agent's context. Errors
+          // come first, the list stops at MAX_VALIDATE_PROBLEMS, and the
+          // true totals say how many there are.
+          const errors = all.filter((p) => p.level === 'error');
+          const problems =
+            all.length > MAX_VALIDATE_PROBLEMS
+              ? [...errors, ...all.filter((p) => p.level !== 'error')].slice(
+                  0,
+                  MAX_VALIDATE_PROBLEMS,
+                )
+              : all;
           return {
-            valid: !problems.some((p) => p.level === 'error'),
+            valid: errors.length === 0,
             problems,
+            ...(problems.length < all.length
+              ? {
+                  omitted: all.length - problems.length,
+                  counts: {
+                    errors: errors.length,
+                    warnings: all.length - errors.length,
+                  },
+                }
+              : {}),
             layoutClean: layout.length === 0,
             ...(hw
               ? {
@@ -2586,6 +2610,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             // can count created / updated / unchanged without a pre-fetch diff.
             ...(typeof r.created === 'boolean' ? { created: r.created } : {}),
             ...(typeof r.changed === 'boolean' ? { changed: r.changed } : {}),
+            // What a document setter reports about what it did: the type it
+            // defined, the layer or style it declared.
+            ...(typeof r.typeName === 'string' ? { typeName: r.typeName } : {}),
+            ...(typeof r.kind === 'string' ? { kind: r.kind } : {}),
           });
         });
       } catch (err) {

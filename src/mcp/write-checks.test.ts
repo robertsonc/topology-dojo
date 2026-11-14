@@ -209,3 +209,65 @@ describe('an edit or removal without pageIndex goes to the page that has the ele
     ).toThrow(/unknown element "ghost"/);
   });
 });
+
+describe('validate_topology on a document with very many findings', () => {
+  it('lists errors first, stops at the cap and reports the true totals', () => {
+    const store = new TopologyStore();
+    const tools = createTools(store, { renderDocument: renderDocumentToSVG });
+    const call = (name: string, args: Record<string, unknown>): unknown =>
+      tools.find((t) => t.name === name)!.handler(args);
+    // 40 nodes piled on one spot (hundreds of overlap warnings), and one
+    // dangling link imported as a whole document (an error).
+    const nodes = Array.from({ length: 40 }, (_, i) => ({
+      id: `n${i}`,
+      type: 'router',
+      x: 300,
+      y: 300,
+    }));
+    const { id } = call('import_topology', {
+      json: {
+        title: 'Pile',
+        customNodes: [],
+        pages: [
+          {
+            id: 'p1',
+            name: 'F',
+            viewBox: '0 0 1000 700',
+            nodes,
+            links: [{ id: 'l', type: 'line', from: 'n0', to: 'ghost' }],
+            anchors: [],
+            zones: [],
+            flowPaths: [],
+            policyMarkers: [],
+          },
+        ],
+      },
+    }) as { id: string };
+    const v = call('validate_topology', { topologyId: id }) as {
+      valid: boolean;
+      problems: { level: string }[];
+      omitted?: number;
+      counts?: { errors: number; warnings: number };
+    };
+    expect(v.valid).toBe(false);
+    expect(v.problems).toHaveLength(60);
+    expect(v.problems[0]!.level).toBe('error');
+    expect(v.omitted).toBe(v.counts!.errors + v.counts!.warnings - 60);
+    expect(v.counts!.errors).toBeGreaterThanOrEqual(1);
+    expect(v.counts!.warnings).toBeGreaterThan(60);
+  });
+
+  it('a short list is returned whole, with no extra fields', () => {
+    const store = new TopologyStore();
+    const tools = createTools(store, { renderDocument: renderDocumentToSVG });
+    const { id } = tools
+      .find((t) => t.name === 'create_topology')!
+      .handler({
+        title: 'T',
+      }) as { id: string };
+    const v = tools
+      .find((t) => t.name === 'validate_topology')!
+      .handler({ topologyId: id }) as Record<string, unknown>;
+    expect(Object.keys(v).sort()).toEqual(['layoutClean', 'problems', 'valid']);
+  });
+});
