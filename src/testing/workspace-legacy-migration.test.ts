@@ -238,9 +238,9 @@ describe('read-only document tools on a migrated topology (issue #276)', () => {
   });
 
   it('a mutating tool is still refused and points at both paths', async () => {
-    const { result } = await tool('set_document_title', {
+    const { result } = await tool('add_page', {
       topologyId: 't3',
-      title: 'Renamed by agent',
+      name: 'Added by agent',
     });
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toContain(

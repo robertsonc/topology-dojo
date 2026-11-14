@@ -151,13 +151,19 @@ packet-level ordering and what can run in parallel):
    shipped and tested against injectable mocks, but has never been run against
    a real or recorded Orchestrator payload, and there's no GUI surface for a
    human to trigger/review a live import (today it's MCP-tool-only). Packets:
-   E1–E7. **Not started** (2026-11-13); the tools are additionally gated by
-   `LIVE_DATA_ENABLED`, off in both environments.
+   E1–E7. **E2 done** (2026-11-14): the no-delete safeguard is now a test
+   (`src/connect/compile.test.ts`), with what a re-read still gets wrong
+   pinned beside it. E1 and E3–E7 are not started; the tools are additionally
+   gated by `LIVE_DATA_ENABLED`, off in both environments.
 6. **Time-aware flow and failure storytelling** — the flow compiler already
    produces animated, per-hop flow paths for a point-in-time fabric snapshot;
    there's no scenario model for "walk through this fabric before, during,
    and after a failure" the way the flipbook already does for static topology
-   states. Packets: T1–T7. **Not started** (2026-11-13).
+   states. Packets: T1–T7. **T1–T3 done** (2026-11-14) as a library in
+   `src/stories/`: a `FlowScenario` (a base fabric plus named steps of
+   changes) compiles to one full page per step, with nodes held in place
+   across pages and the failure marked on the page. Nothing calls it yet:
+   T4 (the MCP tool) is deliberately held, T5–T7 are not started.
 
 Items 4–6 can be scoped and start in parallel (see the
 dependency graph); none of them share a Durable Object or migration, so they
@@ -273,21 +279,25 @@ sourcedOnly:true` list what an importer owns; there's no surface yet for
   human-only view control.
 - ~~**Server-side / MCP PNG export**~~ — **shipped** in Phase 1 (resvg
   WebAssembly rasterizer, `export_topology` png / pdf; see `docs/EXPORTS.md`).
-- **Path analysis between elements ("visual traceroute")** — select two
-  nodes (e.g. two hosts), right-click → "Analyze path": compute the
-  traversal across the page's drawn link graph and present it as a focused
-  view — the traversal set spotlit, everything else dimmed — with the hops
-  optionally overlaid as an animated flow. Both rendering primitives already
-  exist: the per-frame `emphasis` option (`src/render/core.ts` — spotlight a
-  node/link id set, dim the rest to 25%) and page `flowPaths`
-  (`add_flow_path` waypoints). The new pieces are a deterministic
-  shortest/all-paths computation over the in-document graph, the two-node
-  selection + context-menu UX, and — per the one-catalog rule (`DESIGN.md`
-  #2/#3) — an agent-callable `analyze_path` equivalent of the same action.
-  Static first: answers come only from what the document already draws
-  (multiple candidate paths → present alternatives; disconnected → say so,
-  which is itself diagnostic). Page-scoped presentation state (or emitted as
-  a new flipbook page), never cross-page inheritance (decision 0001).
+- ~~**Path analysis between elements ("visual traceroute")**~~ — **shipped
+  2026-11-14**, static, as scoped: answers come only from what the page
+  draws.
+  - One computation for people and agents: `analyzePath` in
+    `src/api/path.ts` (routes shortest first over the page's drawn link
+    graph; hidden layers, blocked / down links and down nodes respected;
+    alternatives up to a bound; "disconnected" explained).
+  - Editor: select two nodes → **Analyze path** (context menu or Properties).
+    The route is spotlit as a preview that changes nothing; a bar offers the
+    alternatives and three ways to keep it — emphasize the frame, add a flow
+    along it, or copy the frame with the route emphasized and captioned. The
+    path is traced again after every edit while the bar is open.
+  - Agents: `analyze_path`, whose `show` option (`emphasis` / `flow` /
+    `page`) is the same three actions.
+  - Page-scoped throughout (decision 0001): emphasis and flows are written
+    to the page, a new frame is a new page; nothing is inherited across
+    pages.
+  - Not done: weighting (cost, bandwidth, policy), and anything live — see
+    "Reverse agentic dispatch — live path discovery" under Later.
 
 ## Later
 
@@ -375,7 +385,9 @@ so a future contributor doesn't have to re-litigate them:
   write path is introduced for performance or convenience.
 - **Hidden cross-page inheritance.** Pages are independent, full-frame
   documents by design (`docs/decisions/0001-flipbook-vs-beats.md`); no
-  delta/override machinery between pages, ever — see `DESIGN.md` #1.
+  delta/override machinery between pages, ever — see `DESIGN.md` #1. The
+  scenario-story compiler (`src/stories/`) is the worked case: changes exist
+  only in its input, and each page is compiled whole.
 - **Laptop-driven production deployment.** `npm run deploy` was deleted
   (finding L1, closed); the only production deploy path is the gated GitHub
   Actions pipeline (`release.yml` — merging to `main` is the release
@@ -397,7 +409,8 @@ so a future contributor doesn't have to re-litigate them:
   failed fetch must never be interpreted as "this appliance/tunnel/flow no
   longer exists" and cascade-delete it. Any future live-import hardening work
   (initiative 5, EdgeConnect) must preserve this — a real vendor API's
-  transient failure is not evidence of a topology change.
+  transient failure is not evidence of a topology change. Enforced by test
+  since packet E2 (`src/connect/compile.test.ts`).
 - **A separate viewer/presenter codebase.** The editor and any renderer share
   one render path (`flattenViewer`); no second, divergent presentation
   engine.

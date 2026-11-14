@@ -135,6 +135,15 @@ import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
 import { DEFAULT_LINK_ATTACH, genId } from './api/builder.js';
+import {
+  analyzePath,
+  pathCaption,
+  pathEmphasis,
+  pathFlow,
+  pathLabel,
+} from './api/path.js';
+import { TEXT_LIMITS } from './api/text.js';
+import { pathPanelView } from './ui/path-panel.js';
 import { computeBadgePlacements } from './editor/problem-badges.js';
 import {
   LINK_ATTACH_FIELDS,
@@ -479,12 +488,24 @@ function onDocChange(): void {
   renderMinimap();
   renderProblems();
   refreshInspectorAfterChange();
+  // A path on show is traced again: the edit may have changed the answer.
+  if (pathSession) renderPathBar();
   markDirty();
 }
 
 // Guards the status bar from rendering before `editor`/`statusbar` are set up
 // (the Editor constructor fires onView during construction).
 let statusReady = false;
+/** The path analysis on show, if any (see "Path analysis" further down).
+ * Declared here because `onDocChange` reads it and runs during start-up. */
+let pathSession: {
+  from: string;
+  to: string;
+  /** Which of the routes found is on show. */
+  index: number;
+  /** The frame it was asked on; it does not follow to another frame. */
+  pageId: string;
+} | null = null;
 /** Set once the inspector has been drawn for the first time. */
 let inspectorReady = false;
 
@@ -957,6 +978,7 @@ function fitView(): void {
 /** Show a page in the editor, fitted clear of the floating panels. */
 function showPage(page: Page): void {
   fitLeftInset = 0;
+  closePathBar(); // a path belongs to the frame it was traced on
   editor.setPage(page);
   settleFit();
 }
@@ -3352,6 +3374,9 @@ function renderInspector(): void {
     if (editor.selectionCount() > 1)
       html +=
         `<div class="insp-h">Selection (${editor.selectionCount()} nodes)</div>` +
+        (canAnalyzePath()
+          ? `<div class="insp-row"><span>Path</span><span class="insp-btns"><button class="tbtn ab" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">⇢ analyze path</button></span></div>`
+          : '') +
         formatRow();
     // Nothing (singly) selected — show document + page properties.
     html += propertiesHtml();
@@ -3543,6 +3568,9 @@ function formatRow(): string {
 }
 
 function wireFormatRow(): void {
+  inspector
+    .querySelector('#i-path')
+    ?.addEventListener('click', analyzeSelectedPath);
   inspector.querySelector('#i-copyfmt')?.addEventListener('click', () => {
     editor.copyFormat();
     renderInspector(); // paste becomes available
@@ -5750,6 +5778,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'h' || e.key === 'H') setHand(!editor.isHandActive());
   if (e.key === 'Escape') {
     stopPlayback();
+    closePathBar();
     editor.clearSelection();
     setTool('select');
   }
@@ -5767,6 +5796,189 @@ window.addEventListener('keydown', (e) => {
     else if (e.key === 'ArrowLeft') choosePage(current - 1);
   }
 });
+
+/* ── Path analysis ("visual traceroute") ──────────────────────────────
+ * Two selected nodes → the routes between them over the links this frame
+ * draws, by `analyzePath`: the function behind the `analyze_path` tool, so a
+ * person and an agent get the same answer from the same page.
+ *
+ * Asking is a read. The route is spotlit as a PREVIEW (the editor draws the
+ * frame as if it were emphasized; nothing is stored), and the bar offers the
+ * three ways to keep it, each the tool's `show` option of the same name:
+ * emphasize this frame, add a flow along the route, or copy the frame with
+ * the route spotlit and captioned. While the bar is open the path is traced
+ * again after every edit, so removing a link shows what the route becomes. */
+
+/** Exactly two nodes are selected (and so there is a path to ask about). */
+function canAnalyzePath(): boolean {
+  return editor.selectedNodeIds().length === 2 && editor.selectionCount() === 2;
+}
+
+function analyzeSelectedPath(): void {
+  if (!canAnalyzePath()) return;
+  const [from, to] = editor.selectedNodeIds() as [string, string];
+  pathSession = { from, to, index: 0, pageId: editor.page.id };
+  renderPathBar();
+}
+
+let pathBar: {
+  el: HTMLDivElement;
+  title: HTMLDivElement;
+  notes: HTMLDivElement;
+  count: HTMLSpanElement;
+  buttons: Record<string, HTMLButtonElement>;
+} | null = null;
+
+function closePathBar(): void {
+  if (!pathSession && !pathBar) return;
+  pathSession = null;
+  pathBar?.el.remove();
+  pathBar = null;
+  editor.previewEmphasis(null);
+}
+
+/** The route on show, traced now (null when there is none). */
+function shownPath(): ReturnType<typeof pathPanelView> | null {
+  if (!pathSession || editor.page.id !== pathSession.pageId) return null;
+  const analysis = analyzePath(editor.page, pathSession.from, pathSession.to, {
+    layers: doc.layers,
+  });
+  // An end that is no longer on the frame (deleted since): nothing to show.
+  if (analysis.status === 'unknown') return null;
+  return pathPanelView(editor.page, analysis, pathSession.index);
+}
+
+const PATH_ACTIONS: {
+  key: string;
+  text: string;
+  title: string;
+  /** Needs a route to act on. */
+  route: boolean;
+}[] = [
+  { key: 'prev', text: '‹', title: 'Previous route', route: true },
+  { key: 'next', text: '›', title: 'Next route', route: true },
+  {
+    key: 'swap',
+    text: '⇄',
+    title: 'Trace the other way (the flow runs from the first node)',
+    route: false,
+  },
+  {
+    key: 'keep',
+    text: '★ emphasize',
+    title: 'Keep this spotlight on the frame',
+    route: true,
+  },
+  {
+    key: 'flow',
+    text: '⇢ add flow',
+    title: 'Add a flow along this route',
+    route: true,
+  },
+  {
+    key: 'frame',
+    text: '⧉ new frame',
+    title: 'Copy this frame with the route spotlit and captioned',
+    route: true,
+  },
+  { key: 'close', text: '×', title: 'Close path analysis', route: false },
+];
+
+function runPathAction(key: string): void {
+  const session = pathSession;
+  if (!session) return;
+  if (key === 'close') return closePathBar();
+  if (key === 'swap') {
+    pathSession = { ...session, from: session.to, to: session.from, index: 0 };
+    return renderPathBar();
+  }
+  const view = shownPath();
+  const route = view?.route;
+  if (!view || !route) return;
+  const page = editor.page;
+  if (key === 'prev' || key === 'next') {
+    session.index = view.index + (key === 'next' ? 1 : -1);
+    renderPathBar();
+  } else if (key === 'keep') {
+    editor.setEmphasis(pathEmphasis(route));
+  } else if (key === 'flow') {
+    editor.addFlowPath({ id: genId('fp'), ...pathFlow(page, route) });
+    renderInspector();
+  } else if (key === 'frame') {
+    const copy = duplicatePage(
+      page,
+      `Path: ${pathLabel(page, route)}`.slice(0, TEXT_LIMITS.name),
+    );
+    copy.emphasis = pathEmphasis(route);
+    copy.caption = pathCaption(page, route);
+    doc.pages.splice(current + 1, 0, copy);
+    gotoPage(current + 1); // closes the bar: the new frame carries the route
+    markDirty();
+  }
+}
+
+function renderPathBar(): void {
+  const view = shownPath();
+  if (!view || !pathSession) return closePathBar();
+  pathSession.index = view.index;
+  editor.previewEmphasis(view.route ? pathEmphasis(view.route) : null);
+
+  if (!pathBar) {
+    const el = document.createElement('div');
+    el.className = 'path-bar';
+    el.setAttribute('role', 'region');
+    el.setAttribute('aria-label', 'Path analysis');
+    const text = document.createElement('div');
+    text.className = 'path-text';
+    text.setAttribute('role', 'status');
+    const title = document.createElement('div');
+    title.className = 'path-title';
+    const notes = document.createElement('div');
+    notes.className = 'path-notes';
+    text.append(title, notes);
+    const actions = document.createElement('div');
+    actions.className = 'path-actions';
+    const count = document.createElement('span');
+    count.className = 'path-count';
+    const buttons: Record<string, HTMLButtonElement> = {};
+    for (const a of PATH_ACTIONS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tbtn';
+      b.dataset.path = a.key;
+      b.textContent = a.text;
+      b.title = a.title;
+      b.setAttribute('aria-label', a.title);
+      b.addEventListener('click', () => runPathAction(a.key));
+      buttons[a.key] = b;
+      actions.append(b);
+      if (a.key === 'prev') actions.append(count);
+    }
+    el.append(text, actions);
+    // Escape closes it from anywhere, a focused button of the bar included:
+    // Escape reaches the canvas's handler from every control (key-routing).
+    app.appendChild(el);
+    pathBar = { el, title, notes, count, buttons };
+  }
+
+  // Text only, never markup: labels come from the document.
+  pathBar.el.classList.toggle('none', !view.found);
+  pathBar.title.textContent = view.title;
+  pathBar.notes.textContent = view.notes.join(' ');
+  pathBar.notes.hidden = view.notes.length === 0;
+  const many = view.count > 1;
+  pathBar.count.textContent = many ? `${view.index + 1} / ${view.count}` : '';
+  pathBar.count.hidden = !many;
+  for (const a of PATH_ACTIONS) {
+    const b = pathBar.buttons[a.key]!;
+    b.hidden = a.route && !view.found;
+    if (a.key === 'prev' || a.key === 'next') {
+      b.hidden = !many;
+      b.disabled =
+        a.key === 'prev' ? view.index === 0 : view.index === view.count - 1;
+    }
+  }
+}
 
 /* Right-click context menu — adaptive to whatever is under the cursor. Every
  * item maps to an existing editor command (nothing UI-only here): the menu is a
@@ -5816,6 +6028,10 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
         label: 'Emphasize on this frame',
         run: () => editor.emphasizeSelection(),
       },
+      // Two nodes: the routes between them (the "visual traceroute").
+      ...(canAnalyzePath()
+        ? [{ label: 'Analyze path', run: analyzeSelectedPath }]
+        : []),
       { label: 'Group into zone', run: () => addAnnotation('zone') },
       { label: 'Save as stencil…', run: () => saveSelectionAsStencil() },
       { label: 'Add policy marker', run: () => addAnnotation('policyMarker') },

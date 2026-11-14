@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   generateSdwan,
   resolveSdwanIntent,
+  sdwanFabricRecords,
   SYNTHETIC_SYSTEM,
   type SdwanIntent,
 } from './generate.js';
@@ -287,6 +288,34 @@ describe('generateSdwan — regions and detail', () => {
     expect(JSON.stringify(generateSdwan(intent).doc)).toBe(
       JSON.stringify(generateSdwan(intent).doc),
     );
+  });
+
+  it('hands out the fabric it draws, as records', () => {
+    for (const intent of [
+      { vendor: 'edgeconnect', branchHa: true, transports: ['inet', 'mpls'] },
+      { vendor: 'juniper', regions: 2, detail: 'site' },
+    ] satisfies SdwanIntent[]) {
+      const records = sdwanFabricRecords(intent);
+      const { doc, stats } = generateSdwan(intent);
+      // One record per fabric element the document draws, same identities.
+      const drawn = (kind: string) =>
+        [...page(doc).nodes, ...page(doc).links]
+          .filter((e) => e.source?.kind === kind)
+          .map((e) => e.source!.id)
+          .sort();
+      expect(drawn('appliance')).toEqual(
+        records.appliances.map((a) => a.id).sort(),
+      );
+      expect(drawn('tunnel')).toEqual(
+        [...records.underlay, ...records.overlay].map((t) => t.id).sort(),
+      );
+      expect(records.underlay).toHaveLength(stats.underlayTunnels);
+      expect(records.overlay).toHaveLength(stats.overlayTunnels);
+      // Plain data, a fresh copy each time: a caller may build on it.
+      expect(sdwanFabricRecords(intent)).toEqual(records);
+      expect(sdwanFabricRecords(intent)).not.toBe(records);
+      expect(JSON.parse(JSON.stringify(records))).toEqual(records);
+    }
   });
 });
 

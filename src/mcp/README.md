@@ -174,8 +174,8 @@ an id. The usual draft-building flow is:
    (a single page) so agents don't reload the whole document.
 
 Page targeting: the `add_*` tools default to the **most recently added page**;
-pass `pageIndex` to target another. `render_svg` and `inspect_render` default
-to page `0`.
+pass `pageIndex` to target another. `render_svg`, `inspect_render` and
+`analyze_path` default to page `0`.
 
 Call `describe_capabilities` first to discover the vocabulary. It defaults to a
 compact **index** (type names/categories only); request editable fields with
@@ -194,7 +194,8 @@ type's editable fields are `common` plus its own `fields`.
 Every agent pays for the whole tool list at the start of a session, so the
 document setters most diagrams never use are **operations only**:
 `set_legend`, `set_palette`, `set_sheet`, `define_link_style`, `define_tier`,
-`define_bundle`, `set_port_table`, `define_node_type` and `set_node_metadata`.
+`define_bundle`, `set_port_table`, `define_node_type`, `set_node_metadata` and
+`set_document_title`.
 They are not in the tool list. Run them through `edit_topology`:
 
 ```jsonc
@@ -307,7 +308,7 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | `generate_sdwan_topology`                              | Generate an SD-WAN fabric from intent (EdgeConnect or Juniper SRX; regions, hubs, branches, transports, HA, LAN) as a new document            |
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                         |
 | `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a draw.io file, a Mermaid flowchart, or CSV data (`format` auto-detects)              |
-| `set_document_title`                                   | Rename a document                                                                                                                             |
+| `set_document_title` _(op)_                            | Rename a document                                                                                                                             |
 | `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox / timing / lineJumps / linkAttach / `portLabels` / `caption` / `emphasis`              |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                                                 |
 | `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                                                              |
@@ -331,6 +332,7 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | `auto_place_labels`                                    | Move node labels away from links (fewest crossings, layout rules kept, hand-placed labels untouched)                                          |
 | `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                              |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force / tiered — rows by declared tiers, `mirror`, `tierZones`)                        |
+| `analyze_path`                                         | Path between two nodes / anchors over a page's drawn links: routes and alternatives, or why none; `show` spotlights it, adds a flow or a page |
 | `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                              |
 | `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"`; `profile: "clean"` default, `"full"` = animated)         |
 | `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations (`theme: "light"` optional)                                                      |

@@ -394,6 +394,8 @@ Right-click a node selection for:
 
 - **Duplicate**, **Copy**, **Copy format**, and **Paste format**;
 - **Emphasize on this frame**;
+- **Analyze path**, when exactly two nodes are selected (see
+  [Analyze a path between two nodes](#analyze-a-path-between-two-nodes));
 - **Group into zone**, **Save as stencil…**, and **Add policy marker**;
 - **Bring to front**, **Send to back**, **Lock** or **Unlock**, and **Delete**.
 
@@ -821,6 +823,48 @@ With nothing selected, use the **Frame** section:
 
 You can also select elements, right-click, and choose
 **Emphasize on this frame**.
+
+### Analyze a path between two nodes
+
+Select two nodes (click one, then Shift-click or Ctrl-click the other) and
+choose **Analyze path** from the right-click menu, or **⇢ analyze path** under
+**Selection** in Properties. The editor traces the routes between them over
+the links the frame draws and spotlights the shortest: its nodes and links at
+full strength, everything else dimmed. The first node you selected is the
+start.
+
+A bar under the toolbar says what was found, for example
+`Path: User -> App · 3 hops via EC-Branch, EC-Hub`, and offers:
+
+| Control         | What it does                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| **‹** / **›**   | Step through the alternative routes, shortest first (shown when there is more than one).    |
+| **⇄**           | Trace the other way round. The route is the same; a flow added from it runs from the start. |
+| **★ emphasize** | Keep the spotlight as this frame's emphasis (one undo step).                                |
+| **⇢ add flow**  | Add a flow path along the route, labelled with its ends and hop count.                      |
+| **⧉ new frame** | Copy the frame, with the route emphasized and captioned, as the next frame of the flipbook. |
+| **×** or Escape | Close the bar. The spotlight goes with it.                                                  |
+
+Tracing is a read: until you choose one of the three keep actions nothing in
+the document changes, and exports and the saved file are unaffected. While the
+bar is open the path is traced again after every edit, so deleting a link
+shows at once what the route becomes, or that there no longer is one.
+
+What counts as a path:
+
+- Only what the frame draws. A link on a hidden layer is not part of any
+  route; when the two nodes are joined only through hidden layers the bar
+  names the layers to show.
+- Links run both ways, whatever their from and to. Several links between the
+  same two nodes are one hop.
+- A link of type **blocked**, a link or tunnel marked down, and a node marked
+  down are avoided. When every route crosses one, the routes are still shown
+  and the bar says so.
+- When there is no path the bar says why: one of the nodes has no usable
+  link, or the two sit in separate groups of linked elements.
+
+Agents use **analyze_path** for the same answer; its `show` option
+(`emphasis`, `flow`, `page`) matches the three keep actions.
 
 ## 10. Starter templates
 
@@ -1536,9 +1580,10 @@ Workspace limits include:
 
 ### Tool groups
 
-Nine document setters are **operations only**: `set_legend`, `set_palette`,
+Ten document setters are **operations only**: `set_legend`, `set_palette`,
 `set_sheet`, `define_link_style`, `define_tier`, `define_bundle`,
-`set_port_table`, `define_node_type`, and `set_node_metadata`. They are not in
+`set_port_table`, `define_node_type`, `set_node_metadata`, and
+`set_document_title`. They are not in
 the tool list an agent loads; the agent runs them as `edit_topology`
 operations and reads their arguments from `describe_operations` when it needs
 one. This keeps the always-loaded tool list small. Where this guide says
@@ -1548,10 +1593,10 @@ one. This keeps the always-loaded tool list small. Where this guide says
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Discover                     | **describe_capabilities**, **layout_guidelines**, **list_templates**                                                                                                                                                                                                                                 |
 | Create/manage private drafts | **create_topology**, **list_topologies**, **get_topology**, **delete_topology**, **create_from_template**, **generate_sdwan_topology**, **import_topology**                                                                                                                                          |
-| Document/page settings       | **set_document_title**, **add_page**, **set_page_properties**; operations **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                             |
+| Document/page settings       | **add_page**, **set_page_properties**; operations **set_document_title**, **set_legend**, **set_palette**, **set_sheet**                                                                                                                                                                             |
 | Add content                  | **add_node**, **set_node_metadata**, **add_link**, **add_anchor**, **add_zone**, **add_flow_path**, **add_policy_marker**                                                                                                                                                                            |
 | Edit content                 | **edit_topology**, **describe_operations**, **update_element**, **remove_element**, **upsert_by_source**, **define_layer**, **define_node_type**, **define_link_style**, **define_tier**, **define_bundle**, **set_port_table**                                                                      |
-| Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **auto_place_labels**, **inspect_render**                                                                                                                                                                       |
+| Check and arrange            | **validate_topology**, **tidy_topology**, **balance_topology**, **layout_topology**, **auto_place_labels**, **analyze_path**, **inspect_render**                                                                                                                                                     |
 | Output                       | **render_svg**, **export_flipbook**, **export_topology**, **view_topology**, hosted **share_topology** / **list_shares** / **unpublish_topology**                                                                                                                                                    |
 | Hardware catalog             | **list_hardware**, **describe_hardware**, **bind_hardware**, **assign_interfaces**, **catalog_diff**                                                                                                                                                                                                 |
 | Workspace                    | **create_workspace**, **list_workspaces**, **get_workspace_manifest**, **get_workspace_document**, **describe_workspace_operations**, **get_workspace_changes**, **get_workspace_elements**, **propose_workspace_changes**, **apply_workspace_changes**, **create_checkpoint**, **list_checkpoints** |
