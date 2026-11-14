@@ -1062,6 +1062,12 @@ autosave separately. They can:
 - choose **back to my document** to return to their prior local draft;
 - choose **download** first to keep both as files.
 
+A recipient does not need an account. Without one, a **sign in** chip sits at
+the right end of the toolbar, and starting a **new** document or choosing
+**keep this copy** opens a prompt: _Sign in to save your copy to your
+workspace._ It can be dismissed; the editor keeps working and saving to the
+browser. Signing in returns to the same document.
+
 ## 12. Custom nodes and stencils
 
 ### Node Designer

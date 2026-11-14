@@ -409,6 +409,11 @@
         gap: 6px;
         text-decoration: none;
       }
+      /* The explicit display above beats the UA's [hidden] rule; without this
+         an empty chip showed whenever there was no session. */
+      .user-chip[hidden] {
+        display: none;
+      }
       .user-chip .uc-dot {
         color: var(--accent);
         font-size: 9px;
@@ -917,6 +922,48 @@
       .user-menu .um-item:hover {
         background: var(--accent);
         color: #08130f;
+      }
+      /* Anonymous visitor: the account chip becomes a sign-in prompt. */
+      .user-chip.signed-out .uc-dot,
+      .user-chip.signed-out .uc-caret {
+        display: none;
+      }
+      .user-chip.signed-out {
+        border-color: var(--accent);
+        color: var(--accent);
+        /* The toolbar scrolls sideways when it is wider than the window, and
+           the account area is at its far end. Pin the sign-in chip to the
+           visible right edge so the offer is on screen without scrolling. */
+        position: sticky;
+        right: 0;
+        z-index: 2;
+        background: var(--panel2);
+        box-shadow: -10px 0 12px -6px rgba(0, 0, 0, 0.5);
+      }
+      /* Narrow toolbars drop chip labels; this chip is only its label. */
+      .user-chip.signed-out .tlabel {
+        display: inline;
+      }
+      .sign-in-prompt {
+        max-width: 250px;
+      }
+      .sign-in-prompt .um-head {
+        white-space: normal;
+        color: var(--text);
+        font-weight: 600;
+        border-bottom: none;
+        margin-bottom: 0;
+      }
+      .sign-in-prompt .um-note {
+        color: var(--muted);
+        padding: 0 8px 8px;
+        line-height: 1.4;
+      }
+      .user-menu .um-item.um-primary {
+        background: var(--accent);
+        color: #08130f;
+        font-weight: 600;
+        text-align: center;
       }
       .align-group {
         display: inline-flex;

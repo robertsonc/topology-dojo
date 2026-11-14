@@ -933,6 +933,7 @@ sharedBanner.querySelector('#sharedKeep')?.addEventListener('click', () => {
   clearLocal('shared');
   updateSharedBanner();
   markDirty();
+  promptSignIn();
 });
 sharedBanner.querySelector('#sharedBack')?.addEventListener('click', () => {
   activeShareId = undefined;
@@ -1011,6 +1012,9 @@ app.querySelector('#fNew')?.addEventListener('click', () => {
     pages: [blankPage('Frame 1')],
     customNodes: [],
   });
+  // An anonymous visitor (in from a share link) has just started a document
+  // of their own: say, without blocking, what signing in would add.
+  promptSignIn();
 });
 app.querySelector('#fSave')?.addEventListener('click', downloadDocJSON);
 
@@ -5020,11 +5024,94 @@ function wireAccountMenu(login: string): void {
     window.location.assign('/logout');
   });
 }
+/** Default line in the anonymous sign-in prompt. */
+const SIGN_IN_PROMPT = 'Sign in to save your copy to your workspace.';
+/**
+ * Open the sign-in prompt under the account chip with `message`. A no-op
+ * until the hosted Worker has said the visitor is anonymous (so never in Vite
+ * dev, and never for a signed-in user).
+ */
+let promptSignIn: (message?: string) => void = () => {};
+
+/**
+ * Anonymous visitor on the hosted app (they arrived through a public share
+ * link, which needs no account): put a "sign in" chip where the account chip
+ * goes. Nothing is forced — the editor keeps working and autosaving to this
+ * browser — but the chip, and the prompt it opens, say what an account adds.
+ * Signing in returns here, where the autosaved document is waiting.
+ */
+function wireSignInChip(): void {
+  const chip = app.querySelector<HTMLButtonElement>('#userChip');
+  const name = app.querySelector<HTMLElement>('#userName');
+  const div = app.querySelector<HTMLElement>('#userDiv');
+  if (!chip || !name || !div) return;
+  name.textContent = 'sign in';
+  chip.title = 'Sign in with GitHub';
+  chip.setAttribute('aria-label', 'Sign in');
+  chip.setAttribute('aria-haspopup', 'dialog');
+  chip.classList.add('signed-out');
+  chip.hidden = false;
+  div.hidden = false;
+
+  const menu = document.createElement('div');
+  menu.className = 'user-menu sign-in-prompt';
+  menu.id = 'signInPrompt';
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-label', 'Sign in');
+  menu.hidden = true;
+  menu.innerHTML =
+    `<div class="um-head" id="signInMessage"></div>` +
+    `<div class="um-note">Your work stays in this browser until you do. Signing in brings you straight back to it.</div>` +
+    `<a class="um-item um-primary" id="signInGo" href="/login?go=%2F">Sign in with GitHub</a>`;
+  const message = menu.querySelector<HTMLElement>('#signInMessage')!;
+  document.body.appendChild(menu);
+
+  let release: (() => void) | null = null;
+  const close = (): void => {
+    menu.hidden = true;
+    chip.setAttribute('aria-expanded', 'false');
+    release?.();
+    release = null;
+  };
+  const open = (text: string): void => {
+    message.textContent = text;
+    const r = chip.getBoundingClientRect();
+    menu.style.top = `${Math.round(r.bottom + 6)}px`;
+    menu.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
+    menu.style.left = 'auto';
+    if (!menu.hidden) return;
+    menu.hidden = false;
+    chip.setAttribute('aria-expanded', 'true');
+    release = registerOverlay(menu, { close });
+  };
+  chip.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu.hidden) open(SIGN_IN_PROMPT);
+    else close();
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && e.target !== chip && !menu.contains(e.target as Node))
+      close();
+  });
+  // Flush the autosave before leaving, so the document is there on return.
+  menu.querySelector('#signInGo')?.addEventListener('click', () => {
+    saveLocal(doc, activeSlot);
+  });
+  // Deferred a tick: the click that triggered the prompt is still bubbling
+  // to the outside-click listener above, which would close it at once.
+  promptSignIn = (text = SIGN_IN_PROMPT) => {
+    setTimeout(() => open(text), 0);
+  };
+}
+
 async function showUserChip(): Promise<void> {
   try {
     const res = await fetch('/api/me', {
       headers: { accept: 'application/json' },
     });
+    // The hosted Worker answers 401 for a visitor with no session. (Vite dev
+    // has no Worker: that is a 404 or the app shell, and shows nothing.)
+    if (res.status === 401) wireSignInChip();
     if (!res.ok) return;
     const me = (await res.json()) as {
       login?: string;
