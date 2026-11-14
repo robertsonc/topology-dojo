@@ -175,7 +175,10 @@ an id. The usual draft-building flow is:
 
 Page targeting: the `add_*` tools default to the **most recently added page**;
 pass `pageIndex` to target another. `render_svg`, `inspect_render` and
-`analyze_path` default to page `0`.
+`analyze_path` default to page `0`. The arrange tools (`tidy_topology`,
+`balance_topology`, `layout_topology`, `auto_place_labels`) work on **every
+page** unless `pageIndex` names one, so pass it when only one page needs
+arranging: the others may have been placed by hand.
 
 Call `describe_capabilities` first to discover the vocabulary. It defaults to a
 compact **index** (type names/categories only); request editable fields with

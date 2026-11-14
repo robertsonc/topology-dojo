@@ -338,15 +338,41 @@ export function balanceLayout(
   return next;
 }
 
-/** Tidy every page of a document in place; returns a before/after summary. */
+/**
+ * Which pages a document-level layout pass touches: one page, or (the
+ * default) all of them. A hand-arranged page must not be rearranged because
+ * another page needed tidying.
+ */
+export interface PageScope {
+  /** 0-based page to arrange; omit for every page. */
+  pageIndex?: number;
+}
+
+/** The pages in scope. Throws when `pageIndex` names no page. */
+export function scopedPages(
+  doc: TopologyDocument,
+  scope: PageScope = {},
+): Page[] {
+  if (scope.pageIndex === undefined) return doc.pages;
+  const page = doc.pages[scope.pageIndex];
+  if (!page)
+    throw new Error(
+      `no page at index ${scope.pageIndex} (the document has ${doc.pages.length})`,
+    );
+  return [page];
+}
+
+/** Tidy a document's pages in place; returns a before/after summary. */
 export function tidyDocument(
   doc: TopologyDocument,
   opts: TidyOptions = {},
+  scope: PageScope = {},
 ): TidyResult {
   registerHitBoxes(doc.customNodes);
+  const pages = scopedPages(doc, scope);
   const before = analyzeLayout(doc).length;
   let movedNodes = 0;
-  for (const page of doc.pages) movedNodes += tidyPage(page, opts);
+  for (const page of pages) movedNodes += tidyPage(page, opts);
   const after = analyzeLayout(doc).length;
   return { movedNodes, before, after };
 }
@@ -370,11 +396,13 @@ export function tidyLayout(
 export function balanceDocument(
   doc: TopologyDocument,
   opts: BalanceOptions = {},
+  scope: PageScope = {},
 ): TidyResult {
   registerHitBoxes(doc.customNodes);
+  const pages = scopedPages(doc, scope);
   const before = analyzeLayout(doc).length;
   let movedNodes = 0;
-  for (const page of doc.pages) {
+  for (const page of pages) {
     const orig = page.nodes.map((n) => ({ x: n.x, y: n.y }));
     tidyPage(page);
     balancePage(page, opts);

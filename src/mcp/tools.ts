@@ -316,6 +316,20 @@ const pageIndex = z
   .int()
   .optional()
   .describe('0-based page; default: the last page.');
+/**
+ * Page scope of the arrange tools (tidy / balance / layout / label placement):
+ * one page, or every page when omitted. Without it an agent tidying one messy
+ * page rearranged every other page of the document too.
+ */
+const pageScope = z
+  .number()
+  .int()
+  .min(0)
+  .optional()
+  .describe('0-based page; omit for all pages.');
+/** The arrange tools' scope argument from parsed tool args. */
+const scopeOf = (a: Record<string, unknown>): { pageIndex?: number } =>
+  a.pageIndex === undefined ? {} : { pageIndex: Number(a.pageIndex) };
 
 /** Zod string: reject overlong raw input, then strip controls / collapse space. */
 function displayString(max: number, opts?: { multiline?: boolean }) {
@@ -2104,9 +2118,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'tidy_topology',
       description:
-        'Auto-arrange a topology toward the layout guidelines: snap nodes to the grid, push apart overlapping/crowded nodes, and keep them inside the page. Mutates the stored topology in place and returns how many nodes moved plus the layout-warning count before/after. Call this after generating, or whenever validate_topology reports layout issues.',
+        'Tidy in place: snap nodes to the grid, push apart overlapping or crowded nodes, keep them inside the page. Locked nodes stay put. Returns how many nodes moved and the layout-warning count before/after. Run after generating, or when validate_topology reports layout issues.',
       inputShape: {
         topologyId,
+        pageIndex: pageScope,
         snapToGrid: z
           .boolean()
           .optional()
@@ -2121,15 +2136,19 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe('Keep nodes inside the page margin (default true).'),
       },
       handler: (a) =>
-        tidyDocument(store.get(String(a.topologyId)), {
-          ...(a.snapToGrid !== undefined
-            ? { snapToGrid: Boolean(a.snapToGrid) }
-            : {}),
-          ...(a.minGap !== undefined ? { minGap: Number(a.minGap) } : {}),
-          ...(a.keepInBounds !== undefined
-            ? { keepInBounds: Boolean(a.keepInBounds) }
-            : {}),
-        }),
+        tidyDocument(
+          store.get(String(a.topologyId)),
+          {
+            ...(a.snapToGrid !== undefined
+              ? { snapToGrid: Boolean(a.snapToGrid) }
+              : {}),
+            ...(a.minGap !== undefined ? { minGap: Number(a.minGap) } : {}),
+            ...(a.keepInBounds !== undefined
+              ? { keepInBounds: Boolean(a.keepInBounds) }
+              : {}),
+          },
+          scopeOf(a),
+        ),
     },
     {
       name: 'auto_place_labels',
@@ -2137,12 +2156,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         'Move node labels away from links: for each node, pick the compass placement (labelPlacement) whose label is crossed by the fewest links as drawn, without crowding another node or label, growing into a foreign zone, or leaving the page; below is preferred on ties. Labels placed by hand (labelOffset / labelOffsetX / labelY) are left alone. Mutates the stored topology; returns the changed count per page. generate_sdwan_topology already does this.',
       inputShape: {
         topologyId,
-        pageIndex: z
-          .number()
-          .int()
-          .min(0)
-          .optional()
-          .describe('0-based page index; omit to place labels on every page.'),
+        pageIndex: pageScope,
       },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
@@ -2167,9 +2181,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'layout_topology',
       description:
-        'Arrange a topology from scratch with a layout algorithm (unlike tidy, which only de-overlaps existing positions). Use after adding nodes/links when you have not placed them well. Links inform structure. Mutates the stored topology in place; returns how many nodes moved.',
+        'Arrange from scratch with a layout algorithm (tidy only de-overlaps existing positions). Links inform structure; zone members stay together; locked nodes stay put. In place; returns how many nodes moved.',
       inputShape: {
         topologyId,
+        pageIndex: pageScope,
         algorithm: z
           .enum(['grid', 'hierarchical', 'circular', 'force', 'tiered'])
           .describe(
@@ -2198,25 +2213,30 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           ),
       },
       handler: (a) =>
-        layoutDocument(store.get(String(a.topologyId)), {
-          algorithm: a.algorithm as LayoutAlgorithm,
-          ...(a.direction !== undefined
-            ? { direction: a.direction as 'TB' | 'LR' }
-            : {}),
-          ...(a.spacing !== undefined ? { spacing: Number(a.spacing) } : {}),
-          ...(a.tierGap !== undefined ? { tierGap: Number(a.tierGap) } : {}),
-          ...(a.mirror !== undefined ? { mirror: Boolean(a.mirror) } : {}),
-          ...(a.tierZones !== undefined
-            ? { tierZones: Boolean(a.tierZones) }
-            : {}),
-        }),
+        layoutDocument(
+          store.get(String(a.topologyId)),
+          {
+            algorithm: a.algorithm as LayoutAlgorithm,
+            ...(a.direction !== undefined
+              ? { direction: a.direction as 'TB' | 'LR' }
+              : {}),
+            ...(a.spacing !== undefined ? { spacing: Number(a.spacing) } : {}),
+            ...(a.tierGap !== undefined ? { tierGap: Number(a.tierGap) } : {}),
+            ...(a.mirror !== undefined ? { mirror: Boolean(a.mirror) } : {}),
+            ...(a.tierZones !== undefined
+              ? { tierZones: Boolean(a.tierZones) }
+              : {}),
+          },
+          scopeOf(a),
+        ),
     },
     {
       name: 'balance_topology',
       description:
-        'Tidy then BALANCE a topology in place: de-overlap, snap nodes onto shared rows/columns, and centre the whole layout in the page. The crisp follow-up to tidy_topology — run it last to make a generated diagram look hand-arranged, then confirm with inspect_render before rendering. Returns how many nodes moved plus the layout-warning count before/after.',
+        'Tidy, then BALANCE in place: align nodes onto shared rows/columns and centre the layout in the page. Locked nodes stay put. Run it last, then confirm with inspect_render. Returns how many nodes moved and the layout-warning count before/after.',
       inputShape: {
         topologyId,
+        pageIndex: pageScope,
         alignTolerance: z
           .number()
           .optional()
@@ -2231,12 +2251,16 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           ),
       },
       handler: (a) =>
-        balanceDocument(store.get(String(a.topologyId)), {
-          ...(a.alignTolerance !== undefined
-            ? { alignTolerance: Number(a.alignTolerance) }
-            : {}),
-          ...(a.center !== undefined ? { center: Boolean(a.center) } : {}),
-        }),
+        balanceDocument(
+          store.get(String(a.topologyId)),
+          {
+            ...(a.alignTolerance !== undefined
+              ? { alignTolerance: Number(a.alignTolerance) }
+              : {}),
+            ...(a.center !== undefined ? { center: Boolean(a.center) } : {}),
+          },
+          scopeOf(a),
+        ),
     },
     {
       name: 'layout_guidelines',
