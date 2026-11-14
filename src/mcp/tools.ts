@@ -10,6 +10,7 @@
  * Return convention: a handler returns either a string (used verbatim as text,
  * e.g. rendered SVG) or any JSON-serializable value (stringified by the server).
  */
+import { COMPACT_CATALOG_NOTE, compactCatalog } from './capabilities.js';
 import { z } from 'zod';
 import {
   addAnchor,
@@ -490,7 +491,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'describe_capabilities',
       description:
-        'Discover what a topology can express. By default returns a compact INDEX (node/link type names, labels, categories + annotation and layer kinds) — cheap to call first. To get editable fields, either pass detail:"full" (the whole catalog — large) or, better, narrow with types:[…] and/or query:"…" which return full fields for just the matches. Pass a topologyId to include that document’s custom node types.',
+        'Discover what a topology can express. By default returns a compact INDEX (node/link type names, labels, categories + annotation and layer kinds) — cheap to call first. To get editable fields, pass detail:"full" (every type; fields are defined once and each type lists field keys) or narrow with types:[…] and/or query:"…" for just the matches. Pass a topologyId to include that document’s custom node types.',
       inputShape: {
         topologyId: topologyId.optional(),
         detail: z
@@ -529,8 +530,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         }
         if (full) {
           return {
-            nodeTypes: nodes,
-            linkTypes: links,
+            // Field definitions appear once; types list field keys.
+            ...compactCatalog(nodes, links),
+            note: COMPACT_CATALOG_NOTE,
             annotations: annotationCatalog(),
             layers: layerCatalog(),
             linkStyles: linkStyleCatalog(),

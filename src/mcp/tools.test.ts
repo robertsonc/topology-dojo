@@ -1,3 +1,8 @@
+import {
+  expandFields,
+  type FieldRef,
+  type FieldTable,
+} from './capabilities.js';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +12,7 @@ import { parseToolArgs } from './register.js';
 import { renderDocumentToSVG } from '../server/render.js';
 import { MockProvider } from '../connect/mock.js';
 import { nodeCatalogLoader } from '../server/catalog.js';
+import { linkCatalog, nodeCatalog } from '../api/catalog.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { TEXT_LIMITS } from '../api/text.js';
 import { DOCUMENT_FIELDS, PAGE_FIELDS } from '../workspace/operations.js';
@@ -785,46 +791,112 @@ describe('MCP tools', () => {
     ]);
     expect(caps.layerKinds).toContain('underlay');
     expect(caps.layerKinds).toContain('overlay');
-    // The index is a fraction of the full catalog — the point of the default.
+    // The index is still several times smaller than the full catalog, even
+    // now that the full catalog defines each field once.
     const index = JSON.stringify(caps).length;
     const full = JSON.stringify(
       call('describe_capabilities', { detail: 'full' }),
     ).length;
-    expect(index).toBeLessThan(full / 5);
+    expect(index).toBeLessThan(full / 3);
   });
 
-  it('describe_capabilities detail:"full" returns editable fields + annotations', () => {
+  it('describe_capabilities detail:"full" defines each field once and lists keys per type', () => {
     const caps = call('describe_capabilities', { detail: 'full' }) as {
-      nodeTypes: { type: string; fields: { key: string }[] }[];
-      linkTypes: { fields: unknown[] }[];
+      nodeFields: FieldTable;
+      linkFields: FieldTable;
+      nodeTypes: { type: string; fields: FieldRef[] }[];
+      linkTypes: { type: string; fields: FieldRef[] }[];
       annotations: { kind: string }[];
       layers: { kinds: string[] };
+      note: string;
     };
-    expect(caps.nodeTypes.every((n) => n.fields.length > 0)).toBe(true);
     expect(caps.annotations.map((a) => a.kind).sort()).toEqual([
       'flowPath',
       'policyMarker',
       'zone',
     ]);
     expect(caps.layers.kinds).toContain('underlay');
+    expect(caps.note).toMatch(/nodeFields\.common/);
+    // Every node type has position and a label; those are named once.
+    expect(caps.nodeFields.common).toEqual(
+      expect.arrayContaining(['x', 'y', 'label']),
+    );
+    expect(caps.nodeFields.defs.x).toMatchObject({ kind: 'number' });
+    // No definition carries its own key or a GUI-only hint.
+    for (const d of Object.values(caps.nodeFields.defs)) {
+      expect(d).not.toHaveProperty('key');
+      expect(d).not.toHaveProperty('widget');
+    }
+
+    // Nothing is lost: each type expands back to the raw catalog's fields.
+    const strip = (f: object): object => {
+      const { widget: _w, ...rest } = f as { widget?: unknown };
+      return rest;
+    };
+    for (const info of nodeCatalog()) {
+      const compact = caps.nodeTypes.find((n) => n.type === info.type)!;
+      const byKey = (list: { key: string }[]) =>
+        [...list].sort((x, y) => x.key.localeCompare(y.key));
+      expect(byKey(expandFields(caps.nodeFields, compact.fields))).toEqual(
+        byKey(info.fields.map(strip) as { key: string }[]),
+      );
+    }
+    for (const info of linkCatalog()) {
+      const compact = caps.linkTypes.find((l) => l.type === info.type)!;
+      expect(
+        expandFields(caps.linkFields, compact.fields)
+          .map((f) => f.key)
+          .sort(),
+      ).toEqual(info.fields.map((f) => f.key).sort());
+    }
+
+    // The point of the shape: a fraction of the raw catalog's size.
+    const raw = JSON.stringify({
+      nodeTypes: nodeCatalog(),
+      linkTypes: linkCatalog(),
+    }).length;
+    const compactSize = JSON.stringify({
+      nodeFields: caps.nodeFields,
+      linkFields: caps.linkFields,
+      nodeTypes: caps.nodeTypes,
+      linkTypes: caps.linkTypes,
+    }).length;
+    expect(compactSize).toBeLessThan(raw / 5);
   });
 
   it('describe_capabilities narrows to full fields via types / query', () => {
     const byType = call('describe_capabilities', {
       types: ['ec', 'tunnel'],
     }) as {
-      nodeTypes: { type: string; fields: unknown[] }[];
-      linkTypes: { type: string; fields: unknown[] }[];
+      nodeFields: FieldTable;
+      linkFields: FieldTable;
+      nodeTypes: { type: string; fields: FieldRef[] }[];
+      linkTypes: { type: string; fields: FieldRef[] }[];
     };
     expect(byType.nodeTypes.map((n) => n.type)).toEqual(['ec']);
     expect(byType.linkTypes.map((l) => l.type)).toEqual(['tunnel']);
-    expect(byType.nodeTypes[0]!.fields.length).toBeGreaterThan(0);
+    // One type listed: nothing is "common", the type lists all its keys, and
+    // only those keys are defined.
+    expect(byType.nodeFields.common).toEqual([]);
+    expect(byType.nodeTypes[0]!.fields).toEqual(
+      expect.arrayContaining(['x', 'y', 'label']),
+    );
+    expect(Object.keys(byType.nodeFields.defs).sort()).toEqual(
+      expandFields(byType.nodeFields, byType.nodeTypes[0]!.fields)
+        .map((f) => f.key)
+        .sort(),
+    );
+    expect(byType.linkTypes[0]!.fields.length).toBeGreaterThan(0);
 
     const byQuery = call('describe_capabilities', { query: 'firewall' }) as {
-      nodeTypes: { type: string; fields: unknown[] }[];
+      nodeFields: FieldTable;
+      nodeTypes: { type: string; fields: FieldRef[] }[];
     };
     expect(byQuery.nodeTypes.some((n) => n.type === 'firewall')).toBe(true);
-    expect(byQuery.nodeTypes[0]!.fields.length).toBeGreaterThan(0);
+    const first = byQuery.nodeTypes[0]!;
+    expect(
+      expandFields(byQuery.nodeFields, first.fields).length,
+    ).toBeGreaterThan(0);
   });
 
   it('get_topology sources:true lists only source-carrying elements (proposal 0006)', () => {
