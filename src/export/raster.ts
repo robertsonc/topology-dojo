@@ -74,9 +74,37 @@ export async function initRasterizer(
   return RASTERIZER;
 }
 
+/**
+ * Characters the embedded typeface has no glyph for, as text it can draw.
+ *
+ * The rasterizer has exactly one font and no system fonts to fall back on, so
+ * a character missing from it prints as an empty box. The arrows are the ones
+ * that turn up in network diagrams ("LTE1→INET1", "10.0.0.1 → 10.0.0.2"); the
+ * ASCII pairs draw as arrows too, because the typeface joins them into one
+ * glyph. Written as XML entities where the text needs it.
+ */
+const UNDRAWABLE: Readonly<Record<string, string>> = {
+  '\u2192': '-&gt;', // →
+  '\u2190': '&lt;-', // ←
+  '\u2194': '&lt;-&gt;', // ↔
+  '\u21D2': '=&gt;', // ⇒
+  '\u21D0': '&lt;=', // ⇐
+  '\u21D4': '&lt;=&gt;', // ⇔
+  '\u27F6': '--&gt;', // ⟶
+  '\u27F5': '&lt;--', // ⟵
+  '\u279C': '-&gt;', // ➜
+  '\u2794': '-&gt;', // ➔
+};
+const UNDRAWABLE_RE = new RegExp(`[${Object.keys(UNDRAWABLE).join('')}]`, 'g');
+
+/** `svg` with the characters the embedded font cannot draw spelled in ones it can. */
+export function drawableText(svg: string): string {
+  return svg.replace(UNDRAWABLE_RE, (c) => UNDRAWABLE[c]!);
+}
+
 function render(svg: string, scale: number) {
   if (!svg.includes('<svg')) throw new Error('render produced invalid SVG');
-  const resvg = new Resvg(svg, {
+  const resvg = new Resvg(drawableText(svg), {
     fitTo: { mode: 'zoom', value: scale },
     font: {
       fontBuffers: fontBuffers(),

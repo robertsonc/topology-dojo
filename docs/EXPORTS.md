@@ -64,6 +64,13 @@ does, with JetBrains Mono embedded because a Worker has no system fonts.
 - PDF is raster by design (like the browser exporter): the engine's SVG uses
   filters a vector converter would drop, so the PDF always matches the canvas.
 
+## Captions
+
+A frame's caption is drawn at the bottom of the frame in every render and
+export, by the editor and by the MCP server alike (`render_svg`, PNG, PDF,
+flipbook frames). A long caption wraps to the frame's width, up to six lines,
+and its panel grows upward; explicit line breaks are kept.
+
 ## Fonts
 
 The canvas takes its typeface (JetBrains Mono) from the page's CSS. A file on
@@ -76,7 +83,12 @@ its own has no page CSS, so each export carries the font a different way:
 - **PNG, PDF and copy-to-clipboard from the editor** embed the font into the
   picture before it is rasterized, so they match the canvas on any machine.
 - **PNG and PDF from the MCP server** use the same typeface, embedded in the
-  server-side rasterizer.
+  server-side rasterizer. That rasterizer has no other font to fall back on,
+  so the arrows the typeface lacks (`→`, `←`, `↔`, `⇒` and their relatives)
+  are drawn from their ASCII spellings (`->`, `<-`, …), which the typeface
+  joins into arrow glyphs. Any other character it lacks, such as CJK text,
+  still prints as an empty box there; the editor's own exports do not have
+  this limit.
 
 ## draw.io (`.drawio`) — "my team can still edit it"
 
