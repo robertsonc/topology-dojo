@@ -224,3 +224,81 @@ describe('history holds only steps that changed something (CODE-08 / CODE-16)', 
     expect(h.editor.historyDepth()).toBe(2);
   });
 });
+
+describe('undo leaves page settings edited outside history alone (CODE-09)', () => {
+  it('a later page rename survives undoing an earlier edit', () => {
+    const h = harness(scene());
+    h.editor.addNode('router');
+    h.editor.renamePage('Core site');
+    h.editor.undo();
+    expect(h.editor.page.nodes).toHaveLength(3);
+    expect(h.editor.page.name).toBe('Core site');
+    h.editor.redo();
+    expect(h.editor.page.nodes).toHaveLength(4);
+    expect(h.editor.page.name).toBe('Core site');
+  });
+
+  it('a rename made by the shell directly on the page survives too', () => {
+    const h = harness(scene());
+    h.editor.addNode('router');
+    h.editor.page.name = 'Filmstrip rename';
+    h.editor.undo();
+    expect(h.editor.page.name).toBe('Filmstrip rename');
+  });
+
+  it('a later canvas resize survives undoing an earlier edit', () => {
+    const h = harness(scene());
+    h.editor.addNode('router');
+    h.editor.setViewBox('0 0 1600 900');
+    h.editor.undo();
+    expect(h.editor.page.nodes).toHaveLength(3);
+    expect(h.editor.page.viewBox).toBe('0 0 1600 900');
+    h.editor.redo();
+    expect(h.editor.page.viewBox).toBe('0 0 1600 900');
+  });
+
+  it('wire-sheet view settings set outside the editor survive undo', () => {
+    const h = harness(scene());
+    h.editor.addNode('router');
+    h.editor.page.view = 'wiresheet';
+    h.editor.page.panelScale = 4;
+    h.editor.undo();
+    expect(h.editor.page.view).toBe('wiresheet');
+    expect(h.editor.page.panelScale).toBe(4);
+  });
+
+  it('"fit page to content" is still undoable, canvas size included', () => {
+    const h = harness(scene());
+    const before = h.editor.page.viewBox;
+    h.editor.fitPageToContent();
+    const fitted = h.editor.page.viewBox;
+    expect(fitted).not.toBe(before);
+    h.editor.undo();
+    expect(h.editor.page.viewBox).toBe(before);
+    h.editor.redo();
+    expect(h.editor.page.viewBox).toBe(fitted);
+  });
+
+  it('undoing a tidy that grew the page shrinks it back', () => {
+    const page = scene();
+    page.nodes.push({ id: 'far', type: 'router', x: 300, y: 300, label: 'F' });
+    page.viewBox = '0 0 400 400';
+    const h = harness(page);
+    h.editor.tidy();
+    const grown = h.editor.page.viewBox;
+    expect(grown).not.toBe('0 0 400 400');
+    h.editor.undo();
+    expect(h.editor.page.viewBox).toBe('0 0 400 400');
+    h.editor.redo();
+    expect(h.editor.page.viewBox).toBe(grown);
+  });
+
+  it('settings that are part of history still undo', () => {
+    const h = harness(scene());
+    h.editor.updatePageProps({ caption: 'Step 1' });
+    h.editor.renamePage('Renamed');
+    h.editor.undo();
+    expect(h.editor.page.caption).toBeUndefined();
+    expect(h.editor.page.name).toBe('Renamed');
+  });
+});

@@ -88,6 +88,36 @@ const LINK_TYPES = [
 ];
 const LINK_STYLES = ['straight', 'orthogonal', 'curved'];
 
+/** One undo / redo step. */
+interface HistoryEntry {
+  /** The page as it was before the step, as JSON (see `serialize`). */
+  page: string;
+  /**
+   * True when the step resized the canvas (the page's viewBox) as part of
+   * what it did: "fit page to content", or a tidy / balance that grew the
+   * page. Only then does undoing or redoing the step put the canvas size
+   * back. For every other step the size is left as it is now, because it is
+   * otherwise edited outside history (`setViewBox`, the sheet size).
+   */
+  resized: boolean;
+}
+
+/**
+ * Page fields a history step never restores, because nothing that edits them
+ * pushes an undo step:
+ * - `name`: `renamePage`, and the filmstrip, which writes it on the page;
+ * - `view`, `panelScale`: set through the MCP page-properties tool only.
+ * (`viewBox` is edited both ways; see `HistoryEntry.resized`. The playback
+ * and presentation fields — caption, duration, transition, emphasis,
+ * lineJumps, linkAttach, portLabels — all go through `updatePageProps` /
+ * `applyEmphasis`, which do push a step, so they are restored.)
+ */
+const OUTSIDE_HISTORY: ReadonlySet<string> = new Set([
+  'name',
+  'view',
+  'panelScale',
+]);
+
 interface DragState {
   startX: number;
   startY: number;
@@ -255,15 +285,18 @@ export class Editor {
    * sets are typed read-only to keep it that way.
    */
   private sel: ReadonlySet<string> = new Set<string>();
-  private undoStack: string[] = [];
-  private redoStack: string[] = [];
+  private undoStack: HistoryEntry[] = [];
+  private redoStack: HistoryEntry[] = [];
   /**
    * Undo/redo stacks stashed per page id while other pages are edited (#204):
    * switching frames must not destroy the ability to undo edits made there.
    * Bounded: each stack is capped (see `snapshot`), and only the most recently
    * left MAX_STASHED_HISTORIES pages keep a stash (insertion-ordered eviction).
    */
-  private histories = new Map<string, { undo: string[]; redo: string[] }>();
+  private histories = new Map<
+    string,
+    { undo: HistoryEntry[]; redo: HistoryEntry[] }
+  >();
   private static readonly MAX_STASHED_HISTORIES = 32;
   /**
    * Gesture-native operation buffer (Packet S2). Each mutating gesture records
@@ -299,7 +332,8 @@ export class Editor {
    * page, and the redo stack that entry replaced: what `cancelGesture` puts
    * back so a cancelled gesture leaves no trace in history.
    */
-  private gestureUndo: { entry: string; redo: string[] } | null = null;
+  private gestureUndo: { entry: HistoryEntry; redo: HistoryEntry[] } | null =
+    null;
   /**
    * A press on a bend handle of the selected link. `index` is the waypoint
    * being dragged; with `insert` set the press was on a segment's "+" handle
@@ -546,6 +580,7 @@ export class Editor {
       // being squeezed.
       const moved = tidyPage(this.page, { keepInBounds: false });
       const grew = this.growPageToFit();
+      if (grew) this.markResized();
       return moved > 0 || grew;
     });
     if (!changed) return;
@@ -579,6 +614,7 @@ export class Editor {
       const moved =
         tidyPage(this.page, { keepInBounds: false }) + balancePage(this.page);
       const grew = this.growPageToFit();
+      if (grew) this.markResized();
       return moved > 0 || grew;
     });
     if (!changed) return;
@@ -599,6 +635,7 @@ export class Editor {
     const vb = `${Math.round(b.x - M)} ${Math.round(b.y - M)} ${Math.round(b.w + 2 * M)} ${Math.round(b.h + 2 * M)}`;
     if (vb === this.page.viewBox) return;
     this.snapshot();
+    this.markResized();
     this.setViewBox(vb);
   }
 
@@ -754,7 +791,8 @@ export class Editor {
   /**
    * Set the page's viewBox (canvas extent) and reframe to it. Not placed on the
    * undo stack — a structural change like the filmstrip rename, kept out so that
-   * undoing node edits never resets pan/zoom.
+   * undoing node edits never resets pan/zoom. Undoing an earlier step does not
+   * bring the old size back either (see `HistoryEntry.resized`).
    */
   setViewBox(vb: string): void {
     if (this.page.viewBox !== vb) this.emitPagePatch({ set: { viewBox: vb } });
@@ -2012,9 +2050,24 @@ export class Editor {
 
   private snapshot(): void {
     this.nudgeActive = false; // any new snapshot ends a nudge-coalescing run
-    this.undoStack.push(JSON.stringify(serialize(this.page)));
+    this.undoStack.push(this.capture(false));
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
+  }
+
+  /** The page as it is now, as a history entry. */
+  private capture(resized: boolean): HistoryEntry {
+    return { page: JSON.stringify(serialize(this.page)), resized };
+  }
+
+  /**
+   * Mark the step just pushed as one that resizes the canvas itself ("fit
+   * page to content", a tidy that grows the page), so undoing it puts the old
+   * size back. See `HistoryEntry.resized`.
+   */
+  private markResized(): void {
+    const step = this.undoStack[this.undoStack.length - 1];
+    if (step) step.resized = true;
   }
 
   /**
@@ -2228,13 +2281,22 @@ export class Editor {
     return `a${Date.now().toString(36)}${(this.anchorSeq++).toString(36)}`;
   }
 
-  private restore(json: string): void {
-    const p = JSON.parse(json) as Record<string, unknown>;
+  /**
+   * Put the page back to a history entry. Fields that are edited outside
+   * history keep their current value (see `OUTSIDE_HISTORY`), and so does the
+   * canvas size unless the step resized the canvas itself: a snapshot holds
+   * the whole page, and restoring all of it used to undo a page rename or a
+   * canvas resize made AFTER the step being undone.
+   */
+  private restore(entry: HistoryEntry): void {
+    const p = JSON.parse(entry.page) as Record<string, unknown>;
     const page = this.page as unknown as Record<string, unknown>;
     // serialize() emits every mutable page field (undefined included), so its
     // key set is the complete field list; a key absent from the stored JSON is
     // an optional field that was unset and must be deleted, not skipped.
     for (const key of Object.keys(serialize(this.page))) {
+      if (OUTSIDE_HISTORY.has(key)) continue;
+      if (key === 'viewBox' && !entry.resized) continue;
       if (p[key] === undefined) delete page[key];
       else page[key] = p[key];
     }
@@ -2252,7 +2314,7 @@ export class Editor {
     // worth the risk, so we drop any buffered intent and let the sync fall back
     // to the snapshot diff, which computes the correct net delta.
     this.pendingOps = [];
-    this.redoStack.push(JSON.stringify(serialize(this.page)));
+    this.redoStack.push(this.capture(prev.resized));
     this.restore(prev);
     this.renderArt();
     this.onChange();
@@ -2265,7 +2327,7 @@ export class Editor {
     if (next === undefined) return;
     this.endNudgeRun();
     this.pendingOps = [];
-    this.undoStack.push(JSON.stringify(serialize(this.page)));
+    this.undoStack.push(this.capture(next.resized));
     this.restore(next);
     this.renderArt();
     this.onChange();
