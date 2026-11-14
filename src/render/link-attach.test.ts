@@ -300,15 +300,19 @@ describe('byte-identical output when the options are absent', () => {
   // the south label: the sample's custom "sensor" label moved down. With
   // that one label held at its old 24px offset the render reproduces the
   // previous hash (2ac48fcc…) byte for byte, so nothing else changed.
+  // Re-pinned when the root <svg> started naming the diagram typeface (a
+  // standalone SVG drew every label in the viewer's default serif). With
+  // that one attribute removed each render reproduces its previous hash
+  // (806622b7…, d121142a…, 65aec72c…, 9f4a8cde…) byte for byte.
   const EXPECTED: Record<string, string> = {
     sampleDocument:
-      '806622b700e291bfad4a7796458d9e40b7f818c8ace2851566e8c37fe9242add',
+      'cd86fa871edfab75eedb4b93cb65e631b1205d266a0e393c0c68e233000cbc00',
     'fixtures/EdgeHA_after.json':
-      'd121142a71f600b674c4fa613b08f8663237034f537f08136f0837160afc5a80',
+      '00211354e7a8842066b320484c264e43e9de14478f5ea426dc54d3ccbc66bd63',
     'fixtures/EdgeHA_before.json':
-      '65aec72c46819bef0bf6e3c2b22d4860e2d47f17b829e2cfc36d9e62373107e5',
+      '8ceb16a79f7e0eeef1e9b61c571513fb6dee46bde549f5b40306822702452c10',
     'src/render/__fixtures__/anchor-routing.json':
-      '9f4a8cdea27750efcc5166a5b2c489d99254dadf035535df50df30ff051c4426',
+      'a4b023e85c4401cfe1c6200fc82cdb54a74b59902eaf21593dde8a69fdfd9037',
   };
 
   it('sample document renders to the pre-feature bytes', () => {
