@@ -194,6 +194,7 @@ function nodeCell(
   ];
   if (n.sublabel) attrs.push(`dojoSublabel="${esc(n.sublabel)}"`);
   if (n.body) attrs.push(`dojoBody="${esc(n.body)}"`);
+  if (n.authoredColor) attrs.push(`dojoColor="${esc(n.authoredColor)}"`);
   if (n.href) attrs.push(`link="${esc(n.href)}"`);
   else if (n.pageLink)
     attrs.push(`link="${esc(DRAWIO_PAGE_LINK_PREFIX + n.pageLink)}"`);
@@ -231,6 +232,7 @@ function zoneCell(
   return (
     `<object id="${esc(drawioCellId(z.id))}" label="${esc(label)}" dojoKind="zone" dojoLabel="${esc(z.label)}"` +
     (z.sublabel ? ` dojoSublabel="${esc(z.sublabel)}"` : '') +
+    (z.authoredColor ? ` dojoColor="${esc(z.authoredColor)}"` : '') +
     `><mxCell style="${esc(style)}" vertex="1" parent="${esc(parent)}">` +
     geom(z.x - origin.x, z.y - origin.y, z.w, z.h) +
     `</mxCell></object>`
@@ -261,6 +263,7 @@ function edgeCells(l: SceneLink, parent: string): string {
     `dojoType="${esc(l.type)}"`,
   ];
   if (l.style) attrs.push(`dojoStyle="${esc(l.style)}"`);
+  if (l.authoredColor) attrs.push(`dojoColor="${esc(l.authoredColor)}"`);
   let out =
     `<object id="${esc(id)}" ${attrs.join(' ')}>` +
     `<mxCell style="${esc(edgeStyle(l))}" edge="1" parent="${esc(parent)}" ` +
@@ -351,7 +354,11 @@ export function documentToDrawioXML(doc: TopologyDocument): string {
         y: a.y - vy,
       }));
       return (
-        `<diagram id="${esc(page.id)}" name="${esc(page.name)}">` +
+        `<diagram id="${esc(page.id)}" name="${esc(page.name)}"` +
+        // The frame's narration. draw.io has no place for it and drops the
+        // attribute when it saves; an untouched export keeps it.
+        (page.caption ? ` dojoCaption="${esc(page.caption)}"` : '') +
+        `>` +
         `<mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="${page.width}" pageHeight="${page.height}" math="0" shadow="0">` +
         `<root>${pageCells(page, anchors)}</root>` +
         `</mxGraphModel>` +
@@ -361,7 +368,7 @@ export function documentToDrawioXML(doc: TopologyDocument): string {
     .join('');
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<mxfile host="Topology Dojo" agent="topology-dojo-export" version="2">` +
+    `<mxfile host="Topology Dojo" agent="topology-dojo-export" version="2" title="${esc(scene.title)}">` +
     diagrams +
     `</mxfile>`
   );
