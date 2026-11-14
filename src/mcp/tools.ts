@@ -134,6 +134,12 @@ import type { Rasterizer } from '../export/raster.js';
 import { exportTools } from './export-tools.js';
 import { hardwareTools } from './hardware-tools.js';
 import { pathTools } from './path-tools.js';
+import { admitArgs } from './args.js';
+import {
+  CHECKED_TOOLS,
+  checkWrite,
+  pageIndexOfElement,
+} from './write-checks.js';
 import { withHardware } from './hardware-render.js';
 import { wiresheetLayout } from '../render/wiresheet.js';
 import { scaleLabel } from '../render/wiresheet-scale.js';
@@ -311,11 +317,28 @@ function themeOpt(a: Record<string, unknown>): {
     ? { theme: a.theme as RenderOptions['theme'] }
     : {};
 }
+/** The most findings validate_topology lists in one result (errors first). */
+export const MAX_VALIDATE_PROBLEMS = 60;
+
 const pageIndex = z
   .number()
   .int()
   .optional()
   .describe('0-based page; default: the last page.');
+/**
+ * Page scope of the arrange tools (tidy / balance / layout / label placement):
+ * one page, or every page when omitted. Without it an agent tidying one messy
+ * page rearranged every other page of the document too.
+ */
+const pageScope = z
+  .number()
+  .int()
+  .min(0)
+  .optional()
+  .describe('0-based page; omit for all pages.');
+/** The arrange tools' scope argument from parsed tool args. */
+const scopeOf = (a: Record<string, unknown>): { pageIndex?: number } =>
+  a.pageIndex === undefined ? {} : { pageIndex: Number(a.pageIndex) };
 
 /** Zod string: reject overlong raw input, then strip controls / collapse space. */
 function displayString(max: number, opts?: { multiline?: boolean }) {
@@ -2076,10 +2099,31 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         const semantic = validateDocument(doc);
         const layout = analyzeLayout(doc);
         const result = (hw: CatalogValidation | null) => {
-          const problems = [...semantic, ...(hw?.errors ?? []), ...layout];
+          const all = [...semantic, ...(hw?.errors ?? []), ...layout];
+          // A large, badly laid-out document has hundreds of findings; all of
+          // them would be tens of kilobytes in the agent's context. Errors
+          // come first, the list stops at MAX_VALIDATE_PROBLEMS, and the
+          // true totals say how many there are.
+          const errors = all.filter((p) => p.level === 'error');
+          const problems =
+            all.length > MAX_VALIDATE_PROBLEMS
+              ? [...errors, ...all.filter((p) => p.level !== 'error')].slice(
+                  0,
+                  MAX_VALIDATE_PROBLEMS,
+                )
+              : all;
           return {
-            valid: !problems.some((p) => p.level === 'error'),
+            valid: errors.length === 0,
             problems,
+            ...(problems.length < all.length
+              ? {
+                  omitted: all.length - problems.length,
+                  counts: {
+                    errors: errors.length,
+                    warnings: all.length - errors.length,
+                  },
+                }
+              : {}),
             layoutClean: layout.length === 0,
             ...(hw
               ? {
@@ -2104,9 +2148,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'tidy_topology',
       description:
-        'Auto-arrange a topology toward the layout guidelines: snap nodes to the grid, push apart overlapping/crowded nodes, and keep them inside the page. Mutates the stored topology in place and returns how many nodes moved plus the layout-warning count before/after. Call this after generating, or whenever validate_topology reports layout issues.',
+        'Tidy in place: snap nodes to the grid, push apart overlapping or crowded nodes, keep them inside the page. Locked nodes stay put. Returns how many nodes moved and the layout-warning count before/after. Run after generating, or when validate_topology reports layout issues.',
       inputShape: {
         topologyId,
+        pageIndex: pageScope,
         snapToGrid: z
           .boolean()
           .optional()
@@ -2121,15 +2166,19 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .describe('Keep nodes inside the page margin (default true).'),
       },
       handler: (a) =>
-        tidyDocument(store.get(String(a.topologyId)), {
-          ...(a.snapToGrid !== undefined
-            ? { snapToGrid: Boolean(a.snapToGrid) }
-            : {}),
-          ...(a.minGap !== undefined ? { minGap: Number(a.minGap) } : {}),
-          ...(a.keepInBounds !== undefined
-            ? { keepInBounds: Boolean(a.keepInBounds) }
-            : {}),
-        }),
+        tidyDocument(
+          store.get(String(a.topologyId)),
+          {
+            ...(a.snapToGrid !== undefined
+              ? { snapToGrid: Boolean(a.snapToGrid) }
+              : {}),
+            ...(a.minGap !== undefined ? { minGap: Number(a.minGap) } : {}),
+            ...(a.keepInBounds !== undefined
+              ? { keepInBounds: Boolean(a.keepInBounds) }
+              : {}),
+          },
+          scopeOf(a),
+        ),
     },
     {
       name: 'auto_place_labels',
@@ -2137,12 +2186,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         'Move node labels away from links: for each node, pick the compass placement (labelPlacement) whose label is crossed by the fewest links as drawn, without crowding another node or label, growing into a foreign zone, or leaving the page; below is preferred on ties. Labels placed by hand (labelOffset / labelOffsetX / labelY) are left alone. Mutates the stored topology; returns the changed count per page. generate_sdwan_topology already does this.',
       inputShape: {
         topologyId,
-        pageIndex: z
-          .number()
-          .int()
-          .min(0)
-          .optional()
-          .describe('0-based page index; omit to place labels on every page.'),
+        pageIndex: pageScope,
       },
       handler: (a) => {
         const doc = store.get(String(a.topologyId));
@@ -2167,9 +2211,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'layout_topology',
       description:
-        'Arrange a topology from scratch with a layout algorithm (unlike tidy, which only de-overlaps existing positions). Use after adding nodes/links when you have not placed them well. Links inform structure. Mutates the stored topology in place; returns how many nodes moved.',
+        'Arrange from scratch with a layout algorithm (tidy only de-overlaps existing positions). Links inform structure; zone members stay together; locked nodes stay put. In place; returns how many nodes moved.',
       inputShape: {
         topologyId,
+        pageIndex: pageScope,
         algorithm: z
           .enum(['grid', 'hierarchical', 'circular', 'force', 'tiered'])
           .describe(
@@ -2198,25 +2243,30 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           ),
       },
       handler: (a) =>
-        layoutDocument(store.get(String(a.topologyId)), {
-          algorithm: a.algorithm as LayoutAlgorithm,
-          ...(a.direction !== undefined
-            ? { direction: a.direction as 'TB' | 'LR' }
-            : {}),
-          ...(a.spacing !== undefined ? { spacing: Number(a.spacing) } : {}),
-          ...(a.tierGap !== undefined ? { tierGap: Number(a.tierGap) } : {}),
-          ...(a.mirror !== undefined ? { mirror: Boolean(a.mirror) } : {}),
-          ...(a.tierZones !== undefined
-            ? { tierZones: Boolean(a.tierZones) }
-            : {}),
-        }),
+        layoutDocument(
+          store.get(String(a.topologyId)),
+          {
+            algorithm: a.algorithm as LayoutAlgorithm,
+            ...(a.direction !== undefined
+              ? { direction: a.direction as 'TB' | 'LR' }
+              : {}),
+            ...(a.spacing !== undefined ? { spacing: Number(a.spacing) } : {}),
+            ...(a.tierGap !== undefined ? { tierGap: Number(a.tierGap) } : {}),
+            ...(a.mirror !== undefined ? { mirror: Boolean(a.mirror) } : {}),
+            ...(a.tierZones !== undefined
+              ? { tierZones: Boolean(a.tierZones) }
+              : {}),
+          },
+          scopeOf(a),
+        ),
     },
     {
       name: 'balance_topology',
       description:
-        'Tidy then BALANCE a topology in place: de-overlap, snap nodes onto shared rows/columns, and centre the whole layout in the page. The crisp follow-up to tidy_topology — run it last to make a generated diagram look hand-arranged, then confirm with inspect_render before rendering. Returns how many nodes moved plus the layout-warning count before/after.',
+        'Tidy, then BALANCE in place: align nodes onto shared rows/columns and centre the layout in the page. Locked nodes stay put. Run it last, then confirm with inspect_render. Returns how many nodes moved and the layout-warning count before/after.',
       inputShape: {
         topologyId,
+        pageIndex: pageScope,
         alignTolerance: z
           .number()
           .optional()
@@ -2231,12 +2281,16 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           ),
       },
       handler: (a) =>
-        balanceDocument(store.get(String(a.topologyId)), {
-          ...(a.alignTolerance !== undefined
-            ? { alignTolerance: Number(a.alignTolerance) }
-            : {}),
-          ...(a.center !== undefined ? { center: Boolean(a.center) } : {}),
-        }),
+        balanceDocument(
+          store.get(String(a.topologyId)),
+          {
+            ...(a.alignTolerance !== undefined
+              ? { alignTolerance: Number(a.alignTolerance) }
+              : {}),
+            ...(a.center !== undefined ? { center: Boolean(a.center) } : {}),
+          },
+          scopeOf(a),
+        ),
     },
     {
       name: 'layout_guidelines',
@@ -2372,6 +2426,36 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
   // diagram is O(1) tool calls instead of one per element (which exhausts
   // per-turn tool-call budgets in agent sessions). Dispatches to the same
   // validated handlers as the individual tools; atomic via snapshot/restore.
+  // Element tools refuse what is wrong at the moment of the call (see
+  // write-checks.ts), and an edit or a removal with no pageIndex goes to the
+  // page that has the element. Wrapped here so a direct call and an
+  // edit_topology operation behave the same.
+  const BY_ELEMENT: Readonly<Record<string, string>> = {
+    update_element: 'elementId',
+    remove_element: 'elementId',
+    set_node_metadata: 'nodeId',
+  };
+  for (const tool of tools) {
+    const idArg = BY_ELEMENT[tool.name];
+    if (!idArg && !CHECKED_TOOLS.has(tool.name)) continue;
+    const handler = tool.handler;
+    tool.handler = (given) => {
+      let a = given;
+      const doc = store.get(String(a.topologyId));
+      if (idArg && a.pageIndex === undefined) {
+        const found = pageIndexOfElement(doc, String(a[idArg]));
+        if (found !== undefined) a = { ...a, pageIndex: found };
+      }
+      checkWrite(
+        tool.name,
+        doc,
+        store.page(String(a.topologyId), a.pageIndex as number | undefined),
+        a,
+      );
+      return handler(a);
+    };
+  }
+
   // Operations whose arguments are in the tool list (each is also a tool).
   const CORE_OPS = [
     'add_page',
@@ -2479,11 +2563,22 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             throw new Error(
               `operations[${i}]: unknown op "${name}" (expected one of ${BATCH_OPS.join(', ')})`,
             );
-          const args = {
+          let args: Record<string, unknown> = {
             topologyId: tid,
-            ...(a.pageIndex !== undefined ? { pageIndex: a.pageIndex } : {}),
+            // The batch's page is inherited only by operations that have one.
+            ...(a.pageIndex !== undefined && 'pageIndex' in tool.inputShape
+              ? { pageIndex: a.pageIndex }
+              : {}),
             ...rest,
           };
+          try {
+            // Nothing an operation carries is dropped silently.
+            args = admitArgs(tool, args);
+          } catch (err) {
+            throw new Error(
+              `operations[${i}] (${name}): ${(err as Error).message.replace(/^invalid arguments for \S+ — /, '')}`,
+            );
+          }
           const parsed = z.object(tool.inputShape).safeParse(args);
           if (!parsed.success)
             throw new Error(
@@ -2491,7 +2586,16 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
                 .map((is) => `${is.path.join('.') || '(args)'}: ${is.message}`)
                 .join('; ')}`,
             );
-          const result = tool.handler(parsed.data);
+          let result: unknown;
+          try {
+            result = tool.handler(parsed.data);
+          } catch (err) {
+            // Name the operation: without it a 40-operation batch fails with
+            // a message that could be about any of them.
+            throw new Error(
+              `operations[${i}] (${name}): ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
           const r = (result ?? {}) as Record<string, unknown>;
           const el = r.element as Record<string, unknown> | undefined;
           results.push({
@@ -2506,6 +2610,10 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
             // can count created / updated / unchanged without a pre-fetch diff.
             ...(typeof r.created === 'boolean' ? { created: r.created } : {}),
             ...(typeof r.changed === 'boolean' ? { changed: r.changed } : {}),
+            // What a document setter reports about what it did: the type it
+            // defined, the layer or style it declared.
+            ...(typeof r.typeName === 'string' ? { typeName: r.typeName } : {}),
+            ...(typeof r.kind === 'string' ? { kind: r.kind } : {}),
           });
         });
       } catch (err) {

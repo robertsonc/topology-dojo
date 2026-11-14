@@ -434,3 +434,63 @@ describe('no delete on an empty, partial or failed fetch (packet E2)', () => {
     });
   });
 });
+
+describe('overlay tunnel labels', () => {
+  const fabric = (overlays: string[]): FabricRecords => ({
+    appliances: [
+      { id: 'hub', hostname: 'hub', site: 'DC' },
+      { id: 'b1', hostname: 'b1', site: 'S1' },
+      { id: 'b2', hostname: 'b2', site: 'S2' },
+    ],
+    underlay: [],
+    overlay: [
+      {
+        id: 't1',
+        scope: 'overlay',
+        from: 'b1',
+        to: 'hub',
+        overlay: overlays[0],
+      },
+      {
+        id: 't2',
+        scope: 'overlay',
+        from: 'b2',
+        to: 'hub',
+        overlay: overlays[1],
+      },
+    ],
+    policies: [],
+  });
+  const tunnels = (recs: FabricRecords) =>
+    compileFabric(recs, OPTS).pages[0]!.links.map((l) => ({
+      label: l.label,
+      overlay: (l as { meta?: Record<string, unknown> }).meta?.overlay,
+    }));
+
+  it('one overlay: no per-tunnel label, the name stays on the link as data', () => {
+    // The same word on every tunnel says nothing and piles up at the hub.
+    expect(tunnels(fabric(['Default', 'Default']))).toEqual([
+      { label: undefined, overlay: 'Default' },
+      { label: undefined, overlay: 'Default' },
+    ]);
+  });
+
+  it('several overlays: each tunnel is labelled with its own', () => {
+    expect(tunnels(fabric(['RealTime', 'BulkApps']))).toEqual([
+      { label: 'RealTime', overlay: 'RealTime' },
+      { label: 'BulkApps', overlay: 'BulkApps' },
+    ]);
+  });
+
+  it('a tunnel with no overlay keeps its alias or id as the label', () => {
+    const recs = fabric(['Default', 'Default']);
+    recs.overlay.push({
+      id: 't3',
+      scope: 'overlay',
+      from: 'b1',
+      to: 'b2',
+      alias: 'b1-b2',
+    });
+    expect(tunnels(recs)[2]).toEqual({ label: 'b1-b2', overlay: undefined });
+  });
+});

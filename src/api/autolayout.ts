@@ -12,7 +12,13 @@
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
 import { LAYOUT_RULES, nodeFootprint, parseViewBox } from './layout.js';
-import { carryAttachments, isLocked, tidyPage } from './tidy.js';
+import {
+  carryAttachments,
+  isLocked,
+  scopedPages,
+  tidyPage,
+  type PageScope,
+} from './tidy.js';
 import {
   mirrorPairKey,
   pinPortsByTier,
@@ -697,14 +703,16 @@ export function layoutPage(page: Page, opts: AutoLayoutOptions): number {
   return moved;
 }
 
-/** Arrange every page of a document; returns how many nodes moved. */
+/** Arrange a document's pages (all, or `scope.pageIndex`); returns how many
+ * nodes moved. */
 export function layoutDocument(
   doc: TopologyDocument,
   opts: AutoLayoutOptions,
+  scope: PageScope = {},
 ): AutoLayoutResult {
   let movedNodes = 0;
   registerHitBoxes(doc.customNodes);
-  for (const page of doc.pages) {
+  for (const page of scopedPages(doc, scope)) {
     let o = opts;
     if (opts.algorithm === 'tiered') {
       // Fill in the document's tiers and keep the margins the page's
