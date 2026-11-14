@@ -114,6 +114,7 @@ import {
 } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
 import { importConfirmText } from './ui/replace-document.js';
+import { problemsDockView } from './ui/problems-dock.js';
 import { exportRenderOptions } from './ui/export-options.js';
 import { exportReport, type ExportState } from './ui/export-status.js';
 import { classifyOpenedFile } from './import/open.js';
@@ -324,6 +325,7 @@ app.innerHTML = `
           <button class="problems-toggle" id="problems-toggle" title="Validation + layout problems">
             <span class="pt-label">Problems</span>
             <span class="prob-count" id="prob-count">0</span>
+            <span class="prob-hidden-note" id="prob-hidden-note"></span>
             <span class="pt-chev" aria-hidden="true">▸</span>
           </button>
           <div class="problems scroll-slim" id="problems"></div>
@@ -1554,18 +1556,19 @@ selectBySel.addEventListener('change', () => {
 /* Status bar — live tool / cursor / element counts / zoom. */
 const statusbar = app.querySelector<HTMLElement>('#statusbar')!;
 let cursor: { x: number; y: number } | null = null;
-// Latest problem tallies, shared with the always-visible status-bar indicator so
-// it stays in sync with the pinned Problems panel without recomputing here.
-let lastProblems = { errors: 0, warnings: 0 };
+// What the Problems dock last showed, shared with the always-visible status-bar
+// indicator so it stays in sync with the dock without recomputing here.
+let problemsView = problemsDockView({
+  visible: 0,
+  errors: 0,
+  hidden: 0,
+  collapsedPref: null,
+});
 function statusProblemsHTML(): string {
-  const { errors, warnings } = lastProblems;
-  const total = errors + warnings;
-  const cls = errors ? 'has-error' : warnings ? 'has-warn' : '';
-  const label = total ? `⚠ ${total}` : '✓';
-  const title = total
-    ? `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'} — open Problems`
-    : 'No problems';
-  return `<button class="sb-problems ${cls}" id="sb-problems" title="${title}" aria-label="${title}">${label}</button>`;
+  const { severity, statusLabel, statusTitle } = problemsView;
+  const cls =
+    severity === 'error' ? 'has-error' : severity === 'warn' ? 'has-warn' : '';
+  return `<button class="sb-problems ${cls}" id="sb-problems" title="${esc(statusTitle)}" aria-label="${esc(statusTitle)}">${esc(statusLabel)}</button>`;
 }
 function renderStatus(): void {
   if (!statusReady) return; // editor / statusbar not wired yet
@@ -1752,6 +1755,7 @@ const problemsToggle =
   app.querySelector<HTMLButtonElement>('#problems-toggle')!;
 const problemsPanel = app.querySelector<HTMLDivElement>('#problems')!;
 const probCount = app.querySelector<HTMLSpanElement>('#prob-count')!;
+const probHiddenNote = app.querySelector<HTMLSpanElement>('#prob-hidden-note')!;
 
 /** Locate the element a problem refers to on the CURRENT page (feeds the canvas
  * badge layer, which only glyphs elements on the page being viewed). */
@@ -1914,6 +1918,9 @@ let badgesVisible = localStorage.getItem(BADGES_KEY) !== '0';
 
 editor.setOnBadgeClick((kind, id) => {
   selectProblemTarget({ kind, id });
+  // A click on a badge asks what the problem is: open the dock on it.
+  setInspectorCollapsed(false);
+  setProblemsCollapsed(false);
   const row = problemsPanel.querySelector<HTMLButtonElement>(
     `[data-prob-kind="${kind}"][data-prob-id="${CSS.escape(id)}"]`,
   );
@@ -1929,6 +1936,7 @@ let problemsPref: boolean | null =
     : localStorage.getItem('tds-problems-collapsed') === '1';
 function applyProblemsCollapsed(collapsed: boolean): void {
   problemsDock.classList.toggle('collapsed', collapsed);
+  problemsToggle.setAttribute('aria-expanded', String(!collapsed));
   const chev = problemsToggle.querySelector('.pt-chev');
   if (chev) chev.textContent = collapsed ? '▸' : '▾';
 }
@@ -1957,15 +1965,20 @@ function renderProblems(): void {
   const problems = all.filter((p) => !hiddenProblems.has(problemKey(p)));
   const hiddenCount = all.length - problems.length;
   const errors = problems.filter((p) => p.level === 'error').length;
-  const warnings = problems.length - errors;
+  problemsView = problemsDockView({
+    visible: problems.length,
+    errors,
+    hidden: hiddenCount,
+    collapsedPref: problemsPref,
+  });
 
-  // Header count badge + severity tint on the pinned dock.
-  problemsDock.classList.toggle('has-error', errors > 0);
-  problemsDock.classList.toggle('has-warn', errors === 0 && warnings > 0);
-  probCount.textContent = String(problems.length);
+  // Header: count badge, how many are hidden, severity tint on the dock.
+  problemsDock.classList.toggle('has-error', problemsView.severity === 'error');
+  problemsDock.classList.toggle('has-warn', problemsView.severity === 'warn');
+  probCount.textContent = problemsView.count;
+  probHiddenNote.textContent = problemsView.hiddenNote;
 
   // Keep the always-visible status-bar indicator in sync.
-  lastProblems = { errors, warnings };
   renderStatus();
 
   const listed = showHiddenProblems ? all : problems;
@@ -2037,11 +2050,9 @@ function renderProblems(): void {
       renderProblems();
     });
 
-  // Auto-collapse when everything is clean; otherwise honour the user's explicit
-  // preference (default: expanded so problems are visible when they appear).
-  applyProblemsCollapsed(
-    problems.length === 0 ? true : (problemsPref ?? false),
-  );
+  // Closed when there is nothing to list; otherwise where the user left it
+  // (closed until they first open it — see problemsDockView).
+  applyProblemsCollapsed(problemsView.collapsed);
 
   // Badge layer reuses the same (visible) `problems` list + `problemLocate`
   // mapping (the current-page locate) — one computation feeds both surfaces,

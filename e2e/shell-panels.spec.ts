@@ -60,3 +60,63 @@ test('pressing the canvas closes the sign-in prompt', async ({ page }) => {
   await expect(prompt).toBeHidden();
   await expect.poll(() => statusCount(page, 'selected')).toBe(1);
 });
+
+test('the Problems dock opens when asked, and keeps hidden problems in reach', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const dock = page.locator('#problems-dock');
+  const count = page.locator('#prob-count');
+  const collapsed = (): Promise<boolean> =>
+    dock.evaluate((el) => el.classList.contains('collapsed'));
+
+  // A node dropped next to the sample scene raises a few problems. The dock
+  // does not open by itself: its header, the status bar and the badges on
+  // the canvas say they are there.
+  await page.locator('.pitem[data-type="router"]').first().click();
+  await expect(count).not.toHaveText('0');
+  const total = Number(await count.innerText());
+  await expect(page.locator('#sb-problems')).toHaveText(`⚠ ${total}`);
+  expect(await collapsed()).toBe(true);
+  await expect(page.locator('#problems .prob').first()).toBeHidden();
+
+  // Opened by its header, it lists them.
+  await page.locator('#problems-toggle').click();
+  await expect(page.locator('#problems .prob')).toHaveCount(total);
+  await expect(page.locator('#problems .prob').first()).toBeVisible();
+
+  // Hiding every problem leaves the dock open, with the way back in view.
+  for (let left = total; left > 0; left--) {
+    const row = page.locator('#problems .prob').first();
+    await row.hover();
+    await row.locator('.prob-hide').click();
+    await expect(count).toHaveText(String(left - 1));
+    expect(await collapsed()).toBe(false);
+  }
+  await expect(page.locator('#problems-toggle')).toContainText(
+    `${total} hidden`,
+  );
+  await expect(page.locator('#sb-problems')).toHaveText(`✓ ${total} hidden`);
+  await expect(page.locator('.prob-foot')).toBeVisible();
+
+  // "show" lists the hidden problems instead of closing the dock.
+  await page.locator('#prob-show-hidden').click();
+  expect(await collapsed()).toBe(false);
+  await expect(page.locator('#problems .prob-hidden')).toHaveCount(total);
+  await expect(page.locator('#problems .prob-hidden').first()).toBeVisible();
+
+  // Closed by the user, the header still says problems are hidden.
+  await page.locator('#problems-toggle').click();
+  expect(await collapsed()).toBe(true);
+  await expect(page.locator('#problems-toggle')).toContainText(
+    `${total} hidden`,
+  );
+
+  // The status-bar indicator opens it again, and everything can be restored.
+  await page.locator('#sb-problems').click();
+  expect(await collapsed()).toBe(false);
+  await page.locator('#prob-restore').click();
+  await expect(count).toHaveText(String(total));
+  await expect(page.locator('#problems-toggle')).not.toContainText('hidden');
+  await expect(page.locator('.prob-foot')).toHaveCount(0);
+});

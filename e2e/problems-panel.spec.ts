@@ -19,6 +19,8 @@ test('a problem names its elements, rings them on click, and can be hidden', asy
   const count = page.locator('#prob-count');
   await expect(count).not.toHaveText('0');
   const total = Number(await count.innerText());
+  // The dock stays closed until it is asked for: its header shows the count.
+  await page.locator('#problems-toggle').click();
 
   // The long-message dock takes the inspector's width, not its own.
   const dock = await page.locator('#problems-dock').boundingBox();

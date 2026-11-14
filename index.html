@@ -2396,6 +2396,15 @@
         text-align: center;
         color: var(--muted);
       }
+      /* "2 hidden" beside the count: problems the user hid are still there. */
+      .prob-hidden-note {
+        font-size: 10px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .prob-hidden-note:empty {
+        display: none;
+      }
       .problems-dock.has-warn .problems-toggle {
         color: #e0a44a;
         border-color: #e0a44a;
