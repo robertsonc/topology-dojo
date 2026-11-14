@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTools, type ToolDef, type ToolDeps } from './tools.js';
+import { admitArgs } from './args.js';
 import { TopologyStore } from './store.js';
 import { withWorkspaceRevision } from './workspace-reads.js';
 import { ContentResult } from './content.js';
@@ -50,7 +51,8 @@ export function parseToolArgs(
   tool: ToolDef,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  const result = z.object(tool.inputShape).safeParse(args);
+  // Nothing the caller wrote is dropped silently: see `admitArgs`.
+  const result = z.object(tool.inputShape).safeParse(admitArgs(tool, args));
   if (!result.success) {
     const detail = result.error.issues
       .map((i) => `${i.path.join('.') || '(args)'}: ${i.message}`)
@@ -90,8 +92,10 @@ export function registerTopologyTools(
 ): TopologyStore {
   registerViewerResource(server);
   const hidden = new Set<string>();
-  const canHide = hideFromToolList(server, hidden);
+  const byName = new Map<string, ToolDef>();
+  const canHide = wrapToolHandlers(server, hidden, byName);
   for (const tool of createTools(store, deps)) {
+    byName.set(tool.name, tool);
     // Operation-only tools are reached through edit_topology (and described
     // by describe_operations); keeping them out of the tool list is the
     // point. They are still registered when the list can be filtered, so a
@@ -164,8 +168,17 @@ export function registerTopologyTools(
  * wrap, it returns false and the caller simply does not register those tools
  * — they stay out of the list either way. `operations.test.ts` exercises both
  * the hidden listing and the direct call, so an SDK change shows up there.
+ *
+ * The same wrap admits a call's arguments (`admitArgs`) BEFORE the SDK
+ * validates them. The SDK strips every argument a tool's schema does not list,
+ * so by the time a handler runs there is no telling that the caller wrote
+ * `pageIndex` or `status` and it was thrown away.
  */
-function hideFromToolList(server: McpServer, hidden: Set<string>): boolean {
+function wrapToolHandlers(
+  server: McpServer,
+  hidden: Set<string>,
+  tools: ReadonlyMap<string, ToolDef>,
+): boolean {
   type Handler = (request: unknown, extra: unknown) => Promise<unknown>;
   const table = (
     server.server as unknown as
@@ -179,9 +192,8 @@ function hideFromToolList(server: McpServer, hidden: Set<string>): boolean {
   table.set = (method: string, handler: Handler) =>
     set(
       method,
-      method !== 'tools/list'
-        ? handler
-        : async (request, extra) => {
+      method === 'tools/list'
+        ? async (request, extra) => {
             const result = (await handler(request, extra)) as {
               tools: { name: string }[];
             };
@@ -189,7 +201,37 @@ function hideFromToolList(server: McpServer, hidden: Set<string>): boolean {
               ...result,
               tools: result.tools.filter((tool) => !hidden.has(tool.name)),
             };
-          },
+          }
+        : method === 'tools/call'
+          ? async (request, extra) => {
+              const params = (
+                request as {
+                  params?: { name?: string; arguments?: unknown };
+                }
+              ).params;
+              const tool = tools.get(String(params?.name));
+              const given = params?.arguments;
+              if (tool && params && given && typeof given === 'object') {
+                try {
+                  params.arguments = admitArgs(
+                    tool,
+                    given as Record<string, unknown>,
+                  );
+                } catch (err) {
+                  return {
+                    isError: true,
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: err instanceof Error ? err.message : String(err),
+                      },
+                    ],
+                  };
+                }
+              }
+              return handler(request, extra);
+            }
+          : handler,
     );
   return true;
 }

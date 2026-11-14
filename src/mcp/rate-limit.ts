@@ -114,6 +114,7 @@ export const MUTATING_MCP_TOOLS: ReadonlySet<string> = new Set([
   'add_zone',
   'add_flow_path',
   'add_policy_marker',
+  'analyze_path',
   'edit_topology',
   'update_element',
   'remove_element',

@@ -1,6 +1,8 @@
+import { createAttachContext } from '../render/link-attach.js';
 import { describe, it, expect } from 'vitest';
 import { renderDocumentToSVG } from './render.js';
 import { createDocument } from '../api/builder.js';
+import { sampleDocument } from '../pages/model.js';
 import { defaultSpec } from '../nodes/spec.js';
 
 describe('headless render (Node, no browser)', () => {
@@ -86,7 +88,7 @@ describe('headless render (Node, no browser)', () => {
 
   it('orthogonal auto-route detours around a node between the endpoints (A.7)', () => {
     const doc = createDocument()
-      .page()
+      .page({ linkAttach: 'none' })
       .node({ id: 'a', type: 'ec', x: 200, y: 300 })
       .node({ id: 'b', type: 'ec', x: 700, y: 300 })
       .node({ id: 'c', type: 'ec', x: 450, y: 300 }) // squarely between a and b
@@ -186,10 +188,46 @@ describe('headless render (Node, no browser)', () => {
     expect(wrapOpacity(svg, 'b')).toBeCloseTo(0.3, 5);
   });
 
+  it('the detour and parallel-link spacing hold with the default anchor box', () => {
+    // New pages start with the link anchor box on: the orthogonal router
+    // still clears the node in the way (from the box edge now, x=238), and
+    // parallel links take separate slots instead of the classic fan-out.
+    const detour = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 300 })
+      .node({ id: 'b', type: 'ec', x: 700, y: 300 })
+      .node({ id: 'c', type: 'ec', x: 450, y: 300 })
+      .link({
+        id: 'l',
+        type: 'line',
+        from: 'a',
+        to: 'b',
+        lineStyle: 'orthogonal',
+      })
+      .build();
+    expect(detour.pages[0]!.linkAttach).toEqual({ distribute: true });
+    expect(renderDocumentToSVG(detour)).toContain(
+      'M238,300 L238,263 L662,263 L662,300',
+    );
+
+    const pair = createDocument()
+      .page()
+      .node({ id: 'a', type: 'ec', x: 200, y: 200 })
+      .node({ id: 'b', type: 'ec', x: 600, y: 200 })
+      .link({ id: 'p1', type: 'line', from: 'a', to: 'b' })
+      .link({ id: 'p2', type: 'line', from: 'a', to: 'b' })
+      .build();
+    const attach = createAttachContext(pair.pages[0]!);
+    const [e1, e2] = pair.pages[0]!.links.map((l) => attach.endpoints(l)!);
+    expect(e1!.from.y).not.toBe(e2!.from.y);
+    expect(e1!.from.y).toBe(e1!.to.y); // each stays level: no crossing
+    expect(e2!.from.y).toBe(e2!.to.y);
+  });
+
   it('fans out parallel links between the same node pair', () => {
     const pair = (ids: string[]) => {
       const d = createDocument()
-        .page()
+        .page({ linkAttach: 'none' })
         .node({ id: 'a', type: 'ec', x: 200, y: 200 })
         .node({ id: 'b', type: 'ec', x: 600, y: 200 });
       for (const id of ids) d.link({ id, type: 'line', from: 'a', to: 'b' });
@@ -445,5 +483,28 @@ describe('flow paths that follow link geometry (#256)', () => {
     expect(d.startsWith('M200,200 L400,200')).toBe(true); // a→b: no link
     expect((d.match(/M/g) ?? []).length).toBe(1); // one continuous path
     expect(d).toMatch(/ Q/); // b→c: the curved link
+  });
+});
+
+describe('a standalone render names its typeface', () => {
+  it('puts the diagram font family on the root element', () => {
+    const root = /^<svg\b[^>]*>/.exec(
+      renderDocumentToSVG(sampleDocument()),
+    )![0];
+    expect(root).toContain(
+      `font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"`,
+    );
+  });
+});
+
+describe('a headless render shows the frame caption', () => {
+  it('draws it the way the editor does', () => {
+    const doc = sampleDocument();
+    doc.pages[0]!.caption = 'Normal operation';
+    const svg = renderDocumentToSVG(doc);
+    expect(svg).toContain('class="tds-caption"');
+    expect(svg).toContain('>Normal operation</text>');
+    // Nothing is added to a frame that has no caption.
+    expect(renderDocumentToSVG(sampleDocument())).not.toContain('tds-caption');
   });
 });

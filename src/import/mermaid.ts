@@ -71,24 +71,33 @@ function parseNodeToken(token: string): ParsedNode | null {
   if (!rest) return { id };
   for (const s of SHAPES) {
     if (rest.startsWith(s.open) && rest.endsWith(s.close)) {
-      let label = rest
-        .slice(s.open.length, rest.length - s.close.length)
-        .trim();
-      // Strip one layer of quoting (Mermaid allows "..." for special chars).
-      if (label.startsWith('"') && label.endsWith('"'))
-        label = label.slice(1, -1);
-      return { id, label: unescapeLabel(label), type: s.type };
+      const label = rest.slice(s.open.length, rest.length - s.close.length);
+      return { id, label: decodeLabel(label), type: s.type };
     }
   }
   return null; // trailing junk we don't understand — caller warns
 }
 
-/** Mermaid entity codes / line breaks the exporter writes, back to text. */
+/** Mermaid entity codes (`#quot;`, `#35;`, any `#NNN;`) and line breaks, back
+ * to text. One pass, so a decoded `#` is never read as the start of a code. */
 function unescapeLabel(label: string): string {
   return label
-    .replace(/#quot;/g, '"')
-    .replace(/#35;/g, '#')
+    .replace(/#(quot|\d{1,7});/g, (_m, code: string) =>
+      code === 'quot' ? '"' : String.fromCodePoint(Number(code)),
+    )
     .replace(/<br\s*\/?>/gi, '\n');
+}
+
+/**
+ * A label as written in Mermaid, back to text: one layer of quoting removed
+ * (Mermaid allows "..." around text with special characters), then entity
+ * codes decoded. The same for a node, an edge and a subgraph title.
+ */
+function decodeLabel(raw: string): string {
+  let label = raw.trim();
+  if (label.length >= 2 && label.startsWith('"') && label.endsWith('"'))
+    label = label.slice(1, -1);
+  return unescapeLabel(label);
 }
 
 interface ParsedEdge {
@@ -102,19 +111,22 @@ interface ParsedEdge {
  * `-. text .->`) must be tried BEFORE the bare operators, or `--` would
  * greedily match and turn the label text into a node.
  * Groups: 1/2/3 = inline labels (plain/thick/dashed); 4 = bare operator;
- * 5 = pipe label after a bare operator.
+ * 5 = pipe label after a bare operator (a quoted one may contain a pipe).
  */
 const EDGE_RE =
-  /^\s*(?:--\s+([^->][^]*?)\s+-->|==\s+([^=>][^]*?)\s+==>|-\.\s+([^.][^]*?)\s+\.->|(-{2,3}>|={2,3}>|-\.{1,3}->?|-{2,3}|={2,3})(?:\|([^|]*)\|)?)\s*/;
+  /^\s*(?:--\s+([^->][^]*?)\s+-->|==\s+([^=>][^]*?)\s+==>|-\.\s+([^.][^]*?)\s+\.->|(-{2,3}>|={2,3}>|-\.{1,3}->?|-{2,3}|={2,3})(?:\|("[^"]*"|[^|]*)\|)?)\s*/;
 
 function edgeInfo(m: RegExpExecArray): ParsedEdge {
-  const label = m[5] ?? m[1] ?? m[2] ?? m[3];
+  const raw = m[5] ?? m[1] ?? m[2] ?? m[3];
+  // Quoted and entity-coded like any other label: without this an exported
+  // edge label came back wrapped in literal quote marks.
+  const label = raw === undefined ? '' : decodeLabel(raw);
   const dashed = m[3] !== undefined || (m[4]?.includes('.') ?? false);
   const thick = m[2] !== undefined || (m[4]?.startsWith('=') ?? false);
   return {
     ...(dashed ? { dashed: true } : {}),
     ...(thick ? { thick: true } : {}),
-    ...(label !== undefined && label.trim() ? { label: label.trim() } : {}),
+    ...(label.trim() ? { label } : {}),
   };
 }
 
@@ -198,17 +210,17 @@ export function convertMermaid(
       continue;
     }
     // Subgraph blocks → zones.
-    const sub = /^subgraph\s+([A-Za-z0-9_.-]+)?\s*(?:\[([^\]]*)\])?\s*$/i.exec(
-      line,
-    );
+    // A quoted title may contain a closing bracket.
+    const sub =
+      /^subgraph\s+([A-Za-z0-9_.-]+)?\s*(?:\[\s*("[^"]*"|[^\]]*)\s*\])?\s*$/i.exec(
+        line,
+      );
     if (sub) {
       const id = sub[1] ?? `sg${zones.length + 1}`;
-      let label = sub[2] ?? sub[1] ?? `Group ${zones.length + 1}`;
-      if (label.startsWith('"') && label.endsWith('"'))
-        label = label.slice(1, -1);
+      const label = sub[2] ?? sub[1] ?? `Group ${zones.length + 1}`;
       const zone: ZoneConfig = {
         id: id.startsWith('zone_') ? id : `zone_${id}`,
-        label: unescapeLabel(label),
+        label: decodeLabel(label),
         nodes: [],
       };
       const parent = zoneStack[zoneStack.length - 1];

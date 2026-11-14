@@ -162,8 +162,11 @@ an id. The usual draft-building flow is:
    with `tidy_topology` / `balance_topology`.
 4. `inspect_render` → a compact visual-quality report (crop, label legibility,
    link routing, density) — the cheap final QA step before rendering.
-5. `render_svg` → a standalone SVG string (large — render once at the end,
-   after the inspection report is clean, not after every edit).
+5. `render_svg` → a standalone SVG string. The default `profile: "clean"` is
+   the static build with only the definitions the drawing uses (half the
+   size or less on small pages; `profile: "full"` is the animated build).
+   Still large: render once at the end, after the inspection report is
+   clean, not after every edit.
 6. `get_topology` / `import_topology` → round-trip the document JSON, which is
    the portable, canonical contract (server state is just a convenience).
    `get_topology` also offers `summary:true` (compact counts), `sources:true`
@@ -171,8 +174,27 @@ an id. The usual draft-building flow is:
    (a single page) so agents don't reload the whole document.
 
 Page targeting: the `add_*` tools default to the **most recently added page**;
-pass `pageIndex` to target another. `render_svg` and `inspect_render` default
-to page `0`.
+pass `pageIndex` to target another. `update_element`, `remove_element` and
+`set_node_metadata` go to the page that **has** the element when `pageIndex`
+is omitted, and ask for it only when the id is on more than one page. `render_svg`, `inspect_render` and
+`analyze_path` default to page `0`. The arrange tools (`tidy_topology`,
+`balance_topology`, `layout_topology`, `auto_place_labels`) work on **every
+page** unless `pageIndex` names one, so pass it when only one page needs
+arranging: the others may have been placed by hand.
+
+Arguments: a tool never drops an argument it does not take. On `add_node` and
+`add_link`, a field of the element written beside the arguments
+(`status: "down"`, `vlan: "100"`) is treated as if it were in `extra`. Any
+other unknown argument is an error that names it, the nearest real argument
+when there is one, and what the tool accepts; inside `edit_topology` the
+error names the operation, and the batch applies nothing.
+
+Write-time checks: the element tools refuse what is wrong at the moment of
+the call and say what would be right — an id already used on the page, a node
+or link type that does not exist, a link end / zone member / waypoint / marker
+node that is not on the page, a link from an element to itself, a flow path
+with fewer than two waypoints. `validate_topology` is still the full check
+(whole-document imports and `upsert_by_source` are not checked on write).
 
 Call `describe_capabilities` first to discover the vocabulary. It defaults to a
 compact **index** (type names/categories only); request editable fields with
@@ -191,7 +213,8 @@ type's editable fields are `common` plus its own `fields`.
 Every agent pays for the whole tool list at the start of a session, so the
 document setters most diagrams never use are **operations only**:
 `set_legend`, `set_palette`, `set_sheet`, `define_link_style`, `define_tier`,
-`define_bundle`, `set_port_table`, `define_node_type` and `set_node_metadata`.
+`define_bundle`, `set_port_table`, `define_node_type`, `set_node_metadata` and
+`set_document_title`.
 They are not in the tool list. Run them through `edit_topology`:
 
 ```jsonc
@@ -212,12 +235,16 @@ summary. Calling one of these names directly as a tool still works (existing
 scripts keep running, and validation hints such as "declare it with
 `define_tier`" can be followed literally); they are only left out of the list.
 
-### Link anchor box (experimental)
+### Link anchor box
 
-Links attach to the edge of the node icon by default, so a south-attached
-link runs through the node label. `set_page_properties` takes
-`linkAttach: { pad?, distribute? }` (`{}` = on with defaults, `"none"` clears)
-to attach links to an **anchor box** instead: the node's hit box inflated by
+Pages created over MCP (`create_topology`, `add_page`, the templates,
+`generate_sdwan_topology`, `build_flow_topology`, `create_workspace`) start
+with `linkAttach: { distribute: true }`: links attach to an **anchor box**
+instead of the icon edge, where a south-attached link would run through the
+node label. `set_page_properties` takes `linkAttach: { pad?, distribute? }`
+(`{}` = on without distribute) or `"none"` for the classic attachment.
+Imported documents and documents stored before this default keep whatever
+they carry. The anchor box is the node's hit box inflated by
 `pad` (default 6) and extended past the label block on the label side. Ports
 pin to that box; auto endpoints clip to its faces (circle/ellipse icons keep a
 padded round outline off the label side). A node's own `linkAttach` (same
@@ -296,11 +323,11 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `describe_capabilities`                                | Discover node/link/annotation types and their fields                                                                                          |
 | `create_topology`                                      | New document (one empty page)                                                                                                                 |
-| `list_templates` / `create_from_template`              | List starter templates; instantiate one as a new document                                                                                     |
+| `list_templates` / `create_from_template`              | List starter templates and their parameters; instantiate one, optionally with `params`, as a new document                                     |
 | `generate_sdwan_topology`                              | Generate an SD-WAN fabric from intent (EdgeConnect or Juniper SRX; regions, hubs, branches, transports, HA, LAN) as a new document            |
 | `list_topologies` / `get_topology` / `delete_topology` | Manage held documents                                                                                                                         |
 | `import_topology`                                      | Load from document JSON, a legacy Topology Studio save, a draw.io file, a Mermaid flowchart, or CSV data (`format` auto-detects)              |
-| `set_document_title`                                   | Rename a document                                                                                                                             |
+| `set_document_title` _(op)_                            | Rename a document                                                                                                                             |
 | `add_page` / `set_page_properties`                     | Append a frame; edit an existing page's name / viewBox / timing / lineJumps / linkAttach / `portLabels` / `caption` / `emphasis`              |
 | `add_node` / `add_link` / `add_anchor`                 | Core elements                                                                                                                                 |
 | `add_zone` / `add_flow_path` / `add_policy_marker`     | Annotation layer                                                                                                                              |
@@ -324,8 +351,9 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | `auto_place_labels`                                    | Move node labels away from links (fewest crossings, layout rules kept, hand-placed labels untouched)                                          |
 | `balance_topology`                                     | Tidy then align rows/columns + centre (the crisp finishing pass)                                                                              |
 | `layout_topology`                                      | Arrange from scratch (hierarchical / grid / circular / force / tiered — rows by declared tiers, `mirror`, `tierZones`)                        |
+| `analyze_path`                                         | Path between two nodes / anchors over a page's drawn links: routes and alternatives, or why none; `show` spotlights it, adds a flow or a page |
 | `inspect_render`                                       | Compact visual-quality report for one page (crop, label legibility, routing, density) — final QA                                              |
-| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"` for a light page)                                         |
+| `render_svg`                                           | Render a page to a standalone SVG string (`visibleLayers` filters; `theme: "light"`; `profile: "clean"` default, `"full"` = animated)         |
 | `export_flipbook`                                      | Standalone self-playing HTML of all pages on their durations (`theme: "light"` optional)                                                      |
 | `export_topology`                                      | Files: PNG / PDF (print-true, ANSI + A-series), draw.io, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid, cable schedule — see [Exports](#exports) |
 | `list_hardware` _(catalog)_                            | Search real hardware models: port summary, SKUs, panel confidence, GA eligibility                                                             |
@@ -356,6 +384,51 @@ its scopes. `outputPath` on `export_topology` exists only on the stdio server.
 | `get_authoring_guidance`                               | Owner-confirmed preferences + product guidance for this task (≤5 rules, hard token budget, `notModified`)                                     |
 | `list_authoring_preferences`                           | Compact read-only summaries of the owner’s learned preferences                                                                                |
 | `explain_authoring_preference`                         | One rule’s scope, trigger, rationale, confidence, and evidence counts (read-only)                                                             |
+
+### Starter templates (`list_templates`, `create_from_template`)
+
+`list_templates` returns `{ templates, generators }`. Each template lists its
+`params`: for every parameter a `name`, a `label`, a `type` (`integer` with
+`min` and `max`, or `boolean`), a `default` and a one-line `description`.
+The parameter schema lives in this result, not in the tool list, where every
+connected agent would pay for it on every session. `generators` names the
+tools that build a design from intent instead of from a template: SD-WAN
+fabrics come from `generate_sdwan_topology`.
+
+`create_from_template` takes the template id, an optional `params` object and
+an optional `title`:
+
+```json
+{ "template": "spine-leaf", "params": { "spines": 4, "leaves": 12 } }
+```
+
+It returns `{ id, title, pages, params, stats }`, where `params` is every
+parameter of the template with defaults filled in and `stats` is the node and
+link count. A parameter that is left out takes its default, so a call without
+`params` builds the same nodes, links and positions as before templates took
+parameters. A name the template does not have, or a value outside its range,
+is refused with a message that names the field, and nothing is created:
+
+```text
+leaves must be an integer from 2 to 16 (got 40)
+"leafs" is not a parameter of template "spine-leaf" (it takes spines, leaves)
+```
+
+| Template               | Parameters (range, default)                                     |
+| ---------------------- | --------------------------------------------------------------- |
+| `three-tier`           | `webServers` 1–6 (2), `appServers` 1–4 (1)                      |
+| `firewall-dmz`         | `dmzServers` 1–6 (2), `internalFirewall` true / false (false)   |
+| `spine-leaf`           | `spines` 1–4 (2), `leaves` 2–16 (4); every leaf on every spine  |
+| `hub-spoke`            | `hubs` 1–2 (1), `sites` 2–24 (6); two hubs dual-home every site |
+| `sdwan-branch`, `ztna` | none                                                            |
+
+The result is laid out: at every parameter value, `validate_topology` and
+`inspect_render` report no problems (a test holds every template to that), so
+there is nothing to tidy before editing. A shape too large for the standard
+1050 × 700 page gets a larger `viewBox` instead of a crowded one, and a wide
+fan or mesh has its links pinned to the facing sides of its nodes
+(`fromPort` / `toPort`). The same code builds the editor's **＋ template…**
+menu, so a person and an agent get the same document for the same values.
 
 ### SD-WAN generator (`generate_sdwan_topology`)
 
