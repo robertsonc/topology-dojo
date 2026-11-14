@@ -20,6 +20,7 @@ import {
   applyPalette,
   engineDefs,
   renderPageSVG,
+  type RenderOptions,
 } from './vendor/topology-ds.js';
 import {
   blankPage,
@@ -112,6 +113,7 @@ import {
   parseNumberField,
 } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
+import { exportRenderOptions } from './ui/export-options.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -478,14 +480,22 @@ const editor = new Editor(
   onZoneSelectChange,
 );
 
+/**
+ * The document-level overlays drawn over a page — the key (legend), the sheet
+ * frame, the caption — recoloured for the brand palette like the art beneath
+ * them, so the key's swatches match what they are the key to. The theme is
+ * applied by whoever composites them: the canvas hook below, or `pageToSVG`
+ * for an export.
+ */
+function pageOverlay(page: Page): string {
+  const overlay = documentOverlaySVG(doc, page) + captionSVG(page);
+  return doc.palette ? applyPalette(overlay, doc.palette) : overlay;
+}
 // Draw the auto-legend (B.1) on the canvas — recomputed each overlay paint from
 // the elements in use, so it tracks edits live. Off unless the document opts in.
 // Themed like the art (#264) so the on-canvas legend/caption read in light mode.
 editor.setOverlayExtra(() =>
-  applyRenderTheme(
-    documentOverlaySVG(doc, editor.page) + captionSVG(editor.page),
-    currentTheme(),
-  ),
+  applyRenderTheme(pageOverlay(editor.page), currentTheme()),
 );
 
 // Feed declared layers (with their visibility/opacity, B.3) into every render so
@@ -1163,9 +1173,6 @@ function exportBase(): string {
   const page = doc.pages[current]!;
   return `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
 }
-function exportExtra(page: Page): string {
-  return documentOverlaySVG(doc, page) + captionSVG(page);
-}
 app.querySelector('#fSvg')?.addEventListener('click', () => {
   const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.svg`;
@@ -1173,14 +1180,8 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
     exportPageSVG(
       filename,
       page,
-      {
-        calm: editor.calm,
-        layers: doc.layers,
-        linkStyles: doc.linkStyles,
-        emphasis: page.emphasis,
-        theme: currentTheme(),
-      },
-      exportExtra(page),
+      { ...pageOpts(page), calm: editor.calm },
+      pageOverlay(page),
     );
     reportExport('ok', '✓ exported svg', filename);
   } catch (err) {
@@ -1194,12 +1195,7 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
   const filename = `${exportBase()}.png`;
   if (pngBtn) pngBtn.disabled = true;
   reportExport('pending', '… exporting png', filename);
-  void exportPagePNG(filename, page, 2, exportExtra(page), {
-    layers: doc.layers,
-    linkStyles: doc.linkStyles,
-    emphasis: page.emphasis,
-    theme: currentTheme(),
-  })
+  void exportPagePNG(filename, page, 2, pageOverlay(page), pageOpts(page))
     .then(() => reportExport('ok', '✓ exported png', filename))
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'PNG export failed.';
@@ -1222,23 +1218,16 @@ const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
 function framed(page: Page): Page {
   return doc.sheet ? page : pageFramedForExport(page);
 }
-function pageExtra(page: Page): string {
-  return documentOverlaySVG(doc, page) + captionSVG(page);
+/* Everything drawn off the canvas — every export, the clipboard copy,
+ * Present — uses these options, so it carries what the canvas shows: the
+ * layers, the link styles, the frame's emphasis, the brand palette, and the
+ * editor's current light/dark toggle (#264: a light canvas exports light). */
+function pageOpts(page: Page): RenderOptions {
+  return exportRenderOptions(doc, page, currentTheme());
 }
-/* Exports follow the editor's current light/dark toggle (#264): a light
- * canvas exports light, a dark canvas exports dark. */
-function pageOpts(page: Page): {
-  layers: typeof doc.layers;
-  linkStyles: typeof doc.linkStyles;
-  emphasis?: string[];
-  theme: RenderTheme;
-} {
-  return {
-    layers: doc.layers,
-    linkStyles: doc.linkStyles,
-    ...(page.emphasis ? { emphasis: page.emphasis } : {}),
-    theme: currentTheme(),
-  };
+/** The same for a selection-only crop, which has no frame emphasis. */
+function selectionOpts(): RenderOptions {
+  return exportRenderOptions(doc, {}, currentTheme());
 }
 /** PDF paper size from the sheet frame (W6), when a standard size is set. */
 function paperSpec(): { paper?: { w: number; h: number } } {
@@ -1260,7 +1249,7 @@ async function runExport(kind: string): Promise<void> {
         {
           page: whole,
           opts: pageOpts(whole),
-          extra: pageExtra(whole),
+          extra: pageOverlay(whole),
           ...paperSpec(),
         },
       ]);
@@ -1272,7 +1261,7 @@ async function runExport(kind: string): Promise<void> {
         doc.pages.map(framed).map((p) => ({
           page: p,
           opts: pageOpts(p),
-          extra: pageExtra(p),
+          extra: pageOverlay(p),
           ...paperSpec(),
         })),
       );
@@ -1290,7 +1279,7 @@ async function runExport(kind: string): Promise<void> {
           return pageToSVG(
             p,
             { ...pageOpts(p), calm: editor.calm },
-            pageExtra(p),
+            pageOverlay(p),
           );
         },
         { theme: currentTheme() },
@@ -1342,27 +1331,31 @@ async function runExport(kind: string): Promise<void> {
       return;
     }
     case 'copy-png':
-      await copyPagePNG(framed(page), pageExtra(framed(page)), pageOpts(page));
+      await copyPagePNG(
+        framed(page),
+        pageOverlay(framed(page)),
+        pageOpts(page),
+      );
       return;
     case 'svg-selection': {
       const sp = selectionAsPage();
       if (!sp) throw new Error('select one or more nodes first');
       exportPageSVG(`${exportBase()}_selection.svg`, sp, {
+        ...selectionOpts(),
         calm: true,
-        layers: doc.layers,
-        linkStyles: doc.linkStyles,
-        theme: currentTheme(),
       });
       return;
     }
     case 'png-selection': {
       const sp = selectionAsPage();
       if (!sp) throw new Error('select one or more nodes first');
-      await exportPagePNG(`${exportBase()}_selection.png`, sp, 2, '', {
-        layers: doc.layers,
-        linkStyles: doc.linkStyles,
-        theme: currentTheme(),
-      });
+      await exportPagePNG(
+        `${exportBase()}_selection.png`,
+        sp,
+        2,
+        '',
+        selectionOpts(),
+      );
       return;
     }
   }
@@ -4775,6 +4768,7 @@ function applyBrandPalette(
   const eff = p && p.id !== 'default' ? p : undefined;
   doc.palette = eff;
   editor.setPalette(eff);
+  editor.redrawOverlay(); // the key drawn over the page is recoloured too
   setChromeAccent(eff ? (eff.chrome ?? eff.accent) : undefined);
   syncPaletteInputs(eff);
   renderMinimap();
@@ -5008,7 +5002,7 @@ function openPresent(): void {
     stage.innerHTML = pageToSVG(
       page,
       { ...pageOpts(page), calm: editor.calm },
-      pageExtra(page),
+      pageOverlay(page),
     );
     if (fade && page.transition === 'fade') {
       stage.classList.remove('present-fade');
@@ -5624,10 +5618,7 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
         run: () => {
           const sp = selectionAsPage();
           if (!sp) return;
-          void copyPagePNG(sp, '', {
-            layers: doc.layers,
-            linkStyles: doc.linkStyles,
-          }).catch((err) =>
+          void copyPagePNG(sp, '', selectionOpts()).catch((err) =>
             alert(
               `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
             ),
@@ -5712,7 +5703,7 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
       label: 'Copy frame as image',
       run: () => {
         const page = doc.pages[current]!;
-        void copyPagePNG(page, pageExtra(page), pageOpts(page)).catch((err) =>
+        void copyPagePNG(page, pageOverlay(page), pageOpts(page)).catch((err) =>
           alert(
             `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
           ),
