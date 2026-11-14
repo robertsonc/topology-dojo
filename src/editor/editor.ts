@@ -204,6 +204,25 @@ const SHARED_LINK_KEYS: ReadonlySet<string> = new Set([
 const CLONE_STEP = 24;
 
 /**
+ * How much room a node placed for the user keeps from the glyphs already on
+ * the page (see `clearSpot`): enough that neither covers the other's caption.
+ * The same margin `quickConnect` uses.
+ */
+const SPOT_CLEARANCE = 40;
+
+/** The order `clearSpot` tries directions in: down-right first, up-left last. */
+const SPOT_DIRECTIONS: readonly (readonly [number, number])[] = [
+  [1, 1],
+  [1, 0],
+  [0, 1],
+  [1, -1],
+  [-1, 1],
+  [0, -1],
+  [-1, 0],
+  [-1, -1],
+];
+
+/**
  * How far into its glyph a connection dot can be grabbed, as a fraction of
  * the glyph's half-extent on that axis (see `connectionDotHit`).
  */
@@ -1773,7 +1792,11 @@ export class Editor {
     }[dir];
     let x = src.x + step.dx;
     let y = src.y + step.dy;
-    for (let i = 0; i < 6 && hitTestNode(this.page, x, y, 40); i++) {
+    for (
+      let i = 0;
+      i < 6 && hitTestNode(this.page, x, y, SPOT_CLEARANCE);
+      i++
+    ) {
       x += step.dx * 0.75;
       y += step.dy * 0.75;
     }
@@ -2211,12 +2234,56 @@ export class Editor {
 
   /* ── mutations ────────────────────────────────────────────────── */
 
-  /** Add a node of `type` at the current view center; selects it for dragging. */
+  /**
+   * A place near (x, y) for new nodes that were not dropped at a point the
+   * user chose (a palette click, a stencil stamp): (x, y) itself, or the
+   * nearest spot around it where none of them would land on or right beside
+   * a node already there. Without it every add lands on the view centre and
+   * a second click looks as if nothing happened. The search goes ring by
+   * ring, down-right first (where a pasted copy also goes), so the new nodes
+   * gather around the middle of the view instead of marching out of it.
+   * `block` holds each new node's offset from (x, y); hidden-layer nodes are
+   * not in the way.
+   */
+  private clearSpot(
+    x: number,
+    y: number,
+    block: readonly { x: number; y: number }[] = [{ x: 0, y: 0 }],
+  ): { x: number; y: number } {
+    const page = this.hitPage();
+    const blocked = (cx: number, cy: number): boolean =>
+      block.some(
+        (o) => hitTestNode(page, cx + o.x, cy + o.y, SPOT_CLEARANCE) !== null,
+      );
+    const nearest = (): { x: number; y: number } => {
+      if (!blocked(x, y)) return { x, y };
+      const RINGS = 12;
+      for (let ring = 1; ring <= RINGS; ring++)
+        for (const [dx, dy] of SPOT_DIRECTIONS) {
+          const cx = x + dx * ring * CLONE_STEP;
+          const cy = y + dy * ring * CLONE_STEP;
+          if (!blocked(cx, cy)) return { x: cx, y: cy };
+        }
+      // Crowded all around: keep stepping down-right, clear of the search.
+      const out = (RINGS + 1) * CLONE_STEP;
+      return { x: x + out, y: y + out };
+    };
+    const spot = nearest();
+    return { x: this.snapVal(spot.x), y: this.snapVal(spot.y) };
+  }
+
+  /**
+   * Add a node of `type` and select it for dragging. It goes to the middle of
+   * the view, or beside it while that spot is taken (see `clearSpot`); an
+   * `extra` carrying x / y places it exactly there instead.
+   */
   addNode(type: string, label?: string, extra?: Partial<NodeConfig>): void {
     this.snapshot();
     const id = `n${Date.now().toString(36)}${(this.nodeSeq++).toString(36)}`;
-    const x = this.snapVal(this.view.x + this.view.w / 2);
-    const y = this.snapVal(this.view.y + this.view.h / 2);
+    const { x, y } = this.clearSpot(
+      this.view.x + this.view.w / 2,
+      this.view.y + this.view.h / 2,
+    );
     this.page.nodes.push({
       id,
       type,
@@ -2744,13 +2811,19 @@ export class Editor {
    * Stamp a saved stencil's elements onto the current page, centred on the
    * viewport with fresh ids, selecting the placed copies. The stencil's nodes
    * are stored centred on (0,0), so the viewport centre becomes the group's
-   * centre. Undoable.
+   * centre; a stamp that would land on nodes already there steps aside as a
+   * block (see `clearSpot`). Undoable.
    */
   stampStencil(srcNodes: NodeConfig[], srcLinks: LinkConfig[]): void {
     if (srcNodes.length === 0) return;
     this.snapshot();
-    const cx = this.snapVal(this.view.x + this.view.w / 2);
-    const cy = this.snapVal(this.view.y + this.view.h / 2);
+    // The stencil's nodes are stored around (0,0): they are the block's own
+    // offsets from where its centre goes.
+    const { x: cx, y: cy } = this.clearSpot(
+      this.view.x + this.view.w / 2,
+      this.view.y + this.view.h / 2,
+      srcNodes,
+    );
     const { nodes, links } = cloneElements(srcNodes, srcLinks, {
       nextNodeId: () => this.newNodeId(),
       nextLinkId: () => this.newLinkId(),
