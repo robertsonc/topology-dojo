@@ -838,6 +838,48 @@ Starting from a template replaces the active canvas after confirmation. Download
 the current JSON first if it must be retained. A connected Agent Workspace must
 be closed before replacing the document.
 
+### Template parameters
+
+Four of the templates take parameters. Choosing one opens a small dialog with
+a question per parameter, a live preview, and the node and link counts that
+will land on the canvas. A parameter with a few values is a row of buttons; one
+with a long range is a slider (drag it, or use the arrow keys). **Create
+diagram** asks for the usual confirmation and then replaces the canvas;
+**Cancel**, **✕** or **Esc** closes the dialog and changes nothing. The dialog
+opens on the template's defaults, which build the same diagram the template
+built before it took parameters.
+
+| Template           | Parameter         | Values   | Default | What it changes                                     |
+| ------------------ | ----------------- | -------- | ------- | --------------------------------------------------- |
+| Three-tier web app | Web servers       | 1–6      | 2       | Web servers behind the firewall                     |
+|                    | App servers       | 1–4      | 1       | App servers; every web server reaches each one      |
+| Firewall + DMZ     | DMZ servers       | 1–6      | 2       | Servers in the DMZ: web, mail, DNS, proxy, VPN, FTP |
+|                    | Internal firewall | No / Yes | No      | A second firewall between the DMZ and the core      |
+| Spine-leaf fabric  | Spines            | 1–4      | 2       | Spine switches; every leaf uplinks to each one      |
+|                    | Leaves            | 2–16     | 4       | Leaf switches                                       |
+| Hub and spoke      | Hubs              | 1–2      | 1       | With two hubs, every site tunnels to both           |
+|                    | Sites             | 2–24     | 6       | Branch sites around the hub                         |
+
+**SD-WAN branch** and **ZTNA user-to-app** have no parameters and start
+straight from the confirmation, as before.
+
+Every combination is laid out and passes validation and the render inspection
+with no problems, so there is nothing to tidy first. Two things change with
+size:
+
+- **The page grows.** A fabric with more than seven leaves, a ring that its
+  sites fill, or a tall DMZ or tier stack gets a canvas larger than the
+  standard 1050 × 700. Press **0** (**Fit view**) to see all of it.
+- **Wide fans are pinned.** In a larger diagram the links of a fan or mesh
+  leave from the facing sides of their nodes (a spine's bottom edge to a leaf's
+  top edge) so they do not run under neighbouring nodes. They are ordinary
+  links with **From side** and **To side** set; change or clear the sides in
+  Properties like any other link.
+
+An agent passes the same parameters to **create_from_template** (see
+[MCP and agent workflows](#16-mcp-and-agent-workflows)) and gets the same
+document.
+
 ### Generate an SD-WAN fabric
 
 **＋ template… → Generate SD-WAN…** opens a wizard that builds a hub-and-spoke
@@ -1410,6 +1452,10 @@ The complete tool table and connection details are in the
    task archetype and relevant workspace ID.
 3. Call **layout_guidelines** before placing a large diagram.
 4. Use **create_topology**, **create_from_template**, or **import_topology**.
+   **list_templates** lists each template's parameters (name, type, range,
+   default); pass them as `params`, for example
+   `{"template": "hub-spoke", "params": {"hubs": 2, "sites": 9}}`. For an
+   SD-WAN fabric use **generate_sdwan_topology** instead.
 5. Prefer one atomic **edit_topology** batch over many one-element calls. A
    private-draft batch accepts at most 200 ordered operations.
 6. Call **validate_topology**.

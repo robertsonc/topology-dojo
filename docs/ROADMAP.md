@@ -119,14 +119,34 @@ packet-level ordering and what can run in parallel):
    consulted before this edit” signal when `get_authoring_guidance` succeeded
    earlier in the same MCP session. Reuses `ANALYTICS_ENABLED` (already on);
    no new flag, no new Durable Object class, no migration. Packets A1–A6.
-4. **Guided topology briefs + semantic templates** — today an agent (or a
-   human) starts from either a blank page or one of six static starter
-   templates (`list_templates`/`create_from_template`); there's no general
-   structured "describe the topology you want" contract that compiles into a
-   scaffolded, validated starting document. Packets: B1–B7. **Not started**
-   (2026-11-13). One archetype now exists outside this plan: the SD-WAN
-   generator (proposal 0010 — `generate_sdwan_topology` and the editor
-   wizard) compiles intent into a document; re-scope B against it first.
+4. **Guided topology briefs + semantic templates** — **done as re-scoped,
+   2026-11-14** (packets B1–B7). The plan was a separate "brief" contract
+   beside the templates (`src/briefs/`, a `create_from_brief` tool, a second
+   wizard). The SD-WAN generator (proposal 0010) had since shipped that shape
+   for one archetype and the MCP tool list had reached its size budget, so B
+   was re-scoped against the generator: the starter templates themselves
+   became **parametric**. `hub-spoke`, `spine-leaf`, `three-tier` and
+   `firewall-dmz` take parameters ("a spine-leaf fabric with 4 spines and 12
+   leaves", "hub and spoke with 2 hubs and 9 sites") through the tool and
+   the menu that already existed: `create_from_template` takes an optional
+   `params` object, `list_templates` returns each template's parameter
+   schema, and choosing a parametric template in **＋ template…** opens a
+   parameter dialog (`src/ui/template-wizard.ts`). `src/api/templates.ts`
+   copies the generator's contract (one resolve step for defaults and bounds,
+   errors that name the field, deterministic output, a
+   `{doc, template, params, stats}` result), and one test holds every
+   template at every parameter value to a clean `validateDocument`,
+   `analyzeLayout` and `inspectPage`. Dropped, with the reason: a
+   `TopologyBrief` type aligned with the authoring-profile archetypes
+   (`src/profile/features.ts` classifies these templates inconsistently); a
+   new MCP tool (the change adds 93 bytes to the tool list instead); a second
+   SD-WAN generator (`list_templates` points to `generate_sdwan_topology`).
+   Template ids are unchanged, and a template called without parameters
+   builds what it built before; the one difference is that the
+   `firewall-dmz` firewall label now wraps, which stops a link being drawn
+   through it. Not done: free-form natural-language briefs; parameters for
+   `sdwan-branch` and `ztna`. Detail: `IMPLEMENTATION_PLAN.md`, Initiative B,
+   "Re-scope (2026-11-14)".
 5. **EdgeConnect live-import hardening + UI** — the provider/compiler code is
    shipped and tested against injectable mocks, but has never been run against
    a real or recorded Orchestrator payload, and there's no GUI surface for a
@@ -215,9 +235,10 @@ packets:
   ACLs beyond the current single-owner-per-workspace model (proposal 0002's
   "Follow-on work" item 6, still deferred).
 - **Reusable topology components / shared template libraries** — beyond the
-  current 6 static starter templates: user-authored, shareable component
-  groups (a "sub-topology" a person or agent can drop in and parameterize).
-  Builds naturally on the guided-briefs work above once that contract exists.
+  current six starter templates (four of them parametric): user-authored,
+  shareable component groups (a "sub-topology" a person or agent can drop in
+  and parameterize). Builds naturally on the parametric-template contract
+  above (`src/api/templates.ts`).
 - **Source-drift reconciliation** — `upsert_by_source` (drafts) and, since
   proposal 0006, `element.upsert` (workspaces) converge a re-import instead
   of duplicating, and `get_topology sources:true` / `get_workspace_elements
