@@ -197,3 +197,116 @@ describe('pointercancel takes the gesture back (CODE-13)', () => {
     expect(h.editor.getSelectedNode()).toBeNull();
   });
 });
+
+describe('only the primary button starts a gesture (CODE-14)', () => {
+  const right = { button: 2, buttons: 2 };
+
+  it('a right-button press-drag-release does not move a node', () => {
+    const h = harness(scene());
+    h.down(300, 300, right);
+    h.move(340, 330, right);
+    h.move(380, 360, right);
+    h.up(380, 360, { button: 2 });
+    expect(posA(h)).toEqual([300, 300]);
+    expect(h.editor.canUndo()).toBe(false);
+  });
+
+  it('a right-button press starts no marquee and changes no selection', () => {
+    const h = harness(scene());
+    h.editor.focusNode('b');
+    h.down(800, 600, right);
+    h.move(200, 200, right);
+    h.up(200, 200, { button: 2 });
+    expect(h.editor.selectedNodeIds()).toEqual(['b']);
+  });
+
+  it('the anchor tool drops nothing on a right-click', () => {
+    const h = harness(scene());
+    h.editor.setTool('anchor');
+    h.down(800, 600, right);
+    h.up(800, 600, { button: 2 });
+    expect(h.editor.page.anchors).toHaveLength(0);
+  });
+
+  it('the link tool does not arm its source on a right-click', () => {
+    const h = harness(scene());
+    h.editor.setTool('link');
+    h.down(300, 300, right);
+    h.up(300, 300, { button: 2 });
+    h.click(460, 500); // one left click on c
+    expect(h.editor.page.links).toHaveLength(2);
+  });
+
+  it('a right-click on one of several selected links keeps them all', () => {
+    const h = harness(scene());
+    h.click(450, 300); // link ab
+    h.click(530, 400, { ctrlKey: true }); // + link bc
+    expect(h.editor.selectedLinkIds()).toEqual(['ab', 'bc']);
+    // The press, then the shell's context-menu pick at the same point.
+    h.down(530, 400, right);
+    h.up(530, 400, { button: 2 });
+    expect(h.editor.pickAt(530, 400)).toEqual({ kind: 'link', id: 'bc' });
+    expect(h.editor.selectedLinkIds().sort()).toEqual(['ab', 'bc']);
+    // The link under the pointer is the one the menu and inspector act on.
+    expect(h.editor.getSelectedLink()?.id).toBe('bc');
+    h.editor.deleteSelected();
+    expect(h.editor.page.links).toHaveLength(0);
+  });
+
+  it('a right-click on an unselected link selects just that link', () => {
+    const h = harness(scene());
+    h.click(450, 300);
+    expect(h.editor.pickAt(530, 400)).toEqual({ kind: 'link', id: 'bc' });
+    expect(h.editor.selectedLinkIds()).toEqual(['bc']);
+  });
+
+  it('a right-click on one of several selected nodes keeps them all', () => {
+    const h = harness(scene());
+    h.click(300, 300);
+    h.click(600, 300, { shiftKey: true });
+    h.down(600, 300, right);
+    h.up(600, 300, { button: 2 });
+    expect(h.editor.pickAt(600, 300)).toEqual({ kind: 'node', id: 'b' });
+    expect(h.editor.selectedNodeIds()).toEqual(['a', 'b']);
+  });
+});
+
+describe('a right-click keeps a selection it lands on (CODE-14)', () => {
+  function withAnchorAndZone(): Harness {
+    const page = scene();
+    page.anchors.push({ id: 'an1', x: 800, y: 500 });
+    page.zones.push({ id: 'z1', label: 'Zone', nodes: ['a', 'b'] });
+    return harness(page);
+  }
+
+  it('an anchor in a selected block keeps the block, with the node menu', () => {
+    const h = withAnchorAndZone();
+    h.click(460, 500); // node c
+    h.click(800, 500, { shiftKey: true }); // + the anchor
+    expect(h.editor.selectionCount()).toBe(2);
+    expect(h.editor.pickAt(800, 500)).toEqual({ kind: 'node', id: 'c' });
+    expect(h.editor.selectionCount()).toBe(2);
+  });
+
+  it('an unselected anchor becomes the selection', () => {
+    const h = withAnchorAndZone();
+    h.click(300, 300);
+    expect(h.editor.pickAt(800, 500)).toEqual({ kind: 'empty', id: null });
+    expect(h.editor.getSelectedAnchor()?.id).toBe('an1');
+    expect(h.editor.selectedNodeIds()).toEqual([]);
+  });
+
+  it('inside the selected zone the zone stays selected', () => {
+    const h = withAnchorAndZone();
+    h.editor.selectZone('z1');
+    expect(h.editor.pickAt(450, 262)).toEqual({ kind: 'empty', id: null });
+    expect(h.editor.getSelectedZone()?.id).toBe('z1');
+  });
+
+  it('on empty canvas everything is deselected, a zone included', () => {
+    const h = withAnchorAndZone();
+    h.editor.selectZone('z1');
+    expect(h.editor.pickAt(850, 650)).toEqual({ kind: 'empty', id: null });
+    expect(h.editor.getSelectedZone()).toBeNull();
+  });
+});

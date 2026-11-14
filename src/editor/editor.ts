@@ -2512,9 +2512,15 @@ export class Editor {
   /**
    * Hit-test at a client (screen) point and make that element the selection,
    * returning what was hit. Used by the right-click context menu so the menu
-   * acts on whatever is under the cursor. A node/link under the cursor that is
-   * already part of the selection is left selected (so a menu can act on a
-   * multi-selection); otherwise the selection is replaced with the single hit.
+   * acts on whatever is under the cursor. An element under the cursor that is
+   * already part of the selection leaves the selection as it is (so a menu
+   * can act on a multi-selection); otherwise the selection is replaced with
+   * the single hit.
+   *
+   * The shell has menus for nodes, links and the empty canvas. An anchor is
+   * reported as 'node' when nodes are selected with it (that menu acts on
+   * the whole block) and as 'empty' otherwise; a zone's empty region is
+   * 'empty'.
    */
   pickAt(
     clientX: number,
@@ -2527,14 +2533,35 @@ export class Editor {
       this.renderOverlay();
       return { kind: 'node', id: node };
     }
+    const anchor = hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad());
+    if (anchor) {
+      if (!this.selAnchors.has(anchor))
+        this.setSelection({ anchors: [anchor] });
+      this.renderOverlay();
+      const lead = this.selectedNodeIds()[0];
+      return lead === undefined
+        ? { kind: 'empty', id: null }
+        : { kind: 'node', id: lead };
+    }
     const link = this.linkAt(p);
     if (link) {
-      if (this.linkSel !== link) this.setSelection({ links: [link] });
+      // One of several selected links: all stay selected, and the one under
+      // the pointer becomes the primary, so the menu's single-link commands
+      // (swap, straighten) and the inspector act on the link that was
+      // right-clicked while Delete and Lock still cover them all.
+      const links = this.selectedLinkIds();
+      this.setSelection({
+        links: links.includes(link)
+          ? [link, ...links.filter((id) => id !== link)]
+          : [link],
+      });
       this.renderOverlay();
       return { kind: 'link', id: link };
     }
-    // Empty canvas — clear any current selection.
-    this.setSelection(null);
+    // Empty canvas — clear the selection, unless it is the zone whose empty
+    // region the pointer is in (that region is where a zone is clicked).
+    const zone = this.zoneAt(p);
+    if (zone === null || zone !== this.zoneSel) this.setSelection(null);
     this.renderOverlay();
     return { kind: 'empty', id: null };
   }
@@ -4411,6 +4438,12 @@ export class Editor {
       }
       if (this.pinch) return; // ignore extra fingers mid-pinch
     }
+    // Only the primary button starts a gesture (the middle one pans, just
+    // below). A right press belongs to the context menu: the shell opens it
+    // from the `contextmenu` event and picks what is under the pointer itself
+    // (pickAt). Treated as a press it would drag nodes, drop anchors, arm the
+    // link tool and collapse the very selection the menu is about to act on.
+    if (e.button !== 0 && e.button !== 1) return;
     // Pan: middle button, or left button while Space is held / Hand tool is on.
     if (
       e.button === 1 ||
@@ -4856,6 +4889,12 @@ export class Editor {
         if (this.touches.size < 2) this.pinch = null;
         return;
       }
+    }
+    // The release of a button that started nothing (a right-click) ends
+    // nothing either, and is no part of a double-click.
+    if (e.button !== 0 && !this.gestureActive()) {
+      this.lastClick.t = 0;
+      return;
     }
     // Detect a double-click from two stationary pointerups. Chrome suppresses
     // the native click/dblclick pair whenever the pointerdown target left the
