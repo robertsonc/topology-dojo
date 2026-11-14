@@ -245,8 +245,20 @@ export class Editor {
   palette: BrandPalette | undefined = undefined;
 
   private drag: DragState | null = null;
-  /** Active waypoint drag on the selected link (index into link.waypoints). */
-  private wpDrag: { index: number; moved: boolean } | null = null;
+  /**
+   * A press on a bend handle of the selected link. `index` is the waypoint
+   * being dragged; with `insert` set the press was on a segment's "+" handle
+   * and the waypoint does not exist yet — it is inserted at `index`, at that
+   * point, once the press turns into a drag. `moved` flips when the pointer
+   * has travelled past `start` by the drag threshold: a plain click on a
+   * handle changes nothing.
+   */
+  private wpDrag: {
+    index: number;
+    moved: boolean;
+    start?: { x: number; y: number };
+    insert?: { x: number; y: number };
+  } | null = null;
   private marquee: { x0: number; y0: number; x1: number; y1: number } | null =
     null;
   /** Pan/zoom window in page coordinates (the displayed viewBox). */
@@ -1170,9 +1182,10 @@ export class Editor {
         const p = ends[which];
         out += `<circle data-link-end="${which}" cx="${p.x}" cy="${p.y}" r="${s * 0.75}" fill="#0b0e14" stroke="${ACCENT}" stroke-width="2"/>`;
       }
-    // Midpoint "add" handles: hollow circle with a + on each segment.
-    for (let k = 0; k < pts.length - 1; k++) {
-      const m = midpoint(pts[k]!, pts[k + 1]!);
+    // "Add a bend" handles: hollow circle with a + on each segment.
+    const adds = this.bendAddPoints(link, pts);
+    for (let k = 0; k < adds.length; k++) {
+      const m = adds[k]!;
       out +=
         `<circle data-wp-add="${k}" cx="${m.x}" cy="${m.y}" r="${s * 0.6}" fill="${ACCENT}" fill-opacity="0.12" stroke="${ACCENT}" stroke-width="1"/>` +
         `<path d="M${m.x - s * 0.3},${m.y} h${s * 0.6} M${m.x},${m.y - s * 0.3} v${s * 0.6}" stroke="${ACCENT}" stroke-width="1"/>`;
@@ -1453,6 +1466,16 @@ export class Editor {
   private nodeEdgeBand(): number {
     const wpx = this.overlay.getBoundingClientRect().width || 1;
     return Math.max(4, (8 * this.view.w) / wpx);
+  }
+
+  /**
+   * How far a press on a handle must travel before it counts as a drag, in
+   * user units (≈4 screen px, never under 3 units). Below it the gesture is
+   * a click, and a click on a handle edits nothing.
+   */
+  private dragSlop(): number {
+    const wpx = this.overlay.getBoundingClientRect().width || 1;
+    return Math.max(3, (4 * this.view.w) / wpx);
   }
 
   /** Connection-dot radius in user units (≈5 screen px). */
@@ -3584,14 +3607,13 @@ export class Editor {
   }
 
   /**
-   * If `p` lands on a waypoint handle of the selected link, begin dragging it; if
-   * it lands on a segment's midpoint "+" handle, insert a new waypoint there and
-   * drag that. Returns true when a grab started.
+   * If `p` lands on a bend handle of the selected link, arm a bend drag: on a
+   * waypoint's square handle to move that waypoint, on a segment's "+" handle
+   * to insert one there. Nothing changes until the press becomes a drag (see
+   * onMove), so a click — or either press of a double-click — leaves the
+   * link as it is. Returns true when a grab started.
    */
-  private tryWaypointGrab(
-    p: { x: number; y: number },
-    suppressInsert = false,
-  ): boolean {
+  private tryWaypointGrab(p: { x: number; y: number }): boolean {
     const link = this.page.links.find((l) => l.id === this.linkSel);
     if (!link) return false;
     const pts = linkPolyline(this.page, link);
@@ -3600,28 +3622,99 @@ export class Editor {
     // Existing waypoint handles (polyline indices 1..n-2).
     for (let i = 1; i < pts.length - 1; i++) {
       if (dist(p, pts[i]!) <= tol) {
-        this.wpDrag = { index: i - 1, moved: false };
+        this.wpDrag = { index: i - 1, moved: false, start: p };
         return true;
       }
     }
-    // The second press of a rapid double-click must not insert a waypoint —
-    // the double-click is heading for the inline label editor instead.
-    if (suppressInsert) return false;
-    // Segment midpoint "add" handles → insert a waypoint at segment index k.
-    for (let k = 0; k < pts.length - 1; k++) {
-      const m = midpoint(pts[k]!, pts[k + 1]!);
-      if (dist(p, m) <= tol) {
-        this.snapshot();
-        const wps = link.waypoints ? [...link.waypoints] : [];
-        wps.splice(k, 0, { x: Math.round(m.x), y: Math.round(m.y) });
-        link.waypoints = wps;
-        this.wpDrag = { index: k, moved: true };
-        this.renderArt();
-        this.onChange();
+    // Segment "+" handles → a waypoint to insert at segment index k.
+    const adds = this.bendAddPoints(link, pts);
+    for (let k = 0; k < adds.length; k++) {
+      if (dist(p, adds[k]!) <= tol) {
+        this.wpDrag = { index: k, moved: false, start: p, insert: adds[k]! };
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * Where the "+" (add a bend) handle of each segment of a link sits. Segment
+   * k runs between polyline points k and k+1 (the two ends and the bends
+   * between them). An orthogonal or curved link is not drawn along those
+   * straight segments, so the handle goes on the route AS DRAWN: halfway, by
+   * length, between the spots on the route nearest the segment's two points.
+   * When the route cannot be measured the segment midpoints are used.
+   */
+  private bendAddPoints(
+    link: LinkConfig,
+    pts: { x: number; y: number }[],
+  ): { x: number; y: number }[] {
+    const mids = pts.slice(0, -1).map((a, k) => midpoint(a, pts[k + 1]!));
+    const shape = this.linkShape(link.id);
+    if (!shape) return mids;
+    // The longest drawn stroke is the wire itself (arrowheads, crossing hops
+    // and decorations are short); orient it from → to.
+    const lengthOf = (poly: { x: number; y: number }[]): number =>
+      poly.reduce((sum, q, i) => (i ? sum + dist(poly[i - 1]!, q) : 0), 0);
+    let route = shape.reduce((a, b) => (lengthOf(b) > lengthOf(a) ? b : a));
+    if (route.length < 2) return mids;
+    const first = pts[0]!,
+      last = pts[pts.length - 1]!;
+    const r0 = route[0]!,
+      r1 = route[route.length - 1]!;
+    if (dist(r0, first) + dist(r1, last) > dist(r0, last) + dist(r1, first))
+      route = [...route].reverse();
+    // Distance along the route at each of its vertices.
+    const cum: number[] = [0];
+    for (let i = 1; i < route.length; i++)
+      cum.push(cum[i - 1]! + dist(route[i - 1]!, route[i]!));
+    const total = cum[cum.length - 1]!;
+    if (!(total > 0)) return mids;
+    // How far along the route the spot nearest `q` is.
+    const along = (q: { x: number; y: number }): number => {
+      let best = 0;
+      let bestD = Infinity;
+      for (let i = 0; i < route.length - 1; i++) {
+        const a = route[i]!,
+          b = route[i + 1]!;
+        const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+        const t = len2
+          ? clamp(
+              ((q.x - a.x) * (b.x - a.x) + (q.y - a.y) * (b.y - a.y)) / len2,
+              0,
+              1,
+            )
+          : 0;
+        const d = Math.hypot(
+          q.x - (a.x + t * (b.x - a.x)),
+          q.y - (a.y + t * (b.y - a.y)),
+        );
+        if (d < bestD) {
+          bestD = d;
+          best = cum[i]! + t * (cum[i + 1]! - cum[i]!);
+        }
+      }
+      return best;
+    };
+    // The route's point at a distance along it.
+    const at = (s: number): { x: number; y: number } => {
+      let i = 1;
+      while (i < route.length - 1 && cum[i]! < s) i++;
+      const a = route[i - 1]!,
+        b = route[i]!;
+      const span = cum[i]! - cum[i - 1]!;
+      const t = span ? clamp((s - cum[i - 1]!) / span, 0, 1) : 0;
+      return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+    };
+    // The ends are the route's own ends (it stops at the node edge, short of
+    // the centre); each bend sits where the route passes nearest to it, never
+    // before the one preceding it.
+    const stops = pts.map((q, i) =>
+      i === 0 ? 0 : i === pts.length - 1 ? total : along(q),
+    );
+    for (let i = 1; i < stops.length; i++)
+      stops[i] = Math.max(stops[i]!, stops[i - 1]!);
+    return mids.map((_, k) => at((stops[k]! + stops[k + 1]!) / 2));
   }
 
   /** Double-click a waypoint handle to remove that bend point. */
@@ -3655,6 +3748,7 @@ export class Editor {
             this.renderArt();
             this.renderOverlay();
             this.onChange();
+            this.fireLinkSelect(); // one bend fewer: refresh what the shell shows
             return;
           }
         }
@@ -4178,11 +4272,7 @@ export class Editor {
     }
 
     // Editing waypoints on the selected link takes priority over other hits.
-    if (
-      this.tool === 'select' &&
-      this.linkSel &&
-      this.tryWaypointGrab(p, this.isSecondClickDown(e))
-    ) {
+    if (this.tool === 'select' && this.linkSel && this.tryWaypointGrab(p)) {
       this.overlay.setPointerCapture(e.pointerId);
       this.renderOverlay();
       return;
@@ -4493,15 +4583,31 @@ export class Editor {
     }
     if (this.wpDrag) {
       const pp = clientToUser(this.overlay, e.clientX, e.clientY);
+      const wd = this.wpDrag;
       const link = this.page.links.find((l) => l.id === this.linkSel);
-      const wp = link?.waypoints?.[this.wpDrag.index];
-      if (wp) {
-        if (!this.wpDrag.moved) {
-          this.snapshot();
-          this.wpDrag.moved = true;
+      if (!link) return;
+      if (!wd.moved) {
+        // Still a click until the pointer has travelled: a press on a handle
+        // (or the presses of a double-click) must not bend or snap anything.
+        if (wd.start && dist(pp, wd.start) <= this.dragSlop()) return;
+        if (!wd.insert && !link.waypoints?.[wd.index]) return;
+        this.snapshot();
+        wd.moved = true;
+        if (wd.insert) {
+          const wps = link.waypoints ? [...link.waypoints] : [];
+          wps.splice(wd.index, 0, {
+            x: Math.round(wd.insert.x),
+            y: Math.round(wd.insert.y),
+          });
+          link.waypoints = wps;
         }
+      }
+      const wp = link.waypoints?.[wd.index];
+      if (wp) {
         wp.x = this.snapVal(pp.x);
         wp.y = this.snapVal(pp.y);
+        // Re-route the wire under the cursor (coalesced per frame).
+        this.scheduleArt();
         this.renderOverlay();
       }
       return;
@@ -4584,19 +4690,6 @@ export class Editor {
   /** When a synthesized double-click last ran (guards the native handler). */
   private synthDblAt = 0;
 
-  /**
-   * True when this pointerdown looks like the second press of a double-click
-   * (rapid + stationary relative to the last click's release) — used to keep
-   * single-press gestures (waypoint insert) out of the double-click's way.
-   */
-  private isSecondClickDown(e: PointerEvent): boolean {
-    return (
-      Date.now() - this.lastClick.t < 450 &&
-      Math.hypot(e.clientX - this.lastClick.x, e.clientY - this.lastClick.y) <=
-        6
-    );
-  }
-
   /** True when this pointerup is the second stationary click of a double. */
   private detectSynthDblClick(e: PointerEvent): boolean {
     const m = this.marquee;
@@ -4671,6 +4764,9 @@ export class Editor {
           });
         this.renderArt();
         this.onChange();
+        // The link gained or moved a bend: let the shell refresh what it
+        // shows about it (bend count, "straighten").
+        this.fireLinkSelect();
       }
       this.wpDrag = null;
       this.renderOverlay();

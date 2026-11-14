@@ -37,6 +37,9 @@ function fakeSvg(): SVGSVGElement {
     getAttribute() {
       return null;
     },
+    getScreenCTM() {
+      return null; // client coordinates are page coordinates (coords.ts)
+    },
     querySelector() {
       return null;
     },
@@ -204,6 +207,36 @@ describe('diffDocuments characterization (locks the fallback/referee)', () => {
     ]);
   });
 });
+
+/** Drive a whole press → drag → release through the editor's pointer
+ * handlers (primary button), for gestures that only exist as pointer input. */
+function pointerDrag(
+  editor: Editor,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): void {
+  const priv = editor as unknown as {
+    onDown(ev: object): void;
+    onMove(ev: object): void;
+    onUp(ev: object): void;
+  };
+  const ev = (p: { x: number; y: number }, buttons: number): object => ({
+    clientX: p.x,
+    clientY: p.y,
+    button: 0,
+    buttons,
+    pointerId: 1,
+    pointerType: 'mouse',
+    shiftKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    preventDefault() {},
+  });
+  priv.onDown(ev(from, 1));
+  priv.onMove(ev({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, 1));
+  priv.onMove(ev(to, 1));
+  priv.onUp(ev(to, 0));
+}
 
 /* ── 2. Referee corpus ─────────────────────────────────────────────────────
  * Each case sets up an editor, runs a gesture, then asserts the emitted ops
@@ -432,6 +465,15 @@ const cases: GestureCase[] = [
       priv.onUp({ pointerId: 1 });
     },
     undoable: false, // waypoint drag snapshots on first move; we inject post-move state
+  },
+  {
+    name: 'insert a bend by dragging a "+" handle (pointer gesture)',
+    setup: (e) => e.focusLink('ab'),
+    run: (e) => {
+      // a (100,100) → b (250,100): the "+" handle sits on their midpoint.
+      pointerDrag(e, { x: 175, y: 100 }, { x: 180, y: 180 });
+    },
+    undoable: true,
   },
   {
     name: 'straighten link (clear waypoints)',
