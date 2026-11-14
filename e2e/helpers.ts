@@ -34,6 +34,48 @@ export async function statusCount(page: Page, key: string): Promise<number> {
   return Number(text.replace(key, '').trim());
 }
 
+/** The text shown for one status-bar key (`tool` → "select"). */
+export async function statusText(page: Page, key: string): Promise<string> {
+  const row = page.locator('#statusbar span', {
+    has: page.locator(`.sb-k:text-is("${key}")`),
+  });
+  return (await row.first().innerText()).replace(key, '').trim();
+}
+
+/** The on-screen box of a node drawn on the canvas, by its id. */
+export async function nodeBox(
+  page: Page,
+  id: string,
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  return page.evaluate((nodeId) => {
+    const el = document.querySelector(
+      `#page-canvas [data-tds-node="${CSS.escape(nodeId)}"]`,
+    );
+    if (!el) throw new Error(`no node "${nodeId}" on the canvas`);
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }, id);
+}
+
+/** Click a node on the canvas (selects it), by its id. */
+export async function clickNode(page: Page, id: string): Promise<void> {
+  const box = await nodeBox(page, id);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
+/**
+ * Move keyboard focus to a control the way a keyboard user does: with Tab.
+ * `locator.focus()` alone is a scripted focus, which the editor (rightly)
+ * does not take as the user navigating by keyboard.
+ */
+export async function tabTo(page: Page, selector: string): Promise<void> {
+  const target = page.locator(selector).first();
+  await target.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(target).toBeFocused();
+}
+
 /**
  * Open a document JSON fixture through the toolbar's hidden file input, and
  * wait until it is on the canvas. The file is read asynchronously, so choosing

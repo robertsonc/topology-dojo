@@ -97,6 +97,13 @@ import {
   leftInsetShift,
   type PanelBox,
 } from './ui/fit-insets.js';
+import {
+  escapeReleasesFocus,
+  focusKind,
+  releasesFocusAfterChange,
+  routeKey,
+  type FocusFacts,
+} from './ui/key-routing.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -5233,22 +5240,81 @@ async function showUserChip(): Promise<void> {
 }
 void showUserChip();
 
-/* Keyboard. Shortcuts are suppressed while typing in a form field so they don't
- * hijack the inspector / rename inputs (and Ctrl+C/V do native text edit there),
- * and while any overlay (dialog / panel / popover / context menu) owns
- * interaction — a Delete pressed in a modal must never reach the canvas (#209).
- * The overlay primitive handles Escape/Tab itself, capture-phase. */
+/* Keyboard. Every key press is routed by one rule (src/ui/key-routing.ts):
+ * a text field has the keyboard to itself; a focused select / checkbox /
+ * slider keeps the plain keys it uses; a button keeps them while the user is
+ * moving around by keyboard, so Space and Enter press it; and everything else
+ * — plus Escape and Ctrl/Cmd combinations from any control — is a canvas
+ * shortcut. Shortcuts are also off while any overlay (dialog / panel /
+ * popover / context menu) owns interaction — a Delete pressed in a modal must
+ * never reach the canvas (#209). The overlay primitive handles Escape/Tab
+ * itself, capture-phase. */
+
+/** Whether the user is moving focus by keyboard: true once Tab has moved it,
+ * false once a pointer is pressed. Starts true, so a control focused before
+ * any input (by assistive technology, say) is treated as keyboard focus. */
+let keyboardNav = true;
+/** What the last key press went to, if no pointer was pressed since — tells
+ * a value changed by its control's own keys from a mouse pick. */
+let lastKeyTarget: EventTarget | null = null;
+/** An Escape keydown reached the page and its keyup has not come yet. */
+let escapeDownSeen = false;
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph']);
+
+function focusFactsOf(el: Element): FocusFacts {
+  return {
+    tag: el.tagName,
+    type: el instanceof HTMLInputElement ? el.type : null,
+    editable: el instanceof HTMLElement && el.isContentEditable,
+    role: el.getAttribute('role'),
+    tabindex: el.hasAttribute('tabindex'),
+    href: el.hasAttribute('href'),
+  };
+}
+/** Take keyboard focus off a control, handing the keyboard to the canvas. */
+function releaseFocus(el: EventTarget | null): void {
+  if (el instanceof HTMLElement && document.activeElement === el) el.blur();
+}
+
+window.addEventListener(
+  'pointerdown',
+  () => {
+    keyboardNav = false;
+    lastKeyTarget = null;
+    escapeDownSeen = false;
+  },
+  true,
+);
+window.addEventListener(
+  'keydown',
+  (e) => {
+    if (e.key === 'Tab') keyboardNav = true;
+    if (e.key === 'Escape') escapeDownSeen = true;
+    if (!MODIFIER_KEYS.has(e.key)) lastKeyTarget = e.target;
+  },
+  true,
+);
+// A select or checkbox changed with the pointer gives the keyboard back to the
+// canvas, so the next Delete or V is a shortcut again (a select would even
+// take "V" as type-ahead and pick an option). Listening on the document runs
+// this after the control's own change handlers.
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!(el instanceof Element)) return;
+  const release = releasesFocusAfterChange({
+    focus: focusFactsOf(el),
+    byKeyboard: lastKeyTarget === el,
+    overlayOpen: overlayActive(),
+  });
+  if (release) releaseFocus(el);
+});
+
 window.addEventListener('keydown', (e) => {
   if (overlayActive()) return;
-  const t = e.target as HTMLElement | null;
-  if (
-    t &&
-    (t.tagName === 'INPUT' ||
-      t.tagName === 'SELECT' ||
-      t.tagName === 'TEXTAREA' ||
-      t.isContentEditable)
-  )
-    return;
+  const target = e.target instanceof Element ? e.target : null;
+  const focus = target ? focusKind(focusFactsOf(target)) : 'canvas';
+  if (routeKey(e, focus, keyboardNav) === 'focus') return;
+  if (e.key === 'Escape' && escapeReleasesFocus(focus)) releaseFocus(target);
 
   // ? (Shift+/) opens the shortcut reference (Esc closes it via the overlay).
   if (e.key === '?') {
@@ -5603,6 +5669,19 @@ window.addEventListener('resize', () => {
 // Release hand mode when Space lifts (or the window loses focus while held).
 window.addEventListener('keyup', (e) => {
   if (e.key === ' ') editor.setSpacePan(false);
+  if (e.key !== 'Escape') return;
+  // A select's open menu takes the Escape keydown that closes it: the page
+  // gets only this keyup. A menu opened with the pointer and dismissed that
+  // way must not keep the keyboard, or the next letter is type-ahead for it.
+  const menuClosed = !escapeDownSeen;
+  escapeDownSeen = false;
+  if (
+    menuClosed &&
+    !keyboardNav &&
+    !overlayActive() &&
+    e.target instanceof HTMLSelectElement
+  )
+    releaseFocus(e.target);
 });
 window.addEventListener('blur', () => editor.setSpacePan(false));
 
