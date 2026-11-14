@@ -572,6 +572,15 @@ function synthesize(i: ResolvedSdwanIntent): Plan {
   };
 }
 
+/**
+ * The fabric an intent expands to, as plain records — the same ones
+ * `generateSdwan` compiles — for callers that want the synthetic fabric as
+ * data rather than as a drawn document (a scenario story's base state).
+ */
+export function sdwanFabricRecords(intent: SdwanIntent): FabricRecords {
+  return synthesize(resolveSdwanIntent(intent)).records;
+}
+
 /* ── generation pass: draw what the fabric API doesn't report ───────── */
 
 const GEO = {

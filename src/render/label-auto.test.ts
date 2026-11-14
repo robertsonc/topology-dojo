@@ -6,9 +6,9 @@ import { autoPlaceLabels } from './label-auto.js';
 import { inspectPage } from './inspect.js';
 
 /** A hub with four branches fanning out below it. */
-function fan(): Page {
+function fan(linkAttach?: 'none'): Page {
   const b = createDocument('Fan')
-    .page({ name: 'Fan' })
+    .page({ name: 'Fan', ...(linkAttach ? { linkAttach } : {}) })
     .node({ id: 'hub', type: 'ec', x: 500, y: 140, label: 'Hub' });
   [200, 400, 600, 800].forEach((x, i) =>
     b
@@ -24,8 +24,16 @@ const crossings = (page: Page): number =>
   ).length;
 
 describe('autoPlaceLabels', () => {
-  it('lifts a hub label above the links fanning below it', () => {
+  it('has nothing to lift on a new page: the anchor box already clears labels', () => {
+    // A page created through the API starts with the link anchor box on, so
+    // the fan leaves the hub below its label instead of through it.
     const page = fan();
+    expect(crossings(page)).toBe(0);
+    expect(autoPlaceLabels(page).changed).toBe(0);
+  });
+
+  it('lifts a hub label above the links fanning below it', () => {
+    const page = fan('none');
     expect(crossings(page)).toBeGreaterThan(0);
     const r = autoPlaceLabels(page);
     expect(r.placements.hub).toBe('n');
@@ -40,16 +48,16 @@ describe('autoPlaceLabels', () => {
   });
 
   it('is idempotent and deterministic', () => {
-    const a = fan();
+    const a = fan('none');
     autoPlaceLabels(a);
     expect(autoPlaceLabels(a).changed).toBe(0);
-    const b = fan();
+    const b = fan('none');
     autoPlaceLabels(b);
     expect(JSON.stringify(b.nodes)).toBe(JSON.stringify(a.nodes));
   });
 
   it('leaves hand-placed labels alone', () => {
-    const page = fan();
+    const page = fan('none');
     const hub = page.nodes.find((n) => n.id === 'hub')!;
     hub.labelOffset = 30;
     const r = autoPlaceLabels(page);
@@ -84,7 +92,7 @@ describe('autoPlaceLabels', () => {
   });
 
   it('can be limited to some nodes', () => {
-    const page = fan();
+    const page = fan('none');
     const r = autoPlaceLabels(page, { nodeIds: ['b0'] });
     expect(Object.keys(r.placements)).toEqual(['b0']);
     expect(page.nodes.find((n) => n.id === 'hub')?.labelPlacement).toBe(

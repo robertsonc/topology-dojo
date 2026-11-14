@@ -1,0 +1,578 @@
+{
+  "three-tier": {
+    "title": "Three-tier web app",
+    "pages": [
+      {
+        "id": "page0",
+        "name": "Three-tier",
+        "viewBox": "0 0 1050 700",
+        "linkAttach": {
+          "distribute": true
+        },
+        "nodes": [
+          {
+            "id": "users",
+            "type": "host",
+            "x": 525,
+            "y": 158,
+            "label": "Users"
+          },
+          {
+            "id": "fw",
+            "type": "firewall",
+            "x": 525,
+            "y": 254,
+            "label": "Firewall"
+          },
+          {
+            "id": "web1",
+            "type": "server",
+            "x": 481,
+            "y": 350,
+            "label": "Web 1"
+          },
+          {
+            "id": "web2",
+            "type": "server",
+            "x": 569,
+            "y": 350,
+            "label": "Web 2"
+          },
+          {
+            "id": "app",
+            "type": "apps",
+            "x": 525,
+            "y": 446,
+            "label": "App"
+          },
+          {
+            "id": "db",
+            "type": "database",
+            "x": 525,
+            "y": 542,
+            "label": "Database"
+          }
+        ],
+        "links": [
+          {
+            "id": "l1",
+            "type": "line",
+            "from": "users",
+            "to": "fw"
+          },
+          {
+            "id": "l2",
+            "type": "line",
+            "from": "fw",
+            "to": "web1"
+          },
+          {
+            "id": "l3",
+            "type": "line",
+            "from": "fw",
+            "to": "web2"
+          },
+          {
+            "id": "l4",
+            "type": "line",
+            "from": "web1",
+            "to": "app"
+          },
+          {
+            "id": "l5",
+            "type": "line",
+            "from": "web2",
+            "to": "app"
+          },
+          {
+            "id": "l6",
+            "type": "line",
+            "from": "app",
+            "to": "db"
+          }
+        ],
+        "anchors": [],
+        "zones": [],
+        "flowPaths": [],
+        "policyMarkers": []
+      }
+    ],
+    "customNodes": []
+  },
+  "sdwan-branch": {
+    "title": "SD-WAN branch",
+    "pages": [
+      {
+        "id": "page0",
+        "name": "Branch",
+        "viewBox": "0 0 1050 700",
+        "linkAttach": {
+          "distribute": true
+        },
+        "nodes": [
+          {
+            "id": "user",
+            "type": "host",
+            "x": 306,
+            "y": 350,
+            "label": "Branch user"
+          },
+          {
+            "id": "ec",
+            "type": "ec",
+            "x": 452,
+            "y": 350,
+            "label": "Edge Connector"
+          },
+          {
+            "id": "pop",
+            "type": "overlayCloud",
+            "x": 598,
+            "y": 350,
+            "label": "SASE PoP"
+          },
+          {
+            "id": "inet",
+            "type": "cloud",
+            "x": 744,
+            "y": 300,
+            "label": "Internet"
+          },
+          {
+            "id": "saas",
+            "type": "saas",
+            "x": 744,
+            "y": 400,
+            "label": "SaaS"
+          }
+        ],
+        "links": [
+          {
+            "id": "l1",
+            "type": "line",
+            "from": "user",
+            "to": "ec"
+          },
+          {
+            "id": "l2",
+            "type": "tunnel",
+            "from": "ec",
+            "to": "pop"
+          },
+          {
+            "id": "l3",
+            "type": "line",
+            "from": "pop",
+            "to": "inet"
+          },
+          {
+            "id": "l4",
+            "type": "line",
+            "from": "pop",
+            "to": "saas"
+          }
+        ],
+        "anchors": [],
+        "zones": [],
+        "flowPaths": [],
+        "policyMarkers": []
+      }
+    ],
+    "customNodes": []
+  },
+  "ztna": {
+    "title": "ZTNA user-to-app",
+    "pages": [
+      {
+        "id": "page0",
+        "name": "ZTNA",
+        "viewBox": "0 0 1050 700",
+        "linkAttach": {
+          "distribute": true
+        },
+        "nodes": [
+          {
+            "id": "user",
+            "type": "host",
+            "x": 139,
+            "y": 350,
+            "label": "User"
+          },
+          {
+            "id": "id",
+            "type": "idcard",
+            "x": 369,
+            "y": 350,
+            "label": "Identity"
+          },
+          {
+            "id": "pop",
+            "type": "overlayCloud",
+            "x": 599,
+            "y": 350,
+            "label": "ZTNA service"
+          },
+          {
+            "id": "conn",
+            "type": "connector",
+            "x": 829,
+            "y": 350,
+            "label": "Connector",
+            "pe": true
+          },
+          {
+            "id": "app",
+            "type": "apps",
+            "x": 993,
+            "y": 350,
+            "label": "Private app"
+          }
+        ],
+        "links": [
+          {
+            "id": "l1",
+            "type": "line",
+            "from": "user",
+            "to": "id"
+          },
+          {
+            "id": "l2",
+            "type": "tunnel",
+            "from": "id",
+            "to": "pop"
+          },
+          {
+            "id": "l3",
+            "type": "tunnel",
+            "from": "pop",
+            "to": "conn"
+          },
+          {
+            "id": "l4",
+            "type": "line",
+            "from": "conn",
+            "to": "app"
+          }
+        ],
+        "anchors": [],
+        "zones": [],
+        "flowPaths": [],
+        "policyMarkers": []
+      }
+    ],
+    "customNodes": []
+  },
+  "firewall-dmz": {
+    "title": "Firewall + DMZ",
+    "pages": [
+      {
+        "id": "page0",
+        "name": "DMZ",
+        "viewBox": "0 0 1050 700",
+        "linkAttach": {
+          "distribute": true
+        },
+        "nodes": [
+          {
+            "id": "inet",
+            "type": "cloud",
+            "x": 306,
+            "y": 350,
+            "label": "Internet"
+          },
+          {
+            "id": "fw",
+            "type": "firewall",
+            "x": 452,
+            "y": 350,
+            "label": "Edge firewall"
+          },
+          {
+            "id": "web",
+            "type": "server",
+            "x": 598,
+            "y": 250,
+            "label": "DMZ web"
+          },
+          {
+            "id": "mail",
+            "type": "server",
+            "x": 598,
+            "y": 350,
+            "label": "DMZ mail"
+          },
+          {
+            "id": "core",
+            "type": "switchEnterprise",
+            "x": 598,
+            "y": 450,
+            "label": "Core"
+          },
+          {
+            "id": "lan",
+            "type": "host",
+            "x": 744,
+            "y": 350,
+            "label": "Internal"
+          }
+        ],
+        "links": [
+          {
+            "id": "l1",
+            "type": "line",
+            "from": "inet",
+            "to": "fw"
+          },
+          {
+            "id": "l2",
+            "type": "line",
+            "from": "fw",
+            "to": "web"
+          },
+          {
+            "id": "l3",
+            "type": "line",
+            "from": "fw",
+            "to": "mail"
+          },
+          {
+            "id": "l4",
+            "type": "line",
+            "from": "fw",
+            "to": "core"
+          },
+          {
+            "id": "l5",
+            "type": "line",
+            "from": "core",
+            "to": "lan"
+          }
+        ],
+        "anchors": [],
+        "zones": [],
+        "flowPaths": [],
+        "policyMarkers": []
+      }
+    ],
+    "customNodes": []
+  },
+  "spine-leaf": {
+    "title": "Spine-leaf fabric",
+    "pages": [
+      {
+        "id": "page0",
+        "name": "Fabric",
+        "viewBox": "0 0 1050 700",
+        "linkAttach": {
+          "distribute": true
+        },
+        "nodes": [
+          {
+            "id": "s1",
+            "type": "switchEnterprise",
+            "x": 431,
+            "y": 276,
+            "label": "Spine 1"
+          },
+          {
+            "id": "s2",
+            "type": "switchEnterprise",
+            "x": 619,
+            "y": 276,
+            "label": "Spine 2"
+          },
+          {
+            "id": "l1",
+            "type": "switch",
+            "x": 243,
+            "y": 424,
+            "label": "L1"
+          },
+          {
+            "id": "l2",
+            "type": "switch",
+            "x": 431,
+            "y": 424,
+            "label": "L2"
+          },
+          {
+            "id": "l3",
+            "type": "switch",
+            "x": 619,
+            "y": 424,
+            "label": "L3"
+          },
+          {
+            "id": "l4",
+            "type": "switch",
+            "x": 807,
+            "y": 424,
+            "label": "L4"
+          }
+        ],
+        "links": [
+          {
+            "id": "l1-s1",
+            "type": "line",
+            "from": "s1",
+            "to": "l1"
+          },
+          {
+            "id": "l1-s2",
+            "type": "line",
+            "from": "s2",
+            "to": "l1"
+          },
+          {
+            "id": "l2-s1",
+            "type": "line",
+            "from": "s1",
+            "to": "l2"
+          },
+          {
+            "id": "l2-s2",
+            "type": "line",
+            "from": "s2",
+            "to": "l2"
+          },
+          {
+            "id": "l3-s1",
+            "type": "line",
+            "from": "s1",
+            "to": "l3"
+          },
+          {
+            "id": "l3-s2",
+            "type": "line",
+            "from": "s2",
+            "to": "l3"
+          },
+          {
+            "id": "l4-s1",
+            "type": "line",
+            "from": "s1",
+            "to": "l4"
+          },
+          {
+            "id": "l4-s2",
+            "type": "line",
+            "from": "s2",
+            "to": "l4"
+          }
+        ],
+        "anchors": [],
+        "zones": [],
+        "flowPaths": [],
+        "policyMarkers": []
+      }
+    ],
+    "customNodes": []
+  },
+  "hub-spoke": {
+    "title": "Hub and spoke",
+    "pages": [
+      {
+        "id": "page0",
+        "name": "Hub & spoke",
+        "viewBox": "0 0 1050 700",
+        "linkAttach": {
+          "distribute": true
+        },
+        "nodes": [
+          {
+            "id": "hub",
+            "type": "overlayCloud",
+            "x": 525,
+            "y": 350,
+            "label": "Hub"
+          },
+          {
+            "id": "site1",
+            "type": "ec",
+            "x": 525,
+            "y": 120,
+            "label": "Site 1"
+          },
+          {
+            "id": "site2",
+            "type": "ec",
+            "x": 742,
+            "y": 235,
+            "label": "Site 2"
+          },
+          {
+            "id": "site3",
+            "type": "ec",
+            "x": 742,
+            "y": 465,
+            "label": "Site 3"
+          },
+          {
+            "id": "site4",
+            "type": "ec",
+            "x": 525,
+            "y": 580,
+            "label": "Site 4"
+          },
+          {
+            "id": "site5",
+            "type": "ec",
+            "x": 308,
+            "y": 465,
+            "label": "Site 5"
+          },
+          {
+            "id": "site6",
+            "type": "ec",
+            "x": 308,
+            "y": 235,
+            "label": "Site 6"
+          }
+        ],
+        "links": [
+          {
+            "id": "t1",
+            "type": "tunnel",
+            "from": "hub",
+            "to": "site1"
+          },
+          {
+            "id": "t2",
+            "type": "tunnel",
+            "from": "hub",
+            "to": "site2"
+          },
+          {
+            "id": "t3",
+            "type": "tunnel",
+            "from": "hub",
+            "to": "site3"
+          },
+          {
+            "id": "t4",
+            "type": "tunnel",
+            "from": "hub",
+            "to": "site4"
+          },
+          {
+            "id": "t5",
+            "type": "tunnel",
+            "from": "hub",
+            "to": "site5"
+          },
+          {
+            "id": "t6",
+            "type": "tunnel",
+            "from": "hub",
+            "to": "site6"
+          }
+        ],
+        "anchors": [],
+        "zones": [],
+        "flowPaths": [],
+        "policyMarkers": []
+      }
+    ],
+    "customNodes": []
+  }
+}

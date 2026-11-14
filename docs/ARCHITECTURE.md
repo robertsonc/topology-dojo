@@ -83,6 +83,14 @@ connect/                the live-data connector layer: types.ts (the vendor-neut
                         proposal 0010). Credentials come from env/secrets only —
                         never through tool arguments.
 
+stories/                scenario stories (initiative T): types.ts (the
+                        FlowScenario contract — a base fabric plus named steps
+                        of changes — and its validator), compile.ts
+                        (compileFlowStory: one full page per step), frame.ts
+                        (the one layout every page shares), annotate.ts (what
+                        marks a failure on its page). A library with no MCP
+                        tool or GUI yet. See "Scenario stories" below.
+
 mcp/                    MCP server: tools.ts (pure handlers), export-tools.ts
                         (export_topology / view_topology), hardware-tools.ts,
                         store.ts (in-memory registry), persist-store.ts (durable
@@ -150,6 +158,43 @@ A **Page** is a complete, standalone frame. There is no inheritance between
 pages: `duplicatePage` is a deep `structuredClone` with a fresh id, so editing
 one frame never affects another. This is the deliberate simplicity of the
 flipbook — the cost is no automatic tweening, which we accept.
+
+### Scenario stories
+
+`src/stories` turns a `FlowScenario` into a flipbook with one page per step
+(`compileFlowStory`). A scenario is a fabric state — plain appliance, tunnel
+and flow records, from a provider snapshot or from the SD-WAN generator
+(`sdwanFabricRecords`) — plus an ordered list of named steps, each a set of
+changes to those records: this tunnel goes down, this flow takes that
+tunnel. It is pure and needs no provider.
+
+**The steps are changes; the pages are not.** The compiler applies the
+changes to the records to get the fabric state at each step, then compiles
+every state from scratch with the flow compiler (`compileFabric` +
+`compileFlow`, unchanged). No page is stored as a difference from another,
+refers to another, or is derived from another page's content: delete or
+rewrite one and the rest are untouched. That is the rule above, kept on
+purpose. A change to `src/stories` that needs one page to read another is
+the wrong change.
+
+What pages have in common is computed, never stored as a link between them:
+
+- **Element ids.** The flow compiler's ids are deterministic, so the same
+  appliance, tunnel or flow has the same id on every page.
+- **Node positions.** Before any page, `frame.ts` compiles every state onto
+  one throwaway page, so that it holds each node that appears anywhere in
+  the story, and places the nodes once: spokes in a column, hubs facing
+  them, endpoints beside their appliance. Each page copies its x/y from
+  that frame, so a node does not move when the story flips. (Laying each
+  page out on its own moves nodes whenever a flow comes or goes. Converging
+  one page into the next re-seeds positions and leaves stale keys;
+  `src/connect/compile.test.ts` pins both.)
+
+`annotate.ts` then marks the step on its own page, with vocabulary the
+document already had: `status` for an unreachable appliance, a `deny` marker
+where a down tunnel leaves, a `redirect` marker on the appliance a rerouted
+flow now leaves through, a stopped red path for a flow that cannot flow, and
+the page's `emphasis` on whatever the step changed.
 
 Every element carries a stable string `id` (unique within its page). `customNodes`
 are user-designed node types stored **as data** (`CustomNodeSpec`), not generated

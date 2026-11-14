@@ -22,6 +22,19 @@ const fixture = (name: string): TopologyDocument =>
   ) as TopologyDocument;
 
 describe('exportPng', () => {
+  it('draws the same pixels with the unused definitions pruned', async () => {
+    // The raster exports render calm + pruneDefs. Pruning must not move a
+    // pixel: an unreferenced definition draws nothing.
+    const r = await nodeRasterizer();
+    const doc = sampleDocument();
+    const plain = r.rasterize(render(doc, 0, { calm: true }), 1).pixels;
+    const pruned = r.rasterize(
+      render(doc, 0, { calm: true, pruneDefs: true }),
+      1,
+    ).pixels;
+    expect(Buffer.from(pruned).equals(Buffer.from(plain))).toBe(true);
+  });
+
   it('renders the sample at 2× with a 192-DPI stamp by default', async () => {
     const r = await nodeRasterizer();
     const out = exportPng(sampleDocument(), 0, render, r, {

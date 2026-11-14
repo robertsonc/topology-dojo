@@ -20,6 +20,8 @@
  * reaches the overlay's own controls (inputs, menus, arrows).
  */
 
+import { isImeKey } from './ime.js';
+
 interface OverlayEntry {
   root: HTMLElement;
   close: () => void;
@@ -89,6 +91,9 @@ export function registerOverlay(
 function onKeydown(e: KeyboardEvent): void {
   const top = stack[stack.length - 1];
   if (!top) return;
+  // Escape that discards an IME candidate must not also close the dialog the
+  // word was being typed in.
+  if (isImeKey(e)) return;
   if (e.key === 'Escape') {
     e.preventDefault();
     e.stopPropagation();

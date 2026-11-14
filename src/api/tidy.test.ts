@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { Page } from '../pages/model.js';
 import { createDocument } from './builder.js';
 import { analyzeLayout } from './layout.js';
 import {
@@ -195,5 +196,60 @@ describe('tidy (auto-layout)', () => {
     carryAttachments(page, orig);
     expect(page.anchors[0]!).toMatchObject({ x: 378, y: 240 });
     expect(page.links[0]!.waypoints![0]!).toMatchObject({ x: 380, y: 270 });
+  });
+});
+
+describe('a locked node is never moved by a layout pass', () => {
+  /** Three nodes piled on one spot; `b` is locked off-grid. */
+  const pile = (): Page =>
+    ({
+      id: 'p',
+      name: 'F',
+      viewBox: '0 0 1000 700',
+      nodes: [
+        { id: 'a', type: 'router', x: 500, y: 300 },
+        { id: 'b', type: 'router', x: 503, y: 297, locked: true },
+        { id: 'c', type: 'router', x: 506, y: 303 },
+      ],
+      links: [],
+      anchors: [],
+      zones: [],
+      flowPaths: [],
+      policyMarkers: [],
+    }) as unknown as Page;
+
+  it('tidy separates the others around it', () => {
+    const p = pile();
+    tidyPage(p);
+    expect(p.nodes[1]).toMatchObject({ x: 503, y: 297 }); // not even snapped
+    // Piled up they overlap; after the pass the other two have made room.
+    expect(
+      overlapWarnings({ title: 't', customNodes: [], pages: [pile()] }),
+    ).toBeGreaterThan(0);
+    expect(overlapWarnings({ title: 't', customNodes: [], pages: [p] })).toBe(
+      0,
+    );
+  });
+
+  it('tidy leaves two locked nodes that overlap alone', () => {
+    const p = pile();
+    (p.nodes[0] as { locked?: boolean }).locked = true;
+    tidyPage(p);
+    expect(p.nodes[0]).toMatchObject({ x: 500, y: 300 });
+    expect(p.nodes[1]).toMatchObject({ x: 503, y: 297 });
+  });
+
+  it('balance aligns a row onto its locked member and does not re-centre', () => {
+    const p = pile();
+    p.nodes[0]!.x = 200;
+    p.nodes[0]!.y = 301;
+    p.nodes[2]!.x = 800;
+    p.nodes[2]!.y = 294;
+    balancePage(p);
+    // The locked node's row (y 297) is the row the other two join.
+    expect(p.nodes.map((n) => n.y)).toEqual([297, 297, 297]);
+    expect(p.nodes[1]).toMatchObject({ x: 503, y: 297 });
+    // No uniform shift: the outer nodes keep their x.
+    expect(p.nodes.map((n) => n.x)).toEqual([200, 503, 800]);
   });
 });
