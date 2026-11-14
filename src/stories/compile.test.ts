@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { analyzeLayout } from '../api/layout.js';
+import { POLICY_MARKER_TYPES } from '../api/markers.js';
 import { validateDocument } from '../api/validate.js';
 import {
   compileFabric,
@@ -16,6 +17,7 @@ import { MockProvider } from '../connect/mock.js';
 import type { FlowRecord } from '../connect/types.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import { parseDoc, serializeDoc } from '../pages/persist.js';
+import { renderDocumentToSVG } from '../server/render.js';
 import { STORY_EPOCH, compileFlowStory } from './compile.js';
 import {
   ScenarioError,
@@ -498,6 +500,329 @@ describe('the frame fits other fabrics too', () => {
     expect(problems(mesh)).toEqual([]);
     expect(mesh.pages[0]!.zones.map((z) => z.nodes.length).sort()).toEqual([
       1, 2,
+    ]);
+  });
+});
+
+/* ── Packet T3: what changed, readable from the page alone ───────────── */
+
+describe('failure-moment annotations', () => {
+  const DOWN = '#fc6161';
+  const AMBER = '#e0a44a';
+  const GREEN = '#01a982';
+  const downMarker = {
+    id: 'story_down_ne_amer-br01',
+    nodeId: 'ne_amer-br01',
+    type: 'deny',
+    label: 'Tunnel down',
+    color: DOWN,
+    align: 'NW',
+  };
+  const primaryLink = 'lk_ov_amer-br01_amer-hub01';
+  const backupLink = 'lk_ov_amer-br01_amer-hub02';
+  const callPath = 'fp_amer-br01_voip-1';
+  const callHosts = ['host_10_1_1_20', 'host_10_0_0_80'];
+
+  it('the worked example: each step shows what it changed', () => {
+    const [normal, down, reroute, restored] = compileFlowStory(workedExample())
+      .pages as [Page, Page, Page, Page];
+
+    // Normal — nothing to point at: no spotlight, no marker, the call runs.
+    expect(normal.emphasis).toBeUndefined();
+    expect(normal.policyMarkers).toEqual([]);
+    expect(normal.flowPaths[0]).toMatchObject({
+      color: GREEN,
+      animation: 'particles',
+    });
+
+    // Tunnel down — the link is red (the flow compiler's doing), a ✕ sits
+    // on the appliance it leaves from, the call on it is drawn stopped in
+    // the same red, and the tunnel, its ends and the call's endpoints are
+    // the spotlight.
+    expect(down.links.find((l) => l.id === primaryLink)!.color).toBe(DOWN);
+    expect(down.policyMarkers).toEqual([downMarker]);
+    expect(down.flowPaths[0]).toMatchObject({
+      color: DOWN,
+      animation: 'dashed',
+    });
+    expect(down.emphasis).toEqual([
+      'ne_amer-hub01',
+      'ne_amer-br01',
+      ...callHosts,
+      primaryLink,
+    ]);
+
+    // Reroute — the call runs again, through hub 2, and hub 2 carries the
+    // ↪ tied to the call's path. The tunnel is still down, so still marked.
+    // The path it left and the path it took are both in the spotlight.
+    expect(reroute.flowPaths[0]).toMatchObject({
+      color: GREEN,
+      animation: 'particles',
+    });
+    expect(reroute.policyMarkers).toEqual([
+      downMarker,
+      {
+        id: 'story_reroute_ne_amer-hub02',
+        nodeId: 'ne_amer-hub02',
+        type: 'redirect',
+        label: 'Rerouted here',
+        color: AMBER,
+        flowPathId: callPath,
+        align: 'NE',
+      },
+    ]);
+    expect(reroute.emphasis).toEqual([
+      'ne_amer-hub01',
+      'ne_amer-hub02',
+      'ne_amer-br01',
+      ...callHosts,
+      primaryLink,
+      backupLink,
+    ]);
+
+    // Restored — the ✕ is gone with the failure; the ↪ is on hub 1, where
+    // the call went back to.
+    expect(restored.links.find((l) => l.id === primaryLink)!.color).toBe(GREEN);
+    expect(restored.policyMarkers).toEqual([
+      {
+        id: 'story_reroute_ne_amer-hub01',
+        nodeId: 'ne_amer-hub01',
+        type: 'redirect',
+        label: 'Rerouted here',
+        color: AMBER,
+        flowPathId: callPath,
+        align: 'NE',
+      },
+    ]);
+    expect(restored.emphasis).toEqual(reroute.emphasis);
+  });
+
+  it('a step that changes something always has a spotlight and a caption; one that does not has no spotlight', () => {
+    for (const scenario of [workedExample(), comeAndGo()]) {
+      const { pages } = compileFlowStory(scenario);
+      scenario.steps.forEach((step, i) => {
+        const page = pages[i]!;
+        expect(page.caption).toBeTruthy();
+        if (step.changes?.length) expect(page.emphasis).not.toHaveLength(0);
+        else expect(page).not.toHaveProperty('emphasis');
+      });
+    }
+  });
+
+  it('points only at what is on its own page', () => {
+    for (const scenario of [workedExample(), comeAndGo()])
+      for (const page of compileFlowStory(scenario).pages) {
+        const nodes = new Set(page.nodes.map((n) => n.id));
+        const spotlightable = new Set([
+          ...nodes,
+          ...page.links.map((l) => l.id),
+        ]);
+        const paths = new Set(page.flowPaths.map((f) => f.id));
+        for (const id of page.emphasis ?? [])
+          expect(spotlightable.has(id), `${page.name}: ${id}`).toBe(true);
+        for (const marker of page.policyMarkers) {
+          expect(nodes.has(marker.nodeId), marker.id).toBe(true);
+          if (marker.flowPathId)
+            expect(paths.has(marker.flowPathId), marker.id).toBe(true);
+        }
+      }
+  });
+
+  it('adds no marker type: deny and redirect are in the catalog already', () => {
+    const types = compileFlowStory(workedExample()).pages.flatMap((p) =>
+      p.policyMarkers.map((m) => m.type),
+    );
+    expect([...new Set(types)].sort()).toEqual(['deny', 'redirect']);
+    for (const type of types) expect(POLICY_MARKER_TYPES).toContain(type);
+  });
+
+  it('a flow that starts or ends is spotlighted where it runs, or ran', () => {
+    const [, starts, callEnds] = compileFlowStory(comeAndGo()).pages as [
+      Page,
+      Page,
+      Page,
+    ];
+    expect(starts.emphasis).toEqual([
+      'ne_amer-hub02',
+      'ne_amer-br02',
+      'host_10_1_2_30',
+      'host_10_0_0_90',
+      'lk_ov_amer-br02_amer-hub02',
+    ]);
+    // The call's endpoints left the page with it; its appliances and its
+    // tunnel are what is left to point at.
+    expect(callEnds.emphasis).toEqual([
+      'ne_amer-hub01',
+      'ne_amer-br01',
+      primaryLink,
+    ]);
+    expect(callEnds.caption).toBe('voip 10.1.1.20 to 10.0.0.80 ends.');
+  });
+
+  it('an appliance that goes down: its LED, the flows through it, the spotlight', () => {
+    const scenario = workedExample();
+    scenario.steps = [
+      { name: 'Normal' },
+      {
+        name: 'Hub 1 down',
+        changes: [
+          {
+            kind: 'set-appliance',
+            applianceId: 'amer-hub01',
+            set: { reachable: false },
+          },
+        ],
+      },
+      {
+        name: 'Hub 1 back',
+        changes: [
+          {
+            kind: 'set-appliance',
+            applianceId: 'amer-hub01',
+            set: { reachable: true },
+          },
+        ],
+      },
+    ];
+    const [normal, down, back] = compileFlowStory(scenario).pages as [
+      Page,
+      Page,
+      Page,
+    ];
+    const hub = (page: Page) =>
+      page.nodes.find((n) => n.id === 'ne_amer-hub01')!;
+    // The generator says nothing about reachability, so no LED to start with.
+    expect(hub(normal).status).toBeUndefined();
+    expect(hub(down).status).toBe('down');
+    expect(hub(back).status).toBe('ok');
+    // The call runs through the dead hub, so it is drawn stopped.
+    expect(down.flowPaths[0]).toMatchObject({
+      color: DOWN,
+      animation: 'dashed',
+    });
+    expect(back.flowPaths[0]).toMatchObject({ color: GREEN });
+    expect(down.emphasis).toEqual([
+      'ne_amer-hub01',
+      'ne_amer-br01',
+      ...callHosts,
+      primaryLink,
+    ]);
+    expect(down.caption).toBe('amer-hub01-ec goes down.');
+    expect(back.caption).toBe('amer-hub01-ec comes back.');
+  });
+
+  it('counts per appliance instead of piling markers up', () => {
+    const scenario = workedExample();
+    const second: FlowRecord = {
+      ...call('ov:amer-br02:amer-hub01'),
+      id: 'web-1',
+      applianceId: 'amer-br02',
+      srcIp: '10.1.2.20',
+    };
+    scenario.steps = [
+      { name: 'Normal', changes: [{ kind: 'add-flow', flow: second }] },
+      {
+        name: 'Hub 1 unreachable from two branches',
+        changes: [
+          { kind: 'set-tunnel', tunnelId: PRIMARY, set: { status: 'down' } },
+          {
+            kind: 'set-tunnel',
+            tunnelId: 'ov:amer-br02:amer-hub01',
+            set: { status: 'down' },
+          },
+          { kind: 'set-tunnel', tunnelId: BACKUP, set: { status: 'down' } },
+        ],
+      },
+      {
+        name: 'Both reroute',
+        changes: [
+          { kind: 'set-tunnel', tunnelId: BACKUP, set: { status: 'up' } },
+          { kind: 'set-flow', flow: CALL, set: { outboundTunnel: BACKUP } },
+          {
+            kind: 'set-flow',
+            flow: { applianceId: 'amer-br02', flowId: 'web-1' },
+            set: { outboundTunnel: 'ov:amer-br02:amer-hub02' },
+          },
+        ],
+      },
+    ];
+    const doc = compileFlowStory(scenario);
+    const labels = (page: Page) =>
+      page.policyMarkers.map((m) => [m.nodeId, m.type, m.label]);
+    expect(labels(doc.pages[1]!)).toEqual([
+      ['ne_amer-br01', 'deny', '2 tunnels down'],
+      ['ne_amer-br02', 'deny', 'Tunnel down'],
+    ]);
+    expect(labels(doc.pages[2]!)).toEqual([
+      ['ne_amer-br01', 'deny', 'Tunnel down'],
+      ['ne_amer-br02', 'deny', 'Tunnel down'],
+      ['ne_amer-hub02', 'redirect', '2 flows rerouted here'],
+    ]);
+    // One marker cannot name two flow paths, so this one names none.
+    expect(doc.pages[2]!.policyMarkers[2]).not.toHaveProperty('flowPathId');
+    expect(problems(doc)).toEqual([]);
+  });
+
+  it('a flow that changes tunnel but not hub is rerouted too', () => {
+    const fabric = sdwanFabricRecords({
+      vendor: 'edgeconnect',
+      hubsPerRegion: 1,
+      branchesPerRegion: 1,
+      transports: ['inet', 'mpls'],
+    });
+    const inet = 'ul:amer-br01:amer-hub01:INET1';
+    const mpls = 'ul:amer-br01:amer-hub01:MPLS1';
+    const doc = compileFlowStory({
+      system: SYNTHETIC_SYSTEM,
+      base: { ...fabric, flows: [call(inet)] },
+      steps: [
+        { name: 'On Internet' },
+        {
+          name: 'Onto MPLS',
+          changes: [
+            { kind: 'set-flow', flow: CALL, set: { outboundTunnel: mpls } },
+          ],
+        },
+      ],
+    });
+    const page = doc.pages[1]!;
+    expect(page.caption).toBe(
+      'voip 10.1.1.20 to 10.0.0.80 moves to another tunnel to amer-hub01-ec.',
+    );
+    expect(page.policyMarkers).toMatchObject([
+      { nodeId: 'ne_amer-hub01', type: 'redirect', label: 'Rerouted here' },
+    ]);
+    expect(page.emphasis).toEqual(
+      expect.arrayContaining([
+        'lk_ul_amer-br01_amer-hub01_INET1',
+        'lk_ul_amer-br01_amer-hub01_MPLS1',
+      ]),
+    );
+  });
+
+  it('reaches the picture: every page renders, and the failure is drawn', () => {
+    const doc = compileFlowStory(workedExample());
+    const svgs = doc.pages.map((_, i) =>
+      renderDocumentToSVG(doc, i, { profile: 'clean', theme: 'light' }),
+    );
+    for (const svg of svgs) expect(svg).toContain('data-tds-flowpath=');
+    const marker = (id: string) => `data-tds-marker="${id}"`;
+    expect(svgs[0]).not.toContain('data-tds-marker=');
+    expect(svgs[1]).toContain(marker('story_down_ne_amer-br01'));
+    expect(svgs[2]).toContain(marker('story_down_ne_amer-br01'));
+    expect(svgs[2]).toContain(marker('story_reroute_ne_amer-hub02'));
+    expect(svgs[3]).toContain(marker('story_reroute_ne_amer-hub01'));
+    expect(svgs[3]).not.toContain(marker('story_down_ne_amer-br01'));
+    // The down colour is on the page only while the tunnel is down (the
+    // engine's own colours, so the default theme).
+    const dark = doc.pages.map((_, i) =>
+      renderDocumentToSVG(doc, i, { profile: 'clean' }),
+    );
+    expect(dark.map((svg) => svg.includes(DOWN))).toEqual([
+      false,
+      true,
+      true,
+      false,
     ]);
   });
 });

@@ -5,7 +5,7 @@
  * NO INHERITANCE. A page is never stored as a difference from another page
  * and never refers to one. Each step's fabric state is compiled from
  * scratch by the flow compiler — `compileFabric` + `compileFlow`, the calls
- * `build_flow_topology` makes, used as they are — and then placed.
+ * `build_flow_topology` makes, used as they are — then placed and annotated.
  * Pages share ids (the same appliance is `ne_…` on each) and nothing else:
  * delete or rewrite one and the others are untouched
  * (docs/decisions/0001-flipbook-vs-beats.md, DESIGN.md #1).
@@ -34,6 +34,7 @@ import type { FlowRecord, TunnelRecord } from '../connect/types.js';
 import { emptyDocument } from '../api/builder.js';
 import { TEXT_LIMITS } from '../api/text.js';
 import type { TopologyDocument } from '../pages/model.js';
+import { annotateStep } from './annotate.js';
 import { layOutFrame } from './frame.js';
 import {
   farEnd,
@@ -83,6 +84,7 @@ export function compileFlowStory(scenario: FlowScenario): TopologyDocument {
     if (duration !== undefined) page.duration = duration;
     if (scenario.playback?.transition)
       page.transition = scenario.playback.transition;
+    annotateStep(page, step, before, after);
     // The layers every state declares; kept from the first compile.
     if (i === 0 && compiled.layers) story.layers = compiled.layers;
     story.pages.push(page);
