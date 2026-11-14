@@ -115,6 +115,11 @@ import {
 import { isImeKey } from './ui/ime.js';
 import { importConfirmText } from './ui/replace-document.js';
 import { problemsDockView } from './ui/problems-dock.js';
+import {
+  typeOptionGroups,
+  type TypeChoice,
+  type TypeOption,
+} from './ui/type-options.js';
 import { saveChip, type SaveChip } from './ui/save-status.js';
 import { checkCustomTypeName, uniqueTypeName } from './ui/custom-type-name.js';
 import {
@@ -2642,14 +2647,19 @@ function wireMeta(_meta?: Record<string, string | number | boolean>): void {
   );
 }
 
-function typeRow(current: string, types: string[]): string {
-  const opts = types.includes(current) ? types : [current, ...types];
-  return `<label class="insp-row"><span>Type</span><select id="i-type">${opts
-    .map(
-      (t) =>
-        `<option value="${esc(t)}" ${t === current ? 'selected' : ''}>${esc(t)}</option>`,
+/** The Type dropdown: types by their library label, under the library's
+ * category headings (see typeOptionGroups). */
+function typeRow(current: string, choices: readonly TypeChoice[]): string {
+  const option = (o: TypeOption): string =>
+    `<option value="${esc(o.value)}"${o.selected ? ' selected' : ''}>${esc(o.label)}</option>`;
+  const body = typeOptionGroups(current, choices)
+    .map((g) =>
+      g.group === null
+        ? g.options.map(option).join('')
+        : `<optgroup label="${esc(g.group)}">${g.options.map(option).join('')}</optgroup>`,
     )
-    .join('')}</select></label>`;
+    .join('');
+  return `<label class="insp-row"><span>Type</span><select id="i-type">${body}</select></label>`;
 }
 
 /** A named, ordered bucket of catalog field keys for the inspector. */
@@ -3272,24 +3282,22 @@ function renderInspector(): void {
   let html = '';
   if (node) {
     const info = getNodeType(node.type, doc.customNodes);
-    const types = nodeCatalog(doc.customNodes).map((n) => n.type);
     html +=
       `<div class="insp-h">Node</div>` +
-      typeRow(node.type, types) +
+      typeRow(node.type, nodeCatalog(doc.customNodes)) +
       groupedFieldsHtml(info, node as Record<string, unknown>, NODE_GROUPS) +
       metaHtml(node.meta) +
       arrangeRow() +
       formatRow();
   } else if (link) {
     const info = getLinkType(link.type);
-    const types = linkCatalog().map((l) => l.type);
     const linkCount = editor.selectedLinkIds().length;
     html +=
       `<div class="insp-h">Link</div>` +
       (linkCount > 1
         ? `<div class="insp-hint">${linkCount} links selected. Type, colour, style and layer changes apply to all; everything else edits this one.</div>`
         : '') +
-      typeRow(link.type, types) +
+      typeRow(link.type, linkCatalog()) +
       endpointRow('from', link.from, link.to) +
       endpointRow('to', link.to, link.from) +
       `<div class="insp-row"><span>Endpoints</span><span class="insp-btns"><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button>${

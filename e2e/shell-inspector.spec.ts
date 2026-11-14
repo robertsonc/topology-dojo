@@ -417,3 +417,41 @@ test('an annotation without a source reference shows no source row', async ({
   await expect(editor.locator('[data-akey="source"]')).toHaveCount(0);
   await expect(editor.locator('[data-asource]')).toHaveCount(0);
 });
+
+/* ── the Type dropdown ───────────────────────────────────────────────────── */
+
+test('the Type dropdown lists types by label, grouped like the node library', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await clickNode(page, 'fw');
+  const type = page.locator('#i-type');
+  await expect(type.locator('option:checked')).toHaveText('Firewall');
+  await expect(type).toHaveValue('firewall');
+
+  // The same headings, in the same order, as the library beside it.
+  const headings = await page
+    .locator('#palette-list .palette-h')
+    .allInnerTexts();
+  const groups = await type
+    .locator('optgroup')
+    .evaluateAll((els) => els.map((el) => (el as HTMLOptGroupElement).label));
+  expect(groups.map((g) => g.toUpperCase())).toEqual(
+    headings.map((h) => h.toUpperCase()),
+  );
+
+  // Picking by label changes the type.
+  await type.selectOption({ label: 'Router' });
+  await expect
+    .poll(async () => (await savedElement(page, 'nodes', 'fw')).type)
+    .toBe('router');
+  await expect(page.locator('#i-type option:checked')).toHaveText('Router');
+
+  // A link's types have no categories: labels, no groups.
+  await clickLink(page, 'ec-fw');
+  await expect(page.locator('#i-type optgroup')).toHaveCount(0);
+  const linkType = await page.locator('#i-type').inputValue();
+  const shown = await page.locator('#i-type option:checked').innerText();
+  expect(shown.toLowerCase().replace(/\s+/g, '')).toBe(linkType.toLowerCase());
+  expect(shown[0]).toBe(shown[0]!.toUpperCase());
+});
