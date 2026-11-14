@@ -176,3 +176,82 @@ describe('a node caption owns its presses (LNK-02)', () => {
     expect(h.editor.page.nodes).toHaveLength(1);
   });
 });
+
+describe('connection dots leave the middle of a small node alone (LNK-03)', () => {
+  // 44 × 16: at 100% the old ±9 px dot boxes covered its whole height.
+  const thin = (): NodeConfig => ({
+    id: 'sw',
+    type: 'switch',
+    x: 400,
+    y: 300,
+    label: 'SW',
+  });
+  const router = (x: number, y: number, id = 'r'): NodeConfig => ({
+    id,
+    type: 'router',
+    x,
+    y,
+    label: id,
+  });
+
+  it('a thin node drags by its centre', () => {
+    const h = harness(onePage(thin()));
+    h.drag({ x: 400, y: 300 }, { x: 460, y: 340 });
+    expect(h.editor.page.nodes[0]).toMatchObject({ x: 460, y: 340 });
+    expect(h.editor.page.links).toHaveLength(0);
+  });
+
+  it('a double-click on the centre of a thin node renames it', () => {
+    const h = harness(onePage(thin()));
+    h.click(400, 300);
+    h.click(400, 300);
+    expect(h.requests.map((r) => [r.kind, r.id])).toEqual([['node', 'sw']]);
+  });
+
+  it('zoomed out to a third, a node still drags and renames by its centre', () => {
+    // The 36 × 36 router is 12 px on screen; a dot is drawn 10 px across.
+    const drag = harness(onePage(router(1500, 1000)), 3000);
+    drag.drag({ x: 1500, y: 1000 }, { x: 1700, y: 1200 });
+    expect(drag.editor.page.nodes[0]).toMatchObject({ x: 1700, y: 1200 });
+
+    const rename = harness(onePage(router(1500, 1000)), 3000);
+    rename.click(1500, 1000);
+    rename.click(1500, 1000);
+    expect(rename.requests.map((r) => r.kind)).toEqual(['node']);
+  });
+
+  it('on a normal-sized node the whole drawn dot starts a link, and so does a near miss outside', () => {
+    // Router right edge is at x = 418; the dot is drawn 5 units around it.
+    for (const pressX of [414, 418, 422, 426]) {
+      const page = onePage(router(400, 300), router(700, 300, 'other'));
+      const h = harness(page);
+      h.drag({ x: pressX, y: 300 }, { x: 700, y: 300 });
+      expect(page.links, `press at x=${pressX}`).toMatchObject([
+        { from: 'r', to: 'other' },
+      ]);
+      expect(page.nodes[0]).toMatchObject({ x: 400, y: 300 });
+    }
+  });
+
+  it('zoomed out, a dot is still grabbed from just outside the glyph', () => {
+    const page = onePage(router(1500, 1000), router(2100, 1000, 'other'));
+    const h = harness(page, 3000);
+    h.drag({ x: 1530, y: 1000 }, { x: 2100, y: 1000 });
+    expect(page.links).toMatchObject([{ from: 'r', to: 'other' }]);
+  });
+
+  it('a press inside another node goes to that node, not to a neighbour’s dot or chevron', () => {
+    // `r` is selected, so its dots and chevrons are live; `near` sits where
+    // r's east chevron floats (36 units right of r's edge at 100%).
+    const page = onePage(router(400, 300), router(450, 300, 'near'));
+    const h = harness(page);
+    h.click(400, 300);
+    expect(h.editor.getSelectedNode()?.id).toBe('r');
+    // (440, 300) is inside `near` (its left edge is x = 432) and inside the
+    // press area of r's east chevron (centre x = 439).
+    h.drag({ x: 440, y: 300 }, { x: 530, y: 400 });
+    expect(page.nodes).toHaveLength(2);
+    expect(page.links).toHaveLength(0);
+    expect(page.nodes[1]).toMatchObject({ id: 'near', x: 540, y: 400 });
+  });
+});

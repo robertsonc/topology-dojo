@@ -184,6 +184,12 @@ const SHARED_LINK_KEYS: ReadonlySet<string> = new Set([
   'locked',
 ]);
 
+/**
+ * How far into its glyph a connection dot can be grabbed, as a fraction of
+ * the glyph's half-extent on that axis (see `connectionDotHit`).
+ */
+const DOT_DEPTH = 0.3;
+
 /** Ring colour for `Editor.spotlight` (the Problems panel's warning amber). */
 const SPOTLIGHT = '#e0a44a';
 
@@ -1440,12 +1446,15 @@ export class Editor {
   }
 
   /**
-   * The edge-midpoint connection points of a node, in user units. A dot that
-   * would sit on the node's own caption is left out: the caption owns that
-   * spot (a press there selects, drags or renames the node), so a dot drawn
-   * on it could never be grabbed.
+   * The edge-midpoint connection points of a node, in user units, each with
+   * the outward direction of the edge it sits on. A dot that would sit on the
+   * node's own caption is left out: the caption owns that spot (a press there
+   * selects, drags or renames the node), so a dot drawn on it could never be
+   * grabbed.
    */
-  private connectionDots(id: string): { x: number; y: number }[] {
+  private connectionDots(
+    id: string,
+  ): { x: number; y: number; ox: number; oy: number }[] {
     const n = this.page.nodes.find((m) => m.id === id);
     if (!n) return [];
     const b = nodeBounds(n);
@@ -1453,24 +1462,48 @@ export class Editor {
     const cy = b.y + b.h / 2;
     const caption = nodeCaptionRect(n);
     return [
-      { x: cx, y: b.y }, // top
-      { x: b.x + b.w, y: cy }, // right
-      { x: cx, y: b.y + b.h }, // bottom
-      { x: b.x, y: cy }, // left
+      { x: cx, y: b.y, ox: 0, oy: -1 }, // top
+      { x: b.x + b.w, y: cy, ox: 1, oy: 0 }, // right
+      { x: cx, y: b.y + b.h, ox: 0, oy: 1 }, // bottom
+      { x: b.x, y: cy, ox: -1, oy: 0 }, // left
     ].filter((d) => !caption || !rectHolds(caption, d));
   }
 
   /**
    * If `p` lands on a connection dot of the hovered or a selected node, return
    * that node's id (so a link can be dragged out from it), else null.
+   *
+   * Outside the glyph and along its edge the grab distance is forgiving (≈9
+   * screen px). INTO the glyph a dot reaches only as far as it is drawn, and
+   * never more than `DOT_DEPTH` of the way to the centre: a fixed-size box
+   * there covers the whole of a thin or zoomed-out node, and then the node
+   * can no longer be dragged or double-clicked by its middle. `body` is the
+   * node whose glyph holds `p`, if any: inside another node's glyph that node
+   * wins, whatever dot of a neighbour reaches over it.
    */
-  private connectionDotHit(p: { x: number; y: number }): string | null {
-    const r = this.dotRadius() * 1.8; // forgiving grab radius
+  private connectionDotHit(
+    p: { x: number; y: number },
+    body: string | null = null,
+  ): string | null {
+    const reach = this.dotRadius() * 1.8;
     const ids = new Set<string>(this.sel);
     if (this.hoverNode) ids.add(this.hoverNode);
     for (const id of ids) {
+      if (body !== null && body !== id) continue;
+      const n = this.page.nodes.find((m) => m.id === id);
+      if (!n) continue;
+      const h = nodeHalf(n);
       for (const d of this.connectionDots(id)) {
-        if (Math.abs(p.x - d.x) <= r && Math.abs(p.y - d.y) <= r) return id;
+        // Distance from the dot along the edge's outward direction (negative
+        // = into the glyph) and sideways along the edge.
+        const out = (p.x - d.x) * d.ox + (p.y - d.y) * d.oy;
+        const along =
+          Math.abs((p.x - d.x) * d.oy) + Math.abs((p.y - d.y) * d.ox);
+        const depth = Math.min(
+          this.dotRadius(),
+          (d.ox !== 0 ? h.w : h.h) * DOT_DEPTH,
+        );
+        if (along <= reach && out <= reach && out >= -depth) return id;
       }
     }
     return null;
@@ -1566,18 +1599,23 @@ export class Editor {
 
   /**
    * The connect affordance a press at `p` would grab: a quick-connect chevron
-   * (`dir` set) or a connection dot, on a hovered or selected node. A node
-   * caption under the pointer wins over both: the user is pointing at the
-   * name, so the press selects, drags or (double-click) renames that node.
+   * (`dir` set) or a connection dot, on a hovered or selected node. Two
+   * things under the pointer win over both, because they are what the user
+   * is pointing at: a node caption (the press selects, drags or renames that
+   * node) and the glyph of a different node than the affordance belongs to
+   * (a neighbour's dot or chevron reaching over a node must not swallow a
+   * press on it).
    */
   private connectAffordanceAt(p: {
     x: number;
     y: number;
   }): { id: string; dir?: 'n' | 'e' | 's' | 'w' } | null {
-    if (hitTestNodeLabel(this.hitPage(), p.x, p.y) !== null) return null;
+    const page = this.hitPage();
+    if (hitTestNodeLabel(page, p.x, p.y) !== null) return null;
+    const body = hitTestNode(page, p.x, p.y, 0);
     const chevron = this.chevronHit(p);
-    if (chevron) return chevron;
-    const dot = this.connectionDotHit(p);
+    if (chevron && (body === null || body === chevron.id)) return chevron;
+    const dot = this.connectionDotHit(p, body);
     return dot === null ? null : { id: dot };
   }
 
