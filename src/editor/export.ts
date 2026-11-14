@@ -10,6 +10,8 @@ import { renderPageSVG, type RenderOptions } from '../vendor/topology-ds.js';
 import type { Page } from '../pages/model.js';
 import { viewBoxAttr } from '../api/layout.js';
 import { ROOT_FONT_ATTR } from '../render/fonts.js';
+import { nodeBounds } from '../api/geometry.js';
+import { nodeLabelRect } from '../render/label-placement.js';
 import { embedDiagramFont } from './export-fonts.js';
 import {
   applyRenderTheme,
@@ -279,7 +281,17 @@ export function selectionPage(
     maxX = Math.max(maxX, x + m);
     maxY = Math.max(maxY, y + m);
   };
-  for (const n of nodes) grow(n.x, n.y, 56); // node art + label allowance
+  for (const n of nodes) {
+    grow(n.x, n.y, 56); // node art + label allowance
+    // A wide node (a text box, a cloud) or a label placed beside it reaches
+    // past that allowance: frame what is actually drawn.
+    const node = n as Page['nodes'][number];
+    for (const r of [nodeBounds(node), nodeLabelRect(node)])
+      if (r) {
+        grow(r.x, r.y);
+        grow(r.x + r.w, r.y + r.h);
+      }
+  }
   for (const l of links) for (const w of l.waypoints ?? []) grow(w.x, w.y, 8);
   const vb = `${Math.round(minX - pad)} ${Math.round(minY - pad)} ${Math.round(maxX - minX + pad * 2)} ${Math.round(maxY - minY + pad * 2)}`;
   return {

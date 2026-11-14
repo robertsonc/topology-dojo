@@ -93,6 +93,26 @@ describe('selectionPage (export selection only)', () => {
     expect(sp.flowPaths).toEqual([]);
   });
 
+  it('frames a wide node and a label placed beside it, not a fixed 56 px', () => {
+    const wide = [
+      { id: 't', type: 'text', x: 500, y: 300, label: 'note', width: 320 },
+      {
+        id: 'r',
+        type: 'router',
+        x: 500,
+        y: 500,
+        label: 'Core router east',
+        labelPlacement: 'e',
+      },
+    ];
+    const sp = selectionPage(base, wide, []);
+    const [x, , w] = sp.viewBox.split(' ').map(Number);
+    // The 320-px text box spans 340..660: the frame must contain it with the
+    // padding, and reach the label drawn to the right of the router.
+    expect(x).toBeLessThanOrEqual(340 - 48);
+    expect(x! + w!).toBeGreaterThanOrEqual(660 + 48);
+  });
+
   it('throws on an empty selection', () => {
     expect(() => selectionPage(base, [], [])).toThrow(/nothing selected/);
   });

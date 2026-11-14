@@ -459,3 +459,15 @@ describe('a standalone render names its typeface', () => {
     );
   });
 });
+
+describe('a headless render shows the frame caption', () => {
+  it('draws it the way the editor does', () => {
+    const doc = sampleDocument();
+    doc.pages[0]!.caption = 'Normal operation';
+    const svg = renderDocumentToSVG(doc);
+    expect(svg).toContain('class="tds-caption"');
+    expect(svg).toContain('>Normal operation</text>');
+    // Nothing is added to a frame that has no caption.
+    expect(renderDocumentToSVG(sampleDocument())).not.toContain('tds-caption');
+  });
+});

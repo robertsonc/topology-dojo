@@ -18,6 +18,7 @@ import { glowForColor } from '../nodes/data.js';
 import { withMarkerIcon } from '../api/markers.js';
 import { viewBoxAttr } from '../api/layout.js';
 import { ROOT_FONT_ATTR } from './fonts.js';
+import { captionSVG } from './caption.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
 import { withInterfaceLabels } from '../api/hardware.js';
@@ -303,7 +304,9 @@ export function renderDocumentWithEngine(
   // Mirrors what the editor composites, so MCP/headless output matches the GUI.
   const overlay =
     (ws ? ws.overlay : '') +
-    documentOverlaySVG(ws ? ws.doc : doc, ws ? ws.overlayPage : page);
+    documentOverlaySVG(ws ? ws.doc : doc, ws ? ws.overlayPage : page) +
+    // The frame's narration, as the editor draws it on the canvas.
+    captionSVG(page);
   if (overlay) svg = svg.replace('</svg>', `${overlay}</svg>`);
   if (doc.palette) svg = applyPalette(svg, doc.palette);
   return applyRenderTheme(svg, opts.theme ?? 'dark');
