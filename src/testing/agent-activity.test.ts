@@ -97,8 +97,9 @@ describe('activity recording never breaks the primary tool path', () => {
     const ok = await handle.fetch('/tool');
     expect(ok.status).toBe(200);
     const baseline = await ok.json();
-    expect(Array.isArray(baseline)).toBe(true);
-    expect((baseline as { id: string }[]).length).toBeGreaterThanOrEqual(5);
+    expect(
+      (baseline as { templates: { id: string }[] }).templates.length,
+    ).toBeGreaterThanOrEqual(5);
 
     const failed = await handle.fetch('/tool?fail=await');
     expect(failed.status).toBe(200);

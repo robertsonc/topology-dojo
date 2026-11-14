@@ -1,4 +1,5 @@
 /** Shared owner workspace facade used by browser routes and remote MCP tools. */
+import { DEFAULT_LINK_ATTACH } from '../src/api/builder.js';
 import type { SessionUser } from '../src/server/session.js';
 import { parseDoc } from '../src/pages/persist.js';
 import type { TopologyDocument } from '../src/pages/model.js';
@@ -199,7 +200,11 @@ export class WorkspaceService {
     return this.create({
       title: title?.trim() || 'Untitled',
       customNodes: [],
-      pages: [blankPage('Frame 1')],
+      // An agent-created workspace starts like an agent-created draft: with
+      // the link anchor box on (see DEFAULT_LINK_ATTACH).
+      pages: [
+        { ...blankPage('Frame 1'), linkAttach: { ...DEFAULT_LINK_ATTACH } },
+      ],
     });
   }
 

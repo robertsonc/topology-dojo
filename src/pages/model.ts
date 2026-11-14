@@ -255,7 +255,8 @@ export function sampleDocument(): TopologyDocument {
   // Built via the headless authoring API — the same path code / an MCP server use.
   const doc = createDocument('Untitled').defineNodeType(sensor);
   doc
-    .page({ id: newPageId(), name: 'Frame 1' })
+    // The first-run scene keeps the classic attachment it was drawn for.
+    .page({ id: newPageId(), name: 'Frame 1', linkAttach: 'none' })
     .node({ id: 'user', type: 'host', x: 130, y: 470, label: 'User' })
     .node({
       id: 'ec',

@@ -53,8 +53,10 @@ describe('registerTopologyTools onToolSettled', () => {
   it('returns unchanged list_templates output when recording throws', async () => {
     const baseline = await registeredHandler()({});
     expect(baseline.isError).toBeUndefined();
-    const parsed = JSON.parse(baseline.content[0]!.text) as { id: string }[];
-    expect(parsed.length).toBeGreaterThanOrEqual(5);
+    const parsed = JSON.parse(baseline.content[0]!.text) as {
+      templates: { id: string }[];
+    };
+    expect(parsed.templates.length).toBeGreaterThanOrEqual(5);
 
     const withThrow = await registeredHandler(() => {
       throw new Error('record boom');

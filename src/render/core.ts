@@ -9,6 +9,7 @@
  * a minimal stub on `globalThis` before instantiation. `_renderSVG()` itself
  * only builds strings.
  */
+import { pruneUnusedDefs, roundGeometry } from './prune-defs.js';
 import { registerBackdrops } from './backdrops.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
@@ -68,6 +69,22 @@ export interface EngineStatic {
 export interface RenderOptions {
   /** Calm: suppress animation (flow particles, link dots) in the output. */
   calm?: boolean;
+  /**
+   * Output profile. `'clean'` is the build for anything that is not the live
+   * canvas — an agent reading the SVG, the inline view, a raster export:
+   * static (implies `calm`), carrying only the definitions the drawing
+   * references, with coordinates printed to two decimals. `'full'` (the
+   * default here) is the animated build with the engine's whole definition
+   * table, byte-identical to what it always was. Raster exports use `calm` +
+   * `pruneDefs` instead, which is pixel-identical to the plain calm build.
+   */
+  profile?: 'full' | 'clean';
+  /**
+   * Drop unreferenced `<defs>` entries without otherwise changing the build
+   * (the flipbook keeps its animation but not 14 KB of unused filters per
+   * page). Implied by `profile: 'clean'`.
+   */
+  pruneDefs?: boolean;
   /**
    * Declared document layers (bottom → top) — drives stacking order. The
    * document render path fills this from `doc.layers` automatically.
@@ -140,7 +157,7 @@ function renderPageUnthemed(
   registerHitBoxes(customNodes);
 
   const topo = new E({ viewBox: page.viewBox });
-  if (opts.calm) topo.reducedMotion = true;
+  if (opts.calm || opts.profile === 'clean') topo.reducedMotion = true;
   // Only set for a light theme so the dark output stays byte-identical.
   if (opts.theme === 'light') topo.light = true;
   applyEngineTheme(topo as never, opts.theme ?? 'dark');
@@ -261,10 +278,20 @@ export function renderPageWithEngine(
   customNodes: CustomNodeSpec[] = [],
   opts: RenderOptions = {},
 ): string {
-  return applyRenderTheme(
-    renderPageUnthemed(E, page, customNodes, opts),
-    opts.theme ?? 'dark',
+  return finishProfile(
+    applyRenderTheme(
+      renderPageUnthemed(E, page, customNodes, opts),
+      opts.theme ?? 'dark',
+    ),
+    opts,
   );
+}
+
+/** The last step of a render: prune unused definitions when asked to. Runs
+ * after the overlays and the theme remap, so their references count. */
+function finishProfile(svg: string, opts: RenderOptions): string {
+  if (opts.profile === 'clean') return roundGeometry(pruneUnusedDefs(svg));
+  return opts.pruneDefs ? pruneUnusedDefs(svg) : svg;
 }
 
 /** Render a document's page (default the first) to a standalone SVG string. */
@@ -309,5 +336,5 @@ export function renderDocumentWithEngine(
     captionSVG(page);
   if (overlay) svg = svg.replace('</svg>', `${overlay}</svg>`);
   if (doc.palette) svg = applyPalette(svg, doc.palette);
-  return applyRenderTheme(svg, opts.theme ?? 'dark');
+  return finishProfile(applyRenderTheme(svg, opts.theme ?? 'dark'), opts);
 }

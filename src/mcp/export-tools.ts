@@ -446,7 +446,12 @@ export function exportTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           throw new Error(`page index ${index} out of range`);
         return withHardware(stored, deps.catalog, (doc, hw) => {
           const theme = (a.theme as 'dark' | 'light' | undefined) ?? 'dark';
-          const svg = renderWith(hw.hardware)(doc, index, { theme });
+          // The inline view needs a static drawing, not the animated build
+          // with the engine's whole definition table.
+          const svg = renderWith(hw.hardware)(doc, index, {
+            theme,
+            profile: 'clean',
+          });
           const data = {
             topologyId: id,
             title: doc.title,

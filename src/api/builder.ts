@@ -11,6 +11,7 @@ import type { Page, TopologyDocument } from '../pages/model.js';
 import type {
   AnchorConfig,
   FlowPathConfig,
+  LinkAttachOptions,
   LinkConfig,
   NodeConfig,
   PolicyMarkerConfig,
@@ -21,6 +22,21 @@ import type { LayerDef, LayerKind } from './layers.js';
 import { validateDocument, type Problem } from './validate.js';
 
 const DEFAULT_VIEWBOX = '0 0 1050 700';
+
+/**
+ * The link anchor box every page created through the authoring API starts
+ * with: links attach to a padded box that clears the node's label, and the
+ * endpoints on one side of a node are spread into even slots. Without it, a
+ * dual-homed hub-and-spoke page (the most common SD-WAN shape) draws its
+ * spoke links straight through the hub labels.
+ *
+ * It is written into the new page, not made the renderer's default, so
+ * stored documents keep rendering exactly as they did. Opt out per page with
+ * `linkAttach: 'none'` here, or `set_page_properties` later.
+ */
+export const DEFAULT_LINK_ATTACH: Readonly<LinkAttachOptions> = Object.freeze({
+  distribute: true,
+});
 
 let _seq = 0;
 /** Stable-ish unique id with a prefix (deterministic order within a run). */
@@ -56,6 +72,11 @@ export interface PageInput {
   /** Playback hold time in ms (players default to 2000 when absent). */
   duration?: number;
   transition?: 'cut' | 'fade';
+  /**
+   * The page's link anchor box. Omitted = `DEFAULT_LINK_ATTACH`; `'none'`
+   * creates the page with the classic attachment (links meet the icon edge).
+   */
+  linkAttach?: LinkAttachOptions | 'none';
 }
 export interface ZoneInput extends Omit<ZoneConfig, 'id' | 'nodes'> {
   id?: string;
@@ -90,6 +111,9 @@ export function addPage(doc: TopologyDocument, input: PageInput = {}): Page {
     viewBox: input.viewBox ?? DEFAULT_VIEWBOX,
     ...(input.duration !== undefined ? { duration: input.duration } : {}),
     ...(input.transition !== undefined ? { transition: input.transition } : {}),
+    ...(input.linkAttach === 'none'
+      ? {}
+      : { linkAttach: { ...(input.linkAttach ?? DEFAULT_LINK_ATTACH) } }),
     nodes: [],
     links: [],
     anchors: [],

@@ -3094,6 +3094,34 @@
         border-color: var(--accent);
         color: #fff;
       }
+      /* Template parameter dialog: the SD-WAN wizard's styles, a narrower
+         card, and a slider row for a parameter with a long range. */
+      .tpw-card {
+        width: min(780px, 94vw);
+      }
+      .tpw-card .sdw-q {
+        margin-bottom: 16px;
+      }
+      .tpw-hint {
+        margin-top: 6px;
+      }
+      .tpw-range {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .tpw-range input {
+        flex: 1;
+        min-width: 0;
+        accent-color: var(--accent);
+      }
+      .tpw-range output {
+        min-width: 2ch;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        color: var(--text);
+      }
       .help-backdrop {
         position: fixed;
         inset: 0;

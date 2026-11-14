@@ -91,11 +91,13 @@ export interface FieldSpec {
 }
 
 /**
- * EXPERIMENTAL link anchor box — the `{ pad, distribute }` object a page or
+ * Link anchor box — the `{ pad, distribute }` object a page or
  * node may carry (a node's merges over the page's). Present = active: links
  * attach to the node's hit box inflated by `pad` (default 6), extended on the
  * label side to clear the label text; `distribute` spreads a side's
- * endpoints into even slots. See render/link-attach.
+ * endpoints into even slots. New pages created through the authoring API
+ * start with it on (`DEFAULT_LINK_ATTACH` in api/builder). See
+ * render/link-attach.
  */
 export const LINK_ATTACH_FIELDS: FieldSpec[] = [
   { key: 'pad', label: 'Box padding', kind: 'number', range: [0, 200] },
@@ -103,7 +105,7 @@ export const LINK_ATTACH_FIELDS: FieldSpec[] = [
 ];
 export const LINK_ATTACH_FIELD: FieldSpec = {
   key: 'linkAttach',
-  label: 'Link anchor box (experimental)',
+  label: 'Link anchor box',
   kind: 'object',
   fields: LINK_ATTACH_FIELDS,
 };
@@ -644,7 +646,7 @@ const LINK_COMMON: FieldSpec[] = [
     options: PORT_OPTIONS,
     optionLabels: PORT_LABELS,
   },
-  // EXPERIMENTAL (link anchor box): fractional shift of an endpoint along the
+  // Link anchor box: fractional shift of an endpoint along the
   // side it attaches to, in [-1, 1] (0 = centre, ±1 = the side's ends). Side
   // ports and auto endpoints only; corner ports ignore it; needs linkAttach.
   {
