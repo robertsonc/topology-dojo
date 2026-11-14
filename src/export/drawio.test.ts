@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { documentToDrawioXML } from './drawio.js';
+import { convertDrawio } from '../import/drawio.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 
 function doc(): TopologyDocument {
@@ -164,5 +165,66 @@ describe('documentToDrawioXML', () => {
   it('is well-formed XML', async () => {
     const { parseXml } = await import('../import/xml.js');
     expect(() => parseXml(xml)).not.toThrow();
+  });
+});
+
+describe('a draw.io export opens again as the same diagram', () => {
+  const source = {
+    title: 'Branch WAN',
+    customNodes: [],
+    pages: [
+      {
+        id: 'p1',
+        name: 'Overview',
+        caption: 'Normal operation: both circuits up.',
+        viewBox: '0 0 1000 700',
+        nodes: [
+          { id: 'fw', type: 'firewall', x: 200, y: 300, label: 'Edge FW' },
+          {
+            id: 'r',
+            type: 'router',
+            x: 600,
+            y: 300,
+            label: 'Core',
+            color: '#ff8800',
+          },
+        ],
+        links: [
+          { id: 'l1', type: 'line', from: 'fw', to: 'r' },
+          { id: 'l2', type: 'line', from: 'r', to: 'fw', color: '#3366ff' },
+        ],
+        anchors: [],
+        zones: [
+          { id: 'z1', label: 'Site', nodes: ['fw'] },
+          { id: 'z2', label: 'DC', nodes: ['r'], color: '#aa00aa' },
+        ],
+        flowPaths: [],
+        policyMarkers: [],
+      },
+    ],
+  } as unknown as TopologyDocument;
+
+  const back = convertDrawio(documentToDrawioXML(source));
+
+  it('keeps the title and the page caption', () => {
+    expect(back.ok).toBe(true);
+    expect(back.document!.title).toBe('Branch WAN');
+    expect(back.document!.pages[0]!.caption).toBe(
+      'Normal operation: both circuits up.',
+    );
+  });
+
+  it('an element with no colour comes back with no colour, not grey', () => {
+    const p = back.document!.pages[0]!;
+    const node = (label: string) => p.nodes.find((n) => n.label === label)!;
+    // The export paints uncoloured elements a neutral grey; reading that back
+    // as their colour turned every default-coloured device grey.
+    expect(node('Edge FW').color).toBeUndefined();
+    expect(node('Core').color).toBe('#ff8800');
+    expect(p.links.map((l) => l.color)).toEqual([undefined, '#3366ff']);
+    expect(p.zones.map((z) => [z.label, z.color])).toEqual([
+      ['Site', undefined],
+      ['DC', '#aa00aa'],
+    ]);
   });
 });

@@ -96,6 +96,13 @@ its own has no page CSS, so each export carries the font a different way:
 A zone member on a different layer than its zone stays a top-level cell of
 its own layer (draw.io children always share their container's layer).
 
+An element with no colour of its own is drawn in a neutral grey, since
+draw.io needs some stroke. The file also records which elements actually had
+a colour (`dojoColor`), the document title and each page's caption, so opening
+an untouched export gives back the same diagram: an uncoloured device stays
+uncoloured rather than turning grey. draw.io keeps the per-element data when
+it saves; it drops the caption, which has no draw.io equivalent.
+
 ## Visio (`.vsdx`) — the enterprise must-have
 
 | Topology Dojo  | Visio                                                                                                                                                                       |
@@ -142,6 +149,11 @@ Mermaid classes (`class r1 router` + a `classDef` for the accent colour).
 Import reads those classes back as node types, splits `<br/>` labels into
 label + sublabel, nests subgraphs as `parentZone`, then auto-lays the graph
 out. Mermaid has no coordinates, layers, port labels or metadata — those drop.
+
+Labels are written as quoted strings, with the characters that would end
+them as Mermaid entity codes (`#quot;`, `#124;` for a pipe, `#93;` for a
+closing bracket, `#35;` for `#`), and read back the same way on nodes, links
+and subgraph titles.
 
 ## Wire-sheet pages
 
@@ -220,6 +232,8 @@ header row, autofilter, sized columns.
   the matching basic shape; text cells → text nodes; images → image nodes;
 - edges → links with routing, dash, colour, width and waypoints; edge-end
   labels → port labels; an end not attached to a shape → an anchor;
+- colour: a shape's stroke, except in a file this app exported, where only
+  the colours the elements really had are read back;
 - `<object>` / `<UserObject>` data → node metadata; `link` / `tooltip` kept.
 
 Dropped with a warning: custom (Node Designer) types the file names but the

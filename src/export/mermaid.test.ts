@@ -106,3 +106,46 @@ describe('documentToMermaid', () => {
     expect(() => documentToMermaid(doc, 5)).toThrow(/out of range/);
   });
 });
+
+describe('labels survive a round trip through Mermaid text', () => {
+  const LABELS = [
+    'plain',
+    'say "hi"',
+    'a|b',
+    'x [y] z',
+    'semi; colon',
+    'hash # tag',
+    'looks like #35; a code',
+    'amp & more',
+    'paren (x) brace {x}',
+    'lt < gt >',
+    'pct 50%',
+  ];
+
+  it.each(LABELS)('%j on a node, a link and a zone', (label) => {
+    const page = {
+      id: 'p',
+      name: 'F',
+      viewBox: '0 0 1000 700',
+      nodes: [
+        { id: 'a', type: 'firewall', x: 100, y: 100, label },
+        { id: 'b', type: 'router', x: 500, y: 100, label: 'B' },
+      ],
+      links: [{ id: 'ab', type: 'line', from: 'a', to: 'b', label }],
+      anchors: [],
+      zones: [{ id: 'z', label, nodes: ['a'] }],
+      flowPaths: [],
+      policyMarkers: [],
+    } as unknown as Page;
+    const back = convertMermaid(pageToMermaid(page));
+    expect(back.ok).toBe(true);
+    expect(back.warnings).toEqual([]);
+    const p = back.document!.pages[0]!;
+    expect(p.nodes.find((n) => n.id === 'a')!.label).toBe(label);
+    // A link label used to come back wrapped in literal quote marks, and one
+    // with a pipe lost the whole link.
+    expect(p.links.map((l) => l.label)).toEqual([label]);
+    // A zone title with a closing bracket lost the zone.
+    expect(p.zones.map((z) => z.label)).toEqual([label]);
+  });
+});
