@@ -157,3 +157,104 @@ test('a blank or non-positive canvas size is ignored', async ({ page }) => {
   await height.press('Tab');
   expect((await savedDocument(page)).pages[0]!.viewBox).toBe('0 0 1200 800');
 });
+
+/* ── annotation editors (zones, flow paths, policy markers) ──────────────── */
+
+/** The editor for the first annotation of a kind, opened. */
+async function openAnnotation(page: Page, collection: string) {
+  const editor = page
+    .locator(`#inspector details.anno[data-acol="${collection}"]`)
+    .first();
+  if (!(await editor.evaluate((d) => (d as HTMLDetailsElement).open)))
+    await editor.locator('summary').click();
+  return { editor, id: (await editor.getAttribute('data-aid'))! };
+}
+
+test('a boolean annotation field is a checkbox that stores a boolean', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const { editor, id } = await openAnnotation(page, 'flowPaths');
+  const follow = editor.locator('[data-akey="followLinks"]');
+  await expect(follow).toHaveAttribute('type', 'checkbox');
+  // A flow path follows its links unless told not to: unset shows ticked.
+  await expect(follow).toBeChecked();
+
+  await follow.uncheck();
+  expect((await savedElement(page, 'flowPaths', id)).followLinks).toBe(false);
+  await follow.check();
+  expect((await savedElement(page, 'flowPaths', id)).followLinks).toBe(true);
+});
+
+test('a zone map backdrop is "None" until one is chosen, and can go back', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const { editor, id } = await openAnnotation(page, 'zones');
+  const backdrop = editor.locator('select[data-akey="backdrop"]');
+  await expect(backdrop).toHaveValue('');
+  await expect(backdrop.locator('option:checked')).toHaveText('None');
+
+  await backdrop.selectOption('world');
+  expect((await savedElement(page, 'zones', id)).backdrop).toBe('world');
+  // (The editor stays open across the change, so the same select is there.)
+  await backdrop.selectOption('');
+  expect(await savedElement(page, 'zones', id)).not.toHaveProperty('backdrop');
+});
+
+test('an annotation editor stays open through its own swatch, compass and chip clicks', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const isOpen = (collection: string): Promise<boolean> =>
+    page
+      .locator(`#inspector details.anno[data-acol="${collection}"]`)
+      .first()
+      .evaluate((d) => (d as HTMLDetailsElement).open);
+
+  const flow = await openAnnotation(page, 'flowPaths');
+  await flow.editor
+    .locator('[data-aswatch="color"] [data-color="#7764fc"]')
+    .click();
+  expect((await savedElement(page, 'flowPaths', flow.id)).color).toBe(
+    '#7764fc',
+  );
+  expect(await isOpen('flowPaths')).toBe(true);
+
+  await page
+    .locator('#inspector details.anno[data-acol="flowPaths"]')
+    .first()
+    .locator('.compass [data-cval="n"]')
+    .click();
+  expect(await isOpen('flowPaths')).toBe(true);
+
+  await page
+    .locator('#inspector details.anno[data-acol="flowPaths"]')
+    .first()
+    .locator('.refchip [data-refmove="1"]')
+    .first()
+    .click();
+  expect(await isOpen('flowPaths')).toBe(true);
+
+  const marker = await openAnnotation(page, 'policyMarkers');
+  await marker.editor
+    .locator('[data-aswatch="color"] [data-color="#01a982"]')
+    .click();
+  expect(await isOpen('policyMarkers')).toBe(true);
+  // The flow path's editor, opened earlier, was not shut by that either.
+  expect(await isOpen('flowPaths')).toBe(true);
+
+  // A collapsed group stays collapsed too.
+  const group = page.locator(
+    '#inspector details.anno-group[data-agroup="zones"]',
+  );
+  await group.locator('> summary').click();
+  await page
+    .locator('#inspector details.anno[data-acol="policyMarkers"]')
+    .first()
+    .locator('[data-aswatch="color"] [data-color="#65aef9"]')
+    .click();
+  expect(await group.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(
+    false,
+  );
+});

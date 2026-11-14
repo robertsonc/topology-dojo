@@ -115,6 +115,11 @@ import {
 import { isImeKey } from './ui/ime.js';
 import { importConfirmText } from './ui/replace-document.js';
 import { problemsDockView } from './ui/problems-dock.js';
+import {
+  booleanFieldChecked,
+  enumFieldOptions,
+  enumFieldValue,
+} from './ui/annotation-fields.js';
 import { exportRenderOptions } from './ui/export-options.js';
 import { exportReport, type ExportState } from './ui/export-status.js';
 import { classifyOpenedFile } from './import/open.js';
@@ -3745,13 +3750,18 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
   // same 3×3 placement picker a link label has; wired in renderAnnotations.
   if (f.widget === 'compass') return compassControl(f, v, 'data-akey');
   switch (f.kind) {
+    case 'boolean':
+      // A real checkbox: typed into a text box, "false" is stored as a string,
+      // which the renderer reads as on.
+      return `<label class="${rowClass(f)}"><span>${f.label}${f.animation ? ' ⟳' : ''}</span><input type="checkbox" data-akey="${f.key}" ${booleanFieldChecked(f.key, v) ? 'checked' : ''}/></label>`;
     case 'enum':
-      return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${(
-        f.options ?? []
+      return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${enumFieldOptions(
+        f,
+        v,
       )
         .map(
           (o) =>
-            `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${o}</option>`,
+            `<option value="${esc(o.value)}"${o.selected ? ' selected' : ''}>${esc(o.label)}</option>`,
         )
         .join('')}</select></label>`;
     case 'color':
@@ -3802,6 +3812,16 @@ function zoneEditorHtml(zone: { id: string }): string {
   );
 }
 
+/**
+ * Which annotation editors are open, and which of their groups are closed —
+ * kept across the inspector's re-renders. A swatch, compass cell or chip
+ * click inside an editor re-renders the inspector; without this the editor
+ * being worked in snapped shut after every click.
+ */
+const annoOpen = new Set<string>();
+const annoGroupClosed = new Set<string>();
+const annoKey = (col: string, id: string): string => `${col}:${id}`;
+
 function annotationsHtml(skipId?: string): string {
   const page = editor.page;
   const counts =
@@ -3825,7 +3845,7 @@ function annotationsHtml(skipId?: string): string {
     );
     if (!items.length) continue;
     html +=
-      `<details class="anno-group" open data-agroup="${g.col}">` +
+      `<details class="anno-group"${annoGroupClosed.has(g.col) ? '' : ' open'} data-agroup="${g.col}">` +
       `<summary class="anno-group-h">${esc(info.label)}s<span class="anno-count">${items.length}</span></summary>`;
     for (const item of items) {
       const cfg = item as Record<string, unknown>;
@@ -3837,7 +3857,7 @@ function annotationsHtml(skipId?: string): string {
             `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">⧉</button>`
           : '';
       html +=
-        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}">` +
+        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
         `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">✕</button></summary>` +
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
         `</details>`;
@@ -3914,112 +3934,136 @@ function wireAnnotations(): void {
       renderInspector();
     }),
   );
-  inspector.querySelectorAll<HTMLElement>('details.anno').forEach((host) => {
-    const col = host.dataset.acol as AnnoCol;
-    const id = host.dataset.aid!;
-    const setA = (key: string, val: unknown, commit: boolean): void =>
-      editor.updateAnnotation(col, id, { [key]: val }, commit);
-    const annoFields = getAnnotationType(
-      ANNO_GROUPS.find((g) => g.col === col)!.kind,
-    )?.fields;
-    host
-      .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-akey]')
-      .forEach((el) => {
-        const key = el.dataset.akey!;
-        if (el instanceof HTMLSelectElement) {
-          el.addEventListener('change', () => setA(key, el.value, true));
-        } else if (el.dataset.akind === 'number') {
-          wireNumberInput(
-            el,
-            findField(annoFields, key),
-            (val) => {
+  inspector
+    .querySelectorAll<HTMLDetailsElement>('details.anno-group')
+    .forEach((group) =>
+      group.addEventListener('toggle', () => {
+        const col = group.dataset.agroup!;
+        if (group.open) annoGroupClosed.delete(col);
+        else annoGroupClosed.add(col);
+      }),
+    );
+  inspector
+    .querySelectorAll<HTMLDetailsElement>('details.anno')
+    .forEach((host) => {
+      const col = host.dataset.acol as AnnoCol;
+      const id = host.dataset.aid!;
+      // The focused zone editor (a zone clicked on the canvas) is always open
+      // and is not part of the list; only the list's editors are remembered.
+      if (!host.classList.contains('selected'))
+        host.addEventListener('toggle', () => {
+          if (host.open) annoOpen.add(annoKey(col, id));
+          else annoOpen.delete(annoKey(col, id));
+        });
+      const setA = (key: string, val: unknown, commit: boolean): void =>
+        editor.updateAnnotation(col, id, { [key]: val }, commit);
+      const annoFields = getAnnotationType(
+        ANNO_GROUPS.find((g) => g.col === col)!.kind,
+      )?.fields;
+      host
+        .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-akey]')
+        .forEach((el) => {
+          const key = el.dataset.akey!;
+          if (el instanceof HTMLSelectElement) {
+            // The empty choice ("None" / "Default") clears the field.
+            el.addEventListener('change', () =>
+              setA(key, enumFieldValue(el.value), true),
+            );
+          } else if (el.type === 'checkbox') {
+            el.addEventListener('change', () => setA(key, el.checked, true));
+          } else if (el.dataset.akind === 'number') {
+            wireNumberInput(
+              el,
+              findField(annoFields, key),
+              (val) => {
+                setA(key, val, !editing);
+                editing = true;
+              },
+              () =>
+                storedValue(
+                  (editor.page[col] as { id: string }[]).find(
+                    (a) => a.id === id,
+                  ) as Record<string, unknown> | undefined,
+                  key,
+                ),
+            );
+          } else {
+            const kind = el.dataset.akind;
+            el.addEventListener('input', () => {
+              let val: unknown = el.value;
+              if (kind === 'refs')
+                val = el.value.split(/[\s,]+/).filter(Boolean);
               setA(key, val, !editing);
               editing = true;
-            },
-            () =>
-              storedValue(
-                (editor.page[col] as { id: string }[]).find(
-                  (a) => a.id === id,
-                ) as Record<string, unknown> | undefined,
-                key,
-              ),
+            });
+          }
+        });
+      // Compass placement picker on a point field (flow-path labelOffset):
+      // click a cell to write its preset offset, the centre to clear it.
+      host
+        .querySelectorAll<HTMLElement>('.compass[data-akey]')
+        .forEach((grid) => {
+          const key = grid.dataset.akey!;
+          const spec: FieldSpec = { key, label: key, kind: 'point' };
+          grid.querySelectorAll<HTMLButtonElement>('[data-cval]').forEach((b) =>
+            b.addEventListener('click', (e) => {
+              e.preventDefault();
+              setA(key, compassValueOf(spec, b.dataset.cval ?? ''), true);
+              renderInspector();
+            }),
           );
-        } else {
-          const kind = el.dataset.akind;
-          el.addEventListener('input', () => {
-            let val: unknown = el.value;
-            if (kind === 'refs') val = el.value.split(/[\s,]+/).filter(Boolean);
-            setA(key, val, !editing);
-            editing = true;
-          });
-        }
-      });
-    // Compass placement picker on a point field (flow-path labelOffset):
-    // click a cell to write its preset offset, the centre to clear it.
-    host
-      .querySelectorAll<HTMLElement>('.compass[data-akey]')
-      .forEach((grid) => {
-        const key = grid.dataset.akey!;
-        const spec: FieldSpec = { key, label: key, kind: 'point' };
-        grid.querySelectorAll<HTMLButtonElement>('[data-cval]').forEach((b) =>
-          b.addEventListener('click', (e) => {
-            e.preventDefault();
-            setA(key, compassValueOf(spec, b.dataset.cval ?? ''), true);
+        });
+      host.querySelectorAll<HTMLElement>('[data-aswatch]').forEach((group) => {
+        const key = group.dataset.aswatch!;
+        group.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
+          b.addEventListener('click', () => {
+            setA(key, b.dataset.color!, true);
             renderInspector();
           }),
         );
       });
-    host.querySelectorAll<HTMLElement>('[data-aswatch]').forEach((group) => {
-      const key = group.dataset.aswatch!;
-      group.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
-        b.addEventListener('click', () => {
-          setA(key, b.dataset.color!, true);
+      // Refs editor (flow waypoints / zone members): add by node picker, reorder
+      // with ‹ ›, remove with ✕ — all by chip position so duplicates behave.
+      host.querySelectorAll<HTMLElement>('.refchips').forEach((box) => {
+        const key = box.dataset.refkey!;
+        const ids = (): string[] =>
+          [...box.querySelectorAll<HTMLElement>('.refchip')].map(
+            (c) => c.dataset.id!,
+          );
+        const commit = (next: string[]): void => {
+          setA(key, next, true);
           renderInspector();
-        }),
-      );
-    });
-    // Refs editor (flow waypoints / zone members): add by node picker, reorder
-    // with ‹ ›, remove with ✕ — all by chip position so duplicates behave.
-    host.querySelectorAll<HTMLElement>('.refchips').forEach((box) => {
-      const key = box.dataset.refkey!;
-      const ids = (): string[] =>
-        [...box.querySelectorAll<HTMLElement>('.refchip')].map(
-          (c) => c.dataset.id!,
+        };
+        const indexOfChip = (el: HTMLElement): number =>
+          [...box.querySelectorAll<HTMLElement>('.refchip')].indexOf(el);
+        box
+          .querySelector<HTMLSelectElement>('.refadd')
+          ?.addEventListener('change', (e) => {
+            const sel = e.target as HTMLSelectElement;
+            if (sel.value) commit([...ids(), sel.value]);
+          });
+        box.querySelectorAll<HTMLButtonElement>('[data-refdel]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            e.preventDefault();
+            const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
+            const next = ids();
+            next.splice(i, 1);
+            commit(next);
+          }),
         );
-      const commit = (next: string[]): void => {
-        setA(key, next, true);
-        renderInspector();
-      };
-      const indexOfChip = (el: HTMLElement): number =>
-        [...box.querySelectorAll<HTMLElement>('.refchip')].indexOf(el);
-      box
-        .querySelector<HTMLSelectElement>('.refadd')
-        ?.addEventListener('change', (e) => {
-          const sel = e.target as HTMLSelectElement;
-          if (sel.value) commit([...ids(), sel.value]);
-        });
-      box.querySelectorAll<HTMLButtonElement>('[data-refdel]').forEach((b) =>
-        b.addEventListener('click', (e) => {
-          e.preventDefault();
-          const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
-          const next = ids();
-          next.splice(i, 1);
-          commit(next);
-        }),
-      );
-      box.querySelectorAll<HTMLButtonElement>('[data-refmove]').forEach((b) =>
-        b.addEventListener('click', (e) => {
-          e.preventDefault();
-          const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
-          const j = i + Number(b.dataset.refmove);
-          const next = ids();
-          if (j < 0 || j >= next.length) return;
-          [next[i], next[j]] = [next[j]!, next[i]!];
-          commit(next);
-        }),
-      );
+        box.querySelectorAll<HTMLButtonElement>('[data-refmove]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            e.preventDefault();
+            const i = indexOfChip(b.closest<HTMLElement>('.refchip')!);
+            const j = i + Number(b.dataset.refmove);
+            const next = ids();
+            if (j < 0 || j >= next.length) return;
+            [next[i], next[j]] = [next[j]!, next[i]!];
+            commit(next);
+          }),
+        );
+      });
     });
-  });
 }
 
 /* Node palette — driven by the catalog; grouped by category. Click to add.
