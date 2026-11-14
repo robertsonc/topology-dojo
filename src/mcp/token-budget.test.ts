@@ -5,7 +5,9 @@
  * descriptions and input schemas — in its context before it does anything,
  * and pays for `describe_capabilities` on its first call. Both grow a little
  * with each feature and nothing else pushes back: the full hosted tool list
- * went from 44 KB (55 tools) in August 2026 to 79 KB (72 tools) by November.
+ * went from 44 KB (55 tools) in August 2026 to 79 KB (72 tools) by November,
+ * and was brought back to 67 KB (64 tools) by making rarely used document
+ * setters `edit_topology` operations (see `OP_ONLY_TOOLS`).
  *
  * These are ratchets, not targets. When one fails, first try to make room
  * (shorten a description, fold a setter into `edit_topology`, move prose into
@@ -59,14 +61,14 @@ const bytes = (value: unknown): number =>
 describe('MCP token budget', () => {
   it('keeps the local (stdio) tool list within budget', async () => {
     const tools = await listedTools(STDIO);
-    expect(tools.length).toBeLessThanOrEqual(43);
-    expect(bytes(tools)).toBeLessThanOrEqual(54_500);
+    expect(tools.length).toBeLessThanOrEqual(35);
+    expect(bytes(tools)).toBeLessThanOrEqual(44_200);
   });
 
   it('keeps the largest hosted tool list within budget', async () => {
     const tools = await listedTools(EVERYTHING);
-    expect(tools.length).toBeLessThanOrEqual(72);
-    expect(bytes(tools)).toBeLessThanOrEqual(78_000);
+    expect(tools.length).toBeLessThanOrEqual(64);
+    expect(bytes(tools)).toBeLessThanOrEqual(67_800);
   });
 
   it('keeps any one tool definition small', async () => {
@@ -81,5 +83,15 @@ describe('MCP token budget', () => {
       (t) => t.name === 'describe_capabilities',
     )!;
     expect(bytes(await tool.handler({}))).toBeLessThanOrEqual(6_500);
+  });
+
+  it('keeps the full capability catalog to one modest reply', async () => {
+    // Was 212 KB when every type repeated every field definition.
+    const tool = createTools(new TopologyStore(), STDIO).find(
+      (t) => t.name === 'describe_capabilities',
+    )!;
+    expect(bytes(await tool.handler({ detail: 'full' }))).toBeLessThanOrEqual(
+      30_000,
+    );
   });
 });

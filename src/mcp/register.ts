@@ -89,7 +89,18 @@ export function registerTopologyTools(
   ) => void | Promise<void>,
 ): TopologyStore {
   registerViewerResource(server);
+  const hidden = new Set<string>();
+  const canHide = hideFromToolList(server, hidden);
   for (const tool of createTools(store, deps)) {
+    // Operation-only tools are reached through edit_topology (and described
+    // by describe_operations); keeping them out of the tool list is the
+    // point. They are still registered when the list can be filtered, so a
+    // call by name (an existing script, or an agent following a hint such as
+    // "declare it with define_tier") keeps working.
+    if (tool.opOnly) {
+      if (!canHide) continue;
+      hidden.add(tool.name);
+    }
     server.registerTool(
       tool.name,
       {
@@ -143,6 +154,44 @@ export function registerTopologyTools(
     );
   }
   return store;
+}
+
+/**
+ * Leave the tools named in `hidden` out of `tools/list` while keeping them
+ * callable. The SDK has no "registered but unlisted" state (a disabled tool
+ * also refuses calls), so this wraps its list handler. It reaches into the
+ * SDK's handler table, which is not public API: when that is not there to
+ * wrap, it returns false and the caller simply does not register those tools
+ * — they stay out of the list either way. `operations.test.ts` exercises both
+ * the hidden listing and the direct call, so an SDK change shows up there.
+ */
+function hideFromToolList(server: McpServer, hidden: Set<string>): boolean {
+  type Handler = (request: unknown, extra: unknown) => Promise<unknown>;
+  const table = (
+    server.server as unknown as
+      | { _requestHandlers?: Map<string, Handler> }
+      | undefined
+  )?._requestHandlers;
+  if (!(table instanceof Map)) return false;
+  // The SDK installs its tools/list handler on the first registration, so
+  // wrap whatever is there at request time, through the table's own setter.
+  const set = table.set.bind(table);
+  table.set = (method: string, handler: Handler) =>
+    set(
+      method,
+      method !== 'tools/list'
+        ? handler
+        : async (request, extra) => {
+            const result = (await handler(request, extra)) as {
+              tools: { name: string }[];
+            };
+            return {
+              ...result,
+              tools: result.tools.filter((tool) => !hidden.has(tool.name)),
+            };
+          },
+    );
+  return true;
 }
 
 /**

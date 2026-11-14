@@ -10,6 +10,7 @@
  * Return convention: a handler returns either a string (used verbatim as text,
  * e.g. rendered SVG) or any JSON-serializable value (stringified by the server).
  */
+import { COMPACT_CATALOG_NOTE, compactCatalog } from './capabilities.js';
 import { z } from 'zod';
 import {
   addAnchor,
@@ -144,7 +145,31 @@ export interface ToolDef {
   handler: (args: Record<string, unknown>) => unknown;
   /** Tool `_meta` (e.g. the MCP Apps view a tool opens). */
   meta?: Record<string, unknown>;
+  /**
+   * Reachable only as an `edit_topology` operation: not registered as a tool,
+   * so its description and schema are not in every agent's `tools/list`. An
+   * agent that needs it reads its arguments from `describe_operations`.
+   */
+  opOnly?: boolean;
 }
+
+/**
+ * Document setters most diagrams never use (wiring-sheet conventions, legend,
+ * palette, custom node types, element metadata). Together their definitions
+ * were ~12 KB of every session's tool list; they stay fully available as
+ * `edit_topology` operations.
+ */
+export const OP_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  'set_legend',
+  'set_palette',
+  'set_sheet',
+  'define_link_style',
+  'define_tier',
+  'define_bundle',
+  'set_port_table',
+  'define_node_type',
+  'set_node_metadata',
+]);
 
 /**
  * Runtime dependencies injected into the tools — chiefly the SVG renderer, which
@@ -490,7 +515,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'describe_capabilities',
       description:
-        'Discover what a topology can express. By default returns a compact INDEX (node/link type names, labels, categories + annotation and layer kinds) — cheap to call first. To get editable fields, either pass detail:"full" (the whole catalog — large) or, better, narrow with types:[…] and/or query:"…" which return full fields for just the matches. Pass a topologyId to include that document’s custom node types.',
+        'Discover what a topology can express. By default returns a compact INDEX (node/link type names, labels, categories + annotation and layer kinds) — cheap to call first. To get editable fields, pass detail:"full" (every type; fields are defined once and each type lists field keys) or narrow with types:[…] and/or query:"…" for just the matches. Pass a topologyId to include that document’s custom node types.',
       inputShape: {
         topologyId: topologyId.optional(),
         detail: z
@@ -529,8 +554,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         }
         if (full) {
           return {
-            nodeTypes: nodes,
-            linkTypes: links,
+            // Field definitions appear once; types list field keys.
+            ...compactCatalog(nodes, links),
+            note: COMPACT_CATALOG_NOTE,
             annotations: annotationCatalog(),
             layers: layerCatalog(),
             linkStyles: linkStyleCatalog(),
@@ -2302,32 +2328,87 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
   // diagram is O(1) tool calls instead of one per element (which exhausts
   // per-turn tool-call budgets in agent sessions). Dispatches to the same
   // validated handlers as the individual tools; atomic via snapshot/restore.
-  const BATCH_OPS = [
+  // Operations whose arguments are in the tool list (each is also a tool).
+  const CORE_OPS = [
     'add_page',
     'define_layer',
-    'define_node_type',
     'add_node',
     'add_link',
     'add_anchor',
     'add_zone',
     'add_flow_path',
     'add_policy_marker',
-    'set_node_metadata',
     'update_element',
     'remove_element',
     'upsert_by_source',
   ] as const;
+  // Operations that exist only here; `describe_operations` gives their args.
+  const EXTENDED_OPS = [...OP_ONLY_TOOLS];
+  const BATCH_OPS: readonly string[] = [...CORE_OPS, ...EXTENDED_OPS];
+  for (const tool of tools)
+    if (OP_ONLY_TOOLS.has(tool.name)) tool.opOnly = true;
   const batchTargets = new Map(
     tools
-      .filter((t) => (BATCH_OPS as readonly string[]).includes(t.name))
+      .filter((t) => BATCH_OPS.includes(t.name))
       .map((t) => [t.name, t] as const),
   );
+  /** First sentence of a description: the one-line summary of an operation. */
+  const summary = (text: string): string =>
+    (text.match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? text).slice(0, 160);
+  tools.push({
+    name: 'describe_operations',
+    description:
+      'Arguments for edit_topology operations. With no arguments, lists every operation with a one-line summary. Pass operations:[…] for the full description and argument schema of those — needed for the operations that are not tools of their own: ' +
+      EXTENDED_OPS.join(', ') +
+      '.',
+    inputShape: {
+      operations: z
+        .array(z.string())
+        .max(BATCH_OPS.length)
+        .optional()
+        .describe('Operation names to describe in full.'),
+    },
+    handler: (a) => {
+      const wanted = a.operations as string[] | undefined;
+      if (!wanted?.length)
+        return {
+          operations: BATCH_OPS.map((op) => ({
+            op,
+            summary: summary(batchTargets.get(op)!.description),
+            ...(OP_ONLY_TOOLS.has(op) ? {} : { tool: true }),
+          })),
+          note: 'Operations marked tool:true are also tools; their arguments are in the tool list. Call again with operations:[…] for the others.',
+        };
+      return {
+        operations: wanted.map((op) => {
+          const tool = batchTargets.get(op);
+          if (!tool)
+            throw new Error(
+              `unknown operation "${op}" (expected one of ${BATCH_OPS.join(', ')})`,
+            );
+          // topologyId is inherited from the edit_topology call.
+          const { topologyId: _inherited, ...shape } = tool.inputShape;
+          // `io: 'input'` describes what the caller sends (several fields
+          // normalise their text on the way in), as the tool list does.
+          const { $schema: _draft, ...schema } = z.toJSONSchema(
+            z.object(shape),
+            { io: 'input', unrepresentable: 'any' },
+          ) as Record<string, unknown>;
+          return { op, description: tool.description, arguments: schema };
+        }),
+        usage:
+          'edit_topology({topologyId, operations:[{op:"<name>", …arguments}]}) — topologyId and pageIndex are inherited from the call.',
+      };
+    },
+  });
   tools.push({
     name: 'edit_topology',
     description:
       'Apply a BATCH of authoring operations to a topology in ONE call — strongly preferred over per-element tool calls when adding or editing more than a couple of elements. Each operation is {op, …args}: op is one of ' +
-      BATCH_OPS.join(', ') +
-      ' and the remaining keys are that tool’s arguments (topologyId and pageIndex are inherited from this call; a per-op pageIndex overrides). Operations apply in order, so later ops can reference ids created earlier. Atomic: if any operation fails the document is left unchanged and the failing index is reported. Returns compact per-op results (ids, plus created:true|false and changed:true|false for upsert_by_source — changed is false when the op was a logical no-op apart from source.fetchedAt, so created / updated / unchanged can be counted from the results), not full elements.',
+      CORE_OPS.join(', ') +
+      ' and the remaining keys are that tool’s arguments (topologyId and pageIndex are inherited from this call; a per-op pageIndex overrides). Document settings are operations too — ' +
+      EXTENDED_OPS.join(', ') +
+      ' — and exist only here: get their arguments from describe_operations. Operations apply in order, so later ops can reference ids created earlier. Atomic: if any operation fails the document is left unchanged and the failing index is reported. Returns compact per-op results (ids, plus created:true|false and changed:true|false for upsert_by_source — changed is false when the op was a logical no-op apart from source.fetchedAt, so created / updated / unchanged can be counted from the results), not full elements.',
     inputShape: {
       topologyId,
       pageIndex,
