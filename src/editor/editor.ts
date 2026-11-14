@@ -200,6 +200,9 @@ const SHARED_LINK_KEYS: ReadonlySet<string> = new Set([
   'locked',
 ]);
 
+/** How far (x and y) a pasted or duplicated copy lands from its original. */
+const CLONE_STEP = 24;
+
 /**
  * How far into its glyph a connection dot can be grabbed, as a fraction of
  * the glyph's half-extent on that axis (see `connectionDotHit`).
@@ -2591,10 +2594,33 @@ export class Editor {
     return !!this.clipboard && this.clipboard.nodes.length > 0;
   }
 
-  /** Paste the clipboard (offset), selecting the new nodes. */
+  /**
+   * Paste the clipboard, selecting the new nodes. A copy lands one step down
+   * and to the right of where it was copied from; while an element already
+   * sits exactly there (an earlier paste of the same clipboard) the copy
+   * steps on, so repeated pastes fan out like repeated duplicates instead of
+   * stacking on one spot where they look like a single node.
+   */
   paste(): void {
     if (!this.clipboard || this.clipboard.nodes.length === 0) return;
-    this.placeClones(this.clipboard.nodes, this.clipboard.links);
+    const lead = this.clipboard.nodes[0]!;
+    const taken = (x: number, y: number): boolean =>
+      this.page.nodes.some((n) => n.x === x && n.y === y) ||
+      this.page.anchors.some((a) => a.x === x && a.y === y);
+    let steps = 1;
+    while (
+      steps < 200 &&
+      taken(
+        Math.round(lead.x + steps * CLONE_STEP),
+        Math.round(lead.y + steps * CLONE_STEP),
+      )
+    )
+      steps++;
+    this.placeClones(
+      this.clipboard.nodes,
+      this.clipboard.links,
+      steps * CLONE_STEP,
+    );
   }
 
   /* ── format painter ───────────────────────────────────────────────
@@ -2659,14 +2685,19 @@ export class Editor {
     this.placeClones(nodes, links);
   }
 
-  private placeClones(srcNodes: NodeConfig[], srcLinks: LinkConfig[]): void {
+  /** Add copies of the elements, `offset` down and to the right, and select them. */
+  private placeClones(
+    srcNodes: NodeConfig[],
+    srcLinks: LinkConfig[],
+    offset = CLONE_STEP,
+  ): void {
     if (srcNodes.length === 0) return;
     this.snapshot();
     const { nodes, links } = cloneElements(srcNodes, srcLinks, {
       nextNodeId: () => this.newNodeId(),
       nextLinkId: () => this.newLinkId(),
-      dx: 24,
-      dy: 24,
+      dx: offset,
+      dy: offset,
     });
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
