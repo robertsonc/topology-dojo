@@ -555,7 +555,8 @@ class TopologyDesigner {
    *   toLabel: optional port label near the destination endpoint (e.g. 'e0')
    *   path: optional custom SVG path string (for flows with curves)
    *   labelPos: optional {x,y} for absolute label placement (flow type)
-   *   labelOffset: optional {x,y} — x shifts along the line, y shifts perpendicular
+   *   labelOffset: optional {x,y} — a page-space shift of the centre label
+   *     from its default spot, for every link type (x right, y down)
    */
   link(id, cfg) {
     cfg = _safeCfg(cfg);
@@ -3966,7 +3967,7 @@ ${grid}`;
     const mx = (x1+x2)/2, my = (y1+y2)/2;
     const a = Math.atan2(y2-y1, x2-x1);
     const loX = labelOffset?.x || 0, loY = labelOffset?.y || 0;
-    const lx = mx + Math.sin(a)*14 + Math.cos(a)*loX + Math.sin(a)*loY, ly = my - Math.cos(a)*14 + Math.sin(a)*loX - Math.cos(a)*loY;
+    const lx = mx + Math.sin(a)*14 + loX, ly = my - Math.cos(a)*14 + loY;
     return `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="6" opacity=".03" filter="url(#tds-glow-blue)"/>` +
       `<line${this._role('primary')} x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#65aef9" stroke-width="${this._lw(1.2)}" stroke-dasharray="5 3" opacity="${this._la('.5')}"/>` +
@@ -4003,7 +4004,7 @@ ${grid}`;
     const mx = (x1+x2)/2, my = (y1+y2)/2;
     const a = Math.atan2(y2-y1, x2-x1);
     const loX = labelOffset?.x || 0, loY = labelOffset?.y || 0;
-    const ox = Math.sin(a)*20 + Math.cos(a)*loX + Math.sin(a)*loY, oy = -Math.cos(a)*20 + Math.sin(a)*loX - Math.cos(a)*loY;
+    const ox = Math.sin(a)*20 + loX, oy = -Math.cos(a)*20 + loY;
     const h = sub ? 32 : 22;
     return `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade-fast" style="opacity:${op}"`}>` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="4" opacity=".03" filter="url(#tds-glow)"/>` +
@@ -4042,7 +4043,7 @@ ${grid}`;
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
     const a = Math.atan2(y2 - y1, x2 - x1);
     const loX = labelOffset?.x || 0, loY = labelOffset?.y || 0;
-    const lx = mx + Math.sin(a) * 28 + Math.cos(a)*loX + Math.sin(a)*loY, ly = my - Math.cos(a) * 28 + Math.sin(a)*loX - Math.cos(a)*loY;
+    const lx = mx + Math.sin(a) * 28 + loX, ly = my - Math.cos(a) * 28 + loY;
     const c = color || '#00a4b3';
     const gf = this._glowForColor(c);
     // Perpendicular angle for signal arcs
@@ -4115,7 +4116,7 @@ ${grid}`;
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
     const a = Math.atan2(y2 - y1, x2 - x1);
     const loX = labelOffset?.x || 0, loY = labelOffset?.y || 0;
-    const lx = mx + Math.sin(a) * 20 + Math.cos(a)*loX + Math.sin(a)*loY, ly = my - Math.cos(a) * 20 + Math.sin(a)*loX - Math.cos(a)*loY;
+    const lx = mx + Math.sin(a) * 20 + loX, ly = my - Math.cos(a) * 20 + loY;
     let s = `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>`;
     // Background glow
     s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="8" opacity=".04" filter="url(#${gf})"/>`;
@@ -4150,7 +4151,7 @@ ${grid}`;
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
     const a = Math.atan2(y2 - y1, x2 - x1);
     const loX = labelOffset?.x || 0, loY = labelOffset?.y || 0;
-    const lx = mx + Math.sin(a) * 22 + Math.cos(a)*loX + Math.sin(a)*loY, ly = my - Math.cos(a) * 22 + Math.sin(a)*loX - Math.cos(a)*loY;
+    const lx = mx + Math.sin(a) * 22 + loX, ly = my - Math.cos(a) * 22 + loY;
     let s = `<g${dofF} ${anim ? `class="tds-phase-in" style="opacity:${op};animation-delay:${delay}s"` : `class="tds-fade" style="opacity:${op}"`}>`;
     // Bright core line (thin, intense — like a laser)
     s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="12" opacity=".03" filter="url(#${gf})"/>`;
@@ -5093,8 +5094,12 @@ ${grid}`;
         const tmx = (from.x + to.x) / 2, tmy = (from.y + to.y) / 2;
         const ta = Math.atan2(to.y - from.y, to.x - from.x);
         const tloX = linkCfg.labelOffset?.x || 0, tloY = linkCfg.labelOffset?.y || 0;
-        const tlx = tmx + Math.sin(ta) * 16 + Math.cos(ta) * tloX + Math.sin(ta) * tloY;
-        const tly = tmy - Math.cos(ta) * 16 + Math.sin(ta) * tloX - Math.cos(ta) * tloY;
+        // The offset is a page-space shift, as it is for a line link's
+        // label: the drag gesture, the compass and the inspector all work in
+        // page x/y. (It used to be along/across the link, so a label dragged
+        // down on a left-to-right tunnel moved up.) Same for the other chips.
+        const tlx = tmx + Math.sin(ta) * 16 + tloX;
+        const tly = tmy - Math.cos(ta) * 16 + tloY;
         svg = this._renderTunnel(stepId, phaseNum, tunnelPath, color, linkCfg.label, tlx, tly, op, linkCfg.dots !== false, _flow, labelScale);
         break;
       }
@@ -5109,9 +5114,16 @@ ${grid}`;
       }
       case 'flow': {
         const path = waypointPath || linkCfg.path || `M${from.x},${from.y} L${to.x},${to.y}`;
+        // The label sits beside the middle of the link unless `labelPos`
+        // pins it to a page point; `labelOffset` shifts it from either. (With
+        // no `labelPos` the label used to be skipped, or drawn at the bare
+        // offset — the top-left corner of the page.)
         const lpos = linkCfg.labelPos || {};
         const lo = linkCfg.labelOffset;
-        svg = this._renderFlow(stepId, phaseNum, path, color, linkCfg.label, (lpos.x || 0) + (lo?.x || 0) || lpos.x, (lpos.y || 0) + (lo?.y || 0) || lpos.y, op, linkCfg.dots !== false, _flow, labelScale);
+        const fa = Math.atan2(to.y - from.y, to.x - from.x);
+        const flx = (Number.isFinite(lpos.x) ? lpos.x : (from.x + to.x) / 2 + Math.sin(fa) * 14) + (lo?.x || 0);
+        const fly = (Number.isFinite(lpos.y) ? lpos.y : (from.y + to.y) / 2 - Math.cos(fa) * 14) + (lo?.y || 0);
+        svg = this._renderFlow(stepId, phaseNum, path, color, linkCfg.label, flx, fly, op, linkCfg.dots !== false, _flow, labelScale);
         break;
       }
       case 'packet':
