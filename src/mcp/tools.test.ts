@@ -35,6 +35,7 @@ describe('MCP tools', () => {
       [
         'add_anchor',
         'add_flow_path',
+        'analyze_path',
         'add_link',
         'add_node',
         'add_page',

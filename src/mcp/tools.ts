@@ -133,6 +133,7 @@ import { SHARE_PUBLIC_WARNING } from '../share/copy.js';
 import type { Rasterizer } from '../export/raster.js';
 import { exportTools } from './export-tools.js';
 import { hardwareTools } from './hardware-tools.js';
+import { pathTools } from './path-tools.js';
 import { withHardware } from './hardware-render.js';
 import { wiresheetLayout } from '../render/wiresheet.js';
 import { scaleLabel } from '../render/wiresheet-scale.js';
@@ -169,6 +170,7 @@ export const OP_ONLY_TOOLS: ReadonlySet<string> = new Set([
   'set_port_table',
   'define_node_type',
   'set_node_metadata',
+  'set_document_title',
 ]);
 
 /**
@@ -2246,7 +2248,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'inspect_render',
       description:
-        'Inspect the VISUAL quality of one rendered page and return a compact report (a few KB) instead of the SVG: page/viewBox vs content bounds with margins, crop/clipping diagnostics, text-legibility warnings (labels overflowing nodes, label/label and label/node collisions, zone labels overlapped by content), routing quality (link crossings measured on the drawn waypoint/orthogonal geometry — crossings forced by a dual-homed mesh between tiers are notes, avoidable ones are problems, co-located crossings collapse into one finding, with pair totals in `crossings` — links through unrelated nodes, degenerate link/flow geometry), and density/balance signals (overlaps, crowding clusters, unbalanced whitespace). Findings are severity-tagged (problem vs note), actionable, and capped per category with true totals in `counts`. Complements validate_topology (which checks semantics + layout rules, not legibility) — use this as the cheap final visual QA step after validate/tidy/balance and BEFORE render_svg / share_topology / export_flipbook; only render once the report is clean.',
+        'Inspect the VISUAL quality of one rendered page and return a compact report (a few KB) instead of the SVG: content bounds vs the frame, clipped or overflowing text, label collisions, link crossings (those a dual-homed mesh forces are notes; avoidable ones are problems), links through unrelated nodes, overlaps and crowding. Findings are tagged problem or note, say what to change, and are capped per category with true totals in `counts`. validate_topology checks semantics and layout rules, not legibility: run this after validate/tidy/balance and before render_svg, share_topology or an export, and render once the report is clean.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -2303,7 +2305,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. `theme: "light"` renders for a light page (light backdrop, dark text, light cards, accents darkened for contrast) — for slides, docs and print; the default "dark" is the canvas look. NOTE: even the default clean build is large (often 10–150KB; map backdrops add far more) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. `theme: "light"` renders for a light page (light backdrop, dark text, light cards, accents darkened for contrast) — for slides, docs and print; the default "dark" is the canvas look. NOTE: the result is large (often 10–150KB; map backdrops add far more; rejected above 2 MiB). Iterate with validate_topology and inspect_render, and render once at the end.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -3010,6 +3012,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
   // File exports (PNG / PDF / draw.io / Visio / PowerPoint / Mermaid) and the
   // MCP Apps inline view.
   tools.push(...exportTools(store, deps));
+  tools.push(...pathTools(store, deps));
   if (deps.catalog) tools.push(...hardwareTools(store, deps.catalog));
 
   // Sharing is only available where a durable store + public origin are wired in
