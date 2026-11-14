@@ -11,7 +11,9 @@
  *     waypoints is removed, and markers pointing at it lose their `flowPathId`;
  *   - hop annotations arriving at a removed waypoint are removed, and a
  *     surviving hop whose `linkId` rode a cascade-removed link loses that
- *     pointer.
+ *     pointer;
+ *   - removed ids (and the links removed with them) leave the page's
+ *     `emphasis` list.
  *
  * DOM-free, and all mutation is in place — collections are never reassigned,
  * so references into the page stay valid (the api/edit contract).
@@ -41,6 +43,23 @@ export function pruneInPlace<T>(arr: T[], keep: (item: T) => boolean): number {
       arr.splice(i, 1);
       dropped++;
     }
+  return dropped;
+}
+
+/**
+ * Drop ids that no longer exist from the page's `emphasis` list, in place.
+ * Emphasis dims every element NOT on the list, so a list whose only entries
+ * are gone would fade the whole page with nothing left to stand out: an
+ * emptied list is removed, which turns emphasis off. Returns the count
+ * dropped. Call for every removal — a node, an anchor, or a link on its own.
+ */
+export function pruneEmphasis(
+  page: Page,
+  removed: ReadonlySet<string>,
+): number {
+  if (!page.emphasis?.length || removed.size === 0) return 0;
+  const dropped = pruneInPlace(page.emphasis, (id) => !removed.has(id));
+  if (page.emphasis.length === 0) delete page.emphasis;
   return dropped;
 }
 
@@ -98,6 +117,8 @@ export function cascadeEndpointRemoval(
   for (const fpId of out.droppedFlowPathIds)
     for (const m of page.policyMarkers)
       if (m.flowPathId === fpId) delete m.flowPathId;
+
+  pruneEmphasis(page, new Set([...removed, ...droppedLinkIds]));
 
   return out;
 }
