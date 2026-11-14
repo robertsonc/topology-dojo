@@ -346,3 +346,70 @@ describe('an anchor placed with the Anchor tool is fully selected (CODE-11 / CAN
     });
   });
 });
+
+describe('selecting never reaches a hidden layer (CODE-06)', () => {
+  /** The scene plus two switches and a link on a layer that is not drawn. */
+  function layered(visible = false): Harness {
+    const page = scene();
+    page.nodes.push(
+      { id: 'hid1', type: 'switch', x: 420, y: 560, label: 'H1', layer: 'u' },
+      { id: 'hid2', type: 'switch', x: 500, y: 560, label: 'H2', layer: 'u' },
+    );
+    page.links.push({
+      id: 'hl',
+      type: 'line',
+      from: 'hid1',
+      to: 'hid2',
+      layer: 'u',
+    });
+    // The hidden switches also hang off a visible node and sit in the zone.
+    page.links.push({ id: 'c-h1', type: 'line', from: 'c', to: 'hid1' });
+    page.zones[0]!.nodes.push('hid1');
+    const h = harness(page);
+    h.editor.setRenderOpts(() => ({
+      layers: [{ id: 'u', defaultVisible: visible }],
+    }));
+    return h;
+  }
+
+  it('a marquee around a visible node leaves the hidden ones inside it alone', () => {
+    const h = layered();
+    h.drag({ x: 380, y: 450 }, { x: 540, y: 600 }); // around node c
+    expect(selected(h.editor).nodes).toEqual(['c']);
+    h.editor.deleteSelected();
+    expect(ids(h.editor).nodes).toEqual(['a', 'b', 'hid1', 'hid2']);
+    expect(ids(h.editor).links).toContain('hl');
+  });
+
+  it('select-all selects what is drawn, and Delete removes only that', () => {
+    const h = layered();
+    h.editor.selectAll();
+    expect(selected(h.editor).nodes).toEqual(['a', 'b', 'c']);
+    h.editor.deleteSelected();
+    expect(ids(h.editor).nodes).toEqual(['hid1', 'hid2']);
+  });
+
+  it('select-by commands stay on the visible page', () => {
+    const invert = layered();
+    invert.editor.focusNode('a');
+    invert.editor.invertSelection();
+    expect(selected(invert.editor).nodes).toEqual(['b', 'c']);
+
+    const grow = layered();
+    grow.editor.focusNode('c');
+    grow.editor.growConnected();
+    expect(selected(grow.editor).nodes).toEqual(['b', 'c']);
+
+    const zone = layered();
+    zone.editor.selectZoneMembers('z1');
+    expect(selected(zone.editor).nodes).toEqual(['a', 'b']);
+  });
+
+  it('once the layer is shown its nodes select like any other', () => {
+    const h = layered(true);
+    h.editor.selectAll();
+    expect(selected(h.editor).nodes).toEqual(['a', 'b', 'c', 'hid1', 'hid2']);
+    h.drag({ x: 380, y: 450 }, { x: 540, y: 600 });
+    expect(selected(h.editor).nodes).toEqual(['c', 'hid1', 'hid2']);
+  });
+});

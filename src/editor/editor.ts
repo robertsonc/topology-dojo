@@ -2515,18 +2515,24 @@ export class Editor {
 
   /* ── clipboard / duplicate / select-all ───────────────────────── */
 
-  /** Select every node on the page. */
+  /**
+   * Select every node the user can see. Nodes on a hidden layer are left
+   * out, here and in every other select-by command and the marquee: a
+   * Delete or a drag must never reach what is not drawn.
+   */
   selectAll(): void {
-    this.setSelection({ nodes: this.page.nodes.map((n) => n.id) });
+    this.setSelection({ nodes: this.hitPage().nodes.map((n) => n.id) });
     this.renderOverlay();
   }
 
   /* ── select by / filter ───────────────────────────────────────── */
 
-  /** Replace the selection with all nodes matching `predicate`. */
+  /** Replace the selection with all visible nodes matching `predicate`. */
   private selectWhere(predicate: (n: NodeConfig) => boolean): void {
     this.setSelection({
-      nodes: this.page.nodes.filter(predicate).map((n) => n.id),
+      nodes: this.hitPage()
+        .nodes.filter(predicate)
+        .map((n) => n.id),
     });
     this.renderOverlay();
   }
@@ -2561,10 +2567,12 @@ export class Editor {
   growConnected(): void {
     if (this.sel.size === 0) return;
     const next = new Set(this.sel);
-    for (const l of this.page.links) {
-      if (this.sel.has(l.from) && this.page.nodes.some((n) => n.id === l.to))
+    // Follow only links that are drawn, to nodes that are drawn.
+    const page = this.hitPage();
+    for (const l of page.links) {
+      if (this.sel.has(l.from) && page.nodes.some((n) => n.id === l.to))
         next.add(l.to);
-      if (this.sel.has(l.to) && this.page.nodes.some((n) => n.id === l.from))
+      if (this.sel.has(l.to) && page.nodes.some((n) => n.id === l.from))
         next.add(l.from);
     }
     this.setSelection({ nodes: next });
@@ -2817,7 +2825,8 @@ export class Editor {
    * movable container.
    */
   selectZoneMembers(id: string): boolean {
-    const ids = this.zoneMemberIds(id);
+    const visible = new Set(this.hitPage().nodes.map((n) => n.id));
+    const ids = this.zoneMemberIds(id).filter((nid) => visible.has(nid));
     if (!ids.length) return false;
     this.setSelection({ nodes: ids });
     this.renderOverlay();
@@ -4917,7 +4926,10 @@ export class Editor {
         // The rubber band adds what it holds to the node + anchor selection
         // the press left in place (empty unless the press was additive).
         const nodes = new Set(this.sel);
-        for (const id of nodesInRect(this.page, x0, y0, x1, y1)) nodes.add(id);
+        // Only what is drawn: a node on a hidden layer inside the rect is
+        // not part of what the user rubber-banded.
+        for (const id of nodesInRect(this.hitPage(), x0, y0, x1, y1))
+          nodes.add(id);
         // Anchors whose point falls in the rect join the selection too.
         const anchors = new Set(this.selAnchors);
         const xa = Math.min(x0, x1),
