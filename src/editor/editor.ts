@@ -2651,7 +2651,10 @@ export class Editor {
     return this.formatClip.kind === 'node' ? this.sel.size > 0 : !!this.linkSel;
   }
 
-  /** Brush the copied style onto the selection (all nodes, or the one link). */
+  /**
+   * Brush the copied style onto the selection: every selected node, or every
+   * selected link (not only the primary one the inspector shows).
+   */
   pasteFormat(): void {
     const clip = this.formatClip;
     if (!clip) return;
@@ -2664,10 +2667,16 @@ export class Editor {
           this.assignAndEmit('nodes', n as Record<string, unknown>, clip.style);
       }
     } else {
-      const link = this.getSelectedLink();
-      if (!link) return;
+      const ids = new Set(this.selectedLinkIds());
+      const links = this.page.links.filter((l) => ids.has(l.id));
+      if (links.length === 0) return;
       this.snapshot();
-      this.assignAndEmit('links', link as Record<string, unknown>, clip.style);
+      for (const link of links)
+        this.assignAndEmit(
+          'links',
+          link as Record<string, unknown>,
+          clip.style,
+        );
     }
     this.renderArt();
     this.renderOverlay();

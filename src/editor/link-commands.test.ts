@@ -163,3 +163,74 @@ describe('swap endpoints keeps each end’s data with its device (LNK-12)', () =
     }
   });
 });
+
+describe('paste format restyles every selected link (LNK-17)', () => {
+  const STYLE = {
+    type: 'tunnel',
+    color: '#01a982',
+    dashed: true,
+    strokeWidth: 3,
+  };
+
+  /** ab carries the style; bc and ca are selected together (bc primary). */
+  function styledAndSelected() {
+    const page = page3();
+    Object.assign(page.links[0]!, STYLE);
+    const h = harness(page);
+    h.editor.focusLink('ab');
+    h.editor.copyFormat();
+    h.click(400, 250); // on bc: b (500,100) → c (300,400)
+    h.click(200, 250, { ctrlKey: true }); // + ca: c (300,400) → a (100,100)
+    expect(h.editor.selectedLinkIds()).toEqual(['bc', 'ca']);
+    return { h, page };
+  }
+
+  it('brushes the copied style onto all of them, as one undo step', () => {
+    const { h, page } = styledAndSelected();
+    expect(h.editor.canPasteFormat()).toBe(true);
+    h.editor.pasteFormat();
+    expect(page.links[1]).toMatchObject({ ...STYLE, from: 'b', to: 'c' });
+    expect(page.links[2]).toMatchObject({ ...STYLE, from: 'c', to: 'a' });
+    expect(h.editor.selectedLinkIds()).toEqual(['bc', 'ca']);
+    h.editor.undo();
+    expect(h.editor.page.links[1]).toEqual({
+      id: 'bc',
+      type: 'line',
+      from: 'b',
+      to: 'c',
+    });
+    expect(h.editor.page.links[2]!.type).toBe('line');
+  });
+
+  it('emits one patch per restyled link, reproducing the snapshot diff', () => {
+    const { h } = styledAndSelected();
+    h.editor.takePendingOperations();
+    const before = wrap(h.editor.page);
+    h.editor.pasteFormat();
+    const after = wrap(h.editor.page);
+    const emitted = h.editor.takePendingOperations();
+    expect(emitted.map((op) => op.type)).toEqual([
+      'element.patch',
+      'element.patch',
+    ]);
+    expect(applyOperations(before, emitted)).toEqual(
+      applyOperations(before, diffDocuments(before, after)),
+    );
+  });
+
+  it('a node style still goes onto every selected node', () => {
+    const page = page3();
+    page.nodes[0]!.color = '#7764fc';
+    const h = harness(page);
+    h.editor.focusNode('a');
+    h.editor.copyFormat();
+    h.click(500, 100);
+    h.click(300, 400, { shiftKey: true });
+    h.editor.pasteFormat();
+    expect(page.nodes.map((n) => n.color)).toEqual([
+      '#7764fc',
+      '#7764fc',
+      '#7764fc',
+    ]);
+  });
+});
