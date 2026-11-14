@@ -31,7 +31,7 @@ failure storytelling (T).
 | A          | Done — A1–A6 merged as PR #243 (`5de7813`, 2026-08-19)                              | `src/agent-activity/`, `worker/agent-activity.ts`, `worker/admin-api.ts`                                |
 | B          | Done 2026-11-14, re-scoped to parametric starter templates (see Initiative B)       | `src/api/templates.ts`, `src/ui/template-wizard.ts`, `params` on `create_from_template`                 |
 | E          | E2 done (2026-11-14, test-only); E1 and E3–E7 not started                           | `src/connect/compile.test.ts` (E2); no `fixtures/edgeconnect/`, no `worker/live-import-api.ts`          |
-| T          | Not started                                                                         | No `src/stories/`, no `compile_flow_story` tool                                                         |
+| T          | T1–T3 done (2026-11-14, library only); T4 held; T5–T7 not started                   | `src/stories/` (`types`, `compile`, `frame`, `annotate` + tests); no `compile_flow_story` tool          |
 
 What changed around the unstarted packets since July — revalidate before
 starting any of them:
@@ -1177,6 +1177,18 @@ pattern.
 - **Acceptance criteria:** Each step's delta description is expressive enough
   to represent "a tunnel goes down" and "a flow reroutes" without needing a
   future breaking change.
+- **Status (2026-11-14): done**, as `src/stories/types.ts` (not `model.ts`),
+  with a validator the spec did not ask for. A `FlowScenario` is `system`,
+  a `base` of plain fabric records (appliances, underlay, overlay, policies,
+  flows — from a provider snapshot or from `sdwanFabricRecords`, the
+  generator's fabric; no provider is involved) and ordered named `steps`.
+  A step's `changes` are a union on `kind`: `set-tunnel`, `set-appliance`
+  and `set-flow` carry a patch of the record (`{ status: 'down' }`,
+  `{ outboundTunnel: … }`), `add-flow` and `remove-flow` a record or a
+  `FlowRef`. A new record field needs no new kind, and a new kind is an
+  addition. `validateFlowScenario` checks every change against the state it
+  meets and returns problems that name the step and the field;
+  `scenarioStates` gives the fabric after each step.
 
 ### T2 — Story compiler
 
@@ -1207,6 +1219,37 @@ pattern.
 - **Acceptance criteria:** Deleting or corrupting one page in a compiled
   scenario has zero effect on the others (proves independence, not just
   by-construction claim).
+- **Status (2026-11-14): done** — `compileFlowStory` in
+  `src/stories/compile.ts`, with `src/stories/frame.ts`.
+  **No inheritance — reviewers, check this first.** The scenario's steps are
+  changes; the document's pages are not. The compiler applies the changes to
+  plain records to get the fabric state at each step and compiles every
+  state from scratch. No page is stored as a difference from another, none
+  refers to another, and none is derived from another page's content. The
+  tests assert that no object is reachable from two pages, that rewriting or
+  deleting one page leaves the others byte-identical and valid, and that
+  the same scenario compiles to the same bytes. Every page of the worked
+  example, and of seven other fabric shapes, has no validation or layout
+  problem, warnings included.
+  Where it departs from the spec above, and why:
+  - It composes `compileFabric` + `compileFlow` (the two calls
+    `compileFlowTopology` makes) rather than `compileFlowTopology` itself,
+    because the one-shot's layout pass cannot be shared between pages.
+    `src/connect/compile.ts` is unchanged; `generate.ts` gained one accessor
+    (`sdwanFabricRecords`).
+  - Positions come from one frame laid out before any page: every state is
+    compiled onto a throwaway page so it holds every node of the story, the
+    nodes are placed once (spokes in a column, hubs facing them, endpoints
+    beside their appliance), and each page copies its x/y from it. A node is
+    at the same place on every page it is on. Laid out one by one, the
+    one-shot moves nodes whenever a flow comes or goes (0, 2 and 5 of the
+    shared nodes across the three flips of the test scenario), and with
+    site zones it packs every site into one row, so tunnels run through the
+    appliances between their ends.
+  - Converging one page into the next (`compileFabric(…, into)`) was
+    rejected: it re-seeds positions and leaves stale keys — the E2 "known
+    limits".
+  - A frame is one column a side, so a large fabric makes a tall page.
 
 ### T3 — Failure-moment annotations
 
@@ -1230,6 +1273,15 @@ pattern.
   marker(s) on the expected element(s).
 - **Acceptance criteria:** A viewer can visually identify what changed
   between two adjacent scenario pages without needing prose explanation.
+- **Status (2026-11-14): done** — `src/stories/annotate.ts`. No marker type
+  was added and `src/api/catalog.ts` is unchanged. On every page where it
+  holds: an unreachable appliance has `status: 'down'` (reachable: `'ok'`),
+  a down tunnel puts one `deny` marker on the appliance it leaves from, and
+  a flow that cannot flow (down tunnel, dead appliance) is drawn stopped in
+  the down colour. On the page of the step that made it: a flow on another
+  tunnel puts one `redirect` marker on the appliance it now leaves through,
+  and the page's `emphasis` holds whatever the step's changes touched.
+  Pages also carry a caption written from the changes.
 
 ### T4 — MCP tool `compile_flow_story`
 
@@ -1250,6 +1302,11 @@ pattern.
   will force the table update).
 - **Acceptance criteria:** An agent with live-fabric access can produce a
   multi-page failure-scenario flipbook in one call.
+- **Status (2026-11-14): held, on purpose.** The MCP tool list has a hard
+  size budget and the live-fabric tools are off in production. One premise
+  above no longer holds: `compileFlowStory` needs no provider (the scenario
+  carries its base, which may be the SD-WAN generator's fabric), so gating
+  the tool on `deps.provider` is a choice, not a requirement.
 
 ### T5 — GUI scenario-timeline authoring affordance
 
@@ -1322,8 +1379,8 @@ here and would need its own evidence-triggered justification.
 ## Packet register (flat index)
 
 _Full specs are in each initiative's section above; this is a cross-reference
-index only. Status at 2026-11-14: N, O3, A and E2 are done; O1/O2 await human
-evidence; every other B, E and T packet is not started._
+index only. Status at 2026-11-14: N, O3, A, E2 and T1–T3 are done; O1/O2 await
+human evidence; T4 is held; every other B, E and T packet is not started._
 
 | Packet | Initiative        | Depends on | Migration? | New flag/tool/secret?      | Human action?                            |
 | ------ | ----------------- | ---------- | ---------- | -------------------------- | ---------------------------------------- |
@@ -1353,10 +1410,10 @@ evidence; every other B, E and T packet is not started._
 | E5     | EdgeConnect       | —          | No         | New secret (staging)       | **Yes, 100%**                            |
 | E6     | EdgeConnect       | —          | No         | No                         | No                                       |
 | E7     | EdgeConnect       | E4, E5, E6 | No         | No                         | Deploy approval                          |
-| T1     | Storytelling      | —          | No         | No                         | No                                       |
-| T2     | Storytelling      | T1, **E2** | No         | No                         | No                                       |
-| T3     | Storytelling      | T2         | No         | No                         | No                                       |
-| T4     | Storytelling      | T2         | No         | New tool                   | No                                       |
+| T1     | Storytelling      | —          | No         | No                         | No — **done**                            |
+| T2     | Storytelling      | T1, **E2** | No         | No                         | No — **done**                            |
+| T3     | Storytelling      | T2         | No         | No                         | No — **done**                            |
+| T4     | Storytelling      | T2         | No         | New tool                   | No — **held** (tool budget)              |
 | T5     | Storytelling      | T3, T4     | No         | No                         | No                                       |
 | T6     | Storytelling      | T5         | No         | No                         | No                                       |
 | T7     | Storytelling      | T6         | No         | No                         | Deploy approval                          |

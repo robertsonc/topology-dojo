@@ -159,7 +159,11 @@ packet-level ordering and what can run in parallel):
    produces animated, per-hop flow paths for a point-in-time fabric snapshot;
    there's no scenario model for "walk through this fabric before, during,
    and after a failure" the way the flipbook already does for static topology
-   states. Packets: T1–T7. **Not started** (2026-11-13).
+   states. Packets: T1–T7. **T1–T3 done** (2026-11-14) as a library in
+   `src/stories/`: a `FlowScenario` (a base fabric plus named steps of
+   changes) compiles to one full page per step, with nodes held in place
+   across pages and the failure marked on the page. Nothing calls it yet:
+   T4 (the MCP tool) is deliberately held, T5–T7 are not started.
 
 Items 4–6 can be scoped and start in parallel (see the
 dependency graph); none of them share a Durable Object or migration, so they
@@ -377,7 +381,9 @@ so a future contributor doesn't have to re-litigate them:
   write path is introduced for performance or convenience.
 - **Hidden cross-page inheritance.** Pages are independent, full-frame
   documents by design (`docs/decisions/0001-flipbook-vs-beats.md`); no
-  delta/override machinery between pages, ever — see `DESIGN.md` #1.
+  delta/override machinery between pages, ever — see `DESIGN.md` #1. The
+  scenario-story compiler (`src/stories/`) is the worked case: changes exist
+  only in its input, and each page is compiled whole.
 - **Laptop-driven production deployment.** `npm run deploy` was deleted
   (finding L1, closed); the only production deploy path is the gated GitHub
   Actions pipeline (`release.yml` — merging to `main` is the release
