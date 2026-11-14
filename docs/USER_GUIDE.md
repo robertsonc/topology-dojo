@@ -294,18 +294,26 @@ order. Use **Straighten (clear bends)** to remove all manual waypoints.
 Either way, waypoints are kept and a pinned port on the moved end is cleared.
 Self-loops are refused.
 
-### Link anchor box (experimental)
+### Link anchor box
 
-By default a link attaches to the edge of the node icon, so a link leaving the
-bottom of a node runs straight through its label. The **Link anchor box**
-option (page Properties, under Crossings; off unless you turn it on) makes
-links attach to a box around the node instead: the icon's hit box padded by
+In the classic attachment a link meets the edge of the node icon, so a link
+leaving the bottom of a node runs straight through its label. The **Link
+anchor box** (page Properties, under Crossings) makes links attach to a box
+around the node instead: the icon's hit box padded by
 **Box padding** (6 px unless set) on every side, with the side that carries
 the label extended past the label text. Ports pin to that box; auto endpoints
 leave through its faces (round icons keep a round outline, padded, except on
 the label side). Each node's Properties has the same switch under Advanced to
 override the page setting for that node only, and a selected node shows its
 anchor box as a faint dashed outline.
+
+The anchor box is **on, with Distribute ends, for new work**: a **new**
+document, the starter templates, the SD-WAN generator, and anything an agent
+creates over MCP (`create_topology`, `add_page`, `build_flow_topology`,
+`create_workspace`). A frame added with **+ frame** follows the frame you are
+on. Documents saved before this, the first-run sample scene, and imported
+files keep the classic attachment until you turn the switch on; nothing is
+re-routed behind your back.
 
 **Distribute ends** spreads every link endpoint on a node side into evenly
 spaced slots, ordered by where the links go, so a stack of links into one side
@@ -316,7 +324,7 @@ it attaches to (0 = centre, ±1 = the ends) for side ports and auto endpoints;
 corner ports ignore it. A corner port (top-left and friends) is an exact pin:
 a side port still moves along its side into a slot under Distribute, a corner
 port never does, and Problems says so for each such link end. These fields
-only take effect while the anchor box is active for that node. The feature is experimental: documents without it render
+only take effect while the anchor box is active for that node. Documents without it render
 exactly as before, and `inspect_render` / Problems measure the drawn geometry
 either way. With **Distribute** on, the link ends on one side of a node are
 ordered by the direction of each link, so neighbouring links fan out without

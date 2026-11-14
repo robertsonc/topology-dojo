@@ -212,12 +212,16 @@ summary. Calling one of these names directly as a tool still works (existing
 scripts keep running, and validation hints such as "declare it with
 `define_tier`" can be followed literally); they are only left out of the list.
 
-### Link anchor box (experimental)
+### Link anchor box
 
-Links attach to the edge of the node icon by default, so a south-attached
-link runs through the node label. `set_page_properties` takes
-`linkAttach: { pad?, distribute? }` (`{}` = on with defaults, `"none"` clears)
-to attach links to an **anchor box** instead: the node's hit box inflated by
+Pages created over MCP (`create_topology`, `add_page`, the templates,
+`generate_sdwan_topology`, `build_flow_topology`, `create_workspace`) start
+with `linkAttach: { distribute: true }`: links attach to an **anchor box**
+instead of the icon edge, where a south-attached link would run through the
+node label. `set_page_properties` takes `linkAttach: { pad?, distribute? }`
+(`{}` = on without distribute) or `"none"` for the classic attachment.
+Imported documents and documents stored before this default keep whatever
+they carry. The anchor box is the node's hit box inflated by
 `pad` (default 6) and extended past the label block on the label side. Ports
 pin to that box; auto endpoints clip to its faces (circle/ellipse icons keep a
 padded round outline off the label side). A node's own `linkAttach` (same

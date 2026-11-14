@@ -411,8 +411,29 @@ describe('MCP tools', () => {
     ).toThrow(/branchesPerRegion has 3 entries/);
   });
 
+  it('create_topology starts the page with the link anchor box on', () => {
+    const { id } = call('create_topology', {}) as { id: string };
+    const page = () =>
+      (call('get_topology', { topologyId: id }) as TopologyDocument).pages[0]!;
+    expect(page().linkAttach).toEqual({ distribute: true });
+    // A page added later starts the same way.
+    call('add_page', { topologyId: id, name: 'Second' });
+    const doc = call('get_topology', { topologyId: id }) as TopologyDocument;
+    expect(doc.pages[1]!.linkAttach).toEqual({ distribute: true });
+    // "none" opts a page out.
+    call('set_page_properties', {
+      topologyId: id,
+      pageIndex: 0,
+      linkAttach: 'none',
+    });
+    expect(page()).not.toHaveProperty('linkAttach');
+  });
+
   it('auto_place_labels lifts a hub label off the links fanning below it', () => {
     const { id } = call('create_topology', {}) as { id: string };
+    // The classic attachment draws the fan through the hub label; the default
+    // anchor box would already clear it and leave nothing to lift.
+    call('set_page_properties', { topologyId: id, linkAttach: 'none' });
     call('add_node', {
       topologyId: id,
       type: 'ec',

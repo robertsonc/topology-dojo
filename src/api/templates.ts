@@ -25,11 +25,13 @@ function arranged(
   b: { build: () => TopologyDocument },
   algorithm: LayoutAlgorithm,
   direction?: 'TB' | 'LR',
+  spacing?: number,
 ): TopologyDocument {
   const doc = b.build();
   layoutDocument(doc, {
     algorithm,
     ...(direction ? { direction } : {}),
+    ...(spacing !== undefined ? { spacing } : {}),
   });
   return doc;
 }
@@ -186,7 +188,10 @@ const TEMPLATES: TemplateDef[] = [
         b.link({ id: `${leaf}-s1`, type: 'line', from: 's1', to: leaf });
         b.link({ id: `${leaf}-s2`, type: 'line', from: 's2', to: leaf });
       }
-      return arranged(b, 'hierarchical', 'TB');
+      // A full mesh between two rows needs more air than the layout's
+      // default gap: at 36px the far spine-to-leaf links leave sideways and
+      // detour under the neighbouring spine.
+      return arranged(b, 'hierarchical', 'TB', 100);
     },
   },
   {

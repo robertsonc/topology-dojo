@@ -180,18 +180,21 @@ packets:
   unused defs), and make it the default for `render_svg`, `view_topology`,
   PNG and PDF. Not started (no `profile` render option exists at `e99b012`). The editable exports (draw.io / Visio / PowerPoint shapes)
   are built from the export scene, not the SVG, so they are unaffected.
-- **Link anchor box on by default for new documents** — on a dual-homed
-  hub-and-spoke page (the most common SD-WAN shape), `inspect_render` flags
-  spoke tunnels running through the hub labels until `linkAttach:
-{distribute: true}` is set, which clears them; the fix is gated behind an
-  EXPERIMENTAL flag. Make it the default for documents created by
-  `create_topology`, templates and `build_flow_topology` (opt out with
-  `linkAttach: "none"`). Stored documents keep rendering as they do today —
-  flipping the engine default would move every existing diagram's wires,
-  which the byte-identical-render promise rules out. Graduate the flag
-  out of EXPERIMENTAL once it is the default. Not started: the opt-in
-  mechanism shipped (PR #274, with a corner-pin warning in #275) and is
-  still marked EXPERIMENTAL in `src/api/catalog.ts`.
+- ~~**Link anchor box on by default for new documents**~~ — **shipped
+  2026-11-14**: pages created through the authoring API (`create_topology`,
+  `add_page`, the templates, `generate_sdwan_topology`,
+  `build_flow_topology`, `create_workspace`) and new documents in the editor
+  start with `linkAttach: {distribute: true}` (`DEFAULT_LINK_ATTACH` in
+  `src/api/builder.ts`); `linkAttach: "none"` opts a page out. The default
+  is written into the new page, not made the renderer's default, so stored
+  documents, imports and the first-run sample scene render as before. No
+  longer labelled experimental. Measured on generated fabrics, links through
+  their own node's label fell from 42 to 1 (3 regions, 2 WAN links), 12 to 0
+  (HA branches with LAN) and 10 to 0 (one box per site). The spine-leaf
+  starter template was re-spaced: at the layout's default gap its far
+  spine-to-leaf links detoured under the neighbouring spine in either
+  attachment. Not done: imports (Mermaid / CSV / draw.io) still produce
+  classic pages.
 
 - **Second fabric provider: Juniper Mist** — the `TopologyProvider`
   abstraction is vendor-neutral by design (`src/connect/types.ts`), and the

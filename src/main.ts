@@ -133,7 +133,7 @@ import { exportReport, type ExportState } from './ui/export-status.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
-import { genId } from './api/builder.js';
+import { DEFAULT_LINK_ATTACH, genId } from './api/builder.js';
 import { computeBadgePlacements } from './editor/problem-badges.js';
 import {
   LINK_ATTACH_FIELDS,
@@ -1181,7 +1181,11 @@ app.querySelector('#fNew')?.addEventListener('click', () => {
   if (!closeWorkspaceForDocumentReplacement()) return;
   loadDoc({
     title: 'Untitled',
-    pages: [blankPage('Frame 1')],
+    // A new document starts with the link anchor box on, like one an agent
+    // creates (DEFAULT_LINK_ATTACH); the page's Properties turn it off.
+    pages: [
+      { ...blankPage('Frame 1'), linkAttach: { ...DEFAULT_LINK_ATTACH } },
+    ],
     customNodes: [],
   });
   // An anonymous visitor (in from a share link) has just started a document
@@ -2843,8 +2847,8 @@ function propertiesHtml(): string {
     `<option value="chip"${page.portLabels !== 'pill' ? ' selected' : ''}>chip beside the wire</option>` +
     `<option value="pill"${page.portLabels === 'pill' ? ' selected' : ''}>pill on the node edge</option>` +
     `</select></label>` +
-    // Experimental link anchor box — page-level; nodes may override it.
-    `<label class="insp-row" title="Experimental: links attach to a padded box that clears the node label instead of the icon edge. Nodes can override it in their Properties."><span>Link anchor box</span><input type="checkbox" id="p-attach"${page.linkAttach ? ' checked' : ''}/></label>` +
+    // Link anchor box — page-level; nodes may override it.
+    `<label class="insp-row" title="Links attach to a padded box that clears the node label instead of the icon edge. On for new documents; nodes can override it in their Properties."><span>Link anchor box</span><input type="checkbox" id="p-attach"${page.linkAttach ? ' checked' : ''}/></label>` +
     (page.linkAttach
       ? `<label class="insp-row"><span>Box padding</span><input type="number" id="p-attach-pad" min="0" max="200" step="any" placeholder="6" value="${page.linkAttach.pad ?? ''}"/></label>` +
         `<label class="insp-row" title="Spread every link endpoint on a node side into evenly spaced slots"><span>Distribute ends</span><input type="checkbox" id="p-attach-dist"${page.linkAttach.distribute ? ' checked' : ''}/></label>`
@@ -3033,7 +3037,7 @@ function wireProperties(): void {
       portLabels: portLabels.value === 'pill' ? 'pill' : undefined,
     });
   });
-  // Link anchor box (experimental) — page-level; the art redraws on change.
+  // Link anchor box — page-level; the art redraws on change.
   const attachOn = inspector.querySelector<HTMLInputElement>('#p-attach');
   attachOn?.addEventListener('change', () => {
     editor.updatePageProps({
@@ -4545,7 +4549,13 @@ function renderFilmstrip(): void {
       playTimer !== null ? stopPlayback() : startPlayback(),
     );
   strip.querySelector('#addPage')?.addEventListener('click', () => {
-    doc.pages.push(blankPage(`Frame ${doc.pages.length + 1}`));
+    // A new frame attaches links the way the frame you are on does, so one
+    // document does not mix the two attachment styles by accident.
+    const attach = doc.pages[current]?.linkAttach;
+    doc.pages.push({
+      ...blankPage(`Frame ${doc.pages.length + 1}`),
+      ...(attach ? { linkAttach: { ...attach } } : {}),
+    });
     gotoPage(doc.pages.length - 1);
     markDirty();
   });

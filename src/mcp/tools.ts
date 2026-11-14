@@ -920,7 +920,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_page_properties',
       description:
-        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (EXPERIMENTAL link anchor box: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; {} = on with defaults, "none" clears; a node’s own linkAttach merges over it), and/or portLabels ("pill" draws each endpoint label as a dark pill ON the node edge at the attach point, rotated to the side — the wiring-sheet convention; pair it with linkAttach {distribute:true}; "chip" restores the classic glass chip beside the wire; a node’s own portLabels overrides it), and/or frame storytelling: caption (a one-line narration shown during playback and under exports; "" clears) and emphasis (node / link ids to spotlight — everything else on the frame dims; [] clears).',
+        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (the link anchor box, ON for new pages as {distribute:true}: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; "none" = classic attachment at the icon edge; a node’s own linkAttach merges over it), and/or portLabels ("pill" draws each endpoint label as a dark pill ON the node edge at the attach point, rotated to the side — the wiring-sheet convention; pair it with linkAttach {distribute:true}; "chip" restores the classic glass chip beside the wire; a node’s own portLabels overrides it), and/or frame storytelling: caption (a one-line narration shown during playback and under exports; "" clears) and emphasis (node / link ids to spotlight — everything else on the frame dims; [] clears).',
       inputShape: {
         topologyId,
         pageIndex,
@@ -957,7 +957,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           ])
           .optional()
           .describe(
-            'EXPERIMENTAL link anchor box for the page ({} = on with defaults; "none" clears).',
+            'Link anchor box for the page (new pages start {distribute:true}; "none" = classic attachment).',
           ),
         portLabels: z
           .enum(['chip', 'pill'])

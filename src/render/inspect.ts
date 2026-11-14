@@ -404,12 +404,19 @@ function checkText(
     if (!pts) continue;
     for (const id of l.from === l.to ? [l.from] : [l.from, l.to]) {
       const lr = labels.get(id);
-      if (lr && polylineIntersectsRect(pts, lr))
-        add(
-          'problem',
-          'text',
-          `link "${l.id}" runs through the label of its node "${id}" — enable the link anchor box (linkAttach) on the page or node, or route the link away from the label`,
-        );
+      if (!lr || !polylineIntersectsRect(pts, lr)) continue;
+      // With the anchor box already on, "enable it" is no help: the label is
+      // wider than the box, or the link is pinned or routed across it.
+      const node = page.nodes.find((n) => n.id === id);
+      const boxed = !!node && attach.optionsFor(node) !== null;
+      add(
+        'problem',
+        'text',
+        `link "${l.id}" runs through the label of its node "${id}" — ` +
+          (boxed
+            ? 'move the label to a clear side (labelPlacement, or auto_place_labels) or route the link away from it'
+            : 'enable the link anchor box (linkAttach) on the page or node, or route the link away from the label'),
+      );
     }
   }
   for (const n of page.nodes) {
