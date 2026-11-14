@@ -38,6 +38,9 @@ function labelledPage(): Page {
   return page;
 }
 
+/** The label texts of link ab are drawn inside that link's group. */
+const AB = { link: 'ab' };
+
 /** Centre points of the label boxes below, each clear of nodes and the wire. */
 const CENTRE = { x: 200, y: 126 };
 const FROM = { x: 147, y: 65 };
@@ -47,10 +50,14 @@ const FLOW = { x: 430, y: 306 };
 function labelled(): Harness {
   const h = harness(labelledPage());
   h.art.texts = [
-    fakeText('uplink', { x: 180, y: 120, width: 40, height: 12 }),
-    fakeText('ge-0/0/1', { x: 125, y: 60, width: 44, height: 10 }),
-    fakeText('xe-1', { x: 240, y: 60, width: 24, height: 10 }),
-    fakeText('backup', { x: 400, y: 300, width: 60, height: 12 }, 'f1'),
+    fakeText('uplink', { x: 180, y: 120, width: 40, height: 12 }, AB),
+    fakeText('ge-0/0/1', { x: 125, y: 60, width: 44, height: 10 }, AB),
+    fakeText('xe-1', { x: 240, y: 60, width: 24, height: 10 }, AB),
+    fakeText(
+      'backup',
+      { x: 400, y: 300, width: 60, height: 12 },
+      { flow: 'f1' },
+    ),
     // The node captions are rendered text too; they must not confuse it.
     fakeText('A', { x: 97, y: 114, width: 6, height: 12 }),
   ];
@@ -78,12 +85,11 @@ describe('double-click on a link label (LNK-07)', () => {
   it('a label dragged away from its wire is still the link’s label', () => {
     const h = labelled();
     h.editor.page.links[0]!.labelOffset = { x: 60, y: 140 };
-    h.art.texts[0] = fakeText('uplink', {
-      x: 240,
-      y: 260,
-      width: 40,
-      height: 12,
-    });
+    h.art.texts[0] = fakeText(
+      'uplink',
+      { x: 240, y: 260, width: 40, height: 12 },
+      AB,
+    );
     expect(h.editor.requestInlineEditAt(260, 266)).toBe('link');
     expect(h.requests[0]).toMatchObject({ kind: 'link', id: 'ab' });
   });
@@ -120,6 +126,56 @@ describe('double-click on a link label (LNK-07)', () => {
       expect(h.requests.map((r) => r.kind)).toEqual([kind]);
       expect(h.editor.canUndo()).toBe(false);
     }
+  });
+
+  it('a node caption that reads like a link label is still the node’s', () => {
+    // Node a is called "uplink" too, and the link's own label has been
+    // dragged far away: the caption is the "uplink" text nearest the link.
+    const h = labelled();
+    h.editor.page.nodes[0]!.label = 'uplink';
+    h.editor.page.links[0]!.labelOffset = { x: 200, y: 300 };
+    h.art.texts = [
+      fakeText('uplink', { x: 380, y: 420, width: 40, height: 12 }, AB),
+      fakeText('uplink', { x: 82, y: 114, width: 36, height: 12 }), // caption
+    ];
+    expect(h.editor.requestInlineEditAt(100, 120)).toBe('node');
+    expect(h.requests[0]).toMatchObject({ kind: 'node', id: 'a' });
+    // And a press on the caption drags the node, not the link's label.
+    h.drag({ x: 100, y: 120 }, { x: 100, y: 220 });
+    expect(h.editor.page.nodes[0]).toMatchObject({ x: 100, y: 200 });
+    expect(h.editor.page.links[0]!.labelOffset).toEqual({ x: 200, y: 300 });
+  });
+
+  it('two links with the same label text: each label is its own link’s', () => {
+    const h = labelled();
+    h.editor.page.nodes.push({
+      id: 'c',
+      type: 'ec',
+      x: 300,
+      y: 400,
+      label: 'C',
+    });
+    h.editor.page.links.push({
+      id: 'bc',
+      type: 'line',
+      from: 'b',
+      to: 'c',
+      label: 'uplink',
+    });
+    // bc's label has been dragged to sit right next to ab's middle; ab's
+    // own label was dragged away.
+    h.art.texts = [
+      fakeText('uplink', { x: 600, y: 500, width: 40, height: 12 }, AB),
+      fakeText(
+        'uplink',
+        { x: 180, y: 130, width: 40, height: 12 },
+        { link: 'bc' },
+      ),
+    ];
+    expect(h.editor.requestInlineEditAt(200, 136)).toBe('link');
+    expect(h.requests[0]).toMatchObject({ kind: 'link', id: 'bc' });
+    expect(h.editor.requestInlineEditAt(620, 506)).toBe('link');
+    expect(h.requests[1]).toMatchObject({ kind: 'link', id: 'ab' });
   });
 
   it('empty canvas still asks for the add-node picker', () => {

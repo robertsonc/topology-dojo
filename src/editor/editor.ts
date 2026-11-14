@@ -4422,16 +4422,87 @@ export class Editor {
   }
 
   /**
-   * Hit-test the link labels (centre + endpoint/port) at point `p`. We match by
-   * the label's rendered `<text>` element so the box is exactly where the engine
-   * drew it — no need to replicate each link type's placement maths. The link's
-   * geometry only disambiguates which element belongs to which link when several
-   * share the same text. Returns the grabbed label, or null.
+   * Every link label as the art drew it: each link's centre label and its
+   * two port (end) labels, with the box of the rendered `<text>`. The engine
+   * decides where a label sits (per link type, plus the drag offsets), so
+   * the box is read off the art instead of being recomputed here.
+   *
+   * A label is looked for inside its own link's `<g data-tds-link>` group
+   * only. Text that merely reads the same — a node's caption, another link's
+   * identical label — is not it; matching by text alone made a double-click
+   * on such a caption edit the link, and a drag move the wrong link's label.
+   * Within the group, position tells apart labels with the same text: the
+   * centre label is the one nearest the link's middle, a port label the one
+   * nearest its end.
    */
+  private linkLabelBoxes(): {
+    lid: string;
+    which: 'centre' | 'from' | 'to';
+    box: { x: number; y: number; width: number; height: number };
+  }[] {
+    const drawn = new Map<
+      string,
+      { text: string; box: DOMRect; cx: number; cy: number }[]
+    >();
+    for (const t of Array.from(
+      this.art.querySelectorAll('g[data-tds-link] text'),
+    ) as SVGTextElement[]) {
+      const id = t.closest('g[data-tds-link]')?.getAttribute('data-tds-link');
+      if (id == null) continue;
+      let box: DOMRect;
+      try {
+        box = t.getBBox();
+      } catch {
+        continue; // not rendered (hidden layer) — nothing to hit
+      }
+      const list = drawn.get(id) ?? [];
+      list.push({
+        text: labelTextOf(t),
+        box,
+        cx: box.x + box.width / 2,
+        cy: box.y + box.height / 2,
+      });
+      drawn.set(id, list);
+    }
+    const out: ReturnType<Editor['linkLabelBoxes']> = [];
+    for (const link of this.page.links) {
+      const texts = drawn.get(link.id);
+      if (!texts) continue;
+      const pts = linkPolyline(this.page, link);
+      if (pts.length < 2) continue;
+      const a = pts[0]!;
+      const b = pts[pts.length - 1]!;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const probes: [
+        string | undefined,
+        'centre' | 'from' | 'to',
+        { x: number; y: number },
+      ][] = [
+        [link.label, 'centre', mid],
+        [link.fromLabel, 'from', a],
+        [link.toLabel, 'to', b],
+      ];
+      for (const [txt, which, region] of probes) {
+        if (!txt) continue;
+        let best: (typeof texts)[number] | null = null;
+        let bestD = Infinity;
+        for (const t of texts) {
+          if (t.text !== String(txt)) continue;
+          const d = Math.hypot(t.cx - region.x, t.cy - region.y);
+          if (d < bestD) {
+            bestD = d;
+            best = t;
+          }
+        }
+        if (best) out.push({ lid: link.id, which, box: best.box });
+      }
+    }
+    return out;
+  }
+
   /**
-   * Rendered centre (doc coords) of every link label currently drawn — matched
-   * by the label's `<text>` element, like hitLabel. Used to capture the dragged
-   * label's home + its neighbours for the drag guides.
+   * Rendered centre (doc coords) of every link label currently drawn. Used
+   * to capture the dragged label's home + its neighbours for the drag guides.
    */
   private labelCenters(): {
     lid: string;
@@ -4439,63 +4510,15 @@ export class Editor {
     x: number;
     y: number;
   }[] {
-    const texts = Array.from(
-      this.art.querySelectorAll('text'),
-    ) as SVGTextElement[];
-    const nearest = (
-      txt: string,
-      region: { x: number; y: number },
-    ): { x: number; y: number } | null => {
-      let best: { x: number; y: number } | null = null;
-      let bestD = Infinity;
-      for (const t of texts) {
-        if (labelTextOf(t) !== txt) continue;
-        let b: DOMRect;
-        try {
-          b = t.getBBox();
-        } catch {
-          continue;
-        }
-        const cx = b.x + b.width / 2;
-        const cy = b.y + b.height / 2;
-        const d = Math.hypot(cx - region.x, cy - region.y);
-        if (d < bestD) {
-          bestD = d;
-          best = { x: cx, y: cy };
-        }
-      }
-      return best;
-    };
-    const out: {
-      lid: string;
-      which: 'centre' | 'from' | 'to';
-      x: number;
-      y: number;
-    }[] = [];
-    for (const link of this.page.links) {
-      const pts = linkPolyline(this.page, link);
-      if (pts.length < 2) continue;
-      const a = pts[0]!;
-      const b = pts[pts.length - 1]!;
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const probes: [
-        string | undefined,
-        'centre' | 'from' | 'to',
-        { x: number; y: number },
-      ][] = [
-        [link.label, 'centre', mid],
-        [link.fromLabel, 'from', a],
-        [link.toLabel, 'to', b],
-      ];
-      for (const [txt, which, region] of probes) {
-        if (!txt) continue;
-        const c = nearest(String(txt), region);
-        if (c) out.push({ lid: link.id, which, x: c.x, y: c.y });
-      }
-    }
-    return out;
+    return this.linkLabelBoxes().map(({ lid, which, box }) => ({
+      lid,
+      which,
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+    }));
   }
 
+  /** The link label (centre or port) drawn under `p`, or null. */
   private hitLabel(p: { x: number; y: number }): {
     lid: string;
     which: 'centre' | 'from' | 'to';
@@ -4503,76 +4526,23 @@ export class Editor {
     x: number;
     y: number;
   } | null {
-    const texts = Array.from(
-      this.art.querySelectorAll('text'),
-    ) as SVGTextElement[];
-    if (!texts.length) return null;
     const PAD = 6;
-    // The rendered text nearest `region` whose content matches `txt`.
-    const nearest = (
-      txt: string,
-      region: { x: number; y: number },
-    ): SVGTextElement | null => {
-      let best: SVGTextElement | null = null;
-      let bestD = Infinity;
-      for (const t of texts) {
-        if (labelTextOf(t) !== txt) continue;
-        let b: DOMRect;
-        try {
-          b = t.getBBox();
-        } catch {
-          continue;
-        }
-        const d = Math.hypot(
-          b.x + b.width / 2 - region.x,
-          b.y + b.height / 2 - region.y,
-        );
-        if (d < bestD) {
-          bestD = d;
-          best = t;
-        }
-      }
-      return best;
-    };
-    const inside = (t: SVGTextElement): boolean => {
-      const b = t.getBBox();
-      return (
-        p.x >= b.x - PAD &&
-        p.x <= b.x + b.width + PAD &&
-        p.y >= b.y - PAD &&
-        p.y <= b.y + b.height + PAD
-      );
-    };
+    const boxes = this.linkLabelBoxes();
     // Last link drawn sits on top, so test in reverse paint order.
-    for (let i = this.page.links.length - 1; i >= 0; i--) {
-      const link = this.page.links[i]!;
-      const pts = linkPolyline(this.page, link);
-      if (pts.length < 2) continue;
-      const a = pts[0]!;
-      const b = pts[pts.length - 1]!;
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const probes: [
-        string | undefined,
-        'centre' | 'from' | 'to',
-        { x: number; y: number },
-      ][] = [
-        [link.label, 'centre', mid],
-        [link.fromLabel, 'from', a],
-        [link.toLabel, 'to', b],
-      ];
-      for (const [txt, which, region] of probes) {
-        if (!txt) continue;
-        const t = nearest(String(txt), region);
-        if (t && inside(t)) {
-          const box = t.getBBox();
-          return {
-            lid: link.id,
-            which,
-            x: box.x + box.width / 2,
-            y: box.y + box.height / 2,
-          };
-        }
-      }
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const { lid, which, box } = boxes[i]!;
+      if (
+        p.x >= box.x - PAD &&
+        p.x <= box.x + box.width + PAD &&
+        p.y >= box.y - PAD &&
+        p.y <= box.y + box.height + PAD
+      )
+        return {
+          lid,
+          which,
+          x: box.x + box.width / 2,
+          y: box.y + box.height / 2,
+        };
     }
     return null;
   }

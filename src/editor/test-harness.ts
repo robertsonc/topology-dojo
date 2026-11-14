@@ -53,8 +53,9 @@ export function fakeSvg(): SVGSVGElement & FakeSvg {
     },
     querySelectorAll(selector: string) {
       if (selector === 'text') return el.texts;
-      if (selector === 'g[data-tds-flowpath] text')
-        return el.texts.filter((t) => t.closest('g[data-tds-flowpath]'));
+      // "<group selector> text": the texts drawn inside such a group.
+      const group = /^(g\[data-tds-(?:link|flowpath)\]) text$/.exec(selector);
+      if (group) return el.texts.filter((t) => t.closest(group[1]!));
       return [] as unknown[];
     },
     addEventListener(type: string, fn: Listener) {
@@ -90,20 +91,29 @@ export function fakeSvg(): SVGSVGElement & FakeSvg {
   return el as unknown as SVGSVGElement & FakeSvg;
 }
 
-/** A rendered label `<text>` at a box (page coordinates), for label hit-tests. */
+/**
+ * A rendered `<text>` at a box (page coordinates), for label hit-tests.
+ * `owner` puts it inside the group the engine draws for a link
+ * (`<g data-tds-link>`) or a flow path (`<g data-tds-flowpath>`); without
+ * one it is free-standing text, like a node caption.
+ */
 export function fakeText(
   text: string,
   box: { x: number; y: number; width: number; height: number },
-  flowPathId?: string,
+  owner: { link?: string; flow?: string } = {},
 ): FakeText {
+  const groups: Record<string, string | undefined> = {
+    'g[data-tds-link]': owner.link,
+    'g[data-tds-flowpath]': owner.flow,
+  };
   return {
     textContent: text,
     getAttribute: () => null,
     getBBox: () => box,
-    closest: (selector) =>
-      flowPathId !== undefined && selector === 'g[data-tds-flowpath]'
-        ? { getAttribute: () => flowPathId }
-        : null,
+    closest: (selector) => {
+      const id = groups[selector];
+      return id === undefined ? null : { getAttribute: () => id };
+    },
   };
 }
 
