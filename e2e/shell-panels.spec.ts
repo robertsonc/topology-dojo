@@ -120,3 +120,99 @@ test('the Problems dock opens when asked, and keeps hidden problems in reach', a
   await expect(page.locator('#problems-toggle')).not.toContainText('hidden');
   await expect(page.locator('.prob-foot')).toHaveCount(0);
 });
+
+/* ── Node Designer ───────────────────────────────────────────────────────── */
+
+test('a custom node type cannot take the name of a built-in type', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await page.locator('.pitem[data-type="router"]').first().click();
+  await expect.poll(() => statusCount(page, 'selected')).toBe(1);
+  /** The markup the built-in Router is drawn with, by any router node. */
+  const routerArt = (): Promise<string> =>
+    page.evaluate(() => {
+      const nodes = [
+        ...document.querySelectorAll('#page-canvas [data-tds-node]'),
+      ];
+      const added = nodes[nodes.length - 1]!;
+      return added.innerHTML.replace(/id="[^"]*"/g, '');
+    });
+  const before = await routerArt();
+
+  await page.locator('#pDesign').click();
+  const dialog = page.locator('.nd-dialog');
+  await expect(dialog).toBeVisible();
+  await page.locator('#nd-name').fill('router');
+  await page.locator('.nd-shape[data-shape="triangle"]').click();
+  await page.locator('#nd-save').click();
+
+  // Not saved: the dialog stays, says why, and the Router is untouched.
+  await expect(dialog).toBeVisible();
+  await expect(page.locator('#nd-name-msg')).toContainText(
+    '“router” is a built-in node type',
+  );
+  await expect(page.locator('#nd-name')).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+  expect(await routerArt()).toBe(before);
+  await expect(page.locator('.pcustom [data-type="router"]')).toHaveCount(0);
+
+  // A name of its own saves.
+  await page.locator('#nd-name').fill('edge-router');
+  await expect(page.locator('#nd-name-msg')).toBeEmpty();
+  await page.locator('#nd-save').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.pcustom [data-type="edge-router"]')).toHaveCount(
+    1,
+  );
+  expect(await routerArt()).toBe(before);
+});
+
+test('a second custom type does not silently replace the first', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // The sample scene brings a custom type of its own.
+  const custom = page.locator('.pcustom .pitem[data-type]');
+  const had = await custom.count();
+
+  // Two designs saved without naming either: two types.
+  await page.locator('#pDesign').click();
+  await expect(page.locator('#nd-name')).toHaveValue('myNode');
+  await page.locator('#nd-save').click();
+  await expect(custom).toHaveCount(had + 1);
+  await page.locator('#pDesign').click();
+  await expect(page.locator('#nd-name')).toHaveValue('myNode2');
+  await page.locator('.nd-shape[data-shape="triangle"]').click();
+  await page.locator('#nd-save').click();
+  await expect(custom).toHaveCount(had + 2);
+
+  // Naming a new design after an existing type asks before replacing it.
+  const asked: string[] = [];
+  let answer = false;
+  page.on('dialog', (d) => {
+    asked.push(d.message());
+    void (answer ? d.accept() : d.dismiss());
+  });
+  await page.locator('#pDesign').click();
+  await page.locator('#nd-name').fill('myNode');
+  await page.locator('#nd-save').click();
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toContain('“myNode” already exists');
+  await expect(page.locator('.nd-dialog')).toBeVisible(); // declined: still open
+  await expect(custom).toHaveCount(had + 2);
+
+  answer = true;
+  await page.locator('#nd-save').click();
+  expect(asked).toHaveLength(2);
+  await expect(page.locator('.nd-dialog')).toHaveCount(0);
+  await expect(custom).toHaveCount(had + 2);
+
+  // Editing a type and saving it under its own name asks nothing.
+  await page.locator('.pcustom [data-edit="myNode2"]').click();
+  await page.locator('#nd-save').click();
+  await expect(page.locator('.nd-dialog')).toHaveCount(0);
+  expect(asked).toHaveLength(2);
+});

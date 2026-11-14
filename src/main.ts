@@ -115,6 +115,7 @@ import {
 import { isImeKey } from './ui/ime.js';
 import { importConfirmText } from './ui/replace-document.js';
 import { problemsDockView } from './ui/problems-dock.js';
+import { checkCustomTypeName, uniqueTypeName } from './ui/custom-type-name.js';
 import {
   booleanFieldChecked,
   enumFieldOptions,
@@ -4093,8 +4094,32 @@ const paletteList = app.querySelector<HTMLElement>('#palette-list')!;
 const paletteSearch = app.querySelector<HTMLInputElement>('#palette-search')!;
 let paletteQuery = '';
 
+/**
+ * Open the Node Designer on a custom type (or a new one), with the name rules
+ * this document imposes: never a built-in or stock type's name — registering
+ * a custom type under one replaces that type's art everywhere — and another
+ * custom type's name only after asking.
+ */
+function designNode(initial: CustomNodeSpec | null): void {
+  const reserved = nodeCatalog().map((t) => t.type);
+  const custom = (): string[] => doc.customNodes.map((c) => c.typeName);
+  openNodeDesigner(initial, upsertCustomNode, {
+    suggest: (base) => uniqueTypeName(base, [...reserved, ...custom()]),
+    check: (name) =>
+      checkCustomTypeName({
+        name,
+        editing: initial?.typeName ?? null,
+        reserved,
+        custom: custom(),
+      }),
+  });
+}
+
 /** Add or replace a custom node type, re-register it, and refresh the UI. */
 function upsertCustomNode(spec: CustomNodeSpec): void {
+  // The designer refuses these names; this keeps the rule for any other
+  // caller, since a built-in type can not be got back once it is shadowed.
+  if (getNodeType(spec.typeName)) return;
   const i = doc.customNodes.findIndex((c) => c.typeName === spec.typeName);
   if (i >= 0) doc.customNodes[i] = spec;
   else doc.customNodes.push(spec);
@@ -4262,12 +4287,12 @@ function buildPalette(): void {
   paletteList.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((b) =>
     b.addEventListener('click', () => {
       const spec = doc.customNodes.find((c) => c.typeName === b.dataset.edit);
-      if (spec) openNodeDesigner(spec, upsertCustomNode);
+      if (spec) designNode(spec);
     }),
   );
   paletteList
     .querySelector('#pDesign')
-    ?.addEventListener('click', () => openNodeDesigner(null, upsertCustomNode));
+    ?.addEventListener('click', () => designNode(null));
   paletteList
     .querySelectorAll<HTMLButtonElement>('[data-stencil]')
     .forEach((b) =>

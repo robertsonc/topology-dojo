@@ -1920,6 +1920,18 @@
         font-family: var(--font);
         font-size: 13px;
       }
+      /* Why the type name cannot be used (it is a built-in type's name). */
+      .nd-name-msg {
+        color: #ff6b6b;
+        font-size: 11px;
+        min-width: 0;
+      }
+      .nd-name-msg:empty {
+        display: none;
+      }
+      .nd-name[aria-invalid='true'] {
+        border-color: #ff6b6b;
+      }
       .nd-spacer {
         flex: 1;
       }
