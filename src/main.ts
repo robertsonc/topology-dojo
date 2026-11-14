@@ -568,7 +568,7 @@ editor.setOpenHrefHandler((href) => {
   const target = pageLinkTarget(href);
   if (target !== null) {
     const i = doc.pages.findIndex((p) => p.id === target);
-    if (i >= 0) selectPage(i);
+    if (i >= 0) choosePage(i);
     return;
   }
   window.open(href, '_blank', 'noopener');
@@ -828,6 +828,9 @@ miniBar.addEventListener('change', (e) => {
 overlaySvg.addEventListener('pointerdown', () => {
   miniBarSuppressed = true;
   miniBar.hidden = true;
+  // Working on the canvas ends flipbook playback: each flip would otherwise
+  // drop the selection and switch the frame under the pointer.
+  stopPlayback();
 });
 overlaySvg.addEventListener('pointerup', () => {
   miniBarSuppressed = false;
@@ -4387,8 +4390,7 @@ function renderFilmstrip(): void {
     el.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-del]') || t.tagName === 'INPUT') return;
-      stopPlayback(); // a manual frame choice takes over from the player
-      selectPage(i);
+      choosePage(i);
     });
     el.addEventListener('dragstart', (e) => {
       dragFrom = i;
@@ -4534,6 +4536,17 @@ function reorderPage(from: number, to: number): void {
   markDirty();
 }
 
+/**
+ * Show the frame the user picked — a click on its chip, an arrow key, a page
+ * link. A choice made by hand takes over from the flipbook player, which
+ * would otherwise flip away from it a moment later.
+ */
+function choosePage(i: number): void {
+  stopPlayback();
+  selectPage(i);
+}
+
+/** Show a frame without rebuilding the strip (the player's own step too). */
 function selectPage(i: number): void {
   if (i < 0 || i >= doc.pages.length) return;
   current = i;
@@ -5564,6 +5577,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'a' || e.key === 'A') setTool('anchor');
   if (e.key === 'h' || e.key === 'H') setHand(!editor.isHandActive());
   if (e.key === 'Escape') {
+    stopPlayback();
     editor.clearSelection();
     setTool('select');
   }
@@ -5577,8 +5591,8 @@ window.addEventListener('keydown', (e) => {
       else if (e.key === 'ArrowRight') editor.nudge(s, 0);
       else if (e.key === 'ArrowUp') editor.nudge(0, -s);
       else if (e.key === 'ArrowDown') editor.nudge(0, s);
-    } else if (e.key === 'ArrowRight') selectPage(current + 1);
-    else if (e.key === 'ArrowLeft') selectPage(current - 1);
+    } else if (e.key === 'ArrowRight') choosePage(current + 1);
+    else if (e.key === 'ArrowLeft') choosePage(current - 1);
   }
 });
 
