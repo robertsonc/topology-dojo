@@ -104,15 +104,31 @@ interface DragState {
 }
 
 /**
+ * What an inline label edit targets: an element's own label, one of a link's
+ * two port (end) labels, or a flow path's label. The shell hands the kind and
+ * id of a request straight back to `Editor.renameElement`.
+ */
+export type InlineEditKind =
+  | 'node'
+  | 'link'
+  | 'link-from'
+  | 'link-to'
+  | 'zone'
+  | 'flow';
+
+/**
  * A request to edit an element's label in place (double-click gesture). The
  * editor computes what was hit and where its label anchor sits in *client*
  * coordinates; the shell (main.ts) owns the floating DOM input and commits
- * through the normal update paths. `kind: 'empty'` reports a double-click on
- * blank canvas (the quick-add gesture).
+ * with `renameElement(kind, id, text)`. `kind: 'empty'` reports a
+ * double-click on blank canvas (the quick-add gesture).
  */
 export interface InlineEditRequest {
-  kind: 'node' | 'link' | 'zone' | 'empty';
-  /** Hit element id; null for 'empty'. */
+  kind: InlineEditKind | 'empty';
+  /**
+   * Hit element id; null for 'empty'. For 'link-from' / 'link-to' it is the
+   * link's id (the kind says which end).
+   */
   id: string | null;
   /** Current label text ('' when unset). */
   current: string;
@@ -2951,24 +2967,35 @@ export class Editor {
    * The inline editor commits through this: by the time its input blurs, the
    * click that blurred it has already selected a different element (or none),
    * so a selection-based update would rename the wrong thing or nothing.
-   * One undo step. Returns false when the element no longer exists.
+   * `kind` says which label: an element's own, a link's port label at one
+   * end ('link-from' / 'link-to', `id` is the link), or a flow path's. One
+   * undo step. Returns false when the element no longer exists.
    */
-  renameElement(
-    kind: 'node' | 'link' | 'zone',
-    id: string,
-    label: string,
-  ): boolean {
+  renameElement(kind: InlineEditKind, id: string, label: string): boolean {
     const collection =
-      kind === 'node' ? 'nodes' : kind === 'link' ? 'links' : 'zones';
+      kind === 'node'
+        ? 'nodes'
+        : kind === 'zone'
+          ? 'zones'
+          : kind === 'flow'
+            ? 'flowPaths'
+            : 'links';
     const el = (this.page[collection] as { id: string }[]).find(
       (e) => e.id === id,
-    );
+    ) as Record<string, unknown> | undefined;
     if (!el) return false;
     this.snapshot();
-    this.assignAndEmit(collection, el as unknown as Record<string, unknown>, {
-      label,
-    });
-    if (kind === 'zone') this.afterAnnotationChange(true);
+    if (kind === 'link-from' || kind === 'link-to') {
+      // A port label is optional text beside the wire: emptied, the field
+      // goes away rather than staying behind as an empty string.
+      const key = kind === 'link-from' ? 'fromLabel' : 'toLabel';
+      if (label === '') {
+        const had = el[key] !== undefined;
+        delete el[key];
+        if (had) this.emitPatch('links', id, { unset: [key] });
+      } else this.assignAndEmit('links', el, { [key]: label });
+    } else this.assignAndEmit(collection, el, { label });
+    if (kind === 'zone' || kind === 'flow') this.afterAnnotationChange(true);
     else {
       this.renderArt();
       this.renderOverlay();
@@ -3651,6 +3678,52 @@ export class Editor {
   requestInlineEditAt(clientX: number, clientY: number): string | null {
     if (!this.onInlineEdit) return null;
     const p = clientToUser(this.overlay, clientX, clientY);
+    // Labels first. They are drawn on top of everything, and a label usually
+    // sits off its wire (nudged beside it, or dragged well away), where no
+    // node / link / zone test would find its owner: the double-click would
+    // fall through to "empty canvas" and open the add-node picker.
+    const lab = this.hitLabel(p);
+    if (lab) {
+      const link = this.page.links.find((l) => l.id === lab.lid)!;
+      this.selectLinkForEdit(lab.lid);
+      const kind =
+        lab.which === 'centre'
+          ? 'link'
+          : lab.which === 'from'
+            ? 'link-from'
+            : 'link-to';
+      const text =
+        lab.which === 'centre'
+          ? link.label
+          : lab.which === 'from'
+            ? link.fromLabel
+            : link.toLabel;
+      const c = userToClient(this.overlay, lab.x, lab.y);
+      this.onInlineEdit({
+        kind,
+        id: lab.lid,
+        current: String(text ?? ''),
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return kind;
+    }
+    const flow = this.flowLabelAt(p);
+    if (flow) {
+      const c = userToClient(this.overlay, flow.x, flow.y);
+      this.onInlineEdit({
+        kind: 'flow',
+        id: flow.id,
+        current: flow.label,
+        clientX: c.x,
+        clientY: c.y,
+        pageX: p.x,
+        pageY: p.y,
+      });
+      return 'flow';
+    }
     const nodeId = this.nodeAt(p);
     if (nodeId) {
       const node = this.page.nodes.find((n) => n.id === nodeId)!;
@@ -3679,15 +3752,7 @@ export class Editor {
     const linkId = this.linkAt(p);
     if (linkId) {
       const link = this.page.links.find((l) => l.id === linkId)!;
-      this.sel.clear();
-      this.clearAnchorSel();
-      this.clearZoneSel();
-      this.fireSelect();
-      if (this.linkSel !== linkId) {
-        this.linkSel = linkId;
-        this.fireLinkSelect();
-      }
-      this.renderOverlay();
+      this.selectLinkForEdit(linkId);
       // Anchor on the centre-label position: polyline midpoint + offset.
       const pts = linkPolyline(this.page, link);
       let ax = p.x,
@@ -3747,6 +3812,19 @@ export class Editor {
       pageY: p.y,
     });
     return 'empty';
+  }
+
+  /** Make `linkId` the selected link, so the inspector shows what is edited. */
+  private selectLinkForEdit(linkId: string): void {
+    this.sel.clear();
+    this.clearAnchorSel();
+    this.clearZoneSel();
+    this.fireSelect();
+    if (this.linkSel !== linkId) {
+      this.linkSel = linkId;
+      this.fireLinkSelect();
+    }
+    this.renderOverlay();
   }
 
   /** Wheel = zoom toward the cursor (keeps the point under the cursor fixed). */
@@ -3885,10 +3963,13 @@ export class Editor {
     return out;
   }
 
-  private hitLabel(p: {
+  private hitLabel(p: { x: number; y: number }): {
+    lid: string;
+    which: 'centre' | 'from' | 'to';
+    /** Centre of the label as drawn (page coordinates). */
     x: number;
     y: number;
-  }): { lid: string; which: 'centre' | 'from' | 'to' } | null {
+  } | null {
     const texts = Array.from(
       this.art.querySelectorAll('text'),
     ) as SVGTextElement[];
@@ -3949,8 +4030,61 @@ export class Editor {
       for (const [txt, which, region] of probes) {
         if (!txt) continue;
         const t = nearest(String(txt), region);
-        if (t && inside(t)) return { lid: link.id, which };
+        if (t && inside(t)) {
+          const box = t.getBBox();
+          return {
+            lid: link.id,
+            which,
+            x: box.x + box.width / 2,
+            y: box.y + box.height / 2,
+          };
+        }
       }
+    }
+    return null;
+  }
+
+  /**
+   * The flow path whose label is drawn under `p`, with the label's rendered
+   * centre. The engine wraps each flow in a `<g data-tds-flowpath>`, so the
+   * owner is read off the label's own group; the text is compared with the
+   * flow's label so other text in the group is not mistaken for it.
+   */
+  private flowLabelAt(p: {
+    x: number;
+    y: number;
+  }): { id: string; label: string; x: number; y: number } | null {
+    const texts = Array.from(
+      this.art.querySelectorAll('g[data-tds-flowpath] text'),
+    ) as SVGTextElement[];
+    const PAD = 6;
+    // Last drawn sits on top, so test in reverse paint order.
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const t = texts[i]!;
+      const id = t
+        .closest('g[data-tds-flowpath]')
+        ?.getAttribute('data-tds-flowpath');
+      const flow = this.page.flowPaths.find((f) => f.id === id);
+      const label = typeof flow?.label === 'string' ? flow.label : '';
+      if (!flow || !label || labelTextOf(t) !== label) continue;
+      let b: DOMRect;
+      try {
+        b = t.getBBox();
+      } catch {
+        continue; // not rendered (hidden layer) — nothing to hit
+      }
+      if (
+        p.x >= b.x - PAD &&
+        p.x <= b.x + b.width + PAD &&
+        p.y >= b.y - PAD &&
+        p.y <= b.y + b.height + PAD
+      )
+        return {
+          id: flow.id,
+          label,
+          x: b.x + b.width / 2,
+          y: b.y + b.height / 2,
+        };
     }
     return null;
   }

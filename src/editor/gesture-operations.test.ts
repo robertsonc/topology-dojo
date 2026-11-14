@@ -443,6 +443,16 @@ const cases: GestureCase[] = [
     undoable: true,
   },
   {
+    name: 'inline rename of a port label (renameElement link-from)',
+    run: (e) => e.renameElement('link-from', 'ab', 'ge-0/0/1'),
+    undoable: true,
+  },
+  {
+    name: 'inline rename of a flow path label (renameElement flow)',
+    run: (e) => e.renameElement('flow', 'f1', 'Primary'),
+    undoable: true,
+  },
+  {
     name: 'rename page (page.patch, not undoable)',
     run: (e) => e.renamePage('Renamed Frame'),
     undoable: false,

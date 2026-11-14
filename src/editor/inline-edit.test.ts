@@ -1,7 +1,8 @@
 /**
  * Inline label editing (double-click) — the editor resolves a double-click
- * into an InlineEditRequest: hit-test node → link → zone → empty, select what
- * was hit (so the ordinary update paths target it), and hand the shell a
+ * into an InlineEditRequest: hit-test node → link → zone → empty (a rendered
+ * link or flow label comes first; see link-labels.test.ts), select what was
+ * hit (so the ordinary update paths target it), and hand the shell a
  * client-space anchor. Commit goes through updateNode/updateLink/
  * updateAnnotation, so undo + gesture-operation emission are inherited.
  *
