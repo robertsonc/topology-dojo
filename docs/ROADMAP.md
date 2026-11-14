@@ -119,14 +119,34 @@ packet-level ordering and what can run in parallel):
    consulted before this edit” signal when `get_authoring_guidance` succeeded
    earlier in the same MCP session. Reuses `ANALYTICS_ENABLED` (already on);
    no new flag, no new Durable Object class, no migration. Packets A1–A6.
-4. **Guided topology briefs + semantic templates** — today an agent (or a
-   human) starts from either a blank page or one of six static starter
-   templates (`list_templates`/`create_from_template`); there's no general
-   structured "describe the topology you want" contract that compiles into a
-   scaffolded, validated starting document. Packets: B1–B7. **Not started**
-   (2026-11-13). One archetype now exists outside this plan: the SD-WAN
-   generator (proposal 0010 — `generate_sdwan_topology` and the editor
-   wizard) compiles intent into a document; re-scope B against it first.
+4. **Guided topology briefs + semantic templates** — **done as re-scoped,
+   2026-11-14** (packets B1–B7). The plan was a separate "brief" contract
+   beside the templates (`src/briefs/`, a `create_from_brief` tool, a second
+   wizard). The SD-WAN generator (proposal 0010) had since shipped that shape
+   for one archetype and the MCP tool list had reached its size budget, so B
+   was re-scoped against the generator: the starter templates themselves
+   became **parametric**. `hub-spoke`, `spine-leaf`, `three-tier` and
+   `firewall-dmz` take parameters ("a spine-leaf fabric with 4 spines and 12
+   leaves", "hub and spoke with 2 hubs and 9 sites") through the tool and
+   the menu that already existed: `create_from_template` takes an optional
+   `params` object, `list_templates` returns each template's parameter
+   schema, and choosing a parametric template in **＋ template…** opens a
+   parameter dialog (`src/ui/template-wizard.ts`). `src/api/templates.ts`
+   copies the generator's contract (one resolve step for defaults and bounds,
+   errors that name the field, deterministic output, a
+   `{doc, template, params, stats}` result), and one test holds every
+   template at every parameter value to a clean `validateDocument`,
+   `analyzeLayout` and `inspectPage`. Dropped, with the reason: a
+   `TopologyBrief` type aligned with the authoring-profile archetypes
+   (`src/profile/features.ts` classifies these templates inconsistently); a
+   new MCP tool (the change adds 93 bytes to the tool list instead); a second
+   SD-WAN generator (`list_templates` points to `generate_sdwan_topology`).
+   Template ids are unchanged, and a template called without parameters
+   builds what it built before; the one difference is that the
+   `firewall-dmz` firewall label now wraps, which stops a link being drawn
+   through it. Not done: free-form natural-language briefs; parameters for
+   `sdwan-branch` and `ztna`. Detail: `IMPLEMENTATION_PLAN.md`, Initiative B,
+   "Re-scope (2026-11-14)".
 5. **EdgeConnect live-import hardening + UI** — the provider/compiler code is
    shipped and tested against injectable mocks, but has never been run against
    a real or recorded Orchestrator payload, and there's no GUI surface for a
@@ -169,29 +189,36 @@ packets:
   (`src/testing/contrast.ts`, `src/testing/light-probe.ts`). Brief and
   outcome: [`futures/light-theme-contrast.md`](futures/light-theme-contrast.md).
 
-- **Clean render profile for exports and the inline view** — measured on a
-  7-node / 6-link template: the SVG defines 29 filters but references 3
-  (`tds-glow`, `tds-dof-blur`, `tds-depth-lift`); `<defs>` is ~41% of a
-  `calm` render (14 KB of 34 KB), and the default render carries 50
-  `<animate>` elements (2 under `calm`). `render_svg` and `view_topology` do
-  not expose `calm`, so agents pay for the animated build in context and
-  transfer. Scope: emit only referenced defs, add a `profile: "clean"`
-  render option (flat per `flattenViewer`, no background animation, no
-  unused defs), and make it the default for `render_svg`, `view_topology`,
-  PNG and PDF. Not started (no `profile` render option exists at `e99b012`). The editable exports (draw.io / Visio / PowerPoint shapes)
-  are built from the export scene, not the SVG, so they are unaffected.
-- **Link anchor box on by default for new documents** — on a dual-homed
-  hub-and-spoke page (the most common SD-WAN shape), `inspect_render` flags
-  spoke tunnels running through the hub labels until `linkAttach:
-{distribute: true}` is set, which clears them; the fix is gated behind an
-  EXPERIMENTAL flag. Make it the default for documents created by
-  `create_topology`, templates and `build_flow_topology` (opt out with
-  `linkAttach: "none"`). Stored documents keep rendering as they do today —
-  flipping the engine default would move every existing diagram's wires,
-  which the byte-identical-render promise rules out. Graduate the flag
-  out of EXPERIMENTAL once it is the default. Not started: the opt-in
-  mechanism shipped (PR #274, with a corner-pin warning in #275) and is
-  still marked EXPERIMENTAL in `src/api/catalog.ts`.
+- ~~**Clean render profile for exports and the inline view**~~ — **shipped
+  2026-11-14**: a `profile: "clean"` render option (static, only the
+  `<defs>` entries the drawing references, coordinates to two decimals) is
+  the default for `render_svg` and `view_topology`; `render_svg` takes
+  `profile: "full"` for the animated build. PNG and PDF render calm with
+  unused definitions pruned, which is pixel-identical to before, and
+  `export_flipbook` keeps its animation but prunes each frame. Measured:
+  the sample scene 31.3 KB to 11.1 KB, the hub-and-spoke template 39.7 KB
+  to 17.7 KB, a generated 3-region SD-WAN fabric 172.6 KB to 113.5 KB. The
+  engine's 35-entry definition table (14 KB) was almost entirely
+  unreferenced after flattening. What is left on a large fabric is
+  per-link markup: a tunnel draws ten stacked translucent strokes for its
+  glow (about 2.5 KB each), which the clean profile deliberately keeps
+  because it is the tunnel's look. The canvas and the browser's own SVG
+  export are unchanged.
+- ~~**Link anchor box on by default for new documents**~~ — **shipped
+  2026-11-14**: pages created through the authoring API (`create_topology`,
+  `add_page`, the templates, `generate_sdwan_topology`,
+  `build_flow_topology`, `create_workspace`) and new documents in the editor
+  start with `linkAttach: {distribute: true}` (`DEFAULT_LINK_ATTACH` in
+  `src/api/builder.ts`); `linkAttach: "none"` opts a page out. The default
+  is written into the new page, not made the renderer's default, so stored
+  documents, imports and the first-run sample scene render as before. No
+  longer labelled experimental. Measured on generated fabrics, links through
+  their own node's label fell from 42 to 1 (3 regions, 2 WAN links), 12 to 0
+  (HA branches with LAN) and 10 to 0 (one box per site). The spine-leaf
+  starter template was re-spaced: at the layout's default gap its far
+  spine-to-leaf links detoured under the neighbouring spine in either
+  attachment. Not done: imports (Mermaid / CSV / draw.io) still produce
+  classic pages.
 
 - **Second fabric provider: Juniper Mist** — the `TopologyProvider`
   abstraction is vendor-neutral by design (`src/connect/types.ts`), and the
@@ -208,9 +235,10 @@ packets:
   ACLs beyond the current single-owner-per-workspace model (proposal 0002's
   "Follow-on work" item 6, still deferred).
 - **Reusable topology components / shared template libraries** — beyond the
-  current 6 static starter templates: user-authored, shareable component
-  groups (a "sub-topology" a person or agent can drop in and parameterize).
-  Builds naturally on the guided-briefs work above once that contract exists.
+  current six starter templates (four of them parametric): user-authored,
+  shareable component groups (a "sub-topology" a person or agent can drop in
+  and parameterize). Builds naturally on the parametric-template contract
+  above (`src/api/templates.ts`).
 - **Source-drift reconciliation** — `upsert_by_source` (drafts) and, since
   proposal 0006, `element.upsert` (workspaces) converge a re-import instead
   of duplicating, and `get_topology sources:true` / `get_workspace_elements

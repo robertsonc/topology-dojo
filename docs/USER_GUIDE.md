@@ -250,7 +250,8 @@ minimap provides an overview of content outside the current viewport.
   grid with **R** and snapping with **G**.
 - Use the arrow keys for a small nudge; hold Shift for a ten-times nudge.
 - Lock important items with **Ctrl/Cmd+L** or the context menu so an accidental
-  drag does not move them.
+  drag does not move them. A locked node also stays put through **tidy**,
+  **balance** and **arrange…**: the other nodes make room around it.
 - Use **[** and **]** for one-step stacking changes, or add Ctrl/Cmd to send an
   item fully back or front.
 
@@ -293,18 +294,26 @@ order. Use **Straighten (clear bends)** to remove all manual waypoints.
 Either way, waypoints are kept and a pinned port on the moved end is cleared.
 Self-loops are refused.
 
-### Link anchor box (experimental)
+### Link anchor box
 
-By default a link attaches to the edge of the node icon, so a link leaving the
-bottom of a node runs straight through its label. The **Link anchor box**
-option (page Properties, under Crossings; off unless you turn it on) makes
-links attach to a box around the node instead: the icon's hit box padded by
+In the classic attachment a link meets the edge of the node icon, so a link
+leaving the bottom of a node runs straight through its label. The **Link
+anchor box** (page Properties, under Crossings) makes links attach to a box
+around the node instead: the icon's hit box padded by
 **Box padding** (6 px unless set) on every side, with the side that carries
 the label extended past the label text. Ports pin to that box; auto endpoints
 leave through its faces (round icons keep a round outline, padded, except on
 the label side). Each node's Properties has the same switch under Advanced to
 override the page setting for that node only, and a selected node shows its
 anchor box as a faint dashed outline.
+
+The anchor box is **on, with Distribute ends, for new work**: a **new**
+document, the starter templates, the SD-WAN generator, and anything an agent
+creates over MCP (`create_topology`, `add_page`, `build_flow_topology`,
+`create_workspace`). A frame added with **+ frame** follows the frame you are
+on. Documents saved before this, the first-run sample scene, and imported
+files keep the classic attachment until you turn the switch on; nothing is
+re-routed behind your back.
 
 **Distribute ends** spreads every link endpoint on a node side into evenly
 spaced slots, ordered by where the links go, so a stack of links into one side
@@ -315,7 +324,7 @@ it attaches to (0 = centre, ±1 = the ends) for side ports and auto endpoints;
 corner ports ignore it. A corner port (top-left and friends) is an exact pin:
 a side port still moves along its side into a slot under Distribute, a corner
 port never does, and Problems says so for each such link end. These fields
-only take effect while the anchor box is active for that node. The feature is experimental: documents without it render
+only take effect while the anchor box is active for that node. Documents without it render
 exactly as before, and `inspect_render` / Problems measure the drawn geometry
 either way. With **Distribute** on, the link ends on one side of a node are
 ordered by the direction of each link, so neighbouring links fan out without
@@ -752,7 +761,11 @@ warnings for visual quality.
 - **balance** or **Shift+T**: tidy, align rows/columns, and center the result.
 - **arrange…**: rebuild the current page using **hierarchical**, **grid**,
   **circular**, or **force-directed** layout. (The **tiered** wiring-sheet
-  layout is available through MCP `layout_topology` only.)
+  layout is available through MCP `layout_topology` only.) On a page with
+  zones, each zone's members stay together: the algorithm arranges the nodes
+  inside each zone, and the zones are then packed side by side.
+- Locked nodes are never moved by tidy, balance or arrange. Balance lines a
+  row or column up on its locked member, and skips re-centring the page.
 - **fit to content**: resize the page around its current content, including
   zone boxes and labels placed outside their nodes. SVG, PNG, and PDF exports
   render the page frame; if drawn content still extends past it, the export is
@@ -824,6 +837,48 @@ templates:
 Starting from a template replaces the active canvas after confirmation. Download
 the current JSON first if it must be retained. A connected Agent Workspace must
 be closed before replacing the document.
+
+### Template parameters
+
+Four of the templates take parameters. Choosing one opens a small dialog with
+a question per parameter, a live preview, and the node and link counts that
+will land on the canvas. A parameter with a few values is a row of buttons; one
+with a long range is a slider (drag it, or use the arrow keys). **Create
+diagram** asks for the usual confirmation and then replaces the canvas;
+**Cancel**, **✕** or **Esc** closes the dialog and changes nothing. The dialog
+opens on the template's defaults, which build the same diagram the template
+built before it took parameters.
+
+| Template           | Parameter         | Values   | Default | What it changes                                     |
+| ------------------ | ----------------- | -------- | ------- | --------------------------------------------------- |
+| Three-tier web app | Web servers       | 1–6      | 2       | Web servers behind the firewall                     |
+|                    | App servers       | 1–4      | 1       | App servers; every web server reaches each one      |
+| Firewall + DMZ     | DMZ servers       | 1–6      | 2       | Servers in the DMZ: web, mail, DNS, proxy, VPN, FTP |
+|                    | Internal firewall | No / Yes | No      | A second firewall between the DMZ and the core      |
+| Spine-leaf fabric  | Spines            | 1–4      | 2       | Spine switches; every leaf uplinks to each one      |
+|                    | Leaves            | 2–16     | 4       | Leaf switches                                       |
+| Hub and spoke      | Hubs              | 1–2      | 1       | With two hubs, every site tunnels to both           |
+|                    | Sites             | 2–24     | 6       | Branch sites around the hub                         |
+
+**SD-WAN branch** and **ZTNA user-to-app** have no parameters and start
+straight from the confirmation, as before.
+
+Every combination is laid out and passes validation and the render inspection
+with no problems, so there is nothing to tidy first. Two things change with
+size:
+
+- **The page grows.** A fabric with more than seven leaves, a ring that its
+  sites fill, or a tall DMZ or tier stack gets a canvas larger than the
+  standard 1050 × 700. Press **0** (**Fit view**) to see all of it.
+- **Wide fans are pinned.** In a larger diagram the links of a fan or mesh
+  leave from the facing sides of their nodes (a spine's bottom edge to a leaf's
+  top edge) so they do not run under neighbouring nodes. They are ordinary
+  links with **From side** and **To side** set; change or clear the sides in
+  Properties like any other link.
+
+An agent passes the same parameters to **create_from_template** (see
+[MCP and agent workflows](#16-mcp-and-agent-workflows)) and gets the same
+document.
 
 ### Generate an SD-WAN fabric
 
@@ -1397,6 +1452,10 @@ The complete tool table and connection details are in the
    task archetype and relevant workspace ID.
 3. Call **layout_guidelines** before placing a large diagram.
 4. Use **create_topology**, **create_from_template**, or **import_topology**.
+   **list_templates** lists each template's parameters (name, type, range,
+   default); pass them as `params`, for example
+   `{"template": "hub-spoke", "params": {"hubs": 2, "sites": 9}}`. For an
+   SD-WAN fabric use **generate_sdwan_topology** instead.
 5. Prefer one atomic **edit_topology** batch over many one-element calls. A
    private-draft batch accepts at most 200 ordered operations.
 6. Call **validate_topology**.
@@ -1405,7 +1464,9 @@ The complete tool table and connection details are in the
    arrangement is appropriate.
 8. Call **inspect_render** for a compact final visual-quality report covering
    crop, labels, link routing, and density.
-9. Call **render_svg** once the inspection is clean. Use
+9. Call **render_svg** once the inspection is clean. It returns the clean
+   build by default: static, and without the renderer's unused definitions
+   (`profile: "full"` returns the animated build). Use
    **export_flipbook** for all pages, **export_topology** for a file (PNG,
    PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedule), **view_topology**
    to show the diagram inline in a host that supports MCP Apps, or hosted

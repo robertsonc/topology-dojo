@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  DEFAULT_LINK_ATTACH,
   createDocument,
   addNode,
   defineNodeType,
@@ -7,6 +8,7 @@ import {
   addPage,
 } from './builder.js';
 import { validateDocument, isValid } from './validate.js';
+import { parseDoc, serializeDoc } from '../pages/persist.js';
 import { defaultSpec } from '../nodes/spec.js';
 
 describe('builder', () => {
@@ -71,7 +73,7 @@ describe('validateDocument', () => {
 
   it('warns when distribute is on and a link end pins to a corner port', () => {
     const doc = createDocument()
-      .page()
+      .page({ linkAttach: 'none' })
       .node({ id: 'a', type: 'ec', x: 0, y: 0 })
       .node({ id: 'b', type: 'ec', x: 300, y: 0 })
       .node({ id: 'c', type: 'ec', x: 0, y: 300 })
@@ -90,6 +92,28 @@ describe('validateDocument', () => {
     // The node can opt itself out again; then the pin is unremarkable.
     doc.pages[0]!.nodes[0]!.linkAttach = { distribute: false };
     expect(validateDocument(doc)).toEqual([]);
+  });
+
+  it('a new page starts with the link anchor box on, unless opted out', () => {
+    const doc = createDocument('D').page().build();
+    expect(doc.pages[0]!.linkAttach).toEqual({ distribute: true });
+    // Each page gets its own object, not a shared (frozen) default.
+    expect(doc.pages[0]!.linkAttach).not.toBe(DEFAULT_LINK_ATTACH);
+    doc.pages[0]!.linkAttach!.pad = 12;
+    expect(DEFAULT_LINK_ATTACH).toEqual({ distribute: true });
+
+    const classic = createDocument('C').page({ linkAttach: 'none' }).build();
+    expect(classic.pages[0]).not.toHaveProperty('linkAttach');
+    const custom = createDocument('X')
+      .page({ linkAttach: { pad: 10 } })
+      .build();
+    expect(custom.pages[0]!.linkAttach).toEqual({ pad: 10 });
+
+    // Round-trips through the document contract.
+    expect(parseDoc(serializeDoc(doc))!.pages[0]!.linkAttach).toEqual({
+      distribute: true,
+      pad: 12,
+    });
   });
 
   it('flags dangling link endpoints', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cascadeEndpointRemoval } from './cascade.js';
+import { cascadeEndpointRemoval, pruneEmphasis } from './cascade.js';
 import { blankPage, pageHasContent, type Page } from './model.js';
 
 function page(): Page {
@@ -125,5 +125,48 @@ describe('pageHasContent (frame-delete confirmation gate)', () => {
     expect(pageHasContent({ ...blankPage('F'), caption: '   ' })).toBe(false);
     expect(pageHasContent({ ...blankPage('F'), emphasis: ['n1'] })).toBe(true);
     expect(pageHasContent({ ...blankPage('F'), emphasis: [] })).toBe(false);
+  });
+});
+
+describe('emphasis follows removals', () => {
+  const emphasized = (emphasis: string[]): Page =>
+    ({
+      id: 'p',
+      name: 'F',
+      viewBox: '0 0 100 100',
+      nodes: [
+        { id: 'a', type: 'router', x: 0, y: 0 },
+        { id: 'b', type: 'router', x: 50, y: 0 },
+        { id: 'c', type: 'router', x: 90, y: 0 },
+      ],
+      links: [
+        { id: 'ab', type: 'line', from: 'a', to: 'b' },
+        { id: 'bc', type: 'line', from: 'b', to: 'c' },
+      ],
+      anchors: [],
+      zones: [],
+      flowPaths: [],
+      policyMarkers: [],
+      emphasis,
+    }) as unknown as Page;
+
+  it('drops a removed node and the links removed with it', () => {
+    const p = emphasized(['a', 'ab', 'c']);
+    cascadeEndpointRemoval(p, new Set(['a']));
+    expect(p.emphasis).toEqual(['c']);
+  });
+
+  it('turns emphasis off when nothing emphasized is left', () => {
+    // A list of ids that no longer exist would dim the whole page.
+    const p = emphasized(['a', 'ab']);
+    cascadeEndpointRemoval(p, new Set(['a']));
+    expect(p.emphasis).toBeUndefined();
+  });
+
+  it('pruneEmphasis is a no-op without a list', () => {
+    const p = emphasized([]);
+    delete p.emphasis;
+    expect(pruneEmphasis(p, new Set(['a']))).toBe(0);
+    expect(p.emphasis).toBeUndefined();
   });
 });

@@ -77,7 +77,7 @@ import {
 import { tidyDocument, balanceDocument } from '../api/tidy.js';
 import { layoutDocument, type LayoutAlgorithm } from '../api/autolayout.js';
 import { POLICY_MARKER_TYPES } from '../api/markers.js';
-import { buildTemplate, listTemplates } from '../api/templates.js';
+import { generateTemplate, listTemplates } from '../api/templates.js';
 import {
   BRANCH_LAN,
   CLOUD_HUBS,
@@ -418,6 +418,18 @@ const compactWorkspaceOperations = z
   .min(1)
   .max(250);
 
+/**
+ * Where `list_templates` sends an agent whose shape a template does not
+ * cover: the generators build whole designs from intent, as their own tools.
+ */
+const TEMPLATE_GENERATORS = [
+  {
+    tool: 'generate_sdwan_topology',
+    description:
+      'SD-WAN fabrics (vendor, regions, hubs, branches, WAN transports, HA, LAN, cloud hubs, SSE) are generated from intent, not built from a template.',
+  },
+] as const;
+
 /** Same-author supersede flag shared by the workspace write tools (issue #269). */
 const supersedeFlag = z
   .boolean()
@@ -613,9 +625,14 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'list_templates',
       description:
-        'List starter templates (id + name + description) that create_from_template can instantiate.',
+        'List starter templates and their parameters for create_from_template.',
       inputShape: {},
-      handler: () => listTemplates(),
+      // Each template carries its parameter schema here, in the result,
+      // where it costs nothing in the tool list (see token-budget.test.ts).
+      handler: () => ({
+        templates: listTemplates(),
+        generators: TEMPLATE_GENERATORS,
+      }),
     },
     {
       name: 'create_from_template',
@@ -623,13 +640,28 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
         'Create a new topology from a starter template (see list_templates). Returns its id, like create_topology.',
       inputShape: {
         template: z.string().describe('Template id from list_templates.'),
+        // A bare object keeps the tool list small; `generateTemplate` checks
+        // every name and value and names the bad one.
+        params: z
+          .looseObject({})
+          .optional()
+          .describe('Template parameters, by name.'),
         title: displayString(TEXT_LIMITS.title).optional(),
       },
       handler: (a) => {
-        const doc = buildTemplate(String(a.template));
+        const { doc, params, stats } = generateTemplate(
+          String(a.template),
+          a.params,
+        );
         if (a.title) doc.title = String(a.title);
         const { id } = store.import(doc);
-        return { id, title: doc.title, pages: doc.pages.length };
+        return {
+          id,
+          title: doc.title,
+          pages: doc.pages.length,
+          params,
+          stats,
+        };
       },
     },
     {
@@ -920,7 +952,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'set_page_properties',
       description:
-        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (EXPERIMENTAL link anchor box: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; {} = on with defaults, "none" clears; a node’s own linkAttach merges over it), and/or portLabels ("pill" draws each endpoint label as a dark pill ON the node edge at the attach point, rotated to the side — the wiring-sheet convention; pair it with linkAttach {distribute:true}; "chip" restores the classic glass chip beside the wire; a node’s own portLabels overrides it), and/or frame storytelling: caption (a one-line narration shown during playback and under exports; "" clears) and emphasis (node / link ids to spotlight — everything else on the frame dims; [] clears).',
+        'Update an existing page’s name, viewBox (the canvas extent "minX minY width height"), playback timing (duration ms / transition) for flipbook playback, lineJumps (draw a hop where standard line links cross links drawn earlier: "arc", "gap", or "none" to clear), and/or linkAttach (the link anchor box, ON for new pages as {distribute:true}: links attach to the node’s hit box padded by `pad` and extended past the label, so a link no longer runs through the label text; `distribute` spreads a side’s endpoints into even slots; "none" = classic attachment at the icon edge; a node’s own linkAttach merges over it), and/or portLabels ("pill" draws each endpoint label as a dark pill ON the node edge at the attach point, rotated to the side — the wiring-sheet convention; pair it with linkAttach {distribute:true}; "chip" restores the classic glass chip beside the wire; a node’s own portLabels overrides it), and/or frame storytelling: caption (a one-line narration shown during playback and under exports; "" clears) and emphasis (node / link ids to spotlight — everything else on the frame dims; [] clears).',
       inputShape: {
         topologyId,
         pageIndex,
@@ -957,7 +989,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           ])
           .optional()
           .describe(
-            'EXPERIMENTAL link anchor box for the page ({} = on with defaults; "none" clears).',
+            'Link anchor box for the page (new pages start {distribute:true}; "none" = classic attachment).',
           ),
         portLabels: z
           .enum(['chip', 'pill'])
@@ -2271,7 +2303,7 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
     {
       name: 'render_svg',
       description:
-        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. `theme: "light"` renders for a light page (light backdrop, dark text, light cards, accents darkened for contrast) — for slides, docs and print; the default "dark" is the canvas look. NOTE: the returned SVG is large (often 20–300KB) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
+        'Render a page to a complete, standalone SVG string. `pageIndex` defaults to 0 (the first frame). `visibleLayers` restricts the output to those declared layers (untagged base elements always draw) — e.g. just the underlay, or underlay + overlay. `theme: "light"` renders for a light page (light backdrop, dark text, light cards, accents darkened for contrast) — for slides, docs and print; the default "dark" is the canvas look. NOTE: even the default clean build is large (often 10–150KB; map backdrops add far more) and is rejected above 2 MiB — do not call this after every edit. Use validate_topology for correctness checks while iterating, inspect_render for a compact visual-quality report once the layout settles, and render (or share_topology, where available) once at the end.',
       inputShape: {
         topologyId,
         pageIndex: z
@@ -2284,11 +2316,18 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
           .optional()
           .describe('Layer ids to draw (omit for the layers’ defaults).'),
         theme: renderTheme,
+        profile: z
+          .enum(['clean', 'full'])
+          .optional()
+          .describe(
+            'clean (default): static, only the definitions the drawing uses — far smaller. full: the animated build (flow particles, link dots).',
+          ),
       },
       handler: (a) =>
         withHardware(store.get(String(a.topologyId)), deps.catalog, (doc, hw) =>
           assertExportWithinLimit(
             deps.renderDocument(doc, (a.pageIndex as number | undefined) ?? 0, {
+              profile: a.profile === 'full' ? 'full' : 'clean',
               ...(a.visibleLayers !== undefined
                 ? { visibleLayers: a.visibleLayers as string[] }
                 : {}),
@@ -2312,6 +2351,9 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
               doc,
               (d, i) =>
                 deps.renderDocument(d, i, {
+                  // Animated, but without the unused definitions each page
+                  // would otherwise repeat.
+                  pruneDefs: true,
                   ...themeOpt(a),
                   ...(hw.hardware ? { hardware: hw.hardware } : {}),
                 }),

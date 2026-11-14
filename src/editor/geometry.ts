@@ -6,7 +6,7 @@
  * adds the editor-facing hit-testing on top.
  */
 import type { Page } from '../pages/model.js';
-import type { ZoneConfig } from '../vendor/topology-ds.js';
+import type { NodeConfig, ZoneConfig } from '../vendor/topology-ds.js';
 import { nodeHalf, nodeBounds, type BoundsRect } from '../api/geometry.js';
 import { nodeLabelRect } from '../render/label-placement.js';
 import { zoneBox } from '../render/zone-box.js';
@@ -65,11 +65,21 @@ export function hitTestNode(
 }
 
 /**
- * Topmost node whose rendered caption (the label/sublabel block drawn beside
- * the glyph — below it by default) contains the point, else null. Lets a
+ * A node's caption as the pointer sees it: the label/sublabel block drawn
+ * beside the glyph (below it by default), grown by `pad`. The block is the
+ * renderer's estimated label rect (render/node-labels: wrapped lines × char
+ * width). Null for a node that draws its own text or has none.
+ */
+export function nodeCaptionRect(n: NodeConfig, pad = 3): BoundsRect | null {
+  const r = nodeLabelRect(n);
+  if (!r) return null;
+  return { x: r.x - pad, y: r.y - pad, w: r.w + pad * 2, h: r.h + pad * 2 };
+}
+
+/**
+ * Topmost node whose rendered caption contains the point, else null. Lets a
  * click on a node's name select the node instead of falling through to a
- * link or the zone behind it. The block is the renderer's estimated label
- * rect (render/node-labels: wrapped lines × char width), grown by `pad`.
+ * link or the zone behind it.
  */
 export function hitTestNodeLabel(
   page: Page,
@@ -79,15 +89,9 @@ export function hitTestNodeLabel(
 ): string | null {
   for (let i = page.nodes.length - 1; i >= 0; i--) {
     const n = page.nodes[i]!;
-    const r = nodeLabelRect(n);
+    const r = nodeCaptionRect(n, pad);
     if (!r) continue;
-    if (
-      x >= r.x - pad &&
-      x <= r.x + r.w + pad &&
-      y >= r.y - pad &&
-      y <= r.y + r.h + pad
-    )
-      return n.id;
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return n.id;
   }
   return null;
 }
