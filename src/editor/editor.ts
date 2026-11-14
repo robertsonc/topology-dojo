@@ -3079,24 +3079,41 @@ export class Editor {
     this.onChange();
   }
 
-  /** Swap the selected link's endpoints (and reverse any waypoints). */
+  /**
+   * Swap the selected link's endpoints. Everything recorded per end — port
+   * and interface labels, optics, bundles, pinned sides and their offsets,
+   * label offsets — moves with its device to the other end, and the bends
+   * are reversed, so the link looks the same and only its direction changed.
+   */
   swapLink(): void {
     const link = this.getSelectedLink();
     if (!link) return;
     this.snapshot();
-    const { from, to } = link;
-    link.from = to;
-    link.to = from;
+    const rec = link as Record<string, unknown>;
+    const before = { ...rec };
+    // The pairs are read off the link's own keys (`from` / `to`, and every
+    // `fromXxx` / `toXxx`), not from a list: a per-end field added to the
+    // model later is swapped without anyone remembering to add it here.
+    const suffixes = new Set<string>();
+    for (const key of Object.keys(rec)) {
+      const m = /^(?:from|to)([A-Z].*)?$/.exec(key);
+      if (m) suffixes.add(m[1] ?? '');
+    }
+    const keys: string[] = ['waypoints'];
+    for (const suffix of suffixes) {
+      const a = `from${suffix}`;
+      const b = `to${suffix}`;
+      keys.push(a, b);
+      const va = rec[a];
+      const vb = rec[b];
+      if (vb === undefined) delete rec[a];
+      else rec[a] = vb;
+      if (va === undefined) delete rec[b];
+      else rec[b] = va;
+    }
     if (link.waypoints) link.waypoints = [...link.waypoints].reverse();
-    this.emitPatch('links', link.id, {
-      set: {
-        from: link.from,
-        to: link.to,
-        ...(link.waypoints
-          ? { waypoints: structuredClone(link.waypoints) }
-          : {}),
-      },
-    });
+    const fp = this.patchFromChange(before, rec, keys);
+    if (fp) this.emitPatch('links', link.id, fp);
     this.renderArt();
     this.renderOverlay();
     this.onChange();

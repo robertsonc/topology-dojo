@@ -398,6 +398,23 @@ const cases: GestureCase[] = [
     undoable: true,
   },
   {
+    name: 'swap link endpoints carrying per-end data',
+    setup: (e, page) => {
+      Object.assign(page.links[0]!, {
+        fromLabel: 'Gi0/1',
+        toLabel: 'Gi0/2',
+        fromPort: 'e',
+        waypoints: [
+          { x: 150, y: 60 },
+          { x: 200, y: 140 },
+        ],
+      });
+      e.focusLink('ab');
+    },
+    run: (e) => e.swapLink(),
+    undoable: true,
+  },
+  {
     name: 're-attach a link end (reconnectLink)',
     run: (e) => e.reconnectLink('ab', 'to', 'c'),
     undoable: true,
