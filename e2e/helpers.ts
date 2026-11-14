@@ -182,15 +182,29 @@ export async function openFixture(page: Page, name: string): Promise<void> {
   await loaded;
 }
 
-/** The debounced (400ms) localStorage autosave, parsed. */
+/**
+ * The debounced (400ms) localStorage autosave, parsed.
+ *
+ * A change is saved 400ms after it is made, and a tab that has changed nothing
+ * has saved nothing. So this waits (up to two seconds) for the entry to exist
+ * rather than hand null to a caller that reads straight after an edit; it
+ * still returns null if nothing is ever saved.
+ */
 export async function readAutosave(
   page: Page,
   slot: 'local' | 'shared' = 'local',
 ): Promise<{ title: string; pages: { nodes: unknown[] }[] } | null> {
-  return page.evaluate((s) => {
+  const raw = await page.evaluate(async (s) => {
     const key =
       s === 'shared' ? 'topology-dojo:doc:shared' : 'topology-dojo:doc';
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
+    const deadline = Date.now() + 2000;
+    for (;;) {
+      const value = localStorage.getItem(key);
+      if (value !== null || Date.now() > deadline) return value;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   }, slot);
+  return raw
+    ? (JSON.parse(raw) as { title: string; pages: { nodes: unknown[] }[] })
+    : null;
 }
