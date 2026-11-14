@@ -174,6 +174,34 @@ the engine class is obtained — Node uses `createRequire` against
 A `{ calm }` option sets the engine's `reducedMotion` flag to suppress animation,
 threaded through both paths for parity.
 
+## Untrusted documents
+
+A document can come from an opened file, an import, a public share link or a
+workspace commit, so its content is untrusted everywhere it is drawn. Two
+layers keep it from becoming markup, and each is tested on its own.
+
+1. **The gate: `parseDoc` (`src/pages/persist.ts`).** Every document passes it:
+   native files, imports (`classifyOpenedFile` runs each importer's output
+   through it), share links, autosave, the MCP stores and workspace commits.
+   Behind the gate an element is a plain object with a string id; every field
+   the catalog declares is the declared kind (a finite number, a safe colour,
+   a boolean, an id string) or absent (`src/pages/typed-fields.ts`); a
+   `viewBox` is four numbers; free text is length-bounded. Nothing behind the
+   gate checks types again.
+2. **The sinks.** The engine builds SVG by interpolation. Element configs are
+   made safe once on the way in (`_safeCfg` in
+   `public/vendor/topology-ds.js`): any string that is not free text and not
+   an id has `"`, `<` and `>` turned into entities. Free text is escaped where
+   it is drawn, and ids where they are written out. Markup the renderer writes
+   as is (wire-sheet panel art) travels beside the config, never in it
+   (`WiresheetLayout.art`), so a document cannot supply it.
+
+A new free-text property is either escaped where it is drawn and added to the
+engine's `_TEXT_KEYS`, or left out of that list, in which case the input pass
+escapes it. `src/server/untrusted.test.ts` renders a document whose every
+field is a markup payload; `e2e/untrusted-document.spec.ts` opens one in the
+browser, by file, by share link and by CSV import.
+
 ## The capability catalog
 
 `api/catalog.ts` is the single machine-readable description of the persisted

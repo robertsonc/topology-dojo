@@ -73,3 +73,28 @@ describe('classifyOpenedFile', () => {
     expect(c.result.error.code).toBe('invalid-input');
   });
 });
+
+describe('an imported document passes the same gate as a native one', () => {
+  // parseDoc bounds free text, checks types and drops what is not usable; an
+  // importer's output must get exactly that, whatever format it read.
+  it('CSV', () => {
+    const long = 'L'.repeat(900);
+    const c = classifyOpenedFile(
+      `[nodes]\nid,label\na,${long}\nb,Core\n[links]\nfrom,to\na,b\n`,
+    );
+    expect(c.kind).toBe('csv');
+    if (c.kind !== 'csv' || !c.result.ok) throw new Error('csv not converted');
+    const label = c.result.document!.pages[0]!.nodes[0]!.label ?? '';
+    expect(label.length).toBeLessThanOrEqual(200);
+  });
+
+  it('Mermaid', () => {
+    const long = 'L'.repeat(900);
+    const c = classifyOpenedFile(`flowchart LR\n  a[${long}] --> b[Core]\n`);
+    expect(c.kind).toBe('mermaid');
+    if (c.kind !== 'mermaid' || !c.result.ok)
+      throw new Error('mermaid not converted');
+    const labels = c.result.document!.pages[0]!.nodes.map((n) => n.label ?? '');
+    expect(Math.max(...labels.map((l) => l.length))).toBeLessThanOrEqual(200);
+  });
+});

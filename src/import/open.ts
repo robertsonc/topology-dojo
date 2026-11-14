@@ -14,6 +14,21 @@ import { convertCsv, detectCsv } from './csv.js';
 import type { CsvConvertResult } from './csv.js';
 import { convertDrawio, detectDrawio } from './drawio.js';
 import type { DrawioConvertResult } from './drawio.js';
+import { parseDoc } from '../pages/persist.js';
+import type { TopologyDocument } from '../pages/model.js';
+
+/**
+ * An importer's output is as untrusted as the file it read, so it passes the
+ * same gate as a native document: ids, types, colours and numbers are checked
+ * once, in one place, whatever format they arrived in.
+ */
+function gated<T extends { ok: boolean; document?: TopologyDocument }>(
+  result: T,
+): T {
+  if (!result.ok || !result.document) return result;
+  const document = parseDoc(result.document);
+  return document ? { ...result, document } : result;
+}
 
 export type OpenFileClassification =
   | { kind: 'legacy'; result: LegacyConvertResult }
@@ -41,12 +56,13 @@ export function classifyOpenedFile(text: string): OpenFileClassification {
     json = JSON.parse(text);
   } catch {
     if (detectDrawio(text))
-      return { kind: 'drawio', result: convertDrawio(text) };
+      return { kind: 'drawio', result: gated(convertDrawio(text)) };
     if (detectMermaid(text))
-      return { kind: 'mermaid', result: convertMermaid(text) };
-    if (detectCsv(text)) return { kind: 'csv', result: convertCsv(text) };
+      return { kind: 'mermaid', result: gated(convertMermaid(text)) };
+    if (detectCsv(text))
+      return { kind: 'csv', result: gated(convertCsv(text)) };
     return { kind: 'native' };
   }
   if (!detectLegacyStudio(json)) return { kind: 'native' };
-  return { kind: 'legacy', result: convertLegacyStudio(json) };
+  return { kind: 'legacy', result: gated(convertLegacyStudio(json)) };
 }

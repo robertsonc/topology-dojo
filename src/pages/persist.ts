@@ -23,6 +23,14 @@ import {
 } from '../api/sheet.js';
 import type { TierDef } from '../api/tiers.js';
 import { BUNDLE_KINDS, type BundleDef } from '../api/bundles.js';
+import { parseViewBox } from '../api/layout.js';
+import {
+  finiteNumber,
+  idString,
+  objectsOnly,
+  typeElementFields,
+  type ElementScope,
+} from './typed-fields.js';
 
 /** A valid CSS hex colour (`#rgb` or `#rrggbb`), else undefined. */
 function hexColor(v: unknown): string | undefined {
@@ -79,23 +87,90 @@ function boundLabelWidth(el: Record<string, unknown>): void {
   else el.labelWidth = w;
 }
 
-/** Sanitize a page's elements against markup injection (in place). */
+type RawElement = Record<string, unknown>;
+
+/**
+ * Keep the members of an element array that are usable at all: plain objects
+ * with an id that is a string (a numeric id is written as one). A null or
+ * scalar member, or one with no usable id, would throw somewhere behind this
+ * gate — in the renderer, the inspector or an exporter.
+ */
+function identified<T>(raw: unknown): T[] {
+  const out: RawElement[] = [];
+  for (const el of objectsOnly<RawElement>(raw)) {
+    const id = idString(el.id);
+    if (id === undefined) continue;
+    if (el.id !== id) el.id = id;
+    out.push(el);
+  }
+  return out as T[];
+}
+
+/** One element's fields made the kinds the catalog declares (in place). */
+function typeElement(el: RawElement, scope: ElementScope): void {
+  typeElementFields(el, scope, safeColor);
+  scrubColors(el);
+  boundLabelWidth(el);
+}
+
+/** A node: a markup-safe type, typed fields, and a position that is numbers. */
+function sanitizeNode(n: RawElement): void {
+  n.type = safeType(n.type, 'host');
+  typeElement(n, 'node');
+  if (typeof n.x !== 'number') n.x = 0;
+  if (typeof n.y !== 'number') n.y = 0;
+}
+
+/** A link: a markup-safe type, typed fields, and both ends as id strings.
+ * Returns false when an end is not an id at all (the link cannot be drawn). */
+function sanitizeLink(l: RawElement): boolean {
+  l.type = safeType(l.type, 'line');
+  typeElement(l, 'link');
+  const from = idString(l.from);
+  const to = idString(l.to);
+  if (from === undefined || to === undefined) return false;
+  if (l.from !== from) l.from = from;
+  if (l.to !== to) l.to = to;
+  return true;
+}
+
+/**
+ * Sanitize a page's elements (in place): against markup injection, and
+ * against values of the wrong type that the renderer would choke on.
+ */
 function sanitizeElements(pg: Page): void {
-  for (const n of pg.nodes as unknown as Record<string, unknown>[]) {
-    n.type = safeType(n.type, 'host');
-    scrubColors(n);
-    boundLabelWidth(n);
+  for (const n of pg.nodes as unknown as RawElement[]) sanitizeNode(n);
+  pg.links = (pg.links as unknown as RawElement[]).filter(
+    sanitizeLink,
+  ) as unknown as Page['links'];
+  for (const a of pg.anchors as unknown as RawElement[]) {
+    a.x = finiteNumber(a.x) ?? 0;
+    a.y = finiteNumber(a.y) ?? 0;
   }
-  for (const l of pg.links as unknown as Record<string, unknown>[]) {
-    l.type = safeType(l.type, 'line');
-    scrubColors(l);
-    boundLabelWidth(l);
+  for (const z of pg.zones as unknown as RawElement[]) typeElement(z, 'zone');
+  for (const f of pg.flowPaths as unknown as RawElement[])
+    typeElement(f, 'flowPath');
+  for (const m of pg.policyMarkers as unknown as RawElement[]) {
+    typeElement(m, 'policyMarker');
+    for (const ref of ['nodeId', 'linkId', 'flowPathId'])
+      if (ref in m && m[ref] != null) {
+        const id = idString(m[ref]);
+        if (id === undefined) delete m[ref];
+        else if (m[ref] !== id) m[ref] = id;
+      }
   }
-  for (const coll of [pg.zones, pg.flowPaths, pg.policyMarkers])
-    for (const el of coll as unknown as Record<string, unknown>[]) {
-      scrubColors(el);
-      boundLabelWidth(el);
-    }
+}
+
+/**
+ * A page's viewBox in the one form every reader expects: four finite numbers
+ * separated by single spaces, with a positive width and height. Anything else
+ * (a hostile string, a hand-edited `0,0,1050,700`) becomes the default frame,
+ * component by component.
+ */
+function canonicalViewBox(v: unknown): string {
+  return parseViewBox(
+    typeof v === 'string' ? v.trim().replace(/[\s,]+/g, ' ') : '',
+  ).join(' ');
 }
 
 /** Sanitize a custom node spec; returns null if it has no markup-safe name. */
@@ -283,7 +358,7 @@ export function parseDoc(input: unknown): TopologyDocument | null {
     pages.push({
       id: typeof p.id === 'string' ? p.id : newPageId(),
       name: typeof p.name === 'string' ? p.name : `Frame ${pages.length + 1}`,
-      viewBox: typeof p.viewBox === 'string' ? p.viewBox : '0 0 1050 700',
+      viewBox: canonicalViewBox(p.viewBox),
       ...(typeof p.duration === 'number' &&
       Number.isFinite(p.duration) &&
       p.duration > 0
@@ -318,16 +393,12 @@ export function parseDoc(input: unknown): TopologyDocument | null {
             ) as string[],
           }
         : {}),
-      nodes: Array.isArray(p.nodes) ? (p.nodes as Page['nodes']) : [],
-      links: Array.isArray(p.links) ? (p.links as Page['links']) : [],
-      anchors: Array.isArray(p.anchors) ? (p.anchors as Page['anchors']) : [],
-      zones: Array.isArray(p.zones) ? (p.zones as Page['zones']) : [],
-      flowPaths: Array.isArray(p.flowPaths)
-        ? (p.flowPaths as Page['flowPaths'])
-        : [],
-      policyMarkers: Array.isArray(p.policyMarkers)
-        ? (p.policyMarkers as Page['policyMarkers'])
-        : [],
+      nodes: identified<Page['nodes'][number]>(p.nodes),
+      links: identified<Page['links'][number]>(p.links),
+      anchors: identified<Page['anchors'][number]>(p.anchors),
+      zones: identified<Page['zones'][number]>(p.zones),
+      flowPaths: identified<Page['flowPaths'][number]>(p.flowPaths),
+      policyMarkers: identified<Page['policyMarkers'][number]>(p.policyMarkers),
     });
   }
   if (pages.length === 0) return null;
@@ -360,6 +431,16 @@ export function parseDoc(input: unknown): TopologyDocument | null {
           typeof (l as { id?: unknown }).id === 'string',
       )
     : [];
+  // A layer's colour is drawn in the legend and the panels; its opacity is
+  // multiplied into every member. Both must be what they claim to be.
+  for (const ly of layers as unknown as RawElement[]) {
+    scrubColors(ly);
+    if ('opacity' in ly && ly.opacity != null) {
+      const o = finiteNumber(ly.opacity);
+      if (o === undefined) delete ly.opacity;
+      else ly.opacity = o;
+    }
+  }
   // Legend: a small opt-in settings object. Keep only recognised fields.
   const rawLegend = d.legend as Record<string, unknown> | undefined;
   const legend =
@@ -395,20 +476,15 @@ export function parseDoc(input: unknown): TopologyDocument | null {
             s.nodes.length > 0,
         )
         .map((s): Stencil => {
-          const nodes = s.nodes as Stencil['nodes'];
-          const links = Array.isArray(s.links)
-            ? (s.links as Stencil['links'])
-            : [];
           // A stencil's members are stamped onto a page verbatim, so its element
-          // data is as untrusted as a page's — sanitize colours / types the same.
-          for (const n of nodes as unknown as Record<string, unknown>[]) {
-            n.type = safeType(n.type, 'host');
-            scrubColors(n);
-          }
-          for (const l of links as unknown as Record<string, unknown>[]) {
-            l.type = safeType(l.type, 'line');
-            scrubColors(l);
-          }
+          // data is as untrusted as a page's — sanitize it the same way.
+          const nodes = identified<Stencil['nodes'][number]>(s.nodes);
+          for (const n of nodes as unknown as RawElement[]) sanitizeNode(n);
+          const links = (
+            identified<Stencil['links'][number]>(
+              s.links,
+            ) as unknown as RawElement[]
+          ).filter(sanitizeLink) as unknown as Stencil['links'];
           return { id: s.id as string, name: s.name as string, nodes, links };
         })
     : [];
@@ -499,6 +575,11 @@ function slotKey(slot: DocSlot): string {
   return slot === 'shared' ? `${KEY}:shared` : KEY;
 }
 
+/** The localStorage key of an autosave slot (for `storage` events). */
+export function autosaveKey(slot: DocSlot = 'local'): string {
+  return slotKey(slot);
+}
+
 /**
  * Persist to localStorage. Returns whether the write actually succeeded —
  * storage can be unavailable (private browsing, policy) or full (quota), and
@@ -508,8 +589,13 @@ export function saveLocal(
   doc: TopologyDocument,
   slot: DocSlot = 'local',
 ): boolean {
+  return saveSerialized(serializeDoc(doc), slot);
+}
+
+/** `saveLocal` for a document that is already serialized (`serializeDoc`). */
+export function saveSerialized(json: string, slot: DocSlot = 'local'): boolean {
   try {
-    localStorage.setItem(slotKey(slot), serializeDoc(doc));
+    localStorage.setItem(slotKey(slot), json);
     return true;
   } catch {
     return false;

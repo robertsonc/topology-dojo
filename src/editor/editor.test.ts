@@ -493,3 +493,77 @@ describe('default node labels', () => {
     ]);
   });
 });
+
+describe('ids are data, not markup, in the overlay', () => {
+  it('escapes an anchor id in its handle', () => {
+    const p = basePage('p1');
+    p.anchors.push({ id: 'k"><pwn>', x: 10, y: 20 });
+    const overlay = fakeSvg();
+    const editor = new Editor(fakeSvg(), overlay, p);
+    editor.setPage(p);
+    expect(overlay.innerHTML).toContain(
+      'data-anchor-id="k&quot;&gt;&lt;pwn&gt;"',
+    );
+    expect(overlay.innerHTML).not.toContain('<pwn>');
+  });
+});
+
+describe('renameElement targets an id, not the selection', () => {
+  // The inline editor commits when its input blurs, and the click that blurs
+  // it has already selected something else by then.
+  it('renames the node it was opened on while another node is selected', () => {
+    const p = basePage('p1');
+    const editor = mkEditor(p);
+    editor.focusNode('b');
+    expect(editor.renameElement('node', 'a', 'Core')).toBe(true);
+    expect(p.nodes.map((n) => n.label)).toEqual(['Core', 'B']);
+  });
+
+  it('renames a link with nothing selected, as one undo step', () => {
+    const p = basePage('p1');
+    const editor = mkEditor(p);
+    expect(editor.renameElement('link', 'ab', 'MPLS')).toBe(true);
+    expect(p.links[0]!.label).toBe('MPLS');
+    editor.undo();
+    expect(editor.page.links[0]!.label).toBeUndefined();
+  });
+
+  it('renames a zone, and reports an id that no longer exists', () => {
+    const p = basePage('p1');
+    p.zones.push({ id: 'z', label: 'Old', nodes: ['a'] });
+    const editor = mkEditor(p);
+    expect(editor.renameElement('zone', 'z', 'Site')).toBe(true);
+    expect(p.zones[0]!.label).toBe('Site');
+    expect(editor.renameElement('node', 'gone', 'x')).toBe(false);
+  });
+});
+
+describe('resetHistory: a replaced document starts with no history', () => {
+  // History is kept per page id, and ids repeat across documents: an imported
+  // page is always `p1`, a generated fabric always `sdwan`.
+  it('does not restore the stash of a same-id page from the old document', () => {
+    const editor = mkEditor(basePage('p1'));
+    editor.addNode('ec'); // one undo step on p1
+    editor.setPage(basePage('p2')); // p1's history is stashed
+    editor.resetHistory();
+    const fresh = basePage('p1'); // another document; its page is `p1` too
+    editor.setPage(fresh);
+    expect(editor.canUndo()).toBe(false);
+    editor.undo();
+    expect(editor.page.nodes).toHaveLength(2);
+  });
+
+  it('does not carry the live stacks over when the current page id repeats', () => {
+    const editor = mkEditor(basePage('sdwan'));
+    editor.addNode('ec');
+    expect(editor.canUndo()).toBe(true);
+    editor.resetHistory();
+    const next = basePage('sdwan');
+    next.nodes[0]!.label = 'Other fabric';
+    editor.setPage(next);
+    expect(editor.canUndo()).toBe(false);
+    editor.undo();
+    expect(editor.page.nodes[0]!.label).toBe('Other fabric');
+    expect(editor.page.nodes).toHaveLength(2);
+  });
+});

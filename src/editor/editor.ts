@@ -1694,7 +1694,7 @@ export class Editor {
       const c = sel ? ACCENT : MUTED;
       const r = 5;
       out +=
-        `<g data-anchor-id="${a.id}">` +
+        `<g data-anchor-id="${escXmlAttr(a.id)}">` +
         `<path d="M${a.x},${a.y - r} L${a.x + r},${a.y} L${a.x},${a.y + r} L${a.x - r},${a.y} Z" fill="${sel ? ACCENT : 'none'}" fill-opacity="${sel ? 0.25 : 0}" stroke="${c}" stroke-width="1.5"/>` +
         `<circle cx="${a.x}" cy="${a.y}" r="1.5" fill="${c}"/>` +
         `</g>`;
@@ -1864,6 +1864,22 @@ export class Editor {
   /** Forget a page's stashed history — call when the page is deleted for good. */
   dropPageHistory(pageId: string): void {
     this.histories.delete(pageId);
+  }
+
+  /**
+   * Forget ALL history: the live stacks and every page's stash. Call BEFORE
+   * `setPage` when the whole document is replaced (new, open, template,
+   * generate, import, share link). History is kept per page id and ids repeat
+   * across documents (an imported page is always `p1`, a generated fabric
+   * `sdwan`), so history kept from the previous document would be replayed
+   * into the new one: one Ctrl+Z and the new diagram becomes the old.
+   */
+  resetHistory(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.histories.clear();
+    this.nudgeActive = false;
+    clearTimeout(this.nudgeTimer);
   }
 
   /* ── gesture → operation funnel (Packet S2) ───────────────────────
@@ -2839,6 +2855,37 @@ export class Editor {
     else this.scheduleArt();
     this.renderOverlay();
     this.onChange();
+  }
+
+  /**
+   * Set the label of ONE element, named by id — not of whatever is selected.
+   * The inline editor commits through this: by the time its input blurs, the
+   * click that blurred it has already selected a different element (or none),
+   * so a selection-based update would rename the wrong thing or nothing.
+   * One undo step. Returns false when the element no longer exists.
+   */
+  renameElement(
+    kind: 'node' | 'link' | 'zone',
+    id: string,
+    label: string,
+  ): boolean {
+    const collection =
+      kind === 'node' ? 'nodes' : kind === 'link' ? 'links' : 'zones';
+    const el = (this.page[collection] as { id: string }[]).find(
+      (e) => e.id === id,
+    );
+    if (!el) return false;
+    this.snapshot();
+    this.assignAndEmit(collection, el as unknown as Record<string, unknown>, {
+      label,
+    });
+    if (kind === 'zone') this.afterAnnotationChange(true);
+    else {
+      this.renderArt();
+      this.renderOverlay();
+      this.onChange();
+    }
+    return true;
   }
 
   /**

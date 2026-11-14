@@ -33,13 +33,15 @@ import {
 } from './pages/model.js';
 import { captureStencil, stencilViewBox } from './editor/stencil.js';
 import {
+  autosaveKey,
   clearLocal,
   loadLocal,
   parseDoc,
-  saveLocal,
+  saveSerialized,
   serializeDoc,
   type DocSlot,
 } from './pages/persist.js';
+import { AutosaveLedger } from './pages/autosave-ledger.js';
 import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
 import {
   copyPagePNG,
@@ -109,7 +111,8 @@ import {
 import { SHARE_PUBLIC_WARNING } from './share/copy.js';
 
 // Restore the last session from localStorage, else start from the sample.
-const doc: TopologyDocument = loadLocal() ?? sampleDocument();
+const restoredDoc = loadLocal();
+const doc: TopologyDocument = restoredDoc ?? sampleDocument();
 // Register the shipped cloud-native types, then the document's custom types,
 // with the engine before any render.
 registerCustomNodes(STOCK_NODE_SPECS);
@@ -336,8 +339,49 @@ function downloadDocJSON(): void {
   );
 }
 
+/* Autosave is one localStorage entry shared by every tab on the origin. The
+ * ledger records what THIS tab last read or wrote, so an idle tab never writes
+ * its stale copy over newer work from another tab (see AutosaveLedger). It
+ * starts from the document this tab opened with: when that was restored from
+ * storage there is nothing to write until it changes. */
+const autosave = new AutosaveLedger();
+autosave.record(serializeDoc(doc));
+function writeAutosave(): boolean {
+  const json = serializeDoc(doc);
+  const ok = saveSerialized(json, activeSlot);
+  if (ok) autosave.record(json);
+  return ok;
+}
+/** Write only if this tab holds something storage does not. */
+function flushAutosave(): void {
+  if (autosave.hasUnsaved(serializeDoc(doc))) writeAutosave();
+}
+// A first visit (nothing stored) saves its starting document once, so the
+// slot is never empty while the app is open. It writes over nothing.
+if (!restoredDoc) saveSerialized(serializeDoc(doc), 'local');
+
+/** Another tab saved a different document to this tab's slot. Say so, and
+ * offer to load it; editing here instead keeps this tab's version. */
+function reportChangedElsewhere(): void {
+  savedEl.textContent = '⚠ changed in another tab — load it';
+  savedEl.title =
+    'Another tab saved a different version of this document. Click to load ' +
+    'it here. If you keep editing in this tab, this tab’s version is saved.';
+  savedEl.classList.remove('save-failed');
+  savedEl.classList.add('save-stale');
+  savedEl.setAttribute('role', 'button');
+  savedEl.tabIndex = 0;
+}
+function loadFromOtherTab(): void {
+  const latest = loadLocal(activeSlot);
+  if (!latest) return;
+  if (activeSlot === 'local' && !closeWorkspaceForDocumentReplacement()) return;
+  loadDoc(latest, false, activeSlot);
+}
+
 /** Reflect a persistence attempt in the status chip. */
 function reportSave(ok: boolean, okText?: string): void {
+  savedEl.classList.remove('save-stale');
   if (ok) {
     savedEl.textContent =
       okText ?? (activeSlot === 'shared' ? '✓ saved · shared copy' : '✓ saved');
@@ -358,24 +402,23 @@ function reportSave(ok: boolean, okText?: string): void {
     savedEl.tabIndex = 0;
   }
 }
-savedEl.addEventListener('click', () => {
+function savedChipAction(): boolean {
   if (savedEl.classList.contains('save-failed')) downloadDocJSON();
-});
+  else if (savedEl.classList.contains('save-stale')) loadFromOtherTab();
+  else return false;
+  return true;
+}
+savedEl.addEventListener('click', () => void savedChipAction());
 savedEl.addEventListener('keydown', (e) => {
-  if (
-    (e.key === 'Enter' || e.key === ' ') &&
-    savedEl.classList.contains('save-failed')
-  ) {
+  if ((e.key === 'Enter' || e.key === ' ') && savedChipAction())
     e.preventDefault();
-    downloadDocJSON();
-  }
 });
 
 function markDirty(): void {
   savedEl.textContent = '…';
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    reportSave(saveLocal(doc, activeSlot));
+    reportSave(writeAutosave());
     if (activeSlot === 'local') scheduleWorkspaceSync();
   }, 400);
 }
@@ -464,17 +507,19 @@ function openInlineLabelEditor(req: InlineEditRequest): void {
   input.style.top = `${Math.round(req.clientY - hostRect.top - 15)}px`;
   host.appendChild(input);
   inlineEditEl = input;
+  // The page the editor was opened on. Ids repeat across pages (a duplicated
+  // frame keeps them), so a commit after a page switch must not land there.
+  const pageId = editor.page.id;
   let done = false;
   const commit = (save: boolean): void => {
     if (done) return;
     done = true;
     const val = input.value.trim();
     closeInlineEdit();
-    if (!save || val === req.current) return;
-    if (req.kind === 'node') editor.updateNode({ label: val });
-    else if (req.kind === 'link') editor.updateLink({ label: val });
-    else if (req.kind === 'zone')
-      editor.updateAnnotation('zones', req.id!, { label: val });
+    if (!save || val === req.current || editor.page.id !== pageId) return;
+    // By id, not by selection: when the commit comes from a blur, the click
+    // that caused it has already selected another element (or none).
+    editor.renameElement(req.kind as 'node' | 'link' | 'zone', req.id!, val);
     renderInspector();
   };
   input.addEventListener('blur', () => commit(true));
@@ -812,11 +857,21 @@ requestAnimationFrame(() => editor.resetView());
  * `slot` is the autosave destination: every explicit replacement (new, open,
  * template, workspace adoption) is the user's own document again, so the
  * default exits shared-copy mode and releases its slot (#202). */
+// Declared here, not with the rest of playback further down: `loadDoc` stops
+// playback and runs during start-up, before that code is reached.
+let playTimer: number | null = null;
 function loadDoc(
   next: TopologyDocument,
   sync = true,
   slot: DocSlot = 'local',
+  sameDocument = false,
 ): void {
+  // A different document: its history starts empty and nothing is playing.
+  // `sameDocument` is the one exception — the open workspace document moving
+  // to another revision (a pull, an accepted proposal, a restored checkpoint)
+  // is still the document the user was editing, so their undo steps stay.
+  stopPlayback();
+  if (!sameDocument) editor.resetHistory();
   activeSlot = slot;
   if (slot === 'local') {
     activeShareId = undefined;
@@ -854,7 +909,7 @@ function loadDoc(
   if (sync) markDirty();
   else
     reportSave(
-      saveLocal(doc, activeSlot),
+      writeAutosave(),
       activeSlot === 'shared' ? '👁 shared copy' : '✓ synced',
     );
 }
@@ -869,7 +924,8 @@ function loadDoc(
  * the beforeunload recovery write). */
 const workspacePanelHandle = mountWorkspacePanel({
   getDoc: () => doc,
-  loadDoc,
+  loadDoc: (next, sync, sameDocument) =>
+    loadDoc(next, sync, 'local', sameDocument),
   getCurrentPageId: () => editor.page.id,
   takePendingOperations: () => editor.takePendingOperations(),
   savedEl,
@@ -899,8 +955,15 @@ function enableWorkspaceUi(): void {
   workspacePanelHandle.enable();
 }
 window.addEventListener('beforeunload', () => {
-  saveLocal(doc, activeSlot);
+  // Only what this tab changed. An idle tab writing here would overwrite
+  // newer work another tab saved to the same slot.
+  flushAutosave();
   workspacePanelHandle.flushBeforeUnload();
+});
+window.addEventListener('storage', (e) => {
+  if (e.storageArea !== localStorage) return;
+  if (e.key !== autosaveKey(activeSlot)) return;
+  if (autosave.isForeignChange(e.newValue)) reportChangedElsewhere();
 });
 
 /*
@@ -4069,7 +4132,6 @@ let pendingFrameDelete: { page: Page; index: number; timer: number } | null =
 
 /* Flipbook playback: step through pages on their durations (loop). The same
  * timing model drives the MCP export_flipbook artifact (pages/playback). */
-let playTimer: number | null = null;
 function stopPlayback(): void {
   if (playTimer === null) return;
   clearTimeout(playTimer);
@@ -5095,7 +5157,7 @@ function wireSignInChip(): void {
   });
   // Flush the autosave before leaving, so the document is there on return.
   menu.querySelector('#signInGo')?.addEventListener('click', () => {
-    saveLocal(doc, activeSlot);
+    flushAutosave();
   });
   // Deferred a tick: the click that triggered the prompt is still bubbling
   // to the outside-click listener above, which would close it at once.
