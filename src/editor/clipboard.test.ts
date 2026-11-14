@@ -2,7 +2,8 @@
  * Copy, cut, paste and duplicate: where the copies land and what they carry.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { Page } from '../pages/model.js';
+import type { Page, TopologyDocument } from '../pages/model.js';
+import { applyOperations, diffDocuments } from '../workspace/operations.js';
 import {
   blankPage,
   harness,
@@ -115,5 +116,152 @@ describe('repeated paste steps away from the last copy (LNK-16 / CAN-07)', () =>
       [148, 148],
       [172, 172],
     ]);
+  });
+});
+/* ── anchors travel with the block ───────────────────────────────────────── */
+
+function anchoredPage(): Page {
+  const page = twoNodes();
+  page.nodes.push({ id: 'c', type: 'ec', x: 200, y: 300, label: 'C' });
+  page.anchors.push({ id: 'an1', x: 200, y: 420 });
+  page.links.push(
+    { id: 'bc', type: 'line', from: 'b', to: 'c' },
+    { id: 'c-an', type: 'line', from: 'c', to: 'an1' },
+  );
+  return page;
+}
+
+/** Select by marquee, as a user does: nodes and anchors inside the rect. */
+function marquee(
+  h: Harness,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): void {
+  h.drag(from, to);
+}
+
+const ids = (h: Harness) => ({
+  nodes: h.editor.page.nodes.map((n) => n.id),
+  anchors: h.editor.page.anchors.map((a) => a.id),
+  links: h.editor.page.links.map((l) => `${l.from}>${l.to}`),
+});
+
+describe('copy / cut / paste / duplicate carry anchors (CODE-07)', () => {
+  it('cut then paste brings back a selected anchor and the link ending on it', () => {
+    const h = harness(anchoredPage());
+    marquee(h, { x: 140, y: 250 }, { x: 260, y: 460 }); // node c + anchor an1
+    expect(h.editor.selectionCount()).toBe(2);
+    h.editor.cut();
+    expect(ids(h)).toEqual({
+      nodes: ['a', 'b'],
+      anchors: [],
+      links: ['a>b'],
+    });
+    h.editor.paste();
+    const page = h.editor.page;
+    expect(page.nodes).toHaveLength(3);
+    expect(page.anchors).toHaveLength(1);
+    const node = page.nodes[2]!;
+    const anchor = page.anchors[0]!;
+    expect(node).toMatchObject({ label: 'C', x: 224, y: 324 });
+    expect(anchor).toMatchObject({ x: 224, y: 444 });
+    expect(anchor.id).not.toBe('an1');
+    expect(page.links.at(-1)).toMatchObject({ from: node.id, to: anchor.id });
+  });
+
+  it('copying a node brings the anchor its link ends on, selected or not', () => {
+    const h = harness(anchoredPage());
+    h.editor.focusNode('c');
+    h.editor.copySelection();
+    h.editor.paste();
+    const page = h.editor.page;
+    expect(page.anchors.map((a) => [a.x, a.y])).toEqual([
+      [200, 420],
+      [224, 444],
+    ]);
+    expect(page.links.at(-1)).toMatchObject({
+      from: page.nodes.at(-1)!.id,
+      to: page.anchors.at(-1)!.id,
+    });
+    // The link to node b is not carried: b was not copied.
+    expect(page.links).toHaveLength(4);
+  });
+
+  it('cutting a node takes the anchor only that node’s link used', () => {
+    const h = harness(anchoredPage());
+    h.editor.focusNode('c');
+    h.editor.cut();
+    // The anchor would be left with no link at all: it goes with the cut.
+    expect(ids(h)).toEqual({ nodes: ['a', 'b'], anchors: [], links: ['a>b'] });
+    h.editor.paste();
+    expect(h.editor.page.anchors).toHaveLength(1);
+    expect(h.editor.page.links).toHaveLength(2);
+  });
+
+  it('cutting a node leaves an anchor other links still use', () => {
+    const page = anchoredPage();
+    page.links.push({ id: 'a-an', type: 'line', from: 'a', to: 'an1' });
+    const h = harness(page);
+    h.editor.focusNode('c');
+    h.editor.cut();
+    expect(ids(h)).toEqual({
+      nodes: ['a', 'b'],
+      anchors: ['an1'],
+      links: ['a>b', 'a>an1'],
+    });
+  });
+
+  it('an anchor on its own can be copied, pasted and duplicated', () => {
+    const h = harness(anchoredPage());
+    h.click(200, 420); // the anchor
+    expect(h.editor.getSelectedAnchor()?.id).toBe('an1');
+    h.editor.copySelection();
+    expect(h.editor.canPaste()).toBe(true);
+    h.editor.paste();
+    h.editor.duplicateSelection();
+    expect(h.editor.page.anchors.map((a) => [a.x, a.y])).toEqual([
+      [200, 420],
+      [224, 444],
+      [248, 468],
+    ]);
+  });
+
+  it('duplicate selects the copies only, so Delete removes just them', () => {
+    const h = harness(anchoredPage());
+    const before = ids(h);
+    marquee(h, { x: 140, y: 250 }, { x: 260, y: 460 });
+    h.editor.duplicateSelection();
+    expect(h.editor.page.nodes).toHaveLength(4);
+    expect(h.editor.page.anchors).toHaveLength(2);
+    expect(h.editor.selectionCount()).toBe(2);
+    h.editor.deleteSelected();
+    expect(ids(h)).toEqual(before);
+  });
+
+  it('emits operations that reproduce the snapshot diff', () => {
+    const wrap = (page: Page): TopologyDocument => ({
+      title: 'T',
+      customNodes: [],
+      pages: [structuredClone(page)],
+    });
+    const runs: ((h: Harness) => void)[] = [
+      (h) => h.editor.paste(),
+      (h) => h.editor.duplicateSelection(),
+      (h) => h.editor.cut(),
+    ];
+    for (const run of runs) {
+      const h = harness(anchoredPage());
+      marquee(h, { x: 140, y: 250 }, { x: 260, y: 460 });
+      h.editor.copySelection();
+      h.editor.takePendingOperations();
+      const before = wrap(h.editor.page);
+      run(h);
+      const after = wrap(h.editor.page);
+      const emitted = h.editor.takePendingOperations();
+      expect(emitted.length).toBeGreaterThan(0);
+      expect(applyOperations(before, emitted)).toEqual(
+        applyOperations(before, diffDocuments(before, after)),
+      );
+    }
   });
 });

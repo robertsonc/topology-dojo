@@ -417,7 +417,11 @@ export class Editor {
     moved: boolean;
   } | null = null;
   /** Copy/paste buffer (cloned elements, page-independent). */
-  private clipboard: { nodes: NodeConfig[]; links: LinkConfig[] } | null = null;
+  private clipboard: {
+    nodes: NodeConfig[];
+    links: LinkConfig[];
+    anchors: AnchorConfig[];
+  } | null = null;
   /** Format-painter buffer: a copied node/link style to brush onto others. */
   private formatClip: {
     kind: 'node' | 'link';
@@ -2190,6 +2194,9 @@ export class Editor {
   private newZoneId(): string {
     return `z${Date.now().toString(36)}${(this.zoneSeq++).toString(36)}`;
   }
+  private newAnchorId(): string {
+    return `a${Date.now().toString(36)}${(this.anchorSeq++).toString(36)}`;
+  }
 
   private restore(json: string): void {
     const p = JSON.parse(json) as Record<string, unknown>;
@@ -2607,30 +2614,81 @@ export class Editor {
     this.zoomBy(1.25);
   }
 
-  /** Copy the selected nodes (+ links internal to them) into the clipboard. */
-  copySelection(): void {
-    if (this.sel.size === 0) return;
-    const ids = this.sel;
-    this.clipboard = {
-      nodes: this.page.nodes
-        .filter((n) => ids.has(n.id))
-        .map((n) => structuredClone(n)),
-      links: this.page.links
-        .filter((l) => ids.has(l.from) && ids.has(l.to))
-        .map((l) => structuredClone(l)),
+  /**
+   * What copy, cut and duplicate take with them: the selected nodes and
+   * anchors, the links that stay whole inside that block, and the anchors
+   * those links end on. An anchor is a wire's loose end: a link from a
+   * selected element to an anchor travels with the element, and takes the
+   * anchor along whether or not it was selected itself. A link to a node
+   * that is not selected is left behind, as before.
+   */
+  private carried(): {
+    nodes: NodeConfig[];
+    links: LinkConfig[];
+    anchors: AnchorConfig[];
+  } | null {
+    if (this.sel.size === 0 && this.selAnchors.size === 0) return null;
+    const picked = (id: string): boolean =>
+      this.sel.has(id) || this.selAnchors.has(id);
+    const anchorIds = new Set(this.page.anchors.map((a) => a.id));
+    const taken = new Set(this.selAnchors);
+    const links = this.page.links.filter((l) => {
+      const from = picked(l.from);
+      const to = picked(l.to);
+      const whole =
+        (from || anchorIds.has(l.from)) &&
+        (to || anchorIds.has(l.to)) &&
+        (from || to);
+      if (whole)
+        for (const end of [l.from, l.to])
+          if (anchorIds.has(end)) taken.add(end);
+      return whole;
+    });
+    return {
+      nodes: this.page.nodes.filter((n) => this.sel.has(n.id)),
+      links,
+      anchors: this.page.anchors.filter((a) => taken.has(a.id)),
     };
   }
 
-  /** Copy then delete the selection. */
+  /** Copy the selection (see `carried`) into the clipboard. */
+  copySelection(): void {
+    const block = this.carried();
+    if (block) this.clipboard = structuredClone(block);
+  }
+
+  /**
+   * Copy then delete the selection. What went to the clipboard leaves the
+   * page: besides the selection, an anchor that was only carried along goes
+   * too when the cut leaves it without any link (it would stay behind as a
+   * stray point, and the paste brings back its copy).
+   */
   cut(): void {
-    if (this.sel.size === 0) return;
-    this.copySelection();
+    const block = this.carried();
+    if (!block) return;
+    this.clipboard = structuredClone(block);
+    const cutLinks = new Set(block.links.map((l) => l.id));
+    const orphaned = block.anchors
+      .filter((a) => !this.selAnchors.has(a.id))
+      .filter((a) =>
+        this.page.links.every(
+          (l) => (l.from !== a.id && l.to !== a.id) || cutLinks.has(l.id),
+        ),
+      );
+    if (orphaned.length)
+      this.setSelection({
+        nodes: this.sel,
+        anchors: [...this.selAnchors, ...orphaned.map((a) => a.id)],
+      });
     this.deleteSelected();
   }
 
-  /** Whether the clipboard holds nodes that `paste()` would place. */
+  /** Whether the clipboard holds something that `paste()` would place. */
   canPaste(): boolean {
-    return !!this.clipboard && this.clipboard.nodes.length > 0;
+    return (
+      !!this.clipboard &&
+      this.clipboard.nodes.length + this.clipboard.anchors.length > 0
+    );
   }
 
   /**
@@ -2641,8 +2699,9 @@ export class Editor {
    * stacking on one spot where they look like a single node.
    */
   paste(): void {
-    if (!this.clipboard || this.clipboard.nodes.length === 0) return;
-    const lead = this.clipboard.nodes[0]!;
+    if (!this.clipboard) return;
+    const lead = this.clipboard.nodes[0] ?? this.clipboard.anchors[0];
+    if (!lead) return;
     const taken = (x: number, y: number): boolean =>
       this.page.nodes.some((n) => n.x === x && n.y === y) ||
       this.page.anchors.some((a) => a.x === x && a.y === y);
@@ -2655,11 +2714,7 @@ export class Editor {
       )
     )
       steps++;
-    this.placeClones(
-      this.clipboard.nodes,
-      this.clipboard.links,
-      steps * CLONE_STEP,
-    );
+    this.placeClones(this.clipboard, steps * CLONE_STEP);
   }
 
   /* ── format painter ───────────────────────────────────────────────
@@ -2724,36 +2779,41 @@ export class Editor {
 
   /** Duplicate the current selection in place (offset), selecting the copies. */
   duplicateSelection(): void {
-    if (this.sel.size === 0) return;
-    const ids = this.sel;
-    const nodes = this.page.nodes.filter((n) => ids.has(n.id));
-    const links = this.page.links.filter(
-      (l) => ids.has(l.from) && ids.has(l.to),
-    );
-    this.placeClones(nodes, links);
+    const block = this.carried();
+    if (block) this.placeClones(block);
   }
 
   /** Add copies of the elements, `offset` down and to the right, and select them. */
   private placeClones(
-    srcNodes: NodeConfig[],
-    srcLinks: LinkConfig[],
+    src: { nodes: NodeConfig[]; links: LinkConfig[]; anchors: AnchorConfig[] },
     offset = CLONE_STEP,
   ): void {
-    if (srcNodes.length === 0) return;
+    if (src.nodes.length === 0 && src.anchors.length === 0) return;
     this.snapshot();
-    const { nodes, links } = cloneElements(srcNodes, srcLinks, {
-      nextNodeId: () => this.newNodeId(),
-      nextLinkId: () => this.newLinkId(),
-      dx: offset,
-      dy: offset,
-    });
+    const { nodes, links, anchors } = cloneElements(
+      src.nodes,
+      src.links,
+      {
+        nextNodeId: () => this.newNodeId(),
+        nextLinkId: () => this.newLinkId(),
+        nextAnchorId: () => this.newAnchorId(),
+        dx: offset,
+        dy: offset,
+      },
+      src.anchors,
+    );
     this.page.nodes.push(...nodes);
     this.page.links.push(...links);
+    this.page.anchors.push(...anchors);
     this.emitAdds('nodes', nodes);
     this.emitAdds('links', links);
+    this.emitAdds('anchors', anchors);
     this.renderArt();
     this.onChange();
-    this.setSelection({ nodes: nodes.map((n) => n.id) });
+    this.setSelection({
+      nodes: nodes.map((n) => n.id),
+      anchors: anchors.map((a) => a.id),
+    });
     this.renderOverlay();
   }
 
@@ -3515,7 +3575,7 @@ export class Editor {
   /** Drop a new anchor at a page point, select it (used by the anchor tool). */
   private addAnchorAt(x: number, y: number): void {
     this.snapshot();
-    const id = `a${Date.now().toString(36)}${(this.anchorSeq++).toString(36)}`;
+    const id = this.newAnchorId();
     this.page.anchors.push({ id, x: this.snapVal(x), y: this.snapVal(y) });
     this.emitAdds('anchors', [{ id }]);
     this.renderArt();

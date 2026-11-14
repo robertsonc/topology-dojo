@@ -360,6 +360,24 @@ const cases: GestureCase[] = [
     undoable: true,
   },
   {
+    name: 'duplicate a node with the anchor its link ends on',
+    setup: (e, page) => {
+      page.links.push({ id: 'a-an', type: 'line', from: 'a', to: 'an1' });
+      (e as unknown as { sel: Set<string> }).sel = new Set(['a']);
+    },
+    run: (e) => e.duplicateSelection(),
+    undoable: true,
+  },
+  {
+    name: 'cut a node together with its anchor',
+    setup: (e, page) => {
+      page.links.push({ id: 'c-an', type: 'line', from: 'c', to: 'an1' });
+      (e as unknown as { sel: Set<string> }).sel = new Set(['c']);
+    },
+    run: (e) => e.cut(),
+    undoable: true,
+  },
+  {
     name: 'stamp stencil',
     run: (e) =>
       e.stampStencil(
