@@ -135,6 +135,11 @@ import { exportTools } from './export-tools.js';
 import { hardwareTools } from './hardware-tools.js';
 import { pathTools } from './path-tools.js';
 import { admitArgs } from './args.js';
+import {
+  CHECKED_TOOLS,
+  checkWrite,
+  pageIndexOfElement,
+} from './write-checks.js';
 import { withHardware } from './hardware-render.js';
 import { wiresheetLayout } from '../render/wiresheet.js';
 import { scaleLabel } from '../render/wiresheet-scale.js';
@@ -2397,6 +2402,36 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
   // diagram is O(1) tool calls instead of one per element (which exhausts
   // per-turn tool-call budgets in agent sessions). Dispatches to the same
   // validated handlers as the individual tools; atomic via snapshot/restore.
+  // Element tools refuse what is wrong at the moment of the call (see
+  // write-checks.ts), and an edit or a removal with no pageIndex goes to the
+  // page that has the element. Wrapped here so a direct call and an
+  // edit_topology operation behave the same.
+  const BY_ELEMENT: Readonly<Record<string, string>> = {
+    update_element: 'elementId',
+    remove_element: 'elementId',
+    set_node_metadata: 'nodeId',
+  };
+  for (const tool of tools) {
+    const idArg = BY_ELEMENT[tool.name];
+    if (!idArg && !CHECKED_TOOLS.has(tool.name)) continue;
+    const handler = tool.handler;
+    tool.handler = (given) => {
+      let a = given;
+      const doc = store.get(String(a.topologyId));
+      if (idArg && a.pageIndex === undefined) {
+        const found = pageIndexOfElement(doc, String(a[idArg]));
+        if (found !== undefined) a = { ...a, pageIndex: found };
+      }
+      checkWrite(
+        tool.name,
+        doc,
+        store.page(String(a.topologyId), a.pageIndex as number | undefined),
+        a,
+      );
+      return handler(a);
+    };
+  }
+
   // Operations whose arguments are in the tool list (each is also a tool).
   const CORE_OPS = [
     'add_page',
@@ -2527,7 +2562,16 @@ export function createTools(store: TopologyStore, deps: ToolDeps): ToolDef[] {
                 .map((is) => `${is.path.join('.') || '(args)'}: ${is.message}`)
                 .join('; ')}`,
             );
-          const result = tool.handler(parsed.data);
+          let result: unknown;
+          try {
+            result = tool.handler(parsed.data);
+          } catch (err) {
+            // Name the operation: without it a 40-operation batch fails with
+            // a message that could be about any of them.
+            throw new Error(
+              `operations[${i}] (${name}): ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
           const r = (result ?? {}) as Record<string, unknown>;
           const el = r.element as Record<string, unknown> | undefined;
           results.push({

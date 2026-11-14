@@ -736,6 +736,7 @@ describe('MCP tools', () => {
       type: 'ec',
       x: 200,
       y: 200,
+      nodeId: 'ec',
       label: 'EC',
     });
     call('add_node', {
@@ -749,7 +750,7 @@ describe('MCP tools', () => {
     call('add_link', {
       topologyId: id,
       type: 'tunnel',
-      from: 'inet',
+      from: 'ec',
       to: 'inet',
     });
 

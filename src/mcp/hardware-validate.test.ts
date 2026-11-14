@@ -168,7 +168,7 @@ describe('authoring the Phase 2 fields over MCP', () => {
     );
     call('add_link', {
       topologyId,
-      type: 'lan',
+      type: 'line',
       from: 'sw',
       to: 'fw',
       fromInterface: '1/1/1',

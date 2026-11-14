@@ -174,7 +174,9 @@ an id. The usual draft-building flow is:
    (a single page) so agents don't reload the whole document.
 
 Page targeting: the `add_*` tools default to the **most recently added page**;
-pass `pageIndex` to target another. `render_svg`, `inspect_render` and
+pass `pageIndex` to target another. `update_element`, `remove_element` and
+`set_node_metadata` go to the page that **has** the element when `pageIndex`
+is omitted, and ask for it only when the id is on more than one page. `render_svg`, `inspect_render` and
 `analyze_path` default to page `0`. The arrange tools (`tidy_topology`,
 `balance_topology`, `layout_topology`, `auto_place_labels`) work on **every
 page** unless `pageIndex` names one, so pass it when only one page needs
@@ -186,6 +188,13 @@ Arguments: a tool never drops an argument it does not take. On `add_node` and
 other unknown argument is an error that names it, the nearest real argument
 when there is one, and what the tool accepts; inside `edit_topology` the
 error names the operation, and the batch applies nothing.
+
+Write-time checks: the element tools refuse what is wrong at the moment of
+the call and say what would be right — an id already used on the page, a node
+or link type that does not exist, a link end / zone member / waypoint / marker
+node that is not on the page, a link from an element to itself, a flow path
+with fewer than two waypoints. `validate_topology` is still the full check
+(whole-document imports and `upsert_by_source` are not checked on write).
 
 Call `describe_capabilities` first to discover the vocabulary. It defaults to a
 compact **index** (type names/categories only); request editable fields with
