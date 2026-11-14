@@ -4351,15 +4351,15 @@ export class Editor {
   }
 
   /** Wheel = zoom toward the cursor (keeps the point under the cursor fixed). */
-  /** Start a two-finger pinch: capture start geometry + view, drop gestures. */
+  /**
+   * Start a two-finger pinch: capture start geometry + view. Whatever the
+   * first finger was doing is taken back (a node it was dragging returns to
+   * where it was, with no undo step): simply forgetting the drag left the
+   * node where the finger had moved it, unsaved and with a stray undo step.
+   */
   private beginPinch(): void {
-    this.drag = null;
-    this.marquee = null;
-    this.dragLink = null;
-    this.wpDrag = null;
-    this.labelDrag = null;
-    this.guides = [];
-    this.labelGuides = [];
+    // The first finger stays down and is half of the pinch: keep its capture.
+    this.abortGesture();
     const [a, b] = [...this.touches.values()] as [
       { x: number; y: number },
       { x: number; y: number },
@@ -5209,6 +5209,13 @@ export class Editor {
   cancelGesture(): boolean {
     if (!this.gestureActive()) return false;
     this.releaseGesturePointer();
+    this.abortGesture();
+    return true;
+  }
+
+  /** The work of `cancelGesture`, leaving the pointer capture as it is. */
+  private abortGesture(): void {
+    this.gesturePointer = null;
     const undo = this.gestureUndo;
     this.gestureUndo = null;
     this.pan = null;
@@ -5232,7 +5239,6 @@ export class Editor {
     }
     this.renderOverlay();
     this.fireSelect();
-    return true;
   }
 
   /**

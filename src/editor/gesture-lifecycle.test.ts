@@ -310,3 +310,39 @@ describe('a right-click keeps a selection it lands on (CODE-14)', () => {
     expect(h.editor.getSelectedZone()).toBeNull();
   });
 });
+
+describe('a second finger takes the first finger’s drag back', () => {
+  const finger = (id: number) => ({ pointerType: 'touch', pointerId: id });
+
+  it('the dragged node returns, with no history, and the pinch zooms', () => {
+    const h = harness(scene());
+    h.down(300, 300, finger(11)); // finger 1 on node a
+    h.move(333, 322, finger(11));
+    h.move(361, 348, finger(11));
+    expect(posA(h)).not.toEqual([300, 300]); // moving live under the finger
+    h.down(500, 500, finger(12)); // finger 2 lands: this is a pinch now
+    expect(posA(h)).toEqual([300, 300]);
+    expect(h.editor.canUndo()).toBe(false);
+    expect(h.editor.takePendingOperations()).toEqual([]);
+    // Spreading the fingers zooms in (the view narrows); nothing moves.
+    const before = h.editor.getView().w;
+    h.move(600, 600, finger(12));
+    expect(h.editor.getView().w).toBeLessThan(before);
+    h.up(600, 600, finger(12));
+    h.up(361, 348, finger(11));
+    expect(posA(h)).toEqual([300, 300]);
+    expect(h.editor.canUndo()).toBe(false);
+    expect(h.changes.count).toBe(0);
+  });
+
+  it('a rubber band started by the first finger is dropped', () => {
+    const h = harness(scene());
+    h.down(240, 240, finger(11));
+    h.move(400, 360, finger(11));
+    h.down(700, 600, finger(12));
+    h.up(700, 600, finger(12));
+    h.up(400, 360, finger(11));
+    expect(h.editor.selectedNodeIds()).toEqual([]);
+    expect(h.overlay.innerHTML).not.toContain('stroke-dasharray="5 4"');
+  });
+});
