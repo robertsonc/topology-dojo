@@ -34,9 +34,36 @@ export async function statusCount(page: Page, key: string): Promise<number> {
   return Number(text.replace(key, '').trim());
 }
 
-/** Open a document JSON fixture through the toolbar's hidden file input. */
+/**
+ * Open a document JSON fixture through the toolbar's hidden file input, and
+ * wait until it is on the canvas. The file is read asynchronously, so choosing
+ * it is not the load; the save chip is the signal. It shows "…" the moment the
+ * new document replaces the old one and "✓ saved" once that is autosaved.
+ * Returning any earlier lets a caller read the previous document's counts.
+ */
 export async function openFixture(page: Page, name: string): Promise<void> {
+  const loaded = page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const chip = document.querySelector('#saved')!;
+        let replaced = false;
+        const observer = new MutationObserver(() => {
+          const text = chip.textContent ?? '';
+          if (text === '…') replaced = true;
+          else if (replaced && text.startsWith('✓')) {
+            observer.disconnect();
+            resolve();
+          }
+        });
+        observer.observe(chip, {
+          childList: true,
+          characterData: true,
+          subtree: true,
+        });
+      }),
+  );
   await page.locator('#fInput').setInputFiles(path.join(fixturesDir, name));
+  await loaded;
 }
 
 /** The debounced (400ms) localStorage autosave, parsed. */
