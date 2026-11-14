@@ -7,6 +7,8 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  linkPoint,
+  nodeBox,
   savedDocument,
   savedElement,
 } from './helpers.js';
@@ -257,4 +259,68 @@ test('an annotation editor stays open through its own swatch, compass and chip c
   expect(await group.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(
     false,
   );
+});
+
+/* ── Properties keeps up with the canvas ─────────────────────────────────── */
+
+test('bending a link on the canvas shows in Properties without reselecting', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await clickLink(page, 'ec-fw');
+  const waypoints = page
+    .locator('#inspector .insp-row', { hasText: 'Waypoints' })
+    .locator('.insp-val');
+  await expect(waypoints).toHaveText('0 pt');
+  await expect(page.locator('#i-straighten')).toHaveCount(0);
+
+  // Drag the link's midpoint handle: that adds a bend.
+  const mid = await linkPoint(page, 'ec-fw', 0.5);
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down();
+  await page.mouse.move(mid.x + 10, mid.y + 40, { steps: 4 });
+  await page.mouse.move(mid.x + 20, mid.y + 70, { steps: 4 });
+  await page.mouse.up();
+
+  await expect(waypoints).toHaveText('1 pt');
+  await expect(page.locator('#i-straighten')).toBeVisible();
+  // …and straightening it is reflected the same way.
+  await page.locator('#i-straighten').click();
+  await expect(waypoints).toHaveText('0 pt');
+  await expect(page.locator('#i-straighten')).toHaveCount(0);
+});
+
+test('dragging a node updates its position in Properties', async ({ page }) => {
+  await bootEditor(page);
+  await clickNode(page, 'fw');
+  await page
+    .locator('#inspector details[data-group="Position"] > summary')
+    .click();
+  const x = Number(await field(page, 'x').inputValue());
+
+  const box = await nodeBox(page, 'fw');
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 40, cy, { steps: 4 });
+  await page.mouse.move(cx + 80, cy, { steps: 4 });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => Number(await field(page, 'x').inputValue()))
+    .toBeGreaterThan(x);
+  // The section the user had opened is still open after the refresh.
+  await expect(field(page, 'x')).toBeVisible();
+});
+
+test('ticking "Show key" reveals the key options at once', async ({ page }) => {
+  await bootEditor(page);
+  await expect(page.locator('#p-legend-cols')).toHaveCount(0);
+  await page.locator('#p-legend').click();
+  await expect(page.locator('#p-legend')).toBeChecked();
+  await expect(page.locator('#p-legend-cols')).toBeVisible();
+  await expect(page.locator('#p-legend-title')).toBeVisible();
+  await page.locator('#p-legend').click();
+  await expect(page.locator('#p-legend-cols')).toHaveCount(0);
 });

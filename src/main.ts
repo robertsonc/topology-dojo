@@ -466,12 +466,31 @@ function onDocChange(): void {
   renderStatus();
   renderMinimap();
   renderProblems();
+  refreshInspectorAfterChange();
   markDirty();
 }
 
 // Guards the status bar from rendering before `editor`/`statusbar` are set up
 // (the Editor constructor fires onView during construction).
 let statusReady = false;
+/** Set once the inspector has been drawn for the first time. */
+let inspectorReady = false;
+
+/**
+ * Keep Properties in step with a change made outside it. A link bent on the
+ * canvas, a node dragged or nudged, an undo: the editor reports the change
+ * but not a new selection, so the panel would go on showing the old bends,
+ * position or values until the element was selected again.
+ *
+ * While focus is inside the panel the change is the panel's own (a field
+ * being typed in, a control just used), and its handlers already redraw what
+ * needs it — redrawing here too would take the field out from under the
+ * caret.
+ */
+function refreshInspectorAfterChange(): void {
+  if (!inspectorReady || inspector.contains(document.activeElement)) return;
+  renderInspector();
+}
 
 const editor = new Editor(
   artSvg,
@@ -3034,6 +3053,7 @@ function wireProperties(): void {
     doc.legend = { ...doc.legend, show: legendOn.checked };
     editor.redrawOverlay();
     markDirty();
+    renderInspector(); // the key's own options appear / go with it
   });
   const legendPos = inspector.querySelector<HTMLSelectElement>('#p-legend-pos');
   legendPos?.addEventListener('change', () => {
@@ -5900,5 +5920,6 @@ function esc(s: string): string {
 
 renderFilmstrip();
 renderInspector();
+inspectorReady = true;
 renderStatus();
 renderMinimap();
