@@ -4795,6 +4795,35 @@ for (const inp of [dpAccent, dpSecondary, dpChrome])
 // Reflect whatever the booted document already carries.
 applyBrandPalette(doc.palette, false);
 
+/**
+ * Close a popover when a pointer is pressed anywhere outside it. Its own
+ * button is left alone: that button's click toggles the popover.
+ *
+ * A press, not a click: a press on the canvas often never becomes a click
+ * (the editor redraws what was pressed), and a popover left open keeps every
+ * canvas shortcut switched off — with nothing on screen to say why.
+ */
+function closeOnOutsidePress(
+  popover: HTMLElement,
+  button: HTMLElement,
+  close: () => void,
+): void {
+  window.addEventListener(
+    'pointerdown',
+    (e) => {
+      const target = e.target as Node | null;
+      if (
+        !popover.hidden &&
+        target &&
+        !popover.contains(target) &&
+        !button.contains(target)
+      )
+        close();
+    },
+    true,
+  );
+}
+
 let releaseDisplayOverlay: (() => void) | null = null;
 function closeDisplayPop(): void {
   displayPop.hidden = true;
@@ -4818,14 +4847,7 @@ displayBtn.addEventListener('click', (e) => {
     });
   } else closeDisplayPop();
 });
-document.addEventListener('click', (e) => {
-  if (
-    !displayPop.hidden &&
-    e.target !== displayBtn &&
-    !displayPop.contains(e.target as Node)
-  )
-    closeDisplayPop();
-});
+closeOnOutsidePress(displayPop, displayBtn, closeDisplayPop);
 
 app
   .querySelector('#tDelete')
@@ -5262,11 +5284,8 @@ function wireAccountMenu(login: string): void {
     if (menu.hidden) open();
     else close();
   });
-  // Dismiss on outside click (Esc is handled by the overlay primitive).
-  document.addEventListener('click', (e) => {
-    if (!menu.hidden && e.target !== chip && !menu.contains(e.target as Node))
-      close();
-  });
+  // Dismiss on an outside press (Esc is handled by the overlay primitive).
+  closeOnOutsidePress(menu, chip, close);
   // Sign out via an explicit navigation — robust even if the anchor default is
   // ever intercepted; the localStorage autosave preserves the open document.
   menu.querySelector('a[href="/logout"]')?.addEventListener('click', (e) => {
@@ -5339,16 +5358,13 @@ function wireSignInChip(): void {
     if (menu.hidden) open(SIGN_IN_PROMPT);
     else close();
   });
-  document.addEventListener('click', (e) => {
-    if (!menu.hidden && e.target !== chip && !menu.contains(e.target as Node))
-      close();
-  });
+  closeOnOutsidePress(menu, chip, close);
   // Flush the autosave before leaving, so the document is there on return.
   menu.querySelector('#signInGo')?.addEventListener('click', () => {
     flushAutosave();
   });
-  // Deferred a tick: the click that triggered the prompt is still bubbling
-  // to the outside-click listener above, which would close it at once.
+  // Deferred a tick, so the prompt opens after whatever the triggering click
+  // was doing (replacing the document, closing a dialog) has finished.
   promptSignIn = (text = SIGN_IN_PROMPT) => {
     setTimeout(() => open(text), 0);
   };
