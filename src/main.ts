@@ -111,6 +111,7 @@ import {
   numberFieldText,
   parseNumberField,
 } from './ui/number-field.js';
+import { isImeKey } from './ui/ime.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -546,6 +547,8 @@ function openInlineLabelEditor(req: InlineEditRequest): void {
   input.addEventListener('blur', () => commit(true));
   input.addEventListener('keydown', (e) => {
     e.stopPropagation();
+    // Enter / Escape that confirm or discard an IME candidate are not ours.
+    if (isImeKey(e)) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       commit(true);
@@ -651,6 +654,7 @@ function openQuickAdd(req: InlineEditRequest, connectFrom?: string): void {
   });
   input.addEventListener('keydown', (e) => {
     e.stopPropagation();
+    if (isImeKey(e)) return; // the key belongs to an IME composition
     if (e.key === 'Escape') {
       e.preventDefault();
       closeQuickAdd();
@@ -2143,6 +2147,7 @@ function openFind(): void {
   const input = findEl.querySelector('input')!;
   input.addEventListener('input', () => runFindQuery(input.value));
   input.addEventListener('keydown', (e) => {
+    if (isImeKey(e)) return; // the key belongs to an IME composition
     if (e.key === 'Escape') {
       e.preventDefault();
       closeFind();
@@ -2596,7 +2601,7 @@ function wireMeta(_meta?: Record<string, string | number | boolean>): void {
     ?.addEventListener('click', add);
   addRow?.querySelectorAll<HTMLInputElement>('input').forEach((i) =>
     i.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') add();
+      if (e.key === 'Enter' && !isImeKey(e)) add();
     }),
   );
 }
@@ -4213,7 +4218,7 @@ paletteSearch.addEventListener('input', () => {
   buildPalette();
 });
 paletteSearch.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && paletteSearch.value) {
+  if (e.key === 'Escape' && paletteSearch.value && !isImeKey(e)) {
     e.stopPropagation();
     paletteSearch.value = '';
     paletteQuery = '';
@@ -4458,6 +4463,7 @@ function startRename(i: number, span: HTMLElement): void {
   };
   input.addEventListener('blur', () => commit(true));
   input.addEventListener('keydown', (e) => {
+    if (isImeKey(e)) return; // the key belongs to an IME composition
     if (e.key === 'Enter') input.blur();
     else if (e.key === 'Escape') commit(false);
   });
@@ -5438,6 +5444,8 @@ document.addEventListener('change', (e) => {
 
 window.addEventListener('keydown', (e) => {
   if (overlayActive()) return;
+  // A key that confirms or discards an IME candidate is never a shortcut.
+  if (isImeKey(e)) return;
   const target = e.target instanceof Element ? e.target : null;
   const focus = target ? focusKind(focusFactsOf(target)) : 'canvas';
   if (routeKey(e, focus, keyboardNav) === 'focus') return;

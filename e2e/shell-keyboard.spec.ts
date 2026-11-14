@@ -214,3 +214,99 @@ test('a value changed by keyboard keeps focus on its control', async ({
   await page.keyboard.press('Space');
   await expect(page.locator('#p-sheet')).toBeChecked();
 });
+
+/* ── input methods ───────────────────────────────────────────────────────
+ * While an IME composition is open, Enter confirms the candidate word. It
+ * must not also commit the field the word is being typed into. */
+
+/** Compose `text` in the focused field and confirm it with Enter, the way a
+ * Japanese or Chinese IME delivers it: the Enter keydown arrives while the
+ * composition is still open, and the word is committed to the field after. */
+async function composeThenEnter(page: Page, text: string): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.imeSetComposition', {
+    text,
+    selectionStart: text.length,
+    selectionEnd: text.length,
+  });
+  const enter = {
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13,
+    nativeVirtualKeyCode: 13,
+  };
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...enter });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...enter });
+  // Committing the word ends the composition (if the field is still there).
+  await cdp.send('Input.insertText', { text });
+  await cdp.detach();
+}
+
+test('Enter that confirms an IME candidate does not commit the inline label editor', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const box = await nodeBox(page, 'fw');
+  await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+  const editor = page.locator('.inline-label-edit');
+  await expect(editor).toBeVisible();
+  await page.keyboard.press('Control+a');
+
+  await composeThenEnter(page, 'こあ');
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue('こあ');
+
+  // The next Enter, with the word confirmed, commits as usual.
+  await page.keyboard.press('Enter');
+  await expect(editor).toBeHidden();
+  await expect(page.locator('#inspector input[data-key="label"]')).toHaveValue(
+    'こあ',
+  );
+});
+
+test('Enter that confirms an IME candidate does not act in quick-add, Find, a frame rename or the metadata row', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const nodes = await statusCount(page, 'nodes');
+
+  // Quick-add: the picker stays open and no node is placed.
+  const host = (await page.locator('.canvas-host').boundingBox())!;
+  await page.mouse.dblclick(host.x + host.width - 120, host.y + 80);
+  await expect(page.locator('.quick-add')).toBeVisible();
+  // (A composition can hold any text; "router" matches a node type, so an
+  // Enter taken as "place the highlighted type" would add a node.)
+  await composeThenEnter(page, 'router');
+  await expect(page.locator('.quick-add .qa-item').first()).toBeVisible();
+  await expect(page.locator('.quick-add')).toBeVisible();
+  expect(await statusCount(page, 'nodes')).toBe(nodes);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.quick-add')).toBeHidden();
+
+  // Find: the box stays open instead of jumping to the first match.
+  await page.keyboard.press('Control+f');
+  await expect(page.locator('.find')).toBeVisible();
+  await composeThenEnter(page, 'SRX');
+  await expect(page.locator('.find .find-item')).toHaveCount(1);
+  await expect(page.locator('.find')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.find')).toHaveCount(0);
+
+  // Frame rename: still editing.
+  await page.locator('#filmstrip [data-name="0"]').dblclick();
+  const rename = page.locator('#filmstrip .frame-rename');
+  await expect(rename).toBeFocused();
+  await page.keyboard.press('Control+a');
+  await composeThenEnter(page, 'ページ');
+  await expect(rename).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#filmstrip [data-name="0"]')).toHaveText('ページ');
+
+  // Metadata: the half-typed key is not added as an entry.
+  await clickNode(page, 'fw');
+  const key = page.locator('#inspector .meta-add .meta-nk');
+  await key.click();
+  await composeThenEnter(page, 'サイト');
+  await expect(page.locator('#inspector .meta-row[data-mk]')).toHaveCount(0);
+  await expect(key).toBeFocused();
+});
