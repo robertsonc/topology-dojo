@@ -206,10 +206,15 @@ available. On a phone-width viewport (640px and below) the Node library and
 Properties panel start collapsed, and Properties opens as a drawer over the
 canvas so the drawing surface stays visible and reachable.
 
-Use **Ctrl/Cmd+F** to search node labels, identifiers, types, sublabels, and
-metadata keys/values (find a node by the IP address, hostname, or model stored
-on it — the result row shows why it matched), then jump to a result. The
-minimap provides an overview of content outside the current viewport.
+Use **Ctrl/Cmd+F** to find a node, link or zone on any frame. Nodes are
+searched by label, identifier, type, sublabel, and metadata keys/values (find
+a node by the IP address, hostname, or model stored on it); links by label,
+port label, identifier, type and metadata; zones by label. Matches on the
+current frame come first, a match on another frame names its frame, and
+choosing one goes to that frame, selects the element and centres it. With the
+box empty it lists the current frame's nodes.
+
+The minimap provides an overview of content outside the current viewport.
 
 ## 5. Build and edit a topology
 
@@ -235,11 +240,19 @@ minimap provides an overview of content outside the current viewport.
 
 - Type in **Search nodes…** to filter by name, type, category, or known aliases.
 - Click a catalog item to add it near the center of the visible page.
+- **Drag a catalog item onto the canvas** to place it where you drop it. A
+  ghost of the item follows the pointer. Drop it **on a link** to insert the
+  node into that link: the link is marked while you are over it, and A—B
+  becomes A—new—B, with both halves keeping the link's type and style and each
+  end keeping its own port label and interface. Press Escape, or release
+  anywhere off the canvas, to cancel. (Mouse and pen; on a touch screen tap
+  the item.)
 - **Double-click empty canvas** to open the quick-add picker: type to filter
   the same catalog, then press Enter (or click) to place that node exactly at
   the double-clicked point.
 - **Double-click a node, link, or zone** to rename it in place: a small input
-  opens over the element; Enter commits, Escape cancels.
+  opens over the element; Enter commits, Escape cancels. With one of them
+  selected, **F2** or **Enter** opens the same input from the keyboard.
 - **Hover a node** to reveal four directional chevrons beyond its connection
   dots. Click one to create a same-type node one step away in that direction,
   already linked back and ready for its label. Drag from a chevron (or a
@@ -371,7 +384,15 @@ positions around its auto position; the center cell restores auto placement.
   all of them; endpoints, bends, labels, and interfaces edit the primary only.
 - Drag on empty canvas in **select** mode to marquee-select.
 - Use **Ctrl/Cmd+A** to select all.
-- Use **Ctrl/Cmd+C**, **X**, and **V** for copy, cut, and paste.
+- Use **Ctrl/Cmd+C**, **X**, and **V** for copy, cut, and paste. A paste lands
+  one step down and to the right of where it was copied from; repeated pastes
+  step on instead of stacking. When that spot is out of view (you panned
+  away, or pasted onto another frame) it lands in the middle of the view.
+- **Ctrl/Cmd+Shift+V** pastes **in place**: at the exact coordinates it was
+  copied from. Use it to put the same device at the same position on another
+  frame of a flipbook.
+- Right-click empty canvas and choose **Paste here** to place the copy,
+  centred as a block, at that point.
 - Use **Ctrl/Cmd+D** to duplicate.
 - Copy only appearance with **Ctrl/Cmd+Alt+C**, then select compatible targets
   and use **Ctrl/Cmd+Alt+V**. The Properties panel also shows **copy** and
@@ -392,7 +413,8 @@ the filmstrip.
 
 Right-click a node selection for:
 
-- **Duplicate**, **Copy**, **Copy format**, and **Paste format**;
+- **Rename** (one node), **Duplicate**, **Cut**, **Copy**, **Copy format**,
+  and **Paste format**;
 - **Emphasize on this frame**;
 - **Analyze path**, when exactly two nodes are selected (see
   [Analyze a path between two nodes](#analyze-a-path-between-two-nodes));
@@ -405,8 +427,9 @@ Right-click a link for:
 - format painting and frame emphasis;
 - stacking, lock, and delete actions.
 
-Right-click empty canvas for **Paste**, **Select all**, **Tidy layout**,
-**Balance layout**, **Auto-place labels**, and **Fit page to content**.
+Right-click empty canvas for **Paste here**, **Paste in place**,
+**Select all**, **Tidy layout**, **Balance layout**, **Auto-place labels**, and
+**Fit page to content**.
 
 **Auto-place labels** moves each node's label (its **Placement**) to the side
 crossed by the fewest links, so a hub whose links fan downward gets its name
@@ -430,6 +453,8 @@ focus inside the open overlay and restore focus when closed.
 | Ctrl/Cmd+Z                         | Undo                                                                          |
 | Ctrl/Cmd+Shift+Z or Ctrl+Y         | Redo                                                                          |
 | Ctrl/Cmd+C, X, V                   | Copy, cut, paste                                                              |
+| Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any frame)                               |
+| F2 or Enter                        | Rename the selected node, link or zone                                        |
 | Ctrl/Cmd+Alt+C                     | Copy format                                                                   |
 | Ctrl/Cmd+Alt+V                     | Paste format onto the selection                                               |
 | Ctrl/Cmd+D                         | Duplicate                                                                     |
@@ -442,9 +467,17 @@ focus inside the open overlay and restore focus when closed.
 | Arrow keys                         | Nudge; Shift makes the step ten times larger                                  |
 | Left/Right Arrow with no selection | Move to the previous or next page                                             |
 | Mouse wheel                        | Zoom toward the cursor                                                        |
+| Two-finger slide (trackpad)        | Pan                                                                           |
+| Pinch (trackpad), Ctrl/Cmd+wheel   | Zoom toward the cursor                                                        |
+| Shift+wheel                        | Pan sideways                                                                  |
 | Space-drag or middle-drag          | Pan                                                                           |
-| 0                                  | Fit to content                                                                |
-| Ctrl/Cmd+F                         | Find and jump to a node (labels, ids, types, metadata)                        |
+| + or -                             | Zoom in or out                                                                |
+| 0 or Shift+1                       | Fit to content                                                                |
+| Shift+0                            | Zoom to 100% (one page unit per pixel)                                        |
+| Shift+2                            | Zoom to the selection (fit to content when nothing is selected)               |
+| Ctrl/Cmd+S                         | Download the document as JSON                                                 |
+| Ctrl/Cmd+O                         | Open a file                                                                   |
+| Ctrl/Cmd+F                         | Find a node, link or zone on any frame and jump to it                         |
 | Double-click node/link/zone        | Rename in place (Enter commits, Escape cancels)                               |
 | Double-click empty canvas          | Quick-add: type to pick a node type, Enter places it                          |
 | Ctrl/Cmd+click                     | Follow an element's hyperlink (when `href` is set)                            |
@@ -462,6 +495,9 @@ focus inside the open overlay and restore focus when closed.
 
 Canvas shortcuts are suppressed while typing in an input and while a dialog or
 menu owns focus.
+
+Zoom deliberately does not use Ctrl/Cmd with plus, minus and zero: those stay
+the browser's own page zoom, for anyone who needs the whole interface larger.
 
 ## 6. Node library and Properties
 
@@ -1214,7 +1250,8 @@ These controls are local view preferences:
 - grid and snap;
 - **Calm canvas**;
 - on-canvas problem badges;
-- **Display settings** for **Ambient backdrop** and **Panel blur (glass)**;
+- **Display settings** for **Ambient backdrop**, **Panel blur (glass)** and
+  what the **Wheel** does;
 - panel visibility and sizing.
 
 In **Display settings**, Ambient backdrop can be **Animated**, **Static**, or
@@ -1224,9 +1261,27 @@ Flow particles are separate; **Calm canvas** pauses glow and flow animation.
 If no Calm preference has been stored, the editor follows the operating
 system's reduced-motion preference. The user can still toggle Calm afterward.
 
-On a touch screen or trackpad, a two-finger pinch zooms about the gesture's
-midpoint and a two-finger drag pans; single-finger editing is unchanged. Full
-mobile editing remains undeclared (see the limitations section).
+On a touch screen, a two-finger pinch zooms about the gesture's midpoint and a
+two-finger drag pans; single-finger editing is unchanged. Full mobile editing
+remains undeclared (see the limitations section).
+
+**Wheel** in Display settings says what a plain wheel event does on the
+canvas:
+
+| Setting         | A mouse wheel | A trackpad's two-finger slide |
+| --------------- | ------------- | ----------------------------- |
+| **Auto**        | zooms         | pans                          |
+| **Always zoom** | zooms         | zooms                         |
+| **Always pan**  | scrolls       | pans                          |
+
+In every setting a trackpad pinch and Ctrl/Cmd+wheel zoom toward the cursor,
+and Shift+wheel pans sideways. **Auto** has to guess which device sent the
+event, because the browser does not say. If the guess is wrong for your mouse
+or trackpad (the wheel scrolls when you expected a zoom, or the reverse), pick
+one of the other two. The choice is remembered in this browser.
+
+The zoom percentage is the size on screen: at 100% one page unit is one
+pixel, whatever the page's canvas size is.
 
 ### Brand palette
 

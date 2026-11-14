@@ -36,6 +36,13 @@ import type {
 } from '../workspace/model.js';
 import { layerView, type LayerDef } from '../api/layers.js';
 import {
+  WHEEL_BURST_MS,
+  fromTrackpad,
+  wheelAction,
+  type WheelMode,
+} from './wheel.js';
+import {
+  distToShape,
   hitTestAnchor,
   hitTestLink,
   hitTestNode,
@@ -236,6 +243,25 @@ const SHARED_LINK_KEYS: ReadonlySet<string> = new Set([
   'locked',
 ]);
 
+/**
+ * The size limits of the view window, in page units: how far in (smallest)
+ * and out (largest) the wheel, the zoom buttons, a pinch and `zoomTo` go.
+ */
+const VIEW_W_MIN = 80;
+const VIEW_W_MAX = 8000;
+const VIEW_H_MIN = 53;
+const VIEW_H_MAX = 5333;
+
+/**
+ * Link fields that belong to the centre label. When a node is inserted on a
+ * link they stay with the first half (see `Editor.insertNodeOnLink`).
+ */
+const CENTRE_LABEL_KEYS: ReadonlySet<string> = new Set([
+  'label',
+  'labelOffset',
+  'labelWidth',
+]);
+
 /** How far (x and y) a pasted or duplicated copy lands from its original. */
 const CLONE_STEP = 24;
 
@@ -360,6 +386,10 @@ export class Editor {
   private view = { x: 0, y: 0, w: 1050, h: 700 };
   private viewInsets?: () => { right: number; bottom: number };
   private pan: { startClientX: number; startClientY: number } | null = null;
+  /** What a plain wheel event does (see `setWheelMode`). */
+  private wheelMode: WheelMode = 'auto';
+  /** The device guess for the wheel gesture in flight, and when it last moved. */
+  private wheelBurst: { trackpad: boolean; at: number } | null = null;
   /** Spacebar held → left-drag pans (hand mode), like Figma/Sketch. */
   private spaceHeld = false;
   /** Dedicated Hand tool active → left-drag pans without holding Space. */
@@ -556,6 +586,7 @@ export class Editor {
     this.zonePress = null;
     this.hoverNode = null;
     this.emphasisPreview = null; // a preview belongs to the page it was made on
+    this.dropLink = null;
     this.view = this.computeFitView();
     this.renderArt();
     this.renderOverlay();
@@ -706,6 +737,18 @@ export class Editor {
   private computeFitView(): { x: number; y: number; w: number; h: number } {
     const b = this.contentBounds();
     if (!b) return parseViewBox(this.page.viewBox);
+    return this.frameView(b);
+  }
+
+  /**
+   * The view that frames a box of page content with padding, centred in the
+   * visible part of the canvas (see `setViewInsets`). `maxZoom` caps how far
+   * it zooms in (1 = 100%): framing one small node should not blow it up.
+   */
+  private frameView(
+    b: BoundsRect,
+    maxZoom = Infinity,
+  ): { x: number; y: number; w: number; h: number } {
     const pad = Math.max(40, 0.06 * Math.max(b.w, b.h));
     const cw = b.w + 2 * pad;
     const ch = b.h + 2 * pad;
@@ -718,7 +761,7 @@ export class Editor {
     const visW = Math.max(1, rect.width - Math.max(0, insets.right));
     const visH = Math.max(1, rect.height - Math.max(0, insets.bottom));
     // Page units per pixel needed to fit the content into the visible sub-rect.
-    const scale = Math.max(cw / visW, ch / visH);
+    const scale = Math.max(cw / visW, ch / visH, 1 / maxZoom);
     // The view spans the whole canvas element at that scale; the content is
     // centred over the visible region, leaving the panel gutters as empty canvas.
     const visCenterX = (rect.width - Math.max(0, insets.right)) / 2;
@@ -729,6 +772,93 @@ export class Editor {
       w: rect.width * scale,
       h: rect.height * scale,
     };
+  }
+
+  /**
+   * Frame the selection: the selected nodes with their captions, the selected
+   * anchors, the selected links along their drawn route, or the selected
+   * zone. Zooms out as far as needed to show it all and in to 100% at most.
+   * Returns false, changing nothing, when nothing is selected.
+   */
+  zoomToSelection(): boolean {
+    const b = this.selectionBounds();
+    if (!b) return false;
+    this.view = this.frameView(b, 1);
+    this.applyView();
+    return true;
+  }
+
+  /** The box around everything selected, as drawn; null with no selection. */
+  private selectionBounds(): BoundsRect | null {
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    const grow = (r: BoundsRect): void => {
+      x0 = Math.min(x0, r.x);
+      y0 = Math.min(y0, r.y);
+      x1 = Math.max(x1, r.x + r.w);
+      y1 = Math.max(y1, r.y + r.h);
+    };
+    for (const n of this.page.nodes) {
+      if (!this.sel.has(n.id)) continue;
+      grow(nodeBounds(n));
+      const caption = nodeCaptionRect(n, 0);
+      if (caption) grow(caption);
+    }
+    for (const a of this.page.anchors)
+      if (this.selAnchors.has(a.id)) grow({ x: a.x, y: a.y, w: 0, h: 0 });
+    const links = new Set(this.selectedLinkIds());
+    for (const link of this.page.links) {
+      if (!links.has(link.id)) continue;
+      const route = this.linkShape(link.id) ?? [linkPolyline(this.page, link)];
+      for (const poly of route)
+        for (const p of poly) grow({ x: p.x, y: p.y, w: 0, h: 0 });
+    }
+    const zone = this.getSelectedZone();
+    const zb = zone ? zoneBounds(this.page, zone) : null;
+    if (zb) grow(zb);
+    return Number.isFinite(x0)
+      ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+      : null;
+  }
+
+  /**
+   * Set the zoom to an absolute scale: 1 is 100%, one page unit per CSS pixel
+   * (the number `zoom()` reports). The middle of the viewport stays where it
+   * is, and the scale is held to the same limits as the wheel and the zoom
+   * buttons.
+   */
+  zoomTo(scale: number): void {
+    if (!Number.isFinite(scale) || scale <= 0) return;
+    const rect = this.overlay.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const cx = this.view.x + this.view.w / 2;
+    const cy = this.view.y + this.view.h / 2;
+    const w = clamp(rect.width / scale, VIEW_W_MIN, VIEW_W_MAX);
+    const h = clamp(rect.height / scale, VIEW_H_MIN, VIEW_H_MAX);
+    this.view = { x: cx - w / 2, y: cy - h / 2, w, h };
+    this.applyView();
+  }
+
+  /**
+   * What a plain wheel event (no Ctrl / Cmd / Shift) does on the canvas:
+   * 'zoom' zooms at the cursor, 'pan' scrolls the view, and 'auto' (the
+   * default) tells a mouse wheel from a trackpad for each event, zooming on
+   * the first and panning on the second. Ctrl / Cmd + wheel always zooms and
+   * Shift + wheel always pans sideways.
+   */
+  setWheelMode(mode: WheelMode): void {
+    this.wheelMode = mode;
+  }
+  /** The current wheel mode (see `setWheelMode`). */
+  getWheelMode(): WheelMode {
+    return this.wheelMode;
+  }
+
+  /** Convert a viewport (client) point to page coordinates. */
+  clientToPage(clientX: number, clientY: number): { x: number; y: number } {
+    return clientToUser(this.overlay, clientX, clientY);
   }
 
   /** The current pan/zoom window (page coordinates) — drives the minimap. */
@@ -761,6 +891,45 @@ export class Editor {
     this.setSelection({ links: [id] });
     if (a && b) this.panTo((a.x + b.x) / 2, (a.y + b.y) / 2);
     this.renderOverlay();
+  }
+
+  /**
+   * Make one element of the current page the whole selection, by id. With
+   * `center` the view also pans to put it in the middle, at the current
+   * zoom; without it the view stays where it is. Returns false, leaving the
+   * selection alone, when the page has no such element (Find calls this
+   * after switching to the page a match is on).
+   */
+  selectElement(
+    kind: 'node' | 'link' | 'zone' | 'anchor',
+    id: string,
+    opts: { center?: boolean } = {},
+  ): boolean {
+    let middle: { x: number; y: number } | null = null;
+    if (kind === 'node' || kind === 'anchor') {
+      const el = (kind === 'node' ? this.page.nodes : this.page.anchors).find(
+        (e) => e.id === id,
+      );
+      if (!el) return false;
+      this.setSelection(kind === 'node' ? { nodes: [id] } : { anchors: [id] });
+      middle = { x: el.x, y: el.y };
+    } else if (kind === 'link') {
+      const link = this.page.links.find((l) => l.id === id);
+      if (!link) return false;
+      this.setSelection({ links: [id] });
+      const a = resolvePos(this.page, link.from);
+      const b = resolvePos(this.page, link.to);
+      if (a && b) middle = midpoint(a, b);
+    } else {
+      const zone = this.page.zones.find((z) => z.id === id);
+      if (!zone) return false;
+      this.setSelection({ zone: id });
+      const b = zoneBounds(this.page, zone);
+      if (b) middle = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    }
+    if (opts.center && middle) this.panTo(middle.x, middle.y);
+    this.renderOverlay();
+    return true;
   }
 
   /**
@@ -913,6 +1082,8 @@ export class Editor {
   private renderOpts: (() => Record<string, unknown>) | null = null;
   /** View-only emphasis drawn in place of the frame's own (previewEmphasis). */
   private emphasisPreview: string[] | null = null;
+  /** The link marked as where a drop would land (see `setDropLink`). */
+  private dropLink: string | null = null;
   setRenderOpts(fn: (() => Record<string, unknown>) | null): void {
     this.renderOpts = fn;
     this.renderArt();
@@ -1233,6 +1404,33 @@ export class Editor {
       `fill="${ACCENT}" fill-opacity="0.06" stroke="${ACCENT}" stroke-width="2" ` +
       `stroke-dasharray="6 4" pointer-events="none"/>`
     );
+  }
+
+  /**
+   * Mark a link as the place a drop would land: while a palette item is
+   * dragged over it, the link is drawn highlighted so it is plain the node
+   * will be inserted INTO it, not placed beside it. `null` clears the mark.
+   * A view aid only: nothing is selected or changed.
+   */
+  setDropLink(id: string | null): void {
+    if (id === this.dropLink) return;
+    this.dropLink = id;
+    this.renderOverlay();
+  }
+
+  private dropLinkSvg(): string {
+    if (!this.dropLink) return '';
+    const link = this.page.links.find((l) => l.id === this.dropLink);
+    if (!link) return '';
+    const pts = linkPolyline(this.page, link);
+    if (pts.length < 2) return '';
+    let out = '';
+    for (const poly of this.linkShape(link.id) ?? [pts]) {
+      if (poly.length < 2) continue;
+      const d = 'M' + poly.map((p) => `${p.x},${p.y}`).join(' L');
+      out += `<path data-drop-link="${escXmlAttr(link.id)}" d="${d}" fill="none" stroke="${ACCENT}" stroke-width="5" stroke-dasharray="10 6" stroke-linecap="round" opacity="0.85" pointer-events="none"/>`;
+    }
+    return out;
   }
 
   private linkSelSvg(): string {
@@ -1822,19 +2020,7 @@ export class Editor {
     this.setSelection({ nodes: [nid] });
     this.renderOverlay();
     // Hand the fresh node straight to the inline label editor.
-    if (this.onInlineEdit) {
-      const h = nodeHalf(node);
-      const c = userToClient(this.overlay, node.x, node.y + h.h + 12);
-      this.onInlineEdit({
-        kind: 'node',
-        id: nid,
-        current: String(node.label ?? ''),
-        clientX: c.x,
-        clientY: c.y,
-        pageX: node.x,
-        pageY: node.y,
-      });
-    }
+    this.onInlineEdit?.(this.nodeEditRequest(node));
     return nid;
   }
 
@@ -2024,6 +2210,7 @@ export class Editor {
       this.spotlightSvg() +
       this.anchorsSvg() +
       this.linkSelSvg() +
+      this.dropLinkSvg() +
       this.selectionSvg() +
       this.connectionDotsSvg() +
       this.chevronsSvg() +
@@ -2435,6 +2622,146 @@ export class Editor {
   }
 
   /**
+   * Add a node of `type` at a page point the user chose (a palette item
+   * dropped on the canvas), snapped to the grid as a dragged node would be.
+   * `extra` sets further fields (a palette tile's variant); the point wins
+   * over any position in it. The new node is selected. One undo step.
+   * Returns its id.
+   */
+  addNodeAt(
+    type: string,
+    at: { x: number; y: number },
+    label?: string,
+    extra?: Partial<NodeConfig>,
+  ): string {
+    this.snapshot();
+    const id = this.newNodeId();
+    this.page.nodes.push({
+      label: label ?? defaultLabel(type),
+      ...extra,
+      id,
+      type,
+      x: this.snapVal(at.x),
+      y: this.snapVal(at.y),
+    });
+    this.emitAdds('nodes', [{ id }]);
+    this.renderArt();
+    this.onChange();
+    this.setSelection({ nodes: [id] });
+    this.renderOverlay();
+    return id;
+  }
+
+  /**
+   * The link drawn under a viewport (client) point, picked along its rendered
+   * route, or null. For drop targets: "would a node dropped here land on a
+   * link?" A point on a node or an anchor is on that element, not on the
+   * links that run in under it, so it reports no link.
+   */
+  linkAtClient(clientX: number, clientY: number): string | null {
+    const p = clientToUser(this.overlay, clientX, clientY);
+    if (this.nodeAt(p)) return null;
+    if (hitTestAnchor(this.page, p.x, p.y, this.anchorHitPad())) return null;
+    return this.linkAt(p);
+  }
+
+  /**
+   * Put a new node of `type` INTO a link: A—B becomes A—new—B. The link keeps
+   * its id as the first half (A to the new node); the second half (the new
+   * node to B) is a copy of it with a fresh id, so both look like the link
+   * did: type, style, colour, layer, line style and the rest of its
+   * appearance and metadata. What belongs to one END stays with that end:
+   * every `from…` field on the first half, every `to…` field on the second.
+   * Bends before the point stay on the first half, bends after it go to the
+   * second, and the centre label stays on the first half. One undo step.
+   * Returns the new node's id, or null when the link does not exist or is
+   * locked.
+   */
+  insertNodeOnLink(
+    linkId: string,
+    type: string,
+    at: { x: number; y: number },
+    extra?: Partial<NodeConfig>,
+  ): string | null {
+    const index = this.page.links.findIndex((l) => l.id === linkId);
+    const link = this.page.links[index];
+    if (!link || link.locked === true) return null;
+    // How many bends come before the point: the stretch of the link nearest
+    // to it is the one being cut.
+    const bends = link.waypoints ?? [];
+    const pts = linkPolyline(this.page, link);
+    let cut = bends.length;
+    let nearest = Infinity;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const d = distToShape(at.x, at.y, [[pts[k]!, pts[k + 1]!]]);
+      if (d < nearest) {
+        nearest = d;
+        cut = k;
+      }
+    }
+    this.snapshot();
+    const node: NodeConfig = {
+      label: defaultLabel(type),
+      ...extra,
+      id: this.newNodeId(),
+      type,
+      x: this.snapVal(at.x),
+      y: this.snapVal(at.y),
+    };
+    this.page.nodes.push(node);
+    this.emitAdds('nodes', [node]);
+    const first = link as Record<string, unknown>;
+    const before = { ...first };
+    // The second half starts as a copy, then gives up what stays behind: the
+    // `from` end's data, the centre label, and the link's identity in an
+    // external system (two links must not both claim one source record).
+    const second: Record<string, unknown> = {
+      ...structuredClone(first),
+      id: this.newLinkId(),
+      from: node.id,
+    };
+    for (const key of Object.keys(second))
+      if (
+        /^from[A-Z]/.test(key) ||
+        CENTRE_LABEL_KEYS.has(key) ||
+        key === 'source'
+      )
+        delete second[key];
+    const changed = ['to', 'waypoints'];
+    for (const key of Object.keys(first))
+      if (/^to[A-Z]/.test(key)) {
+        delete first[key];
+        changed.push(key);
+      }
+    link.to = node.id;
+    if (cut > 0) link.waypoints = bends.slice(0, cut);
+    else delete link.waypoints;
+    if (cut < bends.length)
+      second.waypoints = structuredClone(bends.slice(cut));
+    else delete second.waypoints;
+    const fp = this.patchFromChange(before, first, changed);
+    if (fp) this.emitPatch('links', link.id, fp);
+    // Right above the first half, so the two halves keep the link's place
+    // in the drawing order.
+    this.page.links.splice(index + 1, 0, second as unknown as LinkConfig);
+    this.emitAdds('links', [{ id: second.id as string }]);
+    // A spotlighted link stays spotlighted from end to end.
+    if (this.page.emphasis?.includes(link.id)) {
+      this.page.emphasis = [
+        ...this.page.emphasis,
+        node.id,
+        second.id as string,
+      ];
+      this.emitPagePatch({ set: { emphasis: [...this.page.emphasis] } });
+    }
+    this.renderArt();
+    this.onChange();
+    this.setSelection({ nodes: [node.id] });
+    this.renderOverlay();
+    return node.id;
+  }
+
+  /**
    * Delete the selection. Locked nodes and links are left on the page (and
    * stay selected, so it is plain why they are still there): lock protects an
    * element from Delete as it does from a drag. A locked link still goes when
@@ -2646,7 +2973,11 @@ export class Editor {
   }
   private applyEmphasis(ids: string[]): void {
     this.snapshot();
-    this.page.emphasis = ids.length ? ids : undefined;
+    if (ids.length) this.page.emphasis = ids;
+    else delete this.page.emphasis;
+    this.emitPagePatch(
+      ids.length ? { set: { emphasis: [...ids] } } : { unset: ['emphasis'] },
+    );
     this.renderArt();
     this.renderOverlay();
     this.onChange();
@@ -2836,8 +3167,16 @@ export class Editor {
     this.renderOverlay();
   }
 
-  /** Current zoom factor (1 = 100%): page width over the displayed width. */
+  /**
+   * Current zoom (1 = 100%): CSS pixels per page unit, the scale `zoomTo`
+   * sets. Measured against the screen and not against the page's own width,
+   * so 100% is the same on-screen size whatever the canvas extent is and
+   * resizing the page does not change the readout.
+   */
   zoom(): number {
+    const width = this.overlay.getBoundingClientRect().width;
+    if (width > 0) return width / this.view.w;
+    // Not laid out yet: the page's width stands in for the canvas's.
     const [, , pw] = parseVB(this.page.viewBox);
     return pw / this.view.w;
   }
@@ -2850,8 +3189,8 @@ export class Editor {
   zoomBy(factor: number): void {
     const cx = this.view.x + this.view.w / 2;
     const cy = this.view.y + this.view.h / 2;
-    const w = clamp(this.view.w * factor, 80, 8000);
-    const h = clamp(this.view.h * factor, 53, 5333);
+    const w = clamp(this.view.w * factor, VIEW_W_MIN, VIEW_W_MAX);
+    const h = clamp(this.view.h * factor, VIEW_H_MIN, VIEW_H_MAX);
     this.view = { x: cx - w / 2, y: cy - h / 2, w, h };
     this.applyView();
   }
@@ -2949,29 +3288,64 @@ export class Editor {
   }
 
   /**
-   * Paste the clipboard, selecting the new nodes. A copy lands one step down
-   * and to the right of where it was copied from; while an element already
-   * sits exactly there (an earlier paste of the same clipboard) the copy
-   * steps on, so repeated pastes fan out like repeated duplicates instead of
-   * stacking on one spot where they look like a single node.
+   * Paste the clipboard, selecting the copies. Where they land:
+   * - `inPlace`: at the coordinates they were copied from, exactly (it wins
+   *   over `at`);
+   * - `at`: as a block centred on that page point ("Paste here");
+   * - neither: one step down and to the right of where they were copied
+   *   from, while that is in view; when it is not (the view was panned
+   *   away, or this is another, larger page) the middle of the view, so a
+   *   paste never lands out of sight.
+   * A block placed at a point moves by whole grid steps while snapping is
+   * on, so what was on the grid stays on it. While an element already sits
+   * exactly where the copy would go (an earlier paste at the same spot) the
+   * copy steps on, down and to the right, so repeated pastes fan out instead
+   * of stacking on one spot where they look like a single node.
    */
-  paste(): void {
-    if (!this.clipboard) return;
-    const lead = this.clipboard.nodes[0] ?? this.clipboard.anchors[0];
+  paste(opts: { at?: { x: number; y: number }; inPlace?: boolean } = {}): void {
+    const clip = this.clipboard;
+    if (!clip) return;
+    const lead = clip.nodes[0] ?? clip.anchors[0];
     if (!lead) return;
+    if (opts.inPlace) {
+      this.placeClones(clip, 0, 0);
+      return;
+    }
     const taken = (x: number, y: number): boolean =>
       this.page.nodes.some((n) => n.x === x && n.y === y) ||
       this.page.anchors.some((a) => a.x === x && a.y === y);
-    let steps = 1;
-    while (
-      steps < 200 &&
-      taken(
-        Math.round(lead.x + steps * CLONE_STEP),
-        Math.round(lead.y + steps * CLONE_STEP),
-      )
-    )
-      steps++;
-    this.placeClones(this.clipboard, steps * CLONE_STEP);
+    /** (dx, dy) stepped on until the lead copy's spot is free. */
+    const free = (dx: number, dy: number): [number, number] => {
+      for (
+        let steps = 0;
+        steps < 200 && taken(Math.round(lead.x + dx), Math.round(lead.y + dy));
+        steps++
+      ) {
+        dx += CLONE_STEP;
+        dy += CLONE_STEP;
+      }
+      return [dx, dy];
+    };
+    const v = this.view;
+    let target = opts.at;
+    if (!target) {
+      const [dx, dy] = free(CLONE_STEP, CLONE_STEP);
+      const x = lead.x + dx;
+      const y = lead.y + dy;
+      if (x >= v.x && x <= v.x + v.w && y >= v.y && y <= v.y + v.h) {
+        this.placeClones(clip, dx, dy);
+        return;
+      }
+      target = { x: v.x + v.w / 2, y: v.y + v.h / 2 };
+    }
+    const points = [...clip.nodes, ...clip.anchors];
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const [dx, dy] = free(
+      this.snapVal(target.x - (Math.min(...xs) + Math.max(...xs)) / 2),
+      this.snapVal(target.y - (Math.min(...ys) + Math.max(...ys)) / 2),
+    );
+    this.placeClones(clip, dx, dy);
   }
 
   /* ── format painter ───────────────────────────────────────────────
@@ -3040,10 +3414,14 @@ export class Editor {
     if (block) this.placeClones(block);
   }
 
-  /** Add copies of the elements, `offset` down and to the right, and select them. */
+  /**
+   * Add copies of the elements, moved by (dx, dy) from where the originals
+   * are (one step down and to the right by default), and select them.
+   */
   private placeClones(
     src: { nodes: NodeConfig[]; links: LinkConfig[]; anchors: AnchorConfig[] },
-    offset = CLONE_STEP,
+    dx = CLONE_STEP,
+    dy = dx,
   ): void {
     if (src.nodes.length === 0 && src.anchors.length === 0) return;
     this.snapshot();
@@ -3054,8 +3432,8 @@ export class Editor {
         nextNodeId: () => this.newNodeId(),
         nextLinkId: () => this.newLinkId(),
         nextAnchorId: () => this.newAnchorId(),
-        dx: offset,
-        dy: offset,
+        dx,
+        dy,
       },
       src.anchors,
     );
@@ -4409,70 +4787,21 @@ export class Editor {
       const node = this.page.nodes.find((n) => n.id === nodeId)!;
       this.setSelection({ nodes: [nodeId] });
       this.renderOverlay();
-      // Anchor on the node's label position (just under the node art).
-      const h = nodeHalf(node);
-      const c = userToClient(this.overlay, node.x, node.y + h.h + 12);
-      this.onInlineEdit({
-        kind: 'node',
-        id: nodeId,
-        current: String(node.label ?? ''),
-        clientX: c.x,
-        clientY: c.y,
-        pageX: p.x,
-        pageY: p.y,
-      });
+      this.onInlineEdit(this.nodeEditRequest(node, p));
       return 'node';
     }
     const linkId = this.linkAt(p);
     if (linkId) {
       const link = this.page.links.find((l) => l.id === linkId)!;
       this.selectLinkForEdit(linkId);
-      // Anchor on the centre-label position: polyline midpoint + offset.
-      const pts = linkPolyline(this.page, link);
-      let ax = p.x,
-        ay = p.y;
-      if (pts.length >= 2) {
-        const mid = Math.floor((pts.length - 1) / 2);
-        const a = pts[mid]!,
-          b = pts[mid + 1]!;
-        ax = (a.x + b.x) / 2;
-        ay = (a.y + b.y) / 2;
-      }
-      const off = (link as { labelOffset?: { x?: number; y?: number } })
-        .labelOffset;
-      if (off) {
-        ax += off.x ?? 0;
-        ay += off.y ?? 0;
-      }
-      const c = userToClient(this.overlay, ax, ay);
-      this.onInlineEdit({
-        kind: 'link',
-        id: linkId,
-        current: String(link.label ?? ''),
-        clientX: c.x,
-        clientY: c.y,
-        pageX: p.x,
-        pageY: p.y,
-      });
+      this.onInlineEdit(this.linkEditRequest(link, p));
       return 'link';
     }
     const zoneId = this.zoneAt(p);
     if (zoneId) {
       const zone = this.page.zones.find((z) => z.id === zoneId)!;
       this.selectZone(zoneId);
-      const b = zoneBounds(this.page, zone);
-      const c = b
-        ? userToClient(this.overlay, b.x + b.w / 2, b.y + 6)
-        : userToClient(this.overlay, p.x, p.y);
-      this.onInlineEdit({
-        kind: 'zone',
-        id: zoneId,
-        current: String(zone.label ?? ''),
-        clientX: c.x,
-        clientY: c.y,
-        pageX: p.x,
-        pageY: p.y,
-      });
+      this.onInlineEdit(this.zoneEditRequest(zone, p));
       return 'zone';
     }
     // Blank canvas — quick-add (the shell decides what to do with it).
@@ -4493,6 +4822,117 @@ export class Editor {
     // Already the primary of a multi-selection: leave the others selected.
     if (this.linkSel !== linkId) this.setSelection({ links: [linkId] });
     this.renderOverlay();
+  }
+
+  /**
+   * The inline-edit request for a node's label, anchored just under the node
+   * art. `p` is the page point of the double-click that asked for it; a
+   * request made without one (F2) reports the node's own position.
+   */
+  private nodeEditRequest(
+    node: NodeConfig,
+    p: { x: number; y: number } = node,
+  ): InlineEditRequest {
+    const h = nodeHalf(node);
+    const c = userToClient(this.overlay, node.x, node.y + h.h + 12);
+    return {
+      kind: 'node',
+      id: node.id,
+      current: String(node.label ?? ''),
+      clientX: c.x,
+      clientY: c.y,
+      pageX: p.x,
+      pageY: p.y,
+    };
+  }
+
+  /**
+   * The inline-edit request for a link's centre label, anchored where that
+   * label goes: the middle of the link's polyline plus the label's offset.
+   */
+  private linkEditRequest(
+    link: LinkConfig,
+    p?: { x: number; y: number },
+  ): InlineEditRequest {
+    const pts = linkPolyline(this.page, link);
+    // A link whose ends cannot be placed has no middle: fall back to the
+    // point that asked, or to the middle of the view.
+    let ax = p?.x ?? this.view.x + this.view.w / 2;
+    let ay = p?.y ?? this.view.y + this.view.h / 2;
+    if (pts.length >= 2) {
+      const mid = Math.floor((pts.length - 1) / 2);
+      const a = pts[mid]!,
+        b = pts[mid + 1]!;
+      ax = (a.x + b.x) / 2;
+      ay = (a.y + b.y) / 2;
+    }
+    const off = (link as { labelOffset?: { x?: number; y?: number } })
+      .labelOffset;
+    if (off) {
+      ax += off.x ?? 0;
+      ay += off.y ?? 0;
+    }
+    const c = userToClient(this.overlay, ax, ay);
+    return {
+      kind: 'link',
+      id: link.id,
+      current: String(link.label ?? ''),
+      clientX: c.x,
+      clientY: c.y,
+      pageX: p?.x ?? ax,
+      pageY: p?.y ?? ay,
+    };
+  }
+
+  /** The inline-edit request for a zone's label, anchored on its top edge. */
+  private zoneEditRequest(
+    zone: ZoneConfig,
+    p?: { x: number; y: number },
+  ): InlineEditRequest {
+    const b = zoneBounds(this.page, zone);
+    const at = b
+      ? { x: b.x + b.w / 2, y: b.y + 6 }
+      : (p ?? {
+          x: this.view.x + this.view.w / 2,
+          y: this.view.y + this.view.h / 2,
+        });
+    const c = userToClient(this.overlay, at.x, at.y);
+    return {
+      kind: 'zone',
+      id: zone.id,
+      current: String(zone.label ?? ''),
+      clientX: c.x,
+      clientY: c.y,
+      pageX: p?.x ?? at.x,
+      pageY: p?.y ?? at.y,
+    };
+  }
+
+  /**
+   * Open the inline label editor on what is selected, as a double-click on
+   * it does (the keyboard's F2): the one selected node, the one selected
+   * link (its centre label) or the selected zone. The request goes to the
+   * shell's inline-edit handler. Returns false, doing nothing, when the
+   * selection is anything else or no handler is registered.
+   */
+  beginRename(): boolean {
+    if (!this.onInlineEdit) return false;
+    const node = this.selAnchors.size === 0 ? this.getSelectedNode() : null;
+    if (node) {
+      this.onInlineEdit(this.nodeEditRequest(node));
+      return true;
+    }
+    const link = this.linkSelExtra.size === 0 ? this.getSelectedLink() : null;
+    if (link) {
+      this.onInlineEdit(this.linkEditRequest(link));
+      return true;
+    }
+    const zone = this.getSelectedZone();
+    if (zone) {
+      this.onInlineEdit(this.zoneEditRequest(zone));
+      return true;
+    }
+    return false;
   }
 
   /** Wheel = zoom toward the cursor (keeps the point under the cursor fixed). */
@@ -4542,14 +4982,40 @@ export class Editor {
     this.applyView();
   }
 
+  /**
+   * A wheel event: zoom at the cursor or scroll the view, as `wheelAction`
+   * reads it (a pinch and Ctrl / Cmd + wheel zoom, Shift + wheel pans
+   * sideways, a bare wheel follows the wheel mode). The mouse-or-trackpad
+   * guess is made on the first event of a burst and kept while the burst
+   * lasts, so one gesture never zooms and pans by turns.
+   */
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
-    const before = clientToUser(this.overlay, e.clientX, e.clientY);
-    const factor = Math.exp(e.deltaY * 0.0015); // up = zoom in
-    const w = clamp(this.view.w * factor, 80, 8000);
-    const h = clamp(this.view.h * factor, 53, 5333);
-    // Keep the cursor's page-point stationary on screen.
+    const facts = e as WheelEvent & { wheelDeltaY?: number };
+    const now = e.timeStamp;
+    const burst =
+      this.wheelBurst && now - this.wheelBurst.at < WHEEL_BURST_MS
+        ? this.wheelBurst
+        : { trackpad: fromTrackpad(facts), at: now };
+    burst.at = now;
+    this.wheelBurst = burst;
+    const action = wheelAction(facts, this.wheelMode, burst.trackpad);
     const rect = this.overlay.getBoundingClientRect();
+    if (action.kind === 'pan') {
+      // CSS pixels to page units at the current zoom.
+      const unit = rect.width > 0 ? this.view.w / rect.width : 1;
+      this.view = {
+        ...this.view,
+        x: this.view.x + action.dx * unit,
+        y: this.view.y + action.dy * unit,
+      };
+      this.applyView();
+      return;
+    }
+    const before = clientToUser(this.overlay, e.clientX, e.clientY);
+    const w = clamp(this.view.w * action.factor, VIEW_W_MIN, VIEW_W_MAX);
+    const h = clamp(this.view.h * action.factor, VIEW_H_MIN, VIEW_H_MAX);
+    // Keep the cursor's page-point stationary on screen.
     const fx = (e.clientX - rect.left) / rect.width;
     const fy = (e.clientY - rect.top) / rect.height;
     this.view = { x: before.x - fx * w, y: before.y - fy * h, w, h };

@@ -2670,6 +2670,47 @@
         color: var(--muted);
       }
 
+      /* A library tile being dragged onto the canvas: a ghost of the tile
+         under the pointer. Dimmed where a drop would add nothing. */
+      .pdrag-ghost {
+        position: fixed;
+        z-index: 60;
+        pointer-events: none;
+        transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: 6px 8px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--text);
+        opacity: 0.5;
+      }
+      .pdrag-ghost.can-drop {
+        opacity: 0.95;
+        border-color: var(--accent);
+      }
+      .pdrag-ghost svg {
+        width: 34px;
+        height: 34px;
+      }
+      .pdrag-hint {
+        display: none;
+        color: var(--accent);
+      }
+      .pdrag-ghost.on-link .pdrag-hint {
+        display: block;
+      }
+      html.palette-dragging,
+      html.palette-dragging * {
+        cursor: grabbing !important;
+      }
+
       /* Path analysis bar: the route between two nodes, and what to do
          with it. Sits under the toolbar, over the canvas. */
       .path-bar {

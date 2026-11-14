@@ -9,8 +9,11 @@
  * listeners a browser would call. `getScreenCTM` is null, so client
  * coordinates ARE page coordinates.
  */
+import { expect } from 'vitest';
 import { Editor, type InlineEditRequest } from './editor.js';
-import type { Page } from '../pages/model.js';
+import type { Page, TopologyDocument } from '../pages/model.js';
+import type { WorkspaceOperation } from '../workspace/model.js';
+import { applyOperations, diffDocuments } from '../workspace/operations.js';
 
 type Listener = (e: unknown) => void;
 
@@ -180,6 +183,7 @@ export interface PointerInit {
   shiftKey?: boolean;
   ctrlKey?: boolean;
   metaKey?: boolean;
+  altKey?: boolean;
 }
 
 /** A pointer event as the editor reads it (primary mouse button by default). */
@@ -198,6 +202,7 @@ export function pointer(
     shiftKey: false,
     ctrlKey: false,
     metaKey: false,
+    altKey: false,
     preventDefault() {},
     ...init,
   };
@@ -276,6 +281,32 @@ export function harness(page: Page, viewW = 1000): Harness {
       up(to.x, to.y, init);
     },
   };
+}
+
+/**
+ * Run an edit and check the contract every mutating command has with the
+ * workspace: the operations the editor published for it, applied to the page
+ * as it was, give the same page as the snapshot diff does. Returns them.
+ */
+export function expectPublished(
+  editor: Editor,
+  run: () => void,
+): WorkspaceOperation[] {
+  const wrap = (page: Page): TopologyDocument => ({
+    title: 'T',
+    customNodes: [],
+    pages: [structuredClone(page)],
+  });
+  editor.takePendingOperations();
+  const before = wrap(editor.page);
+  run();
+  const after = wrap(editor.page);
+  const published = editor.takePendingOperations();
+  expect(published.length).toBeGreaterThan(0);
+  expect(applyOperations(before, published)).toEqual(
+    applyOperations(before, diffDocuments(before, after)),
+  );
+  return published;
 }
 
 /** A blank page to put test elements on. */
