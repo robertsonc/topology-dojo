@@ -216,3 +216,81 @@ test('a second custom type does not silently replace the first', async ({
   await expect(page.locator('.nd-dialog')).toHaveCount(0);
   expect(asked).toHaveLength(2);
 });
+
+/* ── the save chip ───────────────────────────────────────────────────────── */
+
+test('a failed autosave is one readable line, is announced, and downloads the document', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await bootEditor(page);
+  // Browser storage is full: every write fails from here on.
+  await page.evaluate(() => {
+    const real = Storage.prototype.setItem;
+    (window as unknown as { __restoreStorage: () => void }).__restoreStorage =
+      () => (Storage.prototype.setItem = real);
+    Storage.prototype.setItem = function () {
+      throw new DOMException('quota', 'QuotaExceededError');
+    };
+  });
+  await page.locator('.pitem[data-type="router"]').first().click();
+
+  const chip = page.locator('#saved');
+  await expect(chip).toHaveText('⚠ not saved — download JSON');
+  // One line, not a narrow column of wrapped words.
+  const box = (await chip.boundingBox())!;
+  const button = (await page.locator('#fSvg').boundingBox())!;
+  expect(box.height).toBeLessThanOrEqual(button.height);
+  expect(box.width).toBeGreaterThan(120);
+  // Announced to assistive technology, not just coloured red.
+  const alert = page.locator('[role="alert"]', { hasText: 'not saved' });
+  await expect(alert).toHaveCount(1);
+  await expect(alert).toContainText(/download/i);
+
+  // It is still the way to rescue the work: a click, or Enter, downloads it.
+  await expect(chip).toHaveAttribute('role', 'button');
+  const byClick = page.waitForEvent('download');
+  await chip.click();
+  expect((await byClick).suggestedFilename()).toMatch(/\.json$/);
+  await chip.focus();
+  const byKey = page.waitForEvent('download');
+  await page.keyboard.press('Enter');
+  expect((await byKey).suggestedFilename()).toMatch(/\.json$/);
+
+  // When a save lands again the warning and its announcement are withdrawn.
+  await page.evaluate(() =>
+    (window as unknown as { __restoreStorage: () => void }).__restoreStorage(),
+  );
+  await page.locator('.pitem[data-type="router"]').first().click();
+  await expect(chip).toHaveText('✓ saved');
+  await expect(
+    page.locator('[role="alert"]', { hasText: 'not saved' }),
+  ).toHaveCount(0);
+});
+
+test('a newer version saved by another tab is announced, on one line', async ({
+  context,
+}) => {
+  const idle = await context.newPage();
+  await bootEditor(idle);
+  const active = await context.newPage();
+  await active.goto('/');
+  await expect(active.locator('.pitem').first()).toBeVisible();
+  await active.locator('.pitem').first().click();
+
+  const chip = idle.locator('#saved');
+  await expect(chip).toHaveText('⚠ changed in another tab — load it');
+  const box = (await chip.boundingBox())!;
+  const button = (await idle.locator('#fSvg').boundingBox())!;
+  expect(box.height).toBeLessThanOrEqual(button.height);
+  await expect(
+    idle.locator('[role="alert"]', { hasText: 'Another tab saved' }),
+  ).toHaveCount(1);
+
+  // Loading it clears the warning and the announcement.
+  await chip.click();
+  await expect(chip).not.toContainText('changed in another tab');
+  await expect(
+    idle.locator('[role="alert"]', { hasText: 'Another tab saved' }),
+  ).toHaveCount(0);
+});

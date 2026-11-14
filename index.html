@@ -332,12 +332,15 @@
         font-weight: 600;
       }
       /* Persistence failure is a recovery affordance, not a status: it stays
-         loud and clickable (download JSON) until a save succeeds (#203). */
+         loud and clickable (download JSON) until a save succeeds (#203). One
+         line: squeezed by the toolbar it used to wrap into a four-line
+         column 52px wide. */
       .saved.save-failed {
         color: #ff6b6b;
         font-weight: 600;
         cursor: pointer;
         text-decoration: underline;
+        white-space: nowrap;
       }
       /* Another tab saved a different version: one line, clickable (load it). */
       .saved.save-stale {

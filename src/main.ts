@@ -115,6 +115,7 @@ import {
 import { isImeKey } from './ui/ime.js';
 import { importConfirmText } from './ui/replace-document.js';
 import { problemsDockView } from './ui/problems-dock.js';
+import { saveChip, type SaveChip } from './ui/save-status.js';
 import { checkCustomTypeName, uniqueTypeName } from './ui/custom-type-name.js';
 import {
   booleanFieldChecked,
@@ -213,6 +214,9 @@ app.innerHTML = `
       </div>
       <input type="file" id="fInput" accept="application/json,.json,.drawio,.xml,.mmd,.mermaid,.csv,.txt" hidden />
       <span class="saved" id="saved"></span>
+      <!-- Spoken when a save fails or another tab's version arrives: the
+           chip is a button then, so the alert has to be a region of its own. -->
+      <span class="visually-hidden" id="saveAlert" role="alert"></span>
     </div>
     <div class="bar-right">
       <div class="tgroup">
@@ -356,6 +360,7 @@ const framesDock = app.querySelector<HTMLDivElement>('#frames-dock')!;
 const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
 const savedEl = app.querySelector<HTMLElement>('#saved')!;
+const saveAlertEl = app.querySelector<HTMLElement>('#saveAlert')!;
 
 /* Autosave to localStorage (debounced) whenever the document changes.
  *
@@ -399,17 +404,30 @@ function flushAutosave(): void {
 // slot is never empty while the app is open. It writes over nothing.
 if (!restoredDoc) saveSerialized(serializeDoc(doc), 'local');
 
+/** Show a save state in the toolbar chip, and announce it when it is a
+ * warning. */
+function showSaveChip(chip: SaveChip): void {
+  savedEl.textContent = chip.text;
+  savedEl.title = chip.title;
+  savedEl.classList.toggle('save-failed', chip.state === 'failed');
+  savedEl.classList.toggle('save-stale', chip.state === 'stale');
+  if (chip.actionable) {
+    savedEl.setAttribute('role', 'button');
+    savedEl.tabIndex = 0;
+  } else {
+    savedEl.removeAttribute('role');
+    savedEl.removeAttribute('tabindex');
+  }
+  // Written only when it changes: every edit made while storage is failing
+  // fails again, and re-writing the alert would repeat it each time.
+  if (saveAlertEl.textContent !== chip.announcement)
+    saveAlertEl.textContent = chip.announcement;
+}
+
 /** Another tab saved a different document to this tab's slot. Say so, and
  * offer to load it; editing here instead keeps this tab's version. */
 function reportChangedElsewhere(): void {
-  savedEl.textContent = '⚠ changed in another tab — load it';
-  savedEl.title =
-    'Another tab saved a different version of this document. Click to load ' +
-    'it here. If you keep editing in this tab, this tab’s version is saved.';
-  savedEl.classList.remove('save-failed');
-  savedEl.classList.add('save-stale');
-  savedEl.setAttribute('role', 'button');
-  savedEl.tabIndex = 0;
+  showSaveChip(saveChip('stale'));
 }
 function loadFromOtherTab(): void {
   const latest = loadLocal(activeSlot);
@@ -420,26 +438,12 @@ function loadFromOtherTab(): void {
 
 /** Reflect a persistence attempt in the status chip. */
 function reportSave(ok: boolean, okText?: string): void {
-  savedEl.classList.remove('save-stale');
-  if (ok) {
-    savedEl.textContent =
-      okText ?? (activeSlot === 'shared' ? '✓ saved · shared copy' : '✓ saved');
-    savedEl.title =
-      activeSlot === 'shared'
-        ? 'Autosaved separately — your own document is untouched'
-        : 'Autosaved to this browser';
-    savedEl.classList.remove('save-failed');
-    savedEl.removeAttribute('role');
-    savedEl.removeAttribute('tabindex');
-  } else {
-    savedEl.textContent = '⚠ not saved — download JSON';
-    savedEl.title =
-      'Browser storage failed (full or unavailable). ' +
-      'Click to download the document as JSON so no work is lost.';
-    savedEl.classList.add('save-failed');
-    savedEl.setAttribute('role', 'button');
-    savedEl.tabIndex = 0;
-  }
+  showSaveChip(
+    saveChip(ok ? 'saved' : 'failed', {
+      shared: activeSlot === 'shared',
+      ...(okText ? { okText } : {}),
+    }),
+  );
 }
 function savedChipAction(): boolean {
   if (savedEl.classList.contains('save-failed')) downloadDocJSON();
