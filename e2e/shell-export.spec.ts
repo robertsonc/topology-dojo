@@ -78,3 +78,42 @@ test('the brand palette carries into SVG, flipbook and Present', async ({
   expect(count(presented, AZURE)).toBeGreaterThan(0);
   expect(count(presented, GREEN)).toBe(0);
 });
+
+test('every export in the menu reports how it went', async ({ page }) => {
+  await bootEditor(page);
+  const status = page.locator('#exportStatus');
+  const menu = page.locator('#fExport');
+
+  // A file export: the chip names it, and its tooltip is the file.
+  const mermaid = await download(page, () => menu.selectOption('mermaid'));
+  await expect(status).toHaveText('✓ exported mermaid');
+  await expect(status).toHaveClass(/export-ok/);
+  await expect(status).toHaveAttribute('title', mermaid.suggestedFilename());
+
+  await download(page, () => menu.selectOption('drawio'));
+  await expect(status).toHaveText('✓ exported draw.io');
+  await download(page, () => menu.selectOption('vsdx'));
+  await expect(status).toHaveText('✓ exported visio');
+  await download(page, () => menu.selectOption('pptx'));
+  await expect(status).toHaveText('✓ exported pptx');
+  await download(page, () => menu.selectOption('flipbook'));
+  await expect(status).toHaveText('✓ exported flipbook');
+
+  // A slow one shows that it is working, then that it is done.
+  const pdf = download(page, () => menu.selectOption('pdf-page'));
+  await expect(status).toHaveText(/… exporting pdf|✓ exported pdf/);
+  await pdf;
+  await expect(status).toHaveText('✓ exported pdf');
+
+  // A failure replaces the previous export's success, with the reason.
+  const alerts: string[] = [];
+  page.on('dialog', (d) => {
+    alerts.push(d.message());
+    void d.accept();
+  });
+  await menu.selectOption('svg-selection'); // nothing is selected
+  await expect(status).toHaveText('⚠ selection export failed');
+  await expect(status).toHaveClass(/export-failed/);
+  await expect(status).toHaveAttribute('title', /select one or more nodes/i);
+  expect(alerts).toHaveLength(1);
+});

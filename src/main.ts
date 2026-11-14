@@ -114,6 +114,7 @@ import {
 } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
 import { exportRenderOptions } from './ui/export-options.js';
+import { exportReport, type ExportState } from './ui/export-status.js';
 import { classifyOpenedFile } from './import/open.js';
 import { validateDocument, type Problem } from './api/validate.js';
 import { analyzeLayout } from './api/layout.js';
@@ -1158,20 +1159,24 @@ app.querySelector('#fSave')?.addEventListener('click', downloadDocJSON);
  * failure so a swallowed download is never the only outcome. */
 const exportStatus = app.querySelector<HTMLElement>('#exportStatus')!;
 const pngBtn = app.querySelector<HTMLButtonElement>('#fPng');
-function reportExport(
-  state: 'ok' | 'pending' | 'error',
-  message: string,
-  detail?: string,
-): void {
-  exportStatus.textContent = message;
-  exportStatus.title = detail ?? message;
+/** Show how export `kind` is going in the status chip (and to a screen
+ * reader: the chip is a polite live region). */
+function reportExport(kind: string, state: ExportState, detail?: string): void {
+  const report = exportReport(kind, state, detail);
+  exportStatus.textContent = report.message;
+  exportStatus.title = report.detail;
   exportStatus.classList.toggle('export-ok', state === 'ok');
   exportStatus.classList.toggle('export-pending', state === 'pending');
   exportStatus.classList.toggle('export-failed', state === 'error');
 }
+/** The file name stem for a whole-document export. */
+function docBase(): string {
+  return (doc.title || 'topology').replace(/[^\w.-]+/g, '_');
+}
+/** The file name stem for a single-frame export. */
 function exportBase(): string {
   const page = doc.pages[current]!;
-  return `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
+  return `${docBase()}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
 }
 app.querySelector('#fSvg')?.addEventListener('click', () => {
   const page = framed(doc.pages[current]!);
@@ -1183,10 +1188,10 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
       { ...pageOpts(page), calm: editor.calm },
       pageOverlay(page),
     );
-    reportExport('ok', '✓ exported svg', filename);
+    reportExport('svg', 'ok', filename);
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'SVG export failed.';
-    reportExport('error', '⚠ svg export failed', detail);
+    reportExport('svg', 'error', detail);
   }
 });
 app.querySelector('#fPng')?.addEventListener('click', () => {
@@ -1194,12 +1199,12 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
   const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.png`;
   if (pngBtn) pngBtn.disabled = true;
-  reportExport('pending', '… exporting png', filename);
+  reportExport('png', 'pending', filename);
   void exportPagePNG(filename, page, 2, pageOverlay(page), pageOpts(page))
-    .then(() => reportExport('ok', '✓ exported png', filename))
+    .then(() => reportExport('png', 'ok', filename))
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'PNG export failed.';
-      reportExport('error', '⚠ png export failed', detail);
+      reportExport('png', 'error', detail);
     })
     .finally(() => {
       if (pngBtn) pngBtn.disabled = false;
@@ -1240,8 +1245,14 @@ function selectionAsPage(): Page | null {
   if (!sel || sel.nodes.length === 0) return null;
   return selectionPage(doc.pages[current]!, sel.nodes, sel.links);
 }
-async function runExport(kind: string): Promise<void> {
+/** Run one export from the menu. Resolves with the name of the file it
+ * downloaded (nothing for a clipboard copy); rejects with the reason. */
+async function runExport(kind: string): Promise<string | undefined> {
   const page = doc.pages[current]!;
+  const save = (filename: string, blob: Blob): string => {
+    downloadBlob(filename, blob);
+    return filename;
+  };
   switch (kind) {
     case 'pdf-page': {
       const whole = framed(page);
@@ -1253,8 +1264,7 @@ async function runExport(kind: string): Promise<void> {
           ...paperSpec(),
         },
       ]);
-      downloadBlob(`${exportBase()}.pdf`, blob);
-      return;
+      return save(`${exportBase()}.pdf`, blob);
     }
     case 'pdf-all': {
       const blob = await pagesToPDFBlob(
@@ -1265,11 +1275,7 @@ async function runExport(kind: string): Promise<void> {
           ...paperSpec(),
         })),
       );
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.pdf`,
-        blob,
-      );
-      return;
+      return save(`${docBase()}.pdf`, blob);
     }
     case 'flipbook': {
       const html = exportFlipbookHTML(
@@ -1284,32 +1290,29 @@ async function runExport(kind: string): Promise<void> {
         },
         { theme: currentTheme() },
       );
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}_flipbook.html`,
+      return save(
+        `${docBase()}_flipbook.html`,
         new Blob([html], { type: 'text/html' }),
       );
-      return;
     }
     case 'drawio': {
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.drawio`,
+      return save(
+        `${docBase()}.drawio`,
         new Blob([documentToDrawioXML(doc)], { type: 'application/xml' }),
       );
-      return;
     }
     case 'vsdx': {
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.vsdx`,
+      return save(
+        `${docBase()}.vsdx`,
         new Blob([documentToVsdx(doc)], {
           type: 'application/vnd.ms-visio.drawing',
         }),
       );
-      return;
     }
     case 'pptx':
     case 'pptx-layers': {
-      downloadBlob(
-        `${(doc.title || 'topology').replace(/[^\w.-]+/g, '_')}.pptx`,
+      return save(
+        `${docBase()}.pptx`,
         new Blob(
           [
             documentToPptx(doc, {
@@ -1321,14 +1324,12 @@ async function runExport(kind: string): Promise<void> {
           },
         ),
       );
-      return;
     }
     case 'mermaid': {
-      downloadBlob(
+      return save(
         `${exportBase()}.mmd`,
         new Blob([documentToMermaid(doc, current)], { type: 'text/plain' }),
       );
-      return;
     }
     case 'copy-png':
       await copyPagePNG(
@@ -1336,36 +1337,51 @@ async function runExport(kind: string): Promise<void> {
         pageOverlay(framed(page)),
         pageOpts(page),
       );
-      return;
+      return undefined;
     case 'svg-selection': {
       const sp = selectionAsPage();
-      if (!sp) throw new Error('select one or more nodes first');
-      exportPageSVG(`${exportBase()}_selection.svg`, sp, {
-        ...selectionOpts(),
-        calm: true,
-      });
-      return;
+      if (!sp) throw new Error('Select one or more nodes first.');
+      const filename = `${exportBase()}_selection.svg`;
+      exportPageSVG(filename, sp, { ...selectionOpts(), calm: true });
+      return filename;
     }
     case 'png-selection': {
       const sp = selectionAsPage();
-      if (!sp) throw new Error('select one or more nodes first');
-      await exportPagePNG(
-        `${exportBase()}_selection.png`,
-        sp,
-        2,
-        '',
-        selectionOpts(),
-      );
-      return;
+      if (!sp) throw new Error('Select one or more nodes first.');
+      const filename = `${exportBase()}_selection.png`;
+      await exportPagePNG(filename, sp, 2, '', selectionOpts());
+      return filename;
     }
   }
+  throw new Error(`unknown export "${kind}"`);
+}
+/** Copy an image to the clipboard from the canvas's right-click menu,
+ * reporting through the same chip as the toolbar's exports. */
+function copyImage(copy: () => Promise<void>): void {
+  reportExport('copy-png', 'pending');
+  copy().then(
+    () => reportExport('copy-png', 'ok'),
+    (err: unknown) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      reportExport('copy-png', 'error', detail);
+      alert(`Copy failed: ${detail}`);
+    },
+  );
 }
 exportSel.addEventListener('change', () => {
   const kind = exportSel.value;
   exportSel.value = '';
   if (!kind) return;
-  void runExport(kind).catch((err) =>
-    alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`),
+  // The chip says what is happening from the start, so a stale message from
+  // an earlier export never stands in for this one's outcome.
+  reportExport(kind, 'pending');
+  runExport(kind).then(
+    (filename) => reportExport(kind, 'ok', filename),
+    (err: unknown) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      reportExport(kind, 'error', detail);
+      alert(`Export failed: ${detail}`);
+    },
   );
 });
 /* New from a starter template. */
@@ -5617,12 +5633,7 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
         label: 'Copy as image',
         run: () => {
           const sp = selectionAsPage();
-          if (!sp) return;
-          void copyPagePNG(sp, '', selectionOpts()).catch((err) =>
-            alert(
-              `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
-            ),
-          );
+          if (sp) copyImage(() => copyPagePNG(sp, '', selectionOpts()));
         },
       },
       {
@@ -5703,11 +5714,7 @@ function ctxItemsFor(kind: 'node' | 'link' | 'empty'): CtxItem[] {
       label: 'Copy frame as image',
       run: () => {
         const page = doc.pages[current]!;
-        void copyPagePNG(page, pageOverlay(page), pageOpts(page)).catch((err) =>
-          alert(
-            `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
+        copyImage(() => copyPagePNG(page, pageOverlay(page), pageOpts(page)));
       },
     },
     { sep: true },
