@@ -24,7 +24,8 @@ import { layerView, type LayerDef } from '../api/layers.js';
 import { resolveLinkStyle, type LinkStyleDef } from '../api/link-styles.js';
 import { withInterfaceLabels } from '../api/hardware.js';
 import { pageHasPills, pillBands, stripPillLabels } from './port-pills.js';
-import { registerHitBoxes } from './hit-boxes.js';
+import { registerHitBoxes, snapshotHitBoxes } from './hit-boxes.js';
+import { snapshotEngineTypes } from './engine-types.js';
 import {
   applyEngineTheme,
   applyPalette,
@@ -122,6 +123,23 @@ export function ensureShim(): void {
   g.document ??= { getElementById: () => null };
 }
 
+/**
+ * Run one render with the engine's type tables and the hit-box registry
+ * restored afterwards: the types a render registers (stock pack, the
+ * document's custom types, wire-sheet panels) never outlive it, so one
+ * document cannot change how a later one renders in the same process.
+ */
+function withRenderScope<T>(E: EngineStatic, fn: () => T): T {
+  const restoreEngine = snapshotEngineTypes(E);
+  const restoreBoxes = snapshotHitBoxes();
+  try {
+    return fn();
+  } finally {
+    restoreBoxes();
+    restoreEngine();
+  }
+}
+
 function registerCustomTypes(E: EngineStatic, specs: CustomNodeSpec[]): void {
   for (const spec of specs) {
     E.registerNodeType(spec.typeName, {
@@ -151,7 +169,8 @@ function renderPageUnthemed(
 ): string {
   ensureShim();
   // Stock cloud types ship with the app; the document's own custom types layer
-  // on top (and override by name if a user redefines one).
+  // on top. parseDoc/validate refuse custom names that reuse a built-in or
+  // stock name, and the caller's render scope undoes all of this afterwards.
   registerCustomTypes(E, [...STOCK_NODE_SPECS, ...customNodes]);
   registerBackdrops(E);
   registerHitBoxes(customNodes);
@@ -278,12 +297,14 @@ export function renderPageWithEngine(
   customNodes: CustomNodeSpec[] = [],
   opts: RenderOptions = {},
 ): string {
-  return finishProfile(
-    applyRenderTheme(
-      renderPageUnthemed(E, page, customNodes, opts),
-      opts.theme ?? 'dark',
+  return withRenderScope(E, () =>
+    finishProfile(
+      applyRenderTheme(
+        renderPageUnthemed(E, page, customNodes, opts),
+        opts.theme ?? 'dark',
+      ),
+      opts,
     ),
-    opts,
   );
 }
 
@@ -300,6 +321,17 @@ export function renderDocumentWithEngine(
   doc: TopologyDocument,
   pageIndex = 0,
   opts: RenderOptions = {},
+): string {
+  return withRenderScope(E, () =>
+    renderDocumentInScope(E, doc, pageIndex, opts),
+  );
+}
+
+function renderDocumentInScope(
+  E: EngineStatic,
+  doc: TopologyDocument,
+  pageIndex: number,
+  opts: RenderOptions,
 ): string {
   const stored = doc.pages[pageIndex];
   if (!stored) throw new Error(`page index ${pageIndex} out of range`);
