@@ -9,6 +9,14 @@ and the pre-reset implementation plan are preserved under
 [`archive/`](archive/) — do not treat anything there as current status; each
 carries a banner pointing back here._
 
+_PRs #311–#319 merged on 2026-11-14, after that revalidation (`main` at
+`916fb14`). Only the passages dated 2026-11-14 or 2026-11-15 below were
+updated for them; the rest of this file was not re-checked. An independent
+audit is planned before any change to the core layers: start from
+[`sitrep/2026-11-15-pre-audit-handoff.md`](sitrep/2026-11-15-pre-audit-handoff.md),
+which records the state at hand-over, what was and was not verified, and the
+problems known to be open._
+
 ## What Topology Dojo is
 
 A production-hosted, collaborative, AI-agent-assisted network-topology
@@ -41,8 +49,8 @@ As of this review (`main` @ `e99b012`, PR #300 merged 2026-11-08):
   the `workers.dev` subdomain 2026-07-18; the GitHub OAuth App callback was
   repointed to match). Staging stays on its own `workers.dev` subdomain,
   fully isolated (`check-wrangler-env.mjs` enforces this in CI).
-- **The current automated gate is 1768 Vitest cases in 146 files plus 32
-  Chromium browser cases in 9 spec files** (`e99b012`, local run 2026-11-13;
+- **The current automated gate is 2918 Vitest cases in 196 files plus 120
+  Chromium browser cases in 27 spec files** (`af6a9ca`, local run 2026-11-14;
   CI additionally runs the Python catalog reference tools, `catalog:check`,
   and a LibreOffice `.vsdx` render job — `ci.yml` jobs `check`, `e2e`,
   `visio`). Counts are evidence for this revision, not a durable product
@@ -120,6 +128,14 @@ from `git log --first-parent`):
   (`src/ui/sdwan-wizard.ts`), place tiles and page links, cloud hubs / SSE
   on-ramp, Natural Earth map backdrops (#298, #299); icon tiers 1–2
   (proposal 0011, #294–#296).
+- **November 2026 review** (PRs #311–#319, 2026-11-14): markup-injection
+  and data-integrity fixes (#311); rendering and export fixes (#312); canvas
+  and app-shell defects (#313, #314); the link anchor box on by default,
+  the clean render profile and parametric templates (#315); path analysis
+  with its editor action, and the scenario-story library (#316); agent
+  tools that refuse wrong calls (#317); standard canvas interactions
+  (#318); QA and UAT plans brought up to date (#319). #312 and #313 reached
+  `main` inside #314's merge.
 
 ## Active implementation program
 
@@ -130,7 +146,7 @@ Six initiatives, detailed in `IMPLEMENTATION_PLAN.md`:
 | N   | Living product/quality documentation        | Baseline refreshed 2026-08-09; maintain with each change  | None                                                                     |
 | O   | Cloudflare alerting + production game day   | Repo-side done 2026-07-19; O1/O2 human halves outstanding | None — human can start immediately                                       |
 | A   | Agent activity + explainability             | Implemented A1–A6; shipped (PR #243, live `5de7813`)      | None — reuses `ANALYTICS_ENABLED`; no new DO/migration                   |
-| B   | Guided topology briefs + semantic templates | Not started (see note)                                    | None — soft dependency on N landing                                      |
+| B   | Guided topology briefs + semantic templates | Done as re-scoped 2026-11-14 (parametric templates)       | None                                                                     |
 | E   | EdgeConnect live-import hardening + UI      | E2 done 2026-11-14 (tests); E1, E3–E7 not started         | None — soft dependency on N landing                                      |
 | T   | Time-aware flow/failure storytelling        | T1–T3 done 2026-11-14 (library); T4 held, T5–T7 not begun | T4 held: MCP tool-list budget; the live-data tools are off in production |
 
@@ -144,8 +160,11 @@ before starting B1. Work since August has been driven by proposals
 0005–0011 and `futures/hw-catalog.md` rather than this table; proposal 0009
 (status: Proposed) would re-cut _Now/Next_ if accepted.
 
-Since that check (2026-11-14): packet E2 is done as tests, and
-`src/stories/` now holds T1–T3 — the scenario contract, the story compiler
+Since that check (2026-11-14): initiative B was re-scoped against the
+generator and shipped as parametric starter templates
+(`src/api/templates.ts`, `params` on `create_from_template`, the parameter
+dialog in `src/ui/template-wizard.ts`; see `ROADMAP.md`, Now item 4). Packet
+E2 is done as tests, and `src/stories/` now holds T1–T3 — the scenario contract, the story compiler
 and the failure-moment annotations — as a library with no caller yet.
 `compile_flow_story` (T4) is deliberately not built: the MCP tool list has a
 hard size budget and the live-data tools are off in production. Before
@@ -299,6 +318,15 @@ notes and `CAPABILITY_MATRIX.md`. Former findings H1 and **M20** are fixed
 
 Full register: `docs/launch-readiness/FINDINGS_REGISTER.md`.
 
+As of 2026-11-15 the register also lists sixteen observations the November
+review left open, and 22 of the July findings still carry no status in any
+document. The pre-audit note
+([`sitrep/2026-11-15-pre-audit-handoff.md`](sitrep/2026-11-15-pre-audit-handoff.md),
+section 6) records four problems confirmed on that date and not fixed: a
+custom node spec can inject markup (the remainder of H8), a failed write to
+the hosted agent store is reported as success (H6), documents carry no
+schema version, and the dependency advisories are not triaged.
+
 ## Human-only operational tasks
 
 Things no agent in this repo can complete alone:
@@ -366,6 +394,10 @@ staging` with a generated ≥16-char value kept only in the operator's
   size).
 - Independently verify the risky properties and run the full gate before
   committing — don't trust a sub-agent's self-report on correctness.
+- Base every pull request on `main`. A pull request based on another
+  pull request's branch merges into that branch, not into `main`, unless
+  the base branch is deleted first; two of the November PRs were stranded
+  that way and had to be carried by a third (2026-11-14).
 - Staging deploys are safe to dispatch on request. Merging to `main` is the
   production release (since 2026-10-10) and any `release.yml` dispatch is a
   recovery or migration action: an agent does either only on an explicit
