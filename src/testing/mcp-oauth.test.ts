@@ -372,6 +372,62 @@ describe('MCP OAuth consent and state binding (Miniflare, real OAuthProvider)', 
     expect(setCookies(done)['tdg_session']).toBeTruthy();
   });
 
+  it('a grant issued before the consent page existed is refused at /mcp, also after a refresh', async () => {
+    const clientId = await register('Pre-consent client');
+    const { verifier, challenge } = await pkce();
+    const minted = await handle.fetch('/__test/legacy-grant', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        clientId,
+        redirectUri: REDIRECT,
+        codeChallenge: challenge,
+        id: 60,
+      }),
+    });
+    const { redirectTo } = (await minted.json()) as { redirectTo: string };
+    const code = new URL(redirectTo).searchParams.get('code')!;
+    const tokenRes = await handle.fetch('/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT,
+        client_id: clientId,
+        code_verifier: verifier,
+      }).toString(),
+    });
+    expect(tokenRes.status).toBe(200);
+    const tokens = (await tokenRes.json()) as {
+      access_token: string;
+      refresh_token: string;
+    };
+    const call = (token: string) =>
+      handle.fetch('/mcp', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      });
+    const refused = await call(tokens.access_token);
+    expect(refused.status).toBe(401);
+    expect(refused.headers.get('www-authenticate') ?? '').toContain(
+      'error="invalid_token"',
+    );
+
+    const refreshed = await handle.fetch('/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        client_id: clientId,
+      }).toString(),
+    });
+    expect(refreshed.status).toBe(200);
+    const next = (await refreshed.json()) as { access_token: string };
+    expect((await call(next.access_token)).status).toBe(401);
+  });
+
   it('a signed-in user can list and revoke their MCP grants', async () => {
     const clientId = await register('Revocable <b>client</b>');
     const { challenge } = await pkce();

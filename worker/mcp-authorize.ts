@@ -28,6 +28,14 @@ import { parseCookies } from '../src/server/session.js';
 import { timingSafeEqual } from '../src/server/api-key.js';
 
 export const MCP_FLOW_COOKIE = 'tdg_mcp_auth';
+
+/**
+ * Stamped into the props of every grant this flow issues. Grants issued
+ * before the consent page existed carry no version and are refused at the
+ * API route (`onlyCurrentGrants`), which revokes them at release: their
+ * clients get `invalid_token` and sign in again through consent.
+ */
+export const MCP_GRANT_VERSION = 2;
 const FLOW_TTL_SEC = 600;
 const FLOW_PREFIX = 'mcpflow:';
 const CONSENT_PREFIX = 'mcpconsent:';
@@ -318,7 +326,12 @@ export async function handleMcpCallback(
     userId: uid,
     metadata: { label: user.login },
     scope: flow.request.scope,
-    props: { id: user.id, login: user.login, name: user.name },
+    props: {
+      id: user.id,
+      login: user.login,
+      name: user.name,
+      grantVersion: MCP_GRANT_VERSION,
+    },
   });
   return new Response(null, {
     status: 302,
@@ -465,4 +478,48 @@ export async function handleConnectionsApi(
   }
 
   return json({ error: 'method not allowed' }, 405);
+}
+
+/* ── API route gate: grants from before the consent page ─────────────── */
+
+/** Props the API handler may serve: an API-key session, or an OAuth grant
+ * issued by the current flow. */
+export function isCurrentMcpGrant(props: unknown): boolean {
+  const p = props as { auth?: unknown; grantVersion?: unknown } | null;
+  if (p?.auth === 'api_key') return true;
+  return p?.grantVersion === MCP_GRANT_VERSION;
+}
+
+interface ApiHandler<E> {
+  fetch(request: Request, env: E, ctx: ExecutionContext): Promise<Response>;
+}
+
+/** Wrap the MCP API handler so tokens from an older grant are refused with
+ * the same `invalid_token` 401 the provider gives an unknown token. */
+export function onlyCurrentGrants<E>(handler: ApiHandler<E>): ApiHandler<E> {
+  return {
+    fetch(request, env, ctx) {
+      const props = (ctx as unknown as { props?: unknown }).props;
+      if (isCurrentMcpGrant(props)) return handler.fetch(request, env, ctx);
+      const url = new URL(request.url);
+      const metadata = `${url.origin}/.well-known/oauth-protected-resource${url.pathname}`;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: 'invalid_token',
+            error_description:
+              'This authorization has been revoked; sign in again',
+          }),
+          {
+            status: 401,
+            headers: {
+              'content-type': 'application/json',
+              'cache-control': 'no-store',
+              'www-authenticate': `Bearer realm="OAuth", resource_metadata="${metadata}", error="invalid_token", error_description="This authorization has been revoked; sign in again"`,
+            },
+          },
+        ),
+      );
+    },
+  };
 }

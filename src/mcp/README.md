@@ -45,7 +45,9 @@ Topology Dojo consent page that names the client and where it redirects, then
 through GitHub sign-in — no token to paste — and the authenticated GitHub user
 is exposed to the agent as `this.props`. Approval is remembered per GitHub user
 and client; `/connections` lists the apps a user has connected and revokes
-them. Only the S256 PKCE method is accepted. The provider also serves OAuth
+them. Only the S256 PKCE method is accepted. Grants issued before the
+consent page existed are refused at `/mcp` (`invalid_token`), so those clients
+sign in again once. The provider also serves OAuth
 discovery (`/.well-known/oauth-authorization-server`) and dynamic client
 registration (`/register`), so compatible clients configure themselves.
 

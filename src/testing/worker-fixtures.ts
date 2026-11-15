@@ -493,15 +493,16 @@ export const API_KEY_PROVIDER_FIXTURE = String.raw`
 import OAuthProvider from '@cloudflare/workers-oauth-provider';
 import { defaultHandler } from './worker/default-handler.ts';
 import { resolveApiKeyToken } from './worker/api-keys.ts';
+import { onlyCurrentGrants } from './worker/mcp-authorize.ts';
 export { TopologyRegistry } from './worker/registry.ts';
 
-const apiHandler = {
+const apiHandler = onlyCurrentGrants({
   async fetch(request, env, ctx) {
     return new Response(JSON.stringify({ props: ctx.props ?? null }), {
       headers: { 'content-type': 'application/json' },
     });
   },
-};
+});
 
 const withAssets = {
   fetch(request, env, ctx) {
@@ -541,6 +542,7 @@ export const MCP_OAUTH_FIXTURE = String.raw`
 import OAuthProvider from '@cloudflare/workers-oauth-provider';
 import { defaultHandler } from './worker/default-handler.ts';
 import { OAUTH_PROVIDER_OPTIONS } from './worker/oauth-options.ts';
+import { onlyCurrentGrants } from './worker/mcp-authorize.ts';
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
@@ -562,16 +564,37 @@ globalThis.fetch = async (input, init) => {
   return realFetch(input, init);
 };
 
-const apiHandler = {
+const apiHandler = onlyCurrentGrants({
   async fetch(request, env, ctx) {
     return new Response(JSON.stringify({ props: ctx.props ?? null }), {
       headers: { 'content-type': 'application/json' },
     });
   },
-};
+});
 
 const withAssets = {
-  fetch(request, env, ctx) {
+  async fetch(request, env, ctx) {
+    // Test-only: mint a grant with the props shape the flow issued before
+    // SEC-1115-01 (no grant version), as an existing deployment holds them.
+    if (new URL(request.url).pathname === '/__test/legacy-grant') {
+      const b = await request.json();
+      const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+        request: {
+          responseType: 'code',
+          clientId: b.clientId,
+          redirectUri: b.redirectUri,
+          scope: [],
+          state: 'legacy',
+          codeChallenge: b.codeChallenge,
+          codeChallengeMethod: 'S256',
+        },
+        userId: String(b.id),
+        metadata: { label: 'user' + b.id },
+        scope: [],
+        props: { id: b.id, login: 'user' + b.id, name: 'User ' + b.id },
+      });
+      return Response.json({ redirectTo });
+    }
     const stubbedEnv = Object.assign({}, env, {
       ASSETS:
         env.ASSETS ??
