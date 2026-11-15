@@ -18,6 +18,7 @@ import type {
   ZoneConfig,
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
+import { isReservedNodeTypeName } from '../nodes/reserved.js';
 import type { LayerDef, LayerKind } from './layers.js';
 import { validateDocument, type Problem } from './validate.js';
 
@@ -196,11 +197,16 @@ export function defineLayer(
   return def;
 }
 
-/** Add or replace a custom node type (by typeName). */
+/** Add or replace a custom node type (by typeName). A built-in or stock
+ * type's name is refused: the custom type would replace its art. */
 export function defineNodeType(
   doc: TopologyDocument,
   spec: CustomNodeSpec,
 ): CustomNodeSpec {
+  if (isReservedNodeTypeName(spec.typeName))
+    throw new Error(
+      `"${spec.typeName}" is a built-in node type; choose another typeName`,
+    );
   const i = doc.customNodes.findIndex((c) => c.typeName === spec.typeName);
   if (i >= 0) doc.customNodes[i] = spec;
   else doc.customNodes.push(spec);

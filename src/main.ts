@@ -61,7 +61,6 @@ import { documentToMermaid } from './export/mermaid.js';
 import { userToClient } from './editor/coords.js';
 import { nodeBounds } from './api/geometry.js';
 import { documentOverlaySVG } from './render/overlays.js';
-import { registerHitBoxes } from './render/hit-boxes.js';
 import {
   SHEET_SIZE_IDS,
   SHEET_SIZE_LABELS,
@@ -78,6 +77,10 @@ import { pageLinkTarget } from './api/page-link.js';
 /** Template-picker value that opens the SD-WAN generator instead. */
 const SDWAN_WIZARD = '__sdwan';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
+import {
+  markBaselineNodeTypes,
+  useDocumentNodeTypes,
+} from './nodes/document-types.js';
 import { STOCK_NODE_SPECS } from './nodes/stock.js';
 import { registerBackdrops } from './render/backdrops.js';
 import { openNodeDesigner } from './nodes/designer.js';
@@ -171,8 +174,10 @@ const doc: TopologyDocument = restoredDoc ?? sampleDocument();
 // with the engine before any render.
 registerCustomNodes(STOCK_NODE_SPECS);
 registerBackdrops(window.TopologyDesigner);
-registerCustomNodes(doc.customNodes);
-registerHitBoxes(doc.customNodes);
+// Everything registered from here on belongs to the open document, and is
+// taken away again when another document is loaded (loadDoc).
+markBaselineNodeTypes(window.TopologyDesigner);
+useDocumentNodeTypes(doc.customNodes);
 let current = 0;
 
 const app = document.getElementById('app')!;
@@ -1031,8 +1036,8 @@ function loadDoc(
     if (next[key] === undefined) delete doc[key];
     else (doc[key] as unknown) = structuredClone(next[key]);
   }
-  registerCustomNodes(doc.customNodes);
-  registerHitBoxes(doc.customNodes);
+  // The previous document's custom types go; this document's are registered.
+  useDocumentNodeTypes(doc.customNodes);
   invalidatePreview(); // custom types replaced — clear cached previews
   finalizeFrameDelete(); // a pending frame restore can't outlive its document
   current = 0;
