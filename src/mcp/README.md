@@ -310,8 +310,8 @@ to the task's affected region and change summaries, not total document size.
 
 ## Tools
 
-The servers define 73 tools; a session sees the subset its runtime enables.
-Nine of them are **operations only** _(op)_: they are not in the tool list and
+The servers define 74 tools; a session sees the subset its runtime enables.
+Ten of them are **operations only** _(op)_: they are not in the tool list and
 run as `edit_topology` operations, with their arguments served on demand by
 `describe_operations` (see [Operations](#operations-that-are-not-tools)).
 The _(live-data)_ tools need a provider; the share, workspace

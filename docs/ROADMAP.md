@@ -36,7 +36,7 @@ are off in production: `API_KEYS_ENABLED` (on in staging) and
   remote `/mcp` uses OAuth 2.1 with GitHub and owner-isolated Durable Object
   storage. There are 64 possible tool registrations (35 with no optional
   dependency; the rest are the hardware-catalog, share, workspace,
-  authoring-guidance and live-fabric groups), plus nine document setters
+  authoring-guidance and live-fabric groups), plus ten document setters
   that are `edit_topology` operations only, kept out of the tool list to
   hold down what every agent session loads (`src/mcp/token-budget.test.ts`
   ratchets the size); actual discovery varies by runtime, flags, API-key
