@@ -70,6 +70,277 @@ improved in passing; none was targeted.
 | QA-2026-11-14-RND-01  | Open   | `inspect_render` measures an overlay-cloud hub as 40×40 where it is drawn about 124×68, so overlaps with the cloud go unreported.                                                                         | Give the type a hit box that matches its art.                                                    |
 | QA-2026-11-14-WHL-01  | Open   | The mouse-or-trackpad guess behind the wheel's Auto setting was not run on physical devices.                                                                                                              | QA case EDT-39: a real trackpad and a real mouse on macOS and Windows.                           |
 
+### Security audit 2026-11-15: findings
+
+A read-only security audit ran on 2026-11-15 against `916fb14` (`main`;
+production serves `78ca2dc`, which differs only in `docs/`). It is the
+independent audit asked for in the pre-audit handoff note of 2026-11-15
+(not in the repository at this commit; "handoff" below refers to it).
+Nothing was fixed, no product file was changed, and nothing was run against
+production, an Orchestrator or any external host. Line numbers refer to
+`916fb14`.
+
+How each row is known:
+
+- **Confirmed (lead)**: reproduced by the lead auditor with a throw-away
+  probe, or read in code by the lead where the path is unambiguous.
+- **Confirmed (pass)**: reproduced by one of five delegated audit passes
+  (workspace and share authorisation; markup sinks; import and export; agent
+  tools; dependencies and CI) with a probe that was then deleted. The lead
+  did not re-run it.
+- **Inferred**: reasoned from code, not exercised.
+
+Probes ran in Node, Miniflare and Chromium. None ran in the real Workers
+runtime, in a real MCP host, or in draw.io, Office or a Mermaid renderer, so
+platform limits and the behaviour of consuming applications are inferred
+throughout. The probe scripts were not kept in the repository; each
+reproduction below is complete enough to rebuild.
+
+#### Summary
+
+| ID          | Sev    | Layer               | Finding                                                                                              | Known            |
+| ----------- | ------ | ------------------- | ---------------------------------------------------------------------------------------------------- | ---------------- |
+| SEC-1115-01 | High   | Auth                | Any registered MCP client can obtain a grant for a user with one click; no consent step              | Confirmed (lead) |
+| SEC-1115-02 | High   | Parse gate, render  | Custom node spec fields inject markup; script runs in SVG and flipbook exports (extends handoff 6.1) | Confirmed (pass) |
+| SEC-1115-03 | High   | Render              | A custom type named after a built-in changes how later, unrelated documents render                   | Confirmed (lead) |
+| SEC-1115-04 | Medium | Persistence         | Legacy drafts are keyed by GitHub login and copied to whoever holds that login now                   | Confirmed (pass) |
+| SEC-1115-05 | Medium | Agent tools         | The MCP Apps viewer's SVG cleaner can be bypassed to run script on click                             | Confirmed (pass) |
+| SEC-1115-06 | Medium | Agent tools (stdio) | `export_topology outputPath` overwrites any file under the export root, with shell-active content    | Confirmed (pass) |
+| SEC-1115-07 | Medium | Persistence         | One oversize document stops later documents being stored; no size or count caps (extends H6)         | Confirmed (pass) |
+| SEC-1115-08 | Medium | Sharing             | Browser share publish has no quota and no size cap (M12 half fixed)                                  | Confirmed (pass) |
+| SEC-1115-09 | Medium | Workspace           | Per-user workspace storage is unbounded and there is no delete route                                 | Confirmed (pass) |
+| SEC-1115-10 | Medium | Export              | Raster, PDF and embedded-image exports can exceed the memory budget                                  | Confirmed (pass) |
+| SEC-1115-11 | Medium | Import              | Hostile files hang or exhaust the importer (regex backtracking, unbounded inflate)                   | Confirmed (lead) |
+| SEC-1115-12 | Medium | CI/CD               | The migration gate reads `wrangler.jsonc` only; wrangler prefers other config files                  | Confirmed (pass) |
+| SEC-1115-13 | Medium | CI/CD               | `main` reports as unprotected                                                                        | Inferred         |
+| SEC-1115-14 | Medium | CI/CD               | Staging deploys run an arbitrary ref's code beside the Cloudflare token                              | Inferred         |
+| SEC-1115-15 | Medium | App shell           | Returning to the app after viewing a share link aborts start-up                                      | Confirmed (pass) |
+| SEC-1115-16 | Medium | Dependencies        | Unbounded array validation in the MCP SDK and zod; the fix needs a major `agents` upgrade            | Inferred         |
+| SEC-1115-17 | Low    | Auth                | Cookie-authenticated mutations rely on `SameSite=Lax` alone                                          | Confirmed (pass) |
+| SEC-1115-18 | Low    | Auth                | Session and cookie handling: no revocation, attribute injection (L6), 500 on a malformed cookie      | Confirmed (lead) |
+| SEC-1115-19 | Low    | Agent tools         | `extra` overrides typed fields and skips write checks (M11 still present)                            | Confirmed (pass) |
+| SEC-1115-20 | Low    | Agent tools         | The MCP session object is named from a client header and not bound to the user                       | Inferred         |
+| SEC-1115-21 | Low    | Agent tools         | Layout tools have no element cap                                                                     | Confirmed (pass) |
+| SEC-1115-22 | Low    | Agent tools         | An `edit_topology` operation can carry its own `topologyId`                                          | Confirmed (pass) |
+| SEC-1115-23 | Low    | Sharing             | The public snapshot rate limiter is bypassable and writes to KV per request                          | Confirmed (pass) |
+| SEC-1115-24 | Low    | Headers             | CSP has no `form-action`; no HSTS; provider responses carry no security headers                      | Confirmed (pass) |
+| SEC-1115-25 | Low    | Export              | draw.io and Mermaid writers: malformed XML, style-key injection, unescaped tooltip and labels        | Confirmed (pass) |
+| SEC-1115-26 | Low    | Import              | MCP legacy-studio import stores a document without `parseDoc` (M13 residual)                         | Confirmed (pass) |
+| SEC-1115-27 | Low    | Live data           | EdgeConnect client: no timeout, redirects followed, `https` not enforced, `..` in `applianceId`      | Inferred         |
+| SEC-1115-28 | Low    | Workspace           | A large checkpoint restore cannot complete; raw storage errors are returned to clients               | Confirmed (pass) |
+| SEC-1115-29 | Low    | CI/CD               | Actions pinned by tag (L2), no dependency automation, `.gitignore` misses local secret files         | Confirmed (pass) |
+| SEC-1115-30 | Low    | Persistence         | Concurrent agent sessions are last-writer-wins on whole documents                                    | Confirmed (pass) |
+| SEC-1115-31 | Info   | Various             | Smaller observations                                                                                 | Mixed            |
+
+#### High
+
+**SEC-1115-01. Any registered MCP client can obtain a grant for a user with one click.**
+
+- **Layer / location:** Auth. `worker/default-handler.ts:481-497` (`handleAuthorize`), `:500-558` (`handleCallback`), `worker/index.ts:55-61`.
+- **Problem:** `/register` accepts anonymous dynamic client registration with any `redirect_uri`. `/authorize` sends the browser straight to GitHub with no consent screen of its own. `/callback` takes `state` as `atob` + `JSON.parse` with nothing binding it to the browser that started the flow, and calls `completeAuthorization` for whatever client the state names. An attacker registers a client that redirects to their own host and sends a signed-in user the `/authorize` link; the authorization code is delivered to the attacker, who redeems it for an access token and a 30-day refresh token carrying the victim's `props`. This is the confused-deputy case the MCP authorization specification requires per-client consent for.
+- **Known:** Confirmed (lead) in Miniflare with the real `OAuthProvider` and `defaultHandler`; only the two GitHub calls were stubbed. Register → `/authorize` (302 to GitHub, no cookie set) → `/callback?code=…&state=<state>` (302 to the attacker's URI with `code`) → `/token` (200, access and refresh token) → `/mcp` saw the victim's `props`. A state forged without calling `/authorize`, with `codeChallengeMethod: "plain"`, was accepted too. Not tested: whether GitHub skips its own prompt for a user who has already authorised the app (believed so for OAuth Apps; if it prompts, the prompt names the legitimate app).
+- **Impact:** the victim's hosted agent identity: drafts, workspaces through agent tools, share publish and revoke, profile reads; the connected fabric if `LIVE_DATA_ENABLED` is ever turned on. There is no grant list or revoke surface, so a victim cannot undo it.
+- **Fix:** show a consent page naming the client and its redirect host before going to GitHub, and remember approval per user and client; bind the upstream `state` to the browser (random value in an `HttpOnly` cookie, or a signed state checked on return) and keep the auth request server-side in KV under that key; consider `allowPlainPKCE: false`; add a list-and-revoke page for grants (`listUserGrants` / `revokeGrant`).
+- **Fix touches:** `worker/default-handler.ts`, `worker/index.ts`, a new page beside `worker/api-keys-page.ts`, `src/testing/default-handler.test.ts`, the smoke script's OAuth checks, `src/mcp/README.md`. Existing grants issued before the fix stay valid unless revoked.
+
+**SEC-1115-02. Custom node spec fields inject markup; script runs in exports.** Extends handoff 6.1 and July H8.
+
+- **Layer / location:** Parse gate and render. Gap: `src/pages/persist.ts:177-191` (`sanitizeCustomNode`). Sinks: `src/nodes/render.ts:49` (`strokeW`, every shape), `src/nodes/data.ts:244,253,265` and `shapeGeom` (`size` for circle, any unknown `shape`, triangle, diamond, cross, arrow; `radius` for square, rectangle, chassis), `src/nodes/designer.ts:139-141,153,164` (`size`, `strokeW`, `radius`, `ledCount`, `portCount` into `innerHTML` when "Edit type" is opened), loops at `src/nodes/render.ts:75-97,117-131` (`ledCount`, `portCount` unbounded).
+- **Known:** Confirmed (pass). Matrix of every field × 13 shapes × string and array payloads through `parseDoc` and the real engine; then Chromium against a build served with the production CSP header.
+- **In the app, under the production CSP:** inline handlers and `<script>` were blocked. Not blocked: `<foreignObject><meta http-equiv="refresh" content="0;url=…">` navigated the tab to another origin on opening `/v/<id>` with no click; `<style>` restyled the whole app (a full-page fake "session expired" overlay); `<form action="http://other-origin">` submitted off-origin; `<img src="/logout">` signed the viewer out. `ledCount: 3e7` froze the tab for about 11 s.
+- **In exports:** the toolbar SVG download and the flipbook HTML export of such a document, opened from `file://`, ran the injected `<script>`.
+- **Not injectable:** `shape`, `patternType`, `ledPos`, `portPos`, `icon`, `badgeText`, booleans, the four colours, `typeName`.
+- **Reproduce:** the handoff's 6.1 test with `strokeW: '1"/><script>alert(1)</script><g x="'`.
+- **Fix:** rebuild the spec from an allowlist in `sanitizeCustomNode`: finite numbers clamped to the designer's ranges, enums from their lists, real booleans, bounded `badgeText`, unknown keys dropped. Also coerce with `Number()` at the sinks and escape in `designer.ts`.
+- **Fix touches:** the designer save path (`src/main.ts:4189`), `src/api/builder.ts:204`, the `define_node_type` tool, and `src/server/untrusted.test.ts`, which needs a `customNodes` axis. Stored documents with out-of-range specs will be normalised on load. Do it before or with SEC-1115-15.
+
+**SEC-1115-03. A custom type named after a built-in changes how later, unrelated documents render.**
+
+- **Layer / location:** Render. `src/render/core.ts:125-136,155`; `src/main.ts:174,1034,4192`; registry at `public/vendor/topology-ds.js:1230`. Name check missing in `src/pages/persist.ts` (`safeType` accepts `router`) and `src/api/validate.ts:62-66`; only the designer UI refuses built-in names (`src/ui/custom-type-name.ts`).
+- **Problem:** rendering a document registers its custom types in the engine's static `NODE_TYPES` and nothing removes or restores them. A document may name a custom type `router`.
+- **Known:** Confirmed (lead) in the Node render path: render a benign document with one router; render a second document with `customNodes: [{ …defaultSpec(), typeName: 'router', strokeW: <payload> }]` and no router node; render the first again. Its output now contains the payload. Confirmed (pass) in Chromium: open a share link whose document declares such types, click "back to my document", and the user's own untouched document draws attacker markup and its SVG export runs script from `file://`, until reload. Inferred: the Worker uses the same core (`worker/render.ts:23`), so within one isolate one user's render would change other users' `render_svg`, export and `view_topology` output until the isolate recycles. Not exercised in workerd.
+- **Impact:** with SEC-1115-02 unfixed, markup in other users' server-side renders. With it fixed, an attacker can still replace how built-in types are drawn for everyone sharing the process.
+- **Fix:** refuse custom names that collide with built-in and stock types in `parseDoc` and `validateDocument`; scope registration to one render (snapshot and restore, or a per-call type map); unregister the previous document's types in `loadDoc`.
+- **Fix touches:** `src/render/core.ts`, `src/render/hit-boxes.ts` (same global shape), `src/main.ts` `loadDoc`, SHA-pinned render tests if registration order changes output, and any stored document that already shadows a built-in.
+
+#### Medium
+
+**SEC-1115-04. Legacy drafts are keyed by GitHub login.**
+
+- **Layer / location:** Persistence. `src/mcp/registry-address.ts:73-110`; `worker/workspaces.ts:174-183,460-462,494-507`; `worker/admin-api.ts:107-111`.
+- **Problem:** every sign-in and every agent session copies `tdoc:` drafts from the registry named `user:<login>` into the caller's uid registry. The legacy registry has no owner stamp and is kept indefinitely. Logins are reusable on GitHub.
+- **Known:** Confirmed (pass) in Miniflare: a session for uid 999 with login `alice` listed and read a draft seeded under `user:alice` by uid 1. The copy code was read by the lead. Whether such drafts exist in production is unknown.
+- **Fix:** stamp the legacy registry with the first uid that pulls it and refuse others; or run a one-off migration from the analytics roster, then delete the legacy keys and the code.
+- **Fix touches:** `worker/registry.ts` (new RPC), `registry-address.ts`, `workspaces.ts`, `worker/mcp.ts`, the migration and registry-address tests.
+
+**SEC-1115-05. The MCP Apps viewer's SVG cleaner can be bypassed.**
+
+- **Layer / location:** Agent tools. `src/mcp/viewer-html.ts:133-149`.
+- **Problem:** the cleaner removes `script`, `foreignObject`, `on*` attributes and hrefs beginning `javascript:`. It keeps `<a href="java&#9;script:…">`, `<a><set attributeName="href" to="javascript:…"/>`, `<a><animate attributeName="href" values="javascript:…"/>` and `<style>`.
+- **Known:** Confirmed (pass): the function, extracted verbatim, ran script on click in Chromium for all three. It needs a markup injection to reach it (SEC-1115-02 or -03). Inferred: script in the viewer can send `tools/call` to the host. Host behaviour was not tested and decides the severity.
+- **Fix:** an element and attribute allowlist (`src/catalog/sanitize-svg.ts` is suitable), or draw the SVG through `<img>`.
+- **Fix touches:** the viewer's click and zoom behaviour if it moves to `<img>`.
+
+**SEC-1115-06. stdio `export_topology outputPath` overwrites any file under the export root.**
+
+- **Layer / location:** Agent tools (stdio). `src/server/export-file.ts:25-47`; `src/mcp/server.ts:46-52`; `src/mcp/export-tools.ts:198-206`; `src/export/mermaid.ts:53-60`.
+- **Problem:** confinement to the working directory works (`../`, absolute paths and a linked parent are refused). Inside it there is no extension check and no overwrite protection, dot-paths are allowed, parent directories are created, and a symlink as the final component is followed. Mermaid output keeps `$()` and backticks from labels.
+- **Known:** Confirmed (pass), twice independently, using only agent tools: a Mermaid export over an executable `build.sh` and over `.husky/pre-commit`; running either executed the label's payload. Writes to `.git/hooks/pre-commit` and `.bashrc` succeeded; a final-component symlink was followed out of the root. The guard code was read by the lead.
+- **Prerequisite:** an agent steered by hostile content (an imported file is enough; see SEC-1115-31) on a developer machine, and the host approving the call.
+- **Fix:** require the extension to match the format; refuse dot-segments; open with `wx` or require an explicit overwrite flag; `lstat` the target; default the root to a dedicated exports directory.
+- **Fix touches:** `export-tools.ts` error text only (no schema bytes), the stdio README, `export-file` tests.
+
+**SEC-1115-07. One oversize document stops later documents being stored.** Extends handoff 6.2 and July H6.
+
+- **Layer / location:** Persistence. `src/mcp/persist-store.ts:94-98`; `worker/mcp.ts:227-237`; `worker/registry.ts:66-68`; `src/pages/persist.ts:306`.
+- **Problem:** the persist loop stops at the first `put` that throws, and `persistAfter` swallows the error. Every document after it in the same session is never stored while each call returns success. There is no size cap per document and no cap on documents or bytes per user; `extra`, `update_element.set` and `define_node_type.spec` accept unbounded strings.
+- **Known:** Confirmed (pass) against a fake store with a 2 MiB value limit: twelve `edit_topology` calls grew a document to 2.5 MB, the write threw, and a document created afterwards was not stored. Inferred: the 2 MiB figure for the real store, and that a user with tens of MiB of drafts would fail rehydrate and see an empty store.
+- **Fix:** a byte cap per document with the error returned to the caller; a per-user quota in `TopologyRegistry.put`; one `try` per document; persist failure surfaced in the tool result (owner decision in handoff section 8).
+- **Fix touches:** the tool contract for every mutating tool (result text, not schema bytes), QA case MCP-07.
+
+**SEC-1115-08. Browser share publish has no quota and no size cap.** July M12 is half fixed.
+
+- **Layer / location:** Sharing. `worker/default-handler.ts:452-472`; `worker/share.ts:34,110-128`; `src/share/snapshot.ts:50-60`.
+- **Known:** Confirmed (pass) in Miniflare: 55 consecutive `POST /api/share` returned 201 and a 9.9 MB snapshot was stored and served publicly. The agent tool is metered (`worker/mcp.ts:251-257`); the browser route is not. After 50 shares the oldest leave the owner's list but stay public, so they cannot be found to revoke.
+- **Fix:** move the quota and a byte cap into `publishSnapshot`; refuse at the list cap or delete the evicted snapshot.
+- **Fix touches:** `share.ts`, error mapping (429, 413), the Share dialog, `share-api.test.ts`.
+
+**SEC-1115-09. Per-user workspace storage is unbounded and there is no delete route.**
+
+- **Layer / location:** Workspace. `worker/workspace-api.ts:26-36,61-64`; `worker/workspaces.ts:185-196`; `worker/document.ts:434-466,1374-1387`; `worker/registry.ts` (`markWorkspace`).
+- **Known:** Confirmed (pass): 150 creates in a loop and one 18 MB, 12-page create all returned 201. The request body is read unbounded; only a per-page 1.8 MiB check exists. Sign-in is open to any GitHub account. Users cannot remove a workspace.
+- **Fix:** a per-owner workspace cap and creation quota in the registry object; page-count and total-byte caps; a body cap; a DELETE route.
+- **Fix touches:** `registry.ts`, `document.ts`, `workspace-api.ts`, the workspace panel.
+
+**SEC-1115-10. Raster, PDF and embedded-image exports can exceed the memory budget.**
+
+- **Layer / location:** Export. `src/export/raster.ts:118-135,174-184`; `src/export/print.ts:150-183`; `src/export/pdf.ts`; `src/mcp/export-tools.ts:93-99,370-374`; `src/api/layout.ts:287-305`; `src/api/text.ts:80`.
+- **Problem:** the scale is floored at 0.25, so a large page `viewBox` exceeds `maxPixels`; `viewBox` has no upper bound; the 8 MiB output check runs after rendering; PDF export holds every page's bitmap; an embedded image is decoded at full size with no dimension or length limit.
+- **Known:** Confirmed (pass) in Node: `viewBox: 0 0 60000 60000` gave a 225-megapixel render at 1.8 GiB resident; a six-page 600 dpi PDF reached 670 MiB; a 42 KB data URI decoding to 16000×16000 drove a 2100×1400 export to 1.36 GiB. Inferred: the effect in a 128 MB Worker isolate.
+- **Fix:** drop the floor and refuse when the budget cannot be met; cap `viewBox`; release PDF bitmaps page by page; read image header dimensions and reject oversized ones; cap `imageHref` length.
+- **Fix touches:** `exportPng`, `exportPdf`, PowerPoint image mode, `parseViewBox`; closes QA-2026-11-14-MCP-02's size-check part.
+
+**SEC-1115-11. Hostile files hang or exhaust the importer.**
+
+- **Layer / location:** Import. `src/import/drawio.ts:67-75` (`detectDrawio`), `:114-127` (inflate), `:136` (`htmlToText`); `src/import/mermaid.ts:116-117,214-217`. Callers: `src/import/open.ts:60`, `src/mcp/tools.ts:857`.
+- **Known:** Confirmed (lead) for `detectDrawio`: `'<!---->'.repeat(n) + '<x'` took 106 ms at n=24 and 401 ms at n=26 (184 bytes), about four times per two comments; the 2,048-character window allows n≈290. It runs on any non-JSON file opened in the app and on `import_topology`. Confirmed (pass): a 349 KB compressed draw.io diagram inflated to 256 MiB before the size check rejected it; the Mermaid edge and subgraph regexes are cubic (a 1,600-space line took 493 ms); `htmlToText` is quadratic.
+- **Fix:** scan the prolog linearly; use streaming inflate with an output ceiling; cap line and label length before the regexes.
+- **Fix touches:** importer tests only.
+
+**SEC-1115-12. The migration gate reads `wrangler.jsonc` only.**
+
+- **Layer / location:** CI/CD. `.github/workflows/release.yml:310-342`; `.github/workflows/deploy-worker.yml:98-141`; `scripts/migration-guard.mjs`; `scripts/check-wrangler-env.mjs`.
+- **Problem:** both guards read the literal file. wrangler resolves `wrangler.json` before `wrangler.jsonc`, and a `.wrangler/deploy/config.json` redirect before either. A commit adding one is classified routine while the deploy applies different migrations, bindings or vars, with no `apply_migration_tag`. The guard scripts also run from the candidate commit.
+- **Known:** Confirmed (pass) in wrangler's source (`node_modules/wrangler/wrangler-dist/cli.js:2958`); not run end to end.
+- **Fix:** pass `--config wrangler.jsonc` to `wrangler deploy` and `wrangler rollback`; fail CI when the other files exist; run the guard scripts from `main` with the candidate's config as data.
+- **Fix touches:** both workflows and the tests for both scripts.
+
+**SEC-1115-13. `main` reports as unprotected.**
+
+- **Layer / location:** CI/CD. `.github/workflows/ci.yml:6` claims branch protection; `docs/DEPLOYMENT_RUNBOOK.md` invariant 4 depends on it.
+- **Known:** Inferred. The branches API returns `protected: false` for `main`. Rulesets and environment settings could not be read, so a ruleset may still apply. If it is accurate, a direct push to `main` is an unattended production release with no review. There is no `CODEOWNERS`.
+- **Fix:** confirm in repository settings; require pull requests and the CI checks; add `CODEOWNERS` for `.github/`, `scripts/` and `wrangler.jsonc`.
+
+**SEC-1115-14. Staging deploys run an arbitrary ref's code beside the Cloudflare token.**
+
+- **Layer / location:** CI/CD. `.github/workflows/deploy-staging.yml:21-29,104-114`; `.github/workflows/deploy-worker.yml:89-141`.
+- **Known:** Inferred. The chosen ref controls the build, the env check and the wrangler config in the job that holds `CLOUDFLARE_API_TOKEN`. If staging and production share one Cloudflare account, a ref could name the production Worker. The token's scope is not readable from the repository.
+- **Fix:** a separate account or token for staging, or restrict the staging environment to protected branches; assert the Worker name in the workflow, not in ref-controlled code.
+
+**SEC-1115-15. Returning to the app after viewing a share link aborts start-up.**
+
+- **Layer / location:** App shell. `src/main.ts:1200-1201` reaches `invalidatePreview()` before `const previewCache` at `src/main.ts:4209` is initialised.
+- **Known:** Confirmed (pass) in Chromium: after opening any share link, including a benign one, every load of `/` throws a `ReferenceError`; the palette, inspector and filmstrip are empty until "back to my document" and a reload. Cause read from source.
+- **Order matters:** this failure is the only thing stopping a hostile shared copy being drawn again on every visit to `/`. Fix SEC-1115-02 first or together.
+- **Fix:** hoist `previewCache` or defer the resume.
+
+**SEC-1115-16. Unbounded array validation in the MCP SDK and zod.** Triage for handoff 6.4.
+
+- **Layer / location:** Dependencies. `@modelcontextprotocol/sdk` 1.29.0 (GHSA-46jr-4wx8-v453), `zod` 4.4.3 (GHSA-mrhx-c7xc-m3w5). Unbounded arrays at `src/mcp/tools.ts:1693,1742,2929`, `src/mcp/path-tools.ts:123`. The transport's 4 MiB check trusts `Content-Length` (`node_modules/agents/dist/mcp/index.js:88`).
+- **Known:** Inferred from code; not exercised. Of the 26 production advisories this is the only one with a reachable path. The rest are in packages that are in no shipped bundle (express, proxy-addr, body-parser, qs, hono, ip-address and others), or are shipped but not reached with attacker input: `dompurify` is loaded only by `jsPDF.html()`, which is never called (`src/editor/export.ts:212-238`); `fast-uri` and `nanoid` receive no attacker input; the SDK's task, OAuth-client and bearer-middleware advisories concern code paths the Worker does not use. Dev-only advisories (two more critical: `vitest`, `tinypool`) need attacker-controlled options and do not touch build or deploy integrity.
+- **Fix:** add `.max()` to the four arrays now; set `maxToolInputElements` once on SDK 1.32. `agents@0.14.5` pins the SDK at exactly 1.29.0, so that needs `agents` 0.33.0, a semver-major upgrade (owner decision in handoff section 8). Enforce a streamed body cap ahead of `mcp.fetch` in `worker/index.ts:47-54`.
+- **Correction to the handoff's framing:** there is no npm-published package (`"private": true`; `server.json` lists the remote only). The stdio server runs from a clone.
+
+#### Low
+
+**SEC-1115-17. Cookie-authenticated mutations rely on `SameSite=Lax` alone.** `worker/auth.ts:80-85`; `worker/workspace-api.ts:26-36,47-53,202-207`; `worker/default-handler.ts:432-475`; `worker/profile-api.ts`. No route checks `Origin` or the content type, cookies have no `__Host-` prefix, and the WebSocket upgrade has no origin check. Confirmed (pass): with `Origin: https://evil.harnessed.cloud` and `content-type: text/plain`, workspace create, share publish and a workspace operation all succeeded. Sibling hosts under `harnessed.cloud` are therefore inside the trust boundary. Fix: one check in `route()` for non-GET requests and upgrades; `__Host-` cookies. Touches worker tests that post without an `Origin`.
+
+**SEC-1115-18. Session and cookie handling.** Confirmed (lead). (a) Sessions are stateless seven-day cookies; `/logout` clears the cookie but the token stays valid, and nothing can revoke one (`src/server/session.ts`, `worker/auth.ts:203-211`). (b) July L6 is open: `go` is written into the state cookie unencoded, so `/auth/github?go=/a;Domain=evil.example;SameSite=None` adds attributes (`worker/auth.ts:110`); the value is a nonce the attacker does not know, so impact is small. (c) `Cookie: x=%` makes `/api/me` return 500, because `parseCookies` calls `decodeURIComponent` unguarded (`src/server/session.ts`). (d) `/logout` is a state-changing GET (`worker/default-handler.ts:582`). (e) The session key falls back to `GITHUB_CLIENT_SECRET` when `SESSION_HMAC_SECRET` is unset; which applies in production is not readable from the repository. Fix: encode `go`; guard the decode; POST logout; a session epoch per user if revocation is wanted.
+
+**SEC-1115-19. `extra` overrides typed fields.** July M11 is still present. `src/mcp/tools.ts:1467,1663`; `src/mcp/write-checks.ts:115-128`. Confirmed (pass): `extra: {id, type, x, y}` created a duplicate id, an unknown type and non-numeric coordinates. The server renderer escaped all of it. Fix: strip those keys from `extra` or spread it first. No schema bytes.
+
+**SEC-1115-20. The MCP session object is not bound to the user.** `node_modules/agents/dist/mcp/index.js:99,165` names the object `streamable-http:<mcp-session-id header>` (read by the lead); `worker/mcp.ts` never compares the caller with the stored `props`. Inferred: a second authenticated user who learns a live 256-bit session id would run tools as the first user, and a scoped API key would inherit an unscoped session's tool set. No leak of the id was found. Fix: refuse in `TopologyMcp` when the stored user id differs from the incoming one.
+
+**SEC-1115-21. Layout tools have no element cap.** `src/api/tidy.ts:153`. Confirmed (pass): 2,000 nodes on one point made `tidy_topology` take 123 s and force layout 134 s, synchronously. Fix: cap nodes and links per page in the add and edit paths. Related to QA-2026-11-14-CAN-02.
+
+**SEC-1115-22. An `edit_topology` operation can carry its own `topologyId`.** `src/mcp/tools.ts:2566-2573`; `worker/mcp.ts:265` checks only the outer id. Confirmed (pass): an operation wrote to a second document and kept the write when the batch on the first rolled back. No durable bypass of the workspace pipeline was found. Fix: one line, put `topologyId: tid` after the spread.
+
+**SEC-1115-23. The public snapshot rate limiter.** `worker/default-handler.ts:314-352,362`; `src/mcp/rate-limit.ts:245-262`. Confirmed (pass): rotating addresses within one IPv6 /64 never reached the limit; each fresh address causes a KV write; the counter falls back to a client-supplied `X-Forwarded-For`; an id of 600 characters returns 500. Share ids are 48 random bits, so enumeration stays impractical. Fix: key on the /64, drop the fallback, validate the id as 12 hex characters before KV.
+
+**SEC-1115-24. Response headers.** `worker/default-handler.ts:270-296`. The CSP has no `form-action` (used in SEC-1115-02); there is no HSTS or `Permissions-Policy`; `/mcp`, `/token` and `/register` responses come from the provider and carry none of the headers. Confirmed (pass) by reading.
+
+**SEC-1115-25. draw.io and Mermaid writers.** `src/export/drawio.ts:39-47,120-124,176-205`; `src/export/mermaid.ts:53-60,197`. Confirmed (pass): `meta` keys such as `dojoType` or `xmlns` and characters such as U+FFFE or a control character in an id produce XML that `xmllint` rejects; an `imageHref` of `data:image/png;base64,AAAA;link=…;shape=…` adds style keys to the cell; the tooltip is not HTML-escaped; Mermaid labels keep `<…>` and `%%{init}%%`. What draw.io and Mermaid do with these is inferred. Visio, PowerPoint, the cable schedule and the flipbook shell were sound.
+
+**SEC-1115-26. MCP legacy-studio import skips `parseDoc`.** July M13 residual. `src/mcp/tools.ts:907-913`. Confirmed (pass): hostile colours and a control character were stored verbatim; the engine escaped them at render. Also `gated()` in `src/import/open.ts:26-33` returns the unvalidated document if `parseDoc` returns null (not reachable today). Fix: route through `store.import`; fail closed.
+
+**SEC-1115-27. EdgeConnect client.** Code review only; `LIVE_DATA_ENABLED` is off and no Orchestrator was contacted. `src/connect/edgeconnect.ts:46-47,197-203`. The client issues six GET paths and no writes; the base URL and key come from the environment only and the key appears in no output or error. Gaps before any live use: no request timeout; redirects are followed, so `X-AUTH-TOKEN` could be sent to another origin; `https` is not enforced on `ORCH_BASE_URL`; `applianceId: ".."` normalises to a different path; flow fan-out has no concurrency cap; `LIVE_DATA_GITHUB_IDS` unset means every signed-in user (documented). Fix: `redirect: 'error'`, `AbortSignal.timeout`, validate `applianceId`, require `https`.
+
+**SEC-1115-28. Checkpoint restore and error text.** `worker/document.ts:1035-1050`; `worker/workspace-api.ts:210-214`; `worker/profile-api.ts:129-133`; `worker/admin-api.ts:158-161`. Confirmed (pass): restoring a checkpoint whose difference exceeds the store's value limit returns 400 with the raw `SQLITE_TOOBIG` text; the transaction rolls back, so nothing is corrupted, but the checkpoint cannot be restored. Storage and runtime messages are returned to clients generally.
+
+**SEC-1115-29. CI hygiene.** July L2 is open: all six workflows pin first-party actions by tag, two of them in the job that holds the Cloudflare token. There is no Dependabot, Renovate or `npm audit` step. `.gitignore` has no `.dev.vars`, `.env` or `.wrangler/` entry (nothing of the kind is committed). Confirmed (pass).
+
+**SEC-1115-30. Concurrent agent sessions.** `src/mcp/persist-store.ts`; `src/mcp/store.ts:14-17`. Confirmed (pass): two sessions editing one draft are last-writer-wins on the whole document, and a delete in one followed by an edit in the other brings the document back. Inferred: ids of the form `t<ms><counter>` can collide across isolates. By design today; a version stamp in the registry `put` would close it.
+
+**SEC-1115-31. Smaller observations (Info).**
+
+- Tool results echo document strings unmarked, and `view_topology` places the title and layer names inside a server-written sentence (`src/mcp/export-tools.ts:475-479`). This is the entry point for SEC-1115-06.
+- `logoUrl` has no scheme check (`public/vendor/topology-ds.js:3324`) and `https` images are allowed by design, so an exported SVG can carry a remote image.
+- `A["#9999999;"]` in Mermaid throws a `RangeError` out of `classifyOpenedFile`, which is documented never to throw (`src/import/mermaid.ts:83-89`).
+- A change of more than 250 operations is committed as independent, individually validated revisions; a closed tab leaves a valid but partial revision (handoff lead 7: validation holds, atomicity does not).
+- `src/render-svg/render.ts` interpolates ids and colours unescaped but has no importer.
+- `reference/legacy-studio.zip` carries an unrelated repository with a third-party tenant slug and a placeholder bearer; no real credential was found.
+- The production build is rebuilt per environment, not promoted, and dependency install scripts run in the job that holds the Cloudflare token.
+
+#### Status of earlier findings touched by this audit
+
+| Earlier finding                     | Status at `916fb14`                                                                      |
+| ----------------------------------- | ---------------------------------------------------------------------------------------- |
+| H6 (failed store write)             | Open, and wider than recorded: SEC-1115-07                                               |
+| H8 / handoff 6.1 (custom node spec) | Open, complete field list and impact in SEC-1115-02                                      |
+| M11 (`extra` overrides)             | Open: SEC-1115-19                                                                        |
+| M12 (share writes)                  | Agent tool metered; browser route unmetered; no size cap: SEC-1115-08                    |
+| M13 (imports bypass validation)     | Fixed for draw.io, Mermaid, CSV and the browser; open for MCP legacy import: SEC-1115-26 |
+| M16 / M21 (`worker/` untested)      | Addressed: Miniflare suites under `src/testing/` drive the real Worker handlers          |
+| M17 (inspector type unescaped)      | Not reproduced: the inspector builders escape document strings                           |
+| L2 (actions by tag)                 | Open: SEC-1115-29                                                                        |
+| L5 (open client registration)       | Open, and exploitable: SEC-1115-01                                                       |
+| L6 (cookie attribute injection)     | Open: SEC-1115-18                                                                        |
+| Handoff 6.4 (dependency advisories) | Triaged: SEC-1115-16                                                                     |
+| Handoff lead 13 (failed rehydrate)  | Sound: a session that starts empty cannot delete or overwrite stored documents           |
+
+M1, M2, M3, M4, M8, M22, M23, M27, L3 and L7 were not checked.
+
+#### Checked and found sound
+
+- **Sessions and API keys:** HMAC-SHA256 session cookies; `safePath` on the post-login redirect; the browser login's state nonce. API keys: 256-bit secrets stored hashed, constant-time comparison, a strict per-owner cap, revoke that never confirms another owner's key id, fail-closed on the flag, scopes applied at tool registration.
+- **Workspace isolation:** the object name is `document:<session uid>:<id>` and every call re-checks the owner (`worker/document.ts:182-184`). The uid comes from the signed cookie or the grant, never from input. Workspaces are single-owner: there are no collaborator, viewer or invite roles, so handoff lead 4 reduces to what the owner's own agent can commit, and that is held by leases checked in the object. Agents cannot grant leases, accept proposals or restore.
+- **`parseDoc` at the storage boundary:** initialise, every commit, load, checkpoint load and restore, legacy migration, fork and share publish. No path stores a workspace document without it.
+- **Admin and diagnostics:** fail-closed on the flag, the session and the numeric id. Analytics stores identity, timestamps and tool names only. Staging fault injection is inert without the staging variable and a token.
+- **Agent tools:** per-user keying from the grant only; no tool argument selects another user's registry, profile, workspace or share. Admission by name holds for all ten operations-only tools. Unknown arguments are refused. No prototype pollution through arguments, ids, CSV headers or attribute names. Generator and template counts are clamped.
+- **Markup:** the engine entry (`_safeCfg`) and every TypeScript overlay (sheet, title block, caption, legend, port pills, port table, problem badges) escape document strings. Element links are `http(s)` only. The inspector, share dialog, workspace, profile and admin panels escape what they show. The share view writes to its own autosave slot and does not touch the viewer's draft (CODE-10).
+- **Exports and imports:** Visio and PowerPoint XML were well-formed under hostile input; zip entry names never come from document values; external relationships are `http(s)` hyperlinks only; the cable schedule guards formula cells; the rasterizer fetches nothing; the XML importer rejects DTDs and caps size and depth.
+- **CI:** no `pull_request_target` or similar triggers; inputs reach shells through `env:` and are validated; releases are restricted to `main`; no secret in the tree or the visible history; no source maps or secret names in the browser bundle.
+
+#### Not covered
+
+- The real Workers runtime: value-size, CPU and memory limits, and whether one isolate serves several users' renders (decides SEC-1115-03's reach).
+- A real MCP host's sandbox for the viewer (decides SEC-1115-05's severity).
+- GitHub's prompt behaviour for an already-authorised user (SEC-1115-01), branch rulesets, environment policies, the Cloudflare token's scope, and whether `SESSION_HMAC_SECRET` is set.
+- Git history beyond the 227 commits in the audit's shallow clone.
+- Firefox and Safari; touch.
+- The editor state machine (`src/editor/editor.ts`), the fabric compiler and `worker/profile.ts` beyond its ownership checks, as security surfaces. Handoff leads 5, 6, 8, 9 and 10 are correctness and performance questions and were not audited.
+- draw.io, Office and Mermaid behaviour on the files in SEC-1115-25.
+
 ## CRITICAL (4)
 
 ### C1. Malformed page viewBox turns every node coordinate into NaN in tidy/layout/balance — persisted data destruction

@@ -33,7 +33,7 @@ import { nonAdjacentTierLinks, tierRank } from './tiers.js';
 import { BUNDLE_KINDS } from './bundles.js';
 import { hardwareShapeProblems } from './hardware.js';
 import { PORT_LABEL_MODES } from '../render/port-pills.js';
-import { registerHitBoxes } from '../render/hit-boxes.js';
+import { withDocumentHitBoxes } from '../render/hit-boxes.js';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -45,7 +45,12 @@ export interface Problem {
 }
 
 export function validateDocument(doc: TopologyDocument): Problem[] {
-  registerHitBoxes(doc.customNodes);
+  return withDocumentHitBoxes(doc.customNodes, () =>
+    validateDocumentUnscoped(doc),
+  );
+}
+
+function validateDocumentUnscoped(doc: TopologyDocument): Problem[] {
   const problems: Problem[] = [];
   const err = (where: string, message: string): void => {
     problems.push({ level: 'error', message, where });
@@ -64,6 +69,11 @@ export function validateDocument(doc: TopologyDocument): Problem[] {
     if (!spec.typeName) err(`customNodes[${i}]`, 'custom node has no typeName');
     else if (customTypes.has(spec.typeName))
       err(`customNodes[${i}]`, `duplicate custom type "${spec.typeName}"`);
+    else if (isBuiltinNodeType(spec.typeName) || isStockNodeType(spec.typeName))
+      err(
+        `customNodes[${i}]`,
+        `custom type "${spec.typeName}" reuses a built-in node type name`,
+      );
     customTypes.add(spec.typeName);
   });
   const knownNodeType = (t: string): boolean =>

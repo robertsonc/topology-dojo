@@ -5,9 +5,12 @@
  * the TypeScript mirrors (zone boxes, link attachment, footprints, pills)
  * must size the same node the same way. Stock specs are registered at
  * load; a document's custom specs are registered by every entry point that
- * has the document (render, validate, layout, tidy, inspect, the editor),
- * exactly as the engine's own global registration works — last
- * registration of a type name wins.
+ * has the document (render, validate, layout, tidy, inspect, the editor).
+ *
+ * Headless entry points register a document's types only for the length of
+ * one call (`withDocumentHitBoxes`), so nothing one document declares
+ * outlives the call that used it. The editor registers the open document's
+ * types and resets to the baseline (`resetHitBoxes`) when it loads another.
  */
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import { customHitBox } from '../nodes/render.js';
@@ -28,7 +31,8 @@ for (const spec of STOCK_NODE_SPECS) {
   designerTypes.add(spec.typeName);
 }
 
-/** Register (overwrite by type name) a document's custom node hit boxes. */
+/** Register (overwrite by type name) a document's custom node hit boxes.
+ * Outlives the call: headless callers use `withDocumentHitBoxes` instead. */
 export function registerHitBoxes(specs: readonly CustomNodeSpec[] = []): void {
   for (const spec of specs) {
     registry.set(spec.typeName, customHitBox(spec));
@@ -52,10 +56,53 @@ export function registeredHitBoxes(): ReadonlyMap<string, HitBox> {
   return registry;
 }
 
-/** The hit boxes for a document: the registry with its custom types applied. */
+/** The hit boxes for a document: the registry with its custom types applied
+ * (a copy when it has any; the registry itself is left as it was). */
 export function hitBoxesFor(
   customNodes: readonly CustomNodeSpec[] | undefined,
 ): ReadonlyMap<string, HitBox> {
-  if (customNodes?.length) registerHitBoxes(customNodes);
-  return registry;
+  if (!customNodes?.length) return registry;
+  const out = new Map(registry);
+  for (const spec of customNodes) out.set(spec.typeName, customHitBox(spec));
+  return out;
+}
+
+/** Undo every registration made since the snapshot was taken. */
+export type RestoreHitBoxes = () => void;
+
+/** Snapshot the registry; the returned function puts it back exactly. */
+export function snapshotHitBoxes(): RestoreHitBoxes {
+  const boxes = new Map(registry);
+  const designer = new Set(designerTypes);
+  return () => {
+    registry.clear();
+    for (const [k, v] of boxes) registry.set(k, v);
+    designerTypes.clear();
+    for (const t of designer) designerTypes.add(t);
+  };
+}
+
+/**
+ * Run `fn` with a document's custom hit boxes registered, then restore the
+ * registry to what it was before, so one document's types never change how
+ * another is measured. Synchronous by design: nothing can interleave.
+ */
+export function withDocumentHitBoxes<T>(
+  customNodes: readonly CustomNodeSpec[] | undefined,
+  fn: () => T,
+): T {
+  const restore = snapshotHitBoxes();
+  try {
+    registerHitBoxes(customNodes);
+    return fn();
+  } finally {
+    restore();
+  }
+}
+
+/** The registry as loaded: the stock pack only (the editor, on opening a
+ * different document). */
+const BASELINE = snapshotHitBoxes();
+export function resetHitBoxes(): void {
+  BASELINE();
 }

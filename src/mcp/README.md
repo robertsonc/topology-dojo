@@ -40,9 +40,14 @@ same engine-agnostic core, with the vendored engine bundled instead of
 
 Auth is **OAuth 2.1** (Cloudflare's `workers-oauth-provider`) with **GitHub** as
 the upstream identity provider. The whole Worker is wrapped in the provider;
-`/mcp` is the protected API route. A client (e.g. Claude) is redirected through a
-single GitHub authorize click — no token to paste — and the authenticated GitHub
-user is exposed to the agent as `this.props`. The provider also serves OAuth
+`/mcp` is the protected API route. A client (e.g. Claude) is sent to a
+Topology Dojo consent page that names the client and where it redirects, then
+through GitHub sign-in — no token to paste — and the authenticated GitHub user
+is exposed to the agent as `this.props`. Approval is remembered per GitHub user
+and client; `/connections` lists the apps a user has connected and revokes
+them. Only the S256 PKCE method is accepted. Grants issued before the
+consent page existed are refused at `/mcp` (`invalid_token`), so those clients
+sign in again once. The provider also serves OAuth
 discovery (`/.well-known/oauth-authorization-server`) and dynamic client
 registration (`/register`), so compatible clients configure themselves.
 

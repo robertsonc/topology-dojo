@@ -20,7 +20,7 @@ import {
   LAYOUT_RULES,
 } from './layout.js';
 import type { NodeConfig } from '../vendor/topology-ds.js';
-import { registerHitBoxes } from '../render/hit-boxes.js';
+import { withDocumentHitBoxes } from '../render/hit-boxes.js';
 
 export interface TidyOptions {
   /** Snap node coordinates onto the grid first (default true). */
@@ -329,8 +329,16 @@ export function balanceLayout(
   doc: TopologyDocument,
   opts: BalanceOptions = {},
 ): TopologyDocument {
+  return withDocumentHitBoxes(doc.customNodes, () =>
+    balanceLayoutUnscoped(doc, opts),
+  );
+}
+
+function balanceLayoutUnscoped(
+  doc: TopologyDocument,
+  opts: BalanceOptions = {},
+): TopologyDocument {
   const next = structuredClone(doc);
-  registerHitBoxes(next.customNodes);
   for (const page of next.pages) {
     tidyPage(page);
     balancePage(page, opts);
@@ -368,7 +376,16 @@ export function tidyDocument(
   opts: TidyOptions = {},
   scope: PageScope = {},
 ): TidyResult {
-  registerHitBoxes(doc.customNodes);
+  return withDocumentHitBoxes(doc.customNodes, () =>
+    tidyDocumentUnscoped(doc, opts, scope),
+  );
+}
+
+function tidyDocumentUnscoped(
+  doc: TopologyDocument,
+  opts: TidyOptions = {},
+  scope: PageScope = {},
+): TidyResult {
   const pages = scopedPages(doc, scope);
   const before = analyzeLayout(doc).length;
   let movedNodes = 0;
@@ -398,7 +415,16 @@ export function balanceDocument(
   opts: BalanceOptions = {},
   scope: PageScope = {},
 ): TidyResult {
-  registerHitBoxes(doc.customNodes);
+  return withDocumentHitBoxes(doc.customNodes, () =>
+    balanceDocumentUnscoped(doc, opts, scope),
+  );
+}
+
+function balanceDocumentUnscoped(
+  doc: TopologyDocument,
+  opts: BalanceOptions = {},
+  scope: PageScope = {},
+): TidyResult {
   const pages = scopedPages(doc, scope);
   const before = analyzeLayout(doc).length;
   let movedNodes = 0;

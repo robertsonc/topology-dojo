@@ -158,7 +158,7 @@ describe('stock cloud-native node types', () => {
     expect(pp.leds).toBe(false);
   });
 
-  it('a document custom type of the same name still overrides a stock one', () => {
+  it('a document custom type may not reuse a stock type name', () => {
     const doc = createDocument('Shadow')
       .page()
       .node({ id: 'f', type: 'file', x: 200, y: 200, label: 'Mine' })
@@ -168,7 +168,7 @@ describe('stock cloud-native node types', () => {
       colorStroke: '#123456',
     });
     const errors = validateDocument(doc).filter((p) => p.level === 'error');
-    expect(errors).toEqual([]);
+    expect(errors.map((p) => p.where)).toEqual(['customNodes[0]']);
   });
 
   it('generic-pack nodes validate and render without per-document definitions', () => {

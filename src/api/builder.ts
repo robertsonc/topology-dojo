@@ -19,6 +19,7 @@ import type {
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
 import { sanitizeCustomNode } from '../nodes/sanitize.js';
+import { isReservedNodeTypeName } from '../nodes/reserved.js';
 import type { LayerDef, LayerKind } from './layers.js';
 import { validateDocument, type Problem } from './validate.js';
 
@@ -200,7 +201,8 @@ export function defineLayer(
 /**
  * Add or replace a custom node type (by typeName). The spec is stored as the
  * parse gate would keep it (`sanitizeCustomNode`); one with no usable type
- * name is refused.
+ * name is refused, and so is a built-in or stock type's name (the custom
+ * type would replace its art).
  */
 export function defineNodeType(
   doc: TopologyDocument,
@@ -210,6 +212,10 @@ export function defineNodeType(
   if (!spec)
     throw new Error(
       'custom node type needs a typeName of letters, digits, _ : . or -',
+    );
+  if (isReservedNodeTypeName(spec.typeName))
+    throw new Error(
+      `"${spec.typeName}" is a built-in node type; choose another typeName`,
     );
   const i = doc.customNodes.findIndex((c) => c.typeName === spec.typeName);
   if (i >= 0) doc.customNodes[i] = spec;

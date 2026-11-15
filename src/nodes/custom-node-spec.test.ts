@@ -16,6 +16,8 @@ import { renderDocumentToSVG } from '../server/render.js';
 import { defaultSpec, type CustomNodeSpec } from './spec.js';
 import { renderCustomNode } from './render.js';
 import { STOCK_NODE_SPECS } from './stock.js';
+import { sanitizeCustomNode } from './sanitize.js';
+import { isReservedNodeTypeName } from './reserved.js';
 
 const KEYS = Object.keys(defaultSpec()).sort();
 
@@ -129,8 +131,14 @@ describe('custom node specs are rebuilt from the fields the designer makes', () 
       ).customNodes,
     ];
     expect(made.length).toBeGreaterThan(STOCK_NODE_SPECS.length + 1);
-    for (const spec of made)
-      expect(parsedSpec({ ...spec }), spec.typeName).toEqual(spec);
+    for (const spec of made) {
+      // The field allowlist keeps every product spec as it is.
+      expect(sanitizeCustomNode({ ...spec }), spec.typeName).toEqual(spec);
+      // Through the parse gate too, except stock specs: their names are
+      // reserved, so a document never carries them as its own custom types.
+      if (!isReservedNodeTypeName(spec.typeName))
+        expect(parsedSpec({ ...spec }), spec.typeName).toEqual(spec);
+    }
     const sample = sampleDocument();
     expect(
       JSON.parse(serializeDoc(parseDoc(serializeDoc(sample))!)).customNodes,

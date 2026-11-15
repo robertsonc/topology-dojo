@@ -27,7 +27,7 @@ import {
   type TierDef,
 } from './tiers.js';
 import { portTableReserve } from '../render/port-table.js';
-import { registerHitBoxes } from '../render/hit-boxes.js';
+import { withDocumentHitBoxes } from '../render/hit-boxes.js';
 import { pillBands, type PillBand } from '../render/port-pills.js';
 
 export type LayoutAlgorithm =
@@ -710,8 +710,17 @@ export function layoutDocument(
   opts: AutoLayoutOptions,
   scope: PageScope = {},
 ): AutoLayoutResult {
+  return withDocumentHitBoxes(doc.customNodes, () =>
+    layoutDocumentUnscoped(doc, opts, scope),
+  );
+}
+
+function layoutDocumentUnscoped(
+  doc: TopologyDocument,
+  opts: AutoLayoutOptions,
+  scope: PageScope = {},
+): AutoLayoutResult {
   let movedNodes = 0;
-  registerHitBoxes(doc.customNodes);
   for (const page of scopedPages(doc, scope)) {
     let o = opts;
     if (opts.algorithm === 'tiered') {

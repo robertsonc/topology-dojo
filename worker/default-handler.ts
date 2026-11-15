@@ -2,17 +2,18 @@
  * The OAuthProvider's "default handler": everything that isn't the protected
  * MCP API route or the provider's own token/registration endpoints. That is:
  *
- *   GET /authorize          → start GitHub sign-in for an MCP client
+ *   GET|POST /authorize     → our consent page for an MCP client, then GitHub
  *   GET /callback           → GitHub redirect back; issue the MCP grant
+ *   /connections, /api/connections → list / revoke the user's MCP grants
  *   GET /api/topology/:id    → a published share snapshot (public, from KV)
  *   DELETE /api/topology/:id → owner-only revoke of that snapshot
  *   /v/:id and everything else → the static SPA (env.ASSETS)
  *
- * GitHub is the upstream identity provider. We deliberately skip our own consent
- * screen (GitHub already shows one) so connecting is a single authorize click.
+ * GitHub is the upstream identity provider. GitHub's own screen only covers
+ * our GitHub app, not which MCP client receives the grant, so the MCP flow
+ * shows its own consent page first (`worker/mcp-authorize.ts`).
  */
 import { isCatalogAssetPath } from '../src/catalog/loader.js';
-import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
 import {
   analyticsEnabled,
   profilesEnabled,
@@ -41,6 +42,12 @@ import {
   registryApiKeyIndex,
 } from './api-keys.js';
 import { apiKeysPage, apiKeysScript } from './api-keys-page.js';
+import {
+  handleAuthorize,
+  handleConnectionsApi,
+  handleMcpCallback,
+} from './mcp-authorize.js';
+import { connectionsPage, connectionsScript } from './connections-page.js';
 import { parseDoc } from '../src/pages/persist.js';
 import {
   SNAPSHOT_GET_LIMIT,
@@ -294,17 +301,6 @@ function withSecurityHeaders(resp: Response): Response {
   });
 }
 
-/** Minimal shapes of the GitHub responses we read. */
-interface GitHubToken {
-  access_token?: string;
-  error?: string;
-}
-interface GitHubUser {
-  id: number;
-  login: string;
-  name: string | null;
-}
-
 /**
  * Per-IP quota on public snapshot GETs. Uses TOPOLOGY_KV (already on this
  * path) with a short-TTL counter — no new Durable Object. Fail-open if the
@@ -477,86 +473,6 @@ async function handleShareApi(
   });
 }
 
-/** Step 1: parse the MCP client's auth request and bounce to GitHub. */
-async function handleAuthorize(
-  request: Request,
-  env: WorkerEnv,
-): Promise<Response> {
-  const oauthReqInfo = await env.OAUTH_PROVIDER.parseAuthRequest(request);
-  if (!oauthReqInfo.clientId) {
-    return new Response('Invalid OAuth request\n', { status: 400 });
-  }
-  const redirectUri = new URL('/callback', request.url).href;
-  const gh = new URL('https://github.com/login/oauth/authorize');
-  gh.searchParams.set('client_id', env.GITHUB_CLIENT_ID);
-  gh.searchParams.set('redirect_uri', redirectUri);
-  gh.searchParams.set('scope', 'read:user');
-  // Round-trip the MCP auth request through GitHub's state parameter.
-  gh.searchParams.set('state', btoa(JSON.stringify(oauthReqInfo)));
-  return Response.redirect(gh.href, 302);
-}
-
-/** Step 2: GitHub redirects back; exchange the code and issue the MCP grant. */
-async function handleCallback(
-  request: Request,
-  env: WorkerEnv,
-): Promise<Response> {
-  const url = new URL(request.url);
-  const code = url.searchParams.get('code');
-  const state = url.searchParams.get('state');
-  if (!code || !state) {
-    return new Response('Missing code/state\n', { status: 400 });
-  }
-  let oauthReqInfo: AuthRequest;
-  try {
-    oauthReqInfo = JSON.parse(atob(state)) as AuthRequest;
-  } catch {
-    return new Response('Bad state\n', { status: 400 });
-  }
-  if (!oauthReqInfo.clientId) {
-    return new Response('Bad state\n', { status: 400 });
-  }
-
-  // Exchange the code for a GitHub access token.
-  const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
-    method: 'POST',
-    headers: { accept: 'application/json', 'content-type': 'application/json' },
-    body: JSON.stringify({
-      client_id: env.GITHUB_CLIENT_ID,
-      client_secret: env.GITHUB_CLIENT_SECRET,
-      code,
-      redirect_uri: new URL('/callback', request.url).href,
-    }),
-  });
-  const token = (await tokenRes.json()) as GitHubToken;
-  if (!token.access_token) {
-    return new Response('GitHub authorization failed\n', { status: 401 });
-  }
-
-  // Identify the user.
-  const userRes = await fetch('https://api.github.com/user', {
-    headers: {
-      authorization: `Bearer ${token.access_token}`,
-      accept: 'application/vnd.github+json',
-      'user-agent': 'topology-dojo',
-    },
-  });
-  if (!userRes.ok) {
-    return new Response('Could not read GitHub profile\n', { status: 401 });
-  }
-  const user = (await userRes.json()) as GitHubUser;
-
-  // Issue the MCP grant; `props` becomes `this.props` in the MCP agent.
-  const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
-    request: oauthReqInfo,
-    userId: String(user.id),
-    metadata: { label: user.login },
-    scope: oauthReqInfo.scope,
-    props: { id: user.id, login: user.login, name: user.name },
-  });
-  return Response.redirect(redirectTo, 302);
-}
-
 export const defaultHandler = {
   async fetch(
     request: Request,
@@ -622,6 +538,23 @@ async function route(
     return apiKeysPage(user, apiKeysEnabled(env));
   }
   if (pathname === '/keys.js') return apiKeysScript();
+  // The user's MCP grants (apps connected through /authorize).
+  if (pathname === '/connections') {
+    const user = await currentUser(request, env);
+    if (!user)
+      return Response.redirect(
+        new URL('/login?go=%2Fconnections', url).href,
+        302,
+      );
+    return connectionsPage(user);
+  }
+  if (pathname === '/connections.js') return connectionsScript();
+  if (
+    pathname === '/api/connections' ||
+    pathname.startsWith('/api/connections/')
+  ) {
+    return handleConnectionsApi(request, env);
+  }
   if (pathname === '/api/keys' || pathname.startsWith('/api/keys/')) {
     if (!apiKeysEnabled(env)) return apiKeysDisabledResponse();
     return handleApiKeysApi(request, env, (uid) =>
@@ -639,7 +572,7 @@ async function route(
   if (pathname === '/callback') {
     return isWebCallback(url.searchParams.get('state'))
       ? completeWebLogin(request, env, ctx)
-      : handleCallback(request, env);
+      : handleMcpCallback(request, env);
   }
 
   // Public share snapshot API (backs the read-only /v/:id view). GET is

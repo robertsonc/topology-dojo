@@ -240,6 +240,7 @@ function parsePalette(raw: unknown): BrandPalette | undefined {
   };
 }
 import type { CustomNodeSpec } from '../nodes/spec.js';
+import { isReservedNodeTypeName } from '../nodes/reserved.js';
 import type { LayerDef } from '../api/layers.js';
 
 const KEY = 'topology-dojo:doc';
@@ -376,7 +377,13 @@ export function parseDoc(input: unknown): TopologyDocument | null {
   const customNodes = Array.isArray(d.customNodes)
     ? (d.customNodes as unknown[])
         .map(sanitizeCustomNode)
-        .filter((s): s is CustomNodeSpec => s !== null)
+        // A custom type may not take a built-in or stock type's name (it
+        // would replace that type's art): such an entry is dropped, and its
+        // nodes draw as the built-in type of that name.
+        .filter(
+          (s): s is CustomNodeSpec =>
+            s !== null && !isReservedNodeTypeName(s.typeName),
+        )
     : [];
   // Layers: keep only well-formed entries (a string id); drop the rest.
   const layers = Array.isArray(d.layers)
