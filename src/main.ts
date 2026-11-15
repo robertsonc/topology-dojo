@@ -81,6 +81,7 @@ import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import { STOCK_NODE_SPECS } from './nodes/stock.js';
 import { registerBackdrops } from './render/backdrops.js';
 import { openNodeDesigner } from './nodes/designer.js';
+import { sanitizeCustomNode } from './nodes/sanitize.js';
 import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
@@ -1194,12 +1195,9 @@ if (shareMatch) {
       alert(err instanceof Error ? err.message : 'Could not load shared link.');
     }
   })();
-} else {
-  // A tab closed (or refreshed) while viewing a shared copy resumes it —
-  // edits made to the copy survive, and the local document stays parked.
-  const sharedResume = loadLocal('shared');
-  if (sharedResume) loadDoc(sharedResume, false, 'shared');
 }
+// Not on a share link: a shared copy left open resumes at the end of start-up
+// (see the bottom of this module).
 
 /* File actions: new / save (download) / open (upload). */
 app.querySelector('#fNew')?.addEventListener('click', () => {
@@ -4182,7 +4180,10 @@ function designNode(initial: CustomNodeSpec | null): void {
 }
 
 /** Add or replace a custom node type, re-register it, and refresh the UI. */
-function upsertCustomNode(spec: CustomNodeSpec): void {
+function upsertCustomNode(designed: CustomNodeSpec): void {
+  // Stored as the parse gate would keep it, like every other way in.
+  const spec = sanitizeCustomNode(designed);
+  if (!spec) return;
   // The designer refuses these names; this keeps the rule for any other
   // caller, since a built-in type can not be got back once it is shadowed.
   if (getNodeType(spec.typeName)) return;
@@ -6322,3 +6323,13 @@ renderInspector();
 inspectorReady = true;
 renderStatus();
 renderMinimap();
+
+// A tab closed (or refreshed) while viewing a shared copy resumes it — edits
+// made to the copy survive, and the local document stays parked. This runs
+// last, once the editor is fully built: `loadDoc` reaches the palette, the
+// preview cache and the inspector, which are set up further down than the
+// share-link check above.
+if (!shareMatch) {
+  const sharedResume = loadLocal('shared');
+  if (sharedResume) loadDoc(sharedResume, false, 'shared');
+}

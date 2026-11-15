@@ -15,6 +15,8 @@ import {
   type FieldSpec,
 } from '../api/catalog.js';
 import type { TopologyDocument } from '../pages/model.js';
+import { SHAPE_KEYS } from '../nodes/data.js';
+import { defaultSpec } from '../nodes/spec.js';
 
 /** Closes an attribute, opens an element, and reopens an attribute. */
 const payload = (tag: string): string =>
@@ -304,6 +306,55 @@ describe('a document cannot inject markup through the renderer', () => {
       svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="'),
     ).toBe(true);
   });
+});
+
+describe('a custom node spec cannot inject markup', () => {
+  // Every embellishment on, so every field reaches a sink.
+  const base = (shape: string): El => ({
+    ...defaultSpec(),
+    typeName: 'probe',
+    shape,
+    icon: 'shield',
+    highlight: true,
+    innerRing: true,
+    pattern: true,
+    patternType: 'dots',
+    leds: true,
+    badge: true,
+    antenna: true,
+    ports: true,
+  });
+  const docWith = (spec: El): TopologyDocument => {
+    const doc = page({
+      nodes: [
+        { id: 'A', type: 'probe', x: 200, y: 300, label: 'A' },
+        { id: 'B', type: 'router', x: 600, y: 300, label: 'B' },
+      ],
+    });
+    doc.customNodes = [spec as never];
+    return doc;
+  };
+  const payloads = (tag: string): [string, unknown][] => [
+    ['string', payload(tag)],
+    ['array', [payload(tag)]],
+  ];
+
+  it('holds for every spec field, on every shape, as a string or an array', () => {
+    const leaks: string[] = [];
+    for (const shape of SHAPE_KEYS)
+      for (const key of Object.keys(defaultSpec()))
+        for (const [kind, value] of payloads(`${shape}.${key}`)) {
+          const raw = docWith({ ...base(shape), [key]: value });
+          const name = `${shape}.${key} (${kind})`;
+          for (const hit of injected(renderDocumentToSVG(structuredClone(raw))))
+            leaks.push(`unparsed ${name}: ${hit}`);
+          const parsed = parseDoc(JSON.stringify(raw));
+          if (parsed)
+            for (const hit of injected(renderDocumentToSVG(parsed)))
+              leaks.push(`parsed ${name}: ${hit}`);
+        }
+    expect(leaks).toEqual([]);
+  }, 120_000);
 });
 
 describe('free text is drawn as the text that was typed', () => {

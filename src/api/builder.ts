@@ -18,6 +18,7 @@ import type {
   ZoneConfig,
 } from '../vendor/topology-ds.js';
 import type { CustomNodeSpec } from '../nodes/spec.js';
+import { sanitizeCustomNode } from '../nodes/sanitize.js';
 import type { LayerDef, LayerKind } from './layers.js';
 import { validateDocument, type Problem } from './validate.js';
 
@@ -196,11 +197,20 @@ export function defineLayer(
   return def;
 }
 
-/** Add or replace a custom node type (by typeName). */
+/**
+ * Add or replace a custom node type (by typeName). The spec is stored as the
+ * parse gate would keep it (`sanitizeCustomNode`); one with no usable type
+ * name is refused.
+ */
 export function defineNodeType(
   doc: TopologyDocument,
-  spec: CustomNodeSpec,
+  input: CustomNodeSpec,
 ): CustomNodeSpec {
+  const spec = sanitizeCustomNode(input);
+  if (!spec)
+    throw new Error(
+      'custom node type needs a typeName of letters, digits, _ : . or -',
+    );
   const i = doc.customNodes.findIndex((c) => c.typeName === spec.typeName);
   if (i >= 0) doc.customNodes[i] = spec;
   else doc.customNodes.push(spec);

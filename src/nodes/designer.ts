@@ -12,7 +12,12 @@ import {
   SWATCHES,
   shapeGeom,
 } from './data.js';
-import { defaultSpec, type CustomNodeSpec } from './spec.js';
+import {
+  CUSTOM_NODE_BADGE_MAX,
+  DESIGNER_RANGES,
+  defaultSpec,
+  type CustomNodeSpec,
+} from './spec.js';
 import { renderCustomNode } from './render.js';
 import { nodeSpecToCode } from './codegen.js';
 import { engineDefs } from '../vendor/topology-ds.js';
@@ -44,6 +49,17 @@ function esc(s: string): string {
   return String(s).replace(/[<>&"]/g, (c) =>
     c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '&' ? '&amp;' : '&quot;',
   );
+}
+
+/** A range slider for a numeric spec field, the value escaped like every
+ * other value written into this dialog. */
+function slider(
+  key: keyof typeof DESIGNER_RANGES,
+  step: number,
+  value: unknown,
+): string {
+  const [min, max] = DESIGNER_RANGES[key];
+  return `<input type="range" min="${min}" max="${max}" step="${step}" data-num="${key}" value="${esc(String(value))}"/>`;
 }
 
 function shapeThumb(shape: string): string {
@@ -136,9 +152,9 @@ export function openNodeDesigner(
           <label class="nd-row">Stroke</label>${swatchRow('colorStroke', spec.colorStroke)}
           <label class="nd-row">Fill</label>${swatchRow('colorFill', spec.colorFill)}
           <div class="nd-h">Dimensions</div>
-          <label class="nd-row">Size <input type="range" min="12" max="48" step="1" data-num="size" value="${spec.size}"/></label>
-          <label class="nd-row">Stroke width <input type="range" min="0.5" max="4" step="0.1" data-num="strokeW" value="${spec.strokeW}"/></label>
-          <label class="nd-row">Corner radius <input type="range" min="0" max="20" step="1" data-num="radius" value="${spec.radius}"/></label>
+          <label class="nd-row">Size ${slider('size', 1, spec.size)}</label>
+          <label class="nd-row">Stroke width ${slider('strokeW', 0.1, spec.strokeW)}</label>
+          <label class="nd-row">Corner radius ${slider('radius', 1, spec.radius)}</label>
           <div class="nd-h">Embellishments</div>
           ${toggle('glow', 'Glow')}
           ${toggle('highlight', 'Highlight bar')}
@@ -150,18 +166,18 @@ export function openNodeDesigner(
           </div>
           ${toggle('leds', 'Status LEDs')}
           <div class="nd-sub" data-sub="leds" ${spec.leds ? '' : 'hidden'}>
-            <label class="nd-row">Count <input type="range" min="1" max="4" step="1" data-num="ledCount" value="${spec.ledCount}"/></label>
+            <label class="nd-row">Count ${slider('ledCount', 1, spec.ledCount)}</label>
             ${swatchRow('ledColor', spec.ledColor)}
             <select data-sel="ledPos">${['bottom', 'top', 'left', 'right'].map((p) => `<option value="${p}" ${p === spec.ledPos ? 'selected' : ''}>${p}</option>`).join('')}</select>
           </div>
           ${toggle('badge', 'Badge')}
           <div class="nd-sub" data-sub="badge" ${spec.badge ? '' : 'hidden'}>
-            <input type="text" data-text="badgeText" value="${esc(spec.badgeText)}" placeholder="badge text"/>
+            <input type="text" data-text="badgeText" maxlength="${CUSTOM_NODE_BADGE_MAX}" value="${esc(spec.badgeText)}" placeholder="badge text"/>
             ${swatchRow('badgeColor', spec.badgeColor)}
           </div>
           ${toggle('ports', 'Ports')}
           <div class="nd-sub" data-sub="ports" ${spec.ports ? '' : 'hidden'}>
-            <label class="nd-row">Count <input type="range" min="2" max="8" step="1" data-num="portCount" value="${spec.portCount}"/></label>
+            <label class="nd-row">Count ${slider('portCount', 1, spec.portCount)}</label>
             <select data-sel="portPos">${['bottom', 'top'].map((p) => `<option value="${p}" ${p === spec.portPos ? 'selected' : ''}>${p}</option>`).join('')}</select>
           </div>
         </div>

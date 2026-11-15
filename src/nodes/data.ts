@@ -236,7 +236,11 @@ export function shapeGeom(
   s: number,
   rx: number,
 ): ShapeGeom {
-  const hs = s;
+  // Every value lands in an attribute: coerce, so a string can never be one.
+  x = Number(x);
+  y = Number(y);
+  rx = Number(rx);
+  const hs = Number(s);
   switch (shape) {
     case 'square':
       return {
