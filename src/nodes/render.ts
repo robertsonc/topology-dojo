@@ -9,6 +9,13 @@
  */
 import { glowForColor, patternDef, shapeGeom } from './data.js';
 import type { CustomNodeSpec } from './spec.js';
+import { isIconKey, specNumber } from './sanitize.js';
+
+/** A finite number, else `fallback` (the spec skipped the parse gate). */
+function num(v: unknown, fallback: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 function esc(s: string): string {
   return String(s).replace(/[<>&"]/g, (c) =>
@@ -28,9 +35,11 @@ export function renderCustomNode(
   // renders an in-progress spec straight from the inputs, so escape here too.
   const c = esc(cfg.color || spec.colorStroke);
   const f = esc(spec.colorFill);
-  const sz = spec.size;
-  const sw = spec.strokeW;
-  const rx = spec.radius;
+  // Numbers only, whatever the spec holds: these reach attributes unescaped.
+  // The live designer preview renders an unsaved spec, so check here too.
+  const sz = num(spec.size, 24);
+  const sw = num(spec.strokeW, 1.2);
+  const rx = num(spec.radius, 3);
   const b = shapeGeom(spec.shape, 0, 0, sz, rx); // half-bounds at origin
   let s = '';
 
@@ -60,7 +69,7 @@ export function renderCustomNode(
   }
 
   // 5. Icon overlay
-  if (spec.icon) {
+  if (isIconKey(spec.icon)) {
     const icon = ICON_PATHS[spec.icon];
     if (icon) {
       const sc = round3(sz * 0.04);
@@ -71,7 +80,8 @@ export function renderCustomNode(
 
   // 6. Status LEDs
   if (spec.leds) {
-    const cnt = spec.ledCount;
+    // Loop counts are bounded to the range a document may hold.
+    const cnt = specNumber('ledCount', spec.ledCount, 0);
     const spread = (cnt - 1) * 4;
     for (let i = 0; i < cnt; i++) {
       const off = -spread / 2 + i * 4;
@@ -96,7 +106,7 @@ export function renderCustomNode(
 
   // 7. Badge
   if (spec.badge && spec.badgeText) {
-    const tw = spec.badgeText.length * 3 + 6;
+    const tw = String(spec.badgeText).length * 3 + 6;
     s += `<rect x="${x + round1(b.bx - tw / 2 + 2)}" y="${y - round1(b.by + 4)}" width="${tw}" height="10" rx="5" fill="${esc(spec.badgeColor)}" opacity=".9"/>`;
     s += `<text data-tds-role="wash" x="${x + round1(b.bx + 2)}" y="${y - round1(b.by - 3)}" text-anchor="middle" fill="#fff" font-size="6" font-family="'JetBrains Mono',monospace" font-weight="600">${esc(spec.badgeText)}</text>`;
   }
@@ -113,7 +123,7 @@ export function renderCustomNode(
 
   // 9. Ports
   if (spec.ports) {
-    const cnt = spec.portCount;
+    const cnt = specNumber('portCount', spec.portCount, 0);
     const pw = 3;
     const ph = 2;
     const totalW = cnt * (pw + 1.5) - 1.5;
@@ -132,7 +142,13 @@ export function renderCustomNode(
 
 /** hitBox half-extents for a spec (used by the engine for routing/collision). */
 export function customHitBox(spec: CustomNodeSpec): { rx: number; ry: number } {
-  const b = shapeGeom(spec.shape, 0, 0, spec.size, spec.radius);
+  const b = shapeGeom(
+    spec.shape,
+    0,
+    0,
+    num(spec.size, 24),
+    num(spec.radius, 3),
+  );
   return { rx: Math.round(b.bx), ry: Math.round(b.by) };
 }
 

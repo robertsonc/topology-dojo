@@ -242,3 +242,86 @@ test('an imported CSV cannot inject markup', async ({ page }) => {
   await expect(page.locator('#page-canvas [data-tds-node]')).toHaveCount(2);
   await expectNoInjection(page, 'csv import');
 });
+
+/** A custom node type whose numbers, settings and text are all payloads. */
+function hostileCustomTypeDocument(): unknown {
+  return {
+    title: 'custom',
+    customNodes: [
+      {
+        typeName: 'probe',
+        shape: 'square',
+        icon: 'shield',
+        colorStroke: '#01a982',
+        colorFill: '#292d3a',
+        size: live('size'),
+        strokeW: inert('strokeW'),
+        radius: live('radius'),
+        glow: true,
+        highlight: true,
+        innerRing: true,
+        pattern: true,
+        patternType: inert('patternType'),
+        leds: true,
+        ledCount: inert('ledCount'),
+        ledColor: inert('ledColor'),
+        ledPos: inert('ledPos'),
+        badge: true,
+        badgeText: inert('badgeText'),
+        badgeColor: inert('badgeColor'),
+        antenna: true,
+        ports: true,
+        portCount: [inert('portCount')],
+        portPos: inert('portPos'),
+      },
+    ],
+    pages: [
+      {
+        id: 'p1',
+        name: 'Frame 1',
+        viewBox: '0 0 1050 700',
+        nodes: [
+          { id: 'a', type: 'probe', x: 300, y: 300, label: 'Probe' },
+          { id: 'b', type: 'router', x: 700, y: 300, label: 'Core' },
+        ],
+        links: [{ id: 'l', type: 'line', from: 'a', to: 'b' }],
+        anchors: [],
+        zones: [],
+        flowPaths: [],
+        policyMarkers: [],
+      },
+    ],
+  };
+}
+
+test('a custom node type cannot inject markup', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await bootEditor(page);
+  await page.locator('#fInput').setInputFiles({
+    name: 'custom.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(hostileCustomTypeDocument())),
+  });
+  await expect(page.locator('#page-canvas [data-tds-node]')).toHaveCount(2);
+  await expectNoInjection(page, 'canvas and palette');
+
+  // The designer writes the spec's values into its controls.
+  await page.locator('.pcustom [data-edit="probe"]').click();
+  await expect(page.locator('.nd-dialog')).toBeVisible();
+  await expectNoInjection(page, 'designer open');
+  await page.locator('#nd-cancel').click();
+
+  // The same type through a share link.
+  await page.route(
+    (url) => url.pathname === '/api/topology/probe1',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(hostileCustomTypeDocument()),
+      }),
+  );
+  await page.goto('/v/probe1');
+  await expect(page.locator('#page-canvas [data-tds-node]')).toHaveCount(2);
+  await expectNoInjection(page, 'share link');
+});

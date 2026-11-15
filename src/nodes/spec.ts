@@ -25,15 +25,46 @@ export interface CustomNodeSpec {
   leds: boolean;
   ledCount: number;
   ledColor: string;
-  ledPos: 'bottom' | 'top' | 'left' | 'right';
+  ledPos: (typeof LED_POSITIONS)[number];
   badge: boolean;
   badgeText: string;
   badgeColor: string;
   antenna: boolean;
   ports: boolean;
   portCount: number;
-  portPos: 'bottom' | 'top';
+  portPos: (typeof PORT_POSITIONS)[number];
 }
+
+/** The designer's slider bounds for the numeric fields. */
+export const DESIGNER_RANGES = {
+  size: [12, 48],
+  strokeW: [0.5, 4],
+  radius: [0, 20],
+  ledCount: [1, 4],
+  portCount: [2, 8],
+} as const satisfies Record<string, readonly [number, number]>;
+
+/**
+ * What a document may hold for the numeric fields: the designer's ranges,
+ * except where the product itself goes further through the authoring API —
+ * the shipped patch-panel art draws a 24-port row (`stock.ts`) and the
+ * reference wiring sheet a size-60, 48-port chassis
+ * (`scripts/build-wiring-sheet-fixture.ts`).
+ */
+export const CUSTOM_NODE_RANGES = {
+  ...DESIGNER_RANGES,
+  size: [12, 96],
+  portCount: [2, 48],
+} as const satisfies Record<
+  keyof typeof DESIGNER_RANGES,
+  readonly [number, number]
+>;
+
+/** The longest badge text a spec keeps. */
+export const CUSTOM_NODE_BADGE_MAX = 32;
+
+export const LED_POSITIONS = ['bottom', 'top', 'left', 'right'] as const;
+export const PORT_POSITIONS = ['bottom', 'top'] as const;
 
 export function defaultSpec(): CustomNodeSpec {
   return {
