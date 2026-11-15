@@ -26,6 +26,8 @@ import { AnalyticsLog } from './analytics.js';
 import { defaultHandler } from './default-handler.js';
 import { resolveApiKeyToken } from './api-keys.js';
 import type { WorkerEnv } from './env.js';
+import { OAUTH_PROVIDER_OPTIONS } from './oauth-options.js';
+import { onlyCurrentGrants } from './mcp-authorize.js';
 
 // Every Durable Object class must be exported from the Worker entry so the
 // runtime can construct them (MCP_OBJECT → per-session agent; TOPOLOGY_REGISTRY
@@ -44,21 +46,20 @@ export {
 // so its (generic) fetch presents the concrete required signature the provider
 // expects for an API handler.
 const mcp = TopologyMcp.serve('/mcp');
-const apiHandler = {
+// Tokens from grants issued before the consent page are refused here
+// (`onlyCurrentGrants`); API-key sessions pass through.
+const apiHandler = onlyCurrentGrants<WorkerEnv>({
   fetch: (
     request: Request,
     env: WorkerEnv,
     ctx: ExecutionContext,
   ): Promise<Response> => mcp.fetch(request, env, ctx),
-};
+});
 
 export default new OAuthProvider({
-  apiRoute: '/mcp',
+  ...OAUTH_PROVIDER_OPTIONS,
   apiHandler,
   defaultHandler,
-  authorizeEndpoint: '/authorize',
-  tokenEndpoint: '/token',
-  clientRegistrationEndpoint: '/register',
   // Bearers that are not one of the provider's own `<userId>:<grantId>:<secret>`
   // tokens are handed here. Only `tdk_…` API keys are ever accepted, and only
   // while API_KEYS_ENABLED; everything else stays an `invalid_token` 401.
