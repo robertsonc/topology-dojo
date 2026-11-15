@@ -91,6 +91,7 @@ export function apiKeysPage(user: SessionUser, enabled: boolean): Response {
 <header>
   <h1>API keys</h1>
   <span>Signed in as <b>@${login}</b></span>
+  <a href="/connections">Connected apps</a>
   <a href="/">← Editor</a>
   <a href="/logout">Sign out</a>
 </header>

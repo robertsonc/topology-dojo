@@ -529,3 +529,61 @@ export default new OAuthProvider({
     }),
 });
 `;
+
+/**
+ * SEC-1115-01: the REAL `@cloudflare/workers-oauth-provider` with the same
+ * endpoint options `worker/index.ts` uses (`worker/oauth-options.ts`) and the
+ * real default handler, so `/register`, `/authorize`, `/callback`, `/token`
+ * and `/mcp` run end to end. The two GitHub calls the callbacks make are
+ * stubbed: an upstream code `user-<id>` signs in as GitHub user `<id>`.
+ */
+export const MCP_OAUTH_FIXTURE = String.raw`
+import OAuthProvider from '@cloudflare/workers-oauth-provider';
+import { defaultHandler } from './worker/default-handler.ts';
+import { OAUTH_PROVIDER_OPTIONS } from './worker/oauth-options.ts';
+
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (url === 'https://github.com/login/oauth/access_token') {
+    const body = JSON.parse(init && init.body ? init.body : '{}');
+    const m = /^user-(\d+)$/.exec(body.code || '');
+    return Response.json(
+      m ? { access_token: 'gh-' + m[1] } : { error: 'bad_verification_code' },
+    );
+  }
+  if (url === 'https://api.github.com/user') {
+    const auth = new Headers(init && init.headers).get('authorization') || '';
+    const m = /^Bearer gh-(\d+)$/.exec(auth);
+    if (!m) return new Response('{}', { status: 401 });
+    const id = Number(m[1]);
+    return Response.json({ id, login: 'user' + id, name: 'User ' + id });
+  }
+  return realFetch(input, init);
+};
+
+const apiHandler = {
+  async fetch(request, env, ctx) {
+    return new Response(JSON.stringify({ props: ctx.props ?? null }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  },
+};
+
+const withAssets = {
+  fetch(request, env, ctx) {
+    const stubbedEnv = Object.assign({}, env, {
+      ASSETS:
+        env.ASSETS ??
+        { fetch: async () => new Response('Not Found', { status: 404 }) },
+    });
+    return defaultHandler.fetch(request, stubbedEnv, ctx);
+  },
+};
+
+export default new OAuthProvider({
+  ...OAUTH_PROVIDER_OPTIONS,
+  apiHandler,
+  defaultHandler: withAssets,
+});
+`;

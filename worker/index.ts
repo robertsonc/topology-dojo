@@ -26,6 +26,7 @@ import { AnalyticsLog } from './analytics.js';
 import { defaultHandler } from './default-handler.js';
 import { resolveApiKeyToken } from './api-keys.js';
 import type { WorkerEnv } from './env.js';
+import { OAUTH_PROVIDER_OPTIONS } from './oauth-options.js';
 
 // Every Durable Object class must be exported from the Worker entry so the
 // runtime can construct them (MCP_OBJECT → per-session agent; TOPOLOGY_REGISTRY
@@ -53,12 +54,9 @@ const apiHandler = {
 };
 
 export default new OAuthProvider({
-  apiRoute: '/mcp',
+  ...OAUTH_PROVIDER_OPTIONS,
   apiHandler,
   defaultHandler,
-  authorizeEndpoint: '/authorize',
-  tokenEndpoint: '/token',
-  clientRegistrationEndpoint: '/register',
   // Bearers that are not one of the provider's own `<userId>:<grantId>:<secret>`
   // tokens are handed here. Only `tdk_…` API keys are ever accepted, and only
   // while API_KEYS_ENABLED; everything else stays an `invalid_token` 401.
