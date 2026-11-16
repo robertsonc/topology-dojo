@@ -109,9 +109,18 @@ Configure an MCP-compatible client with:
     https://<deployment-domain>/mcp
 
 Compatible clients use the endpoint's OAuth discovery and dynamic client
-registration. The user is redirected to GitHub; there is no application token
-to paste into an ordinary client setup. Hosted MCP drafts are isolated by the
-authenticated GitHub identity.
+registration. The user first sees a Topology Dojo consent page that names the
+client and the address it redirects to. **Approve** continues to GitHub;
+**Cancel** returns an `access_denied` error to the client. The client chose its
+own name, so approve only a connection you started. When you are already signed
+in to the hosted editor, an app you approved before skips the consent page.
+There is no application token to paste into an ordinary client setup. Hosted
+MCP drafts are isolated by the authenticated GitHub identity.
+
+**/connections** (signed in) lists the apps connected to your account, newest
+first. **Disconnect** revokes an app's tokens and forgets your approval, so the
+app sees the consent page again when it reconnects. A client authorized before
+the consent page existed is refused on `/mcp` and has to sign in again once.
 
 Deployment owners setting up OAuth, staging, secrets, and Durable Objects
 should use the [MCP deployment guide](../src/mcp/README.md) and
@@ -993,6 +1002,9 @@ The vendor decides how tunnels and HA are drawn:
   hidden by default because it is dense; one bonded tunnel per appliance pair on
   the **Overlay** layer. An HA pair is two active appliances joined by an HA
   link: each circuit lands on one member and both members build tunnels.
+  With one overlay in the fabric, as in every generated fabric, the overlay
+  tunnels carry no label; the overlay name stays on each link as `overlay`
+  metadata. With several overlays each tunnel is labelled with its own.
 - **Juniper SRX** — one IPsec overlay tunnel per WAN path to each hub; there is
   no separate underlay layer. A chassis cluster is drawn as node0 and node1 with
   control and fabric links, every circuit on both nodes (reth), and tunnels
@@ -1215,8 +1227,13 @@ Designer provides a live preview and supports:
 - glow, highlight, inner ring, antenna, and pattern options;
 - LEDs, badge, and ports.
 
-Save the definition to add it to the current document's Node library. Use the
-pencil control beside a custom type to edit it. Existing nodes of that type
+Save the definition to add it to the current document's Node library. A type
+name that a built-in or stock type already uses is refused, here and by the
+agent's `define_node_type` operation. A document that arrives with one (a file,
+an import, a share link) loses that definition on open, and its nodes draw as
+the built-in type. Every definition is also checked on the way in: numbers are
+clamped to fixed ranges, a setting that is not one of its listed values takes
+its default, and fields the Designer does not have are dropped. Use the pencil control beside a custom type to edit it. Existing nodes of that type
 refresh when the definition changes. Custom definitions are part of the
 document JSON and therefore travel with JSON, workspace, share, and compatible
 render paths.
@@ -1460,6 +1477,12 @@ unacknowledged operation batch in IndexedDB. While offline:
 
 Do not clear browser site data or replace the document while work is pending.
 Download JSON as an additional backup.
+
+A change larger than one commit allows (250 operations or 512 KiB) is sent as
+consecutive commits. When the server answers and refuses the same commit three
+times, sync pauses as **sync rejected** and the workspace panel shows the
+server's message; **Sync now** or **Reload server** recovers. Only a network failure is
+shown as offline.
 
 If recovery finds local edits newer than the last confirmed server sync,
 workspace synchronization pauses:
@@ -1849,7 +1872,9 @@ deployment, `LIVE_DATA_GITHUB_IDS` can also restrict them to listed owners.
 
 For the hosted editor, sign out and retry **Sign in with GitHub**. For MCP,
 remove the stale client authorization and reconnect so OAuth discovery runs
-again. For an API key that suddenly returns 401: check it was not revoked or
+again; **/connections** can disconnect the app on the server side too. A
+`401 invalid_token` that says the authorization has been revoked means the
+grant was disconnected or predates the consent page: reconnect the client. For an API key that suddenly returns 401: check it was not revoked or
 expired on **/keys**, that the deployment still has `API_KEYS_ENABLED`, and
 that the client sends it only as an `Authorization: Bearer` header on `/mcp`;
 repeated wrong-key attempts from one address are refused for about five minutes (a best-effort brake on guessing, not an exact quota). Deployment operators should verify the GitHub OAuth callback, secrets,
