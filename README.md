@@ -24,7 +24,8 @@ GitHub.
 
 **Hosted MCP server:** add `https://topology-dojo.harnessed.cloud/mcp` to your
 MCP client as a remote (Streamable HTTP) server. Sign-in is GitHub OAuth in the
-browser; there is no key to paste. In Claude Code:
+browser, after a consent page that names the client; there is no key to paste.
+In Claude Code:
 
 ```bash
 claude mcp add --transport http topology-dojo https://topology-dojo.harnessed.cloud/mcp
@@ -129,7 +130,7 @@ src/
   api/         headless authoring: build, validate, lay out, tidy; no DOM
   render/      render core shared by Node and the Worker, plus inspect_render
   export/      PNG, PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedules
-  import/      draw.io, Mermaid and legacy-document importers
+  import/      draw.io, Mermaid, CSV and legacy-document importers
   catalog/     hardware catalog loader and interface resolution
   connect/     SD-WAN generator, and the live-data provider and flow compiler
   editor/ ui/  the canvas editor and its panels
@@ -138,6 +139,7 @@ src/
   workspace/   shared-workspace operations, conflicts and browser client
   profile/     learned authoring preferences
   share/       public snapshot links
+  stories/     scenario stories, one page per step (a library with no caller yet)
   server/      Node-side headless renderer and helpers
   vendor/      typed facade over the vendored rendering engine
   core/        the retired beat model, kept for reference only
