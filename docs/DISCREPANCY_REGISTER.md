@@ -173,3 +173,56 @@ Not corrected in this pass (outside its file scope, flagged for the owning
 docs): `CAPABILITY_MATRIX.md` still says "60 possible registrations"; the
 `worker/env.ts` and `worker/workspace-tools.ts` comments still say "the
 eight workspace MCP tools". Rows 15–16 above remain as deferred in July.
+
+## Follow-up: 2026-11-16
+
+Scheduled docs audit of `main` at `60e5812` against base `e99b012` (the
+newest SHA in the capability matrix header). Each item says how it is known:
+**Confirmed** (read in code or reproduced this run), **Observed** (reported by
+a test run, not re-checked) or **Inferred**.
+
+| #   | Document                                      | Section                             | Current claim                                                                      | Actual repository state                                                                                                                                                                                                                                                                                                                                                                          | Required correction                                                                                                                                              | Severity   | Evidence                                                                                                                                                                    |
+| --- | --------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 17  | `docs/sitrep/2026-11-15-pre-audit-handoff.md` | §2 "Agent tool list"; §7 lead 11    | "stdio lists 35 tools in 44,088 bytes (limits 35 and 44,200)"                      | Confirmed: the stdio server (`src/mcp/server.ts`) passes `catalog: nodeCatalogLoader()`, so it also lists the five hardware tools: 40 tools, 49,257 bytes, measured the way `src/mcp/token-budget.test.ts` measures. That test's "local (stdio)" case passes only `renderDocument`, so the list a stdio agent actually loads has no budget. Suspected test gap, not a doc fix; code not changed. | Dated record, not edited. Owner decision: budget the deployed stdio configuration in `token-budget.test.ts`, or state that the stdio limit excludes the catalog. | **Medium** | `src/mcp/server.ts` (`registerTopologyTools` deps); `src/mcp/hardware-tools.ts` gate on `deps.catalog`; `src/mcp/token-budget.test.ts` (`STDIO`); throw-away probe this run |
+| 18  | `docs/sitrep/2026-11-15-pre-audit-handoff.md` | §6.1, §8 first row, Appendix B (H8) | A custom node spec can inject markup; open                                         | Confirmed resolved by `fbcb0d8` (PR #324): `sanitizeCustomNode` (`src/nodes/sanitize.ts`) rebuilds every spec from an allowlist at `parseDoc`, `defineNodeType` and the Designer save. The sitrep's own probe, re-run this audit with the payload in `strokeW`, `size`, `radius`, `ledCount`, `portCount`, `badgeText`, `icon` and `shape` (circle shape only), no longer reaches the SVG.       | Dated record, not edited. `HANDOFF.md` "Known risks" now carries a dated note.                                                                                   | **High**   | `src/nodes/sanitize.ts` (`sanitizeCustomNode`); `src/pages/persist.ts` (`parseDoc`); `src/nodes/custom-node-spec.test.ts`; probe this run                                   |
+| 19  | `docs/HANDOFF.md`                             | "Key files", Auth row               | `worker/auth.ts`, `worker/landing.ts`, `public/landing/`, `public/showcase/*.webp` | Confirmed: the MCP consent flow, provider options and connected-apps page added by PR #322 live in `worker/mcp-authorize.ts`, `worker/oauth-options.ts` and `worker/connections-page.ts`, which the row does not name.                                                                                                                                                                           | Add them to the row. Not edited this run: the row is not a dated passage.                                                                                        | **Low**    | `worker/default-handler.ts` (`route`: `/authorize`, `/callback`, `/connections`, `/api/connections`)                                                                        |
+| 20  | `docs/CAPABILITY_MATRIX.md`                   | Operations, "Browser release gate"  | "nine Chromium spec files as of `e99b012`"                                         | Confirmed: `e2e/` holds 29 spec files at `60e5812`. The claim is scoped to `e99b012`, so it is dated rather than wrong.                                                                                                                                                                                                                                                                          | Refresh when the Operations section is next deep-audited.                                                                                                        | **Low**    | `ls e2e/*.spec.ts`                                                                                                                                                          |
+
+Corrected in the living docs this run (Confirmed against code):
+
+- `CAPABILITY_MATRIX.md` tool inventory said 73 definitions and 9
+  operations-only; `createTools` with every dependency defines 74, lists 64
+  hosted, and `OP_ONLY_TOOLS` has 10.
+- The MCP consent page, browser-bound flow state, S256-only PKCE, the
+  refusal of pre-consent grants, and `/connections` (PR #322) were described
+  only in `src/mcp/README.md`. Added to `USER_GUIDE.md` (hosted MCP endpoint,
+  authentication troubleshooting), `ARCHITECTURE.md` (identity, module map),
+  `README.md` and the matrix.
+- Custom node spec hardening and per-document type registration (PRs #323,
+  #324) were in no living doc. Added to `USER_GUIDE.md` (Node Designer),
+  `ARCHITECTURE.md` (untrusted documents, document model, module map) and the
+  matrix.
+- `validate_topology`'s 60-finding cap with `omitted` / `counts`
+  (`MAX_VALIDATE_PROBLEMS`, `src/mcp/tools.ts`) was undocumented; added to
+  `src/mcp/README.md`.
+- Oversized workspace syncs split into several commits, and the **sync
+  rejected** state after three refusals (`src/workspace/batch.ts`,
+  `MAX_SYNC_REFUSALS` in `src/ui/workspace-panel.ts`), added to
+  `USER_GUIDE.md`.
+- Single-overlay fabrics draw unlabelled overlay tunnels
+  (`src/connect/compile.ts`); added to the SD-WAN generator section of
+  `USER_GUIDE.md`.
+- Server-side PNG / PDF redraw the deny, redirect and NAT marker icons
+  (`UNDRAWABLE`, `src/export/raster.ts`); other emoji marker icons still
+  print as boxes. Added to `EXPORTS.md`.
+
+Resolved since an earlier follow-up:
+
+- 2026-11-13 "Not corrected": "`CAPABILITY_MATRIX.md` still says 60 possible
+  registrations". Resolved by `13a1822` (73 definitions) and corrected to 74
+  by this run.
+
+Still open from earlier follow-ups, re-checked this run: the
+`worker/env.ts` and `worker/workspace-tools.ts` comments (and the test helper
+`src/testing/worker-fixtures.ts`) still say "the eight workspace MCP tools";
+`WORKSPACE_TOOL_NAMES` has 11. Code comments, not edited.
