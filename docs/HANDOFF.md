@@ -17,6 +17,13 @@ audit is planned before any change to the core layers: start from
 which records the state at hand-over, what was and was not verified, and the
 problems known to be open._
 
+_2026-11-16 (scheduled docs audit, `main` at `60e5812`): PRs #320–#324 merged
+after that note. #322 added the MCP consent page and `/connections`; #323 and
+#324 scoped custom node types to one document and closed the custom node spec
+injection (see "Known risks"). Only this passage and the dated paragraph under
+"Known risks" were updated; the baseline, counts, initiative table and key
+files below were not re-checked._
+
 ## What Topology Dojo is
 
 A production-hosted, collaborative, AI-agent-assisted network-topology
@@ -326,6 +333,14 @@ section 6) records four problems confirmed on that date and not fixed: a
 custom node spec can inject markup (the remainder of H8), a failed write to
 the hosted agent store is reported as success (H6), documents carry no
 schema version, and the dependency advisories are not triaged.
+
+2026-11-16: the first of those is fixed by `fbcb0d8` (PR #324). Custom node
+specs are rebuilt from an allowlist on every way into a document
+(`sanitizeCustomNode`, `src/nodes/sanitize.ts`), and the pre-audit note's
+probe no longer reaches the SVG (re-run this date). H6 is unchanged:
+`persistAfter` in `worker/mcp.ts` still logs a failed store write and
+returns success. The schema version and the advisory triage were not
+re-checked.
 
 ## Human-only operational tasks
 
