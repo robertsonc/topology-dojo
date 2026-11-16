@@ -37,6 +37,8 @@ api/                    headless authoring, DOM-free:
   hardware.ts           document vocabulary added since: layers, wire classes,
                         tiers, LAG/ECMP bundles, the sheet frame, page links,
                         and hardware bindings (proposals 0008 / 0010, hw-catalog).
+  path.ts               path analysis between two elements over a page's drawn
+                        links (analyzePath; analyze_path and the editor action).
 
 render/core.ts          engine-agnostic render: (EngineClass, page) → SVG string.
 render/                 TypeScript overlays + headless mirrors around the core:
@@ -68,7 +70,9 @@ catalog/                hardware catalog (hw-catalog): loader.ts (versioned
 
 nodes/                  custom node types (data, not code): spec.ts (CustomNodeSpec),
                         render.ts (pure interpreter + browser registration),
-                        data.ts (shapes/icons), designer.ts (the Node Designer modal).
+                        data.ts (shapes/icons), designer.ts (the Node Designer modal),
+                        sanitize.ts + reserved.ts (the spec allowlist and reserved
+                        type names), document-types.ts (per-document registration).
 
 editor/editor.ts        the canvas editor: an interaction overlay <svg> over the
                         engine-rendered art <svg>. Owns selection, drag, marquee,
@@ -95,8 +99,10 @@ mcp/                    MCP server: tools.ts (pure handlers), export-tools.ts
                         (export_topology / view_topology), hardware-tools.ts,
                         store.ts (in-memory registry), persist-store.ts (durable
                         mirror), rate-limit.ts, workspace-reads.ts, viewer-html.ts
-                        (the MCP Apps inline view), register.ts (adapter + runtime
-                        arg validation), server.ts (stdio entry).
+                        (the MCP Apps inline view), path-tools.ts (analyze_path),
+                        args.ts + write-checks.ts (argument admission and write-time
+                        checks), register.ts (adapter + runtime arg validation),
+                        server.ts (stdio entry).
                         Shared by the Worker. (Remote auth lives in worker/, not here.)
 
 workspace/              shared human-agent write protocol: revision/operation/
@@ -119,7 +125,9 @@ worker/                 Cloudflare Worker: index.ts (OAuth provider wrapper +
                         coordinator per shared topology), workspaces.ts (owner
                         directory + lazy migration), profile.ts, analytics.ts,
                         auth.ts + landing.ts, api-keys.ts, share.ts, catalog.ts,
-                        raster.ts, render.ts, staging-fault.ts.
+                        raster.ts, render.ts, staging-fault.ts, mcp-authorize.ts +
+                        oauth-options.ts + connections-page.ts (MCP consent,
+                        provider options, connected apps).
 
 core/                   the retired beat-model (model/resolve/tween) — dormant.
 ```
@@ -199,7 +207,13 @@ the page's `emphasis` on whatever the step changed.
 Every element carries a stable string `id` (unique within its page). `customNodes`
 are user-designed node types stored **as data** (`CustomNodeSpec`), not generated
 code; one spec registers one node type with the engine via a single pure
-interpreter (`renderCustomNode`).
+interpreter (`renderCustomNode`). A registration lasts for one document only:
+the render core snapshots the engine's type tables and hit-box registry before
+each render and restores them after (`snapshotEngineTypes`,
+`src/render/engine-types.ts`), the headless checks register a document's hit
+boxes for the call only, and the editor resets to the built-in and stock
+baseline before loading another document (`useDocumentNodeTypes`,
+`src/nodes/document-types.ts`).
 
 ## The render seam
 
@@ -231,8 +245,13 @@ layers keep it from becoming markup, and each is tested on its own.
    Behind the gate an element is a plain object with a string id; every field
    the catalog declares is the declared kind (a finite number, a safe colour,
    a boolean, an id string) or absent (`src/pages/typed-fields.ts`); a
-   `viewBox` is four numbers; free text is length-bounded. Nothing behind the
-   gate checks types again.
+   `viewBox` is four numbers; free text is length-bounded. Custom node specs
+   are rebuilt from an allowlist (`sanitizeCustomNode`, `src/nodes/sanitize.ts`):
+   clamped finite numbers, listed settings, booleans, a known icon, bounded
+   badge text, unknown keys dropped. A spec named like a built-in or stock
+   type is dropped (`isReservedNodeTypeName`, `src/nodes/reserved.ts`). The
+   builder's `defineNodeType` and the Node Designer's save run the same check.
+   Nothing behind the gate checks types again.
 2. **The sinks.** The engine builds SVG by interpolation. Element configs are
    made safe once on the way in (`_safeCfg` in
    `public/vendor/topology-ds.js`): any string that is not free text and not
@@ -301,7 +320,14 @@ onto an `McpServer` (return value → MCP text content, thrown errors → `isErr
 - **Identity:** new workspace directories and document addresses use GitHub's
   stable numeric user id. The old login-keyed registry is read only as a lazy
   migration source. `worker/index.ts` wraps the surfaces in OAuth 2.1 / GitHub
-  sign-in and serves static assets. Behind `API_KEYS_ENABLED`, a user-minted
+  sign-in and serves static assets. The provider options (S256 PKCE only) are
+  in `worker/oauth-options.ts`. `/authorize` shows a consent page and keeps
+  the parsed request server-side in `OAUTH_KV` for ten minutes, bound to the
+  browser by an HttpOnly cookie that `/callback` must match
+  (`worker/mcp-authorize.ts`). Grants carry a grant version, and the `/mcp`
+  handler (`onlyCurrentGrants`) serves only current grants and API-key
+  sessions. `/connections` and `/api/connections` list and revoke a user's
+  grants. Behind `API_KEYS_ENABLED`, a user-minted
   `tdk_` API key (`worker/api-keys.ts`, proposal 0005) resolves through the
   provider's `resolveExternalToken` hook to the same `{ id, login, name }`
   props plus `auth`/`scopes`, so the coordinator, registry, quotas, and share
