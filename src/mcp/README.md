@@ -164,7 +164,9 @@ an id. The usual draft-building flow is:
    operations in a single call) over per-element `add_node` / `add_link` /
    `add_zone` calls, which can exhaust an agent's per-turn tool budget.
 3. `validate_topology` → list of problems (empty = valid); fix layout warnings
-   with `tidy_topology` / `balance_topology`.
+   with `tidy_topology` / `balance_topology`. A long list puts errors first and
+   stops at 60; the result then adds `omitted` and `counts` (`errors`,
+   `warnings`) with the true totals.
 4. `inspect_render` → a compact visual-quality report (crop, label legibility,
    link routing, density) — the cheap final QA step before rendering.
 5. `render_svg` → a standalone SVG string. The default `profile: "clean"` is

@@ -86,9 +86,12 @@ its own has no page CSS, so each export carries the font a different way:
   server-side rasterizer. That rasterizer has no other font to fall back on,
   so the arrows the typeface lacks (`→`, `←`, `↔`, `⇒` and their relatives)
   are drawn from their ASCII spellings (`->`, `<-`, …), which the typeface
-  joins into arrow glyphs. Any other character it lacks, such as CJK text,
-  still prints as an empty box there; the editor's own exports do not have
-  this limit.
+  joins into arrow glyphs. The deny, redirect and NAT policy-marker icons are
+  redrawn the same way (`✕` as `×`, `↪` as `->`, `⇄` as `<->`). The emoji
+  most other marker icons use (🔍 🔒 👁 …) have no spelling and still print
+  as empty boxes. Any other character it lacks, such as CJK text, still
+  prints as an empty box there; the editor's own exports do not have this
+  limit.
 
 ## draw.io (`.drawio`) — "my team can still edit it"
 
