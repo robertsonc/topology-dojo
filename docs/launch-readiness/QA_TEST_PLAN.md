@@ -11,7 +11,8 @@ because a case appears in this plan: §4 records the automated evidence verified
 on 2026-08-09, while cases marked **Required** still need execution against the
 named environment and source SHA. §7.9–§7.14 were added on 2026-11-14 for the
 work merged since that baseline; the tests they name were run at `af6a9ca`
-(§4.3).
+(§4.3). §7.15 was added on 2026-11-19 for the editor chrome
+foundations (PR #326, `e9d0d7f`); its tests were not re-run for it.
 
 Authoritative companion documents:
 
@@ -217,17 +218,18 @@ canvas was made to fit its stage (EDT-34), and once when the zoom readout
 they include changed meaning (EDT-38). Each regeneration was looked at before
 it was committed.
 
-2026-11-19, on the branch of draft PR #326 (proposal 0013, not merged, and
-not part of the run above): the same three baselines were regenerated twice
-more. Each is a screenshot of the canvas box, so it includes the chrome that
-floats over the canvas (the node library, the pages strip and the zoom
-controls), and its size follows the chrome around it. With the toolbar, the
-properties panel and the status bar docked edge to edge the box is 1018×646
-(it was 1005×600), and the floating controls draw SVG icons instead of
-symbol characters (`3d11fb0`, `3765dc3`). The first commit records that its
-images came from a Linux checkout with the real typeface, not from a CI
-artifact; the second does not say where its images were made. Both record
-that each image was looked at before it was committed.
+2026-11-19, in PR #326 (proposal 0013, merged that day as `e9d0d7f`; not part
+of the run above): the same three baselines were regenerated twice more. Each
+is a screenshot of the canvas box, so it includes the chrome that floats over
+the canvas (the node library, the pages strip and the zoom controls), and its
+size follows the chrome around it. With the toolbar, the properties panel and
+the status bar docked edge to edge the box is 1018×646 (it was 1005×600), and
+the floating controls draw SVG icons instead of symbol characters (`3d11fb0`,
+`3765dc3`). The first commit records that its images came from a Linux
+checkout with the real typeface, not from a CI artifact; the second does not
+say where its images were made. Both record that each image was looked at
+before it was committed. CI accepted the three baselines when the pull request
+merged.
 
 ---
 
@@ -546,6 +548,23 @@ added to match other diagram tools. All changed after `501e7a4`.
 | EDT-37 | **Analyze path:** with two nodes selected the shortest route is spotlit as a preview that stores nothing and adds no undo step; the bar steps through alternatives and offers emphasize, add flow, and new frame; two nodes with no drawn path say why; the path is traced again after an edit; the menu item appears for exactly two nodes                                                                                                                                                        | Automated: `src/api/path.test.ts`, `src/ui/path-panel.test.ts`, `src/editor/emphasis-preview.test.ts` + e2e `path-analysis.spec.ts` (5)                                                                                                                                                                                                 |
 | EDT-38 | A library tile dragged onto the canvas lands where it is dropped and, dropped on a link, is inserted into it (one undo step restores the link); Escape or a release off the canvas adds nothing; + / - zoom, Shift+0 is 100%, Shift+1 fits, Shift+2 frames the selection; F2 renames, and Enter renames only while the canvas has focus; Ctrl/Cmd+Shift+V pastes in place and “Paste here” pastes at the clicked point; Find reaches nodes, links, and zones on every frame and jumps to the match | Automated: `src/editor/shell-api.test.ts`, `src/ui/canvas-keys.test.ts`, `src/ui/find.test.ts`, `src/ui/palette-drag.test.ts` + e2e `standard-interactions.spec.ts` (10)                                                                                                                                                                |
 | EDT-39 | A mouse wheel zooms at the cursor; a trackpad's two-finger slide pans; a pinch and Ctrl/Cmd+wheel zoom; Shift+wheel pans sideways; one gesture never zooms and pans by turns; the Wheel setting (Auto / Always zoom / Always pan) overrules the device guess and survives a reload                                                                                                                                                                                                                 | Decision logic automated: `src/editor/wheel.test.ts`, `src/editor/shell-api.test.ts`, and synthetic wheel events in e2e `standard-interactions.spec.ts`. **Required:** a physical trackpad and a physical mouse, on macOS and Windows, in Chrome, Firefox, and Safari. The device guess is a heuristic and has not been run on hardware |
+
+### 7.15 Editor chrome foundations (proposal 0013, P0; PR #326, 2026-11-19)
+
+Cases for the part of the UI overhaul merged as `e9d0d7f`. The command
+registry, the shell, the properties panel and the skin sweep are not on
+`main`, so they have no cases here yet. The menu component, the command
+palette, the shared control classes and the properties-panel tab rules are on
+`main` but used by no surface; their unit tests and browser specs
+(`src/ui/menu.test.ts`, `src/ui/command-palette.test.ts`,
+`e2e/menu-component.spec.ts`, `e2e/command-palette-component.spec.ts`) test the
+components alone, and no case here depends on them.
+
+| ID     | Scenario and expected result                                                                                                                                                                                                                                                                                                                                                                                                               | Evidence                                                                                                                                                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| EDT-40 | The chrome is flat in both themes: colours come only from `src/styles/tokens.css`, surfaces use the layer and radius scales and no backdrop blur, text and the focus ring meet WCAG contrast on every surface, and no text is set under 12 px outside the surfaces not converted yet. The toolbar, properties panel and status bar are docked; the "Panel blur (glass)" setting is gone; `theme-color` and `color-scheme` follow the theme | Automated: `src/styles/styles.test.ts` (contrast computed from the tokens; the 12 px rule is a ratchet), the three canvas screenshot baselines (§4.3). **Required:** a look at the docked chrome in both themes in Firefox and Safari; the e2e suite runs Chromium only (§4.2) |
+| EDT-41 | Panel scrollbars are neutral, invisible at rest, and appear on hover or keyboard focus inside the container; the canvas viewport is unchanged                                                                                                                                                                                                                                                                                              | Styles are in `src/styles/scrollbars.css`; no automated test drives the hover or focus reveal. **Required:** a manual check in Chromium, Firefox and Safari                                                                                                                    |
+| EDT-42 | Every chrome icon is one symbol of the inline SVG sprite generated from the pinned `lucide-static`; a button that lost its symbol character keeps its words or its accessible name; the generated file carries the icon set's licence text; ink on the brand accent is the one with at least 4.5:1 when one exists                                                                                                                         | Automated: `src/ui/icons.test.ts`, `src/ui/contrast.test.ts`, e2e `icons.spec.ts`                                                                                                                                                                                              |
 
 ## 8. Non-functional suites
 
