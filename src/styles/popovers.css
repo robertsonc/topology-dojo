@@ -2,19 +2,19 @@
 /* Display-settings popover (ambient + glass). */
 .display-pop {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-popover);
   width: 248px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   padding: 10px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-float);
   font-size: 12px;
-  color: var(--text);
+  color: var(--fg);
   font-family: var(--font);
 }
 .display-pop .dp-h {
-  color: var(--muted);
+  color: var(--fg-weak);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -32,16 +32,16 @@
   cursor: pointer;
 }
 .display-pop select {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--surface-field);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 3px 6px;
   font-family: var(--font);
   font-size: 12px;
 }
 .display-pop .dp-note {
-  color: var(--muted);
+  color: var(--fg-weak);
   font-size: 10.5px;
   line-height: 1.45;
   margin-top: 6px;
@@ -49,7 +49,7 @@
 }
 .display-pop .dp-h2 {
   margin-top: 10px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
   padding-top: 10px;
 }
 .display-pop .dp-swatches {
@@ -62,7 +62,7 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 2px solid var(--border);
+  border: 2px solid var(--line);
   padding: 0;
   cursor: pointer;
   /* A diagonal split hints at the secondary colour behind the accent. */
@@ -77,44 +77,40 @@
   transform: scale(1.12);
 }
 .display-pop .dp-swatch.on {
-  border-color: var(--text);
-  box-shadow: 0 0 0 2px var(--panel2);
+  border-color: var(--fg);
+  box-shadow: 0 0 0 2px var(--surface-float);
 }
 .display-pop input[type='color'] {
   width: 40px;
   height: 22px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-field);
   cursor: pointer;
 }
-/* "No glass" — drop the panel backdrop blur for a flatter, faster look. */
-html.no-glass * {
-  backdrop-filter: none !important;
-}
 .user-menu .um-head {
-  color: var(--muted);
+  color: var(--fg-weak);
   padding: 6px 8px;
   margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
 .user-menu .um-head b {
-  color: var(--text);
+  color: var(--fg);
   font-weight: 700;
 }
 .user-menu .um-item {
   display: block;
   padding: 7px 8px;
-  border-radius: 6px;
-  color: var(--text);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
   text-decoration: none;
   cursor: pointer;
 }
 .user-menu .um-item:hover {
-  background: var(--accent);
-  color: #08130f;
+  background: var(--surface-hover);
+  color: var(--fg-strong);
 }
 /* Anonymous visitor: the account chip becomes a sign-in prompt. */
 .user-chip.signed-out .uc-dot,
@@ -130,8 +126,8 @@ html.no-glass * {
   position: sticky;
   right: 0;
   z-index: 2;
-  background: var(--panel2);
-  box-shadow: -10px 0 12px -6px rgba(0, 0, 0, 0.5);
+  background: var(--surface-front);
+  box-shadow: -10px 0 12px -6px var(--surface-scrim);
 }
 /* Narrow toolbars drop chip labels; this chip is only its label. */
 .user-chip.signed-out .tlabel {
@@ -142,19 +138,19 @@ html.no-glass * {
 }
 .sign-in-prompt .um-head {
   white-space: normal;
-  color: var(--text);
+  color: var(--fg);
   font-weight: 600;
   border-bottom: none;
   margin-bottom: 0;
 }
 .sign-in-prompt .um-note {
-  color: var(--muted);
+  color: var(--fg-weak);
   padding: 0 8px 8px;
   line-height: 1.4;
 }
 .user-menu .um-item.um-primary {
   background: var(--accent);
-  color: #08130f;
+  color: var(--on-accent);
   font-weight: 600;
   text-align: center;
 }

@@ -4,7 +4,7 @@
   gap: 3px;
   padding-left: 8px;
   margin-left: 4px;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--line);
 }
 .align-group[hidden] {
   display: none;
@@ -18,7 +18,7 @@
 }
 .meta-top {
   margin-top: 4px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
   padding-top: 10px;
 }
 .meta-row {
@@ -31,23 +31,23 @@
   padding: 0 6px;
 }
 .meta-row .meta-k {
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 .meta-x,
 .meta-addbtn {
   height: var(--insp-ctl-h, 26px);
   background: none;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  color: var(--fg-weak);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   padding: 0;
   font-size: 12px;
   line-height: 1;
 }
 .meta-addbtn:hover {
-  color: var(--accent);
+  color: var(--fg-strong);
 }
 .meta-x:hover {
-  color: #fc6161;
+  color: var(--status-error);
 }

@@ -2,7 +2,7 @@
 /* Annotations (zones / flow paths / policy markers) */
 .anno-top {
   margin-top: 4px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
   padding-top: 10px;
 }
 .anno-add {
@@ -33,25 +33,25 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: var(--muted);
+  color: var(--fg-weak);
   padding: 2px 0;
 }
 .anno-group > summary.anno-group-h::-webkit-details-marker {
   display: none;
 }
 .anno-count {
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  background: var(--surface-front);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
   padding: 0 6px;
   font-size: 10px;
-  color: var(--text);
+  color: var(--fg);
 }
 details.anno {
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 6px 8px;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--surface-field);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -62,7 +62,7 @@ details.anno > summary {
   gap: 6px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--text);
+  color: var(--fg);
   list-style: none;
 }
 details.anno > summary::-webkit-details-marker {
@@ -72,9 +72,9 @@ details.anno > summary::-webkit-details-marker {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--muted);
-  background: var(--panel2);
-  border-radius: 4px;
+  color: var(--fg-weak);
+  background: var(--surface-front);
+  border-radius: var(--radius-xs);
   padding: 1px 5px;
 }
 .anno-t {
@@ -87,11 +87,11 @@ details.anno > summary::-webkit-details-marker {
 .anno-x {
   background: none;
   border: none;
-  color: var(--muted);
+  color: var(--fg-weak);
   cursor: pointer;
   font-size: 12px;
   padding: 0 2px;
 }
 .anno-x:hover {
-  color: #fc6161;
+  color: var(--status-error);
 }

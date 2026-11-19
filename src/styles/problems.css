@@ -16,7 +16,7 @@
   gap: 4px;
   margin-top: 6px;
   padding-top: 8px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
   min-height: 0;
 }
 .problems-toggle {
@@ -26,16 +26,16 @@
   width: 100%;
   font-family: var(--font);
   font-size: 11px;
-  color: var(--muted);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  color: var(--fg-weak);
+  background: var(--surface-front);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 4px 9px;
   cursor: pointer;
 }
 .problems-toggle:hover {
-  color: var(--text);
-  border-color: var(--accent);
+  color: var(--fg);
+  border-color: var(--line-strong);
 }
 .pt-label {
   font-weight: 500;
@@ -48,47 +48,47 @@
 .prob-count {
   min-width: 18px;
   padding: 0 6px;
-  border-radius: 999px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-front);
+  border: 1px solid var(--line);
   font-size: 10px;
   line-height: 16px;
   text-align: center;
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 /* "2 hidden" beside the count: problems the user hid are still there. */
 .prob-hidden-note {
   font-size: 10px;
-  color: var(--muted);
+  color: var(--fg-weak);
   white-space: nowrap;
 }
 .prob-hidden-note:empty {
   display: none;
 }
 .problems-dock.has-warn .problems-toggle {
-  color: #e0a44a;
-  border-color: #e0a44a;
+  color: var(--status-warn);
+  border-color: var(--status-warn);
 }
 .problems-dock.has-warn .prob-count {
-  color: #1d1f27;
-  background: #e0a44a;
-  border-color: #e0a44a;
+  color: var(--on-status);
+  background: var(--status-warn);
+  border-color: var(--status-warn);
 }
 .problems-dock.has-error .problems-toggle {
-  color: #fc6161;
-  border-color: #fc6161;
+  color: var(--status-error);
+  border-color: var(--status-error);
 }
 .problems-dock.has-error .prob-count {
-  color: #1d1f27;
-  background: #fc6161;
-  border-color: #fc6161;
+  color: var(--on-status);
+  background: var(--status-error);
+  border-color: var(--status-error);
 }
 .problems {
   max-height: 34vh;
   overflow-y: auto;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--surface-front);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -103,7 +103,7 @@
 }
 .prob-empty {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--fg-weak);
   padding: 4px 6px;
 }
 .prob {
@@ -113,12 +113,12 @@
   text-align: left;
   background: none;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 4px 6px;
   cursor: default;
   font-family: var(--font);
   font-size: 11px;
-  color: var(--text);
+  color: var(--fg);
 }
 .prob {
   padding: 0;
@@ -133,7 +133,7 @@
   text-align: left;
   background: none;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 4px 6px;
   cursor: default;
   font: inherit;
@@ -143,15 +143,15 @@
   cursor: pointer;
 }
 .prob-go.locatable:hover {
-  background: var(--panel);
+  background: var(--surface-hover);
 }
 .prob-hide {
   flex: none;
   width: 22px;
   background: none;
   border: none;
-  border-radius: 5px;
-  color: var(--muted);
+  border-radius: var(--radius-sm);
+  color: var(--fg-weak);
   font: inherit;
   cursor: pointer;
   opacity: 0;
@@ -162,8 +162,8 @@
   opacity: 1;
 }
 .prob-hide:hover {
-  background: var(--panel);
-  color: var(--text);
+  background: var(--surface-hover);
+  color: var(--fg);
 }
 .prob-hidden .prob-go {
   opacity: 0.5;
@@ -174,14 +174,14 @@
   align-items: center;
   padding: 4px 6px;
   font-size: 10px;
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 .prob-link {
   background: none;
   border: none;
   padding: 0;
   font: inherit;
-  color: var(--accent, #01a982);
+  color: var(--accent);
   cursor: pointer;
   text-decoration: underline;
 }
@@ -198,10 +198,10 @@
   border-radius: 50%;
 }
 .prob-error .prob-dot {
-  background: #fc6161;
+  background: var(--status-error);
 }
 .prob-warning .prob-dot {
-  background: #e0a44a;
+  background: var(--status-warn);
 }
 .prob-msg {
   display: flex;
@@ -209,6 +209,6 @@
   min-width: 0;
 }
 .prob-where {
-  color: var(--muted);
+  color: var(--fg-weak);
   font-size: 10px;
 }

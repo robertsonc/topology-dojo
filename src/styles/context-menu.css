@@ -2,13 +2,13 @@
 /* Right-click context menu (positioned at the cursor). */
 .ctx-menu {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-menu);
   min-width: 168px;
   padding: 4px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
   font-family: var(--font);
   font-size: 12px;
   user-select: none;
@@ -19,23 +19,23 @@
   text-align: left;
   background: none;
   border: 0;
-  border-radius: 5px;
-  color: var(--text);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
   font-family: var(--font);
   font-size: 12px;
   padding: 6px 10px;
   cursor: pointer;
 }
 .ctx-item:hover:not(:disabled) {
-  background: rgba(1, 169, 130, 0.16);
-  color: var(--accent);
+  background: var(--surface-hover);
+  color: var(--fg-strong);
 }
 .ctx-item:disabled {
-  color: var(--muted);
+  color: var(--fg-weak);
   cursor: default;
 }
 .ctx-sep {
   height: 1px;
   margin: 4px 6px;
-  background: var(--border);
+  background: var(--line);
 }

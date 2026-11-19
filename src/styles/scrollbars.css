@@ -1,20 +1,27 @@
 /* The .scroll-slim scrollbar utility. */
-/* Slim hover-reveal scrollbars — shared across editor chrome panels
-   (palette, properties, dialogs, dropdowns, filmstrip). Applied via the
-   .scroll-slim utility, never on the canvas viewport.
+/* Slim, neutral, hover-reveal scrollbars for the editor chrome (library,
+   properties, dialogs, lists, pages strip). Never used on the canvas
+   viewport.
 
-   Track is always transparent; the thumb is invisible at rest, appears
-   when the pointer is over the scroll container, and tints stronger when
-   hovering the thumb itself. The hit area is a full 8px but the visible
-   pill is ~4px, via a 2px transparent border + padding-box background clip
-   (a raw 4px scrollbar is too hard to grab). scrollbar-gutter: stable
-   reserves the inline-end gutter so content doesn't shift on reveal.
+   At rest the thumb is invisible. It appears while the pointer is over the
+   scroll container or keyboard focus is inside it, and darkens when the
+   thumb itself is hovered. The colour is a neutral tint: the accent is
+   reserved for state, and a green scrollbar reads as one.
 
-   WARNING: scrollbar-width / scrollbar-color are declared ONLY inside the
-   @supports (Firefox) block. Setting either standard property on the
-   element disables ALL ::-webkit-scrollbar styling in Chromium 121+ — do
-   not hoist them up here. No transitions: Chromium doesn't animate
-   scrollbar pseudo-elements. */
+   Two engines, two mechanisms:
+   - Chromium and Safari style ::-webkit-scrollbar. The hit area is a full
+     8px but the visible pill is about 4px (a 2px transparent border +
+     padding-box clip; a raw 4px bar is too hard to grab).
+   - Firefox has no such pseudo-elements, so it gets the standard
+     properties, with the same reveal on hover and focus.
+
+   WARNING: keep scrollbar-width / scrollbar-color inside the @supports
+   block. Setting either on the element disables ALL ::-webkit-scrollbar
+   styling in Chromium 121+. No transitions: scrollbar pseudo-elements do
+   not animate.
+
+   scrollbar-gutter: stable reserves the inline-end gutter so content does
+   not shift when the thumb appears. */
 .scroll-slim {
   scrollbar-gutter: stable;
 }
@@ -30,19 +37,27 @@
 }
 .scroll-slim::-webkit-scrollbar-thumb {
   background-color: transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
-.scroll-slim:hover::-webkit-scrollbar-thumb {
-  background-color: var(--sb-thumb);
+.scroll-slim:hover::-webkit-scrollbar-thumb,
+.scroll-slim:focus-within::-webkit-scrollbar-thumb,
+.scroll-slim:focus-visible::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
 }
-.scroll-slim:hover::-webkit-scrollbar-thumb:hover {
-  background-color: var(--sb-thumb-hover);
+.scroll-slim:hover::-webkit-scrollbar-thumb:hover,
+.scroll-slim::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-hover);
 }
 @supports not selector(::-webkit-scrollbar) {
   .scroll-slim {
     scrollbar-width: thin;
-    scrollbar-color: var(--sb-thumb) transparent;
+    scrollbar-color: transparent transparent;
+  }
+  .scroll-slim:hover,
+  .scroll-slim:focus-within,
+  .scroll-slim:focus-visible {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 }

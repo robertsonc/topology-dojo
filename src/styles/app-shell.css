@@ -3,8 +3,8 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--surface-back);
+  color: var(--fg);
   font-family: var(--font);
   overflow: hidden;
 }
@@ -25,43 +25,43 @@ body {
   align-items: center;
   gap: 16px;
   padding: 4px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--muted);
+  border-top: 1px solid var(--line);
+  background: var(--surface-back);
+  color: var(--fg-weak);
   font-size: 11px;
   font-family: var(--font);
   white-space: nowrap;
   overflow-x: auto;
 }
 .statusbar .sb-k {
-  color: var(--text);
+  color: var(--fg);
 }
 .statusbar .sb-hint {
   margin-left: auto;
-  color: var(--muted);
+  color: var(--fg-weak);
   opacity: 0.85;
 }
 /* Always-visible problems indicator; click opens the right-rail section. */
 .statusbar .sb-problems {
   font-family: var(--font);
   font-size: 11px;
-  color: var(--muted);
+  color: var(--fg-weak);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
   padding: 0 8px;
   line-height: 16px;
   cursor: pointer;
 }
 .statusbar .sb-problems:hover {
-  color: var(--text);
-  border-color: var(--accent);
+  color: var(--fg);
+  border-color: var(--line-strong);
 }
 .statusbar .sb-problems.has-warn {
-  color: #e0a44a;
-  border-color: #e0a44a;
+  color: var(--status-warn);
+  border-color: var(--status-warn);
 }
 .statusbar .sb-problems.has-error {
-  color: #fc6161;
-  border-color: #fc6161;
+  color: var(--status-error);
+  border-color: var(--status-error);
 }

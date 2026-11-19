@@ -8,10 +8,10 @@
   flex: 1;
 }
 .pedit {
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 7px;
+  background: var(--surface-front);
+  border: 1px solid var(--line);
+  color: var(--fg-weak);
+  border-radius: var(--radius-md);
   padding: 0 8px;
   cursor: pointer;
   font-size: 12px;
@@ -23,46 +23,45 @@
 .nd-modal {
   position: fixed;
   inset: 0;
-  z-index: 50;
-  background: rgba(7, 11, 18, 0.6);
+  z-index: var(--z-modal);
+  background: var(--surface-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(2px);
 }
 .nd-dialog {
   width: min(920px, 94vw);
   height: min(620px, 92vh);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-float);
 }
 .nd-head {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
 }
 .nd-title {
   font-weight: 700;
 }
 .nd-name {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
+  background: var(--surface-field);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
   padding: 5px 9px;
   font-family: var(--font);
   font-size: 13px;
 }
 /* Why the type name cannot be used (it is a built-in type's name). */
 .nd-name-msg {
-  color: #ff6b6b;
+  color: var(--status-error-fg);
   font-size: 11px;
   min-width: 0;
 }
@@ -70,16 +69,16 @@
   display: none;
 }
 .nd-name[aria-invalid='true'] {
-  border-color: #ff6b6b;
+  border-color: var(--status-error-fg);
 }
 .nd-spacer {
   flex: 1;
 }
 .nd-btn {
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 8px;
+  background: var(--surface-front);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  border-radius: var(--radius-md);
   padding: 6px 14px;
   cursor: pointer;
   font-family: var(--font);
@@ -87,7 +86,7 @@
 }
 .nd-btn.primary {
   background: var(--accent);
-  color: var(--bg);
+  color: var(--on-accent);
   border-color: var(--accent);
   font-weight: 700;
 }
@@ -102,10 +101,10 @@
   padding: 12px;
 }
 .nd-left {
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--line);
 }
 .nd-right {
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--line);
 }
 .nd-center {
   display: flex;
@@ -115,7 +114,7 @@
 .nd-preview-wrap {
   width: 240px;
   height: 240px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 #nd-preview {
@@ -123,7 +122,7 @@
   height: 100%;
 }
 .nd-h {
-  color: var(--muted);
+  color: var(--fg-weak);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -139,9 +138,9 @@
 }
 .nd-shape,
 .nd-icon {
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  background: var(--surface-front);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 4px;
   cursor: pointer;
   aspect-ratio: 1;
@@ -154,7 +153,7 @@
 .nd-shape.on,
 .nd-icon.on {
   border-color: var(--accent);
-  background: rgba(1, 169, 130, 0.14);
+  background: var(--accent-soft);
 }
 .nd-icons {
   display: grid;
@@ -164,7 +163,7 @@
 .nd-icon[data-icon=''] {
   aspect-ratio: auto;
   grid-column: 1 / -1;
-  color: var(--muted);
+  color: var(--fg-weak);
   font-size: 11px;
   padding: 5px;
 }
@@ -174,7 +173,7 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--fg-weak);
   margin: 5px 0;
 }
 .nd-row input[type='range'] {
@@ -190,17 +189,17 @@
   cursor: pointer;
 }
 .nd-sub {
-  border-left: 2px solid var(--border);
+  border-left: 2px solid var(--line);
   padding: 4px 0 4px 8px;
   margin: 0 0 6px 6px;
 }
 .nd-sub select,
 .nd-sub input[type='text'] {
   width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
+  background: var(--surface-field);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
   padding: 4px 7px;
   font-family: var(--font);
   font-size: 12px;
@@ -215,13 +214,13 @@
 .nd-sw {
   width: 100%;
   aspect-ratio: 1;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  border: 1px solid var(--swatch-edge);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   padding: 0;
 }
 .nd-sw.on {
   /* Selected marker — --text so it stays visible in the light theme. */
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--fg);
   outline-offset: 1px;
 }

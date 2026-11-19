@@ -1,39 +1,169 @@
-/* Design tokens: dark :root and :root.light. */
+/* Design tokens for the editor chrome (proposal 0013).
+
+   Every colour, radius, shadow, layer and duration the chrome uses is named
+   here, once per theme. Other files in src/styles/ reference these names and
+   contain no colour literals (src/styles/styles.test.ts enforces that).
+
+   Roles, not hues: pick a token by what the thing IS (a floating surface,
+   weak text, a divider), never by how it happens to look today.
+
+   The canvas keeps its own palette. `--canvas-bg` is mirrored as a literal in
+   the exporters, and the problem-severity colours are mirrored in
+   src/editor/editor.ts (on-canvas badges), so those values must not drift. */
 :root {
-  --bg: #1d1f27;
-  --panel: #22252e;
-  --panel2: #292d3a;
-  --border: #3e4550;
-  --text: #e6e8e9;
-  --muted: #7d8a92;
-  --accent: #01a982;
-  --font: 'JetBrains Mono', ui-monospace, monospace;
-  /* Flat canvas fill — a single tone, no radial sheen/vignette. Shared by
-     the live canvas and (as a matching literal) the exported SVG/PNG
-     backdrop so live and exports read identically. */
+  color-scheme: dark;
+
+  /* ── Surfaces: three flat elevations ─────────────────────────────────
+     back   the app frame and docked panels
+     front  cards, tiles and raised controls that sit on a panel
+     float  menus, popovers, dialogs and anything that floats (with a shadow) */
+  --surface-back: #1d1f27;
+  --surface-front: #292d3a;
+  --surface-float: #22252e;
+  /* Fills layered on any surface. */
+  --surface-field: rgba(255, 255, 255, 0.06); /* inputs, wells */
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --surface-press: rgba(255, 255, 255, 0.14);
+  --surface-scrim: rgba(0, 0, 0, 0.55); /* behind modal dialogs */
+  /* Flat canvas fill — a single tone, no sheen or vignette. Shared by the
+     live canvas and (as a matching literal) the exported SVG/PNG backdrop,
+     so live and exports read identically. Do not change without the
+     exporters. */
   --canvas-bg: #0e1613;
-  /* Glow budget: flat everywhere; the ONLY glow is the emphasis spotlight. */
-  --glow-none: none;
-  --glow-emphasis: drop-shadow(
-    0 0 6px color-mix(in srgb, var(--accent) 50%, transparent)
-  );
-  /* Slim scrollbar thumb tints, derived from --accent (#01a982 = rgb 1 169 130).
-     Kept as tokens so the scroll-slim rules never hardcode the color twice. */
-  --sb-thumb: rgba(1, 169, 130, 0.25);
-  --sb-thumb-hover: rgba(1, 169, 130, 0.55);
+  /* Present mode is a dark stage in both themes. */
+  --stage-bg: #060a08;
+  --stage-bar: rgba(10, 14, 12, 0.9);
+
+  /* ── Foreground ────────────────────────────────────────────────────── */
+  --fg-strong: #ffffff; /* titles, selected items, values being edited */
+  --fg: #e6e8e9; /* default text */
+  --fg-weak: #b1b9be; /* labels, hints, secondary text (8.3:1 on back) */
+  --fg-disabled: rgba(255, 255, 255, 0.36);
+
+  /* ── Lines ─────────────────────────────────────────────────────────── */
+  --line: rgba(255, 255, 255, 0.12); /* dividers, card and panel edges */
+  --line-strong: rgba(255, 255, 255, 0.36); /* control outlines, hover edges */
+
+  /* ── Accent ────────────────────────────────────────────────────────────
+     The brand colour. A document's brand palette overrides `--accent` (and
+     `--on-accent`) at runtime (setChromeAccent in src/main.ts), so derive
+     tints from it with color-mix instead of writing a literal. Reserve it
+     for the primary action, the selected state and links.
+
+     The dark default equals the canvas accent (ACCENT in
+     src/editor/editor.ts, the "Default" brand preset in src/main.ts), so
+     selection handles on the canvas and selected chrome read as one colour. */
+  --accent: #01a982;
+  --on-accent: #1d1f27; /* text and icons on an accent fill (5.5:1) */
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-soft-strong: color-mix(in srgb, var(--accent) 28%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 55%, transparent);
+  /* Keyboard focus ring: neutral and high-contrast, so it stays visible on
+     an accent fill and under any brand palette. */
+  --focus: #ffffff;
+
+  /* ── Status ────────────────────────────────────────────────────────────
+     `--status-error` and `--status-warn` are also drawn on the canvas as
+     problem badges (PROB_ERROR / PROB_WARN in src/editor/editor.ts): keep
+     the two in sync. The `-fg` variants are for text. */
+  --status-error: #fc6161;
+  --status-warn: #e0a44a;
+  --status-ok: #2fd07f;
+  --status-info: #65aef9;
+  --status-error-fg: #ff7b7b;
+  --status-warn-fg: #ecbe4f;
+  --status-error-soft: color-mix(in srgb, var(--status-error) 14%, transparent);
+  --on-status: #1d1f27; /* text on a warn or error fill */
+  /* Proposal-diff strokes (workspace preview): add / remove / modify. */
+  --diff-add: #2fd07f;
+  --diff-remove: #fc6161;
+  --diff-modify: #ffcc55;
+
+  /* ── Shape ─────────────────────────────────────────────────────────── */
+  --radius-xs: 4px; /* swatches, chips inside controls */
+  --radius-sm: 6px; /* buttons, inputs */
+  --radius-md: 8px; /* tiles, menus, small cards */
+  --radius-lg: 12px; /* floating cards, dialogs */
+  --radius-full: 999px;
+
+  /* ── Elevation ─────────────────────────────────────────────────────── */
+  --shadow-raised: 0 2px 10px rgba(0, 0, 0, 0.35); /* cards over the canvas */
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.5); /* menus, popovers, dialogs */
+  /* Hairline around colour swatches so dark swatches read on dark panels. */
+  --swatch-edge: rgba(255, 255, 255, 0.18);
+
+  /* ── Type ──────────────────────────────────────────────────────────────
+     `--font` is the data and canvas face: IDs, addresses, coordinates,
+     counts, and everything drawn on the canvas. `--font-ui` is for labels
+     and menus; surfaces adopt it as each overhaul phase rebuilds them. */
+  --font: 'JetBrains Mono', ui-monospace, monospace;
+  --font-ui:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  --text-xs: 12px;
+  --text-sm: 14px;
+
+  /* ── Layers ────────────────────────────────────────────────────────────
+     One named scale instead of ad-hoc numbers. The list is the stacking
+     order, lowest first; within a layer, DOM order decides. */
+  --z-canvas-ui: 6; /* library and pages dock floating over the canvas */
+  --z-panel: 8; /* the docked properties column (a drawer on phones) */
+  --z-selection-ui: 18; /* the mini style bar beside the selection */
+  --z-canvas-pop: 20; /* inline rename, quick-add: anchored in the canvas */
+  --z-overlay: 30; /* find bar and path bar, fixed under the toolbar */
+  --z-modal: 50; /* node designer */
+  --z-popover: 60; /* toolbar popovers, account menu, drag ghost, present */
+  --z-toast: 65;
+  --z-side-panel: 70; /* agent workspace, preferences, admin */
+  --z-dialog: 100; /* modal dialogs and their scrim */
+  --z-menu: 1000; /* the context menu: always on top */
+
+  /* ── Motion ────────────────────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --ease: cubic-bezier(0.4, 0.5, 0.2, 1);
+
+  /* ── Scrollbars ────────────────────────────────────────────────────── */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.28);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.46);
 }
-/* Light theme — overrides the chrome + canvas backdrop (engine node art
-   keeps its own colors, which read fine on a light canvas). */
+
+/* Light theme. Canvas node art keeps its own colours, which read on a light
+   canvas. */
 :root.light {
-  --bg: #f4f6f8;
-  --panel: #ffffff;
-  --panel2: #eaeef2;
-  --border: #cdd5dd;
-  --text: #1d1f27;
-  --muted: #5c6b76;
-  /* Flat light canvas (no sheen/vignette). */
+  color-scheme: light;
+
+  --surface-back: #f7f7f7;
+  --surface-front: #ffffff;
+  --surface-float: #ffffff;
+  --surface-field: rgba(0, 0, 0, 0.05);
+  --surface-hover: rgba(0, 0, 0, 0.06);
+  --surface-press: rgba(0, 0, 0, 0.11);
+  --surface-scrim: rgba(20, 24, 32, 0.4);
   --canvas-bg: #eef1f4;
-  /* Slightly stronger tints so the green thumb stays legible on light panels. */
-  --sb-thumb: rgba(1, 169, 130, 0.4);
-  --sb-thumb-hover: rgba(1, 169, 130, 0.7);
+
+  --fg-strong: #1d1f27;
+  --fg: #3e4550;
+  --fg-weak: #606a70; /* 5.2:1 on back, 5.5:1 on front */
+  --fg-disabled: rgba(0, 0, 0, 0.38);
+
+  --line: rgba(0, 0, 0, 0.12);
+  --line-strong: rgba(0, 0, 0, 0.36);
+
+  /* Darker than the canvas accent: #01a982 is only 3:1 on white. This is
+     5.1:1 on the back surface and 5.5:1 on white, and white text on it is
+     5.5:1. */
+  --accent: #03785b;
+  --on-accent: #ffffff;
+  --focus: #1d1f27;
+
+  --status-error-fg: #cc1f1a;
+  --status-warn-fg: #8a5a00;
+
+  --shadow-raised: 0 2px 10px rgba(31, 41, 55, 0.14);
+  --shadow-float: 0 12px 32px rgba(31, 41, 55, 0.2);
+  --swatch-edge: rgba(0, 0, 0, 0.18);
+
+  --scrollbar-thumb: rgba(0, 0, 0, 0.3);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.48);
 }

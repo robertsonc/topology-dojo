@@ -3,8 +3,8 @@
 .present-root {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  background: #060a08;
+  z-index: var(--z-popover);
+  background: var(--stage-bg);
   display: flex;
   flex-direction: column;
 }
@@ -39,19 +39,19 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(10, 14, 12, 0.9);
-  border-top: 1px solid var(--border);
+  background: var(--stage-bar);
+  border-top: 1px solid var(--line);
   font-family: var(--font);
 }
 .present-count {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--fg-weak);
   min-width: 52px;
   text-align: center;
 }
 .present-name {
   font-size: 12px;
-  color: var(--text);
+  color: var(--fg);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -67,7 +67,7 @@
 }
 .share-note {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--fg-weak);
   line-height: 1.5;
   margin: 8px 0 12px;
 }
@@ -79,15 +79,15 @@
 }
 .share-status {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 .share-fresh {
   font-size: 13px;
   margin-bottom: 10px;
   padding: 8px 10px;
-  background: rgba(1, 169, 130, 0.1);
-  border: 1px solid rgba(1, 169, 130, 0.4);
-  border-radius: 7px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-md);
   word-break: break-all;
 }
 .share-fresh a,
@@ -104,7 +104,7 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 .share-list {
   display: flex;
@@ -116,8 +116,8 @@
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
 }
 .share-meta {
   flex: 1;
@@ -134,5 +134,5 @@
 }
 .share-sub {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--fg-weak);
 }

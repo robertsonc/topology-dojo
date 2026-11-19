@@ -7,48 +7,47 @@
   height: 7px;
   margin-right: 5px;
   border-radius: 50%;
-  background: var(--muted);
+  background: var(--fg-weak);
 }
 .workspace-chip.on .ws-dot {
   background: var(--accent);
   box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 65%, transparent);
 }
 .workspace-chip.conflict .ws-dot {
-  background: #fc6161;
+  background: var(--status-error);
 }
 /* Transient new-proposal toast near the chip (issue #212): clicks
    through to the proposal card; auto-dismisses. */
 .ws-toast {
   position: fixed;
-  z-index: 65;
+  z-index: var(--z-toast);
   padding: 7px 11px;
-  background: var(--panel2);
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
-  border-radius: 9px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
-  color: var(--text);
+  background: var(--surface-float);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  color: var(--fg);
   font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
 }
 .ws-toast:hover {
-  border-color: var(--accent);
+  border-color: var(--line-strong);
 }
 .workspace-panel {
   position: fixed;
-  z-index: 70;
+  z-index: var(--z-side-panel);
   top: 52px;
   right: 14px;
   width: min(390px, calc(100vw - 28px));
   max-height: min(680px, calc(100vh - 72px));
   overflow: auto;
   padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(16px);
-  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-float);
+  box-shadow: var(--shadow-float);
+  color: var(--fg);
   font-size: 11px;
 }
 .ws-head,
@@ -69,12 +68,12 @@
 .ws-card {
   margin-top: 9px;
   padding: 9px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-front);
 }
 .ws-k {
-  color: var(--muted);
+  color: var(--fg-weak);
   min-width: 66px;
 }
 .ws-v {
@@ -89,17 +88,17 @@
 }
 .ws-note,
 .ws-empty {
-  color: var(--muted);
+  color: var(--fg-weak);
   line-height: 1.5;
 }
 /* Named checkpoints (Packet R3): create row + per-checkpoint entries. */
 .ws-input {
   flex: 1 1 auto;
   min-width: 0;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 7px;
+  background: var(--surface-field);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  border-radius: var(--radius-md);
   padding: 4px 8px;
   font-family: var(--font);
   font-size: 12px;
@@ -110,7 +109,7 @@
 .ws-checkpoint {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
 }
 .ws-checkpoint-head {
   display: flex;
@@ -121,7 +120,7 @@
 /* Revision timeline (Packet R4). */
 .ws-rev {
   padding: 6px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
 }
 .ws-rev:first-child {
   border-top: none;
@@ -140,9 +139,9 @@
   text-transform: uppercase;
   letter-spacing: 0.4px;
   padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--muted);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--line);
+  color: var(--fg-weak);
 }
 .ws-src-proposal {
   color: var(--accent);
@@ -159,8 +158,8 @@
   font-weight: 600;
 }
 .pref-status-paused {
-  color: #e0a44a;
-  border-color: #e0a44a;
+  color: var(--status-warn);
+  border-color: var(--status-warn);
 }
 .pref-status-confirmed {
   color: var(--accent);
@@ -168,15 +167,15 @@
 }
 .pref-status-rejected,
 .pref-rejected-note {
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 .pref-review {
-  color: #e0a44a;
+  color: var(--status-warn);
   font-weight: 600;
 }
 .pref-stale,
 .pref-exceptions {
-  color: var(--muted);
+  color: var(--fg-weak);
   font-style: italic;
 }
 .pref-scope-chooser {
@@ -197,17 +196,17 @@
   flex-wrap: wrap;
 }
 .ws-src-restore {
-  color: #e0a44a;
-  border-color: #e0a44a;
+  color: var(--status-warn);
+  border-color: var(--status-warn);
 }
 .ws-rev-floor {
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px dashed var(--border);
+  border-top: 1px dashed var(--line);
   font-style: italic;
 }
 .ws-error {
-  color: #fc8181;
+  color: var(--status-error-fg);
   line-height: 1.45;
 }
 .ws-actions {
@@ -215,7 +214,7 @@
   margin-top: 8px;
 }
 .ws-actions .tbtn {
-  border-color: var(--border);
+  border-color: var(--line);
   font-size: 10.5px;
 }
 .ws-proposal-title {
@@ -223,14 +222,14 @@
   margin-bottom: 4px;
 }
 .ws-proposal-meta {
-  color: var(--muted);
+  color: var(--fg-weak);
   margin-bottom: 6px;
 }
 .ws-ops {
   margin: 0;
   padding-left: 0;
   list-style: none;
-  color: var(--muted);
+  color: var(--fg-weak);
   line-height: 1.5;
 }
 /* Per-operation selection rows for partial proposal acceptance. */
@@ -246,11 +245,11 @@
   accent-color: var(--accent);
 }
 .ws-op:hover {
-  color: var(--text);
+  color: var(--fg);
 }
 .ws-section {
   margin-top: 12px;
-  color: var(--muted);
+  color: var(--fg-weak);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -259,7 +258,7 @@
 .ws-preview {
   margin-top: 9px;
   padding-top: 9px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
 }
 .ws-preview-pages {
   display: flex;
@@ -282,7 +281,7 @@
   min-width: 0;
 }
 .ws-preview-frame-label {
-  color: var(--muted);
+  color: var(--fg-weak);
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -293,12 +292,12 @@
   width: 100%;
   max-width: 340px;
   height: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
 }
 .ws-preview-empty {
-  border: 1px dashed var(--border);
-  border-radius: 8px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
   padding: 14px 8px;
   text-align: center;
   font-size: 10px;
@@ -324,14 +323,14 @@
   opacity: 0.85;
 }
 .ws-hl-add {
-  stroke: #2fd07f; /* solid = added */
+  stroke: var(--diff-add); /* solid = added */
 }
 .ws-hl-remove {
-  stroke: #fc6161;
+  stroke: var(--diff-remove);
   stroke-dasharray: 2 5; /* dotted = removed */
 }
 .ws-hl-mod {
-  stroke: #ffcc55;
+  stroke: var(--diff-modify);
   stroke-dasharray: 8 4; /* dashed = modified */
 }
 .ws-hl-focus {
@@ -355,7 +354,7 @@
   cursor: pointer;
 }
 .ws-op-jump:hover {
-  color: var(--text);
+  color: var(--fg);
   text-decoration: underline dotted;
 }
 /* openToProposal / openToConflict landing flash (issue #212). */

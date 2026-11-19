@@ -9,11 +9,10 @@
   align-items: center;
   gap: 4px;
   padding: 4px;
-  background: color-mix(in srgb, var(--panel) 86%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(6px);
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
 }
 .cc-btn {
   min-width: 26px;
@@ -21,16 +20,16 @@
   padding: 0 6px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--muted);
+  border-radius: var(--radius-sm);
+  color: var(--fg-weak);
   font-family: var(--font);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
 .cc-btn:hover {
-  background: var(--panel2);
-  color: var(--text);
+  background: var(--surface-hover);
+  color: var(--fg);
 }
 .cc-btn.on {
   color: var(--accent);
@@ -39,5 +38,5 @@
 .cc-btn.cc-zoom {
   min-width: 48px;
   font-size: 12px;
-  color: var(--text);
+  color: var(--fg);
 }

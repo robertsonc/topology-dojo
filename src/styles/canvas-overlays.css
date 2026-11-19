@@ -11,14 +11,14 @@
   gap: 4px;
   margin-top: 4px;
   padding-top: 8px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
 }
 .minimap {
   width: 100%;
   aspect-ratio: 170 / 120;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .minimap-dock.collapsed .minimap {
@@ -30,17 +30,17 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--muted);
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  color: var(--fg-weak);
+  background: var(--surface-front);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 4px 8px;
   cursor: pointer;
   white-space: nowrap;
 }
 .minimap-toggle:hover {
-  color: var(--text);
-  border-color: var(--accent);
+  color: var(--fg);
+  border-color: var(--line-strong);
 }
 
 /* Find / jump-to-element overlay (Ctrl+F). */
@@ -49,22 +49,22 @@
   top: 64px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 30;
+  z-index: var(--z-overlay);
   width: 340px;
   padding: 6px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
   font-family: var(--font);
 }
 .find input {
   width: 100%;
   box-sizing: border-box;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
+  background: var(--surface-field);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
   font-family: var(--font);
   font-size: 13px;
   padding: 7px 9px;
@@ -82,30 +82,30 @@
   justify-content: space-between;
   gap: 8px;
   padding: 6px 9px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
-  color: var(--text);
+  color: var(--fg);
   cursor: pointer;
 }
 .find-item.on,
 .find-item:hover {
-  background: rgba(1, 169, 130, 0.16);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .find-item .fi-type {
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 .find-empty {
   padding: 6px 9px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 
 /* A library tile being dragged onto the canvas: a ghost of the tile
    under the pointer. Dimmed where a drop would add nothing. */
 .pdrag-ghost {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-popover);
   pointer-events: none;
   transform: translate(-50%, -50%);
   display: flex;
@@ -113,13 +113,13 @@
   align-items: center;
   gap: 2px;
   padding: 6px 8px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
   font-family: var(--font);
   font-size: 11px;
-  color: var(--text);
+  color: var(--fg);
   opacity: 0.5;
 }
 .pdrag-ghost.can-drop {
@@ -149,7 +149,7 @@ html.palette-dragging * {
   top: 64px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 29;
+  z-index: calc(var(--z-overlay) - 1);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -160,16 +160,16 @@ html.palette-dragging * {
   max-width: min(860px, calc(100vw - 32px));
   box-sizing: border-box;
   padding: 6px 8px 6px 12px;
-  background: var(--panel2);
+  background: var(--surface-float);
   border: 1px solid var(--accent);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
   font-family: var(--font);
   font-size: 12px;
-  color: var(--text);
+  color: var(--fg);
 }
 .path-bar.none {
-  border-color: var(--border);
+  border-color: var(--line);
 }
 .path-text {
   flex: 1 1 auto;
@@ -180,7 +180,7 @@ html.palette-dragging * {
 }
 .path-notes {
   margin-top: 2px;
-  color: var(--muted);
+  color: var(--fg-weak);
   overflow-wrap: anywhere;
 }
 .path-actions {
@@ -190,7 +190,7 @@ html.palette-dragging * {
   gap: 2px;
 }
 .path-count {
-  color: var(--muted);
+  color: var(--fg-weak);
   padding: 0 2px;
   white-space: nowrap;
 }
@@ -203,39 +203,39 @@ html.palette-dragging * {
    element being renamed (double-click a node / link / zone). */
 .inline-label-edit {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-canvas-pop);
   box-sizing: border-box;
-  background: var(--panel2);
+  background: var(--surface-float);
   border: 1px solid var(--accent);
-  border-radius: 6px;
-  color: var(--text);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
   font-family: var(--font);
   font-size: 13px;
   text-align: center;
   padding: 5px 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-raised);
   outline: none;
 }
 
 /* Quick-add popover (double-click empty canvas → type-to-place). */
 .quick-add {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-canvas-pop);
   width: 260px;
   padding: 6px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
   font-family: var(--font);
 }
 .qa-input {
   width: 100%;
   box-sizing: border-box;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
+  background: var(--surface-field);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
   font-family: var(--font);
   font-size: 13px;
   padding: 7px 9px;
@@ -260,11 +260,11 @@ html.palette-dragging * {
   text-align: left;
   background: none;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 4px 8px;
   font-family: var(--font);
   font-size: 12px;
-  color: var(--text);
+  color: var(--fg);
   cursor: pointer;
 }
 .qa-item .ppreview {
@@ -279,13 +279,13 @@ html.palette-dragging * {
 }
 .qa-item.active,
 .qa-item:hover {
-  background: rgba(1, 169, 130, 0.16);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .qa-none {
   padding: 6px 9px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 
 /* Mini style bar — floats above the selection with quick actions. */
@@ -294,22 +294,22 @@ html.palette-dragging * {
 }
 .mini-bar {
   position: absolute;
-  z-index: 18;
+  z-index: var(--z-selection-ui);
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 5px 7px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
   font-family: var(--font);
 }
 .mb-sw {
   width: 14px;
   height: 14px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--swatch-edge);
   cursor: pointer;
   padding: 0;
 }
@@ -319,13 +319,13 @@ html.palette-dragging * {
 .mb-div {
   width: 1px;
   align-self: stretch;
-  background: var(--border);
+  background: var(--line);
   margin: 0 2px;
 }
 .mb-btn {
   background: none;
   border: 0;
-  color: var(--muted);
+  color: var(--fg-weak);
   font-size: 13px;
   cursor: pointer;
   padding: 0 3px;
@@ -335,10 +335,10 @@ html.palette-dragging * {
   color: var(--accent);
 }
 .mb-sel {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--text);
+  background: var(--surface-field);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
   font-family: var(--font);
   font-size: 11px;
   padding: 2px 4px;
