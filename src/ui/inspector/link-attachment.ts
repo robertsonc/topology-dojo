@@ -15,17 +15,29 @@ export function overridesLinkAttach(node: NodeConfig): boolean {
   return typeof node.linkAttach === 'object' && node.linkAttach !== null;
 }
 
-/** "From page: anchor box on, 6 px padding, ends distributed." and the like. */
+/**
+ * "From page: anchor box on, 6 px padding, ends distributed." and the like.
+ * While the node overrides the page, a value the override leaves out comes
+ * from the page's setting and says so: "This node: anchor box on, 9 px
+ * padding (from page), ends not distributed."
+ */
 export function linkAttachSummary(
   page: LinkAttachOptions | null | undefined,
   node: NodeConfig,
 ): string {
-  const source = overridesLinkAttach(node) ? 'This node' : 'From page';
+  const own = overridesLinkAttach(node) ? node.linkAttach! : null;
+  const source = own ? 'This node' : 'From page';
   const applied = effectiveLinkAttach(page, node);
   if (!applied) return `${source}: off. Links meet the icon edge.`;
+  const pg = page && typeof page === 'object' ? page : null;
+  // The same rule as effectiveLinkAttach: the node's value, else the page's.
+  const fromPage = (key: keyof LinkAttachOptions): string =>
+    own && own[key] === undefined && pg && pg[key] !== undefined
+      ? ' (from page)'
+      : '';
   const pad = Number.isInteger(applied.pad)
     ? String(applied.pad)
     : String(Math.round(applied.pad * 100) / 100);
   const ends = applied.distribute ? 'ends distributed' : 'ends not distributed';
-  return `${source}: anchor box on, ${pad} px padding, ${ends}.`;
+  return `${source}: anchor box on, ${pad} px padding${fromPage('pad')}, ${ends}${fromPage('distribute')}.`;
 }

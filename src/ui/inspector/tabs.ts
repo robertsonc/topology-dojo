@@ -37,18 +37,29 @@ export interface InspectorTabs {
   sync(selection: string | null, counts: SelectionCounts): InspectorTab;
   /** Show the Page or Document tab, as a command or a problem asks. */
   reveal(tab: RestingTab): void;
+  /**
+   * Show the Selection tab, as a jump to an element asks (a Problems entry
+   * or a badge): the element is shown even when it was already selected and
+   * the Page or Document tab had been picked by hand. Nothing happens while
+   * nothing is selected.
+   */
+  showSelection(): void;
   /** The tab on show. */
   active(): InspectorTab;
+  /** The tab row's element (the `role="tablist"`). */
+  readonly tabList: HTMLElement;
 }
 
 /**
- * Put the tab row in front of `panel` and drive it. `onChange` is called
- * when the user (or `reveal`) changes the tab, to draw the panel again.
+ * Put the tab row in front of `at` (by default `panel` itself) and drive it.
+ * `onChange` is called when the user (or `reveal`) changes the tab, to draw
+ * the panel again.
  */
 export function mountInspectorTabs(
   panel: HTMLElement,
   storage: StorageLike | null,
   onChange: () => void,
+  at: Element = panel,
 ): InspectorTabs {
   let stored: string | null = null;
   try {
@@ -75,7 +86,7 @@ export function mountInspectorTabs(
     buttons.set(tab, b);
     list.append(b);
   }
-  panel.before(list);
+  at.before(list);
   panel.setAttribute('role', 'tabpanel');
 
   const paint = (): void => {
@@ -136,6 +147,10 @@ export function mountInspectorTabs(
     reveal(tab) {
       if (apply({ type: 'reveal', tab })) onChange();
     },
+    showSelection() {
+      pick('selection');
+    },
     active: () => state.active,
+    tabList: list,
   };
 }

@@ -25,8 +25,8 @@ describe('which sections are open', () => {
 
   it('is remembered per title, across a reload', () => {
     const storage = memoryStorage();
-    new SectionMemory(storage).remember('Wiring', true);
-    new SectionMemory(storage).remember('Text', false);
+    new SectionMemory(storage).remember('Wiring', true, false);
+    new SectionMemory(storage).remember('Text', false, true);
     const reloaded = new SectionMemory(storage);
     expect(reloaded.isOpen('Wiring', false)).toBe(true);
     expect(reloaded.isOpen('Text', true)).toBe(false);
@@ -34,6 +34,28 @@ describe('which sections are open', () => {
       Wiring: true,
       Text: false,
     });
+  });
+
+  it('keeps only what differs from a section’s default', () => {
+    const storage = memoryStorage();
+    const memory = new SectionMemory(storage);
+    // A section drawn as it starts reports that state: nothing is stored.
+    memory.remember('Page', true, true);
+    memory.remember('Sheet', false, false);
+    expect(storage.data.has(INSPECTOR_SECTIONS_KEY)).toBe(false);
+    memory.remember('Sheet', true, false);
+    memory.remember('Page', false, true);
+    expect(JSON.parse(storage.data.get(INSPECTOR_SECTIONS_KEY)!)).toEqual({
+      Sheet: true,
+      Page: false,
+    });
+    // Back to its default, a section's entry goes, so a later change of the
+    // default reaches it.
+    memory.remember('Page', true, true);
+    expect(JSON.parse(storage.data.get(INSPECTOR_SECTIONS_KEY)!)).toEqual({
+      Sheet: true,
+    });
+    expect(new SectionMemory(storage).isOpen('Page', false)).toBe(false);
   });
 
   it('falls back to the defaults when storage is missing, broken or throws', () => {
@@ -53,7 +75,7 @@ describe('which sections are open', () => {
     ]) {
       const memory = new SectionMemory(storage);
       expect(memory.isOpen('Text', true)).toBe(true);
-      memory.remember('Text', false); // never throws
+      memory.remember('Text', false, true); // never throws
       expect(memory.isOpen('Text', true)).toBe(false);
     }
   });
@@ -70,7 +92,7 @@ describe('a section', () => {
       hint: 'What it is for.',
     });
     expect(html).toBe(
-      '<details class="insp-group" data-group="Annotations">' +
+      '<details class="insp-group" data-group="Annotations" data-open-default="false">' +
         `<summary class="insp-h">${CARET}Annotations <span class="badge insp-count">3</span></summary>` +
         '<div class="insp-rows"><div class="insp-hint">What it is for.</div><p>rows</p></div></details>',
     );
@@ -78,9 +100,9 @@ describe('a section', () => {
 
   it('opens as the user left it', () => {
     const left = new SectionMemory(null);
-    left.remember('Wiring', true);
+    left.remember('Wiring', true, false);
     expect(sectionHtml(left, 'Wiring', 'x', { open: false })).toContain(
-      'data-group="Wiring" open>',
+      'data-group="Wiring" data-open-default="false" open>',
     );
   });
 
@@ -92,7 +114,7 @@ describe('a section', () => {
     expect(
       sectionHtml(memory, '<b>"x"</b> options', 'x', { open: true }),
     ).toContain(
-      `data-group="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" open><summary class="insp-h">${CARET}&lt;b&gt;&quot;x&quot;&lt;/b&gt; options</summary>`,
+      `data-group="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" data-open-default="true" open><summary class="insp-h">${CARET}&lt;b&gt;&quot;x&quot;&lt;/b&gt; options</summary>`,
     );
   });
 });

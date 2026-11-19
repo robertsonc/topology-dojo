@@ -475,7 +475,7 @@ app.innerHTML = `
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
       <div class="inspector-col">
-        <button class="inspector-toggle" id="inspector-toggle" title="${tip('view.toggleProperties', 'Hide properties')}"><span class="toggle-word">hide</span> ${icon('panel-right-close')}</button>
+        <button type="button" class="btn btn-sm btn-ghost inspector-toggle" id="inspector-toggle" title="${tip('view.toggleProperties', 'Hide properties')}" aria-label="Hide properties"><span class="toggle-word">hide</span> ${icon('panel-right-close')}</button>
         <div class="inspector-body" id="inspector-body">
           <aside class="inspector scroll-slim" id="inspector"></aside>
         </div>
@@ -2061,6 +2061,9 @@ function selectProblemTarget(loc: {
   if (loc.kind === 'link') editor.focusLink(loc.id);
   else if (loc.kind === 'zone') editor.focusZone(loc.id);
   else editor.focusNode(loc.id);
+  // A jump shows the element, even when it was selected already and the
+  // Page or Document tab had been picked since.
+  inspectorTabs.showSelection();
 }
 
 /** Every element a problem names on its page, in the order it names them. */
@@ -2406,6 +2409,9 @@ const inspectorTabs = mountInspectorTabs(
   inspector,
   browserStorage(),
   renderInspector,
+  // The tab row heads the column, above the panel's body (which is hidden
+  // while the column is collapsed).
+  app.querySelector<HTMLElement>('#inspector-body')!,
 );
 const inspectorContext: InspectorContext = {
   root: inspector,
@@ -2427,6 +2433,9 @@ const inspectorContext: InspectorContext = {
 const inspectorWrap = app.querySelector<HTMLDivElement>('#inspector-wrap')!;
 const inspectorToggle =
   app.querySelector<HTMLButtonElement>('#inspector-toggle')!;
+// The toggle is drawn at the end of the tab row: it follows the tab list in
+// the markup as well, so keyboard focus meets the tabs first.
+inspectorTabs.tabList.after(inspectorToggle);
 function setInspectorCollapsed(collapsed: boolean, persist = true): void {
   inspectorWrap.classList.toggle('collapsed', collapsed);
   inspectorToggle.innerHTML = collapsed
@@ -2434,6 +2443,11 @@ function setInspectorCollapsed(collapsed: boolean, persist = true): void {
     : `<span class="toggle-word">hide</span> ${icon('panel-right-close')}`;
   inspectorToggle.title = commands.titleWithShortcut(
     'view.toggleProperties',
+    collapsed ? 'Show properties' : 'Hide properties',
+  );
+  // Its name says what it does; the word it shows is the start of it.
+  inspectorToggle.setAttribute(
+    'aria-label',
     collapsed ? 'Show properties' : 'Hide properties',
   );
   if (!persist) return;

@@ -44,6 +44,8 @@ export const MORE_COMMANDS: readonly (CommandId | null)[] = [
   'edit.pasteFormat',
   null,
   'arrange.bringToFront',
+  'arrange.bringForward',
+  'arrange.sendBackward',
   'arrange.sendToBack',
   null,
   'edit.duplicate',

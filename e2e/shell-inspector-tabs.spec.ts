@@ -213,8 +213,9 @@ test('a node shows its link attachment, and overriding it writes the node', asyn
   await expect
     .poll(async () => (await savedElement(page, 'nodes', 'fw')).linkAttach)
     .toEqual({});
+  // An override with nothing set yet: the padding is still the page's.
   await expect(line).toHaveText(
-    'This node: anchor box on, 8 px padding, ends not distributed.',
+    'This node: anchor box on, 8 px padding (from page), ends not distributed.',
   );
   const pad = attach.locator('input[data-key="linkAttach.pad"]');
   await pad.fill('14');
@@ -297,4 +298,72 @@ test('two nodes can be arranged and annotated from the Selection tab', async ({
   await expect
     .poll(async () => (await savedDocument(page)).pages[0]!.zones.length)
     .toBe(zones + 1);
+});
+
+test('a Problems jump shows the element, even after the Page tab was picked', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // A node and a duplicate one grid step away: they overlap, a problem.
+  await page.locator('.pitem').first().click();
+  await page.keyboard.press('Control+d');
+  await expect(page.locator('#prob-count')).not.toHaveText('0');
+  await page.locator('#problems-toggle').click();
+  const go = page
+    .locator('#problems .prob', { hasText: 'overlap' })
+    .first()
+    .locator('.prob-go');
+
+  await go.click();
+  await expect(tab(page, 'selection')).toHaveAttribute('aria-selected', 'true');
+  const title = await page.locator('#inspector .insp-title').innerText();
+
+  // The Page tab picked by hand, then the same problem again: the selection
+  // has not changed, and the jump still shows it.
+  await inspectorTab(page, 'page');
+  await go.click();
+  await expect(tab(page, 'selection')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#inspector .insp-title')).toHaveText(title);
+});
+
+test('a section left as it starts is not written to storage', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await inspectorTab(page, 'document');
+  await inspectorSection(page, 'Sheet');
+  await inspectorTab(page, 'page');
+  // Only the section the user opened is remembered, not the defaults of the
+  // sections drawn on the way.
+  const stored = () =>
+    page.evaluate(() =>
+      JSON.parse(
+        localStorage.getItem('topology-dojo:inspector-sections') ?? '{}',
+      ),
+    );
+  expect(await stored()).toEqual({ Sheet: true });
+  // Closed again, it is back at its default: nothing is kept.
+  await inspectorTab(page, 'document');
+  await section(page, 'Sheet').locator('> summary').click();
+  await expect(section(page, 'Sheet')).not.toHaveAttribute('open', '');
+  expect(await stored()).toEqual({});
+});
+
+test('focus meets the tabs before the hide toggle drawn at their end', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const toggle = page.locator('#inspector-toggle');
+  await expect(toggle).toHaveAccessibleName('Hide properties');
+  await tab(page, 'page').focus();
+  await page.keyboard.press('Tab');
+  await expect(toggle).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(tab(page, 'page')).toBeFocused();
+  // Collapsed, the tab row goes with the panel and the toggle says so.
+  await toggle.click();
+  await expect(page.locator('.insp-tabs')).toBeHidden();
+  await expect(toggle).toHaveAccessibleName('Show properties');
+  await toggle.click();
+  await expect(page.locator('.insp-tabs')).toBeVisible();
 });

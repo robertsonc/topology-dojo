@@ -77,30 +77,28 @@
 .inspector-wrap.collapsed .inspector-body {
   display: none;
 }
+/* The collapse toggle is the shared small button (.btn .btn-sm). */
 .inspector-toggle {
   align-self: flex-end;
-  font: 400 12px/1 var(--font);
-  color: var(--fg-weak);
-  background: var(--surface-float);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 4px 6px;
-  cursor: pointer;
-  box-shadow: var(--shadow-raised);
-}
-.inspector-toggle:hover {
-  color: var(--fg);
-  border-color: var(--line-strong);
 }
 /* While the panel is open the toggle sits at the end of the tab row, which
-   leaves it room; collapsed, it is all the column shows. */
+   leaves it room; collapsed, it is all the column shows. It comes after the
+   tab list in the markup too, so focus meets the tabs first. */
 .inspector-wrap:not(.collapsed) .inspector-toggle {
   position: absolute;
-  top: 12px;
+  top: 10px;
   right: 12px;
 }
 .inspector-wrap:not(.collapsed) .insp-tabs {
   padding-right: 66px;
+}
+.inspector-wrap.collapsed .insp-tabs {
+  display: none;
+}
+/* Collapsed, the toggle is over the canvas: it takes a surface of its own. */
+.inspector-wrap.collapsed .inspector-toggle {
+  border-color: var(--line);
+  background: var(--surface-float);
 }
 /* Under the default width the toggle is its icon alone, a 28px square level
    with the tabs, and the tabs share what is left by the length of their
@@ -179,7 +177,9 @@
 /* ── Tabs ──────────────────────────────────────────────────────────────── */
 /* The shared .tabs row, spanning the panel's own width. */
 .insp-tabs {
-  padding: 0 0 6px;
+  padding: 0;
+  /* 6px under the row: the column's 8px gap, less 2px. */
+  margin-bottom: -2px;
 }
 .insp-tabs > .tab {
   padding: 0 4px;

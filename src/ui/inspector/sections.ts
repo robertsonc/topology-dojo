@@ -41,10 +41,19 @@ export class SectionMemory {
     return this.open.get(title) ?? fallback;
   }
 
-  /** Remember that the section was opened or closed. */
-  remember(title: string, open: boolean): void {
-    if (this.open.get(title) === open) return;
-    this.open.set(title, open);
+  /**
+   * Remember that the section was opened or closed. Only a state that
+   * differs from the section's default (`fallback`) is kept: a section left
+   * as it starts has no entry, so a later change to its default reaches it.
+   */
+  remember(title: string, open: boolean, fallback: boolean): void {
+    if (open === fallback) {
+      if (!this.open.has(title)) return;
+      this.open.delete(title);
+    } else {
+      if (this.open.get(title) === open) return;
+      this.open.set(title, open);
+    }
     try {
       this.storage?.setItem(
         INSPECTOR_SECTIONS_KEY,
@@ -88,7 +97,7 @@ export function sectionHtml(
     ? `<div class="insp-hint">${esc(opts.hint)}</div>`
     : '';
   return (
-    `<details class="insp-group" data-group="${esc(title)}"${open ? ' open' : ''}>` +
+    `<details class="insp-group" data-group="${esc(title)}" data-open-default="${opts.open}"${open ? ' open' : ''}>` +
     `<summary class="insp-h">${CARET}${esc(title)}${count}</summary>` +
     `<div class="insp-rows">${hint}${body}</div>` +
     `</details>`
@@ -103,7 +112,14 @@ export function wireSections(root: ParentNode, memory: SectionMemory): void {
       d.addEventListener('toggle', () => {
         // A section drawn and then replaced by a redraw still reports its
         // first toggle; only the one on the page speaks for the user.
-        if (d.isConnected) memory.remember(d.dataset.group!, d.open);
+        // (A section drawn open also reports a toggle as it is inserted;
+        // that is its default, or what was remembered, so nothing changes.)
+        if (d.isConnected)
+          memory.remember(
+            d.dataset.group!,
+            d.open,
+            d.dataset.openDefault === 'true',
+          );
       });
     });
 }
