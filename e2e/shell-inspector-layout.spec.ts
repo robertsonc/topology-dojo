@@ -453,3 +453,25 @@ test('on a phone a choice in the properties drawer shows its words in full', asy
   expect(status.words).toBe('None (no indicator)');
   expect(status.text).toBeLessThanOrEqual(status.inner);
 });
+
+// The last tab ran 4px under Hide: a press on its right edge closed the
+// panel.
+for (const width of [240, 300, 480]) {
+  test(`no tab runs under the Hide button at a ${width}px panel`, async ({
+    page,
+  }) => {
+    await page.evaluate(
+      (w) => localStorage.setItem('tds-inspector-width', String(w)),
+      width,
+    );
+    await page.reload();
+    await expect(page.locator('#page-canvas')).toBeVisible();
+    const hide = (await page.locator('#inspector-toggle').boundingBox())!;
+    for (const tab of await page.locator('.insp-tabs > .tab').all()) {
+      const box = (await tab.boundingBox())!;
+      expect(box.x + box.width, await tab.innerText()).toBeLessThanOrEqual(
+        hide.x,
+      );
+    }
+  });
+}

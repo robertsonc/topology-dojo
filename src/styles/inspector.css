@@ -89,8 +89,10 @@
   top: 10px;
   right: 12px;
 }
+/* The toggle's width ("Hide", about 71px) and a 6px gap: no tab runs under
+   it. */
 .inspector-wrap:not(.collapsed) .insp-tabs {
-  padding-right: 66px;
+  padding-right: 78px;
 }
 .inspector-wrap.collapsed .insp-tabs {
   display: none;
