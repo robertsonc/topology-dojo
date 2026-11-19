@@ -217,6 +217,18 @@ canvas was made to fit its stage (EDT-34), and once when the zoom readout
 they include changed meaning (EDT-38). Each regeneration was looked at before
 it was committed.
 
+2026-11-19, on the branch of draft PR #326 (proposal 0013, not merged, and
+not part of the run above): the same three baselines were regenerated twice
+more. Each is a screenshot of the canvas box, so it includes the chrome that
+floats over the canvas (the node library, the pages strip and the zoom
+controls), and its size follows the chrome around it. With the toolbar, the
+properties panel and the status bar docked edge to edge the box is 1018×646
+(it was 1005×600), and the floating controls draw SVG icons instead of
+symbol characters (`3d11fb0`, `3765dc3`). The first commit records that its
+images came from a Linux checkout with the real typeface, not from a CI
+artifact; the second does not say where its images were made. Both record
+that each image was looked at before it was committed.
+
 ---
 
 ## 5. Exact automated release gates and commands

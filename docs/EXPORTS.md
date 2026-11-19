@@ -3,7 +3,7 @@
 Phase 1 ("remove adoption blockers") makes a Topology Dojo diagram usable
 where network teams already work. This page is the fidelity contract: what
 each format keeps, what it drops, and why. Exports are reachable from the
-editor toolbar (**svg**, **png**, and the **⤓ export…** menu) and from MCP
+editor toolbar (**svg**, **png**, and the **export…** menu) and from MCP
 (`render_svg`, `export_flipbook`, `export_topology`); the "Where it runs"
 column says which side has each format. Imports go through **open** and
 `import_topology`.
