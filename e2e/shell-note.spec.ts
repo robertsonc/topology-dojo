@@ -155,3 +155,58 @@ test('a shared link opens on its banner, without the note', async ({
   await expect(page.locator('#sharedBanner')).toBeVisible();
   await expect(note(page)).toBeHidden();
 });
+
+// In a window under 480px tall the note takes the canvas's height: it keeps
+// clear of the zoom control and of the closed properties toggle, so every
+// one of them can still be pressed, and the toggle never covers its title.
+for (const size of [
+  { width: 360, height: 225 },
+  { width: 320, height: 256 },
+  { width: 1024, height: 400 },
+  { width: 844, height: 390 },
+]) {
+  test(`in a ${size.width}x${size.height} window the note covers no control`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await bootEditor(page);
+    await returningUser(page);
+    await expect(note(page)).toBeVisible();
+    // The open library drawer covers the canvas's controls by design below
+    // 1,024px; with it closed, only the note could.
+    if (size.width < 1024) await page.locator('#palette-toggle').click();
+    await expect(note(page)).toBeVisible();
+    const found = await page.evaluate(() => {
+      const card = document
+        .getElementById('shellNote')!
+        .getBoundingClientRect();
+      const title = document
+        .querySelector('.shell-note-title')!
+        .getBoundingClientRect();
+      const meet = (a: DOMRect, b: DOMRect) =>
+        Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 &&
+        Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+      const out: string[] = [];
+      for (const id of [
+        'ccZoomOut',
+        'ccZoom',
+        'ccZoomIn',
+        'ccFit',
+        'inspector-toggle',
+      ]) {
+        const el = document.getElementById(id)!;
+        if (!el.checkVisibility()) continue;
+        const r = el.getBoundingClientRect();
+        if (meet(r, card)) out.push(`${id} meets the note`);
+        if (meet(r, title)) out.push(`${id} meets its title`);
+        const hit = document.elementFromPoint(
+          r.left + r.width / 2,
+          r.top + r.height / 2,
+        );
+        if (!hit || !el.contains(hit)) out.push(`${id} is not pressed`);
+      }
+      return out;
+    });
+    expect(found).toEqual([]);
+  });
+}

@@ -1040,12 +1040,19 @@
     bottom: 4px;
   }
   /* The "what moved" note takes the canvas's height and scrolls inside
-     itself, so its title and its lines are not cut off above the canvas.
-     It covers the corner controls until it is dismissed. */
+     itself, so its title and its lines are not cut off above the canvas. */
   .shell-note {
     top: 4px;
     bottom: 4px;
     overflow-y: auto;
+  }
+  /* In a narrow canvas too, it keeps clear of the zoom control (about 142px
+     wide, 10px in from the edge) and so of the closed properties toggle
+     above it: neither is covered, and neither covers its title. */
+  @container canvas-col (max-width: 520px) {
+    .shell-note {
+      right: 160px;
+    }
   }
 }
 @media (max-height: 480px) and (max-width: 1023px) {

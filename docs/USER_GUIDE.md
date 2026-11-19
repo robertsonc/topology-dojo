@@ -350,8 +350,10 @@ toolbar's controls went: the menus hold the File, Edit, View and Arrange
 commands; the tools are on the left rail; pages, grid, snap and the minimap
 are on the bar under the canvas; Properties has Selection, Page and Document
 tabs; and **Ctrl/Cmd+K** finds any command. The card does not take the focus
-or block the canvas or any key, and it is not shown in present mode.
-**Got it** dismisses it for good in this browser; **Show shortcuts** opens the
+or block the canvas or any key, and it is not shown in present mode. In a
+window under 480px tall it runs the canvas's height and scrolls within
+itself, and it keeps clear of the zoom control and the closed **Properties**
+toggle, so both can still be pressed. **Got it** dismisses it for good in this browser; **Show shortcuts** opens the
 shortcut sheet and leaves the card where it is. **Help → What moved** (or
 "What moved" in the command palette) shows it again at any time. A browser
 with nothing of the editor's in its storage never sees it, and a visit that
