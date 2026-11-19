@@ -130,6 +130,7 @@ import {
   createCommandRegistry,
   HELP_GESTURES,
   isPoint,
+  KEYS_SEPARATOR,
   matchKey,
   oneOf,
   PRESENT_KEYS,
@@ -5331,14 +5332,19 @@ function openHelp(): void {
         s.rows
           .map(
             ([k, d]) =>
-              `<div class="help-row"><kbd>${esc(k)}</kbd><span>${esc(d)}</span></div>`,
+              // What it does, then each shortcut as its own key cap, so a
+              // command with two shortcuts wraps instead of overflowing.
+              `<div class="help-row"><span class="help-what">${esc(d)}</span><span class="help-keys">${k
+                .split(KEYS_SEPARATOR)
+                .map((key) => `<kbd>${esc(key)}</kbd>`)
+                .join('')}</span></div>`,
           )
           .join('') +
         `</div>`,
     )
     .join('');
   helpEl.innerHTML =
-    `<div class="help-card scroll-slim" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">` +
+    `<div class="help-card help-sheet scroll-slim" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">` +
     `<div class="help-head"><h3>Keyboard shortcuts</h3>` +
     `<button class="tbtn ticon" id="helpClose" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
     `<div class="help-cols">${cols}</div></div>`;

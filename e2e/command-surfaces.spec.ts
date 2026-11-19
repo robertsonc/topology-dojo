@@ -101,14 +101,14 @@ test('the shortcut sheet lists the commands by group, then the gestures', async 
     'Presentation',
     'Find and the node library',
   ]);
-  const rows = await card
-    .locator('.help-row')
-    .evaluateAll((els) =>
-      els.map(
-        (el) =>
-          `${el.querySelector('kbd')!.textContent} | ${el.querySelector('span')!.textContent}`,
-      ),
-    );
+  const rows = await card.locator('.help-row').evaluateAll((els) =>
+    els.map(
+      (el) =>
+        // A row's shortcuts are one key cap each: read them as the one
+        // "A · B" string the command table writes.
+        `${[...el.querySelectorAll('kbd')].map((k) => k.textContent).join(' · ')} | ${el.querySelector('.help-what')!.textContent}`,
+    ),
+  );
   for (const row of [
     'Ctrl/Cmd+S | Download as JSON',
     'Ctrl/Cmd+Shift+Z · Ctrl/Cmd+Y | Redo',

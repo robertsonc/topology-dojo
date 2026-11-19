@@ -1434,8 +1434,9 @@ export interface CommandRegistry<Id extends string = string> {
   unbound(): Id[];
 }
 
-/** The separator between two shortcuts of one command in the sheet. */
-const KEYS_SEPARATOR = ' · ';
+/** The separator between two shortcuts of one command in a sheet row's keys:
+ * the sheet splits on it to draw each shortcut as its own key cap. */
+export const KEYS_SEPARATOR = ' · ';
 
 export function createCommandRegistry<Id extends string>(
   specs: readonly CommandSpec<Id>[],
