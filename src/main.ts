@@ -65,6 +65,7 @@ import { documentToVsdx } from './export/vsdx.js';
 import { documentToPptx } from './export/pptx.js';
 import { documentToMermaid } from './export/mermaid.js';
 import { userToClient } from './editor/coords.js';
+import { placeSelectionBar, type EdgeBox } from './ui/selection-bar-place.js';
 import { nodeBounds } from './api/geometry.js';
 import { documentOverlaySVG } from './render/overlays.js';
 import { sheetPaperPt } from './api/sheet.js';
@@ -986,37 +987,54 @@ function syncMiniBarCommands(): void {
   }
 }
 
-/** Selection anchor (top-centre of the selection bbox) in client coords. */
-function miniBarAnchor(): { x: number; y: number } | null {
+/**
+ * The selection's box on screen (client coordinates), which the selection
+ * bar keeps clear of: for a link what is drawn of it (its route, markers and
+ * labels: the handles that bend it sit on that route), for nodes their
+ * bounds.
+ */
+function miniBarSelectionBox(): EdgeBox | null {
   const link = editor.getSelectedLink();
   let minX = Infinity,
     minY = Infinity,
-    maxX = -Infinity;
+    maxX = -Infinity,
+    maxY = -Infinity;
+  const add = (x: number, y: number): void => {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  };
   if (link) {
-    const pts: { x: number; y: number }[] = [];
+    const drawn = artSvg
+      .querySelector(`g[data-tds-link="${CSS.escape(link.id)}"]`)
+      ?.getBoundingClientRect();
+    if (drawn && drawn.width + drawn.height > 0)
+      return {
+        left: drawn.left,
+        top: drawn.top,
+        right: drawn.right,
+        bottom: drawn.bottom,
+      };
+    // Not drawn: its endpoints and bends stand in for the route.
     for (const id of [link.from, link.to]) {
       const n = editor.page.nodes.find((m) => m.id === id);
       const a = n ?? editor.page.anchors.find((m) => m.id === id);
-      if (a) pts.push({ x: a.x, y: a.y });
+      if (a) add(a.x, a.y);
     }
-    pts.push(...(link.waypoints ?? []));
-    if (pts.length === 0) return null;
-    for (const p of pts) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-    }
+    for (const p of link.waypoints ?? []) add(p.x, p.y);
   } else {
     const sel = editor.selectionElements();
-    if (!sel || sel.nodes.length === 0) return null;
-    for (const n of sel.nodes) {
+    for (const n of sel?.nodes ?? []) {
       const b = nodeBounds(n);
-      minX = Math.min(minX, b.x);
-      minY = Math.min(minY, b.y);
-      maxX = Math.max(maxX, b.x + b.w);
+      add(b.x, b.y);
+      add(b.x + b.w, b.y + b.h);
     }
   }
-  return userToClient(overlaySvg, (minX + maxX) / 2, minY);
+  if (minX === Infinity) return null;
+  const a = userToClient(overlaySvg, minX, minY);
+  const b = userToClient(overlaySvg, maxX, maxY);
+  return { left: a.x, top: a.y, right: b.x, bottom: b.y };
 }
 
 let miniBarSuppressed = false;
@@ -1027,9 +1045,9 @@ function updateMiniBar(): void {
     miniBar.hidden = true;
     return;
   }
-  const anchor = miniBarAnchor();
+  const selection = miniBarSelectionBox();
   const host = document.querySelector<HTMLElement>('.canvas-host');
-  if (!anchor || !host) {
+  if (!selection || !host) {
     miniBar.hidden = true;
     return;
   }
@@ -1054,16 +1072,20 @@ function updateMiniBar(): void {
   // Measured from the canvas's left edge, so the room to its right does not
   // decide whether the bar wraps onto a second row.
   miniBar.style.left = '0px';
-  const w = miniBar.offsetWidth || 200;
-  const h = miniBar.offsetHeight || 34;
-  const left = Math.max(
-    4,
-    Math.min(anchor.x - hostRect.left - w / 2, hostRect.width - w - 4),
+  // Clear of the selection: above it, or below it when there is no room
+  // above. The bar's own size (one row or two) decides what fits.
+  const at = placeSelectionBar(
+    {
+      left: selection.left - hostRect.left,
+      top: selection.top - hostRect.top,
+      right: selection.right - hostRect.left,
+      bottom: selection.bottom - hostRect.top,
+    },
+    { width: miniBar.offsetWidth || 200, height: miniBar.offsetHeight || 34 },
+    { width: hostRect.width, height: hostRect.height },
   );
-  // Clear of the selection, by the bar's own height (one row or two).
-  const top = Math.max(4, anchor.y - hostRect.top - h - 12);
-  miniBar.style.left = `${Math.round(left)}px`;
-  miniBar.style.top = `${Math.round(top)}px`;
+  miniBar.style.left = `${at.left}px`;
+  miniBar.style.top = `${at.top}px`;
   const emph = miniBar.querySelector<HTMLButtonElement>('#mbEmph');
   if (emph) {
     const ids = link ? [link.id] : (editor.selectedNodeIds() ?? []);

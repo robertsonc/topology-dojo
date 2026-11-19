@@ -9,7 +9,9 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  linkPoint,
   nodeBox,
+  openFixture,
   savedDocument,
   savedElement,
 } from './helpers.js';
@@ -129,3 +131,80 @@ for (const viewport of [
     expect(lock.x + lock.width).toBeLessThanOrEqual(box.x + box.width);
   });
 }
+
+/** Whether two boxes share any point. */
+function overlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+// The bar floats beside the selection, never on it. A link's route carries
+// the handles that bend it, so a bar on the route takes the presses meant
+// for them. Fixture: the orthogonal link `orth`, which runs over the top of
+// the nodes it joins: its route is higher than both of its ends.
+test('the bar is clear of a selected link, its handles included', async ({
+  page,
+}) => {
+  await openFixture(page, 'zone-orthogonal.json');
+  const pick = await linkPoint(page, 'orth', 0.25);
+  await page.mouse.click(pick.x, pick.y);
+  await expect(bar(page)).toBeVisible();
+  const barBox = (await bar(page).boundingBox())!;
+
+  const route = (await page
+    .locator('#page-canvas g[data-tds-link="orth"]')
+    .boundingBox())!;
+  expect(overlap(barBox, route), 'the bar covers the route').toBe(false);
+
+  // Every handle of the link takes its own press.
+  const handles = page.locator('#overlay [data-wp-add], #overlay [data-wp]');
+  expect(await handles.count()).toBeGreaterThan(0);
+  for (const handle of await handles.all()) {
+    const box = (await handle.boundingBox())!;
+    expect(overlap(barBox, box), 'the bar covers a handle').toBe(false);
+    const top = await page.evaluate(
+      ([x, y]) =>
+        document.elementFromPoint(x!, y!)?.closest('.mini-bar') !== null,
+      [box.x + box.width / 2, box.y + box.height / 2],
+    );
+    expect(top, 'a press on the handle would land on the bar').toBe(false);
+  }
+});
+
+// With no room above the selection the bar goes below it, not onto it.
+test('the bar goes below a node at the top of the canvas', async ({ page }) => {
+  await clickNode(page, 'fw');
+  await expect(bar(page)).toBeVisible();
+  const before = (await bar(page).boundingBox())!;
+  const node = await nodeBox(page, 'fw');
+  expect(before.y + before.height).toBeLessThanOrEqual(node.y);
+
+  // Pan the scene up until the node sits against the canvas's top edge.
+  const host = (await page.locator('.canvas-host').boundingBox())!;
+  await page.mouse.move(host.x + 20, host.y + host.height - 20);
+  await page.keyboard.down('Space');
+  await page.mouse.down();
+  await page.mouse.move(
+    host.x + 20,
+    host.y + host.height - 20 - (node.y - host.y) + 6,
+    {
+      steps: 8,
+    },
+  );
+  await page.mouse.up();
+  await page.keyboard.up('Space');
+
+  await expect(bar(page)).toBeVisible();
+  const moved = await nodeBox(page, 'fw');
+  expect(moved.y - host.y).toBeLessThan(40);
+  const after = (await bar(page).boundingBox())!;
+  expect(overlap(after, moved), 'the bar covers the node').toBe(false);
+  expect(after.y).toBeGreaterThanOrEqual(moved.y + moved.height);
+});
