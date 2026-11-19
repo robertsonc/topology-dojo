@@ -5561,9 +5561,15 @@ function toggleDisplayPop(): void {
         8,
     );
     displayPop.style.maxHeight = `${Math.max(120, window.innerHeight - bottom - ceiling)}px`;
-    displayPop.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
     displayPop.style.left = 'auto';
     displayPop.hidden = false;
+    // Its right edge under its button's, but its left edge never closer than
+    // 8px to the window's (a narrow window, a zoomed browser).
+    const right = Math.min(
+      Math.max(8, window.innerWidth - r.right),
+      window.innerWidth - 8 - displayPop.offsetWidth,
+    );
+    displayPop.style.right = `${Math.round(Math.max(8, right))}px`;
     displayBtn.classList.add('on');
     displayBtn.setAttribute('aria-expanded', 'true');
     releaseDisplayOverlay = registerOverlay(displayPop, {

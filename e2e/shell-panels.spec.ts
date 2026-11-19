@@ -39,6 +39,22 @@ test('Display settings stays inside a short window', async ({ page }) => {
   const lastBox = (await last.boundingBox())!;
   expect(lastBox.y).toBeGreaterThanOrEqual(box.y);
   expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(box.y + box.height);
+
+  // In a window this narrow and short (a phone zoomed to 400%) it keeps its
+  // left edge inside the window too.
+  for (const size of [
+    { width: 320, height: 256 },
+    { width: 360, height: 225 },
+  ]) {
+    await page.keyboard.press('Escape');
+    await expect(pop).toBeHidden();
+    await page.setViewportSize(size);
+    await page.locator('#tDisplay').click();
+    await expect(pop).toBeVisible();
+    const small = (await pop.boundingBox())!;
+    expect(small.x, `${size.width}x${size.height}`).toBeGreaterThanOrEqual(8);
+    expect(small.x + small.width).toBeLessThanOrEqual(size.width - 8);
+  }
 });
 
 test('pressing the canvas closes Display settings and the shortcuts work again', async ({

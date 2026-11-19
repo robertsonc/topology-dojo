@@ -4,6 +4,8 @@
   position: fixed;
   z-index: var(--z-popover);
   width: 288px;
+  /* Never wider than the window less 8px each side. */
+  max-width: calc(100vw - 16px);
   padding: 12px;
   /* A short window gives it a max-height (src/main.ts): the rest scrolls. */
   overflow-y: auto;
