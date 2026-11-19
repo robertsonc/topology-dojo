@@ -290,8 +290,8 @@ files and 3,397 tests; and the browser suite, with CI's settings (`CI=1`, no
 `--trace` or `--retries` flag, Chromium at `/opt/pw-browsers/chromium`),
 passed all 327 tests in 39 files in 9.2 minutes, with none reported flaky.
 That includes the three screenshot baselines of `e2e/visual.spec.ts`, which
-passed on this machine. No test took 20 seconds or more. The ten slowest, in
-seconds: `workspace-sync.spec.ts` "a commit the server refuses stops retrying
+passed on this machine. In that run no test took 20 seconds or more. The ten
+slowest, in seconds: `workspace-sync.spec.ts` "a commit the server refuses stops retrying
 and shows the reason" 19.6; `icons.spec.ts` "icons in the rest of the
 inspector, the bars and the frames strip" 13.5; `shell-inspector.spec.ts`
 "a number outside what the field allows is clamped or refused" 11.9 and
@@ -303,8 +303,12 @@ light)" 9.0 and "the dialogs: Share, both wizards and the node designer
 syncs as several commits" 7.7; `label-position.spec.ts` "link nudges
 accumulate, undo, and reset to Auto" 7.7; `shell-inspector-tabs.spec.ts` "a
 node shows its link attachment, and overriding it writes the node" 7.1. The
-first is within 0.4 seconds of the 20-second limit in §10.2 and is the next to
-lighten.
+first was within 0.4 seconds of the 20-second limit in §10.2, and a later
+review timed it alone, with one worker, at 20.4, 19.9 and 19.9 seconds: over
+the limit once. It was made lighter afterwards (`34f6e14`): it moves the
+page's clock instead of waiting on three real retry intervals, and still
+checks that exactly three commits are sent. Run alone with one worker three
+times on 2026-11-19, it took 5.1 to 5.4 seconds.
 
 ## 5. Exact automated release gates and commands
 
