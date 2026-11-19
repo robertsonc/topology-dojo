@@ -3369,18 +3369,16 @@ const ANNOTATE_COMMANDS: Readonly<Record<string, CommandId>> = {
 /**
  * Annotate: make a zone, flow path or marker from what is selected. `bare`
  * draws the buttons as a group of their own across the panel's width (a
- * node's last row), without the plus marks (`plus` puts them back), so the
- * two fit on one line.
+ * node's last row, the Annotate section of several nodes). Each button is
+ * its command's words, with no icon, wherever it is drawn: so two of them fit
+ * on one line of a node's last row, and "Group into zone" looks the same for
+ * one node and for several.
  */
-function annotateRow(
-  kinds: readonly AnnotationKind[],
-  bare = false,
-  plus = !bare,
-): string {
+function annotateRow(kinds: readonly AnnotationKind[], bare = false): string {
   const buttons = kinds
     .map((kind) => {
       const id = ANNOTATE_COMMANDS[kind]!;
-      return `<button type="button" class="btn btn-sm" data-annotate="${kind}" title="${tip(id)}">${plus ? `${icon('plus')} ` : ''}${esc(commands.get(id)!.title)}</button>`;
+      return `<button type="button" class="btn btn-sm" data-annotate="${kind}" title="${tip(id)}">${esc(commands.get(id)!.title)}</button>`;
     })
     .join('');
   return bare
@@ -3575,7 +3573,7 @@ function renderInspector(): void {
         inspectorSections,
         'Annotate',
         // Across the panel: the section's title is the row's label.
-        annotateRow(['zone', 'flowPath'], true, true),
+        annotateRow(['zone', 'flowPath'], true),
         { open: true },
       ) +
       sectionHtml(inspectorSections, 'Format', formatRow(), { open: true }) +

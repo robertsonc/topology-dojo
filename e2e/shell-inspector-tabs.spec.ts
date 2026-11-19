@@ -266,6 +266,40 @@ test('with a node selected, the page’s link settings are one click away', asyn
   }
 });
 
+// "Group into zone" is one button wherever it is: the same markup at the
+// foot of one node's tab and in the Annotate section of two nodes.
+test('Group into zone looks the same for one node and for two', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const zone = page.locator('#inspector [data-annotate="zone"]');
+  const look = () =>
+    zone.evaluate((b) => ({
+      classes: b.className,
+      icons: b.querySelectorAll('.icon').length,
+      text: b.textContent,
+    }));
+  await clickNode(page, 'fw');
+  await expect(tab(page, 'selection')).toHaveText('Node');
+  const one = await look();
+  const second = (await page
+    .locator('#page-canvas [data-tds-node="ec"]')
+    .boundingBox())!;
+  await page.keyboard.down('Shift');
+  await page.mouse.click(
+    second.x + second.width / 2,
+    second.y + second.height / 2,
+  );
+  await page.keyboard.up('Shift');
+  await expect(tab(page, 'selection')).toHaveText('2 nodes');
+  expect(await look()).toEqual(one);
+  expect(one).toEqual({
+    classes: 'btn btn-sm',
+    icons: 0,
+    text: 'Group into zone',
+  });
+});
+
 test('two nodes can be arranged and annotated from the Selection tab', async ({
   page,
 }) => {
