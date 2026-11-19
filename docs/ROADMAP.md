@@ -179,12 +179,13 @@ accepted it re-cuts _Now/Next_.
 [Proposal 0013](proposals/0013-ui-overhaul.md) (the UI overhaul of the editor
 chrome: placement first, then a flat skin) was **accepted 2026-11-19**. At
 that date nothing of it is on `main`. Its phase P0 (foundations) is in
-progress on draft PR #326: that branch holds the stylesheet moved to
-`src/styles/`, the token layer, the flat docked chrome, hover-reveal
+progress on draft PR #326: at `3765dc3` that branch holds the stylesheet
+moved to `src/styles/`, the token layer, the flat docked chrome, hover-reveal
 scrollbars and one SVG icon set; the command registry P0 also lists is not
-on it. Its phases P1–P4 (shell, properties panel, skin sweep, guardrails) are
-not started. P0–P4 are that proposal's own labels, unrelated to proposal
-0003's packets P1–P5 and to the "Phase 0" and "Phase 1" milestones below.
+on it, and neither is anything of its phases P1–P4 (shell, properties panel,
+skin sweep, guardrails). P0–P4 are that proposal's own labels, unrelated to
+proposal 0003's packets P1–P5 and to the "Phase 0" and "Phase 1" milestones
+below.
 
 ## Next
 

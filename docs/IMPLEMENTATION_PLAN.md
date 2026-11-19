@@ -78,8 +78,9 @@ Work that merged since August came from proposals 0005–0008, 0010, 0011 and
 0013 (the UI overhaul of the editor chrome) was accepted 2026-11-19 and is
 not a packet series of this plan either: its phases stay in
 [`proposals/0013-ui-overhaul.md`](proposals/0013-ui-overhaul.md). At that
-date its P0 is in progress on draft PR #326 (not merged) and its P1–P4 are
-not started; those labels are unrelated to proposal 0003's packets P1–P5.
+date its P0 is in progress on draft PR #326 (not merged), and at `3765dc3`
+nothing of its P1–P4 is on that branch; those labels are unrelated to
+proposal 0003's packets P1–P5.
 
 ## How to use this document
 

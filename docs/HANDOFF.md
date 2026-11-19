@@ -24,20 +24,22 @@ injection (see "Known risks"). Only this passage and the dated paragraph under
 "Known risks" were updated; the baseline, counts, initiative table and key
 files below were not re-checked._
 
-_2026-11-19 (the branch of draft PR #326, based on `main` at `f9b2bc6`; not
-merged): [proposal 0013](proposals/0013-ui-overhaul.md), the UI overhaul of
-the editor chrome, was accepted this date. The first part of its phase P0 is
-on that branch: the editor stylesheet moved out of `index.html` into
-`src/styles/` with a token layer; the chrome is flat, with the toolbar, the
-properties panel and the status bar docked (the node library and the pages
-dock still float over the canvas); panel scrollbars are neutral and appear on
-hover or keyboard focus; the chrome's icons are one SVG set instead of symbol
-characters; and the "Panel blur (glass)" display setting is gone. The command
-registry P0 also lists is not on the branch, and P1–P4 are not started. Only
-this passage, the paragraph dated 2026-11-19 under "Active implementation
-program", the `docs/proposals/0005`–`0013` entry under "Documentation map and
-history" and three new "Key files" rows were written; nothing else in this
-file was re-checked._
+_2026-11-19 (the branch of draft PR #326 at `3765dc3`, based on `main` at
+`f9b2bc6`; not merged): [proposal 0013](proposals/0013-ui-overhaul.md), the
+UI overhaul of the editor chrome, was accepted this date. The first part of
+its phase P0 is on that branch at that commit: the editor stylesheet moved
+out of `index.html` into `src/styles/` with a token layer; the chrome is
+flat, with the toolbar, the properties panel and the status bar docked (the
+node library and the pages dock still float over the canvas); panel
+scrollbars are neutral and appear on hover or keyboard focus; the chrome's
+icons are one SVG set instead of symbol characters (Lucide, a third-party
+set; `src/ui/icons.generated.ts` reproduces its ISC and MIT license text);
+and the "Panel blur (glass)" display setting is gone. The command registry
+P0 also lists is not on the branch at that commit, and neither is anything
+of P1–P4. Only this passage, the paragraph dated 2026-11-19 under "Active
+implementation program", the `docs/proposals/0005`–`0013` entry under
+"Documentation map and history" and three new "Key files" rows were written;
+nothing else in this file was re-checked._
 
 ## What Topology Dojo is
 
@@ -195,9 +197,9 @@ base fabric), so the gate the packet assumed does not follow.
 
 2026-11-19: proposal 0013 (the UI overhaul of the editor chrome, accepted
 this date) is likewise driven from its own file, not from this table. Its P0
-is in progress on draft PR #326 and is not merged; its P1–P4 are not started.
-Those phase labels are the proposal's own and are unrelated to proposal
-0003's packets P1–P5.
+is in progress on draft PR #326 and is not merged; at `3765dc3` nothing of
+its P1–P4 is on that branch. Those phase labels are the proposal's own and
+are unrelated to proposal 0003's packets P1–P5.
 
 Before starting a July implementation packet, revalidate its premise against
 `ROADMAP.md`, `CAPABILITY_MATRIX.md`, and current code. O1/O2 remain explicitly
@@ -422,8 +424,8 @@ staging` with a generated ≥16-char value kept only in the operator's
   the SD-WAN generator (slices 1–4 implemented), the icon gap review
   (tiers 1–2 shipped), SD-WAN vendor research (research only), and the UI
   overhaul of the editor chrome (accepted 2026-11-19; P0 in progress on
-  draft PR #326, P1–P4 not started). Each file's status header is
-  authoritative.
+  draft PR #326, with nothing of P1–P4 on that branch at `3765dc3`). Each
+  file's status header is authoritative.
 - `docs/EXPORTS.md` — the export/import fidelity contract.
 - `docs/futures/hw-catalog.md` — hardware-catalog phase status;
   `docs/sitrep/` holds its dated progress notes (historical).
