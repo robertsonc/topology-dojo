@@ -45,19 +45,33 @@
   background: var(--accent);
   color: var(--on-accent);
 }
+/* Hover keeps the fill, so the label keeps its contrast on any brand accent,
+   and shows a halo instead. */
 .btn-primary:hover,
 .btn-primary:active {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 86%, var(--on-accent));
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft-strong);
   color: var(--on-accent);
+}
+.btn-primary:active {
+  box-shadow: 0 0 0 2px var(--accent-soft-strong);
+}
+/* A button that stays down while something it opened is showing. */
+.btn[aria-pressed='true'] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--fg-strong);
 }
 /* No outline until hovered: for secondary actions in a row of buttons. */
 .btn-ghost {
   border-color: transparent;
 }
 /* A destructive action (delete, revoke). */
+/* The outline takes the text tone: --status-error is tuned for a fill and is
+   under 3:1 as a line on a light surface. */
 .btn-danger {
-  border-color: var(--status-error);
+  border-color: var(--status-error-fg);
   color: var(--status-error-fg);
 }
 .btn-danger:hover {
