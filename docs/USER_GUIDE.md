@@ -279,13 +279,14 @@ for each one that is showing. The Node library, pages bar, minimap, Problems
 list, and Properties panel remember whether they were open, and the panel its
 width, when browser storage is available.
 
-In a window narrower than 1,024px (half of a laptop screen, a browser zoomed
-to 150% or more, a tablet or a phone) the Node library and Properties panel
-are drawers over the canvas instead of columns beside it, so the canvas keeps
-the whole width from the rail to the window's edge. They start closed unless
-you opened them last time; **B** and **P** open and close them, and opening
-one does not resize the canvas or move the drawing. **Fit view** fits the
-drawing into the part of the canvas an open drawer leaves showing.
+In a window narrower than 1,024px (half of a laptop screen, a laptop browser
+zoomed to 150% or more, a tablet or a phone) the Node library and Properties
+panel are drawers over the canvas instead of columns beside it, so the canvas
+keeps the whole width from the rail to the window's edge. They start closed
+unless you opened them last time; **B** and **P** open and close them, and
+opening one does not resize the canvas or move the drawing. **Fit view** fits
+the drawing into the part of the canvas the open drawers leave showing, and
+the zoom control and the minimap move beside an open Properties drawer.
 
 Press **Ctrl/Cmd+K**, or choose the rail's **Command palette** button or
 **Help → Command palette**, to search everything the editor can do from one

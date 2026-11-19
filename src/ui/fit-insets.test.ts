@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FIT_GAP,
+  MIN_FIT_BAND,
   editorInsets,
   fitInsets,
   leftInsetShift,
@@ -99,6 +100,53 @@ describe('fitInsets', () => {
     const short = { left: 0, top: 0, right: 800, bottom: 100 };
     const card = { left: 0, top: 30, right: 800, bottom: 90 };
     expect(fitInsets({ canvas: short, corner: card }).bottom).toBe(60);
+  });
+
+  it('keeps what two drawers cover whole, past the 60% share', () => {
+    // 720px wide, both drawers open: the library from the rail, the
+    // properties drawer from the window's edge.
+    const wide = { left: 44, top: 44, right: 720, bottom: 732 };
+    const lib = { left: 44, top: 44, right: 252, bottom: 732 };
+    const props = { left: 396, top: 44, right: 720, bottom: 732 };
+    const insets = fitInsets({
+      canvas: wide,
+      palette: lib,
+      inspector: props,
+      drawers: true,
+    });
+    expect(insets.left).toBe(208 + FIT_GAP);
+    expect(insets.right).toBe(324 + FIT_GAP);
+    // Without drawers the same claims would give way to the share.
+    const shared = fitInsets({ canvas: wide, palette: lib, inspector: props });
+    expect(shared.left + shared.right).toBeCloseTo(676 * 0.6);
+  });
+
+  it('clears the zoom control beside a drawer with a band at the bottom', () => {
+    const wide = { left: 44, top: 44, right: 900, bottom: 732 };
+    const props = { left: 576, top: 44, right: 900, bottom: 732 };
+    // The zoom control, moved left of the drawer.
+    const ctrls = { left: 424, top: 686, right: 566, bottom: 722 };
+    const insets = fitInsets({
+      canvas: wide,
+      inspector: props,
+      corner: ctrls,
+      drawers: true,
+    });
+    expect(insets.right).toBe(324 + FIT_GAP);
+    expect(insets.bottom).toBe(732 - 686 + FIT_GAP);
+  });
+
+  it('leaves the content a strip however far the drawers reach', () => {
+    const narrow = { left: 44, top: 44, right: 400, bottom: 732 };
+    const lib = { left: 44, top: 44, right: 252, bottom: 732 };
+    const props = { left: 240, top: 44, right: 400, bottom: 732 };
+    const insets = fitInsets({
+      canvas: narrow,
+      palette: lib,
+      inspector: props,
+      drawers: true,
+    });
+    expect(356 - insets.left - insets.right).toBeCloseTo(MIN_FIT_BAND);
   });
 
   it('ignores a panel that lies wholly outside the canvas', () => {

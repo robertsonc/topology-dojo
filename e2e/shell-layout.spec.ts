@@ -509,6 +509,16 @@ for (const width of [1023, 900, 768, 720, 641]) {
     expect(b.inspector!.right - b.inspector!.left).toBe(324);
     expect(b.inspector!.left - b.area!.left).toBeGreaterThanOrEqual(72);
 
+    // However wide the panel is asked to be, 72px of canvas still shows.
+    await page.locator('#inspector').evaluate((el) => {
+      el.style.width = '600px';
+    });
+    b = await expectDrawer('inspector');
+    expect(b.inspector!.left - b.area!.left).toBeGreaterThanOrEqual(72);
+    await page.locator('#inspector').evaluate((el) => {
+      el.style.width = '';
+    });
+
     // Closing it gives the canvas back as it was.
     await page.locator('#inspector-toggle').click();
     expect(await closed(page, 'inspector-wrap')).toBe(true);
@@ -568,6 +578,153 @@ test('fit view keeps the content clear of an open drawer', async ({ page }) => {
   await expectContentVisible(page, true);
 });
 
+/** Boot the editor on clean storage that holds only `stored`. */
+async function bootStored(
+  page: Page,
+  stored: Record<string, string>,
+): Promise<void> {
+  await bootEditor(page);
+  await page.evaluate((all) => {
+    for (const [k, v] of Object.entries(all)) localStorage.setItem(k, v);
+  }, stored);
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+}
+
+/** The drawers' inner edges: the canvas they leave showing between them. */
+async function band(page: Page): Promise<{ left: number; right: number }> {
+  const b = await boxes(page, { lib: '#palette', props: '#inspector-wrap' });
+  return { left: b.lib!.right, right: b.props!.left };
+}
+
+for (const width of [641, 720]) {
+  test(`fit view keeps the content between both open drawers at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await bootStored(page, {
+      'tds-palette-collapsed': '0',
+      'tds-inspector-collapsed': '0',
+    });
+    expect(await closed(page, 'palette')).toBe(false);
+    expect(await closed(page, 'inspector-wrap')).toBe(false);
+    await page.keyboard.press('0');
+    const strip = await band(page);
+    const nodes = await nodeBoxes(page);
+    expect(nodes.length).toBeGreaterThan(0);
+    for (const n of nodes) {
+      expect(n.left).toBeGreaterThanOrEqual(strip.left);
+      expect(n.right).toBeLessThanOrEqual(strip.right);
+    }
+    // The zoom control's fit button is in reach beside the drawer.
+    expect(await hits(page, ['ccFit'])).toEqual(['ccFit']);
+  });
+}
+
+test('the zoom control and the minimap move left of an open properties drawer', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await bootEditor(page);
+  await page.locator('#minimap-toggle').click();
+  await page.locator('#inspector-toggle').click();
+  const b = await boxes(page, {
+    props: '#inspector-wrap',
+    ctrls: '#canvasCtrls',
+    map: '#minimap-dock',
+  });
+  expect(b.ctrls!.right).toBeLessThanOrEqual(b.props!.left);
+  expect(b.map!.right).toBeLessThanOrEqual(b.props!.left);
+  expect(await hits(page, [...CONTROL_IDS, 'minimap'])).toEqual([
+    ...CONTROL_IDS,
+    'minimap',
+  ]);
+  // Closed, the drawer gives the corner back.
+  await page.locator('#inspector-toggle').click();
+  const area = (await boxes(page, { area: '#canvas-area' })).area!;
+  const ctrls = (await boxes(page, { c: '#canvasCtrls' })).c!;
+  expect(area.right - ctrls.right).toBe(10);
+});
+
+test('the selection bar keeps to the canvas between open drawers', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 768, height: 800 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+  });
+  await page.keyboard.press('0');
+  // The rightmost node, beside the properties drawer.
+  const node = (await nodeBoxes(page)).sort((a, c) => c.right - a.right)[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  const bar = page.locator('.mini-bar');
+  await expect(bar).toBeVisible();
+  const strip = await band(page);
+  const box = (await boxes(page, { bar: '.mini-bar' })).bar!;
+  expect(box.left).toBeGreaterThanOrEqual(strip.left);
+  expect(box.right).toBeLessThanOrEqual(strip.right);
+});
+
+test('a press on the resize grip of a narrowed drawer keeps the stored width', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 641, height: 800 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+    'tds-inspector-width': '480',
+  });
+  const widths = () =>
+    page.evaluate(() => {
+      const panel = document.querySelector<HTMLElement>('#inspector')!;
+      return {
+        drawn: panel.offsetWidth,
+        asked: panel.style.width,
+        stored: localStorage.getItem('tds-inspector-width'),
+      };
+    });
+  // With the library open the drawer leaves 72px of canvas: the panel is
+  // drawn narrower than the 480px chosen.
+  const start = await widths();
+  expect(start.drawn).toBeLessThan(480);
+  const grip = (await page.locator('#inspector-resizer').boundingBox())!;
+  const x = grip.x + grip.width / 2;
+  const y = grip.y + grip.height / 2;
+  await page.mouse.click(x, y);
+  expect((await widths()).stored).toBe('480');
+
+  // A drag held at the drawer's limit moves nothing, and stores nothing.
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 100, y, { steps: 4 });
+  await page.mouse.up();
+  expect(await widths()).toEqual(start);
+
+  // Docked again, the panel is as wide as chosen.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+  expect((await widths()).drawn).toBe(480);
+
+  // A drag that narrows the drawer stores what it draws.
+  await page.setViewportSize({ width: 641, height: 800 });
+  const g = (await page.locator('#inspector-resizer').boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 30, g.y + g.height / 2, {
+    steps: 4,
+  });
+  await page.mouse.up();
+  const after = await widths();
+  expect(after.drawn).toBe(start.drawn - 30);
+  expect(after.asked).toBe(`${after.drawn}px`);
+  expect(after.stored).toBe(String(after.drawn));
+});
+
 test('crossing 1,024px keeps the selection, the tab and the sections', async ({
   page,
 }) => {
@@ -621,6 +778,15 @@ test('crossing 1,024px keeps the selection, the tab and the sections', async ({
   await page.setViewportSize({ width: 1280, height: 800 });
   await field.blur();
 
+  // A panel that closes while a button in it has the focus hands the focus
+  // to its toggle, not to the page.
+  await page.locator('#insp-tab-document').focus();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  await expect(page.locator('#inspector-toggle')).toBeFocused();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+
   // Kept open by choice, it stays open across the breakpoint, both ways.
   await page.locator('#inspector-toggle').click();
   await page.locator('#inspector-toggle').click();
@@ -630,4 +796,27 @@ test('crossing 1,024px keeps the selection, the tab and the sections', async ({
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
   await expectKept();
+});
+
+test('crossing 1,024px while a colour is typed keeps the panel open', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bootEditor(page);
+  const node = (await nodeBoxes(page))[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  await inspectorTab(page, 'selection');
+  const colour = page.locator('#inspector .colour-btn').first();
+  await colour.click();
+  const hex = page.locator('#inspector .colour-pop:visible input.hex');
+  await hex.fill('#12ab');
+  await hex.focus();
+  // The popover closes on any resize and gives the focus back to its
+  // button; the panel it was typed in stays open, with the focus in it.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expect(colour).toBeFocused();
 });

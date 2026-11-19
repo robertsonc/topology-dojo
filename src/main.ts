@@ -112,6 +112,7 @@ import type { LabelPlacement } from './render/label-placement.js';
 import {
   COMPACT_LAYOUT_MQ,
   defaultPanelCollapsed,
+  isCompactAbovePhone,
   isCompactLayoutWidth,
 } from './ui/compact-layout.js';
 import {
@@ -1069,6 +1070,32 @@ function updateMiniBar(): void {
   syncMiniBarCommands();
   miniBar.hidden = false;
   const hostRect = host.getBoundingClientRect();
+  // Below 1,024px (above a phone) open drawers cover the canvas's edges and
+  // are drawn over the bar: it keeps to the canvas they leave showing.
+  let bandLeft = 0;
+  let bandRight = hostRect.width;
+  if (isCompactAbovePhone(window.innerWidth)) {
+    const drawer = (id: string): DOMRect | null => {
+      const el = document.getElementById(id);
+      return el && !el.classList.contains('collapsed')
+        ? el.getBoundingClientRect()
+        : null;
+    };
+    const lib = drawer('palette');
+    const props = drawer('inspector-wrap');
+    if (lib) bandLeft = Math.max(0, lib.right - hostRect.left);
+    if (props)
+      bandRight = Math.max(
+        bandLeft,
+        Math.min(hostRect.width, props.left - hostRect.left),
+      );
+  }
+  // In a narrow strip the bar takes more rows rather than run under a
+  // drawer, down to a width where its rows would stack too tall.
+  miniBar.style.maxWidth =
+    bandRight - bandLeft < hostRect.width
+      ? `${Math.max(160, bandRight - bandLeft - 8)}px`
+      : '';
   // Measured from the canvas's left edge, so the room to its right does not
   // decide whether the bar wraps onto a second row.
   miniBar.style.left = '0px';
@@ -1076,15 +1103,15 @@ function updateMiniBar(): void {
   // above. The bar's own size (one row or two) decides what fits.
   const at = placeSelectionBar(
     {
-      left: selection.left - hostRect.left,
+      left: selection.left - hostRect.left - bandLeft,
       top: selection.top - hostRect.top,
-      right: selection.right - hostRect.left,
+      right: selection.right - hostRect.left - bandLeft,
       bottom: selection.bottom - hostRect.top,
     },
     { width: miniBar.offsetWidth || 200, height: miniBar.offsetHeight || 34 },
-    { width: hostRect.width, height: hostRect.height },
+    { width: bandRight - bandLeft, height: hostRect.height },
   );
-  miniBar.style.left = `${at.left}px`;
+  miniBar.style.left = `${at.left + bandLeft}px`;
   miniBar.style.top = `${at.top}px`;
   const emph = miniBar.querySelector<HTMLButtonElement>('#mbEmph');
   if (emph) {
@@ -1191,6 +1218,7 @@ editor.setViewInsets(() => {
     // The zoom control is always there; the minimap card above it only
     // while it is open.
     corner: unionBox(openPanelBox('canvasCtrls'), openPanelBox('minimap-dock')),
+    drawers: isCompactAbovePhone(window.innerWidth),
   });
   fitLeftInset = insets.left;
   return editorInsets(insets);
@@ -2559,29 +2587,57 @@ function readCollapsedPref(key: string): string | null {
  * Inferred defaults are not written to storage, so crossing the breakpoint
  * can still flip them; an explicit B/P toggle persists and wins at every
  * width. Crossing the breakpoint only toggles the panels' classes, so the
- * selection, the panel's tab and its sections are untouched; and a panel
- * holding the focus (a field being edited) is not closed under it.
+ * selection, the panel's tab and its sections are untouched. A panel with a
+ * field being typed in is not closed under it; a panel that closes while it
+ * holds the focus hands the focus to its toggle, not to the page.
  */
 function syncPanelLayoutFromPrefs(): void {
   const compact = isCompactLayoutWidth(window.innerWidth);
   // A field being typed in, not a button or a section heading with focus.
-  const focused = (el: HTMLElement): boolean => {
-    const active = document.activeElement;
-    return (
-      active instanceof HTMLElement &&
-      el.contains(active) &&
-      (active.matches('input, textarea, select') || active.isContentEditable)
+  const isField = (el: Element | null): boolean =>
+    el instanceof HTMLElement &&
+    (el.matches('input, textarea, select') || el.isContentEditable);
+  // The resize that crossed the breakpoint may already have moved the focus
+  // (the colour popover closes on a resize and gives it back to its button),
+  // so what had it when the resize began counts too.
+  const editing = (el: HTMLElement): boolean =>
+    [document.activeElement, focusAtResize].some(
+      (f) => isField(f) && el.contains(f),
     );
+  const close = (
+    el: HTMLElement,
+    toggle: HTMLElement,
+    shut: boolean,
+    apply: () => void,
+  ): void => {
+    if (shut && editing(el)) return;
+    const held = shut && el.contains(document.activeElement);
+    apply();
+    if (held && document.activeElement !== toggle)
+      toggle.focus({ preventScroll: true });
   };
   const palettePref = readCollapsedPref('tds-palette-collapsed');
   const paletteShut = defaultPanelCollapsed(palettePref, compact);
-  if (!(paletteShut && focused(paletteEl)))
-    setPaletteCollapsed(paletteShut, palettePref !== null);
+  close(paletteEl, paletteToggle, paletteShut, () =>
+    setPaletteCollapsed(paletteShut, palettePref !== null),
+  );
   const inspectorPref = readCollapsedPref('tds-inspector-collapsed');
   const inspectorShut = defaultPanelCollapsed(inspectorPref, compact);
-  if (!(inspectorShut && focused(inspectorWrap)))
-    setInspectorCollapsed(inspectorShut, inspectorPref !== null);
+  close(inspectorWrap, inspectorToggle, inspectorShut, () =>
+    setInspectorCollapsed(inspectorShut, inspectorPref !== null),
+  );
 }
+
+/** What had the focus as the latest resize began: a capture listener on the
+ * window runs before the ones that react to the resize. */
+let focusAtResize: Element | null = null;
+window.addEventListener(
+  'resize',
+  () => {
+    focusAtResize = document.activeElement;
+  },
+  { capture: true },
+);
 
 syncPanelLayoutFromPrefs();
 window
@@ -2610,26 +2666,58 @@ try {
 
 watchPanelWidth(inspector, inspectorWrap);
 
-// Left-edge drag-to-resize (dragging left widens the docked panel).
+// Below 1,024px the drawers float over the canvas. The open properties
+// drawer's width is kept on the stage as --insp-drawer-w, so the zoom control
+// and the minimap card move left of it instead of being covered (shell.css);
+// and the selection's mini bar moves into the canvas the drawers leave.
+{
+  const stageEl = app.querySelector<HTMLElement>('.stage')!;
+  new ResizeObserver(() => {
+    const open = !inspectorWrap.classList.contains('collapsed');
+    stageEl.style.setProperty(
+      '--insp-drawer-w',
+      `${open ? inspectorWrap.offsetWidth : 0}px`,
+    );
+    if (statusReady) updateMiniBar();
+  }).observe(inspectorWrap);
+  new ResizeObserver(() => {
+    if (statusReady) updateMiniBar();
+  }).observe(paletteEl);
+}
+
+// Left-edge drag-to-resize (dragging left widens the docked panel). A drawer
+// below 1,024px can be narrower than the stored width (it leaves canvas
+// showing beside it): the drag starts from the width drawn and stops where
+// the drawer does, so the grip always moves the edge it shows, and the panel's
+// own width never runs past what is drawn. Only a drag that changes the
+// width stores it: a press on the grip, or a drag held at the drawer's limit,
+// keeps the width the person chose, for the windows where it fits.
 inspectorResizer.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   const startX = e.clientX;
   const startW = inspector.offsetWidth;
+  const startStyle = inspector.style.width;
+  let w = startW;
   inspectorResizer.classList.add('active');
   inspectorResizer.setPointerCapture(e.pointerId);
   const onMove = (ev: PointerEvent): void => {
-    const w = Math.min(
+    const want = Math.min(
       INSPECTOR_W_MAX,
       Math.max(INSPECTOR_W_MIN, startW + (startX - ev.clientX)),
     );
-    inspector.style.width = `${w}px`;
+    inspector.style.width = `${want}px`;
+    // The drawer's limit: what it draws of the width asked for.
+    w = Math.min(want, inspector.offsetWidth);
+    if (w !== startW) inspector.style.width = `${w}px`;
+    else inspector.style.width = startStyle;
   };
   const onUp = (): void => {
     inspectorResizer.classList.remove('active');
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
+    if (w === startW) return;
     try {
-      localStorage.setItem(INSPECTOR_W_KEY, String(inspector.offsetWidth));
+      localStorage.setItem(INSPECTOR_W_KEY, String(w));
     } catch {
       /* ignore */
     }

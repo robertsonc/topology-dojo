@@ -5,9 +5,9 @@
  * Most of the chrome is docked around the canvas: the rail and the node
  * library on its left, the pages bar under it, the properties panel on its
  * right. What still floats over it is the zoom control in its bottom-right
- * corner, with the minimap card above it when that is open, and on a phone
- * the library and properties drawers over its edges. Content fitted to the
- * whole canvas box would land under those.
+ * corner, with the minimap card above it when that is open, and below
+ * 1,024px the library and properties drawers over its edges. Content fitted
+ * to the whole canvas box would land under those.
  */
 
 /** A box in viewport pixels (the part of a DOMRect this module reads). */
@@ -31,6 +31,9 @@ export const FIT_GAP = 12;
 /** A fit never gives up more than this share of the canvas, per axis. */
 const MAX_SHARE = 0.6;
 
+/** The narrowest strip a fit keeps for the content between two drawers. */
+export const MIN_FIT_BAND = 24;
+
 /**
  * The insets for a fit. Pass the box of each panel that is currently open and
  * floating over the canvas; leave out (or pass null for) a panel that is
@@ -45,8 +48,12 @@ export function fitInsets(panels: {
   /** What floats in the canvas's bottom-right corner: the zoom control, or
    * the zoom control and the minimap card above it (their joint box). */
   corner?: PanelBox | null;
+  /** The library and the properties panel are drawers over the canvas (the
+   * compact layout above a phone): the fit clears what they cover whole,
+   * however little canvas they leave between them. */
+  drawers?: boolean;
 }): FitInsets {
-  const { canvas, palette, inspector, corner } = panels;
+  const { canvas, palette, inspector, corner, drawers = false } = panels;
   const width = Math.max(0, canvas.right - canvas.left);
   const height = Math.max(0, canvas.bottom - canvas.top);
   // How far a panel reaches into the canvas from its edge, plus the gap. A
@@ -57,6 +64,15 @@ export function fitInsets(panels: {
   let left = palette ? reach(palette.right - canvas.left) : 0;
   let right = inspector ? reach(canvas.right - inspector.left) : 0;
   let bottom = 0;
+  // What the drawers cover is kept whole, short of the narrowest strip.
+  let keepLeft = 0;
+  let keepRight = 0;
+  if (drawers) {
+    const most = Math.max(0, width - MIN_FIT_BAND);
+    const scale = left + right > most ? most / (left + right) : 1;
+    keepLeft = left = left * scale;
+    keepRight = right = right * scale;
+  }
   // A corner card can be cleared by giving up a strip on the right or a band
   // at the bottom. It takes whichever costs the smaller share of its axis:
   // the low, wide zoom control takes a band at the bottom, the tall minimap
@@ -64,17 +80,21 @@ export function fitInsets(panels: {
   if (corner && width > 0 && height > 0) {
     const toRight = reach(canvas.right - corner.left);
     const toBottom = reach(canvas.bottom - corner.top);
-    if (toRight / width < toBottom / height) right = Math.max(right, toRight);
+    // Beside a drawer, a strip costs only what it adds to the drawer's.
+    const strip = toRight - keepRight;
+    if (strip / width < toBottom / height) right = Math.max(right, toRight);
     else bottom = toBottom;
   }
 
   // Keep most of the canvas for the content. When the side panels together
-  // ask for more than their share, both give way in proportion.
-  const sideCap = width * MAX_SHARE;
+  // ask for more than their share, both give way in proportion; what the
+  // drawers cover does not give way.
+  const sideCap = Math.max(width * MAX_SHARE, keepLeft + keepRight);
   if (left + right > sideCap) {
-    const scale = left + right > 0 ? sideCap / (left + right) : 0;
-    left *= scale;
-    right *= scale;
+    const flex = left - keepLeft + (right - keepRight);
+    const scale = flex > 0 ? (sideCap - keepLeft - keepRight) / flex : 0;
+    left = keepLeft + (left - keepLeft) * scale;
+    right = keepRight + (right - keepRight) * scale;
   }
   bottom = Math.min(bottom, height * MAX_SHARE);
   return { left, right, bottom };
