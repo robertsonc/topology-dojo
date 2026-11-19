@@ -123,7 +123,14 @@ import {
   parseNumberField,
 } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
-import { canvasKeyCommand, type CanvasKeyCommand } from './ui/canvas-keys.js';
+import {
+  COMMAND_SPECS,
+  commandVariant,
+  createCommandRegistry,
+  matchKey,
+  type CommandHandlers,
+  type CommandId,
+} from './ui/commands.js';
 import { enablePaletteDrag } from './ui/palette-drag.js';
 import { findInDocument, type FindMatch } from './ui/find.js';
 import type { WheelMode } from './editor/wheel.js';
@@ -187,6 +194,26 @@ markBaselineNodeTypes(window.TopologyDesigner);
 useDocumentNodeTypes(doc.customNodes);
 let current = 0;
 
+/* Commands. Every command of the editor is declared in src/ui/commands.ts
+ * (its title, its keys). This is the one registry of them: each control of
+ * the shell runs its command through it, the window key handler runs what
+ * `matchKey` finds, and tooltips take their shortcut text from it. What each
+ * command DOES is bound in one place, "Command bindings" further down, once
+ * the functions they call exist. */
+const commands = createCommandRegistry(COMMAND_SPECS);
+/** A command's tooltip with its shortcut ("Undo (Ctrl/Cmd+Z)"), escaped for
+ * an attribute; `label` words it differently for one control. */
+function tip(id: CommandId, label?: string): string {
+  return esc(commands.titleWithShortcut(id, label));
+}
+/** Run the variant of a parameterised command that a control's value names:
+ * the export of a menu option, the alignment of a button. */
+function runVariant(prefix: string, value: string | undefined): void {
+  const spec = commandVariant(prefix, value);
+  if (!spec) throw new Error(`no "${prefix}" command for "${value}"`);
+  commands.run(spec.id);
+}
+
 const app = document.getElementById('app')!;
 
 app.innerHTML = `
@@ -224,8 +251,8 @@ app.innerHTML = `
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn ticon" id="tUndo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">${icon('undo')}</button>
-        <button class="tbtn ticon" id="tRedo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">${icon('redo')}</button>
+        <button class="tbtn ticon" id="tUndo" title="${tip('edit.undo')}" aria-label="Undo">${icon('undo')}</button>
+        <button class="tbtn ticon" id="tRedo" title="${tip('edit.redo')}" aria-label="Redo">${icon('redo')}</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
@@ -256,27 +283,27 @@ app.innerHTML = `
     </div>
     <div class="bar-right">
       <div class="tgroup">
-        <button class="tbtn on" id="tSelect" title="Select/move tool (V)" aria-label="Select/move tool">${icon('tool-select')}<span class="tlabel">select</span></button>
-        <button class="tbtn" id="tLink" title="Draw link tool (L)" aria-label="Draw link tool">${icon('tool-link')}<span class="tlabel">link</span></button>
-        <button class="tbtn" id="tAnchor" title="Drop anchor tool (A) — free-floating link endpoints" aria-label="Drop anchor tool">${icon('anchor')}<span class="tlabel">anchor</span></button>
+        <button class="tbtn on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool">${icon('tool-select')}<span class="tlabel">select</span></button>
+        <button class="tbtn" id="tLink" title="${tip('tool.link')}" aria-label="Draw link tool">${icon('tool-link')}<span class="tlabel">link</span></button>
+        <button class="tbtn" id="tAnchor" title="${tip('tool.anchor')} — free-floating link endpoints" aria-label="Drop anchor tool">${icon('anchor')}<span class="tlabel">anchor</span></button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn ticon on" id="tGrid" title="Toggle grid (R)" aria-label="Toggle grid">${icon('grid')}</button>
-        <button class="tbtn ticon on" id="tSnap" title="Toggle snap (G)" aria-label="Toggle snap">${icon('snap')}</button>
-        <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)" aria-label="Calm canvas — pause animations">${icon('calm')}</button>
+        <button class="tbtn ticon on" id="tGrid" title="${tip('view.toggleGrid')}" aria-label="Toggle grid">${icon('grid')}</button>
+        <button class="tbtn ticon on" id="tSnap" title="${tip('view.toggleSnap')}" aria-label="Toggle snap">${icon('snap')}</button>
+        <button class="tbtn ticon" id="tCalm" title="${tip('view.toggleCalm', 'Calm canvas — pause animations')}" aria-label="Calm canvas — pause animations">${icon('calm')}</button>
         <button class="tbtn ticon on" id="tBadges" title="Toggle on-canvas problem badges" aria-label="Toggle on-canvas problem badges">${icon('badges')}</button>
         <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">${icon('settings')}</button>
         <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">${icon('sun')}</button>
-        <button class="tbtn ticon" id="tFit" title="Fit view (0)" aria-label="Fit view">${icon('fit-view')}</button>
+        <button class="tbtn ticon" id="tFit" title="${tip('view.fit')}" aria-label="Fit view">${icon('fit-view')}</button>
         <button class="tbtn ticon" id="tPresent" title="Present — full-screen playback of all frames" aria-label="Present full-screen">${icon('present')}</button>
-        <button class="tbtn ticon" id="tHelp" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
+        <button class="tbtn ticon" id="tHelp" title="${tip('help.shortcuts')}" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn" id="tDelete" title="Delete selection (Del)" aria-label="Delete selection">${icon('delete')}<span class="tlabel">delete</span></button>
-        <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)" aria-label="Tidy layout">${icon('tidy')}<span class="tlabel">tidy</span></button>
-        <button class="tbtn" id="tBalance" title="Balance layout — align rows/columns + centre (Shift+T)" aria-label="Balance layout">${icon('balance')}<span class="tlabel">balance</span></button>
+        <button class="tbtn" id="tDelete" title="${tip('edit.delete', 'Delete selection')}" aria-label="Delete selection">${icon('delete')}<span class="tlabel">delete</span></button>
+        <button class="tbtn" id="tTidy" title="${tip('arrange.tidy', 'Tidy layout — grid-snap + de-overlap')}" aria-label="Tidy layout">${icon('tidy')}<span class="tlabel">tidy</span></button>
+        <button class="tbtn" id="tBalance" title="${tip('arrange.balance', 'Balance layout — align rows/columns + centre')}" aria-label="Balance layout">${icon('balance')}<span class="tlabel">balance</span></button>
         <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm" aria-label="Auto-arrange with a layout algorithm">
           <option value="">arrange…</option>
           <option value="hierarchical">hierarchical</option>
@@ -325,11 +352,11 @@ app.innerHTML = `
   <div class="stage">
     <div class="canvas-area" id="canvas-area">
       <aside class="palette" id="palette">
-        <button class="palette-toggle" id="palette-toggle" title="Hide node library (B)">nodes ${icon('panel-left-close')}</button>
+        <button class="palette-toggle" id="palette-toggle" title="${tip('view.toggleLibrary', 'Hide node library')}">nodes ${icon('panel-left-close')}</button>
         <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
         <div class="palette-list scroll-slim" id="palette-list"></div>
         <div class="minimap-dock" id="minimap-dock">
-          <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">map ${icon('chevron-down')}</button>
+          <button class="minimap-toggle" id="minimap-toggle" title="${tip('view.toggleMinimap', 'Hide minimap')}">map ${icon('chevron-down')}</button>
           <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
       </aside>
@@ -346,7 +373,7 @@ app.innerHTML = `
            row while both fit; otherwise the controls sit above the strip. -->
       <div class="canvas-dock" id="canvas-dock">
         <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
-          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="Hide frames (F)">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
+          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="${tip('view.toggleFrames', 'Hide frames')}">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
           <div class="frames-reveal">
             <div class="filmstrip scroll-slim" id="filmstrip"></div>
           </div>
@@ -354,16 +381,16 @@ app.innerHTML = `
         <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Canvas view">
           <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">${icon('hand')}</button>
           <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
-          <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)" aria-label="Zoom level — fit view">100%</button>
+          <button class="cc-btn cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom level — fit view">100%</button>
           <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
-          <button class="cc-btn" id="ccFit" title="Fit to content (0)" aria-label="Fit to content">${icon('fit-view')}</button>
+          <button class="cc-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
         </div>
       </div>
     </div>
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
       <div class="inspector-col">
-        <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ${icon('panel-right-close')}</button>
+        <button class="inspector-toggle" id="inspector-toggle" title="${tip('view.toggleProperties', 'Hide properties')}">hide ${icon('panel-right-close')}</button>
         <div class="inspector-body" id="inspector-body">
           <aside class="inspector scroll-slim" id="inspector"></aside>
         </div>
@@ -482,8 +509,9 @@ function reportSave(ok: boolean, okText?: string): void {
   );
 }
 function savedChipAction(): boolean {
-  if (savedEl.classList.contains('save-failed')) downloadDocJSON();
-  else if (savedEl.classList.contains('save-stale')) loadFromOtherTab();
+  if (savedEl.classList.contains('save-failed')) commands.run('file.download');
+  else if (savedEl.classList.contains('save-stale'))
+    commands.run('file.loadOtherTab');
   else return false;
   return true;
 }
@@ -1134,7 +1162,7 @@ function updateSharedBanner(): void {
   sharedBanner.hidden = activeSlot !== 'shared';
   sharedUnpublish.hidden = activeSlot !== 'shared' || !activeShareId;
 }
-sharedBanner.querySelector('#sharedKeep')?.addEventListener('click', () => {
+function keepSharedCopy(): void {
   if (
     !confirm(
       'Keep this shared copy as your document? Your previous locally saved ' +
@@ -1149,12 +1177,12 @@ sharedBanner.querySelector('#sharedKeep')?.addEventListener('click', () => {
   updateSharedBanner();
   markDirty();
   promptSignIn();
-});
-sharedBanner.querySelector('#sharedBack')?.addEventListener('click', () => {
+}
+function backToMyDocument(): void {
   activeShareId = undefined;
   loadDoc(loadLocal() ?? sampleDocument());
-});
-sharedUnpublish.addEventListener('click', () => {
+}
+function unpublishSharedLink(): void {
   if (!activeShareId) return;
   if (
     !confirm(
@@ -1188,7 +1216,16 @@ sharedUnpublish.addEventListener('click', () => {
       alert(err instanceof Error ? err.message : 'Could not unpublish.');
     }
   })();
-});
+}
+sharedBanner
+  .querySelector('#sharedKeep')
+  ?.addEventListener('click', () => commands.run('shared.keepCopy'));
+sharedBanner
+  .querySelector('#sharedBack')
+  ?.addEventListener('click', () => commands.run('shared.backToMine'));
+sharedUnpublish.addEventListener('click', () =>
+  commands.run('shared.unpublish'),
+);
 
 const shareMatch = location.pathname.match(/^\/v\/([\w-]+)\/?$/);
 if (shareMatch) {
@@ -1215,7 +1252,7 @@ if (shareMatch) {
 // (see the bottom of this module).
 
 /* File actions: new / save (download) / open (upload). */
-app.querySelector('#fNew')?.addEventListener('click', () => {
+function newDocument(): void {
   if (!confirm('Start a new document? Unsaved changes to this one are lost.'))
     return;
   if (!closeWorkspaceForDocumentReplacement()) return;
@@ -1231,8 +1268,13 @@ app.querySelector('#fNew')?.addEventListener('click', () => {
   // An anonymous visitor (in from a share link) has just started a document
   // of their own: say, without blocking, what signing in would add.
   promptSignIn();
-});
-app.querySelector('#fSave')?.addEventListener('click', downloadDocJSON);
+}
+app
+  .querySelector('#fNew')
+  ?.addEventListener('click', () => commands.run('file.new'));
+app
+  .querySelector('#fSave')
+  ?.addEventListener('click', () => commands.run('file.download'));
 
 /* Image export: SVG (vector, honors calm) and PNG (always a static raster).
  * #222: the click used to fire a detached <a download> and revoke the blob
@@ -1260,7 +1302,7 @@ function exportBase(): string {
   const page = doc.pages[current]!;
   return `${docBase()}_${(page.name || 'frame').replace(/[^\w.-]+/g, '_')}`;
 }
-app.querySelector('#fSvg')?.addEventListener('click', () => {
+function exportSvg(): void {
   const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.svg`;
   try {
@@ -1275,8 +1317,8 @@ app.querySelector('#fSvg')?.addEventListener('click', () => {
     const detail = err instanceof Error ? err.message : 'SVG export failed.';
     reportExport('svg', 'error', detail);
   }
-});
-app.querySelector('#fPng')?.addEventListener('click', () => {
+}
+function exportPng(): void {
   if (pngBtn?.disabled) return;
   const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.png`;
@@ -1291,7 +1333,11 @@ app.querySelector('#fPng')?.addEventListener('click', () => {
     .finally(() => {
       if (pngBtn) pngBtn.disabled = false;
     });
-});
+}
+app
+  .querySelector('#fSvg')
+  ?.addEventListener('click', () => commands.run('file.export.svg'));
+pngBtn?.addEventListener('click', () => commands.run('file.export.png'));
 /* More export formats: PDF (raster @2× through the same pipeline as PNG, so
  * it always matches the canvas), the standalone flipbook HTML (same generator
  * as the MCP tool — no fork), clipboard PNG, and selection-only crops. */
@@ -1450,10 +1496,8 @@ function copyImage(copy: () => Promise<void>): void {
     },
   );
 }
-exportSel.addEventListener('change', () => {
-  const kind = exportSel.value;
-  exportSel.value = '';
-  if (!kind) return;
+/** Run one of the export menu's formats, reporting how it goes. */
+function exportFromMenu(kind: string): void {
   // The chip says what is happening from the start, so a stale message from
   // an earlier export never stands in for this one's outcome.
   reportExport(kind, 'pending');
@@ -1465,6 +1509,11 @@ exportSel.addEventListener('change', () => {
       alert(`Export failed: ${detail}`);
     },
   );
+}
+exportSel.addEventListener('change', () => {
+  const kind = exportSel.value;
+  exportSel.value = '';
+  if (kind) runVariant('file.export.', kind);
 });
 /* New from a starter template. */
 const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
@@ -1477,30 +1526,28 @@ templateSel.innerHTML =
     )
     .join('') +
   `<option value="${SDWAN_WIZARD}" title="Generate an SD-WAN fabric: vendor, regions, hubs, branches, WAN transports, HA, LAN">Generate SD-WAN…</option>`;
-templateSel.addEventListener('change', () => {
-  const id = templateSel.value;
-  templateSel.value = '';
-  if (!id) return;
-  if (id === SDWAN_WIZARD) {
-    openSdwanWizard({
-      mount: app,
-      render: (generated) => {
-        const p = generated.pages[0]!;
-        return pageToSVG(p, {
-          layers: generated.layers,
-          calm: true,
-          theme: currentTheme(),
-        });
-      },
-      onCreate: (generated) => {
-        if (!confirm('Replace the current diagram? Unsaved changes are lost.'))
-          return;
-        if (!closeWorkspaceForDocumentReplacement()) return;
-        loadDoc(generated);
-      },
-    });
-    return;
-  }
+/** Open the SD-WAN generator; what it creates replaces the document. */
+function generateSdwan(): void {
+  openSdwanWizard({
+    mount: app,
+    render: (generated) => {
+      const p = generated.pages[0]!;
+      return pageToSVG(p, {
+        layers: generated.layers,
+        calm: true,
+        theme: currentTheme(),
+      });
+    },
+    onCreate: (generated) => {
+      if (!confirm('Replace the current diagram? Unsaved changes are lost.'))
+        return;
+      if (!closeWorkspaceForDocumentReplacement()) return;
+      loadDoc(generated);
+    },
+  });
+}
+/** Start a new document from the starter template `id`. */
+function newFromTemplate(id: string): void {
   // A parametric template asks for its parameters first (and confirms on
   // Create); one without parameters falls through to the plain path below.
   if (
@@ -1524,10 +1571,19 @@ templateSel.addEventListener('change', () => {
   if (!confirm('Start from this template? Unsaved changes are lost.')) return;
   if (!closeWorkspaceForDocumentReplacement()) return;
   loadDoc(buildTemplate(id));
+}
+templateSel.addEventListener('change', () => {
+  const id = templateSel.value;
+  templateSel.value = '';
+  if (!id) return;
+  if (id === SDWAN_WIZARD) commands.run('file.generateSdwan');
+  else runVariant('file.template.', id);
 });
 
 const fileInput = app.querySelector<HTMLInputElement>('#fInput')!;
-app.querySelector('#fOpen')?.addEventListener('click', () => fileInput.click());
+app
+  .querySelector('#fOpen')
+  ?.addEventListener('click', () => commands.run('file.open'));
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
   fileInput.value = '';
@@ -1606,15 +1662,15 @@ function setTool(t: 'select' | 'link' | 'anchor'): void {
   anchorBtn.classList.toggle('on', t === 'anchor');
   renderStatus();
 }
-selectBtn.addEventListener('click', () => setTool('select'));
-linkBtn.addEventListener('click', () => setTool('link'));
-anchorBtn.addEventListener('click', () => setTool('anchor'));
+selectBtn.addEventListener('click', () => commands.run('tool.select'));
+linkBtn.addEventListener('click', () => commands.run('tool.link'));
+anchorBtn.addEventListener('click', () => commands.run('tool.anchor'));
 
 /* Undo / Redo buttons (mirror Ctrl/Cmd+Z) + History readout. */
 const undoBtn = app.querySelector<HTMLButtonElement>('#tUndo')!;
 const redoBtn = app.querySelector<HTMLButtonElement>('#tRedo')!;
-undoBtn.addEventListener('click', () => editor.undo());
-redoBtn.addEventListener('click', () => editor.redo());
+undoBtn.addEventListener('click', () => commands.run('edit.undo'));
+redoBtn.addEventListener('click', () => commands.run('edit.redo'));
 
 /* On-canvas controls: hand/pan, zoom +/−, zoom %, fit. */
 const handBtn = app.querySelector<HTMLButtonElement>('#ccHand')!;
@@ -1623,15 +1679,17 @@ function setHand(on: boolean): void {
   editor.setHandTool(on);
   handBtn.classList.toggle('on', on);
 }
-handBtn.addEventListener('click', () => setHand(!editor.isHandActive()));
+handBtn.addEventListener('click', () => commands.run('tool.hand'));
 app
   .querySelector('#ccZoomIn')!
-  .addEventListener('click', () => editor.zoomIn());
+  .addEventListener('click', () => commands.run('view.zoomIn'));
 app
   .querySelector('#ccZoomOut')!
-  .addEventListener('click', () => editor.zoomOut());
-ccZoom.addEventListener('click', fitView);
-app.querySelector('#ccFit')!.addEventListener('click', fitView);
+  .addEventListener('click', () => commands.run('view.zoomOut'));
+ccZoom.addEventListener('click', () => commands.run('view.fit'));
+app
+  .querySelector('#ccFit')!
+  .addEventListener('click', () => commands.run('view.fit'));
 
 /** Reflect undo/redo availability + live zoom % in the chrome. */
 function refreshChrome(): void {
@@ -1642,14 +1700,18 @@ function refreshChrome(): void {
 
 /* Select-by dropdown — select nodes by a criterion (resets to placeholder). */
 const selectBySel = app.querySelector<HTMLSelectElement>('#tSelectBy')!;
+/** The command behind each option of the menu. */
+const SELECT_BY: Readonly<Record<string, CommandId>> = {
+  type: 'selection.sameType',
+  color: 'selection.sameColor',
+  connected: 'selection.growConnected',
+  invert: 'selection.invert',
+  all: 'selection.all',
+};
 selectBySel.addEventListener('change', () => {
-  const mode = selectBySel.value;
+  const command = SELECT_BY[selectBySel.value];
   selectBySel.value = '';
-  if (mode === 'type') editor.selectSameType();
-  else if (mode === 'color') editor.selectSameColor();
-  else if (mode === 'connected') editor.growConnected();
-  else if (mode === 'invert') editor.invertSelection();
-  else if (mode === 'all') editor.selectAll();
+  if (command) commands.run(command);
 });
 
 /* Status bar — live tool / cursor / element counts / zoom. */
@@ -1690,12 +1752,14 @@ function renderStatus(): void {
 }
 // Delegated: the status-bar problems indicator opens the right rail (if hidden)
 // and expands the pinned Problems section.
+function showProblems(): void {
+  setInspectorCollapsed(false);
+  setProblemsCollapsed(false);
+  problemsPanel.scrollIntoView({ block: 'nearest' });
+}
 statusbar.addEventListener('click', (e) => {
-  if ((e.target as HTMLElement).closest('#sb-problems')) {
-    setInspectorCollapsed(false);
-    setProblemsCollapsed(false);
-    problemsPanel.scrollIntoView({ block: 'nearest' });
-  }
+  if ((e.target as HTMLElement).closest('#sb-problems'))
+    commands.run('view.showProblems');
 });
 // Live cursor readout (page coordinates) while hovering the canvas.
 overlaySvg.addEventListener('pointermove', (e) => {
@@ -1775,7 +1839,10 @@ const minimapToggle = app.querySelector<HTMLButtonElement>('#minimap-toggle')!;
 function setMinimapCollapsed(collapsed: boolean): void {
   minimapDock.classList.toggle('collapsed', collapsed);
   minimapToggle.innerHTML = `map ${icon(collapsed ? 'chevron-right' : 'chevron-down')}`;
-  minimapToggle.title = collapsed ? 'Show minimap (M)' : 'Hide minimap (M)';
+  minimapToggle.title = commands.titleWithShortcut(
+    'view.toggleMinimap',
+    collapsed ? 'Show minimap' : 'Hide minimap',
+  );
   try {
     localStorage.setItem('tds-minimap-collapsed', collapsed ? '1' : '0');
   } catch {
@@ -1783,7 +1850,7 @@ function setMinimapCollapsed(collapsed: boolean): void {
   }
 }
 minimapToggle.addEventListener('click', () =>
-  setMinimapCollapsed(!minimapDock.classList.contains('collapsed')),
+  commands.run('view.toggleMinimap'),
 );
 setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') === '1');
 
@@ -1793,9 +1860,10 @@ const paletteToggle = app.querySelector<HTMLButtonElement>('#palette-toggle')!;
 function setPaletteCollapsed(collapsed: boolean, persist = true): void {
   paletteEl.classList.toggle('collapsed', collapsed);
   paletteToggle.innerHTML = `nodes ${icon(collapsed ? 'panel-left-open' : 'panel-left-close')}`;
-  paletteToggle.title = collapsed
-    ? 'Show node library (B)'
-    : 'Hide node library (B)';
+  paletteToggle.title = commands.titleWithShortcut(
+    'view.toggleLibrary',
+    collapsed ? 'Show node library' : 'Hide node library',
+  );
   if (!persist) return;
   try {
     localStorage.setItem('tds-palette-collapsed', collapsed ? '1' : '0');
@@ -1804,7 +1872,7 @@ function setPaletteCollapsed(collapsed: boolean, persist = true): void {
   }
 }
 paletteToggle.addEventListener('click', () =>
-  setPaletteCollapsed(!paletteEl.classList.contains('collapsed')),
+  commands.run('view.toggleLibrary'),
 );
 
 /* Collapse / restore the frames strip — a floating overlay at the canvas's
@@ -1816,7 +1884,10 @@ function setFramesCollapsed(collapsed: boolean): void {
   framesToggle.setAttribute('aria-expanded', String(!collapsed));
   const chev = framesToggle.querySelector('.frames-chev');
   if (chev) chev.innerHTML = icon(collapsed ? 'chevron-right' : 'chevron-left');
-  framesToggle.title = collapsed ? 'Show frames (F)' : 'Hide frames (F)';
+  framesToggle.title = commands.titleWithShortcut(
+    'view.toggleFrames',
+    collapsed ? 'Show frames' : 'Hide frames',
+  );
   try {
     localStorage.setItem('tds-frames-collapsed', collapsed ? '1' : '0');
   } catch {
@@ -1825,9 +1896,7 @@ function setFramesCollapsed(collapsed: boolean): void {
   // Re-opening should land with the active frame in view (incl. mid-playback).
   if (!collapsed) scrollActiveFrameIntoView();
 }
-framesToggle.addEventListener('click', () =>
-  setFramesCollapsed(!framesDock.classList.contains('collapsed')),
-);
+framesToggle.addEventListener('click', () => commands.run('view.toggleFrames'));
 setFramesCollapsed(localStorage.getItem('tds-frames-collapsed') === '1');
 
 // Wheel over the strip pans it horizontally. The editor's zoom handler lives
@@ -2164,7 +2233,7 @@ function renderProblems(): void {
 }
 
 problemsToggle.addEventListener('click', () =>
-  setProblemsCollapsed(!problemsDock.classList.contains('collapsed')),
+  commands.run('view.toggleProblems'),
 );
 
 statusReady = true;
@@ -2263,9 +2332,10 @@ function setInspectorCollapsed(collapsed: boolean, persist = true): void {
   inspectorToggle.innerHTML = collapsed
     ? `props ${icon('panel-right-open')}`
     : `hide ${icon('panel-right-close')}`;
-  inspectorToggle.title = collapsed
-    ? 'Show properties (P)'
-    : 'Hide properties (P)';
+  inspectorToggle.title = commands.titleWithShortcut(
+    'view.toggleProperties',
+    collapsed ? 'Show properties' : 'Hide properties',
+  );
   if (!persist) return;
   try {
     localStorage.setItem('tds-inspector-collapsed', collapsed ? '1' : '0');
@@ -2274,7 +2344,7 @@ function setInspectorCollapsed(collapsed: boolean, persist = true): void {
   }
 }
 inspectorToggle.addEventListener('click', () =>
-  setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed')),
+  commands.run('view.toggleProperties'),
 );
 
 function readCollapsedPref(key: string): string | null {
@@ -2381,22 +2451,14 @@ alignGroup
   .querySelectorAll<HTMLButtonElement>('[data-align]')
   .forEach((b) =>
     b.addEventListener('click', () =>
-      editor.alignSelection(
-        b.dataset.align as
-          | 'left'
-          | 'centerH'
-          | 'right'
-          | 'top'
-          | 'middleV'
-          | 'bottom',
-      ),
+      runVariant('arrange.align', b.dataset.align),
     ),
   );
 alignGroup
   .querySelectorAll<HTMLButtonElement>('[data-dist]')
   .forEach((b) =>
     b.addEventListener('click', () =>
-      editor.distributeSelection(b.dataset.dist as 'h' | 'v'),
+      runVariant('arrange.distribute', b.dataset.dist),
     ),
   );
 
@@ -3057,10 +3119,9 @@ function wireProperties(): void {
   };
   wIn?.addEventListener('change', applySize);
   hIn?.addEventListener('change', applySize);
-  inspector.querySelector('#p-fit')?.addEventListener('click', () => {
-    editor.fitPageToContent();
-    renderInspector();
-  });
+  inspector
+    .querySelector('#p-fit')
+    ?.addEventListener('click', () => commands.run('page.fitToContent'));
   // Playback timing — same fields the MCP set_page_properties tool sets.
   // Routed through updatePageProps so the edits land on the undo stack (#205).
   const dur = inspector.querySelector<HTMLInputElement>('#p-dur');
@@ -3276,10 +3337,9 @@ function wireFrameStory(): void {
     editor.updatePageProps({ caption: cap.value || undefined }, !editing);
     editing = true;
   });
-  inspector.querySelector('#p-emph-clear')?.addEventListener('click', () => {
-    editor.clearEmphasis();
-    renderInspector();
-  });
+  inspector
+    .querySelector('#p-emph-clear')
+    ?.addEventListener('click', () => commands.run('page.emphasis.clear'));
   inspector.querySelectorAll<HTMLInputElement>('.emph-cb').forEach((cb) => {
     cb.addEventListener('change', () => {
       editor.toggleEmphasis(cb.dataset.eid!);
@@ -3457,11 +3517,11 @@ function renderInspector(): void {
           renderInspector();
         });
     inspector.querySelector('#i-swap')?.addEventListener('click', () => {
-      editor.swapLink();
+      commands.run('link.swapEndpoints');
       renderInspector();
     });
     inspector.querySelector('#i-straighten')?.addEventListener('click', () => {
-      editor.straightenLink();
+      commands.run('link.straighten');
       renderInspector();
     });
   } else if (anchor) {
@@ -3484,32 +3544,19 @@ function renderInspector(): void {
           () => editor.getSelectedAnchor()?.[axis],
         );
     inspector.querySelector('#a-del')?.addEventListener('click', () => {
-      editor.deleteSelected();
+      commands.run('edit.delete');
       renderInspector();
     });
   } else {
     wireProperties();
   }
-  inspector.querySelector('[data-z="front"]')?.addEventListener('click', () => {
-    editor.bringToFront();
-    renderInspector();
-  });
-  inspector
-    .querySelector('[data-z="forward"]')
-    ?.addEventListener('click', () => {
-      editor.bringForward();
-      renderInspector();
-    });
-  inspector
-    .querySelector('[data-z="backward"]')
-    ?.addEventListener('click', () => {
-      editor.sendBackward();
-      renderInspector();
-    });
-  inspector.querySelector('[data-z="back"]')?.addEventListener('click', () => {
-    editor.sendToBack();
-    renderInspector();
-  });
+  for (const [z, command] of Z_ORDER_COMMANDS)
+    inspector
+      .querySelector(`[data-z="${z}"]`)
+      ?.addEventListener('click', () => {
+        commands.run(command);
+        renderInspector();
+      });
   wireFormatRow();
   wireGroups();
   wireAnnotations();
@@ -3556,14 +3603,22 @@ function endpointRow(
   );
 }
 
+/** The z-order command behind each button of the Arrange row. */
+const Z_ORDER_COMMANDS = [
+  ['back', 'arrange.sendToBack'],
+  ['backward', 'arrange.sendBackward'],
+  ['forward', 'arrange.bringForward'],
+  ['front', 'arrange.bringToFront'],
+] as const;
+
 /** Z-order ("Arrange") controls — shown for a single node or a link. */
 function arrangeRow(): string {
   return (
     `<div class="insp-row"><span>Arrange</span><span class="arrange">` +
-    `<button class="tbtn ab" data-z="back" title="Send to back ([Ctrl+[)" aria-label="Send to back">${icon('send-to-back')}</button>` +
-    `<button class="tbtn ab" data-z="backward" title="Send backward ([)" aria-label="Send backward">${icon('arrow-down')}</button>` +
-    `<button class="tbtn ab" data-z="forward" title="Bring forward (])" aria-label="Bring forward">${icon('arrow-up')}</button>` +
-    `<button class="tbtn ab" data-z="front" title="Bring to front (Ctrl+])" aria-label="Bring to front">${icon('bring-to-front')}</button>` +
+    `<button class="tbtn ab" data-z="back" title="${tip('arrange.sendToBack')}" aria-label="Send to back">${icon('send-to-back')}</button>` +
+    `<button class="tbtn ab" data-z="backward" title="${tip('arrange.sendBackward')}" aria-label="Send backward">${icon('arrow-down')}</button>` +
+    `<button class="tbtn ab" data-z="forward" title="${tip('arrange.bringForward')}" aria-label="Bring forward">${icon('arrow-up')}</button>` +
+    `<button class="tbtn ab" data-z="front" title="${tip('arrange.bringToFront')}" aria-label="Bring to front">${icon('bring-to-front')}</button>` +
     `</span></div>`
   );
 }
@@ -3573,8 +3628,8 @@ function arrangeRow(): string {
 function formatRow(): string {
   return (
     `<div class="insp-row"><span>Format</span><span class="insp-btns">` +
-    `<button class="tbtn ab" id="i-copyfmt" title="Copy format (Ctrl/Cmd+Alt+C)"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} copy</button>` +
-    `<button class="tbtn ab" id="i-pastefmt" title="Paste format (Ctrl/Cmd+Alt+V)"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} paste</button>` +
+    `<button class="tbtn ab" id="i-copyfmt" title="${tip('edit.copyFormat')}"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} copy</button>` +
+    `<button class="tbtn ab" id="i-pastefmt" title="${tip('edit.pasteFormat')}"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} paste</button>` +
     `</span></div>`
   );
 }
@@ -3582,15 +3637,14 @@ function formatRow(): string {
 function wireFormatRow(): void {
   inspector
     .querySelector('#i-path')
-    ?.addEventListener('click', analyzeSelectedPath);
-  inspector.querySelector('#i-copyfmt')?.addEventListener('click', () => {
-    editor.copyFormat();
-    renderInspector(); // paste becomes available
-  });
-  inspector.querySelector('#i-pastefmt')?.addEventListener('click', () => {
-    editor.pasteFormat();
-    renderInspector();
-  });
+    ?.addEventListener('click', () => commands.run('selection.analyzePath'));
+  // Both redraw the inspector themselves: after a copy, paste is available.
+  inspector
+    .querySelector('#i-copyfmt')
+    ?.addEventListener('click', () => commands.run('edit.copyFormat'));
+  inspector
+    .querySelector('#i-pastefmt')
+    ?.addEventListener('click', () => commands.run('edit.pasteFormat'));
 }
 
 function wireType(onChange: (t: string) => void): void {
@@ -4038,12 +4092,19 @@ function addAnnotation(kind: AnnotationKind): void {
   renderInspector();
 }
 
+/** The command behind each "add" button of the Annotations section. */
+const ADD_ANNOTATION: Readonly<Record<AnnotationKind, CommandId>> = {
+  zone: 'selection.groupIntoZone',
+  flowPath: 'selection.addFlow',
+  policyMarker: 'selection.addPolicyMarker',
+};
+
 function wireAnnotations(): void {
   inspector
     .querySelectorAll<HTMLButtonElement>('[data-add]')
     .forEach((b) =>
       b.addEventListener('click', () =>
-        addAnnotation(b.dataset.add as AnnotationKind),
+        commands.run(ADD_ANNOTATION[b.dataset.add as AnnotationKind]),
       ),
     );
   inspector.querySelectorAll<HTMLButtonElement>('[data-adel]').forEach((b) =>
@@ -4443,7 +4504,7 @@ function buildPalette(): void {
     );
   paletteList
     .querySelector('#pSaveStencil')
-    ?.addEventListener('click', () => saveSelectionAsStencil());
+    ?.addEventListener('click', () => commands.run('selection.saveAsStencil'));
 }
 // Live search: re-render the list on each keystroke; Esc clears.
 paletteSearch.addEventListener('input', () => {
@@ -4647,38 +4708,54 @@ function renderFilmstrip(): void {
   strip.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((b) =>
     b.addEventListener('click', (e) => {
       e.stopPropagation();
-      deletePage(Number(b.dataset.del));
+      commands.run('page.delete', Number(b.dataset.del));
     }),
   );
   strip
     .querySelector('#playFlip')
-    ?.addEventListener('click', () =>
-      playTimer !== null ? stopPlayback() : startPlayback(),
-    );
-  strip.querySelector('#addPage')?.addEventListener('click', () => {
-    // A new frame attaches links the way the frame you are on does, so one
-    // document does not mix the two attachment styles by accident.
-    const attach = doc.pages[current]?.linkAttach;
-    doc.pages.push({
-      ...blankPage(`Frame ${doc.pages.length + 1}`),
-      ...(attach ? { linkAttach: { ...attach } } : {}),
-    });
-    gotoPage(doc.pages.length - 1);
-    markDirty();
-  });
-  strip.querySelector('#dupPage')?.addEventListener('click', () => {
-    doc.pages.splice(
-      current + 1,
-      0,
-      duplicatePage(doc.pages[current]!, `Frame ${doc.pages.length + 1}`),
-    );
-    gotoPage(current + 1);
-    markDirty();
-  });
-  strip.querySelector('#undoDel')?.addEventListener('click', undoFrameDelete);
+    ?.addEventListener('click', () => commands.run('page.playPause'));
+  strip
+    .querySelector('#addPage')
+    ?.addEventListener('click', () => commands.run('page.add'));
+  strip
+    .querySelector('#dupPage')
+    ?.addEventListener('click', () => commands.run('page.duplicate'));
+  strip
+    .querySelector('#undoDel')
+    ?.addEventListener('click', () => commands.run('page.undoDelete'));
 
   updateFramesIndicator();
   scrollActiveFrameIntoView();
+}
+
+/** Start the flipbook player, or stop it. */
+function togglePlayback(): void {
+  if (playTimer !== null) stopPlayback();
+  else startPlayback();
+}
+
+/** Add a blank frame at the end and go to it. */
+function addBlankPage(): void {
+  // A new frame attaches links the way the frame you are on does, so one
+  // document does not mix the two attachment styles by accident.
+  const attach = doc.pages[current]?.linkAttach;
+  doc.pages.push({
+    ...blankPage(`Frame ${doc.pages.length + 1}`),
+    ...(attach ? { linkAttach: { ...attach } } : {}),
+  });
+  gotoPage(doc.pages.length - 1);
+  markDirty();
+}
+
+/** Copy the current frame into a new one after it and go to it. */
+function duplicateCurrentPage(): void {
+  doc.pages.splice(
+    current + 1,
+    0,
+    duplicatePage(doc.pages[current]!, `Frame ${doc.pages.length + 1}`),
+  );
+  gotoPage(current + 1);
+  markDirty();
 }
 
 /** Switch to a page AND rebuild the strip (after a structural change). */
@@ -4805,14 +4882,16 @@ function selectPage(i: number): void {
 /* Toolbar */
 const gridBtn = app.querySelector<HTMLButtonElement>('#tGrid')!;
 const snapBtn = app.querySelector<HTMLButtonElement>('#tSnap')!;
-gridBtn.addEventListener('click', () => {
+function toggleGrid(): void {
   editor.toggleGrid();
   gridBtn.classList.toggle('on', editor.gridVisible);
-});
-snapBtn.addEventListener('click', () => {
+}
+function toggleSnap(): void {
   editor.toggleSnap();
   snapBtn.classList.toggle('on', editor.snap);
-});
+}
+gridBtn.addEventListener('click', () => commands.run('view.toggleGrid'));
+snapBtn.addEventListener('click', () => commands.run('view.toggleSnap'));
 
 /* Calm canvas — pause animations (glow/particles) for a quieter editing view.
  * A view preference (not document data), persisted across sessions. */
@@ -4821,9 +4900,12 @@ const CALM_KEY = 'topology-dojo:calm';
 function applyCalm(on: boolean): void {
   editor.setCalm(on);
   calmBtn.classList.toggle('on', on);
-  calmBtn.title = on
-    ? 'Resume animations — glow & flow particles (C)'
-    : 'Calm canvas — pause animations (C)';
+  calmBtn.title = commands.titleWithShortcut(
+    'view.toggleCalm',
+    on
+      ? 'Resume animations — glow & flow particles'
+      : 'Calm canvas — pause animations',
+  );
   try {
     localStorage.setItem(CALM_KEY, on ? '1' : '0');
   } catch {
@@ -4839,7 +4921,7 @@ applyCalm(
     ? window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
     : storedCalm === '1',
 );
-calmBtn.addEventListener('click', () => applyCalm(!editor.calm));
+calmBtn.addEventListener('click', () => commands.run('view.toggleCalm'));
 
 /* On-canvas problem badges (Packet B1) — a view preference, persisted across
  * sessions like Calm/Grid/Snap (`badgesVisible` + `BADGES_KEY` above, next to
@@ -4861,7 +4943,7 @@ function applyBadgesVisible(on: boolean): void {
   renderProblems();
 }
 badgesBtn.classList.toggle('on', badgesVisible);
-badgesBtn.addEventListener('click', () => applyBadgesVisible(!badgesVisible));
+badgesBtn.addEventListener('click', () => commands.run('view.toggleBadges'));
 
 /* Light / dark theme — a view preference, persisted across sessions. */
 const themeBtn = app.querySelector<HTMLButtonElement>('#tTheme')!;
@@ -4901,9 +4983,7 @@ function applyTheme(light: boolean): void {
   }
 }
 applyTheme(localStorage.getItem(THEME_KEY) === 'light');
-themeBtn.addEventListener('click', () =>
-  applyTheme(!document.documentElement.classList.contains('light')),
-);
+themeBtn.addEventListener('click', () => commands.run('view.toggleTheme'));
 
 /* Display settings — embellishment controls (ambient backdrop level),
  * separate from the document and persisted as view preferences.
@@ -4920,7 +5000,7 @@ displayPop.innerHTML =
   `<label class="dp-row">Ambient backdrop<select id="dpAmbient">` +
   `<option value="animated">Animated</option><option value="static">Static</option><option value="off">Off</option>` +
   `</select></label>` +
-  `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (C) pauses those.</div>` +
+  `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (${esc(commands.shortcutLabel('view.toggleCalm') ?? '')}) pauses those.</div>` +
   `<label class="dp-row">Wheel<select id="dpWheel">` +
   `<option value="auto">Auto</option><option value="zoom">Always zoom</option><option value="pan">Always pan</option>` +
   `</select></label>` +
@@ -4957,7 +5037,7 @@ applyAmbient(
     : 'animated',
 );
 dpAmbient.addEventListener('change', () =>
-  applyAmbient(dpAmbient.value as 'off' | 'static' | 'animated'),
+  runVariant('view.ambient.', dpAmbient.value),
 );
 
 /* What a plain wheel event does on the canvas. The default guesses the device
@@ -4978,9 +5058,9 @@ function applyWheelMode(mode: WheelMode): void {
 }
 const storedWheel = localStorage.getItem(WHEEL_KEY);
 applyWheelMode(isWheelMode(storedWheel) ? storedWheel : 'auto');
-dpWheel.addEventListener('change', () => {
-  if (isWheelMode(dpWheel.value)) applyWheelMode(dpWheel.value);
-});
+dpWheel.addEventListener('change', () =>
+  runVariant('view.wheel.', dpWheel.value),
+);
 
 /* ── Brand palette (#7) ──────────────────────────────────────────────
  * A document-level palette that recolours the canvas accents (via a render-time
@@ -5111,8 +5191,7 @@ function closeDisplayPop(): void {
   releaseDisplayOverlay?.();
   releaseDisplayOverlay = null;
 }
-displayBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
+function toggleDisplayPop(): void {
   if (displayPop.hidden) {
     const r = displayBtn.getBoundingClientRect();
     displayPop.style.top = `${Math.round(r.bottom + 6)}px`;
@@ -5125,26 +5204,31 @@ displayBtn.addEventListener('click', (e) => {
       close: closeDisplayPop,
     });
   } else closeDisplayPop();
+}
+displayBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  commands.run('view.displaySettings');
 });
 closeOnOutsidePress(displayPop, displayBtn, closeDisplayPop);
 
 app
   .querySelector('#tDelete')
-  ?.addEventListener('click', () => editor.deleteSelected());
-app.querySelector('#tTidy')?.addEventListener('click', () => editor.tidy());
+  ?.addEventListener('click', () => commands.run('edit.delete'));
+app
+  .querySelector('#tTidy')
+  ?.addEventListener('click', () => commands.run('arrange.tidy'));
 app
   .querySelector('#tBalance')
-  ?.addEventListener('click', () => editor.balance());
+  ?.addEventListener('click', () => commands.run('arrange.balance'));
 const layoutSel = app.querySelector<HTMLSelectElement>('#tLayout')!;
 layoutSel.addEventListener('change', () => {
   const algorithm = layoutSel.value;
   layoutSel.value = ''; // reset to the placeholder
-  if (algorithm)
-    editor.layout({
-      algorithm: algorithm as 'grid' | 'hierarchical' | 'circular' | 'force',
-    });
+  if (algorithm) runVariant('arrange.layout.', algorithm);
 });
-app.querySelector('#tFit')?.addEventListener('click', fitView);
+app
+  .querySelector('#tFit')
+  ?.addEventListener('click', () => commands.run('view.fit'));
 
 /* ── Keyboard-shortcut help overlay (?) ────────────────────────────── */
 const SHORTCUTS: { group: string; items: [string, string][] }[] = [
@@ -5256,7 +5340,9 @@ function openHelp(): void {
   // Focus trap + Escape + focus restore (issue #209).
   releaseHelpOverlay = registerOverlay(helpEl, { close: closeHelp });
 }
-app.querySelector('#tHelp')?.addEventListener('click', () => openHelp());
+app
+  .querySelector('#tHelp')
+  ?.addEventListener('click', () => commands.run('help.shortcuts'));
 
 /* ── Present mode: full-screen playback of every frame ─────────────────
  * A human-only view feature (DESIGN #2 carve-out — nothing persisted): the
@@ -5365,7 +5451,9 @@ function openPresent(): void {
     /* fixed-position fallback still covers the viewport */
   });
 }
-app.querySelector('#tPresent')?.addEventListener('click', () => openPresent());
+app
+  .querySelector('#tPresent')
+  ?.addEventListener('click', () => commands.run('view.present'));
 
 /* ── Share dialog (hosted only): publish a public /v/:id snapshot of the
  * current document and manage (revoke) previously published links. The
@@ -5518,7 +5606,9 @@ function openShare(): void {
   releaseShareOverlay = registerOverlay(shareEl, { close: closeShare });
   void refresh();
 }
-app.querySelector('#fShare')?.addEventListener('click', () => openShare());
+/** Hidden until the hosted Worker reports a signed-in user. */
+const shareBtn = app.querySelector<HTMLButtonElement>('#fShare');
+shareBtn?.addEventListener('click', () => commands.run('file.share'));
 
 /* Account menu. The Worker gates the app behind GitHub sign-in and reports the
  * current user at /api/me; when that succeeds we reveal a toolbar chip that opens
@@ -5677,7 +5767,6 @@ async function showUserChip(): Promise<void> {
       enableWorkspaceUi();
       profilePanelHandle.enable();
       // Sharing needs the hosted Worker (KV + session); reveal only here.
-      const shareBtn = app.querySelector<HTMLButtonElement>('#fShare');
       if (shareBtn) shareBtn.hidden = false;
       // The Admin chip is revealed only for the deployment owner; the real gate
       // is the /api/admin routes, so this is a cosmetic reveal.
@@ -5766,28 +5855,332 @@ function zoomToSelection(): void {
   else fitView();
 }
 
-function runCanvasCommand(command: CanvasKeyCommand): void {
-  switch (command) {
-    case 'zoom-in':
-      return editor.zoomIn();
-    case 'zoom-out':
-      return editor.zoomOut();
-    case 'zoom-100':
-      return editor.zoomTo(1);
-    case 'zoom-fit':
-      return fitView();
-    case 'zoom-selection':
-      return zoomToSelection();
-    case 'rename':
-      editor.beginRename();
-      return;
-    case 'paste-in-place':
-      return editor.paste({ inPlace: true });
-    case 'save':
-      return downloadDocJSON();
-    case 'open':
-      return fileInput.click();
-  }
+/* ── Command bindings ──────────────────────────────────────────────────
+ * What each command of src/ui/commands.ts does, bound once to the functions
+ * above. Every surface runs a command through the registry: the toolbar and
+ * panel controls, the window key handler, the context menu. `enabled` is the
+ * rule a surface greys the command out by (the context menu's, a button's
+ * `disabled`); the keyboard does not ask it (see RunOptions.ignoreEnabled).
+ * `checked` says whether a toggle or a choice is on now. */
+const bind = (id: CommandId, handlers: CommandHandlers): void =>
+  commands.bind(id, handlers);
+const pageIndexArg = (args: unknown): number =>
+  typeof args === 'number' ? args : current;
+
+// File
+bind('file.new', { run: newDocument });
+bind('file.open', { run: () => fileInput.click() });
+bind('file.download', { run: downloadDocJSON });
+bind('file.loadOtherTab', { run: loadFromOtherTab });
+bind('file.share', {
+  run: openShare,
+  // Revealed only once the hosted Worker reports a signed-in user.
+  enabled: () => !!shareBtn && !shareBtn.hidden,
+});
+bind('file.export.svg', { run: exportSvg });
+bind('file.export.png', {
+  run: exportPng,
+  enabled: () => !pngBtn?.disabled,
+});
+for (const spec of COMMAND_SPECS)
+  if (spec.id.startsWith('file.export.') && spec.args !== undefined)
+    bind(spec.id, { run: (kind) => exportFromMenu(String(kind)) });
+bind('file.generateSdwan', { run: generateSdwan });
+for (const spec of COMMAND_SPECS)
+  if (spec.id.startsWith('file.template.'))
+    bind(spec.id, { run: (id) => newFromTemplate(String(id)) });
+bind('shared.keepCopy', { run: keepSharedCopy });
+bind('shared.backToMine', { run: backToMyDocument });
+bind('shared.unpublish', {
+  run: unpublishSharedLink,
+  enabled: () => !!activeShareId,
+});
+
+// Edit
+bind('edit.undo', {
+  run: () => editor.undo(),
+  enabled: () => editor.canUndo(),
+});
+bind('edit.redo', {
+  run: () => editor.redo(),
+  enabled: () => editor.canRedo(),
+});
+bind('edit.cut', { run: () => editor.cut() });
+bind('edit.copy', { run: () => editor.copySelection() });
+bind('edit.paste', {
+  run: () => editor.paste(),
+  enabled: () => editor.canPaste(),
+});
+bind('edit.pasteHere', {
+  // Run with the page point to paste at, centred on it.
+  run: (at) => editor.paste({ at: at as { x: number; y: number } }),
+  enabled: () => editor.canPaste(),
+});
+bind('edit.pasteInPlace', {
+  run: () => editor.paste({ inPlace: true }),
+  enabled: () => editor.canPaste(),
+});
+bind('edit.duplicate', { run: () => editor.duplicateSelection() });
+bind('edit.delete', { run: () => editor.deleteSelected() });
+bind('edit.rename', { run: () => void editor.beginRename() });
+// Both redraw the inspector: after a copy its paste button is available.
+bind('edit.copyFormat', {
+  run: () => {
+    editor.copyFormat();
+    renderInspector();
+  },
+  enabled: () => editor.canCopyFormat(),
+});
+bind('edit.pasteFormat', {
+  run: () => {
+    editor.pasteFormat();
+    renderInspector();
+  },
+  enabled: () => editor.canPasteFormat(),
+});
+bind('edit.toggleLock', {
+  run: () => editor.toggleLock(),
+  checked: () => editor.selectionLocked(),
+});
+bind('edit.find', { run: openFind, checked: () => !!findEl });
+bind('edit.copyAsImage', {
+  run: () => {
+    const sp = selectionAsPage();
+    if (sp) copyImage(() => copyPagePNG(sp, '', selectionOpts()));
+  },
+});
+bind('edit.copyFrameAsImage', {
+  run: () => {
+    const page = doc.pages[current]!;
+    copyImage(() => copyPagePNG(page, pageOverlay(page), pageOpts(page)));
+  },
+});
+
+// Selection
+bind('selection.all', { run: () => editor.selectAll() });
+bind('selection.sameType', { run: () => editor.selectSameType() });
+bind('selection.sameColor', { run: () => editor.selectSameColor() });
+bind('selection.growConnected', { run: () => editor.growConnected() });
+bind('selection.invert', { run: () => editor.invertSelection() });
+bind('selection.clear', {
+  run: () => {
+    stopPlayback();
+    closePathBar();
+    editor.clearSelection();
+    setTool('select');
+  },
+});
+// Run with how far to move (Shift+arrow runs them with 10).
+const nudgeBy = (args: unknown): number =>
+  typeof args === 'number' ? args : 1;
+bind('selection.nudgeLeft', { run: (s) => editor.nudge(-nudgeBy(s), 0) });
+bind('selection.nudgeRight', { run: (s) => editor.nudge(nudgeBy(s), 0) });
+bind('selection.nudgeUp', { run: (s) => editor.nudge(0, -nudgeBy(s)) });
+bind('selection.nudgeDown', { run: (s) => editor.nudge(0, nudgeBy(s)) });
+bind('selection.emphasize', { run: () => editor.emphasizeSelection() });
+bind('selection.analyzePath', {
+  run: analyzeSelectedPath,
+  enabled: canAnalyzePath,
+  checked: () => !!pathSession,
+});
+bind('selection.groupIntoZone', { run: () => addAnnotation('zone') });
+bind('selection.addFlow', { run: () => addAnnotation('flowPath') });
+bind('selection.addPolicyMarker', {
+  run: () => addAnnotation('policyMarker'),
+});
+bind('selection.saveAsStencil', { run: () => saveSelectionAsStencil() });
+bind('link.swapEndpoints', { run: () => editor.swapLink() });
+bind('link.straighten', {
+  run: () => editor.straightenLink(),
+  enabled: () => editor.selectedLinkHasBends(),
+});
+// The path analysis bar's buttons, while a path is on show.
+bind('path.prev', { run: () => runPathAction('prev') });
+bind('path.next', { run: () => runPathAction('next') });
+bind('path.swap', { run: () => runPathAction('swap') });
+bind('path.keepEmphasis', { run: () => runPathAction('keep') });
+bind('path.addFlow', { run: () => runPathAction('flow') });
+bind('path.newFrame', { run: () => runPathAction('frame') });
+bind('path.close', { run: () => runPathAction('close') });
+
+// Arrange. Z-order acts on one node or a link (canArrange); with anything
+// else it does nothing.
+const canArrange = (): boolean => editor.canArrange();
+bind('arrange.bringToFront', {
+  run: () => editor.bringToFront(),
+  enabled: canArrange,
+});
+bind('arrange.bringForward', {
+  run: () => editor.bringForward(),
+  enabled: canArrange,
+});
+bind('arrange.sendBackward', {
+  run: () => editor.sendBackward(),
+  enabled: canArrange,
+});
+bind('arrange.sendToBack', {
+  run: () => editor.sendToBack(),
+  enabled: canArrange,
+});
+type AlignMode = Parameters<typeof editor.alignSelection>[0];
+for (const id of [
+  'arrange.alignLeft',
+  'arrange.alignCenterH',
+  'arrange.alignRight',
+  'arrange.alignTop',
+  'arrange.alignMiddleV',
+  'arrange.alignBottom',
+] as const)
+  bind(id, { run: (mode) => editor.alignSelection(mode as AlignMode) });
+for (const id of ['arrange.distributeH', 'arrange.distributeV'] as const)
+  bind(id, {
+    run: (axis) => editor.distributeSelection(axis as 'h' | 'v'),
+  });
+bind('arrange.tidy', { run: () => editor.tidy() });
+bind('arrange.balance', { run: () => editor.balance() });
+for (const id of [
+  'arrange.layout.hierarchical',
+  'arrange.layout.grid',
+  'arrange.layout.circular',
+  'arrange.layout.force',
+] as const)
+  bind(id, {
+    run: (algorithm) =>
+      editor.layout({
+        algorithm: algorithm as Parameters<
+          typeof editor.layout
+        >[0]['algorithm'],
+      }),
+  });
+bind('arrange.autoPlaceLabels', {
+  run: () => editor.autoLabels(doc.customNodes),
+});
+bind('page.fitToContent', {
+  run: () => {
+    editor.fitPageToContent();
+    renderInspector();
+  },
+});
+
+// Tools
+bind('tool.select', {
+  run: () => setTool('select'),
+  checked: () => selectBtn.classList.contains('on'),
+});
+bind('tool.link', {
+  run: () => setTool('link'),
+  checked: () => linkBtn.classList.contains('on'),
+});
+bind('tool.anchor', {
+  run: () => setTool('anchor'),
+  checked: () => anchorBtn.classList.contains('on'),
+});
+bind('tool.hand', {
+  run: () => setHand(!editor.isHandActive()),
+  checked: () => editor.isHandActive(),
+});
+
+// View
+bind('view.zoomIn', { run: () => editor.zoomIn() });
+bind('view.zoomOut', { run: () => editor.zoomOut() });
+bind('view.zoom100', { run: () => editor.zoomTo(1) });
+bind('view.fit', { run: fitView });
+bind('view.zoomToSelection', { run: zoomToSelection });
+bind('view.toggleGrid', { run: toggleGrid, checked: () => editor.gridVisible });
+bind('view.toggleSnap', { run: toggleSnap, checked: () => editor.snap });
+bind('view.toggleCalm', {
+  run: () => applyCalm(!editor.calm),
+  checked: () => editor.calm,
+});
+bind('view.toggleBadges', {
+  run: () => applyBadgesVisible(!badgesVisible),
+  checked: () => badgesVisible,
+});
+bind('view.displaySettings', {
+  run: toggleDisplayPop,
+  checked: () => !displayPop.hidden,
+});
+for (const id of [
+  'view.ambient.animated',
+  'view.ambient.static',
+  'view.ambient.off',
+] as const)
+  bind(id, {
+    run: (level) => applyAmbient(level as 'off' | 'static' | 'animated'),
+    checked: () => dpAmbient.value === commands.get(id)?.args,
+  });
+for (const id of [
+  'view.wheel.auto',
+  'view.wheel.zoom',
+  'view.wheel.pan',
+] as const)
+  bind(id, {
+    run: (mode) => {
+      if (isWheelMode(mode)) applyWheelMode(mode);
+    },
+    checked: () => dpWheel.value === commands.get(id)?.args,
+  });
+bind('view.toggleTheme', {
+  run: () => applyTheme(!document.documentElement.classList.contains('light')),
+  checked: () => document.documentElement.classList.contains('light'),
+});
+bind('view.present', { run: openPresent, checked: () => !!presentEl });
+bind('view.toggleLibrary', {
+  run: () => setPaletteCollapsed(!paletteEl.classList.contains('collapsed')),
+  checked: () => !paletteEl.classList.contains('collapsed'),
+});
+bind('view.toggleMinimap', {
+  run: () => setMinimapCollapsed(!minimapDock.classList.contains('collapsed')),
+  checked: () => !minimapDock.classList.contains('collapsed'),
+});
+bind('view.toggleProperties', {
+  run: () =>
+    setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed')),
+  checked: () => !inspectorWrap.classList.contains('collapsed'),
+});
+bind('view.toggleFrames', {
+  run: () => setFramesCollapsed(!framesDock.classList.contains('collapsed')),
+  checked: () => !framesDock.classList.contains('collapsed'),
+});
+bind('view.toggleProblems', {
+  run: () =>
+    setProblemsCollapsed(!problemsDock.classList.contains('collapsed')),
+  checked: () => !problemsDock.classList.contains('collapsed'),
+});
+bind('view.showProblems', { run: showProblems });
+
+// Frames. Delete runs with a frame's index, or deletes the current frame.
+bind('page.add', { run: addBlankPage });
+bind('page.duplicate', { run: duplicateCurrentPage });
+bind('page.delete', {
+  run: (i) => deletePage(pageIndexArg(i)),
+  enabled: () => doc.pages.length > 1,
+});
+bind('page.undoDelete', {
+  run: undoFrameDelete,
+  enabled: () => pendingFrameDelete !== null,
+});
+bind('page.next', { run: () => choosePage(current + 1) });
+bind('page.prev', { run: () => choosePage(current - 1) });
+bind('page.playPause', {
+  run: togglePlayback,
+  checked: () => playTimer !== null,
+});
+bind('page.emphasis.clear', {
+  run: () => {
+    editor.clearEmphasis();
+    renderInspector();
+  },
+});
+
+// Help
+bind('help.shortcuts', { run: openHelp, checked: () => !!helpEl });
+
+{
+  // A command nothing does would be a menu item or a key that does nothing.
+  const unbound = commands.unbound();
+  if (unbound.length)
+    throw new Error(`commands with nothing bound: ${unbound.join(', ')}`);
 }
 
 window.addEventListener('keydown', (e) => {
@@ -5799,140 +6192,25 @@ window.addEventListener('keydown', (e) => {
   if (routeKey(e, focus, keyboardNav) === 'focus') return;
   if (e.key === 'Escape' && escapeReleasesFocus(focus)) releaseFocus(target);
 
-  // ? (Shift+/) opens the shortcut reference (Esc closes it via the overlay).
-  if (e.key === '?') {
-    e.preventDefault();
-    openHelp();
-    return;
-  }
-
-  // Spacebar → hand mode (hold and left-drag to pan). Prevent page scroll.
+  // Hold Space: hand mode while it is down (a gesture, not a command; the
+  // keyup handler below releases it). Prevent page scroll.
   if (e.key === ' ') {
     e.preventDefault();
     editor.setSpacePan(true);
     return;
   }
 
-  // View, rename and file shortcuts (see src/ui/canvas-keys.ts). Checked
-  // before the copy / paste block: Ctrl+Shift+V is "paste in place".
-  const command = canvasKeyCommand(e, focus === 'canvas');
-  if (command) {
-    e.preventDefault();
-    runCanvasCommand(command);
-    return;
-  }
-
-  const mod = e.ctrlKey || e.metaKey;
-  if (mod) {
-    const k = e.key.toLowerCase();
-    // Format painter (#211) — checked before the plain copy/paste branches.
-    // Matched on e.code: Alt+letter yields a composed e.key on some layouts.
-    if (e.altKey && (e.code === 'KeyC' || k === 'c')) {
-      e.preventDefault();
-      editor.copyFormat();
-      renderInspector();
-      return;
-    }
-    if (e.altKey && (e.code === 'KeyV' || k === 'v')) {
-      e.preventDefault();
-      editor.pasteFormat();
-      renderInspector();
-      return;
-    }
-    if (k === 'z') {
-      e.preventDefault();
-      if (e.shiftKey) editor.redo();
-      else editor.undo();
-    } else if (k === 'y') {
-      e.preventDefault();
-      editor.redo();
-    } else if (k === 'a') {
-      e.preventDefault();
-      editor.selectAll();
-    } else if (k === 'f') {
-      e.preventDefault();
-      openFind();
-    } else if (k === 'c') {
-      e.preventDefault();
-      editor.copySelection();
-    } else if (k === 'x') {
-      e.preventDefault();
-      editor.cut();
-    } else if (k === 'v') {
-      e.preventDefault();
-      editor.paste();
-    } else if (k === 'd') {
-      e.preventDefault();
-      editor.duplicateSelection();
-    } else if (k === 'l') {
-      e.preventDefault();
-      editor.toggleLock();
-    } else if (e.key === ']') {
-      e.preventDefault();
-      editor.bringToFront();
-    } else if (e.key === '[') {
-      e.preventDefault();
-      editor.sendToBack();
-    }
-    return; // other mod combos: leave to the browser
-  }
-
-  if (e.key === 'Delete' || e.key === 'Backspace') {
-    e.preventDefault();
-    editor.deleteSelected();
-    return;
-  }
-  if (e.key === ']') {
-    editor.bringForward();
-    return;
-  }
-  if (e.key === '[') {
-    editor.sendBackward();
-    return;
-  }
-  if (e.key === 'g' || e.key === 'G') {
-    editor.toggleSnap();
-    snapBtn.classList.toggle('on', editor.snap);
-  }
-  if (e.key === 'r' || e.key === 'R') {
-    editor.toggleGrid();
-    gridBtn.classList.toggle('on', editor.gridVisible);
-  }
-  if (e.key === 'm' || e.key === 'M')
-    setMinimapCollapsed(!minimapDock.classList.contains('collapsed'));
-  if (e.key === 'b' || e.key === 'B')
-    setPaletteCollapsed(!paletteEl.classList.contains('collapsed'));
-  if (e.key === 'p' || e.key === 'P')
-    setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed'));
-  if (e.key === 'f' || e.key === 'F')
-    setFramesCollapsed(!framesDock.classList.contains('collapsed'));
-  if (e.key === 'c' || e.key === 'C') applyCalm(!editor.calm);
-  if (e.key === 't') editor.tidy();
-  if (e.key === 'T') editor.balance(); // Shift+T
-  if (e.key === '0') fitView();
-  if (e.key === 'l' || e.key === 'L') setTool('link');
-  if (e.key === 'v' || e.key === 'V') setTool('select');
-  if (e.key === 'a' || e.key === 'A') setTool('anchor');
-  if (e.key === 'h' || e.key === 'H') setHand(!editor.isHandActive());
-  if (e.key === 'Escape') {
-    stopPlayback();
-    closePathBar();
-    editor.clearSelection();
-    setTool('select');
-  }
-
-  // Arrows: nudge the selection (Shift = 10px); otherwise flip pages.
-  if (e.key.startsWith('Arrow')) {
-    if (editor.selectionCount() > 0) {
-      e.preventDefault();
-      const s = e.shiftKey ? 10 : 1;
-      if (e.key === 'ArrowLeft') editor.nudge(-s, 0);
-      else if (e.key === 'ArrowRight') editor.nudge(s, 0);
-      else if (e.key === 'ArrowUp') editor.nudge(0, -s);
-      else if (e.key === 'ArrowDown') editor.nudge(0, s);
-    } else if (e.key === 'ArrowRight') choosePage(current + 1);
-    else if (e.key === 'ArrowLeft') choosePage(current - 1);
-  }
+  // Every other key is a command or nothing: src/ui/commands.ts decides
+  // which. A bound key is taken from the browser (when its binding says so)
+  // whether or not the command has anything to act on, and the command is
+  // run without asking whether it is enabled, as the keys always were.
+  const hit = matchKey(e, {
+    focusOnCanvas: focus === 'canvas',
+    selectionCount: editor.selectionCount(),
+  });
+  if (!hit) return;
+  if (hit.preventDefault) e.preventDefault();
+  commands.run(hit.id, hit.args, { ignoreEnabled: true });
 });
 
 /* ── Path analysis ("visual traceroute") ──────────────────────────────
@@ -5988,6 +6266,8 @@ function shownPath(): ReturnType<typeof pathPanelView> | null {
 
 const PATH_ACTIONS: {
   key: string;
+  /** What the button runs. */
+  command: CommandId;
   icon: IconName;
   /** Words after the icon; an action without them is the icon alone. */
   text?: string;
@@ -5995,16 +6275,30 @@ const PATH_ACTIONS: {
   /** Needs a route to act on. */
   route: boolean;
 }[] = [
-  { key: 'prev', icon: 'chevron-left', title: 'Previous route', route: true },
-  { key: 'next', icon: 'chevron-right', title: 'Next route', route: true },
+  {
+    key: 'prev',
+    command: 'path.prev',
+    icon: 'chevron-left',
+    title: 'Previous route',
+    route: true,
+  },
+  {
+    key: 'next',
+    command: 'path.next',
+    icon: 'chevron-right',
+    title: 'Next route',
+    route: true,
+  },
   {
     key: 'swap',
+    command: 'path.swap',
     icon: 'reverse',
     title: 'Trace the other way (the flow runs from the first node)',
     route: false,
   },
   {
     key: 'keep',
+    command: 'path.keepEmphasis',
     icon: 'star',
     text: 'emphasize',
     title: 'Keep this spotlight on the frame',
@@ -6012,6 +6306,7 @@ const PATH_ACTIONS: {
   },
   {
     key: 'flow',
+    command: 'path.addFlow',
     icon: 'flow',
     text: 'add flow',
     title: 'Add a flow along this route',
@@ -6019,12 +6314,19 @@ const PATH_ACTIONS: {
   },
   {
     key: 'frame',
+    command: 'path.newFrame',
     icon: 'duplicate',
     text: 'new frame',
     title: 'Copy this frame with the route spotlit and captioned',
     route: true,
   },
-  { key: 'close', icon: 'x', title: 'Close path analysis', route: false },
+  {
+    key: 'close',
+    command: 'path.close',
+    icon: 'x',
+    title: 'Close path analysis',
+    route: false,
+  },
 ];
 
 function runPathAction(key: string): void {
@@ -6092,7 +6394,7 @@ function renderPathBar(): void {
       b.innerHTML = a.text ? `${icon(a.icon)} ${a.text}` : icon(a.icon);
       b.title = a.title;
       b.setAttribute('aria-label', a.title);
-      b.addEventListener('click', () => runPathAction(a.key));
+      b.addEventListener('click', () => commands.run(a.command));
       buttons[a.key] = b;
       actions.append(b);
       if (a.key === 'prev') actions.append(count);

@@ -8,7 +8,8 @@
  * plain keys so the browser keeps its own page zoom, Shift + digit by
  * physical key because what a shifted digit types depends on the layout.
  * This module is that table seen through the old names, and its tests are
- * the ones that pinned those reasons.
+ * the ones that pinned those reasons. The shell's key handler asks
+ * `matchKey` itself; this view is kept for those tests.
  */
 import { matchKey, type CommandId, type KeyPress } from './commands.js';
 

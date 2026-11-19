@@ -978,7 +978,7 @@ const VIEW = [
     title: 'Display settings',
     group: 'view',
     icon: 'settings',
-    keywords: ['ambient', 'glass', 'wheel', 'brand palette'],
+    keywords: ['ambient', 'wheel', 'brand palette'],
   },
   {
     id: 'view.ambient.animated',
@@ -998,7 +998,6 @@ const VIEW = [
     group: 'view',
     args: 'off',
   },
-  { id: 'view.toggleGlass', title: 'Panel blur (glass)', group: 'view' },
   {
     id: 'view.wheel.auto',
     title: 'Wheel: auto (a mouse zooms, a trackpad pans)',
