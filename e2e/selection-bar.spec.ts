@@ -207,4 +207,39 @@ test('the bar goes below a node at the top of the canvas', async ({ page }) => {
   const after = (await bar(page).boundingBox())!;
   expect(overlap(after, moved), 'the bar covers the node').toBe(false);
   expect(after.y).toBeGreaterThanOrEqual(moved.y + moved.height);
+  await expectArrowsClear(page);
+});
+
+/** The selected node's four quick-connect arrows are drawn, and the bar
+ * covers none of them: each takes its own press. */
+async function expectArrowsClear(page: Page): Promise<void> {
+  const arrows = page.locator('#overlay [data-qc]');
+  await expect(arrows).toHaveCount(4);
+  const barBox = (await bar(page).boundingBox())!;
+  for (const arrow of await arrows.all()) {
+    const dir = await arrow.getAttribute('data-qc');
+    const box = (await arrow.boundingBox())!;
+    expect(overlap(barBox, box), `the bar covers the ${dir} arrow`).toBe(false);
+    const onBar = await page.evaluate(
+      ([x, y]) =>
+        document.elementFromPoint(x!, y!)?.closest('.mini-bar') !== null,
+      [box.x + box.width / 2, box.y + box.height / 2],
+    );
+    expect(onBar, `a press on the ${dir} arrow would land on the bar`).toBe(
+      false,
+    );
+  }
+}
+
+// A selected node shows quick-connect arrows outside its box, on all four
+// sides; the bar above the node keeps clear of the one above it.
+test('the bar is clear of a node and its quick-connect arrows', async ({
+  page,
+}) => {
+  await clickNode(page, 'hub');
+  await expect(bar(page)).toBeVisible();
+  const barBox = (await bar(page).boundingBox())!;
+  const node = await nodeBox(page, 'hub');
+  expect(barBox.y + barBox.height).toBeLessThanOrEqual(node.y);
+  await expectArrowsClear(page);
 });

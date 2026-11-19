@@ -5,6 +5,30 @@
 import { expect, test } from '@playwright/test';
 import { bootEditor, clickNode, nodeBox, statusCount } from './helpers.js';
 
+// A window 450px tall is shorter than Display settings: it stays inside the
+// window and scrolls inside itself, down to its last control.
+test('Display settings stays inside a short window', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 450 });
+  await bootEditor(page);
+  const pop = page.locator('.display-pop');
+  await page.locator('#tDisplay').click();
+  await expect(pop).toBeVisible();
+  const box = (await pop.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(450);
+  const scroll = await pop.evaluate((el) => ({
+    content: el.scrollHeight,
+    box: el.clientHeight,
+  }));
+  expect(scroll.content).toBeGreaterThan(scroll.box);
+  // Its last control can be reached by scrolling the popover.
+  const last = page.locator('#dpChrome');
+  await last.scrollIntoViewIfNeeded();
+  const lastBox = (await last.boundingBox())!;
+  expect(lastBox.y).toBeGreaterThanOrEqual(box.y);
+  expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(box.y + box.height);
+});
+
 test('pressing the canvas closes Display settings and the shortcuts work again', async ({
   page,
 }) => {

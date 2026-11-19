@@ -89,6 +89,27 @@ test('one node with type options fits on a page with the anchor box on', async (
   }
 });
 
+test('a node with its own link attachment fits without scrolling', async ({
+  page,
+}) => {
+  // The override adds the node's padding and ends under its switch; with a
+  // type options section too (ec, user) this is a node's longest default
+  // view.
+  for (const id of ['fw', 'ec', 'user']) {
+    await clickNode(page, id);
+    const override = page.locator('#inspector input[data-key="linkAttach"]');
+    await override.check();
+    await expect(
+      page.locator('#inspector input[data-key="linkAttach.pad"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('#inspector input[data-key="linkAttach.distribute"]'),
+    ).toBeVisible();
+    await expectFits(page, `node ${id}, its own link attachment`);
+    await page.keyboard.press('Escape');
+  }
+});
+
 test('one link fits without scrolling', async ({ page }) => {
   await clickLink(page, 'ec-fw');
   await expect(page.locator('#insp-tab-selection')).toHaveText('Link');
@@ -278,3 +299,45 @@ test('a section header’s focus ring is drawn inside the panel’s scroll box',
   expect(ring.style).not.toBe('none');
   expect(ring.left).toBeGreaterThanOrEqual(ring.panelLeft);
 });
+
+// A phone's properties drawer is narrow: a number keeps every digit (the
+// canvas width read "105" for 1050). On a phone the spin buttons step aside;
+// where they show, they take 15px of the field.
+for (const width of [320, 390]) {
+  test(`on a phone the canvas size fields show every digit at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await bootEditor(page);
+    await page.locator('#inspector-toggle').click();
+    await inspectorTab(page, 'page');
+    for (const id of ['#p-w', '#p-h']) {
+      const field = page.locator(id);
+      await field.hover();
+      await field.focus();
+      const room = await field.evaluate((el) => {
+        const input = el as HTMLInputElement;
+        const cs = getComputedStyle(input);
+        const probe = document.createElement('span');
+        probe.style.font = cs.font;
+        probe.style.position = 'absolute';
+        probe.style.whiteSpace = 'pre';
+        probe.textContent = input.value;
+        document.body.append(probe);
+        const text = probe.getBoundingClientRect().width;
+        probe.remove();
+        const spin = cs.appearance === 'textfield' ? 0 : 15;
+        const inner =
+          input.clientWidth -
+          parseFloat(cs.paddingLeft) -
+          parseFloat(cs.paddingRight) -
+          spin;
+        return { value: input.value, text, inner };
+      });
+      expect(room.value.length).toBeGreaterThan(0);
+      expect(room.text, `${id} "${room.value}"`).toBeLessThanOrEqual(
+        room.inner,
+      );
+    }
+  });
+}

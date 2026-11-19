@@ -28,7 +28,9 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
     ['#minimap-toggle', 'Show minimap (M)'],
     ['#frames-toggle', 'Hide pages (F)'],
     ['#inspector-toggle', 'Hide properties (P)'],
+    ['#ccZoomOut', 'Zoom out (-)'],
     ['#ccZoom', 'Fit view (0)'],
+    ['#ccZoomIn', 'Zoom in (+)'],
     ['#ccFit', 'Fit to content (0)'],
   ];
   for (const [selector, title] of titles)

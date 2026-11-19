@@ -408,7 +408,7 @@
 
 /* Focus and landing flashes. */
 .ws-attention {
-  animation: ws-attention-flash 0.6s var(--ease) 3;
+  animation: ws-attention-flash var(--dur-flash) var(--ease) 3;
 }
 @keyframes ws-attention-flash {
   50% {
@@ -447,7 +447,7 @@
 }
 .ws-hl-focus {
   stroke-width: 4;
-  animation: ws-hl-flash 0.5s var(--ease) 3;
+  animation: ws-hl-flash var(--dur-slow) var(--ease) 3;
 }
 @keyframes ws-hl-flash {
   50% {

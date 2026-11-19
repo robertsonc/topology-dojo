@@ -1,127 +1,78 @@
-/* Display popover, account menu items, sign-in prompt. */
-/* Display-settings popover (ambient + glass). */
+/* Display settings, opened from the pages bar. Its controls are the shared
+   ones (.section-label, .field, .hint); this file lays them out. */
 .display-pop {
   position: fixed;
   z-index: var(--z-popover);
-  width: 248px;
-  background: var(--surface-float);
+  width: 288px;
+  padding: 12px;
+  /* A short window gives it a max-height (src/main.ts): the rest scrolls. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 10px;
+  background: var(--surface-float);
   box-shadow: var(--shadow-float);
-  font-size: 12px;
   color: var(--fg);
-  font-family: var(--font);
+  font: 400 13px/1.35 var(--font-ui);
 }
 .display-pop .dp-h {
-  color: var(--fg-weak);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 0 2px 8px;
+  padding: 0 0 6px;
 }
 .display-pop .dp-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 5px 2px;
+  gap: 12px;
+  min-height: 36px;
 }
-.display-pop select {
-  background: var(--surface-field);
-  color: var(--fg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 3px 6px;
-  font-family: var(--font);
-  font-size: 12px;
+.display-pop .dp-field {
+  width: 124px;
+  flex: none;
 }
 .display-pop .dp-note {
-  color: var(--fg-weak);
-  font-size: 10.5px;
-  line-height: 1.45;
-  margin-top: 6px;
-  padding: 0 2px;
+  margin: 2px 0 8px;
 }
 .display-pop .dp-h2 {
-  margin-top: 10px;
+  margin-top: 4px;
+  padding-top: 12px;
   border-top: 1px solid var(--line);
-  padding-top: 10px;
 }
 .display-pop .dp-swatches {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 2px 2px 6px;
+  gap: 8px;
+  padding: 2px 0 6px;
 }
+/* A brand preset: the accent with its secondary colour in one corner. */
 .display-pop .dp-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid var(--line);
+  width: 24px;
+  height: 24px;
   padding: 0;
-  cursor: pointer;
-  /* A diagonal split hints at the secondary colour behind the accent. */
+  border: 2px solid var(--swatch-edge);
+  border-radius: 50%;
   background-image: linear-gradient(
     135deg,
     var(--sw1) 0 60%,
     var(--sw2) 60% 100%
   );
-  transition: transform 0.08s ease;
+  cursor: pointer;
+  transition: border-color var(--dur-fast);
 }
 .display-pop .dp-swatch:hover {
-  transform: scale(1.12);
+  border-color: var(--line-strong);
 }
+/* The chosen preset: a ring in the strong text colour, clear of the swatch. */
 .display-pop .dp-swatch.on {
-  border-color: var(--fg);
-  box-shadow: 0 0 0 2px var(--surface-float);
+  border-color: var(--surface-float);
+  box-shadow: 0 0 0 2px var(--fg-strong);
 }
 .display-pop input[type='color'] {
-  width: 40px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--line);
+  width: 44px;
+  height: 24px;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-field);
   cursor: pointer;
-}
-.user-menu .um-head {
-  color: var(--fg-weak);
-  padding: 6px 8px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-.user-menu .um-item {
-  display: block;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
-  color: var(--fg);
-  text-decoration: none;
-  cursor: pointer;
-}
-.user-menu .um-item:hover {
-  background: var(--surface-hover);
-  color: var(--fg-strong);
-}
-.sign-in-prompt {
-  max-width: 250px;
-}
-.sign-in-prompt .um-head {
-  white-space: normal;
-  color: var(--fg);
-  font-weight: 600;
-  border-bottom: none;
-  margin-bottom: 0;
-}
-.sign-in-prompt .um-note {
-  color: var(--fg-weak);
-  padding: 0 8px 8px;
-  line-height: 1.4;
-}
-.user-menu .um-item.um-primary {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-  text-align: center;
 }

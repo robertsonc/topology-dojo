@@ -68,7 +68,7 @@
   outline: none;
 }
 .cmdk-field:focus-within .cmdk-glass {
-  color: var(--accent);
+  color: var(--accent-fg);
 }
 
 /* The results. `position: relative` keeps the rows' offsets local. */

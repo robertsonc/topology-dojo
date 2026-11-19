@@ -1,4 +1,5 @@
-/* The two "new from template" wizards and the keyboard-shortcut sheet. */
+/* The two "new from template" wizards, the keyboard-shortcut sheet and the
+   scrim the Share dialog shares with it. */
 
 /* ── Wizards ──────────────────────────────────────────────────────────────
    The SD-WAN wizard (src/ui/sdwan-wizard.ts) and the template parameter
@@ -144,6 +145,7 @@
   text-align: right;
   color: var(--fg);
 }
+/* ── The scrim the shortcut sheet and the Share dialog open on ─────────── */
 .help-backdrop {
   position: fixed;
   inset: 0;
@@ -151,35 +153,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
   background: var(--surface-scrim);
 }
+/* A .dialog on that scrim: its head and foot stay, its body scrolls. */
 .help-card {
-  width: min(760px, 92vw);
   max-height: 86vh;
-  overflow-y: auto;
-  padding: 18px 20px 20px;
-  background: var(--surface-float);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-float);
-  font-family: var(--font);
-}
-.help-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.help-head h3 {
-  margin: 0;
-  font-size: 14px;
-  color: var(--fg);
 }
 /* The shortcut sheet: groups flow down three columns, each row says what a
    command does and then shows its shortcuts as key caps. */
 .help-sheet {
   width: min(980px, 94vw);
-  font-family: var(--font-ui);
 }
 .help-cols {
   columns: 3 250px;
@@ -191,8 +175,6 @@
 }
 .help-col h4 {
   margin: 0 0 4px;
-  color: var(--fg-weak);
-  font: 600 12px/1.3 var(--font-ui);
 }
 .help-row {
   display: grid;

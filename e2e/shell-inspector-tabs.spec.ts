@@ -367,3 +367,16 @@ test('focus meets the tabs before the hide toggle drawn at their end', async ({
   await toggle.click();
   await expect(page.locator('.insp-tabs')).toBeVisible();
 });
+
+test('the hide toggle exposes whether the panel is open', async ({ page }) => {
+  await bootEditor(page);
+  const toggle = page.locator('#inspector-toggle');
+  await expect(toggle).toHaveAttribute('aria-controls', 'inspector-wrap');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  // The key does the same as the button, and the state follows it.
+  await page.locator('.canvas-host').click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press('p');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+});

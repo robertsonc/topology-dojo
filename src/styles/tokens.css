@@ -77,7 +77,6 @@
   --status-error-fg: #ff7b7b;
   --status-warn-fg: #ecbe4f;
   --status-error-soft: color-mix(in srgb, var(--status-error) 14%, transparent);
-  --on-status: #1d1f27; /* text on a warn or error fill */
   /* Proposal-diff strokes (workspace preview): add / remove / modify. */
   --diff-add: #2fd07f;
   --diff-remove: #fc6161;
@@ -125,6 +124,8 @@
   /* ── Motion ────────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
   --dur: 180ms;
+  --dur-slow: 500ms; /* a page fading in, a highlight's pulse */
+  --dur-flash: 600ms; /* one beat of an attention flash */
   --ease: cubic-bezier(0.4, 0.5, 0.2, 1);
 
   /* ── Scrollbars ────────────────────────────────────────────────────── */
@@ -174,4 +175,24 @@
 
   --scrollbar-thumb: rgba(0, 0, 0, 0.3);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.48);
+}
+
+/* A dark scope inside either theme: what sits on a surface that is dark in
+   both (the present-mode stage) takes the dark theme's foreground, lines,
+   fills and focus ring, and dark native controls. The surfaces themselves
+   stay the scope's own. */
+.dark-scope {
+  color-scheme: dark;
+
+  --surface-field: rgba(255, 255, 255, 0.06);
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --surface-press: rgba(255, 255, 255, 0.14);
+  --fg-strong: #ffffff;
+  --fg: #e6e8e9;
+  --fg-weak: #b1b9be;
+  --fg-disabled: rgba(255, 255, 255, 0.36);
+  --line: rgba(255, 255, 255, 0.12);
+  --line-strong: rgba(255, 255, 255, 0.36);
+  --accent-fg: color-mix(in srgb, var(--accent) 60%, white);
+  --focus: #ffffff;
 }

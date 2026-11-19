@@ -166,7 +166,7 @@ const UP = '↑';
 const DOWN = '↓';
 
 /**
- * The presentation's keys as its bar's tooltips print them ("Previous frame
+ * The presentation's keys as its bar's tooltips print them ("Previous page
  * (←)"); the sheet's Presentation rows start with the same text. The keys
  * themselves are the presentation's own handler's (src/main.ts).
  */
@@ -1594,8 +1594,8 @@ export const HELP_GESTURES: readonly HelpSection[] = [
   {
     title: 'Presentation',
     rows: [
-      [`${PRESENT_KEYS.prev} / PageUp`, 'Previous frame'],
-      [`${PRESENT_KEYS.next} / PageDown`, 'Next frame'],
+      [`${PRESENT_KEYS.prev} / PageUp`, 'Previous page'],
+      [`${PRESENT_KEYS.next} / PageDown`, 'Next page'],
       [PRESENT_KEYS.playPause, 'Play / pause'],
       [PRESENT_KEYS.exit, 'Exit'],
     ],

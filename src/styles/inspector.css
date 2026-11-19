@@ -369,6 +369,25 @@
   gap: 4px;
   min-width: 0;
 }
+/* A node's own link attachment: its padding and its ends in one row. */
+.insp-attach-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.insp-attach-pair > .field {
+  width: 64px;
+  flex: none;
+}
+.insp-attach-dist {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
 /* Buttons in the control column. */
 .insp-btns,
 .arrange {

@@ -398,6 +398,25 @@ test('on a phone the open library ends above the pages bar', async ({
   expect(reached).toBe(true);
 });
 
+// A phone shows one drawer at a time: opening one closes the other, and the
+// closed one keeps its stored choice (closing it was not the person's).
+test('on a phone opening one drawer closes the other', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  const stored = (key: string) =>
+    page.evaluate((k) => localStorage.getItem(k), key);
+  await page.locator('#palette-toggle').click();
+  await expect(page.locator('#palette')).not.toHaveClass(/collapsed/);
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expect(page.locator('#palette')).toHaveClass(/collapsed/);
+  expect(await stored('tds-palette-collapsed')).toBe('0');
+  await page.locator('#palette-toggle').click();
+  await expect(page.locator('#palette')).not.toHaveClass(/collapsed/);
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  expect(await stored('tds-inspector-collapsed')).toBe('0');
+});
+
 test('on a phone the document title keeps room to be read', async ({
   page,
 }) => {
@@ -496,14 +515,24 @@ for (const width of [1023, 900, 768, 720, 641]) {
     let b = await expectDrawer('palette');
     expect(b.area!.right - b.palette!.right).toBeGreaterThanOrEqual(72);
 
-    // Both open together: canvas still shows between them.
+    // Both open together where 160px of canvas still shows between them.
+    // Where it would not (720px and 641px), opening the properties drawer
+    // closes the library, and the library's stored choice stays as it was.
+    const roomy = width >= 768;
     await page.locator('#inspector-toggle').click();
     expect(await closed(page, 'inspector-wrap')).toBe(false);
     b = await expectDrawer('inspector');
-    expect(b.inspector!.left - b.palette!.right).toBeGreaterThanOrEqual(72);
-
-    // The properties drawer alone, as wide as the docked panel.
-    await page.locator('#palette-toggle').click();
+    expect(await closed(page, 'palette')).toBe(!roomy);
+    if (roomy) {
+      expect(b.inspector!.left - b.palette!.right).toBeGreaterThanOrEqual(160);
+      // The properties drawer alone, as wide as the docked panel.
+      await page.locator('#palette-toggle').click();
+    } else
+      expect(
+        await page.evaluate(() =>
+          localStorage.getItem('tds-palette-collapsed'),
+        ),
+      ).toBe('0');
     expect(await closed(page, 'palette')).toBe(true);
     b = await expectDrawer('inspector');
     expect(b.inspector!.right - b.inspector!.left).toBe(324);

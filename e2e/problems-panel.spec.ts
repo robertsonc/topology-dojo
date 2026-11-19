@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import {
+  bootEditor,
+  clickNode,
+  inspectorSection,
+  inspectorTab,
+} from './helpers.js';
 
 /**
  * The Problems dock: a row names elements the way the canvas does, a click
@@ -55,4 +60,37 @@ test('a problem names its elements, rings them on click, and can be hidden', asy
   await page.locator('#prob-restore').click();
   await expect(page.locator('#prob-count')).toHaveText(String(total));
   await expect(page.locator('.prob-foot')).toHaveCount(0);
+});
+
+// A problem about one field of an element: the jump shows the element's tab,
+// opens the section the field is in and puts the focus on the field.
+test('a jump to a problem about a field opens its section and focuses it', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await clickNode(page, 'fw');
+  await inspectorSection(page, 'Data');
+  const href = page.locator('#inspector [data-key="href"]');
+  await href.fill('ftp://example.com/fw');
+  await href.press('Enter');
+  await expect(page.locator('#saved')).toHaveText('✓ saved');
+
+  // Somewhere else in the panel: the section closed, another tab on show.
+  const data = page.locator('#inspector details.insp-group[data-group="Data"]');
+  await data.locator('> summary').click();
+  await expect(data).not.toHaveAttribute('open', '');
+  await inspectorTab(page, 'page');
+
+  await page.locator('#problems-toggle').click();
+  await page
+    .locator('#problems .prob', { hasText: 'not an http(s) URL' })
+    .locator('.prob-go')
+    .click();
+  await expect(page.locator('#insp-tab-selection')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(data).toHaveAttribute('open', '');
+  await expect(href).toBeFocused();
+  await expect(href).toHaveValue('ftp://example.com/fw');
 });

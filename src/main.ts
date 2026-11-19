@@ -113,6 +113,7 @@ import {
   COMPACT_LAYOUT_MQ,
   defaultPanelCollapsed,
   isCompactAbovePhone,
+  drawersCrowd,
   isCompactLayoutWidth,
 } from './ui/compact-layout.js';
 import {
@@ -196,7 +197,7 @@ import { enablePaletteDrag } from './ui/palette-drag.js';
 import { findInDocument, type FindMatch } from './ui/find.js';
 import type { WheelMode } from './editor/wheel.js';
 import { importConfirmText } from './ui/replace-document.js';
-import { problemsDockView } from './ui/problems-dock.js';
+import { problemField, problemsDockView } from './ui/problems-dock.js';
 import {
   typeOptionGroups,
   type TypeChoice,
@@ -239,7 +240,7 @@ import {
   type NodeTypeInfo,
 } from './api/catalog.js';
 import { SHARE_PUBLIC_WARNING } from './share/copy.js';
-import { readableInkOn } from './ui/contrast.js';
+import { readableAccentText, readableInkOn } from './ui/contrast.js';
 
 // Restore the last session from localStorage, else start from the sample.
 const restoredDoc = loadLocal();
@@ -413,9 +414,9 @@ app.innerHTML = `
           <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Minimap: click or drag to move the view"></svg>
         </div>
         <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Zoom">
-          <button type="button" class="icon-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
+          <button type="button" class="icon-btn" id="ccZoomOut" title="${tip('view.zoomOut')}" aria-label="Zoom out">${icon('zoom-out')}</button>
           <button type="button" class="cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom 100% — fit view">100%</button>
-          <button type="button" class="icon-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
+          <button type="button" class="icon-btn" id="ccZoomIn" title="${tip('view.zoomIn')}" aria-label="Zoom in">${icon('zoom-in')}</button>
           <button type="button" class="icon-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
         </div>
       </div>
@@ -445,15 +446,15 @@ app.innerHTML = `
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
       <div class="inspector-col">
-        <button type="button" class="btn btn-sm btn-ghost inspector-toggle" id="inspector-toggle" title="${tip('view.toggleProperties', 'Hide properties')}" aria-label="Hide properties"><span class="toggle-word">hide</span> ${icon('panel-right-close')}</button>
+        <button type="button" class="btn btn-sm btn-ghost inspector-toggle" id="inspector-toggle" aria-controls="inspector-wrap" aria-expanded="true" title="${tip('view.toggleProperties', 'Hide properties')}" aria-label="Hide properties"><span class="toggle-word">hide</span> ${icon('panel-right-close')}</button>
         <div class="inspector-body" id="inspector-body">
           <aside class="inspector scroll-slim" id="inspector"></aside>
         </div>
         <div class="problems-dock collapsed" id="problems-dock">
           <button class="problems-toggle" id="problems-toggle" title="Validation + layout problems">
             <span class="pt-label">Problems</span>
-            <span class="prob-count" id="prob-count">0</span>
-            <span class="prob-hidden-note" id="prob-hidden-note"></span>
+            <span class="badge data prob-count" id="prob-count">0</span>
+            <span class="hint prob-hidden-note" id="prob-hidden-note"></span>
             <span class="pt-chev" aria-hidden="true">${icon('chevron-right')}</span>
           </button>
           <div class="problems scroll-slim" id="problems"></div>
@@ -811,7 +812,7 @@ function openQuickAdd(req: InlineEditRequest, connectFrom?: string): void {
   pop.style.left = `${Math.round(left)}px`;
   pop.style.top = `${Math.round(top)}px`;
   pop.innerHTML =
-    `<input type="search" class="qa-input" placeholder="Add node… (type to search)" aria-label="Search node types" autocomplete="off">` +
+    `<input type="search" class="field qa-input" placeholder="Add node… (type to search)" aria-label="Search node types" autocomplete="off">` +
     `<div class="qa-list scroll-slim" role="listbox"></div>`;
   host.appendChild(pop);
   quickAddEl = pop;
@@ -905,7 +906,7 @@ function miniBarHtml(kind: 'node' | 'link'): string {
     (c) =>
       `<button class="mb-sw" data-mbcolor="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}"></button>`,
   ).join('');
-  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this page" aria-label="Emphasize on this page">${icon('star')}</button>`;
+  const emph = `<button type="button" class="icon-btn mb-btn" id="mbEmph" title="Emphasize on this page" aria-label="Emphasize on this page" aria-pressed="false">${icon('star')}</button>`;
   if (kind === 'link') {
     const info = editor.selectedLinkInfo();
     const typeOpts = linkCatalog()
@@ -921,8 +922,8 @@ function miniBarHtml(kind: 'node' | 'link'): string {
       )
       .join('');
     return (
-      `<select class="mb-sel" id="mbType" title="Link type" aria-label="Link type">${typeOpts}</select>` +
-      `<select class="mb-sel" id="mbStyle" title="Routing" aria-label="Link routing">${styleOpts}</select>` +
+      `<select class="field mb-sel" id="mbType" title="Link type" aria-label="Link type">${typeOpts}</select>` +
+      `<select class="field mb-sel" id="mbStyle" title="Routing" aria-label="Link routing">${styleOpts}</select>` +
       `<span class="mb-div"></span>${swatches}<span class="mb-div"></span>${emph}` +
       miniBarCommandsHtml(MINI_BAR_ORDER)
     );
@@ -992,7 +993,7 @@ function syncMiniBarCommands(): void {
  * The selection's box on screen (client coordinates), which the selection
  * bar keeps clear of: for a link what is drawn of it (its route, markers and
  * labels: the handles that bend it sit on that route), for nodes their
- * bounds.
+ * bounds and, for a sole node, its quick-connect arrows.
  */
 function miniBarSelectionBox(): EdgeBox | null {
   const link = editor.getSelectedLink();
@@ -1030,6 +1031,13 @@ function miniBarSelectionBox(): EdgeBox | null {
       const b = nodeBounds(n);
       add(b.x, b.y);
       add(b.x + b.w, b.y + b.h);
+    }
+    // A sole node's quick-connect arrows sit outside its box, on all four
+    // sides: the bar keeps clear of them too.
+    const arrows = editor.quickConnectBox();
+    if (arrows) {
+      add(arrows.left, arrows.top);
+      add(arrows.right, arrows.bottom);
     }
   }
   if (minX === Infinity) return null;
@@ -1118,6 +1126,7 @@ function updateMiniBar(): void {
     const ids = link ? [link.id] : (editor.selectedNodeIds() ?? []);
     const on = ids.length > 0 && ids.every((id) => editor.isEmphasized(id));
     emph.classList.toggle('on', on);
+    emph.setAttribute('aria-pressed', String(on));
   }
 }
 miniBar.addEventListener('click', (e) => {
@@ -2174,6 +2183,23 @@ function selectProblemTarget(loc: {
   inspectorTabs.showSelection();
 }
 
+/**
+ * After a jump from the Problems dock: open the section of the field at fault
+ * (and any section it is nested in) and put the focus on it.
+ */
+function revealProblemField(selector: string | undefined): void {
+  if (!selector) return;
+  const field = inspector.querySelector<HTMLElement>(selector);
+  if (!field) return;
+  for (
+    let section = field.closest('details');
+    section;
+    section = section.parentElement?.closest('details') ?? null
+  )
+    section.open = true;
+  field.focus();
+}
+
 /** Every element a problem names on its page, in the order it names them. */
 function problemTargets(
   p: Problem,
@@ -2340,6 +2366,8 @@ function renderProblems(): void {
   problemsDock.classList.toggle('has-error', problemsView.severity === 'error');
   problemsDock.classList.toggle('has-warn', problemsView.severity === 'warn');
   probCount.textContent = problemsView.count;
+  probCount.classList.toggle('badge-error', problemsView.severity === 'error');
+  probCount.classList.toggle('badge-warn', problemsView.severity === 'warn');
   probHiddenNote.textContent = problemsView.hiddenNote;
 
   // Keep the always-visible status-bar indicator in sync.
@@ -2351,28 +2379,39 @@ function renderProblems(): void {
       const loc = problemLocateGlobal(p);
       const text = problemText(p);
       const isHidden = hiddenProblems.has(problemKey(p));
-      const attrs = loc
-        ? ` data-prob-page="${loc.pageIndex}" data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
-        : '';
+      // Where it is fixed: the element's tab, or the Page or Document tab,
+      // and the field at fault when there is one.
+      const fix = problemField(p);
+      const pageAt = /^page\[(\d+)\]/.exec(p.where);
+      const tabOnly = !loc && fix && fix.tab !== 'selection';
+      const attrs =
+        (loc
+          ? ` data-prob-page="${loc.pageIndex}" data-prob-kind="${loc.kind}" data-prob-id="${esc(loc.id)}"`
+          : tabOnly
+            ? ` data-prob-tab="${fix.tab}"${pageAt ? ` data-prob-page="${pageAt[1]}"` : ''}`
+            : '') +
+        ((loc || tabOnly) && fix?.field
+          ? ` data-prob-field="${esc(fix.field)}"`
+          : '');
       return (
         `<div class="prob prob-${p.level}${isHidden ? ' prob-hidden' : ''}">` +
-        `<button class="prob-go${loc ? ' locatable' : ''}"${attrs} data-i="${i}" title="${esc(`${p.message} — ${p.where}`)}">` +
+        `<button type="button" class="prob-go${loc || tabOnly ? ' locatable' : ''}"${attrs} data-i="${i}" title="${esc(`${p.message} — ${p.where}`)}">` +
         `<span class="prob-dot"></span>` +
         `<span class="prob-msg">${esc(text.message)}<span class="prob-where">${esc(text.where)}</span></span>` +
         `</button>` +
-        `<button class="prob-hide" data-hide="${i}" title="${isHidden ? 'Show this problem again' : 'Hide this problem (it stays in validation)'}" aria-label="${isHidden ? 'Show this problem again' : 'Hide this problem'}">${icon(isHidden ? 'eye' : 'eye-off')}</button>` +
+        `<button type="button" class="icon-btn prob-hide" data-hide="${i}" title="${isHidden ? 'Show this problem again' : 'Hide this problem (it stays in validation)'}" aria-label="${isHidden ? 'Show this problem again' : 'Hide this problem'}">${icon(isHidden ? 'eye' : 'eye-off')}</button>` +
         `</div>`
       );
     })
     .join('');
   const footer = hiddenCount
     ? `<div class="prob-foot"><span>${hiddenCount} hidden</span>` +
-      `<button class="prob-link" id="prob-show-hidden">${showHiddenProblems ? 'hide them' : 'show'}</button>` +
-      `<button class="prob-link" id="prob-restore">restore all</button></div>`
+      `<button type="button" class="btn btn-sm btn-ghost prob-link" id="prob-show-hidden">${showHiddenProblems ? 'Hide them' : 'Show them'}</button>` +
+      `<button type="button" class="btn btn-sm btn-ghost prob-link" id="prob-restore">Restore all</button></div>`
     : '';
   problemsPanel.innerHTML =
     (rows ||
-      `<div class="prob-empty">${
+      `<div class="hint prob-empty">${
         hiddenCount
           ? 'No other problems.'
           : 'No problems — validation and layout are clean.'
@@ -2389,6 +2428,18 @@ function renderProblems(): void {
         if (Number.isInteger(page) && page !== current) gotoPage(page);
         selectProblemTarget({ kind, id: b.dataset.probId! });
         editor.spotlight(problemTargets(listed[Number(b.dataset.i)]!));
+        revealProblemField(b.dataset.probField);
+      }),
+    );
+  // A problem about a page or the document shows that tab.
+  problemsPanel
+    .querySelectorAll<HTMLButtonElement>('.prob-go[data-prob-tab]')
+    .forEach((b) =>
+      b.addEventListener('click', () => {
+        const page = Number(b.dataset.probPage);
+        if (Number.isInteger(page) && page !== current) gotoPage(page);
+        inspectorTabs.reveal(b.dataset.probTab as 'page' | 'document');
+        revealProblemField(b.dataset.probField);
       }),
     );
   problemsPanel.querySelectorAll<HTMLButtonElement>('.prob-hide').forEach((b) =>
@@ -2426,6 +2477,32 @@ problemsToggle.addEventListener('click', () =>
 
 statusReady = true;
 renderProblems();
+
+/* ── Bars over the canvas: Find and the path analysis bar ────────────────
+ * Centred over the canvas, under its top edge (the top bar, and the shared
+ * copy's banner when it shows), and never wider than the canvas: they never
+ * cover the rail, the library or the properties panel. They follow the
+ * canvas as the panels open and close. */
+const canvasArea = app.querySelector<HTMLElement>('#canvas-area')!;
+const overCanvasEls = new Set<HTMLElement>();
+function placeOverCanvas(el: HTMLElement): void {
+  const r = canvasArea.getBoundingClientRect();
+  el.style.left = `${Math.round(r.left + r.width / 2)}px`;
+  el.style.top = `${Math.round(r.top + 12)}px`;
+  el.style.maxWidth = `${Math.max(160, Math.floor(r.width - 24))}px`;
+}
+function overCanvas(el: HTMLElement): void {
+  overCanvasEls.add(el);
+  placeOverCanvas(el);
+}
+new ResizeObserver(() => {
+  for (const el of overCanvasEls)
+    if (el.isConnected) placeOverCanvas(el);
+    else overCanvasEls.delete(el);
+}).observe(canvasArea);
+window.addEventListener('resize', () => {
+  for (const el of overCanvasEls) if (el.isConnected) placeOverCanvas(el);
+});
 
 /* Find / jump-to-element (Ctrl+F): nodes, links and zones on every frame
  * (see src/ui/find.ts for what matches). Choosing a match goes to its frame
@@ -2480,9 +2557,10 @@ function openFind(): void {
   findEl = document.createElement('div');
   findEl.className = 'find';
   findEl.innerHTML =
-    `<input type="text" placeholder="Find a node, link or zone on any frame…" aria-label="Find a node, link or zone on any frame, by label, id, type or metadata" />` +
+    `<input type="text" class="field find-input" placeholder="Find a node, link or zone on any page…" aria-label="Find a node, link or zone on any page, by label, id, type or metadata" />` +
     `<div class="find-results scroll-slim"></div>`;
   app.appendChild(findEl);
+  overCanvas(findEl);
   const input = findEl.querySelector('input')!;
   input.addEventListener('input', () => runFindQuery(input.value));
   input.addEventListener('keydown', (e) => {
@@ -2561,6 +2639,11 @@ function setInspectorCollapsed(collapsed: boolean, persist = true): void {
     'aria-label',
     collapsed ? 'Show properties' : 'Hide properties',
   );
+  // And it says whether the panel it shows and hides is open.
+  inspectorToggle.setAttribute('aria-expanded', String(!collapsed));
+  // The zoom control and the minimap move with the drawer at once, not a
+  // frame later when the resize is observed.
+  syncInspectorDrawerWidth();
   if (!persist) return;
   try {
     localStorage.setItem('tds-inspector-collapsed', collapsed ? '1' : '0');
@@ -2628,6 +2711,26 @@ function syncPanelLayoutFromPrefs(): void {
   );
 }
 
+/**
+ * After a drawer opens: on a phone, or where the two open drawers would leave
+ * under 160px of canvas between them, the other one closes. That is not the
+ * person's choice, so its stored choice is left as it was.
+ */
+function makeRoomForDrawer(opened: 'palette' | 'inspector'): void {
+  const other = opened === 'palette' ? inspectorWrap : paletteEl;
+  if (paletteEl.classList.contains('collapsed')) return;
+  if (inspectorWrap.classList.contains('collapsed')) return;
+  const between =
+    inspectorWrap.getBoundingClientRect().left -
+    paletteEl.getBoundingClientRect().right;
+  if (!drawersCrowd(window.innerWidth, between)) return;
+  const toggle = other === paletteEl ? paletteToggle : inspectorToggle;
+  const held = other.contains(document.activeElement);
+  if (other === paletteEl) setPaletteCollapsed(true, false);
+  else setInspectorCollapsed(true, false);
+  if (held) toggle.focus({ preventScroll: true });
+}
+
 /** What had the focus as the latest resize began: a capture listener on the
  * window runs before the ones that react to the resize. */
 let focusAtResize: Element | null = null;
@@ -2670,14 +2773,18 @@ watchPanelWidth(inspector, inspectorWrap);
 // drawer's width is kept on the stage as --insp-drawer-w, so the zoom control
 // and the minimap card move left of it instead of being covered (shell.css);
 // and the selection's mini bar moves into the canvas the drawers leave.
-{
-  const stageEl = app.querySelector<HTMLElement>('.stage')!;
-  new ResizeObserver(() => {
-    const open = !inspectorWrap.classList.contains('collapsed');
-    stageEl.style.setProperty(
+function syncInspectorDrawerWidth(): void {
+  const open = !inspectorWrap.classList.contains('collapsed');
+  app
+    .querySelector<HTMLElement>('.stage')
+    ?.style.setProperty(
       '--insp-drawer-w',
       `${open ? inspectorWrap.offsetWidth : 0}px`,
     );
+}
+{
+  new ResizeObserver(() => {
+    syncInspectorDrawerWidth();
     if (statusReady) updateMiniBar();
   }).observe(inspectorWrap);
   new ResizeObserver(() => {
@@ -3169,17 +3276,29 @@ function linkFieldControl(link: LinkConfig): (f: FieldSpec) => string {
  * they write the document exactly as that field always did.
  */
 function linkAttachControl(f: FieldSpec, node: NodeConfig): string {
+  // The switch alone; its two fields share one row under it, so the
+  // section is no taller than a row more with the override on.
   const override: FieldSpec = {
     ...f,
     label: 'Override for this node',
-    fields: f.fields?.map((s) =>
-      s.key === 'distribute' ? { ...s, label: 'Distribute ends' } : s,
-    ),
+    fields: [],
   };
-  return (
+  let html =
     `<div class="insp-hint" data-link-attach-summary>${esc(linkAttachSummary(editor.page.linkAttach, node))}</div>` +
-    fieldControl(override, node as Record<string, unknown>)
-  );
+    fieldControl(override, node as Record<string, unknown>);
+  const own = node.linkAttach;
+  const pad = f.fields?.find((s) => s.key === 'pad');
+  const distribute = f.fields?.find((s) => s.key === 'distribute');
+  if (typeof own === 'object' && own !== null && pad && distribute) {
+    const v = own as Record<string, unknown>;
+    html +=
+      `<div class="insp-row insp-attach-sub"><span>${labelMark('nested')} ${esc(pad.label)}</span>` +
+      `<span class="insp-attach-pair">` +
+      `<input type="number" data-key="${f.key}.pad" data-kind="number" value="${esc(String(v.pad ?? ''))}" placeholder="auto" aria-label="${esc(pad.label)}"${boundsAttrs(numberBounds(pad))}/>` +
+      `<label class="insp-attach-dist"><span>Distribute ends</span><input type="checkbox" data-key="${f.key}.distribute" ${v.distribute ? 'checked' : ''}/></label>` +
+      `</span></div>`;
+  }
+  return html;
 }
 
 /** Keep the Link attachment line in step while its fields are typed in. */
@@ -3413,7 +3532,7 @@ function renderInspector(): void {
       ) +
       sectionHtml(inspectorSections, 'Format', formatRow(), { open: true }) +
       (canAnalyzePath()
-        ? `<div class="insp-rows insp-top"><div class="insp-row"><span>Path</span><span class="insp-btns"><button type="button" class="btn btn-sm" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">${icon('route')} Analyze path</button></span></div></div>`
+        ? `<div class="insp-rows insp-top"><div class="insp-row"><span>Path</span><span class="insp-btns"><button type="button" class="btn btn-sm" id="i-path" title="Trace the routes between these two nodes over the links this page draws">${icon('route')} Analyze path</button></span></div></div>`
         : '');
   }
   closeColourPopover();
@@ -3956,7 +4075,7 @@ function annotationsHtml(): string {
     if (!items.length) continue;
     html +=
       `<details class="anno-group"${annoGroupClosed.has(g.col) ? '' : ' open'} data-agroup="${g.col}">` +
-      `<summary class="anno-group-h">${esc(info.label)}s<span class="anno-count">${items.length}</span></summary>`;
+      `<summary class="anno-group-h">${esc(info.label)}s<span class="badge data anno-count">${items.length}</span></summary>`;
     for (const item of items) {
       const cfg = item as Record<string, unknown>;
       const title = String(cfg.label ?? cfg.type ?? item.id);
@@ -3970,7 +4089,7 @@ function annotationsHtml(): string {
         // Named for its annotation, so its controls (several "Label" fields
         // on one tab) are told apart by the group they are in.
         `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}" aria-label="${esc(info.label)} ${esc(title)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
-        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button type="button" class="icon-btn anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
+        `<summary><span class="badge anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button type="button" class="icon-btn anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
         // The rows in their own column, so they keep the panel's row gap
         // (a gap set on a <details> does not reach its content).
         `<div class="insp-rows anno-rows">` +
@@ -4335,7 +4454,7 @@ function buildPalette(): void {
   // palette no longer carries its own copy — a collapse can't strip them anymore.
   let html = ``;
   for (const [cat, infos] of byCat) {
-    html += `<div class="palette-h">${esc(cat)}</div>`;
+    html += `<div class="section-label palette-h">${esc(cat)}</div>`;
     for (const info of infos) {
       const item = `<button class="pitem" data-type="${esc(info.type)}">${nodePreviewSVG(info.type)}<span class="plabel">${esc(info.label)}</span></button>`;
       html += info.custom
@@ -4356,7 +4475,7 @@ function buildPalette(): void {
       st.name.toLowerCase().includes(paletteQuery.trim().toLowerCase()),
   );
   if (stencils.length) {
-    html += `<div class="palette-h">Stencils</div>`;
+    html += `<div class="section-label palette-h">Stencils</div>`;
     for (const st of stencils) {
       html += `<div class="pcustom"><button class="pitem" data-stencil="${esc(st.id)}" title="Stamp '${esc(st.name)}'">${stencilPreviewSVG(st)}<span class="plabel">${esc(st.name)}</span></button><button class="pedit" data-stencil-del="${esc(st.id)}" title="Delete stencil" aria-label="Delete stencil ${esc(st.name)}">${icon('delete')}</button></div>`;
     }
@@ -4369,8 +4488,8 @@ function buildPalette(): void {
   // The library actions (design a type, save a stencil) only show when not
   // mid-search — a filtered list is for picking, not authoring.
   if (!searching) {
-    html += `<button class="pitem design" id="pDesign"><span>${icon('plus')} design node</span></button>`;
-    html += `<button class="pitem design" id="pSaveStencil" title="Save the selected node(s) as a reusable group"><span>${icon('plus')} save stencil</span></button>`;
+    html += `<button class="pitem design" id="pDesign"><span>${icon('plus')} Design node</span></button>`;
+    html += `<button class="pitem design" id="pSaveStencil" title="Save the selected node(s) as a reusable group"><span>${icon('plus')} Save stencil</span></button>`;
   }
   paletteList.innerHTML = html;
 
@@ -4797,7 +4916,7 @@ function deletePage(i: number): void {
   // delete silently (pageHasContent, pages/model).
   if (
     pageHasContent(page) &&
-    !confirm(`Delete "${page.name}"? This frame has content.`)
+    !confirm(`Delete "${page.name}"? This page has content.`)
   )
     return;
   finalizeFrameDelete(); // only the most recent delete stays recoverable
@@ -4924,8 +5043,12 @@ function currentTheme(): RenderTheme {
     ? 'light'
     : 'dark';
 }
+/** The document's brand accent on the chrome, if it sets one. */
+let chromeAccentHex: string | undefined;
 function applyTheme(light: boolean): void {
   document.documentElement.classList.toggle('light', light);
+  // Accent text is worked out against this theme's surface.
+  syncAccentText();
   // The browser's own UI (a phone's address bar, an installed app's title
   // bar) follows the chrome: the theme's back surface, read from the tokens.
   document
@@ -4961,29 +5084,29 @@ displayPop.setAttribute('role', 'dialog');
 displayPop.setAttribute('aria-label', 'Display settings');
 displayPop.hidden = true;
 displayPop.innerHTML =
-  `<div class="dp-h">Display</div>` +
-  `<label class="dp-row">Ambient backdrop<select id="dpAmbient">` +
+  `<h3 class="section-label dp-h">Display</h3>` +
+  `<label class="dp-row">Ambient backdrop<select class="field dp-field" id="dpAmbient">` +
   variantOptions('view.ambient.', {
     animated: 'Animated',
     static: 'Static',
     off: 'Off',
   }) +
   `</select></label>` +
-  `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (${esc(commands.shortcutLabel('view.toggleCalm') ?? '')}) pauses those.</div>` +
-  `<label class="dp-row">Wheel<select id="dpWheel">` +
+  `<p class="hint dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (${esc(commands.shortcutLabel('view.toggleCalm') ?? '')}) pauses those.</p>` +
+  `<label class="dp-row">Wheel<select class="field dp-field" id="dpWheel">` +
   variantOptions('view.wheel.', {
     auto: 'Auto',
     zoom: 'Always zoom',
     pan: 'Always pan',
   }) +
   `</select></label>` +
-  `<div class="dp-note">Auto: a mouse wheel zooms, a trackpad’s two-finger slide pans. Pinch or Ctrl/Cmd+wheel always zooms; Shift+wheel pans sideways.</div>` +
-  `<div class="dp-h dp-h2">Brand palette</div>` +
+  `<p class="hint dp-note">Auto: a mouse wheel zooms, a trackpad’s two-finger slide pans. Pinch or Ctrl/Cmd+wheel always zooms; Shift+wheel pans sideways.</p>` +
+  `<h3 class="section-label dp-h dp-h2">Brand palette</h3>` +
   `<div class="dp-swatches" id="dpPresets"></div>` +
   `<label class="dp-row">Accent<input type="color" id="dpAccent"/></label>` +
   `<label class="dp-row">Secondary<input type="color" id="dpSecondary"/></label>` +
   `<label class="dp-row">Chrome (UI)<input type="color" id="dpChrome"/></label>` +
-  `<div class="dp-note">Recolours the canvas accents and the app chrome to match your brand. Saved with the document.</div>`;
+  `<p class="hint dp-note">Recolours the canvas accents and the app chrome to match your brand. Saved with the document.</p>`;
 document.body.appendChild(displayPop);
 const dpAmbient = displayPop.querySelector<HTMLSelectElement>('#dpAmbient')!;
 const dpWheel = displayPop.querySelector<HTMLSelectElement>('#dpWheel')!;
@@ -5084,6 +5207,28 @@ function setChromeAccent(hex: string | undefined): void {
   else style.removeProperty('--accent');
   if (ink) style.setProperty('--on-accent', ink);
   else style.removeProperty('--on-accent');
+  chromeAccentHex = hex;
+  syncAccentText();
+}
+
+/**
+ * Accent text and icons (`--accent-fg`) under a brand accent: the accent,
+ * mixed toward the theme's strongest text until it reads (4.5:1) on the
+ * front surface. A dark brand on the dark theme, or a pale one on the light
+ * theme, would otherwise be unreadable as text. With no brand accent the
+ * theme's own value in tokens.css stands.
+ */
+function syncAccentText(): void {
+  const root = document.documentElement;
+  root.style.removeProperty('--accent-fg');
+  if (!chromeAccentHex) return;
+  const tokens = getComputedStyle(root);
+  const fg = readableAccentText(
+    chromeAccentHex,
+    tokens.getPropertyValue('--surface-front').trim(),
+    tokens.getPropertyValue('--fg-strong').trim(),
+  );
+  if (fg) root.style.setProperty('--accent-fg', fg);
 }
 
 function syncPaletteInputs(p: BrandPalette | undefined): void {
@@ -5177,7 +5322,10 @@ function toggleDisplayPop(): void {
     // It opens upward from its button at the right end of the pages bar.
     const r = displayBtn.getBoundingClientRect();
     displayPop.style.top = 'auto';
-    displayPop.style.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`;
+    const bottom = Math.round(window.innerHeight - r.top + 6);
+    displayPop.style.bottom = `${bottom}px`;
+    // In a short window it keeps inside it and scrolls within itself.
+    displayPop.style.maxHeight = `${Math.max(120, window.innerHeight - bottom - 8)}px`;
     displayPop.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
     displayPop.style.left = 'auto';
     displayPop.hidden = false;
@@ -5220,7 +5368,7 @@ function openHelp(): void {
   const cols = [...commands.helpSections(), ...HELP_GESTURES]
     .map(
       (s) =>
-        `<div class="help-col"><h4>${esc(s.title)}</h4>` +
+        `<div class="help-col"><h4 class="section-label">${esc(s.title)}</h4>` +
         s.rows
           .map(
             ([k, d]) =>
@@ -5236,10 +5384,10 @@ function openHelp(): void {
     )
     .join('');
   helpEl.innerHTML =
-    `<div class="help-card help-sheet scroll-slim" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">` +
-    `<div class="help-head"><h3>Keyboard shortcuts</h3>` +
-    `<button class="tbtn ticon" id="helpClose" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
-    `<div class="help-cols">${cols}</div></div>`;
+    `<div class="dialog help-card help-sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">` +
+    `<div class="dialog-head help-head"><h3 class="dialog-title" id="helpTitle">Keyboard shortcuts</h3>` +
+    `<button type="button" class="icon-btn" id="helpClose" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
+    `<div class="dialog-body scroll-slim"><div class="help-cols">${cols}</div></div></div>`;
   app.appendChild(helpEl);
   helpEl.addEventListener('click', (e) => {
     if (e.target === helpEl) closeHelp(); // click backdrop to dismiss
@@ -5284,18 +5432,18 @@ function openPresent(): void {
   let frame = current;
   let playing = doc.pages.length > 1;
   const root = document.createElement('div');
-  root.className = 'present-root';
+  root.className = 'present-root dark-scope';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', 'Presentation');
   root.innerHTML =
     `<div class="present-stage" id="presentStage"></div>` +
     `<div class="present-bar">` +
-    `<button class="tbtn" id="presentPrev" title="Previous frame (${PRESENT_KEYS.prev})" aria-label="Previous frame">${icon('frame-prev')}</button>` +
-    `<button class="tbtn" id="presentPlay" title="Play / pause (${PRESENT_KEYS.playPause})" aria-label="Play or pause">${icon(playing ? 'pause' : 'play')}</button>` +
-    `<button class="tbtn" id="presentNext" title="Next frame (${PRESENT_KEYS.next})" aria-label="Next frame">${icon('frame-next')}</button>` +
-    `<span class="present-count" id="presentCount"></span>` +
+    `<button type="button" class="icon-btn" id="presentPrev" title="Previous page (${PRESENT_KEYS.prev})" aria-label="Previous page">${icon('frame-prev')}</button>` +
+    `<button type="button" class="icon-btn" id="presentPlay" title="Play / pause (${PRESENT_KEYS.playPause})" aria-label="Play or pause">${icon(playing ? 'pause' : 'play')}</button>` +
+    `<button type="button" class="icon-btn" id="presentNext" title="Next page (${PRESENT_KEYS.next})" aria-label="Next page">${icon('frame-next')}</button>` +
+    `<span class="present-count data" id="presentCount"></span>` +
     `<span class="present-name" id="presentName"></span>` +
-    `<button class="tbtn present-exit" id="presentExit" title="Exit (${PRESENT_KEYS.exit})" aria-label="Exit presentation">${icon('x')} exit</button>` +
+    `<button type="button" class="btn btn-ghost present-exit" id="presentExit" title="Exit (${PRESENT_KEYS.exit})" aria-label="Exit presentation">${icon('x')}Exit</button>` +
     `</div>`;
   document.body.appendChild(root);
   presentEl = root;
@@ -5404,8 +5552,8 @@ function shareRowHtml(s: ShareRow): string {
     `<div class="share-row" data-id="${esc(s.id)}">` +
     `<div class="share-meta"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` +
     `<span class="share-sub">${esc(new Date(s.createdAt).toLocaleDateString())} · expires in ${days}d</span></div>` +
-    `<button class="tbtn share-copy" data-url="${esc(url)}" title="Copy link">copy</button>` +
-    `<button class="tbtn share-revoke" data-id="${esc(s.id)}" title="Revoke — the public link stops resolving">revoke</button>` +
+    `<button type="button" class="btn btn-sm btn-ghost share-copy" data-url="${esc(url)}" title="Copy the public link">Copy link</button>` +
+    `<button type="button" class="btn btn-sm btn-danger share-revoke" data-id="${esc(s.id)}" title="Revoke — the public link stops resolving">Revoke link</button>` +
     `</div>`
   );
 }
@@ -5417,15 +5565,16 @@ function openShare(): void {
   shareEl = document.createElement('div');
   shareEl.className = 'help-backdrop';
   shareEl.innerHTML =
-    `<div class="help-card share-card scroll-slim" role="dialog" aria-modal="true" aria-label="Share">` +
-    `<div class="help-head"><h3>Share</h3>` +
-    `<button class="tbtn ticon" id="shareClose" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
-    `<p class="share-note">Publishing creates a <b>public</b> read-only snapshot at a /v/&lt;id&gt; link — no sign-in needed to view it. Links expire after 30 days; revoking one takes it down early (edge caches may serve it for up to about a minute). Don’t publish internal addresses or policy details unless they’re approved for public access.</p>` +
-    `<div class="share-actions"><button class="tbtn" id="sharePublish">${icon('publish')} publish current document</button><span class="share-status" id="shareStatus" role="status"></span></div>` +
+    `<div class="dialog help-card share-card" role="dialog" aria-modal="true" aria-labelledby="shareTitle">` +
+    `<div class="dialog-head help-head"><h3 class="dialog-title" id="shareTitle">Share</h3>` +
+    `<button type="button" class="icon-btn" id="shareClose" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
+    `<div class="dialog-body scroll-slim">` +
+    `<p class="share-note hint">Publishing creates a <b>public</b> read-only snapshot at a /v/&lt;id&gt; link — no sign-in needed to view it. Links expire after 30 days; revoking one takes it down early (edge caches may serve it for up to about a minute). Don’t publish internal addresses or policy details unless they’re approved for public access.</p>` +
+    `<div class="share-actions"><button type="button" class="btn btn-primary" id="sharePublish">${icon('publish')}Publish this document</button><span class="share-status hint" id="shareStatus" role="status"></span></div>` +
     `<div class="share-fresh" id="shareFresh" hidden></div>` +
-    `<h4 class="share-h">Published links</h4>` +
-    `<div class="share-list" id="shareList">loading…</div>` +
-    `</div>`;
+    `<h4 class="section-label share-h">Published links</h4>` +
+    `<div class="share-list" id="shareList"><span class="hint">Loading…</span></div>` +
+    `</div></div>`;
   app.appendChild(shareEl);
   const status = shareEl.querySelector<HTMLElement>('#shareStatus')!;
   const list = shareEl.querySelector<HTMLElement>('#shareList')!;
@@ -5435,9 +5584,9 @@ function openShare(): void {
       const shares = await fetchShares();
       list.innerHTML = shares.length
         ? shares.map(shareRowHtml).join('')
-        : `<div class="share-sub">No live links.</div>`;
+        : `<div class="hint">No live links.</div>`;
     } catch (err) {
-      list.innerHTML = `<div class="share-sub">Could not load published links (${esc(String(err))}).</div>`;
+      list.innerHTML = `<div class="hint">Could not load published links (${esc(String(err))}).</div>`;
     }
   };
   shareEl.addEventListener('click', (e) => {
@@ -5449,8 +5598,8 @@ function openShare(): void {
     const copy = t.closest<HTMLButtonElement>('.share-copy');
     if (copy) {
       void navigator.clipboard?.writeText(copy.dataset.url!).then(
-        () => (copy.innerHTML = `copied ${icon('check')}`),
-        () => (copy.textContent = 'copy failed'),
+        () => (copy.innerHTML = `${icon('check')}Copied`),
+        () => (copy.textContent = 'Copy failed'),
       );
       return;
     }
@@ -5467,17 +5616,17 @@ function openShare(): void {
           if (res.ok) void refresh();
           else {
             revoke.disabled = false;
-            revoke.textContent = 'revoke';
+            revoke.textContent = 'Revoke link';
             status.textContent =
               res.status === 403
-                ? 'only the publisher can revoke this link'
-                : `revoke failed (${res.status})`;
+                ? 'Only the publisher can revoke this link.'
+                : `Revoke failed (${res.status}).`;
           }
         },
         () => {
           revoke.disabled = false;
-          revoke.textContent = 'revoke';
-          status.textContent = 'revoke failed (offline?)';
+          revoke.textContent = 'Revoke link';
+          status.textContent = 'Revoke failed (offline?)';
         },
       );
     }
@@ -5485,7 +5634,7 @@ function openShare(): void {
   shareEl
     .querySelector<HTMLButtonElement>('#sharePublish')!
     .addEventListener('click', () => {
-      status.textContent = 'publishing…';
+      status.textContent = 'Publishing…';
       fresh.hidden = true;
       void fetch('/api/share', {
         method: 'POST',
@@ -5494,7 +5643,7 @@ function openShare(): void {
       }).then(
         async (res) => {
           if (!res.ok) {
-            status.textContent = `publish failed (${res.status})`;
+            status.textContent = `Publish failed (${res.status}).`;
             return;
           }
           const out = (await res.json()) as { id: string; url: string };
@@ -5504,12 +5653,12 @@ function openShare(): void {
           status.textContent = '';
           fresh.hidden = false;
           fresh.innerHTML =
-            `<span class="share-sub">Published:</span> <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a> ` +
-            `<button class="tbtn share-copy" data-url="${esc(url)}">copy</button>`;
+            `<span class="share-sub">Published:</span> <a class="data" href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>` +
+            `<button type="button" class="btn btn-sm share-copy" data-url="${esc(url)}" title="Copy the public link">Copy link</button>`;
           void refresh();
         },
         () => {
-          status.textContent = 'publish failed (offline?)';
+          status.textContent = 'Publish failed (offline?)';
         },
       );
     });
@@ -5621,15 +5770,15 @@ function wireSignInChip(): void {
   div.hidden = false;
 
   const menu = document.createElement('div');
-  menu.className = 'user-menu sign-in-prompt';
+  menu.className = 'sign-in-prompt';
   menu.id = 'signInPrompt';
   menu.setAttribute('role', 'dialog');
   menu.setAttribute('aria-label', 'Sign in');
   menu.hidden = true;
   menu.innerHTML =
-    `<div class="um-head" id="signInMessage"></div>` +
-    `<div class="um-note">Your work stays in this browser until you do. Signing in brings you straight back to it.</div>` +
-    `<a class="um-item um-primary" id="signInGo" href="/login?go=%2F">Sign in with GitHub</a>`;
+    `<p class="sip-title" id="signInMessage"></p>` +
+    `<p class="hint">Your work stays in this browser until you do. Signing in brings you straight back to it.</p>` +
+    `<a class="btn btn-primary sip-go" id="signInGo" href="/login?go=%2F">Sign in with GitHub</a>`;
   const message = menu.querySelector<HTMLElement>('#signInMessage')!;
   document.body.appendChild(menu);
 
@@ -6137,7 +6286,11 @@ for (const id of ['view.theme.dark', 'view.theme.light'] as const)
   });
 bind('view.present', { run: openPresent, checked: () => !!presentEl });
 bind('view.toggleLibrary', {
-  run: () => setPaletteCollapsed(!paletteEl.classList.contains('collapsed')),
+  run: () => {
+    const opening = paletteEl.classList.contains('collapsed');
+    setPaletteCollapsed(!opening);
+    if (opening) makeRoomForDrawer('palette');
+  },
   checked: () => !paletteEl.classList.contains('collapsed'),
 });
 bind('view.toggleMinimap', {
@@ -6145,8 +6298,11 @@ bind('view.toggleMinimap', {
   checked: () => !minimapDock.classList.contains('collapsed'),
 });
 bind('view.toggleProperties', {
-  run: () =>
-    setInspectorCollapsed(!inspectorWrap.classList.contains('collapsed')),
+  run: () => {
+    const opening = inspectorWrap.classList.contains('collapsed');
+    setInspectorCollapsed(!opening);
+    if (opening) makeRoomForDrawer('inspector');
+  },
   checked: () => !inspectorWrap.classList.contains('collapsed'),
 });
 bind('view.toggleFrames', {
@@ -6340,15 +6496,15 @@ const PATH_ACTIONS: {
     key: 'keep',
     command: 'path.keepEmphasis',
     icon: 'star',
-    text: 'emphasize',
-    title: 'Keep this spotlight on the frame',
+    text: 'Emphasize',
+    title: 'Keep this spotlight on the page',
     route: true,
   },
   {
     key: 'flow',
     command: 'path.addFlow',
     icon: 'flow',
-    text: 'add flow',
+    text: 'Add flow',
     title: 'Add a flow along this route',
     route: true,
   },
@@ -6356,8 +6512,8 @@ const PATH_ACTIONS: {
     key: 'frame',
     command: 'path.newFrame',
     icon: 'duplicate',
-    text: 'new frame',
-    title: 'Copy this frame with the route spotlit and captioned',
+    text: 'New page',
+    title: 'Copy this page with the route spotlit and captioned',
     route: true,
   },
   {
@@ -6429,9 +6585,9 @@ function renderPathBar(): void {
     for (const a of PATH_ACTIONS) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'tbtn';
+      b.className = a.text ? 'btn btn-sm btn-ghost' : 'icon-btn';
       b.dataset.path = a.key;
-      b.innerHTML = a.text ? `${icon(a.icon)} ${a.text}` : icon(a.icon);
+      b.innerHTML = a.text ? `${icon(a.icon)}${a.text}` : icon(a.icon);
       b.title = a.title;
       b.setAttribute('aria-label', a.title);
       b.addEventListener('click', () => commands.run(a.command));
@@ -6443,6 +6599,7 @@ function renderPathBar(): void {
     // Escape closes it from anywhere, a focused button of the bar included:
     // Escape reaches the canvas's handler from every control (key-routing).
     app.appendChild(el);
+    overCanvas(el);
     pathBar = { el, title, notes, count, buttons };
   }
 

@@ -105,7 +105,7 @@ describe('pathPanelView', () => {
       links: [link('ab', 'a', 'b')],
     } as PathPage;
     const view = pathPanelView(page, analyzePath(page, 'a', 'c'));
-    expect(view.notes).toEqual(['C has no usable link on this frame.']);
+    expect(view.notes).toEqual(['C has no usable link on this page.']);
   });
 
   it('points at the hidden layer that would join the two ends', () => {

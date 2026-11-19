@@ -65,7 +65,7 @@ export function pathPanelView(
   if (analysis.status === 'same')
     return none(`${from} is both ends: there is nothing to trace.`);
   if (analysis.status === 'unknown')
-    return none('Select two nodes on this frame to trace a path.');
+    return none('Select two nodes on this page to trace a path.');
 
   if (analysis.status === 'disconnected') {
     const notes: string[] = [];
@@ -87,7 +87,7 @@ export function pathPanelView(
       notes.push(
         `${lone.join(' and ')} ${
           lone.length > 1 ? 'have' : 'has'
-        } no usable link on this frame.`,
+        } no usable link on this page.`,
       );
     } else
       notes.push(

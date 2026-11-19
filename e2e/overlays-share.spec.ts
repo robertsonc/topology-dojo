@@ -50,7 +50,8 @@ test('a share link opens as a shared copy without touching local work (#202)', a
   );
   await expect(page.locator('#sharedUnpublish')).toBeVisible();
   // The banner's actions are the shell's shared buttons, in sentence case.
-  await expect(page.locator('#sharedBanner .tbtn')).toHaveCount(0);
+  for (const button of await page.locator('#sharedBanner button').all())
+    await expect(button).toHaveClass(/\bbtn\b/);
   await expect(page.locator('#sharedBanner button')).toHaveText([
     'Keep this copy',
     'Back to my document',

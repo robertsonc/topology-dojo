@@ -411,7 +411,11 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
   expect(await starFill()).toBe('none');
   await page.locator('#mbEmph').click();
   await expect(page.locator('#mbEmph')).toHaveClass(/\bon\b/);
-  expect(await starFill()).toBe(await colour('#mbEmph'));
+  // The button is the shared icon button, whose colour eases in: compare the
+  // two once it has settled.
+  await expect
+    .poll(async () => (await starFill()) === (await colour('#mbEmph')))
+    .toBe(true);
   expect(await iconProblems(page)).toEqual([]);
   await page.locator('#mbEmph').click();
   await expect(page.locator('#mbEmph')).not.toHaveClass(/\bon\b/);

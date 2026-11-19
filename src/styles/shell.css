@@ -55,7 +55,7 @@
 .logo-mark {
   display: block;
   flex: none;
-  color: var(--accent);
+  color: var(--accent-fg);
 }
 .wordmark {
   color: var(--fg-weak);
@@ -629,7 +629,7 @@
 }
 .frame-x:hover {
   background: var(--status-error-soft);
-  color: var(--status-error);
+  color: var(--status-error-fg);
 }
 .frame-rename {
   width: 120px;
@@ -910,4 +910,57 @@
   .statusbar {
     gap: 6px;
   }
+}
+
+/* ── Shared-copy banner ───────────────────────────────────────────────────
+   Shown under the top bar while the canvas holds a /v/<id> shared snapshot
+   (#202). Its buttons are the shared .btn. The explicit display beats the
+   UA's [hidden] rule, so restate it. */
+.shared-banner[hidden] {
+  display: none;
+}
+.shared-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--accent-line);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface-back));
+  color: var(--fg-strong);
+  font: 400 12px/1.4 var(--font-ui);
+}
+
+/* ── Sign-in prompt ───────────────────────────────────────────────────────
+   Under the account chip, for an anonymous visitor of the hosted app. */
+.sign-in-prompt {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 260px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-float);
+  box-shadow: var(--shadow-float);
+  color: var(--fg);
+  font: 400 13px/1.4 var(--font-ui);
+}
+.sign-in-prompt[hidden] {
+  display: none;
+}
+.sign-in-prompt .sip-title {
+  margin: 0;
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+.sign-in-prompt .hint {
+  margin: 0;
+}
+.sign-in-prompt .sip-go {
+  align-self: stretch;
+  margin-top: 4px;
 }
