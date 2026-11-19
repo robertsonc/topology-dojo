@@ -1,8 +1,10 @@
 # Proposal 0013 — UI overhaul: placement first, then a flat skin
 
-**Status:** Accepted (2026-11-19). P0 (foundations) is implemented; P1–P4
-are not started. The section "What P0 changed from this text" records where
-the implementation departed from the proposal as first written.
+**Status:** Accepted (2026-11-19). P0 (foundations) is in progress: the
+stylesheet move, the token layer and the flat skin are in; the icon sprite and
+the command registry are not yet. P1–P4 are not started. The section "What P0
+changed from this text" records where the implementation departed from the
+proposal as first written.
 
 **Captured:** 2026-11-18
 
