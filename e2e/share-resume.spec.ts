@@ -54,7 +54,7 @@ test('the editor starts up on / after a share link was opened', async ({
   await expect(
     page.locator('.pitem[data-type="router"]').first(),
   ).toBeAttached();
-  await expect(page.locator('#inspector > .insp-h').first()).toBeAttached();
+  await expect(page.locator('#inspector .insp-h').first()).toBeAttached();
   await expect(page.locator('#filmstrip [data-page]')).toHaveCount(1);
   await expect(page.locator('#filmstrip')).toContainText('Shared frame');
   expect(errors).toEqual([]);

@@ -219,3 +219,26 @@ export async function readAutosave(
     ? (JSON.parse(raw) as { title: string; pages: { nodes: unknown[] }[] })
     : null;
 }
+
+/** Show one tab of the properties panel: 'selection', 'page' or 'document'. */
+export async function inspectorTab(
+  page: Page,
+  tab: 'selection' | 'page' | 'document',
+): Promise<void> {
+  const button = page.locator(`#insp-tab-${tab}`);
+  await button.click();
+  await expect(button).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Open a section of the properties panel by its title, unless it is open. */
+export async function inspectorSection(
+  page: Page,
+  title: string,
+): Promise<void> {
+  const section = page
+    .locator(`#inspector details.insp-group[data-group="${title}"]`)
+    .first();
+  if (!(await section.evaluate((d) => (d as HTMLDetailsElement).open)))
+    await section.locator('> summary').click();
+  await expect(section).toHaveAttribute('open', '');
+}

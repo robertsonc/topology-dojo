@@ -42,7 +42,7 @@ async function savedPage(page: Page) {
 }
 
 const fineTune = (page: Page) =>
-  page.locator('details[data-group="Fine Tune"]');
+  page.locator('details[data-group="Fine tune"]');
 const offsetX = (page: Page) => page.locator('input[data-key="labelOffsetX"]');
 const offsetY = (page: Page) => page.locator('input[data-key="labelOffset"]');
 const cell = (page: Page, code: string) =>

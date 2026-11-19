@@ -2,7 +2,7 @@
  * The frames strip: renaming a frame, and the flipbook player's way out.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import { bootEditor, inspectorSection, inspectorTab } from './helpers.js';
 
 const frameName = (page: Page, index: number) =>
   page.locator(`#filmstrip [data-name="${index}"]`);
@@ -30,6 +30,7 @@ test('Escape cancels a frame rename; Enter and clicking away keep it', async ({
   await page.keyboard.press('Enter');
   await expect(frameName(page, 0)).toHaveText('Core');
 
+  await inspectorTab(page, 'document');
   await frameName(page, 1).dblclick();
   await page.keyboard.press('Control+a');
   await page.keyboard.type('Edge');
@@ -56,6 +57,7 @@ async function startFastPlayback(page: Page): Promise<void> {
   await expect(page.locator('#frames-ind')).toHaveText('2/2');
   for (const index of [1, 0]) {
     await page.locator(`#filmstrip [data-page="${index}"]`).click();
+    await inspectorSection(page, 'Playback');
     await page.locator('#p-dur').fill('150');
     await page.locator('#p-dur').press('Tab');
   }

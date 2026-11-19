@@ -3,7 +3,7 @@
  * with, and every export says how it went.
  */
 import { expect, test, type Download, type Page } from '@playwright/test';
-import { bootEditor, expectExported } from './helpers.js';
+import { bootEditor, expectExported, inspectorTab } from './helpers.js';
 
 async function downloadText(download: Download): Promise<string> {
   const stream = await download.createReadStream();
@@ -34,6 +34,7 @@ test('the brand palette carries into SVG, flipbook and Present', async ({
 }) => {
   await bootEditor(page);
   // The key (legend) is drawn over the page from the same colours.
+  await inspectorTab(page, 'document');
   await page.locator('#p-legend').click();
   await page.locator('#tDisplay').click();
   await page.locator('.dp-swatch[data-id="azure"]').click();

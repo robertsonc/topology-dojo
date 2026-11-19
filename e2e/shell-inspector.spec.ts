@@ -7,6 +7,8 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  inspectorSection,
+  inspectorTab,
   linkPoint,
   nodeBox,
   savedDocument,
@@ -51,6 +53,8 @@ test('clearing a number field removes the property instead of storing 0', async 
 
   // A zone's padding, in the annotations list.
   await page.keyboard.press('Escape');
+  await inspectorTab(page, 'page');
+  await inspectorSection(page, 'Annotations');
   const zone = page.locator('#inspector details.anno[data-acol="zones"]');
   await zone.locator('summary').click();
   const zoneId = (await zone.getAttribute('data-aid'))!;
@@ -89,6 +93,7 @@ test('a number outside what the field allows is clamped or refused', async ({
   // A shape's size must be positive: zero and negatives are not stored.
   await page.keyboard.press('Escape');
   await page.locator('.pitem[data-type="shape:rectangle"]').first().click();
+  await inspectorSection(page, 'Rectangle options');
   await field(page, 'shapeWidth').fill('80');
   const shapeId = (await savedDocument(page)).pages[0]!.nodes.at(-1)!.id;
   expect((await savedElement(page, 'nodes', shapeId)).shapeWidth).toBe(80);
@@ -109,6 +114,7 @@ test('a number outside what the field allows is clamped or refused', async ({
   // A text node's font size likewise.
   await page.keyboard.press('Escape');
   await page.locator('.pitem[data-type="text"]').first().click();
+  await inspectorSection(page, 'Text options');
   await field(page, 'fontSize').fill('0');
   await field(page, 'fontSize').fill('-5');
   await field(page, 'padding').fill('4');
@@ -123,7 +129,7 @@ test('a required position keeps its value when its field is cleared', async ({
   await bootEditor(page);
   await clickNode(page, 'fw');
   await page
-    .locator('#inspector details[data-group="Position"] > summary')
+    .locator('#inspector details[data-group="Position and order"] > summary')
     .click();
   await field(page, 'y').fill('310');
   const before = await savedElement(page, 'nodes', 'fw');
@@ -164,6 +170,7 @@ test('a blank or non-positive canvas size is ignored', async ({ page }) => {
 
 /** The editor for the first annotation of a kind, opened. */
 async function openAnnotation(page: Page, collection: string) {
+  await inspectorSection(page, 'Annotations');
   const editor = page
     .locator(`#inspector details.anno[data-acol="${collection}"]`)
     .first();
@@ -294,7 +301,7 @@ test('dragging a node updates its position in Properties', async ({ page }) => {
   await bootEditor(page);
   await clickNode(page, 'fw');
   await page
-    .locator('#inspector details[data-group="Position"] > summary')
+    .locator('#inspector details[data-group="Position and order"] > summary')
     .click();
   const x = Number(await field(page, 'x').inputValue());
 
@@ -316,6 +323,7 @@ test('dragging a node updates its position in Properties', async ({ page }) => {
 
 test('ticking "Show key" reveals the key options at once', async ({ page }) => {
   await bootEditor(page);
+  await inspectorTab(page, 'document');
   await expect(page.locator('#p-legend-cols')).toHaveCount(0);
   await page.locator('#p-legend').click();
   await expect(page.locator('#p-legend')).toBeChecked();

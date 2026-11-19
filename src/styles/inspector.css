@@ -38,18 +38,21 @@
   padding: 10px 10px 10px 4px;
   gap: 6px;
 }
+/* The tab row (Selection / Page / Document), then the panel it shows. */
 .inspector-body {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: stretch;
+  gap: 8px;
 }
 .inspector {
   --insp-label: 88px; /* label column; controls fill the rest */
   --insp-ctl-h: 26px; /* one height for every input/select/button */
   width: 240px;
   min-width: 200px;
-  flex: none;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   background: transparent;
@@ -183,6 +186,15 @@
 }
 .insp-group[open] > summary::before {
   transform: rotate(90deg);
+}
+/* How many things a section holds (annotations, layers, set values). */
+.insp-count {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--surface-front);
+  color: var(--fg);
+  letter-spacing: 0;
 }
 .insp-group > summary:hover {
   color: var(--fg);
@@ -576,4 +588,11 @@
   /* Selected marker — --text so it stays visible in the light theme. */
   outline: 2px solid var(--fg);
   outline-offset: 1px;
+}
+/* The tab row spans the panel's own width: its three labels need it all. */
+.insp-tabs {
+  padding: 0 0 6px;
+}
+.insp-tabs > .tab {
+  padding: 0 4px;
 }
