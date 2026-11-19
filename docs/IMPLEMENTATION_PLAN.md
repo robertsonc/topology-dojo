@@ -77,10 +77,10 @@ Work that merged since August came from proposals 0005–0008, 0010, 0011 and
 **Proposed**; if accepted, this plan is re-cut from its packets. Proposal
 0013 (the UI overhaul of the editor chrome) was accepted 2026-11-19 and is
 not a packet series of this plan either: its phases stay in
-[`proposals/0013-ui-overhaul.md`](proposals/0013-ui-overhaul.md). At that
-date its P0 is in progress on draft PR #326 (not merged), and at `3765dc3`
-nothing of its P1–P4 is on that branch; those labels are unrelated to
-proposal 0003's packets P1–P5.
+[`proposals/0013-ui-overhaul.md`](proposals/0013-ui-overhaul.md). Its P0 is
+merged except the command registry (PR #326, merged 2026-11-19 as `e9d0d7f`);
+the registry is in progress, and P1–P4 have not started. Those labels are
+unrelated to proposal 0003's packets P1–P5.
 
 ## How to use this document
 

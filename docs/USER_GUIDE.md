@@ -1,11 +1,11 @@
 # Topology Dojo User Guide
 
 **Last reviewed:** 2026-11-13 (against `main` at `e99b012`). Updated
-2026-11-19 on the branch of draft PR #326 (the first part of
-[proposal 0013](proposals/0013-ui-overhaul.md), not merged): passages that
-named a control by a symbol now name it by its text or tooltip, "View
-preferences" no longer lists a glass setting, and "Brand palette" says what
-a palette recolours in the app chrome. The rest of the guide was not
+2026-11-19 for PR #326, the first part of
+[proposal 0013](proposals/0013-ui-overhaul.md), merged that day as `e9d0d7f`:
+passages that named a control by a symbol now name it by its text or tooltip,
+"View preferences" no longer lists a glass setting, and "Brand palette" says
+what a palette recolours in the app chrome. The rest of the guide was not
 re-checked.
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
