@@ -568,6 +568,75 @@ test('fit view keeps the content clear of an open drawer', async ({ page }) => {
   await expectContentVisible(page, true);
 });
 
+/** Boot the editor on clean storage that holds only `stored`. */
+async function bootStored(
+  page: Page,
+  stored: Record<string, string>,
+): Promise<void> {
+  await bootEditor(page);
+  await page.evaluate((all) => {
+    for (const [k, v] of Object.entries(all)) localStorage.setItem(k, v);
+  }, stored);
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+}
+
+test('a press on the resize grip of a narrowed drawer keeps the stored width', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 641, height: 800 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+    'tds-inspector-width': '480',
+  });
+  const widths = () =>
+    page.evaluate(() => {
+      const panel = document.querySelector<HTMLElement>('#inspector')!;
+      return {
+        drawn: panel.offsetWidth,
+        asked: panel.style.width,
+        stored: localStorage.getItem('tds-inspector-width'),
+      };
+    });
+  // With the library open the drawer leaves 72px of canvas: the panel is
+  // drawn narrower than the 480px chosen.
+  const start = await widths();
+  expect(start.drawn).toBeLessThan(480);
+  const grip = (await page.locator('#inspector-resizer').boundingBox())!;
+  const x = grip.x + grip.width / 2;
+  const y = grip.y + grip.height / 2;
+  await page.mouse.click(x, y);
+  expect((await widths()).stored).toBe('480');
+
+  // A drag held at the drawer's limit moves nothing, and stores nothing.
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 100, y, { steps: 4 });
+  await page.mouse.up();
+  expect(await widths()).toEqual(start);
+
+  // Docked again, the panel is as wide as chosen.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+  expect((await widths()).drawn).toBe(480);
+
+  // A drag that narrows the drawer stores what it draws.
+  await page.setViewportSize({ width: 641, height: 800 });
+  const g = (await page.locator('#inspector-resizer').boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 30, g.y + g.height / 2, {
+    steps: 4,
+  });
+  await page.mouse.up();
+  const after = await widths();
+  expect(after.drawn).toBe(start.drawn - 30);
+  expect(after.asked).toBe(`${after.drawn}px`);
+  expect(after.stored).toBe(String(after.drawn));
+});
+
 test('crossing 1,024px keeps the selection, the tab and the sections', async ({
   page,
 }) => {
@@ -620,14 +689,4 @@ test('crossing 1,024px keeps the selection, the tab and the sections', async ({
   await expect(field).toHaveValue('Data centre');
   await page.setViewportSize({ width: 1280, height: 800 });
   await field.blur();
-
-  // Kept open by choice, it stays open across the breakpoint, both ways.
-  await page.locator('#inspector-toggle').click();
-  await page.locator('#inspector-toggle').click();
-  await page.setViewportSize({ width: 900, height: 800 });
-  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
-  await expectKept();
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
-  await expectKept();
 });

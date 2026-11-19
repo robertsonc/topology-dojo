@@ -2610,26 +2610,39 @@ try {
 
 watchPanelWidth(inspector, inspectorWrap);
 
-// Left-edge drag-to-resize (dragging left widens the docked panel).
+// Left-edge drag-to-resize (dragging left widens the docked panel). A drawer
+// below 1,024px can be narrower than the stored width (it leaves canvas
+// showing beside it): the drag starts from the width drawn and stops where
+// the drawer does, so the grip always moves the edge it shows, and the panel's
+// own width never runs past what is drawn. Only a drag that changes the
+// width stores it: a press on the grip, or a drag held at the drawer's limit,
+// keeps the width the person chose, for the windows where it fits.
 inspectorResizer.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   const startX = e.clientX;
   const startW = inspector.offsetWidth;
+  const startStyle = inspector.style.width;
+  let w = startW;
   inspectorResizer.classList.add('active');
   inspectorResizer.setPointerCapture(e.pointerId);
   const onMove = (ev: PointerEvent): void => {
-    const w = Math.min(
+    const want = Math.min(
       INSPECTOR_W_MAX,
       Math.max(INSPECTOR_W_MIN, startW + (startX - ev.clientX)),
     );
-    inspector.style.width = `${w}px`;
+    inspector.style.width = `${want}px`;
+    // The drawer's limit: what it draws of the width asked for.
+    w = Math.min(want, inspector.offsetWidth);
+    if (w !== startW) inspector.style.width = `${w}px`;
+    else inspector.style.width = startStyle;
   };
   const onUp = (): void => {
     inspectorResizer.classList.remove('active');
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
+    if (w === startW) return;
     try {
-      localStorage.setItem(INSPECTOR_W_KEY, String(inspector.offsetWidth));
+      localStorage.setItem(INSPECTOR_W_KEY, String(w));
     } catch {
       /* ignore */
     }

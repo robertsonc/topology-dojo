@@ -135,7 +135,8 @@
    COMPACT_LAYOUT_MAX_PX in src/ui/compact-layout.ts, which also defaults
    both panels closed here when the person has no stored choice. The resize
    grip on its left edge works as when docked: the drawer is anchored to the
-   window's right edge, so dragging the grip left widens it. */
+   window's right edge, so dragging the grip left widens it, up to the
+   drawer's limit, where it stops (src/main.ts). */
 @media (max-width: 1023px) {
   .inspector-wrap {
     position: absolute;
