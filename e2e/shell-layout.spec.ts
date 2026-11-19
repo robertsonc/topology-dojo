@@ -5,7 +5,12 @@
  * the panels around it.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor, menuCommand } from './helpers.js';
+import {
+  bootEditor,
+  inspectorTab,
+  menuCommand,
+  statusCount,
+} from './helpers.js';
 
 interface Box {
   left: number;
@@ -277,8 +282,8 @@ for (const viewport of [
 }
 
 // The pages bar in a canvas column of every size: 720px is a 1,440px window
-// at 200% zoom (both panels still docked), 1,024px the narrowest desktop,
-// 390px a phone. Its page controls are on screen, nothing in it is drawn
+// at 200% zoom (both panels are drawers there, closed), 1,024px the
+// narrowest desktop (both docked), 390px a phone. Its page controls are on screen, nothing in it is drawn
 // over, and the canvas options keep the right end.
 for (const viewport of [
   { width: 720, height: 450 },
@@ -431,4 +436,198 @@ test('the status bar draws the focus ring of its button whole', async ({
   });
   expect(fits.above).toBeGreaterThanOrEqual(0);
   expect(fits.below).toBeGreaterThanOrEqual(0);
+});
+
+// The compact layout: below 1,024px the node library and the properties
+// panel are drawers over the canvas, so the canvas column always runs from
+// the rail to the window's edge (a half-screen window, a zoomed laptop, a
+// tablet). From 1,024px up both dock.
+const RAIL_W = 44;
+/** Is the panel closed? */
+const closed = (page: Page, id: string): Promise<boolean> =>
+  page.locator(`#${id}`).evaluate((el) => el.classList.contains('collapsed'));
+
+for (const width of [1023, 900, 768, 720, 641]) {
+  test(`below 1,024px the panels are drawers over the canvas at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await bootEditor(page);
+    const sel = {
+      col: '.canvas-col',
+      area: '#canvas-area',
+      bar: '#pagesBar',
+      status: '#statusbar',
+      palette: '#palette',
+      inspector: '#inspector-wrap',
+    };
+
+    // With nothing stored both drawers start closed, and the canvas column
+    // is the window less the rail.
+    expect(await closed(page, 'palette')).toBe(true);
+    expect(await closed(page, 'inspector-wrap')).toBe(true);
+    await expect(page.locator('#palette-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    const start = await boxes(page, sel);
+    expect(start.col!.right - start.col!.left).toBe(width - RAIL_W);
+    const scene = await nodeBoxes(page);
+
+    /** Open one drawer and check where it lies; the canvas never moves. */
+    const expectDrawer = async (name: 'palette' | 'inspector') => {
+      const b = await boxes(page, sel);
+      expect(b.col).toEqual(start.col);
+      expect(b.area).toEqual(start.area);
+      expect(await nodeBoxes(page)).toEqual(scene);
+      const drawer = b[name]!;
+      expectInside(drawer, b.viewport!);
+      expectInside(drawer, b.area!);
+      expect(overlaps(drawer, b.bar!)).toBe(false);
+      expect(overlaps(drawer, b.status!)).toBe(false);
+      return b;
+    };
+
+    await page.locator('#palette-toggle').click();
+    await expect(page.locator('#palette-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    let b = await expectDrawer('palette');
+    expect(b.area!.right - b.palette!.right).toBeGreaterThanOrEqual(72);
+
+    // Both open together: canvas still shows between them.
+    await page.locator('#inspector-toggle').click();
+    expect(await closed(page, 'inspector-wrap')).toBe(false);
+    b = await expectDrawer('inspector');
+    expect(b.inspector!.left - b.palette!.right).toBeGreaterThanOrEqual(72);
+
+    // The properties drawer alone, as wide as the docked panel.
+    await page.locator('#palette-toggle').click();
+    expect(await closed(page, 'palette')).toBe(true);
+    b = await expectDrawer('inspector');
+    expect(b.inspector!.right - b.inspector!.left).toBe(324);
+    expect(b.inspector!.left - b.area!.left).toBeGreaterThanOrEqual(72);
+
+    // Closing it gives the canvas back as it was.
+    await page.locator('#inspector-toggle').click();
+    expect(await closed(page, 'inspector-wrap')).toBe(true);
+    expect((await boxes(page, sel)).col).toEqual(start.col);
+
+    // A stored choice to keep them open wins on load.
+    await page.evaluate(() => {
+      localStorage.setItem('tds-palette-collapsed', '0');
+      localStorage.setItem('tds-inspector-collapsed', '0');
+    });
+    await page.reload();
+    await expect(page.locator('#page-canvas')).toBeVisible();
+    expect(await closed(page, 'palette')).toBe(false);
+    expect(await closed(page, 'inspector-wrap')).toBe(false);
+    b = await boxes(page, sel);
+    expect(b.col!.right - b.col!.left).toBe(width - RAIL_W);
+  });
+}
+
+test('from 1,024px up both panels dock beside the canvas, open', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await bootEditor(page);
+  expect(await closed(page, 'palette')).toBe(false);
+  expect(await closed(page, 'inspector-wrap')).toBe(false);
+  const b = await boxes(page, {
+    col: '.canvas-col',
+    palette: '#palette',
+    inspector: '#inspector-wrap',
+  });
+  const library = b.palette!.right - b.palette!.left;
+  const panel = b.inspector!.right - b.inspector!.left;
+  expect(library).toBe(208);
+  expect(panel).toBe(324);
+  // Docked: the canvas column is what the panels leave, between them.
+  expect(b.col!.right - b.col!.left).toBe(1024 - RAIL_W - library - panel);
+  expect(b.col!.left).toBe(b.palette!.right);
+  expect(b.col!.right).toBe(b.inspector!.left);
+});
+
+test('fit view keeps the content clear of an open drawer', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await bootEditor(page);
+  await page.locator('#inspector-toggle').click();
+  await page.keyboard.press('0');
+  let drawer = (await boxes(page, { d: '#inspector-wrap' })).d!;
+  for (const n of await nodeBoxes(page))
+    expect(n.right).toBeLessThanOrEqual(drawer.left);
+  await page.locator('#inspector-toggle').click();
+
+  await page.locator('#palette-toggle').click();
+  await page.locator('#ccFit').click();
+  drawer = (await boxes(page, { d: '#palette' })).d!;
+  for (const n of await nodeBoxes(page))
+    expect(n.left).toBeGreaterThanOrEqual(drawer.right);
+  await expectContentVisible(page, true);
+});
+
+test('crossing 1,024px keeps the selection, the tab and the sections', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bootEditor(page);
+  // A node selected, the Document tab showing, one of its sections toggled.
+  const host = (await page.locator('.canvas-host').boundingBox())!;
+  await page.mouse.click(host.x + 8, host.y + 8);
+  const node = (await nodeBoxes(page))[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  expect(await statusCount(page, 'selected')).toBe(1);
+  await inspectorTab(page, 'document');
+  const groups = page.locator('#inspector > details.insp-group');
+  await groups.last().locator('> summary').click();
+  const sections = (): Promise<[string, boolean][]> =>
+    groups.evaluateAll((ds) =>
+      ds.map((d) => [
+        (d as HTMLElement).dataset.group!,
+        (d as HTMLDetailsElement).open,
+      ]),
+    );
+  const before = await sections();
+  const expectKept = async () => {
+    expect(await statusCount(page, 'selected')).toBe(1);
+    await expect(page.locator('#insp-tab-document')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(await sections()).toEqual(before);
+  };
+
+  // Nothing stored: the panel closes as a drawer and opens again docked.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  await expectKept();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expectKept();
+
+  // A field being typed in is not closed under the person typing.
+  const field = page.locator('#p-title');
+  await field.fill('Data centre');
+  await field.focus();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('Data centre');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await field.blur();
+
+  // Kept open by choice, it stays open across the breakpoint, both ways.
+  await page.locator('#inspector-toggle').click();
+  await page.locator('#inspector-toggle').click();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expectKept();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expectKept();
 });
