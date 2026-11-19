@@ -4,16 +4,23 @@
  * bindings compete for a press, and the registry binds, gates and describes
  * commands the way the shell relies on.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { listTemplates } from '../api/templates.js';
 import {
   COMMAND_GROUPS,
   COMMAND_SPECS,
   HELP_GESTURES,
+  PRESENT_KEYS,
   bindingMatches,
+  commandArg,
   commandVariant,
   createCommandRegistry,
+  isPoint,
   matchKey,
+  oneOf,
+  templateCommandSpecs,
+  variantArgs,
   type CommandId,
   type CommandSpec,
   type KeyBinding,
@@ -71,13 +78,80 @@ describe('COMMAND_SPECS', () => {
   });
 
   it('has one command per starter template, run with the template id', () => {
+    const templates = templateCommandSpecs(listTemplates());
+    expect(templates.length).toBe(listTemplates().length);
     for (const t of listTemplates()) {
-      const s = COMMAND_SPECS.find((c) => c.id === `file.template.${t.id}`);
+      const s = templates.find((c) => c.id === `file.template.${t.id}`);
       expect(s, t.id).toBeDefined();
       expect(s!.args).toBe(t.id);
       expect(s!.title).toContain(t.name);
-      expect(commandVariant('file.template.', t.id)).toBe(s);
+      expect(s!.group).toBe('file');
+      expect(s!.bindings).toBeUndefined();
+      expect(commandVariant('file.template.', t.id, templates)).toBe(s);
     }
+    // The table itself has none: the shell passes the list in.
+    expect(COMMAND_SPECS.some((c) => c.id.startsWith('file.template.'))).toBe(
+      false,
+    );
+  });
+
+  it('is data: it imports nothing but the icon names', () => {
+    // Whatever reads the table (a menu, the palette) must not load the
+    // template builder or the layout engine with it.
+    const source = readFileSync(
+      new URL('./commands.ts', import.meta.url),
+      'utf8',
+    );
+    const imports = [
+      ...source.matchAll(/^import\b[^;]*?from '([^']+)'/gms),
+    ].map((m) => m[1]);
+    expect(imports).toEqual(['./icons.js']);
+  });
+
+  it('lists the arguments of a menu of variants, in table order', () => {
+    // The order the export, arrange and display menus offered them in.
+    expect(variantArgs('file.export.')).toEqual([
+      'pdf-page',
+      'pdf-all',
+      'flipbook',
+      'drawio',
+      'vsdx',
+      'pptx',
+      'pptx-layers',
+      'mermaid',
+      'copy-png',
+      'svg-selection',
+      'png-selection',
+    ]);
+    expect(variantArgs('arrange.layout.')).toEqual([
+      'hierarchical',
+      'grid',
+      'circular',
+      'force',
+    ]);
+    expect(variantArgs('arrange.align')).toEqual([
+      'left',
+      'centerH',
+      'right',
+      'top',
+      'middleV',
+      'bottom',
+    ]);
+    expect(variantArgs('arrange.distribute')).toEqual(['h', 'v']);
+    expect(variantArgs('view.ambient.')).toEqual(['animated', 'static', 'off']);
+    expect(variantArgs('view.wheel.')).toEqual(['auto', 'zoom', 'pan']);
+    // Every one finds its command again.
+    for (const prefix of ['file.export.', 'arrange.layout.', 'view.wheel.'])
+      for (const v of variantArgs(prefix))
+        expect(commandVariant(prefix, v)?.args, v).toBe(v);
+    // Commands that take no argument offer nothing.
+    expect(variantArgs('edit.')).toEqual([]);
+    // A variant whose argument is not a string cannot be a menu option.
+    expect(() =>
+      variantArgs('page.', [
+        { id: 'page.goto', title: 'Go to frame', group: 'pages', args: 3 },
+      ] as unknown as readonly CommandSpec<CommandId>[]),
+    ).toThrow(/not a string/);
   });
 
   it('finds the variant of a parameterised command by its argument', () => {
@@ -95,6 +169,10 @@ describe('COMMAND_SPECS', () => {
     expect(commandVariant('file.export.', 'gif')).toBeUndefined();
     expect(commandVariant('file.export.', undefined)).toBeUndefined();
     // Two variants of one command never share an argument.
+    const withTemplates = [
+      ...COMMAND_SPECS,
+      ...templateCommandSpecs(listTemplates()),
+    ];
     for (const prefix of [
       'file.export.',
       'file.template.',
@@ -104,9 +182,9 @@ describe('COMMAND_SPECS', () => {
       'view.ambient.',
       'view.wheel.',
     ]) {
-      const args = COMMAND_SPECS.filter(
-        (s) => s.id.startsWith(prefix) && s.args !== undefined,
-      ).map((s) => s.args);
+      const args = withTemplates
+        .filter((s) => s.id.startsWith(prefix) && s.args !== undefined)
+        .map((s) => s.args);
       expect(args.length, prefix).toBeGreaterThan(1);
       expect(new Set(args).size, prefix).toBe(args.length);
     }
@@ -156,6 +234,7 @@ describe('COMMAND_SPECS', () => {
       // panels and frames
       ...['view.toggleLibrary', 'view.toggleMinimap', 'view.toggleProperties'],
       ...['view.toggleFrames', 'view.toggleProblems', 'view.showProblems'],
+      ...['problems.showHidden', 'problems.restoreAll'],
       ...['page.add', 'page.duplicate', 'page.delete', 'page.undoDelete'],
       ...['page.next', 'page.prev', 'page.playPause'],
     ])
@@ -1360,5 +1439,58 @@ describe('the shortcut sheet', () => {
         expect(description).not.toBe('');
       }
     }
+  });
+});
+
+describe('the arguments of a bound command', () => {
+  it('passes a right argument through and throws on a wrong one or none', () => {
+    const isAxis = oneOf(['h', 'v']);
+    expect(commandArg('arrange.distributeH', 'h', isAxis)).toBe('h');
+    expect(() => commandArg('arrange.distributeH', 'x', isAxis)).toThrow(
+      'arrange.distributeH: unexpected argument "x"',
+    );
+    expect(() => commandArg('arrange.distributeH', undefined, isAxis)).toThrow(
+      'arrange.distributeH: unexpected argument (none)',
+    );
+    expect(() => commandArg('arrange.distributeH', 1, isAxis)).toThrow(
+      /unexpected argument 1/,
+    );
+  });
+
+  it('takes a page point where "Paste here" pastes', () => {
+    expect(commandArg('edit.pasteHere', { x: 1, y: -2 }, isPoint)).toEqual({
+      x: 1,
+      y: -2,
+    });
+    for (const bad of [
+      undefined,
+      null,
+      {},
+      { x: 1 },
+      { x: '1', y: 2 },
+      { x: Number.NaN, y: 0 },
+      [1, 2],
+    ])
+      expect(() => commandArg('edit.pasteHere', bad, isPoint)).toThrow(
+        /edit\.pasteHere: unexpected argument/,
+      );
+  });
+});
+
+describe("the presentation's keys", () => {
+  it('are the ones its tooltips and the sheet print', () => {
+    expect(PRESENT_KEYS).toEqual({
+      prev: '←',
+      next: '→',
+      playPause: 'Space',
+      exit: 'Esc',
+    });
+    const rows = HELP_GESTURES.find((s) => s.title === 'Presentation')!.rows;
+    expect(rows).toEqual([
+      ['← / PageUp', 'Previous frame'],
+      ['→ / PageDown', 'Next frame'],
+      ['Space', 'Play / pause'],
+      ['Esc', 'Exit'],
+    ]);
   });
 });

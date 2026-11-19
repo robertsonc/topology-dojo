@@ -69,7 +69,6 @@
  * the link type to X, go to frame N, pick a brand colour) stay with the
  * control that has the row or the value.
  */
-import { listTemplates } from '../api/templates.js';
 import type { IconName } from './icons.js';
 
 /** The menu a command belongs to. */
@@ -165,6 +164,18 @@ const LEFT = '←';
 const RIGHT = '→';
 const UP = '↑';
 const DOWN = '↓';
+
+/**
+ * The presentation's keys as its bar's tooltips print them ("Previous frame
+ * (←)"); the sheet's Presentation rows start with the same text. The keys
+ * themselves are the presentation's own handler's (src/main.ts).
+ */
+export const PRESENT_KEYS = {
+  prev: LEFT,
+  next: RIGHT,
+  playPause: 'Space',
+  exit: 'Esc',
+} as const;
 
 /** The two bindings of a nudge: one unit, and ten with Shift. */
 function nudgeKeys<K extends string, D extends string>(key: K, display: D) {
@@ -313,15 +324,27 @@ const FILE = [
 /** A starter template's command: the template picker's entry for it. */
 export type TemplateCommandId = `file.template.${string}`;
 
-const TEMPLATES: readonly CommandSpec<TemplateCommandId>[] =
-  listTemplates().map(
-    (t): CommandSpec<TemplateCommandId> => ({
-      id: `file.template.${t.id}`,
-      title: `New from template: ${t.name}`,
-      group: 'file',
-      args: t.id,
-    }),
-  );
+/** A starter template as the template picker lists it. */
+export interface TemplateEntry {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * The commands of the starter templates: one per template, run with its id.
+ * The shell passes the list (`listTemplates()` of src/api/templates.ts), so
+ * that this module stays data and does not load the template builder.
+ */
+export function templateCommandSpecs(
+  templates: readonly TemplateEntry[],
+): CommandSpec<TemplateCommandId>[] {
+  return templates.map((t) => ({
+    id: `file.template.${t.id}`,
+    title: `New from template: ${t.name}`,
+    group: 'file',
+    args: t.id,
+  }));
+}
 
 const EDIT = [
   {
@@ -1060,6 +1083,17 @@ const VIEW = [
     group: 'view',
     keywords: ['validation', 'layout problems'],
   },
+  // The footer of the problems panel, while any problem is hidden.
+  {
+    id: 'problems.showHidden',
+    title: 'Show hidden problems',
+    group: 'view',
+  },
+  {
+    id: 'problems.restoreAll',
+    title: 'Restore all hidden problems',
+    group: 'view',
+  },
 ] as const satisfies readonly CommandSpec[];
 
 const PAGES = [
@@ -1153,10 +1187,13 @@ export type CommandId =
   | IdOf<typeof PAGES>
   | IdOf<typeof HELP>;
 
-/** Every command of the editor, group by group in menu order. */
+/**
+ * Every command of the editor, group by group in menu order, but the starter
+ * templates: those come from `templateCommandSpecs`, with the list the shell
+ * passes. They have no keys.
+ */
 export const COMMAND_SPECS: readonly CommandSpec<CommandId>[] = [
   ...FILE,
-  ...TEMPLATES,
   ...EDIT,
   ...SELECTION,
   ...ARRANGE,
@@ -1174,12 +1211,74 @@ export const COMMAND_SPECS: readonly CommandSpec<CommandId>[] = [
 export function commandVariant(
   prefix: string,
   args: unknown,
+  specs: readonly CommandSpec<CommandId>[] = COMMAND_SPECS,
 ): CommandSpec<CommandId> | undefined {
-  return COMMAND_SPECS.find(
+  return specs.find(
     (spec) =>
       spec.id.startsWith(prefix) &&
       spec.args !== undefined &&
       spec.args === args,
+  );
+}
+
+/**
+ * The arguments of the variants under `prefix`, in table order: the values a
+ * menu of them offers (the export menu's options are the `file.export.`
+ * variants that take one). Each is a string; anything else throws.
+ */
+export function variantArgs(
+  prefix: string,
+  specs: readonly CommandSpec<CommandId>[] = COMMAND_SPECS,
+): string[] {
+  return specs
+    .filter((spec) => spec.id.startsWith(prefix) && spec.args !== undefined)
+    .map((spec) => {
+      if (typeof spec.args !== 'string')
+        throw new Error(`${spec.id}: its argument is not a string`);
+      return spec.args;
+    });
+}
+
+/**
+ * The argument a bound command was run with, checked: `ok` says what it
+ * takes, and anything else (a wrong value, or none) is a mistake of the
+ * caller and throws instead of running the command with it.
+ */
+export function commandArg<T>(
+  id: string,
+  args: unknown,
+  ok: (value: unknown) => value is T,
+): T {
+  if (!ok(args))
+    throw new Error(`${id}: unexpected argument ${describeArg(args)}`);
+  return args;
+}
+const describeArg = (value: unknown): string => {
+  if (value === undefined) return '(none)';
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+};
+
+/** A check for `commandArg`: one of `values`. */
+export function oneOf<const T extends string>(
+  values: readonly T[],
+): (value: unknown) => value is T {
+  return (value): value is T =>
+    typeof value === 'string' && (values as readonly string[]).includes(value);
+}
+
+/** A check for `commandArg`: a page point (where "Paste here" pastes). */
+export function isPoint(value: unknown): value is { x: number; y: number } {
+  if (typeof value !== 'object' || value === null) return false;
+  const { x, y } = value as { x?: unknown; y?: unknown };
+  return (
+    typeof x === 'number' &&
+    Number.isFinite(x) &&
+    typeof y === 'number' &&
+    Number.isFinite(y)
   );
 }
 
@@ -1436,10 +1535,10 @@ export const HELP_GESTURES: readonly HelpSection[] = [
   {
     title: 'Presentation',
     rows: [
-      [`${LEFT} / PageUp`, 'Previous frame'],
-      [`${RIGHT} / PageDown`, 'Next frame'],
-      ['Space', 'Play / pause'],
-      ['Esc', 'Exit'],
+      [`${PRESENT_KEYS.prev} / PageUp`, 'Previous frame'],
+      [`${PRESENT_KEYS.next} / PageDown`, 'Next frame'],
+      [PRESENT_KEYS.playPause, 'Play / pause'],
+      [PRESENT_KEYS.exit, 'Exit'],
     ],
   },
   {

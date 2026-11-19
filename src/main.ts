@@ -124,11 +124,17 @@ import {
 } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
 import {
+  commandArg,
   COMMAND_SPECS,
   commandVariant,
   createCommandRegistry,
   HELP_GESTURES,
+  isPoint,
   matchKey,
+  oneOf,
+  PRESENT_KEYS,
+  templateCommandSpecs,
+  variantArgs,
   type CommandHandlers,
   type CommandId,
 } from './ui/commands.js';
@@ -201,7 +207,11 @@ let current = 0;
  * `matchKey` finds, and tooltips take their shortcut text from it. What each
  * command DOES is bound in one place, "Command bindings" further down, once
  * the functions they call exist. */
-const commands = createCommandRegistry(COMMAND_SPECS);
+const ALL_COMMAND_SPECS = [
+  ...COMMAND_SPECS,
+  ...templateCommandSpecs(listTemplates()),
+];
+const commands = createCommandRegistry(ALL_COMMAND_SPECS);
 /** A command's tooltip with its shortcut ("Undo (Ctrl/Cmd+Z)"), escaped for
  * an attribute; `label` words it differently for one control. */
 function tip(id: CommandId, label?: string): string {
@@ -210,10 +220,70 @@ function tip(id: CommandId, label?: string): string {
 /** Run the variant of a parameterised command that a control's value names:
  * the export of a menu option, the alignment of a button. */
 function runVariant(prefix: string, value: string | undefined): void {
-  const spec = commandVariant(prefix, value);
+  const spec = commandVariant(prefix, value, ALL_COMMAND_SPECS);
   if (!spec) throw new Error(`no "${prefix}" command for "${value}"`);
   commands.run(spec.id);
 }
+/** Throw unless a set of controls offers exactly the variants of the
+ * command under `prefix`, each once: the controls and the table cannot
+ * drift apart. Returns the variants' arguments in table order. */
+function checkVariantControls(
+  prefix: string,
+  offered: readonly (string | undefined)[],
+): string[] {
+  const values = variantArgs(prefix, ALL_COMMAND_SPECS);
+  const stray = offered.filter((v) => v === undefined || !values.includes(v));
+  const missing = values.filter((v) => !offered.includes(v));
+  if (stray.length || missing.length || offered.length !== values.length)
+    throw new Error(
+      `the "${prefix}" controls and commands differ: offered ${offered.join(', ')}; commands ${values.join(', ')}`,
+    );
+  return values;
+}
+/** The <option>s of a menu of a parameterised command's variants, in table
+ * order: the value of each is its variant's argument, and its text the
+ * menu's own wording, from `labels`. */
+function variantOptions(
+  prefix: string,
+  labels: Readonly<Record<string, string>>,
+): string {
+  return checkVariantControls(prefix, Object.keys(labels))
+    .map((v) => `<option value="${esc(v)}">${esc(labels[v]!)}</option>`)
+    .join('');
+}
+/** The export menu's wording of each format. */
+const EXPORT_LABELS: Readonly<Record<string, string>> = {
+  'pdf-page': 'PDF — current frame',
+  'pdf-all': 'PDF — all frames',
+  flipbook: 'Flipbook HTML — all frames',
+  drawio: 'draw.io — all frames (editable, lossy)',
+  vsdx: 'Visio .vsdx — all frames (editable, lossy)',
+  pptx: 'PowerPoint .pptx — slide per frame',
+  'pptx-layers': 'PowerPoint .pptx — slide per layer',
+  mermaid: 'Mermaid — current frame',
+  'copy-png': 'Copy PNG to clipboard',
+  'svg-selection': 'SVG — selection only',
+  'png-selection': 'PNG — selection only',
+};
+/** The arrange menu's wording of each layout algorithm. */
+const LAYOUT_LABELS: Readonly<Record<string, string>> = {
+  hierarchical: 'hierarchical',
+  grid: 'grid',
+  circular: 'circular',
+  force: 'force-directed',
+};
+/** The select-by menu: each option's value, wording and command. */
+const SELECT_BY_OPTIONS: readonly [
+  value: string,
+  label: string,
+  command: CommandId,
+][] = [
+  ['type', 'same type', 'selection.sameType'],
+  ['color', 'same color', 'selection.sameColor'],
+  ['connected', 'connected (grow)', 'selection.growConnected'],
+  ['invert', 'invert', 'selection.invert'],
+  ['all', 'all', 'selection.all'],
+];
 
 const app = document.getElementById('app')!;
 
@@ -261,17 +331,7 @@ app.innerHTML = `
         <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
         <select class="tbtn" id="fExport" title="More export formats" aria-label="More export formats">
           <option value="">export…</option>
-          <option value="pdf-page">PDF — current frame</option>
-          <option value="pdf-all">PDF — all frames</option>
-          <option value="flipbook">Flipbook HTML — all frames</option>
-          <option value="drawio">draw.io — all frames (editable, lossy)</option>
-          <option value="vsdx">Visio .vsdx — all frames (editable, lossy)</option>
-          <option value="pptx">PowerPoint .pptx — slide per frame</option>
-          <option value="pptx-layers">PowerPoint .pptx — slide per layer</option>
-          <option value="mermaid">Mermaid — current frame</option>
-          <option value="copy-png">Copy PNG to clipboard</option>
-          <option value="svg-selection">SVG — selection only</option>
-          <option value="png-selection">PNG — selection only</option>
+          ${variantOptions('file.export.', EXPORT_LABELS)}
         </select>
         <span class="export-status" id="exportStatus" role="status" aria-live="polite"></span>
         <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
@@ -307,18 +367,11 @@ app.innerHTML = `
         <button class="tbtn" id="tBalance" title="${tip('arrange.balance', 'Balance layout — align rows/columns + centre')}" aria-label="Balance layout">${icon('balance')}<span class="tlabel">balance</span></button>
         <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm" aria-label="Auto-arrange with a layout algorithm">
           <option value="">arrange…</option>
-          <option value="hierarchical">hierarchical</option>
-          <option value="grid">grid</option>
-          <option value="circular">circular</option>
-          <option value="force">force-directed</option>
+          ${variantOptions('arrange.layout.', LAYOUT_LABELS)}
         </select>
         <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion" aria-label="Select nodes by a criterion">
           <option value="">select…</option>
-          <option value="type">same type</option>
-          <option value="color">same color</option>
-          <option value="connected">connected (grow)</option>
-          <option value="invert">invert</option>
-          <option value="all">all</option>
+          ${SELECT_BY_OPTIONS.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
         </select>
       </div>
       <span class="align-group" id="alignGroup" hidden>
@@ -1319,10 +1372,13 @@ function exportSvg(): void {
     reportExport('svg', 'error', detail);
   }
 }
+/** A PNG export is being drawn; another waits until it is done. */
+let pngExportInFlight = false;
 function exportPng(): void {
-  if (pngBtn?.disabled) return;
+  if (pngExportInFlight) return;
   const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.png`;
+  pngExportInFlight = true;
   if (pngBtn) pngBtn.disabled = true;
   reportExport('png', 'pending', filename);
   void exportPagePNG(filename, page, 2, pageOverlay(page), pageOpts(page))
@@ -1332,6 +1388,7 @@ function exportPng(): void {
       reportExport('png', 'error', detail);
     })
     .finally(() => {
+      pngExportInFlight = false;
       if (pngBtn) pngBtn.disabled = false;
     });
 }
@@ -1702,13 +1759,9 @@ function refreshChrome(): void {
 /* Select-by dropdown — select nodes by a criterion (resets to placeholder). */
 const selectBySel = app.querySelector<HTMLSelectElement>('#tSelectBy')!;
 /** The command behind each option of the menu. */
-const SELECT_BY: Readonly<Record<string, CommandId>> = {
-  type: 'selection.sameType',
-  color: 'selection.sameColor',
-  connected: 'selection.growConnected',
-  invert: 'selection.invert',
-  all: 'selection.all',
-};
+const SELECT_BY: Readonly<Record<string, CommandId>> = Object.fromEntries(
+  SELECT_BY_OPTIONS.map(([value, , command]) => [value, command]),
+);
 selectBySel.addEventListener('change', () => {
   const command = SELECT_BY[selectBySel.value];
   selectBySel.value = '';
@@ -2206,18 +2259,10 @@ function renderProblems(): void {
   );
   problemsPanel
     .querySelector('#prob-show-hidden')
-    ?.addEventListener('click', () => {
-      showHiddenProblems = !showHiddenProblems;
-      renderProblems();
-    });
+    ?.addEventListener('click', () => commands.run('problems.showHidden'));
   problemsPanel
     .querySelector('#prob-restore')
-    ?.addEventListener('click', () => {
-      hiddenProblems.clear();
-      showHiddenProblems = false;
-      saveHiddenProblems();
-      renderProblems();
-    });
+    ?.addEventListener('click', () => commands.run('problems.restoreAll'));
 
   // Closed when there is nothing to list; otherwise where the user left it
   // (closed until they first open it — see problemsDockView).
@@ -2448,6 +2493,18 @@ function onSelectionChange(count: number): void {
   renderInspector();
   renderStatus();
 }
+// The buttons name their variant in a data attribute; they must offer
+// exactly the commands' variants.
+for (const [prefix, attr] of [
+  ['arrange.align', 'align'],
+  ['arrange.distribute', 'dist'],
+] as const)
+  checkVariantControls(
+    prefix,
+    [...alignGroup.querySelectorAll<HTMLElement>(`[data-${attr}]`)].map(
+      (b) => b.dataset[attr],
+    ),
+  );
 alignGroup
   .querySelectorAll<HTMLButtonElement>('[data-align]')
   .forEach((b) =>
@@ -4101,13 +4158,14 @@ const ADD_ANNOTATION: Readonly<Record<AnnotationKind, CommandId>> = {
 };
 
 function wireAnnotations(): void {
-  inspector
-    .querySelectorAll<HTMLButtonElement>('[data-add]')
-    .forEach((b) =>
-      b.addEventListener('click', () =>
-        commands.run(ADD_ANNOTATION[b.dataset.add as AnnotationKind]),
-      ),
-    );
+  inspector.querySelectorAll<HTMLButtonElement>('[data-add]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const kind = b.dataset.add;
+      if (!kind || !Object.hasOwn(ADD_ANNOTATION, kind))
+        throw new Error(`no "add" command for "${kind}"`);
+      commands.run(ADD_ANNOTATION[kind as AnnotationKind]);
+    }),
+  );
   inspector.querySelectorAll<HTMLButtonElement>('[data-adel]').forEach((b) =>
     b.addEventListener('click', (e) => {
       e.preventDefault();
@@ -4999,11 +5057,19 @@ displayPop.hidden = true;
 displayPop.innerHTML =
   `<div class="dp-h">Display</div>` +
   `<label class="dp-row">Ambient backdrop<select id="dpAmbient">` +
-  `<option value="animated">Animated</option><option value="static">Static</option><option value="off">Off</option>` +
+  variantOptions('view.ambient.', {
+    animated: 'Animated',
+    static: 'Static',
+    off: 'Off',
+  }) +
   `</select></label>` +
   `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (${esc(commands.shortcutLabel('view.toggleCalm') ?? '')}) pauses those.</div>` +
   `<label class="dp-row">Wheel<select id="dpWheel">` +
-  `<option value="auto">Auto</option><option value="zoom">Always zoom</option><option value="pan">Always pan</option>` +
+  variantOptions('view.wheel.', {
+    auto: 'Auto',
+    zoom: 'Always zoom',
+    pan: 'Always pan',
+  }) +
   `</select></label>` +
   `<div class="dp-note">Auto: a mouse wheel zooms, a trackpad’s two-finger slide pans. Pinch or Ctrl/Cmd+wheel always zooms; Shift+wheel pans sideways.</div>` +
   `<div class="dp-h dp-h2">Brand palette</div>` +
@@ -5020,7 +5086,12 @@ const dpAccent = displayPop.querySelector<HTMLInputElement>('#dpAccent')!;
 const dpSecondary = displayPop.querySelector<HTMLInputElement>('#dpSecondary')!;
 const dpChrome = displayPop.querySelector<HTMLInputElement>('#dpChrome')!;
 
-function applyAmbient(level: 'off' | 'static' | 'animated'): void {
+type AmbientLevel = Parameters<typeof editor.setAmbient>[0];
+const isAmbientLevel = oneOf<AmbientLevel>(['off', 'static', 'animated']);
+/** The ambient backdrop as last applied. */
+let ambientLevel: AmbientLevel = 'animated';
+function applyAmbient(level: AmbientLevel): void {
+  ambientLevel = level;
   editor.setAmbient(level);
   dpAmbient.value = level;
   try {
@@ -5048,7 +5119,10 @@ dpAmbient.addEventListener('change', () =>
 const WHEEL_KEY = 'tds-wheel-mode';
 const isWheelMode = (v: unknown): v is WheelMode =>
   v === 'auto' || v === 'zoom' || v === 'pan';
+/** What a plain wheel event does, as last applied. */
+let wheelMode: WheelMode = 'auto';
 function applyWheelMode(mode: WheelMode): void {
+  wheelMode = mode;
   editor.setWheelMode(mode);
   dpWheel.value = mode;
   try {
@@ -5315,12 +5389,12 @@ function openPresent(): void {
   root.innerHTML =
     `<div class="present-stage" id="presentStage"></div>` +
     `<div class="present-bar">` +
-    `<button class="tbtn" id="presentPrev" title="Previous frame (←)" aria-label="Previous frame">${icon('frame-prev')}</button>` +
-    `<button class="tbtn" id="presentPlay" title="Play / pause (Space)" aria-label="Play or pause">${icon(playing ? 'pause' : 'play')}</button>` +
-    `<button class="tbtn" id="presentNext" title="Next frame (→)" aria-label="Next frame">${icon('frame-next')}</button>` +
+    `<button class="tbtn" id="presentPrev" title="Previous frame (${PRESENT_KEYS.prev})" aria-label="Previous frame">${icon('frame-prev')}</button>` +
+    `<button class="tbtn" id="presentPlay" title="Play / pause (${PRESENT_KEYS.playPause})" aria-label="Play or pause">${icon(playing ? 'pause' : 'play')}</button>` +
+    `<button class="tbtn" id="presentNext" title="Next frame (${PRESENT_KEYS.next})" aria-label="Next frame">${icon('frame-next')}</button>` +
     `<span class="present-count" id="presentCount"></span>` +
     `<span class="present-name" id="presentName"></span>` +
-    `<button class="tbtn present-exit" id="presentExit" title="Exit (Esc)" aria-label="Exit presentation">${icon('x')} exit</button>` +
+    `<button class="tbtn present-exit" id="presentExit" title="Exit (${PRESENT_KEYS.exit})" aria-label="Exit presentation">${icon('x')} exit</button>` +
     `</div>`;
   document.body.appendChild(root);
   presentEl = root;
@@ -5546,6 +5620,8 @@ function openShare(): void {
 }
 /** Hidden until the hosted Worker reports a signed-in user. */
 const shareBtn = app.querySelector<HTMLButtonElement>('#fShare');
+/** Sharing is offered: the hosted Worker reported a signed-in user. */
+let shareAvailable = false;
 shareBtn?.addEventListener('click', () => commands.run('file.share'));
 
 /* Account menu. The Worker gates the app behind GitHub sign-in and reports the
@@ -5705,6 +5781,7 @@ async function showUserChip(): Promise<void> {
       enableWorkspaceUi();
       profilePanelHandle.enable();
       // Sharing needs the hosted Worker (KV + session); reveal only here.
+      shareAvailable = !!shareBtn;
       if (shareBtn) shareBtn.hidden = false;
       // The Admin chip is revealed only for the deployment owner; the real gate
       // is the /api/admin routes, so this is a cosmetic reveal.
@@ -5813,18 +5890,18 @@ bind('file.loadOtherTab', { run: loadFromOtherTab });
 bind('file.share', {
   run: openShare,
   // Revealed only once the hosted Worker reports a signed-in user.
-  enabled: () => !!shareBtn && !shareBtn.hidden,
+  enabled: () => shareAvailable,
 });
 bind('file.export.svg', { run: exportSvg });
 bind('file.export.png', {
   run: exportPng,
-  enabled: () => !pngBtn?.disabled,
+  enabled: () => !pngExportInFlight,
 });
 for (const spec of COMMAND_SPECS)
   if (spec.id.startsWith('file.export.') && spec.args !== undefined)
     bind(spec.id, { run: (kind) => exportFromMenu(String(kind)) });
 bind('file.generateSdwan', { run: generateSdwan });
-for (const spec of COMMAND_SPECS)
+for (const spec of ALL_COMMAND_SPECS)
   if (spec.id.startsWith('file.template.'))
     bind(spec.id, { run: (id) => newFromTemplate(String(id)) });
 bind('shared.keepCopy', { run: keepSharedCopy });
@@ -5851,7 +5928,7 @@ bind('edit.paste', {
 });
 bind('edit.pasteHere', {
   // Run with the page point to paste at, centred on it.
-  run: (at) => editor.paste({ at: at as { x: number; y: number } }),
+  run: (at) => editor.paste({ at: commandArg('edit.pasteHere', at, isPoint) }),
   enabled: () => editor.canPaste(),
 });
 bind('edit.pasteInPlace', {
@@ -5961,6 +6038,21 @@ bind('arrange.sendToBack', {
   enabled: canArrange,
 });
 type AlignMode = Parameters<typeof editor.alignSelection>[0];
+const ALIGN_MODES = [
+  'left',
+  'centerH',
+  'right',
+  'top',
+  'middleV',
+  'bottom',
+] as const satisfies readonly AlignMode[];
+type LayoutAlgorithmArg = Parameters<typeof editor.layout>[0]['algorithm'];
+const LAYOUT_ALGORITHMS = [
+  'hierarchical',
+  'grid',
+  'circular',
+  'force',
+] as const satisfies readonly LayoutAlgorithmArg[];
 for (const id of [
   'arrange.alignLeft',
   'arrange.alignCenterH',
@@ -5969,10 +6061,14 @@ for (const id of [
   'arrange.alignMiddleV',
   'arrange.alignBottom',
 ] as const)
-  bind(id, { run: (mode) => editor.alignSelection(mode as AlignMode) });
+  bind(id, {
+    run: (mode) =>
+      editor.alignSelection(commandArg(id, mode, oneOf(ALIGN_MODES))),
+  });
 for (const id of ['arrange.distributeH', 'arrange.distributeV'] as const)
   bind(id, {
-    run: (axis) => editor.distributeSelection(axis as 'h' | 'v'),
+    run: (axis) =>
+      editor.distributeSelection(commandArg(id, axis, oneOf(['h', 'v']))),
   });
 bind('arrange.tidy', { run: () => editor.tidy() });
 bind('arrange.balance', { run: () => editor.balance() });
@@ -5985,9 +6081,7 @@ for (const id of [
   bind(id, {
     run: (algorithm) =>
       editor.layout({
-        algorithm: algorithm as Parameters<
-          typeof editor.layout
-        >[0]['algorithm'],
+        algorithm: commandArg(id, algorithm, oneOf(LAYOUT_ALGORITHMS)),
       }),
   });
 bind('arrange.autoPlaceLabels', {
@@ -6003,15 +6097,15 @@ bind('page.fitToContent', {
 // Tools
 bind('tool.select', {
   run: () => setTool('select'),
-  checked: () => selectBtn.classList.contains('on'),
+  checked: () => editor.tool === 'select',
 });
 bind('tool.link', {
   run: () => setTool('link'),
-  checked: () => linkBtn.classList.contains('on'),
+  checked: () => editor.tool === 'link',
 });
 bind('tool.anchor', {
   run: () => setTool('anchor'),
-  checked: () => anchorBtn.classList.contains('on'),
+  checked: () => editor.tool === 'anchor',
 });
 bind('tool.hand', {
   run: () => setHand(!editor.isHandActive()),
@@ -6044,8 +6138,8 @@ for (const id of [
   'view.ambient.off',
 ] as const)
   bind(id, {
-    run: (level) => applyAmbient(level as 'off' | 'static' | 'animated'),
-    checked: () => dpAmbient.value === commands.get(id)?.args,
+    run: (level) => applyAmbient(commandArg(id, level, isAmbientLevel)),
+    checked: () => ambientLevel === commands.get(id)?.args,
   });
 for (const id of [
   'view.wheel.auto',
@@ -6053,10 +6147,8 @@ for (const id of [
   'view.wheel.pan',
 ] as const)
   bind(id, {
-    run: (mode) => {
-      if (isWheelMode(mode)) applyWheelMode(mode);
-    },
-    checked: () => dpWheel.value === commands.get(id)?.args,
+    run: (mode) => applyWheelMode(commandArg(id, mode, isWheelMode)),
+    checked: () => wheelMode === commands.get(id)?.args,
   });
 bind('view.toggleTheme', {
   run: () => applyTheme(!document.documentElement.classList.contains('light')),
@@ -6086,6 +6178,24 @@ bind('view.toggleProblems', {
   checked: () => !problemsDock.classList.contains('collapsed'),
 });
 bind('view.showProblems', { run: showProblems });
+// The problems panel's footer, while any problem is hidden.
+bind('problems.showHidden', {
+  run: () => {
+    showHiddenProblems = !showHiddenProblems;
+    renderProblems();
+  },
+  enabled: () => hiddenProblems.size > 0,
+  checked: () => showHiddenProblems,
+});
+bind('problems.restoreAll', {
+  run: () => {
+    hiddenProblems.clear();
+    showHiddenProblems = false;
+    saveHiddenProblems();
+    renderProblems();
+  },
+  enabled: () => hiddenProblems.size > 0,
+});
 
 // Frames. Delete runs with a frame's index, or deletes the current frame.
 bind('page.add', { run: addBlankPage });
