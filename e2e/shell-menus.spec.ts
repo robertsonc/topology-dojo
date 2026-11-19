@@ -8,11 +8,15 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   bootEditor,
+  clickNode,
+  CONTEXT_MENU,
   menuCommand,
   savedDocument,
   statusCount,
+  statusText,
   tabTo,
 } from './helpers.js';
+import { formerToolbar } from '../src/ui/former-toolbar.js';
 
 const top = (page: Page, menu: string) =>
   page.locator(`#menubar [data-menu="${menu}"]`);
@@ -288,96 +292,17 @@ async function offeredBy(page: Page, trigger: Locator): Promise<string[]> {
   return found;
 }
 
-/**
- * The toolbar before the shell was rebuilt: each control and the commands it
- * ran, a select's options one by one (src/ui/menus.test.ts holds the same
- * list against the menu definitions).
- */
-const FORMER_TOOLBAR: readonly (readonly [string, readonly string[]])[] = [
-  ['#fNew', ['file.new']],
-  ['#fSave', ['file.download']],
-  ['#fOpen', ['file.open']],
-  ['#fShare', ['file.share']],
-  ['#tUndo', ['edit.undo']],
-  ['#tRedo', ['edit.redo']],
-  ['#fSvg', ['file.export.svg']],
-  ['#fPng', ['file.export.png']],
-  [
-    '#fExport',
-    [
-      'file.export.pdfPage',
-      'file.export.pdfAll',
-      'file.export.flipbook',
-      'file.export.drawio',
-      'file.export.vsdx',
-      'file.export.pptx',
-      'file.export.pptxLayers',
-      'file.export.mermaid',
-      'file.export.copyPng',
-      'file.export.svgSelection',
-      'file.export.pngSelection',
-    ],
-  ],
-  [
-    '#fTemplate',
-    [
-      ...['three-tier', 'sdwan-branch', 'ztna', 'firewall-dmz', 'spine-leaf'],
-      'hub-spoke',
-    ]
-      .map((id) => `file.template.${id}`)
-      .concat('file.generateSdwan'),
-  ],
-  ['#tGrid', ['view.toggleGrid']],
-  ['#tSnap', ['view.toggleSnap']],
-  ['#tCalm', ['view.toggleCalm']],
-  ['#tBadges', ['view.toggleBadges']],
-  ['#tDisplay', ['view.displaySettings']],
-  ['#tTheme', ['view.theme.dark', 'view.theme.light']],
-  ['#tFit', ['view.fit']],
-  ['#tPresent', ['view.present']],
-  ['#tHelp', ['help.shortcuts']],
-  ['#tDelete', ['edit.delete']],
-  ['#tTidy', ['arrange.tidy']],
-  ['#tBalance', ['arrange.balance']],
-  [
-    '#tLayout',
-    [
-      'arrange.layout.hierarchical',
-      'arrange.layout.grid',
-      'arrange.layout.circular',
-      'arrange.layout.force',
-    ],
-  ],
-  [
-    '#tSelectBy',
-    [
-      'selection.sameType',
-      'selection.sameColor',
-      'selection.growConnected',
-      'selection.invert',
-      'selection.all',
-    ],
-  ],
-  [
-    '#alignGroup',
-    [
-      'arrange.alignLeft',
-      'arrange.alignCenterH',
-      'arrange.alignRight',
-      'arrange.alignTop',
-      'arrange.alignMiddleV',
-      'arrange.alignBottom',
-      'arrange.distributeH',
-      'arrange.distributeV',
-    ],
-  ],
-  ['#tSelect', ['tool.select']],
-  ['#tLink', ['tool.link']],
-  ['#tAnchor', ['tool.anchor']],
-  ['#profileChip', ['account.preferences']],
-  ['#adminChip', ['account.admin']],
-  ['#userChip', ['account.apiKeys', 'account.signOut']],
-];
+/** The toolbar before the shell was rebuilt: each control and the commands
+ * it ran (src/ui/former-toolbar.ts, which src/ui/menus.test.ts checks against
+ * the menu definitions), with the templates the old picker listed. */
+const FORMER_TOOLBAR = formerToolbar([
+  'three-tier',
+  'sdwan-branch',
+  'ztna',
+  'firewall-dmz',
+  'spine-leaf',
+  'hub-spoke',
+]);
 
 test('every command the old toolbar ran is in a menu', async ({ page }) => {
   // Signed in as the owner, so Share and Admin are offered.
@@ -492,4 +417,65 @@ test('the palette adds a node, goes to an element and goes to a page', async ({
   await expect(activeOption(page)).toHaveAttribute('data-id', 'page:1');
   await page.keyboard.press('Enter');
   await expect(page.locator('#frames-ind')).toHaveText(/2\/2/);
+});
+
+test('each template item carries its description as a tooltip', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await top(page, 'file').click();
+  await page
+    .locator('.menu-layer')
+    .getByRole('menuitem', { name: 'New from template' })
+    .click();
+  // As the old picker's options did: the template's description, and the
+  // SD-WAN wizard's own line.
+  await expect(
+    page.locator('.menu-layer [data-command="file.template.three-tier"]'),
+  ).toHaveAttribute('title', /firewall/);
+  await expect(
+    page.locator('.menu-layer [data-command="file.generateSdwan"]'),
+  ).toHaveAttribute('title', /^Generate an SD-WAN fabric/);
+});
+
+test('Shift+F10 and the menu key open the context menu from the keyboard', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await clickNode(page, 'fw');
+  await expect.poll(() => statusCount(page, 'selected')).toBe(1);
+  // The keyboard is the canvas's (nothing focused).
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+
+  await page.keyboard.press('Shift+F10');
+  const menu = page.locator(CONTEXT_MENU);
+  await expect(menu).toBeVisible();
+  // The node's menu, for the selection as it is, starting on its first item.
+  await expect(focusedItem(page)).toHaveAttribute(
+    'data-command',
+    'edit.rename',
+  );
+  expect(await statusCount(page, 'selected')).toBe(1);
+  await page.keyboard.press('End');
+  await expect(focusedItem(page)).toHaveAttribute(
+    'data-command',
+    'edit.delete',
+  );
+  // Escape closes it and the keyboard is the canvas's again.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await page.keyboard.press('l');
+  expect(await statusText(page, 'tool')).toBe('link');
+  await page.keyboard.press('v');
+
+  // The menu key does the same; with nothing selected it is the empty
+  // canvas's menu.
+  await page.keyboard.press('Escape'); // clears the selection
+  await expect.poll(() => statusCount(page, 'selected')).toBe(0);
+  await page.keyboard.press('ContextMenu');
+  await expect(menu).toBeVisible();
+  await expect(menu.locator('[data-command="selection.all"]')).toBeVisible();
+  await expect(menu.locator('[data-command="edit.rename"]')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
 });

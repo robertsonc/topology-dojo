@@ -8,6 +8,7 @@ import {
   type CommandId,
 } from './commands.js';
 import { isMenuItem, type MenuEntry, type MenuItem } from './menu.js';
+import { formerToolbar } from './former-toolbar.js';
 import {
   accountMenu,
   arrangeMenu,
@@ -328,96 +329,8 @@ describe('the menus', () => {
   });
 });
 
-/**
- * Every control of the toolbar before the shell was rebuilt, with the
- * commands that it ran (src/main.ts, the header template: maps/shell-map.md
- * §1.2). A select's options are listed one by one. A menu must offer each of
- * these commands, so that nothing the toolbar did is lost with it.
- */
-const FORMER_TOOLBAR: readonly (readonly [string, readonly CommandId[]])[] = [
-  ['#fNew', ['file.new']],
-  ['#fSave', ['file.download']],
-  ['#fOpen', ['file.open']],
-  ['#fShare', ['file.share']],
-  ['#tUndo', ['edit.undo']],
-  ['#tRedo', ['edit.redo']],
-  ['#fSvg', ['file.export.svg']],
-  ['#fPng', ['file.export.png']],
-  [
-    '#fExport',
-    [
-      'file.export.pdfPage',
-      'file.export.pdfAll',
-      'file.export.flipbook',
-      'file.export.drawio',
-      'file.export.vsdx',
-      'file.export.pptx',
-      'file.export.pptxLayers',
-      'file.export.mermaid',
-      'file.export.copyPng',
-      'file.export.svgSelection',
-      'file.export.pngSelection',
-    ],
-  ],
-  [
-    '#fTemplate',
-    [
-      ...TEMPLATES.map((t) => `file.template.${t.id}` as const),
-      'file.generateSdwan',
-    ],
-  ],
-  ['#tGrid', ['view.toggleGrid']],
-  ['#tSnap', ['view.toggleSnap']],
-  ['#tCalm', ['view.toggleCalm']],
-  ['#tBadges', ['view.toggleBadges']],
-  ['#tDisplay', ['view.displaySettings']],
-  // The toggle becomes the choice of the two themes.
-  ['#tTheme', ['view.theme.dark', 'view.theme.light']],
-  ['#tFit', ['view.fit']],
-  ['#tPresent', ['view.present']],
-  ['#tHelp', ['help.shortcuts']],
-  ['#tDelete', ['edit.delete']],
-  ['#tTidy', ['arrange.tidy']],
-  ['#tBalance', ['arrange.balance']],
-  [
-    '#tLayout',
-    [
-      'arrange.layout.hierarchical',
-      'arrange.layout.grid',
-      'arrange.layout.circular',
-      'arrange.layout.force',
-    ],
-  ],
-  [
-    '#tSelectBy',
-    [
-      'selection.sameType',
-      'selection.sameColor',
-      'selection.growConnected',
-      'selection.invert',
-      'selection.all',
-    ],
-  ],
-  [
-    '#alignGroup',
-    [
-      'arrange.alignLeft',
-      'arrange.alignCenterH',
-      'arrange.alignRight',
-      'arrange.alignTop',
-      'arrange.alignMiddleV',
-      'arrange.alignBottom',
-      'arrange.distributeH',
-      'arrange.distributeV',
-    ],
-  ],
-  ['#tSelect', ['tool.select']],
-  ['#tLink', ['tool.link']],
-  ['#tAnchor', ['tool.anchor']],
-  ['#profileChip', ['account.preferences']],
-  ['#adminChip', ['account.admin']],
-  ['#userChip', ['account.apiKeys', 'account.signOut']],
-];
+/** The old toolbar's controls and their commands (src/ui/former-toolbar.ts). */
+const FORMER_TOOLBAR = formerToolbar(TEMPLATES.map((t) => t.id));
 describe('the former toolbar', () => {
   it('lists each export format and each template of the old selects', () => {
     const exportIds = FORMER_TOOLBAR.find(([c]) => c === '#fExport')![1];

@@ -52,6 +52,15 @@ test('narrow viewport keeps core controls reachable', async ({ page }) => {
   await expect(page.locator('#tUndo')).toBeVisible();
   await expect(page.locator('#menuMore')).toBeVisible();
   await expect(page.locator('#tSelect')).toBeVisible();
+  // Download JSON is reachable from it: Menu ▸ File ▸ Download JSON.
+  await page.locator('#menuMore').click();
+  await page
+    .locator('.menu-layer')
+    .getByRole('menuitem', { name: 'File', exact: true })
+    .click();
+  await expect(
+    page.locator('.menu-layer [data-command="file.download"]'),
+  ).toBeVisible();
 });
 
 test('phone viewport keeps the canvas visible and usable (#221)', async ({

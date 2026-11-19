@@ -172,6 +172,9 @@ test('dismissing a menu with Escape hands the keyboard back to the canvas', asyn
   await page.locator('#fExportBtn').click(); // opens the menu
   await page.keyboard.press('Escape'); // closes it without choosing
   await expect(page.locator('.menu')).toHaveCount(0);
+  // Focus is back on the menu's trigger, and the canvas keys still work
+  // from there (below).
+  await expect(page.locator('#fExportBtn')).toBeFocused();
   await page.keyboard.press('l');
   expect(await statusText(page, 'tool')).toBe('link');
   await page.keyboard.press('v');
