@@ -346,28 +346,57 @@ for (const vp of VIEWPORTS)
 
 // The document never scrolls sideways, at any width from 360 to 1,920px,
 // sampled every 40px: signed out, and signed in under a 30-character login.
+// The body clips what overflows, so the document's own scroll width cannot
+// show a bar that runs past the window: each bar is measured too, and every
+// visible control outside the canvas must end inside the window.
 const WIDTHS = Array.from({ length: 40 }, (_, i) => 360 + i * 40);
 const LONG_LOGIN = 'octocat-network-engineering-01';
+const BARS = ['.topbar', '#statusbar', '#pagesBar', '.stage'];
 
 async function overflowing(page: Page): Promise<string[]> {
   const out: string[] = [];
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 800 });
     // Let the shell's resize observers lay the bars out at the new width.
-    const over = await page.evaluate(
-      () =>
-        new Promise<number>((resolve) =>
+    const found = await page.evaluate(
+      (bars) =>
+        new Promise<string[]>((resolve) =>
           requestAnimationFrame(() =>
-            requestAnimationFrame(() =>
-              resolve(
-                document.documentElement.scrollWidth -
-                  document.documentElement.clientWidth,
-              ),
-            ),
+            requestAnimationFrame(() => {
+              const over: string[] = [];
+              const doc = document.documentElement;
+              if (doc.scrollWidth > doc.clientWidth)
+                over.push(
+                  `the document is ${doc.scrollWidth - doc.clientWidth}px too wide`,
+                );
+              for (const selector of bars) {
+                const bar = document.querySelector(selector);
+                if (bar && bar.scrollWidth > bar.clientWidth + 1)
+                  over.push(
+                    `${selector} is ${bar.scrollWidth - bar.clientWidth}px too wide`,
+                  );
+              }
+              const controls = document.querySelectorAll<HTMLElement>(
+                'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
+              );
+              for (const el of controls) {
+                if (el.closest('svg')) continue;
+                if (getComputedStyle(el).visibility === 'hidden') continue;
+                const r = el.getBoundingClientRect();
+                if (r.width === 0 || r.height === 0) continue;
+                if (r.right > window.innerWidth + 1 || r.left < -1)
+                  over.push(
+                    `${el.id ? `#${el.id}` : el.className || el.tagName} spans ` +
+                      `${Math.round(r.left)}..${Math.round(r.right)}`,
+                  );
+              }
+              resolve(over);
+            }),
           ),
         ),
+      BARS,
     );
-    if (over > 0) out.push(`${width}px: ${over}px too wide`);
+    out.push(...found.map((f) => `${width}px: ${f}`));
   }
   return out;
 }
