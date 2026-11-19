@@ -172,7 +172,7 @@ describe('editor stylesheet', () => {
       'popovers.css': 2,
       'present-share.css': 1,
       'problems.css': 7,
-      'stage-palette.css': 3,
+      'stage-palette.css': 2,
       'workspace.css': 7,
     };
     const small: Record<string, number> = {};
