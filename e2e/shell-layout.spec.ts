@@ -457,6 +457,52 @@ test('the status bar draws the focus ring of its button whole', async ({
   expect(fits.below).toBeGreaterThanOrEqual(0);
 });
 
+// The pages bar clips what it has no room for: the focus ring of the Pages
+// toggle at its left end, and of the first page chip at the left of its
+// scroll box, is still drawn whole.
+for (const width of [1440, 720, 360]) {
+  test(`the pages bar draws the focus rings at its ends whole at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await bootEditor(page);
+    for (const selector of ['#frames-toggle', '.frame-sel']) {
+      const control = page.locator(selector).first();
+      await control.focus();
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Tab');
+      await expect(control).toBeFocused();
+      const clipped = await control.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        const reach =
+          parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset || '0');
+        const r = el.getBoundingClientRect();
+        const cut: string[] = [];
+        // Every ancestor that clips, at the inside of its border.
+        for (let a = el.parentElement; a; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+          const b = a.getBoundingClientRect();
+          const left = b.left + parseFloat(s.borderLeftWidth);
+          const right = b.right - parseFloat(s.borderRightWidth);
+          const top = b.top + parseFloat(s.borderTopWidth);
+          const bottom = b.bottom - parseFloat(s.borderBottomWidth);
+          if (
+            r.left - reach < left - 0.5 ||
+            r.right + reach > right + 0.5 ||
+            r.top - reach < top - 0.5 ||
+            r.bottom + reach > bottom + 0.5
+          )
+            cut.push(a.id || a.className);
+        }
+        return { reach, cut };
+      });
+      expect(clipped.reach, selector).toBeGreaterThan(0);
+      expect(clipped.cut, selector).toEqual([]);
+    }
+  });
+}
+
 // The compact layout: below 1,024px the node library and the properties
 // panel are drawers over the canvas, so the canvas column always runs from
 // the rail to the window's edge (a half-screen window, a zoomed laptop, a

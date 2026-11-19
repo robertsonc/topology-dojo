@@ -543,12 +543,17 @@
   background: var(--surface-back);
   font-family: var(--font-ui);
 }
+/* It clips what a narrow bar has no room for. Its 4px of side padding (taken
+   back by the margin, so nothing moves) keep the focus ring of the Pages
+   toggle at its left end whole: the ring reaches 4px outside a control. */
 .frames-dock {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  margin-inline: -4px;
+  padding-inline: 4px;
   overflow: hidden;
 }
 .frames-toggle {
@@ -602,7 +607,9 @@
   align-items: center;
   gap: 2px;
   min-width: 0;
-  padding: 4px 2px;
+  /* Room for a chip's whole focus ring at either end of the scroll box. */
+  margin-inline: -2px;
+  padding: 4px;
   overflow-x: auto;
   overflow-y: hidden;
 }
