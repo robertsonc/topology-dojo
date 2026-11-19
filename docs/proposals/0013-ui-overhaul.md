@@ -530,9 +530,15 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   1,100 px and below; the words on Export and Share at 1,023 px and below;
   the layout menu
   beside Tidy and the chips' words at 760 px and below; Present and the logo
-  at 640 px and below (`src/styles/shell.css`). Reason (`a0a6c42`, `59c30b0`): the bar never scrolls
-  sideways, and a long login had pushed the account chip off the bar between
-  1,101 and 1,161 px.
+  at 640 px and below (`src/styles/shell.css`). Where the bar is still short
+  of room at any width, the save state beside the title shortens (a warning
+  to its first words, then to its mark), then the workspace chip's name, the
+  account's name, the logo, the account chip's caret and, last, the mark of
+  a plain save step aside (`fitSaveChip` in `src/main.ts`), so the title and
+  the save state never run under Undo. Reason (`a0a6c42`, `59c30b0`, PR
+  #328): the bar never scrolls sideways, a long login had pushed the account
+  chip off the bar between 1,101 and 1,161 px, and the save state, a failed
+  save's warning above all, had been drawn over Undo, Redo and Tidy.
 - **The top bar's controls differ from the sketch in four ways.** Tidy is a
   button with a separate menu button beside it (`#tTidy`, `#tTidyMenu`). The
   account control is a chip with a person icon, the login and a caret, not an

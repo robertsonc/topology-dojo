@@ -225,7 +225,16 @@ The editor is organized into six areas and a status bar.
    keeps room for a short name. In a narrower window the top bar gives up
    first the words on its other buttons, then the menu beside **Tidy**, then
    **Present**; every command it dropped is
-   still in the menus (**Arrange** and **File → Present**).
+   still in the menus (**Arrange** and **File → Present**). The title and the
+   save state beside it never run under **Undo** or anything else on the bar.
+   Wherever the bar is short of room, the save state shortens first: a
+   warning to its first words (**⚠ not saved**, **⚠ newer copy**), then a
+   warning or a save to its mark alone (**⚠**, **✓**). Its tooltip, and what a
+   screen reader says, keep the whole sentence, and pressing it still
+   downloads the document or loads the other tab's copy. If the bar is still
+   short, the workspace chip's name, then the account's name, the logo and
+   the account chip's caret step aside, and last, on a phone, the **✓** of a
+   save (a warning always shows).
 2. **Left rail.** A narrow column of icon buttons. At the top are the four
    tools: **Select/move tool**, **Hand / pan tool**, **Draw link tool** and
    **Drop anchor tool** (the same four are under **Edit → Tools**). Below them
