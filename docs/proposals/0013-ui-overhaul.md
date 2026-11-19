@@ -3,11 +3,13 @@
 **Status:** Accepted (2026-11-19). P0 (foundations) is merged except its
 command registry: PR #326 merged into `main` on 2026-11-19 as `e9d0d7f`, and
 the stylesheet move, the token layer, the flat skin, the docked chrome, the
-neutral scrollbars and the icon sprite are live. `src/ui/commands.ts` is not
+neutral scrollbars and the icon sprite are merged. `src/ui/commands.ts` is not
 on `main` yet; it is the rest of P0 and is in progress. P1 (shell), P2
-(properties panel), P3 (skin sweep) and P4 (guardrails) have not started: no
-surface has moved or been converted. Some of their building blocks are on
-`main` but used by no surface yet: the shared control classes
+(properties panel), P3 (skin sweep) and P4 (guardrails) have not changed a
+surface: none has been relocated as P1 and P2 describe, or converted to the
+shared control classes. The 12 px text ratchet in `src/styles/styles.test.ts`,
+a first form of P4's budget test, is already on `main`. Some building blocks
+of the other phases are on `main` but used by no surface yet: the shared control classes
 (`src/styles/controls.css`), the menu component and the command palette
 (both listed under P1) and the rules for properties-panel tabs
 (`src/ui/inspector-tabs.ts`, under P2). The section

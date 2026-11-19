@@ -183,7 +183,8 @@ the same day as `e9d0d7f` (see "UI overhaul foundations" under "Completed
 historical milestones"). What remains of P0 is the command registry
 (`src/ui/commands.ts`), in progress and due in a later pull request. Its
 phases P1–P4 (shell, properties panel, skin sweep, guardrails) have not
-started. P0–P4 are that proposal's own labels, unrelated to proposal 0003's
+changed a surface yet; the 12 px text ratchet, a first form of P4's budget
+test, and the P1 and P2 building blocks are already on `main`. P0–P4 are that proposal's own labels, unrelated to proposal 0003's
 packets P1–P5 and to the "Phase 0" and "Phase 1" milestones below.
 
 ## Next
@@ -730,7 +731,8 @@ Plan and per-phase status: [`futures/hw-catalog.md`](futures/hw-catalog.md).
 
 ### UI overhaul foundations (proposal 0013, P0 except the command registry, 2026-11-19)
 
-PR #326, merged 2026-11-19 as `e9d0d7f`. Shipped:
+PR #326, merged 2026-11-19 as `e9d0d7f` (its Release run was still in
+progress when this was written). Shipped:
 
 - The editor stylesheet moved out of `index.html` into `src/styles/`;
   `index.css` imports the files in cascade order.
@@ -745,13 +747,14 @@ PR #326, merged 2026-11-19 as `e9d0d7f`. Shipped:
   characters; ink on the brand accent chosen for contrast.
 - Guards: `src/styles/styles.test.ts`, `src/ui/icons.test.ts`,
   `src/ui/contrast.test.ts`, `e2e/icons.spec.ts`. The three canvas screenshot
-  baselines were regenerated and CI accepted them.
+  baselines were regenerated; CI's e2e job passed on the pull request's last
+  commit (`8881941`) before it merged.
 
-On `main` but used by no surface yet (building blocks for P1 and P2, not
+On `main` but used by no surface yet (building blocks for P1–P3, not
 capabilities): the shared control classes, the Inter typeface, the menu
 component, the command palette and the properties-panel tab rules.
 
-Not shipped: the command registry, and P1–P4.
+Not shipped: the command registry, and any change to a surface from P1–P4.
 
 ### Wiring-sheet conventions (proposal 0008, 2026-10-15)
 
