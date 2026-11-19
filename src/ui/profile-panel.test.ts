@@ -20,6 +20,7 @@ import {
   type ProfilePanelState,
 } from './profile-panel.js';
 import type { AuthoringPreference } from '../profile/model.js';
+import { icon } from './icons.js';
 
 function preference(
   overrides: Partial<AuthoringPreference> = {},
@@ -258,6 +259,57 @@ describe('renderPreferencesHtml', () => {
       'Conflicting evidence (2 contradictions)',
     );
     expect(candidateFlagged).toContain('>Make this a preference…</button>');
+  });
+
+  it('leads each callout with the icon of its state, and names the state in words', () => {
+    // The icon is decorative (aria-hidden), so the words must stand alone.
+    const note = (cls: string, name: Parameters<typeof icon>[0]): string =>
+      `<div class="ws-note ${cls}">${icon(name)} `;
+    const seen = { supportingOutcomes: 3, evidenceDocuments: 2 };
+    expect(
+      renderPreferencesHtml([
+        preference({ supportingOutcomes: 2, evidenceDocuments: 2 }),
+      ]),
+    ).toContain(`${note('pref-observed', 'observed')}Observed 2×`);
+    expect(renderPreferencesHtml([preference(seen)])).toContain(
+      `${note('pref-ask', 'question')}You have made this correction 3 times`,
+    );
+    expect(
+      renderPreferencesHtml([
+        preference({
+          ...seen,
+          status: 'confirmed',
+          confirmedAt: '2026-07-15T09:00:00.000Z',
+        }),
+      ]),
+    ).toContain(
+      `${note('pref-confirmed-note', 'confirmed')}Confirmed 2026-07-15`,
+    );
+    expect(
+      renderPreferencesHtml([preference({ status: 'rejected' })]),
+    ).toContain(`${note('pref-rejected-note', 'rejected')}Rejected — `);
+    expect(
+      renderPreferencesHtml([
+        preference({
+          ...seen,
+          status: 'confirmed',
+          needsReview: true,
+          contradictingOutcomes: 2,
+        }),
+      ]),
+    ).toContain(`${note('pref-review', 'warning')}Overridden 2×`);
+    expect(
+      renderPreferencesHtml([
+        preference({ needsReview: true, contradictingOutcomes: 2 }),
+      ]),
+    ).toContain(`${note('pref-review', 'warning')}Conflicting evidence`);
+    expect(
+      renderPreferencesHtml(
+        [preference({ lastObservedAt: '2026-05-01T00:00:00.000Z' })],
+        null,
+        '2026-07-17T12:00:00.000Z',
+      ),
+    ).toContain(`${note('pref-stale', 'stale')}Not observed since 2026-05-01`);
   });
 
   it('lists exception workspaces, escaped', () => {

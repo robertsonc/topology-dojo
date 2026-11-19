@@ -24,6 +24,23 @@ injection (see "Known risks"). Only this passage and the dated paragraph under
 "Known risks" were updated; the baseline, counts, initiative table and key
 files below were not re-checked._
 
+_2026-11-19 (the branch of draft PR #326 at `3765dc3`, based on `main` at
+`f9b2bc6`; not merged): [proposal 0013](proposals/0013-ui-overhaul.md), the
+UI overhaul of the editor chrome, was accepted this date. The first part of
+its phase P0 is on that branch at that commit: the editor stylesheet moved
+out of `index.html` into `src/styles/` with a token layer; the chrome is
+flat, with the toolbar, the properties panel and the status bar docked (the
+node library and the pages dock still float over the canvas); panel
+scrollbars are neutral and appear on hover or keyboard focus; the chrome's
+icons are one SVG set instead of symbol characters (Lucide, a third-party
+set; `src/ui/icons.generated.ts` reproduces its ISC and MIT license text);
+and the "Panel blur (glass)" display setting is gone. The command registry
+P0 also lists is not on the branch at that commit, and neither is anything
+of P1–P4. Only this passage, the paragraph dated 2026-11-19 under "Active
+implementation program", the `docs/proposals/0005`–`0013` entry under
+"Documentation map and history" and three new "Key files" rows were written;
+nothing else in this file was re-checked._
+
 ## What Topology Dojo is
 
 A production-hosted, collaborative, AI-agent-assisted network-topology
@@ -178,6 +195,12 @@ hard size budget and the live-data tools are off in production. Before
 starting T4, note that a story needs no provider (its scenario carries the
 base fabric), so the gate the packet assumed does not follow.
 
+2026-11-19: proposal 0013 (the UI overhaul of the editor chrome, accepted
+this date) is likewise driven from its own file, not from this table. Its P0
+is in progress on draft PR #326 and is not merged; at `3765dc3` nothing of
+its P1–P4 is on that branch. Those phase labels are the proposal's own and
+are unrelated to proposal 0003's packets P1–P5.
+
 Before starting a July implementation packet, revalidate its premise against
 `ROADMAP.md`, `CAPABILITY_MATRIX.md`, and current code. O1/O2 remain explicitly
 human/operator work unless dated evidence says otherwise.
@@ -310,6 +333,9 @@ reviewed Darwin baselines are deliberately added. See `launch-readiness/QA_TEST_
 | Workspace client                 | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                                                               |
 | Adaptive authoring profiles      | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`                                                |
 | Admin/analytics dashboard        | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`, `src/agent-activity/`                                                                  |
+| Editor chrome styles             | `src/styles/index.css` (imports the other files in cascade order), `src/styles/tokens.css` (semantic tokens, both themes), `src/styles/styles.test.ts` (guards); proposal 0013  |
+| Editor chrome icons              | `scripts/build-icons.ts` (manifest + generator, `npm run build:icons`), `src/ui/icons.generated.ts` (generated from `lucide-static`), `src/ui/icons.ts`, `src/styles/icons.css` |
+| Ink on the brand accent          | `src/ui/contrast.ts` (`readableInkOn`), called by `setChromeAccent` in `src/main.ts`                                                                                            |
 | Auth + landing page + showcase   | `worker/auth.ts`, `worker/landing.ts`, `public/landing/`, `public/showcase/*.webp`                                                                                              |
 | Deployment config                | `wrangler.jsonc`, `.github/workflows/{release,deploy-worker,deploy-staging,ci,production-verify,nightly-staging-smoke}.yml`, `scripts/{check-wrangler-env,migration-guard}.mjs` |
 | Flags                            | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `liveDataEnabled`, `isAdmin`), `worker/api-keys.ts` (`apiKeysEnabled`)                              |
@@ -391,12 +417,14 @@ staging` with a generated ≥16-char value kept only in the operator's
   profiles, and the deployment pipeline. All four are implemented; 0001's
   status header already said so, 0003/0004's were corrected as part of this
   reset (see `DISCREPANCY_REGISTER.md`).
-- `docs/proposals/0005`–`0012` — API keys (implemented, production flag
+- `docs/proposals/0005`–`0013` — API keys (implemented, production flag
   off), importer sync (implemented), merge-is-the-release (implemented),
   wiring-diagram conventions (implemented except harness routing), the
   vendor-neutral diagramming-tool direction (**Proposed**, not accepted),
   the SD-WAN generator (slices 1–4 implemented), the icon gap review
-  (tiers 1–2 shipped), and SD-WAN vendor research (research only). Each
+  (tiers 1–2 shipped), SD-WAN vendor research (research only), and the UI
+  overhaul of the editor chrome (accepted 2026-11-19; P0 in progress on
+  draft PR #326, with nothing of P1–P4 on that branch at `3765dc3`). Each
   file's status header is authoritative.
 - `docs/EXPORTS.md` — the export/import fidelity contract.
 - `docs/futures/hw-catalog.md` — hardware-catalog phase status;

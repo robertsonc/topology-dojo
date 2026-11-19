@@ -418,6 +418,108 @@ test('an annotation without a source reference shows no source row', async ({
   await expect(editor.locator('[data-asource]')).toHaveCount(0);
 });
 
+/* ── anchors in a flow's waypoints ───────────────────────────────────────── */
+
+test('an anchor waypoint is named in words, and picked from its own group', async ({
+  page,
+}) => {
+  page.on('dialog', (d) => void d.accept());
+  await bootEditor(page);
+  await page.locator('#fInput').setInputFiles({
+    name: 'anchored.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({
+        title: 'Anchored flow',
+        pages: [
+          {
+            id: 'p-anchor',
+            name: 'Edge',
+            viewBox: '0 0 1050 700',
+            nodes: [
+              { id: 'a', type: 'router', x: 300, y: 300, label: 'Core' },
+              { id: 'b', type: 'router', x: 520, y: 300 },
+            ],
+            links: [{ id: 'a-b', type: 'line', from: 'a', to: 'b' }],
+            anchors: [
+              { id: 'a1', x: 700, y: 220 },
+              { id: 'a2', x: 700, y: 380 },
+            ],
+            zones: [],
+            flowPaths: [{ id: 'f1', label: 'Flow', waypoints: ['a', 'a1'] }],
+            policyMarkers: [],
+          },
+        ],
+        customNodes: [],
+      }),
+    ),
+  });
+  await expect(page.locator('#page-canvas [data-tds-node]')).toHaveCount(2);
+  const { editor } = await openAnnotation(page, 'flowPaths');
+
+  // A node's chip shows and says its label. An anchor's shows the anchor
+  // icon and its id, and its buttons say "anchor" in words: the icon is
+  // hidden from a screen reader, and no symbol is read out in its place.
+  const node = editor.locator('.refchip[data-id="a"]');
+  await expect(node.locator('.reflbl')).toHaveText('Core');
+  await expect(node.locator('.icon')).toHaveCount(3);
+  await expect(node.getByRole('button')).toHaveText(['', '', '']);
+  expect(
+    await node
+      .getByRole('button')
+      .evaluateAll((buttons) => buttons.map((b) => b.ariaLabel)),
+  ).toEqual(['Move Core earlier', 'Move Core later', 'Remove Core']);
+
+  const anchor = editor.locator('.refchip[data-id="a1"]');
+  await expect(anchor.locator('.reflbl')).toHaveText('a1');
+  await expect(anchor.locator('.reflbl .icon use')).toHaveAttribute(
+    'href',
+    '#i-anchor',
+  );
+  await expect(
+    anchor.getByRole('button', { name: 'Move anchor a1 earlier' }),
+  ).toHaveAttribute('title', 'Move earlier');
+  await expect(
+    anchor.getByRole('button', { name: 'Move anchor a1 later' }),
+  ).toHaveAttribute('title', 'Move later');
+  await expect(
+    anchor.getByRole('button', { name: 'Remove anchor a1' }),
+  ).toHaveAttribute('title', 'Remove');
+
+  // The picker lists nodes by label (else id), then the anchors by id under
+  // a heading of their own: an option cannot hold an icon to mark them.
+  const picker = editor.locator('select.refadd');
+  await expect(picker).toHaveAttribute('title', 'Add by node');
+  await expect(picker.locator('> option')).toHaveText(['add…', 'Core', 'b']);
+  await expect(picker.locator('optgroup')).toHaveCount(1);
+  const anchors = picker.locator('optgroup[label="Anchors"] > option');
+  await expect(anchors).toHaveText(['a1', 'a2']);
+  expect(
+    await anchors.evaluateAll((options) =>
+      options.map((o) => (o as HTMLOptionElement).value),
+    ),
+  ).toEqual(['a1', 'a2']);
+
+  // Picked from the group, an anchor joins the route like a node does.
+  await picker.selectOption('a2');
+  await expect
+    .poll(async () => (await savedElement(page, 'flowPaths', 'f1')).waypoints)
+    .toEqual(['a', 'a1', 'a2']);
+  await expect(
+    page
+      .locator('#inspector details.anno[data-acol="flowPaths"]')
+      .getByRole('button', { name: 'Remove anchor a2' }),
+  ).toBeVisible();
+
+  // On a page without anchors there is no empty group.
+  await bootEditor(page);
+  const plain = (await openAnnotation(page, 'flowPaths')).editor;
+  await expect(plain.locator('select.refadd > option').first()).toHaveText(
+    'add…',
+  );
+  await expect(plain.locator('select.refadd optgroup')).toHaveCount(0);
+});
+
 /* ── the Type dropdown ───────────────────────────────────────────────────── */
 
 test('the Type dropdown lists types by label, grouped like the node library', async ({

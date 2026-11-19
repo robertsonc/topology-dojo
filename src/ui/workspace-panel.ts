@@ -68,6 +68,7 @@ import type {
 } from '../workspace/model.js';
 import { serializeDoc } from '../pages/persist.js';
 import { registerOverlay } from './overlay.js';
+import { icon } from './icons.js';
 import type { Page, TopologyDocument } from '../pages/model.js';
 import type { ZoneConfig } from '../vendor/topology-ds.js';
 import { pageToSVG } from '../editor/export.js';
@@ -380,14 +381,15 @@ export function renderTimelineHtml(workspace: ActiveWorkspace): string {
         `<span class="ws-note">${esc(actor)}</span></div>` +
         `<div class="ws-note">${change.summary.count} op${change.summary.count === 1 ? '' : 's'}${first ? ` · ${esc(first)}` : ''}</div>` +
         (change.proposalId
-          ? `<div class="ws-note">✓ accepted proposal</div>`
+          ? `<div class="ws-note">${icon('check')} accepted proposal</div>`
           : '') +
         (change.guidanceConsultedBefore
           ? `<div class="ws-note" title="get_authoring_guidance ran in the same MCP session before this revision. This is not a claim that the guidance caused the edit.">Guidance was consulted before this edit</div>`
           : '') +
         marks
           .map(
-            (name) => `<div class="ws-note">◈ checkpoint “${esc(name)}”</div>`,
+            (name) =>
+              `<div class="ws-note">${icon('checkpoint')} checkpoint “${esc(name)}”</div>`,
           )
           .join('') +
         `</div>`
@@ -609,7 +611,7 @@ export interface RenderedPreviewFrame {
 
 /** CSS class per change type. Colors AND dash patterns differ (solid = add,
  * dotted = remove, dashed = modify) so the distinction never rides on color
- * alone — see the `.ws-hl-*` rules in index.html. */
+ * alone — see the `.ws-hl-*` rules in src/styles/workspace.css. */
 const HL_CHANGE_CLASS: Record<ElementChange['change'], string> = {
   added: 'ws-hl-add',
   removed: 'ws-hl-remove',
@@ -1930,7 +1932,7 @@ export function mountWorkspacePanel(
     workspacePanel.setAttribute('role', 'dialog');
     workspacePanel.setAttribute('aria-label', 'Agent Workspace');
     workspacePanel.innerHTML =
-      `<div class="ws-head"><h3>Agent Workspace</h3><button class="tbtn ticon" id="wsClose" title="Close" aria-label="Close">✕</button></div>` +
+      `<div class="ws-head"><h3>Agent Workspace</h3><button class="tbtn ticon" id="wsClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
       `<div id="wsBody"></div>`;
     document.body.appendChild(workspacePanel);
     workspacePanel

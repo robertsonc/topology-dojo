@@ -1,6 +1,12 @@
 # Topology Dojo User Guide
 
-**Last reviewed:** 2026-11-13 (against `main` at `e99b012`)
+**Last reviewed:** 2026-11-13 (against `main` at `e99b012`). Updated
+2026-11-19 on the branch of draft PR #326 (the first part of
+[proposal 0013](proposals/0013-ui-overhaul.md), not merged): passages that
+named a control by a symbol now name it by its text or tooltip, "View
+preferences" no longer lists a glass setting, and "Brand palette" says what
+a palette recolours in the app chrome. The rest of the guide was not
+re-checked.
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
 edit a diagram directly on the canvas, or an MCP-capable agent can author the
@@ -183,10 +189,10 @@ reloaded document normally opens on its first page.
 The editor is organized into six areas.
 
 1. **Top toolbar.** File actions (including **share** on hosted
-   deployments), undo and redo, **svg**, **png**, the **⤓ export…** menu
+   deployments), undo and redo, **svg**, **png**, the **export…** menu
    (PDF, flipbook HTML, draw.io, Visio, PowerPoint, Mermaid, clipboard PNG,
    selection-only exports), templates,
-   drawing tools, view controls (including **▶** Present), layout actions,
+   drawing tools, view controls (including **Present**), layout actions,
    selection actions, and the optional workspace/profile/admin/account chips.
 2. **Node library.** A searchable, categorized catalog on the left. It also
    holds document custom nodes and stencils.
@@ -201,12 +207,17 @@ The editor is organized into six areas.
 6. **Properties and Problems.** A resizable right column. Properties follow the
    selection; Problems shows validation and layout findings. Each finding names
    elements by their label. Click one to ring every element it refers to and
-   bring them into view. Hover a finding and choose **✕** to hide it in this
-   browser; the footer shows how many are hidden and restores them. A hidden
-   finding is still reported by `validate_topology`.
+   bring them into view. Hover a finding and choose **Hide this problem** (the
+   crossed-out eye) to hide it in this browser; the footer shows how many are
+   hidden and restores them. A hidden finding is still reported by
+   `validate_topology`.
 
 The status bar reports the active tool, cursor location, element counts, zoom,
 history availability, and current error/warning counts.
+
+Many buttons show an icon and no text. This guide names such a button by its
+tooltip, which appears when the pointer rests on it: **Undo** is the toolbar
+button whose tooltip reads "Undo (Ctrl/Cmd+Z)".
 
 Use **B**, **M**, **P**, and **F** to toggle the Node library, minimap,
 Properties, and pages strip. The palette, filmstrip, minimap, Problems panel,
@@ -229,7 +240,7 @@ The minimap provides an overview of content outside the current viewport.
 
 ### A practical first-diagram workflow
 
-1. Choose **new** or select an item from **＋ template…**.
+1. Choose **new** or select an item from **template…**.
 2. Set the document title and page name in Properties while nothing is
    selected.
 3. Search the Node library and click node types to add them.
@@ -242,7 +253,7 @@ The minimap provides an overview of content outside the current viewport.
    sequence.
 9. Wait for **✓ saved**, then choose **download** for a portable JSON backup.
 10. Export the current frame as **svg** or **png**, pick another format from
-    **⤓ export…** (see [Save, import, export, and share](#11-save-import-export-and-share)),
+    **export…** (see [Save, import, export, and share](#11-save-import-export-and-share)),
     or publish a public share link.
 
 ### Add and move nodes
@@ -332,10 +343,10 @@ anchor box as a faint dashed outline.
 The anchor box is **on, with Distribute ends, for new work**: a **new**
 document, the starter templates, the SD-WAN generator, and anything an agent
 creates over MCP (`create_topology`, `add_page`, `build_flow_topology`,
-`create_workspace`). A frame added with **+ frame** follows the frame you are
-on. Documents saved before this, the first-run sample scene, and imported
-files keep the classic attachment until you turn the switch on; nothing is
-re-routed behind your back.
+`create_workspace`). A frame added with the pages strip's **frame** button
+follows the frame you are on. Documents saved before this, the first-run
+sample scene, and imported files keep the classic attachment until you turn
+the switch on; nothing is re-routed behind your back.
 
 **Distribute ends** spreads every link endpoint on a node side into evenly
 spaced slots, ordered by where the links go, so a stack of links into one side
@@ -415,7 +426,7 @@ editing does not leave avoidable dangling references.
 
 Undo and redo are available from the toolbar or with **Ctrl/Cmd+Z** and
 **Ctrl/Cmd+Shift+Z**. Each page keeps its own edit history when switching
-between pages. Page deletion has its own short-lived **↩ undo delete** action in
+between pages. Page deletion has its own short-lived **undo delete** action in
 the filmstrip.
 
 ### Context menus
@@ -610,11 +621,12 @@ selection editor.
 
 ### Add annotations
 
-The **Annotations** section in Properties has:
+The **Annotations** section in Properties has three buttons, each a plus icon
+and a word:
 
-- **＋ zone** — seeds a zone from all currently selected nodes;
-- **＋ flow** — seeds an ordered flow path from the selected nodes;
-- **＋ marker** — attaches a policy marker to the first selected node.
+- **zone** — seeds a zone from all currently selected nodes;
+- **flow** — seeds an ordered flow path from the selected nodes;
+- **marker** — attaches a policy marker to the first selected node.
 
 Select the nodes before creating the annotation. A marker requires a selected
 node. A useful flow normally requires at least two ordered waypoints.
@@ -642,9 +654,9 @@ a plain click there selects the zone.
 
 The membership editor uses chips. Zone membership is node-only:
 
-- **＋ add…** adds a node;
-- **‹** and **›** reorder a chip;
-- **✕** removes it.
+- the **add…** list adds a node;
+- the arrows on a chip (**Move earlier** and **Move later**) reorder it;
+- the x on a chip (**Remove**) removes it.
 
 Anchors are valid link endpoints and flow-path waypoints, but not zone members.
 If an anchor appears in the generic picker, do not select it; validation treats
@@ -656,12 +668,13 @@ zone with its contents. A zone can name a parent zone for nested grouping.
 ### Flow paths
 
 A flow path is an ordered route through nodes or anchors. The order is the
-route. Select nodes in route order before choosing **＋ flow**, or use the chip
-editor afterward.
+route. Select nodes in route order before choosing **flow** under
+**Annotations**, or use the chip editor afterward.
 
 Flow paths support label, color, animation style, dashed/pulse/particle
 presentation, speed, direction, width, opacity, layer, source, and optional hop
-metadata. Use chip **‹/›** controls to correct the order.
+metadata. Use a chip's **Move earlier** and **Move later** arrows to correct
+the order.
 
 The label sits on the longest drawn segment of the route, just off the wire,
 in a glass pill that word-wraps at about 26 characters (set **Label width**
@@ -703,7 +716,7 @@ outside declared layers.
 While nothing is selected:
 
 1. Open **Layers** in Properties.
-2. Choose **＋ Layer** to declare a new layer.
+2. Choose **Layer** (the button with a plus icon) to declare a new layer.
 3. Use the eye control to show or hide it.
 4. Use the opacity slider to dim the layer.
 5. Assign nodes, links, or annotations to the layer from their Properties.
@@ -794,7 +807,8 @@ values, overlap, crowding, and off-page content.
 - Expand **Problems** to see details.
 - Select a problem to switch to its page and focus the related element when one
   is available.
-- Toggle on-canvas problem badges with the warning icon in the toolbar.
+- Turn on-canvas problem badges on or off with the toolbar button whose
+  tooltip reads **Toggle on-canvas problem badges**.
 - Click a badge to open the related problem.
 
 Rendering is intentionally tolerant of many warnings so a diagram can remain
@@ -828,20 +842,23 @@ Problems again.
 
 The pages strip shows the current page number and total.
 
-- Choose **＋ frame** to add a blank page.
-- Choose **⧉ duplicate** to deep-copy the current page.
+- Choose **frame** (the button with a plus icon; its tooltip reads "Add blank
+  frame") to add a blank page.
+- Choose **duplicate** to deep-copy the current page.
 - Double-click a page name to rename it.
 - Drag a page chip to reorder pages.
-- Use the page **✕** to delete it. The only page cannot be deleted.
+- Use the x on a page chip (**Delete frame**) to delete it. The only page
+  cannot be deleted.
 - If a page contains nodes, links, annotations, a caption, or emphasis, deletion
   asks for confirmation.
-- After deletion, **↩ undo delete** remains available for about eight seconds.
+- After deletion, **undo delete** remains available for about eight seconds.
   Only the most recent deleted page is recoverable this way.
 
 ### Playback
 
-When a document has multiple pages, choose **▶ play**. Playback loops through
-the pages. For each page, set:
+When a document has multiple pages, choose **play** in the pages strip (it
+reads **pause** while playing). Playback loops through the pages. For each
+page, set:
 
 - **Hold (ms)** — how long the frame remains visible;
 - **Transition** — **cut** or **fade**.
@@ -851,7 +868,8 @@ visual transition; page hold duration controls when the next frame starts.
 
 ### Present mode
 
-Choose the **▶** toolbar button to play the document full-screen: every frame
+Choose **Present** in the toolbar (the presentation-screen icon; its tooltip
+begins "Present") to play the document full-screen: every frame
 renders exactly as exports do (caption, legend, emphasis, fade transitions),
 looping on each page's hold time. Use **←/→** to step manually, **Space** to
 pause/resume autoplay, and **Escape** to exit.
@@ -872,23 +890,24 @@ You can also select elements, right-click, and choose
 ### Analyze a path between two nodes
 
 Select two nodes (click one, then Shift-click or Ctrl-click the other) and
-choose **Analyze path** from the right-click menu, or **⇢ analyze path** under
+choose **Analyze path** from the right-click menu, or **analyze path** under
 **Selection** in Properties. The editor traces the routes between them over
 the links the frame draws and spotlights the shortest: its nodes and links at
 full strength, everything else dimmed. The first node you selected is the
 start.
 
 A bar under the toolbar says what was found, for example
-`Path: User -> App · 3 hops via EC-Branch, EC-Hub`, and offers:
+`Path: User -> App · 3 hops via EC-Branch, EC-Hub`, and offers the controls
+below. Those that show only an icon are named by their tooltip:
 
-| Control         | What it does                                                                                |
-| --------------- | ------------------------------------------------------------------------------------------- |
-| **‹** / **›**   | Step through the alternative routes, shortest first (shown when there is more than one).    |
-| **⇄**           | Trace the other way round. The route is the same; a flow added from it runs from the start. |
-| **★ emphasize** | Keep the spotlight as this frame's emphasis (one undo step).                                |
-| **⇢ add flow**  | Add a flow path along the route, labelled with its ends and hop count.                      |
-| **⧉ new frame** | Copy the frame, with the route emphasized and captioned, as the next frame of the flipbook. |
-| **×** or Escape | Close the bar. The spotlight goes with it.                                                  |
+| Control                                                                           | What it does                                                                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Previous route** / **Next route** (the two chevrons)                            | Step through the alternative routes, shortest first (shown when there is more than one).    |
+| **Trace the other way** (the opposed arrows; the tooltip begins with these words) | Trace the other way round. The route is the same; a flow added from it runs from the start. |
+| **emphasize**                                                                     | Keep the spotlight as this frame's emphasis (one undo step).                                |
+| **add flow**                                                                      | Add a flow path along the route, labelled with its ends and hop count.                      |
+| **new frame**                                                                     | Copy the frame, with the route emphasized and captioned, as the next frame of the flipbook. |
+| **Close path analysis** (the x) or Escape                                         | Close the bar. The spotlight goes with it.                                                  |
 
 Tracing is a read: until you choose one of the three keep actions nothing in
 the document changes, and exports and the saved file are unaffected. While the
@@ -913,7 +932,7 @@ Agents use **analyze_path** for the same answer; its `show` option
 
 ## 10. Starter templates
 
-The **＋ template…** menu creates a new document from one of six built-in
+The **template…** menu creates a new document from one of six built-in
 templates:
 
 - **Three-tier web app**;
@@ -934,9 +953,9 @@ a question per parameter, a live preview, and the node and link counts that
 will land on the canvas. A parameter with a few values is a row of buttons; one
 with a long range is a slider (drag it, or use the arrow keys). **Create
 diagram** asks for the usual confirmation and then replaces the canvas;
-**Cancel**, **✕** or **Esc** closes the dialog and changes nothing. The dialog
-opens on the template's defaults, which build the same diagram the template
-built before it took parameters.
+**Cancel**, **Close** (the x in the dialog's header) or **Esc** closes the
+dialog and changes nothing. The dialog opens on the template's defaults,
+which build the same diagram the template built before it took parameters.
 
 | Template           | Parameter         | Values   | Default | What it changes                                     |
 | ------------------ | ----------------- | -------- | ------- | --------------------------------------------------- |
@@ -971,7 +990,7 @@ document.
 
 ### Generate an SD-WAN fabric
 
-**＋ template… → Generate SD-WAN…** opens a wizard that builds a hub-and-spoke
+**template… → Generate SD-WAN…** opens a wizard that builds a hub-and-spoke
 SD-WAN fabric from a few choices. A live preview shows the device, tunnel and
 cable counts that will land on the canvas.
 
@@ -1076,12 +1095,14 @@ caption. Calm Canvas affects animated presentation in the SVG.
 ### Light and dark exports
 
 Every image export (SVG, PNG, PDF, clipboard, selection crops, flipbook HTML)
-follows the editor's **☀ / 🌙** theme toggle: a light canvas exports light, a
-dark canvas exports dark. The light export is not just a light backdrop — the
-engine's dark-tuned constants are remapped so the page reads on white: dark
-label text, white cards and label chips, and accents darkened for contrast.
-Colours set on your own nodes, links, zones and brand palette are left as they
-are. To get the other theme, flip the toggle and export again.
+follows the editor's theme toggle, the toolbar button that shows a sun in the
+dark theme (**Switch to light theme**) and a moon in the light theme
+(**Switch to dark theme**): a light canvas exports light, a dark canvas
+exports dark. The light export is not just a light backdrop — the engine's
+dark-tuned constants are remapped so the page reads on white: dark label
+text, white cards and label chips, and accents darkened for contrast. Colours
+set on your own nodes, links, zones and brand palette are left as they are.
+To get the other theme, flip the toggle and export again.
 
 Over MCP, pass `theme: "light"` to **render_svg**, **export_flipbook**, or
 **export_topology** (PNG, PDF, and PowerPoint image mode); the default is
@@ -1099,7 +1120,7 @@ rasterized in the browser. Agents get a server-rendered PNG from the MCP
 
 ### PDF, clipboard, and selection exports
 
-The **⤓ export…** toolbar menu adds:
+The **export…** toolbar menu adds:
 
 - **PDF — current frame** and **PDF — all frames** (one multi-page PDF, each
   page sized to its frame, or to the sheet's paper size when a standard
@@ -1113,7 +1134,7 @@ The **⤓ export…** toolbar menu adds:
 
 ### draw.io, Visio, PowerPoint, and Mermaid
 
-The **⤓ export…** menu also writes the formats other teams edit in. The
+The **export…** menu also writes the formats other teams edit in. The
 three office formats are editable and deliberately lossy; what each keeps and
 drops is specified in the [export fidelity contract](EXPORTS.md).
 
@@ -1137,7 +1158,7 @@ schedule (CSV / XLSX), from the MCP **export_topology** tool — see
 
 ### Flipbook HTML
 
-The **⤓ export… → Flipbook HTML** toolbar action (and the MCP
+The **export… → Flipbook HTML** toolbar action (and the MCP
 **export_flipbook** tool — both use the same generator) returns a
 self-contained HTML presentation of all pages. It includes page timing,
 cut/fade behavior, looped play/pause, and page navigation.
@@ -1219,7 +1240,7 @@ browser. Signing in returns to the same document.
 
 ### Node Designer
 
-Choose **＋ design node** at the bottom of the unfiltered Node library. The Node
+Choose **design node** at the bottom of the unfiltered Node library. The Node
 Designer provides a live preview and supports:
 
 - type name and base shape/icon;
@@ -1247,12 +1268,13 @@ A stencil is a reusable group of selected nodes and the links internal to that
 selection.
 
 1. Select one or more nodes.
-2. Choose **＋ save stencil** in the Node library or
+2. Choose **save stencil** in the Node library or
    **Save as stencil…** in the context menu.
 3. Name the stencil.
 4. Click its thumbnail under **Stencils** to stamp a fresh copy centered on the
    current page.
-5. Use the stencil **✕** to remove the saved definition.
+5. Use the trash-can icon beside the stencil (**Delete stencil**) to remove
+   the saved definition.
 
 Stamped nodes and links receive fresh identifiers. Stencils belong to the
 document, not to a global account library.
@@ -1267,8 +1289,7 @@ These controls are local view preferences:
 - grid and snap;
 - **Calm canvas**;
 - on-canvas problem badges;
-- **Display settings** for **Ambient backdrop**, **Panel blur (glass)** and
-  what the **Wheel** does;
+- **Display settings** for **Ambient backdrop** and what the **Wheel** does;
 - panel visibility and sizing.
 
 In **Display settings**, Ambient backdrop can be **Animated**, **Static**, or
@@ -1306,8 +1327,11 @@ The same Display settings panel includes document-level brand palettes:
 **Default**, **Azure**, **Violet**, **Amber**, **Crimson**, **Teal**, and
 **Slate**, plus custom **Accent**, **Secondary**, and **Chrome (UI)** colors.
 
-Unlike ambient, glass, and light/dark settings, a non-default brand palette is
-saved in the document and travels with it.
+Unlike ambient and light/dark settings, a non-default brand palette is saved
+in the document and travels with it. It also recolours the app chrome: the
+accent, its tints on selected controls, and the ink drawn on accent-filled
+buttons, which switches between dark and light to stay readable on the brand
+colour.
 
 ### Keyboard and focus behavior
 

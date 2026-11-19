@@ -130,7 +130,7 @@ packet-level ordering and what can run in parallel):
    leaves", "hub and spoke with 2 hubs and 9 sites") through the tool and
    the menu that already existed: `create_from_template` takes an optional
    `params` object, `list_templates` returns each template's parameter
-   schema, and choosing a parametric template in **＋ template…** opens a
+   schema, and choosing a parametric template in **template…** opens a
    parameter dialog (`src/ui/template-wizard.ts`). `src/api/templates.ts`
    copies the generator's contract (one resolve step for defaults and bounds,
    errors that name the field, deterministic output, a
@@ -175,6 +175,17 @@ Since August the work that actually merged came from numbered proposals
 it is recorded under "Completed historical milestones". Proposal 0009 (the
 vendor-neutral diagramming-tool direction) is **Proposed, not accepted**; if
 accepted it re-cuts _Now/Next_.
+
+[Proposal 0013](proposals/0013-ui-overhaul.md) (the UI overhaul of the editor
+chrome: placement first, then a flat skin) was **accepted 2026-11-19**. At
+that date nothing of it is on `main`. Its phase P0 (foundations) is in
+progress on draft PR #326: at `3765dc3` that branch holds the stylesheet
+moved to `src/styles/`, the token layer, the flat docked chrome, hover-reveal
+scrollbars and one SVG icon set; the command registry P0 also lists is not
+on it, and neither is anything of its phases P1–P4 (shell, properties panel,
+skin sweep, guardrails). P0–P4 are that proposal's own labels, unrelated to
+proposal 0003's packets P1–P5 and to the "Phase 0" and "Phase 1" milestones
+below.
 
 ## Next
 
@@ -276,7 +287,9 @@ sourcedOnly:true` list what an importer owns; there's no surface yet for
   background). Builds on the flat-viewer seam (`flattenViewer` in
   `src/vendor/topology-ds.ts`); per `DESIGN.md` #2 this stays a presentation
   preference (no document-schema/agent surface), living with pan/zoom as a
-  human-only view control.
+  human-only view control. Not part of proposal 0013: its "flat skin" is the
+  editor chrome (toolbar, panels, dialogs), and canvas rendering is one of
+  its non-goals.
 - ~~**Server-side / MCP PNG export**~~ — **shipped** in Phase 1 (resvg
   WebAssembly rasterizer, `export_topology` png / pdf; see `docs/EXPORTS.md`).
 - ~~**Path analysis between elements ("visual traceroute")**~~ — **shipped

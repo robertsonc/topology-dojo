@@ -103,7 +103,7 @@ untested.
 | Capability                                                                                     | State for this plan                                                      | Activation or condition                                                                                                                             |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Browser authoring, local persistence, import, JSON/SVG/PNG export, and public shared snapshots | Core                                                                     | Supported browser and production-candidate build                                                                                                    |
-| Standalone flipbook HTML export                                                                | Core for MCP acceptance; also a browser **⤓ export…** action             | Hosted or local MCP client and a multi-page document                                                                                                |
+| Standalone flipbook HTML export                                                                | Core for MCP acceptance; also a browser **export…** action               | Hosted or local MCP client and a multi-page document                                                                                                |
 | Remote MCP authoring and OAuth                                                                 | Core for hosted releases; local stdio remains a diagnostic/operator path | Hosted `/mcp`, GitHub OAuth application, and MCP client                                                                                             |
 | Starter templates with parameters and the SD-WAN generator                                     | Core                                                                     | Supported browser; hosted or local MCP client for the agent path                                                                                    |
 | Editable exports (draw.io, Visio, PowerPoint, Mermaid) and draw.io / Mermaid import            | Core                                                                     | Supported browser; draw.io and an office suite to open the files; hosted or local MCP client                                                        |
@@ -208,8 +208,8 @@ cycle from its description.
   legend, stencil, custom node type, transitions, and brand palette.
 - `TD-UAT-UNDO`: a two-page document for the 12-edit script written out in
   UAT-NA-02 (the repository has no fixture file or script file for it). Build
-  it from **＋ template… → Three-tier web app** with the default parameters,
-  then **⧉ duplicate** the page, so that both pages hold Users, Firewall,
+  it from **template… → Three-tier web app** with the default parameters,
+  then **duplicate** the page, so that both pages hold Users, Firewall,
   Web 1, Web 2, App, and Database with their six links.
 - `TD-UAT-UGLY`: overlapping, off-grid, but semantically valid geometry for
   layout recovery.
@@ -385,7 +385,7 @@ opened.
 
 **Steps and expected results:**
 
-1. From **＋ template…** choose **Spine-leaf fabric**. A dialog asks for
+1. From **template…** choose **Spine-leaf fabric**. A dialog asks for
    Spines and Leaves and shows a preview with the node and link counts: 6
    nodes and 8 links at the defaults. Set 4 spines and 12 leaves: the counts
    read 16 nodes and 48 links.
@@ -397,7 +397,7 @@ opened.
    **Fit view** shows the whole fabric.
 4. Choose **ZTNA user-to-app**. No dialog opens: the usual confirmation is
    asked and the template loads.
-5. Choose **＋ template… → Generate SD-WAN…**. Pick a vendor, two regions, two
+5. Choose **template… → Generate SD-WAN…**. Pick a vendor, two regions, two
    hubs per region, and three branches per region. The preview shows device,
    tunnel, and cable counts that change with each choice. Create the diagram:
    the fabric lands on the canvas with each region in its own zone.
@@ -439,7 +439,7 @@ participant starts from a suitable template.
 5. Use page playback and calm/reduced-motion-friendly presentation controls.
    The narrative order, durations, captions, emphasis, and layers are coherent.
 6. From the browser, export JSON, SVG, and PNG, and the flipbook from
-   **⤓ export… → Flipbook HTML — all frames**. Re-import JSON and compare the
+   **export… → Flipbook HTML — all frames**. Re-import JSON and compare the
    rich semantics against the source. Open the flipbook file with networking
    disabled and check its pages, captions, and timing.
 

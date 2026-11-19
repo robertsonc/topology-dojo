@@ -7,14 +7,24 @@
  * now reports the same three states through this one function.
  */
 
+import type { IconName } from './icons.js';
+
 export type ExportState = 'pending' | 'ok' | 'error';
 
-/** What the chip shows: its state, its text and its tooltip. */
+/** What the chip shows: its state, its icon, its text and its tooltip. */
 export interface ExportReport {
   state: ExportState;
+  /** The mark drawn before the text; the text says the state in words too. */
+  icon: IconName;
   message: string;
   detail: string;
 }
+
+const STATE_ICONS: Readonly<Record<ExportState, IconName>> = {
+  pending: 'busy',
+  ok: 'check',
+  error: 'warning',
+};
 
 /**
  * The short name of each export, by the value the toolbar uses for it (the
@@ -58,9 +68,14 @@ export function exportReport(
   const copy = CLIPBOARD_EXPORTS.has(kind);
   const message =
     state === 'pending'
-      ? `… ${copy ? 'copying' : 'exporting'} ${name}`
+      ? `${copy ? 'copying' : 'exporting'} ${name}`
       : state === 'ok'
-        ? `✓ ${copy ? 'copied' : 'exported'} ${name}`
-        : `⚠ ${name} ${copy ? 'copy' : 'export'} failed`;
-  return { state, message, detail: detail || message };
+        ? `${copy ? 'copied' : 'exported'} ${name}`
+        : `${name} ${copy ? 'copy' : 'export'} failed`;
+  return {
+    state,
+    icon: STATE_ICONS[state],
+    message,
+    detail: detail || message,
+  };
 }

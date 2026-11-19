@@ -1,0 +1,452 @@
+/* Shared controls (proposal 0013).
+
+   One definition of each control the chrome is built from. A surface (the
+   top bar, the properties panel, a dialog) composes these classes and adds
+   layout only: it does not restyle a button or a field. Labels are in the
+   UI face; add `.data` to anything that shows data (an id, a number, an
+   address, a shortcut), which stays in the mono face.
+
+   Sizes: controls are 28px tall (24px for `-sm`), icons 16px, text never
+   under 12px. States come from ARIA and native attributes, not from extra
+   classes: `aria-pressed`, `aria-checked`, `aria-selected`, `:disabled`. */
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--fg);
+  font: 500 13px/1 var(--font-ui);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast),
+    border-color var(--dur-fast),
+    color var(--dur-fast);
+}
+.btn:hover {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.btn:active {
+  background: var(--surface-press);
+}
+/* The one filled button on a surface: its primary action. */
+.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.btn-primary:hover,
+.btn-primary:active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 86%, var(--on-accent));
+  color: var(--on-accent);
+}
+/* No outline until hovered: for secondary actions in a row of buttons. */
+.btn-ghost {
+  border-color: transparent;
+}
+/* A destructive action (delete, revoke). */
+.btn-danger {
+  border-color: var(--status-error);
+  color: var(--status-error-fg);
+}
+.btn-danger:hover {
+  background: var(--status-error-soft);
+  color: var(--status-error-fg);
+}
+.btn-sm {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* A square button that shows only an icon. It needs an aria-label. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-weak);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast),
+    color var(--dur-fast);
+}
+.icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.icon-btn:active {
+  background: var(--surface-press);
+}
+.icon-btn[aria-pressed='true'],
+.icon-btn[aria-checked='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+.icon-btn-lg {
+  width: 32px;
+  height: 32px;
+}
+
+.btn:disabled,
+.btn[aria-disabled='true'],
+.icon-btn:disabled,
+.icon-btn[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* A quiet pill that reports a state and opens something (workspace, account). */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--fg);
+  font: 400 12px/1 var(--font-ui);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast),
+    border-color var(--dur-fast);
+}
+.chip:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+}
+
+/* Inside these the icon is a flex item spaced by `gap`: it takes its full
+   16px and needs none of the room .icon gives up beside loose text. */
+.btn > .icon,
+.icon-btn > .icon,
+.chip > .icon,
+.seg > button > .icon,
+.tab > .icon {
+  margin: 0;
+}
+
+/* These set `display`, which would otherwise beat the `hidden` attribute. */
+.btn[hidden],
+.icon-btn[hidden],
+.chip[hidden],
+.seg[hidden],
+.tabs[hidden] {
+  display: none;
+}
+
+/* ── Fields ───────────────────────────────────────────────────────────── */
+/* Text inputs, number inputs, selects and textareas: a filled well with no
+   outline at rest, an outline on hover, the shared focus ring on focus. */
+.field {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-field);
+  color: var(--fg);
+  font: 400 12px/1.3 var(--font-ui);
+  transition: border-color var(--dur-fast);
+}
+textarea.field {
+  height: auto;
+  padding: 6px 8px;
+  line-height: 1.4;
+  resize: vertical;
+}
+.field:hover {
+  border-color: var(--line-strong);
+}
+.field::placeholder {
+  color: var(--fg-weak);
+  opacity: 1;
+}
+.field:disabled {
+  opacity: 0.5;
+}
+.field[aria-invalid='true'] {
+  border-color: var(--status-error);
+}
+
+/* Anything that shows data rather than a label. */
+.data {
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Switch ───────────────────────────────────────────────────────────── */
+/* Either <input type="checkbox" class="switch"> or
+   <button role="switch" aria-checked class="switch">. */
+.switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast),
+    border-color var(--dur-fast);
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg-weak);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.switch:checked,
+.switch[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.switch:checked::after,
+.switch[aria-checked='true']::after {
+  background: var(--on-accent);
+  transform: translateX(14px);
+}
+.switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Segmented control ────────────────────────────────────────────────── */
+/* A few exclusive choices shown at once: <div class="seg" role="group">
+   holding buttons with aria-pressed (or role="radio" with aria-checked). */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-field);
+}
+.seg > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-weak);
+  font: 400 12px/1 var(--font-ui);
+  cursor: pointer;
+}
+.seg > button:hover {
+  color: var(--fg-strong);
+}
+.seg > button[aria-pressed='true'],
+.seg > button[aria-checked='true'] {
+  background: var(--surface-front);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--fg-strong);
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+/* <div class="tabs" role="tablist"> holding <button class="tab" role="tab">. */
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-weak);
+  font: 500 13px/1 var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab:hover {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.tab[aria-selected='true'] {
+  background: var(--surface-front);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--fg-strong);
+}
+.tab[aria-disabled='true'] {
+  background: transparent;
+  color: var(--fg-weak);
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Small parts ──────────────────────────────────────────────────────── */
+/* A vertical hairline between groups of controls in a bar. */
+.vr {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--line);
+}
+/* A keyboard shortcut shown beside a label. */
+.kbd {
+  color: var(--fg-weak);
+  font: 400 12px/1 var(--font);
+  white-space: nowrap;
+}
+/* A count or state beside a label. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-field);
+  color: var(--fg);
+  font: 500 12px/1 var(--font-ui);
+  white-space: nowrap;
+}
+.badge-accent {
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+.badge-warn {
+  color: var(--status-warn-fg);
+}
+.badge-error {
+  background: var(--status-error-soft);
+  color: var(--status-error-fg);
+}
+/* Secondary text under or beside a control. */
+.hint {
+  color: var(--fg-weak);
+  font: 400 12px/1.4 var(--font-ui);
+}
+/* The label of a group of rows in a panel or dialog. Sentence case. */
+.section-label {
+  margin: 0;
+  color: var(--fg-weak);
+  font: 600 12px/1.3 var(--font-ui);
+}
+/* One item of a list on a panel (a checkpoint, a proposal, a share link). */
+.card {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-front);
+}
+
+/* ── Dialog ───────────────────────────────────────────────────────────── */
+/* The look of a modal: <div class="dialog" role="dialog" aria-modal="true">
+   with a head (title, close button), a body that scrolls, and a foot whose
+   last button is the primary action. The scrim and the layer stay with the
+   surface that opens it. */
+.dialog {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-float);
+  box-shadow: var(--shadow-float);
+  color: var(--fg);
+  font: 400 13px/1.45 var(--font-ui);
+}
+.dialog-head {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  padding: 12px 12px 8px 16px;
+}
+.dialog-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--fg-strong);
+  font: 600 15px/1.3 var(--font-ui);
+}
+.dialog-body {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 16px 16px;
+  overflow: auto;
+}
+.dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: none;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Side panel ───────────────────────────────────────────────────────── */
+/* The head of a panel that slides in or docks beside the canvas. */
+.panel-head {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--fg-strong);
+  font: 600 14px/1.3 var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch::after {
+    transition: none;
+  }
+}

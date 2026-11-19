@@ -74,7 +74,13 @@ starting any of them:
 Work that merged since August came from proposals 0005–0008, 0010, 0011 and
 `futures/hw-catalog.md`, none of which are packets of this plan; see
 `ROADMAP.md` §"Completed historical milestones". Proposal 0009 is
-**Proposed**; if accepted, this plan is re-cut from its packets.
+**Proposed**; if accepted, this plan is re-cut from its packets. Proposal
+0013 (the UI overhaul of the editor chrome) was accepted 2026-11-19 and is
+not a packet series of this plan either: its phases stay in
+[`proposals/0013-ui-overhaul.md`](proposals/0013-ui-overhaul.md). At that
+date its P0 is in progress on draft PR #326 (not merged), and at `3765dc3`
+nothing of its P1–P4 is on that branch; those labels are unrelated to
+proposal 0003's packets P1–P5.
 
 ## How to use this document
 
@@ -700,7 +706,7 @@ existed, and gets a laid-out, validated document.
 | B1     | `TopologyBrief` types aligned with the profile archetypes | Parameter specs on each template (`TemplateParamSpec` in `src/api/templates.ts`). No brief type, and no alignment with `src/profile/features.ts`: its `Archetype` is detected from graph structure and does not map onto the templates (`detectArchetype` reads the three-tier template as `leaf-spine`, and a 4 × 12 spine-leaf fabric as `hub-and-spoke`) |
 | B2     | `compileBrief` for three archetypes                       | `generateTemplate` / `resolveTemplateParams`, copying the SD-WAN generator's contract: defaults and bounds in one resolve step, an error that names the bad field, deterministic output, a `{doc, template, params, stats}` result. Four templates are parametric: `hub-spoke`, `spine-leaf`, `three-tier`, `firewall-dmz`                                  |
 | B3     | New tool `create_from_brief`                              | No new tool. `create_from_template` takes an optional `params` object; `list_templates` returns each template's parameter schema in its result (93 bytes added to the tool list)                                                                                                                                                                            |
-| B4     | "New from brief" wizard                                   | Choosing a parametric template in **＋ template…** opens a parameter dialog (`src/ui/template-wizard.ts`): questions, live preview and counts, Create, Escape. A template without parameters starts as before                                                                                                                                               |
+| B4     | "New from brief" wizard                                   | Choosing a parametric template in **template…** opens a parameter dialog (`src/ui/template-wizard.ts`): questions, live preview and counts, Create, Escape. A template without parameters starts as before                                                                                                                                                  |
 | B5     | More archetypes, SD-WAN first                             | No second SD-WAN generator: `list_templates` returns a `generators` entry pointing to `generate_sdwan_topology`                                                                                                                                                                                                                                             |
 | B6     | Guardrail test over every archetype                       | One test over every template at every parameter value: `validateDocument`, `analyzeLayout` and `inspectPage` report no problems (`src/api/templates.test.ts`). A value that cannot be made clean lowers the parameter's maximum; the test is not loosened                                                                                                   |
 | B7     | Docs, gate, rollout                                       | `USER_GUIDE.md` §10 and §16, `src/mcp/README.md`, `ROADMAP.md`, this section                                                                                                                                                                                                                                                                                |

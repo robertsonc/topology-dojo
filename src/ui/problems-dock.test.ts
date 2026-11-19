@@ -10,7 +10,8 @@ describe('problemsDockView', () => {
     // The header and the status bar still say there is something to see.
     expect(view.count).toBe('1');
     expect(view.severity).toBe('warn');
-    expect(view.statusLabel).toBe('⚠ 1');
+    expect(view.statusIcon).toBe('warning');
+    expect(view.statusLabel).toBe('1');
   });
 
   it("honours the user's choice once they have made one", () => {
@@ -44,7 +45,8 @@ describe('problemsDockView', () => {
   it('says how many problems are hidden, in the header and the status bar', () => {
     const none = problemsDockView({ ...base, hidden: 2 });
     expect(none.hiddenNote).toBe('2 hidden');
-    expect(none.statusLabel).toBe('✓ 2 hidden');
+    expect(none.statusIcon).toBe('check');
+    expect(none.statusLabel).toBe('2 hidden');
     expect(none.statusTitle).toMatch(/2 hidden/);
     expect(none.severity).toBe('none');
 
@@ -56,7 +58,8 @@ describe('problemsDockView', () => {
     });
     expect(some.count).toBe('3');
     expect(some.hiddenNote).toBe('2 hidden');
-    expect(some.statusLabel).toBe('⚠ 3');
+    expect(some.statusIcon).toBe('warning');
+    expect(some.statusLabel).toBe('3');
     expect(some.statusTitle).toBe(
       '1 error, 2 warnings, 2 hidden — open Problems',
     );
@@ -69,7 +72,9 @@ describe('problemsDockView', () => {
       count: '0',
       hiddenNote: '',
       severity: 'none',
-      statusLabel: '✓',
+      // Clean: the check mark alone; the title is its accessible name.
+      statusIcon: 'check',
+      statusLabel: '',
       statusTitle: 'No problems',
     });
   });

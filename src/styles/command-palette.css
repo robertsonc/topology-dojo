@@ -1,0 +1,187 @@
+/* The command palette (Ctrl/Cmd+K): src/ui/command-palette.ts. */
+
+/* The scrim centres the dialog near the top. On a short viewport the gap
+   above it shrinks, and the dialog can never be taller than what is left:
+   the list scrolls inside instead. */
+.cmdk-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: min(96px, 14vh) 16px 16px;
+  background: var(--surface-scrim);
+}
+.cmdk {
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: 100%;
+  overflow: hidden;
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+/* The search field: borderless, with a divider under it. */
+.cmdk-field {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg-weak);
+}
+.cmdk-glass {
+  display: inline-flex;
+  flex: none;
+}
+.cmdk-input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--fg-strong);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+.cmdk-input::placeholder {
+  color: var(--fg-weak);
+  opacity: 1;
+}
+/* Focus never leaves this field while the palette is open, and the dialog
+   would clip a ring drawn around it. In place of the ring the magnifier
+   takes the accent (the editor's other text fields show focus in the accent
+   too), next to the caret. Forced colours get the ring back, below. */
+.cmdk-input:focus-visible {
+  outline: none;
+}
+.cmdk-field:focus-within .cmdk-glass {
+  color: var(--accent);
+}
+
+/* The results. `position: relative` keeps the rows' offsets local. */
+.cmdk-list {
+  position: relative;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 320px;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+/* One highlight for keyboard and pointer alike: there is no :hover rule, the
+   pointer moves the active option (see command-palette.ts). */
+.cmdk-item[aria-selected='true'] {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.cmdk-item[aria-disabled='true'] {
+  color: var(--fg-disabled);
+  cursor: default;
+}
+.cmdk-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-weak);
+}
+/* Title, then the group as a quiet label. A long title is cut with an
+   ellipsis; the group gives way first. */
+.cmdk-main {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.cmdk-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-title mark {
+  background: none;
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+.cmdk-group {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-weak);
+  font-size: 12px;
+}
+.cmdk-group::before {
+  content: '·';
+  margin-right: 6px;
+}
+/* The shortcut: data, so the data face. */
+.cmdk-hint {
+  flex: none;
+  color: var(--fg-weak);
+  font-family: var(--font);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cmdk-item[aria-disabled='true'] mark,
+.cmdk-item[aria-disabled='true'] .cmdk-icon,
+.cmdk-item[aria-disabled='true'] .cmdk-group,
+.cmdk-item[aria-disabled='true'] .cmdk-hint {
+  color: inherit;
+}
+.cmdk-empty {
+  padding: 16px;
+  color: var(--fg-weak);
+  font-size: 13px;
+}
+
+/* Forced colours drop fills and author colours: the active option is
+   outlined instead, and the field shows its focus ring (inside its box, where
+   the dialog does not clip it). */
+@media (forced-colors: active) {
+  .cmdk-item[aria-selected='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .cmdk-input:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
+/* Phones: a field under 16px makes iOS zoom the page when it is focused. */
+@media (max-width: 640px) {
+  .cmdk-input {
+    font-size: 16px;
+  }
+}

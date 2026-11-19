@@ -1,0 +1,166 @@
+/* Menus: menu bar menus, button menus, the context menu (src/ui/menu.ts). */
+
+/* The host of an open menu and its submenus. It has no box of its own: the
+   menus inside are fixed to the viewport. */
+.menu-layer {
+  display: contents;
+}
+/* Focus sentinels at both ends of the layer (see src/ui/menu.ts). They are
+   inert and take no space, but must keep a box: do not hide them. */
+.menu-edge {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+}
+
+.menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  min-width: 232px;
+  max-width: min(360px, calc(100vw - 8px));
+  /* 1px border + 4px padding: MENU_INSET in src/ui/menu.ts. */
+  padding: 4px;
+  /* A menu taller than the viewport is given a max-height and scrolls. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 16px;
+  text-align: left;
+  user-select: none;
+}
+
+.menu-item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* The active item: the one with focus, which is also the one under the
+   pointer (the pointer moves focus, so there is a single highlight and no
+   :hover rule to disagree with it), and the parent of an open submenu.
+   Neutral fill: the accent is for state, not for hover. */
+.menu-item:focus,
+.menu-item[aria-expanded='true'] {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+/* The shared focus ring (base.css), drawn inside the row so the menu's scroll
+   box never clips it. It belongs to the keyboard: while the pointer is what
+   opened the menu or moves focus in it (data-pointer, cleared by the next key
+   press) the fill above is the indicator, and no ring trails the pointer or
+   frames the popup. */
+.menu-item:focus-visible {
+  outline-offset: -2px;
+}
+.menu-layer[data-pointer] .menu:focus-visible,
+.menu-layer[data-pointer] .menu-item:focus-visible {
+  outline: none;
+}
+.menu-item.danger,
+.menu-item.danger:focus {
+  color: var(--status-error-fg);
+}
+/* Forced colours drop the fill, so there an outline marks the active item,
+   whoever moved focus to it. */
+@media (forced-colors: active) {
+  .menu-item:focus,
+  .menu-item[aria-expanded='true'],
+  .menu-layer[data-pointer] .menu-item:focus-visible {
+    outline: 2px solid;
+    outline-offset: -2px;
+  }
+}
+/* Disabled items keep focus (and the ring) but never look active. */
+.menu-item[aria-disabled='true'],
+.menu-item[aria-disabled='true']:focus {
+  background: transparent;
+  color: var(--fg-disabled);
+  cursor: default;
+}
+
+.menu-check,
+.menu-icon,
+.menu-caret {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+.menu-check svg,
+.menu-icon svg,
+.menu-caret svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.menu-check {
+  color: var(--accent);
+}
+.menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-hint {
+  flex: none;
+  padding-left: 16px;
+  color: var(--fg-weak);
+  font-family: var(--font);
+  font-size: 12px;
+}
+/* The submenu arrow's column, at the end of the row. Every row of a menu
+   that has a submenu keeps it (empty), so the hints before it line up. */
+.menu-caret {
+  margin-right: -4px;
+  color: var(--fg-weak);
+}
+.menu-item[aria-disabled='true'] .menu-check,
+.menu-item[aria-disabled='true'] .menu-hint,
+.menu-item[aria-disabled='true'] .menu-caret {
+  color: inherit;
+}
+
+.menu-sep {
+  flex: none;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}
+.menu-group {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+.menu-heading {
+  flex: none;
+  padding: 6px 10px 2px;
+  color: var(--fg-weak);
+  font-size: 12px;
+  font-weight: 600;
+}

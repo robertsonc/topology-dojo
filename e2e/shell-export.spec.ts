@@ -3,7 +3,7 @@
  * with, and every export says how it went.
  */
 import { expect, test, type Download, type Page } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import { bootEditor, expectExported } from './helpers.js';
 
 async function downloadText(download: Download): Promise<string> {
   const stream = await download.createReadStream();
@@ -86,24 +86,23 @@ test('every export in the menu reports how it went', async ({ page }) => {
 
   // A file export: the chip names it, and its tooltip is the file.
   const mermaid = await download(page, () => menu.selectOption('mermaid'));
-  await expect(status).toHaveText('✓ exported mermaid');
-  await expect(status).toHaveClass(/export-ok/);
+  await expectExported(page, 'mermaid');
   await expect(status).toHaveAttribute('title', mermaid.suggestedFilename());
 
   await download(page, () => menu.selectOption('drawio'));
-  await expect(status).toHaveText('✓ exported draw.io');
+  await expectExported(page, 'draw.io');
   await download(page, () => menu.selectOption('vsdx'));
-  await expect(status).toHaveText('✓ exported visio');
+  await expectExported(page, 'visio');
   await download(page, () => menu.selectOption('pptx'));
-  await expect(status).toHaveText('✓ exported pptx');
+  await expectExported(page, 'pptx');
   await download(page, () => menu.selectOption('flipbook'));
-  await expect(status).toHaveText('✓ exported flipbook');
+  await expectExported(page, 'flipbook');
 
   // A slow one shows that it is working, then that it is done.
   const pdf = download(page, () => menu.selectOption('pdf-page'));
-  await expect(status).toHaveText(/… exporting pdf|✓ exported pdf/);
+  await expect(status).toHaveText(/^\s*(exporting|exported) pdf$/);
   await pdf;
-  await expect(status).toHaveText('✓ exported pdf');
+  await expectExported(page, 'pdf');
 
   // A failure replaces the previous export's success, with the reason.
   const alerts: string[] = [];
@@ -112,7 +111,11 @@ test('every export in the menu reports how it went', async ({ page }) => {
     void d.accept();
   });
   await menu.selectOption('svg-selection'); // nothing is selected
-  await expect(status).toHaveText('⚠ selection export failed');
+  await expect(status).toHaveText('selection export failed');
+  await expect(status.locator('.icon use')).toHaveAttribute(
+    'href',
+    '#i-warning',
+  );
   await expect(status).toHaveClass(/export-failed/);
   await expect(status).toHaveAttribute('title', /select one or more nodes/i);
   expect(alerts).toHaveLength(1);

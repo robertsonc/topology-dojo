@@ -5,7 +5,8 @@
  * canvas (art + interaction overlay) and the filmstrip — a hideable overlay
  * floating at the canvas's bottom-left — is re-rendered on page changes.
  */
-// Self-hosted JetBrains Mono (bundled by Vite — no external font fetch at runtime).
+// Self-hosted JetBrains Mono (data, canvas) and Inter (labels), bundled by
+// Vite: no external font fetch at runtime.
 // Latin-only subset: the UI is latin, and the aggregate weight CSS ships six
 // @font-face subsets (cyrillic/greek/vietnamese/…) per weight, bloating the
 // deployed bundle 6x for glyphs this app never draws.
@@ -14,6 +15,9 @@ import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-500.css';
 import '@fontsource/jetbrains-mono/latin-600.css';
 import '@fontsource/jetbrains-mono/latin-700.css';
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter/latin-600.css';
 import { Editor, type InlineEditRequest } from './editor/editor.js';
 import { clientToUser } from './editor/coords.js';
 import {
@@ -90,6 +94,7 @@ import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
 import { mountAdminDashboard } from './ui/admin-dashboard.js';
 import { overlayActive, registerOverlay } from './ui/overlay.js';
+import { icon, iconSprite, type IconName } from './ui/icons.js';
 import { nodeLabelNudge, linkLabelNudge } from './ui/label-position.js';
 import type { LabelPlacement } from './render/label-placement.js';
 import {
@@ -167,6 +172,7 @@ import {
   type NodeTypeInfo,
 } from './api/catalog.js';
 import { SHARE_PUBLIC_WARNING } from './share/copy.js';
+import { readableInkOn } from './ui/contrast.js';
 
 // Restore the last session from localStorage, else start from the sample.
 const restoredDoc = loadLocal();
@@ -191,6 +197,10 @@ app.innerHTML = `
        width/height 0 + position:absolute + aria-hidden rather than display:none,
        which would break paint-server resolution in several browsers. -->
   <svg id="tds-defs-sprite" class="svg-defs-sprite" width="0" height="0" aria-hidden="true" focusable="false"></svg>
+  <!-- The chrome's icon symbols (src/ui/icons.ts), mounted once by the same
+       rules: every icon in the shell, the panels and the dialogs is a
+       <use href="#i-…"> that resolves here. -->
+  <svg id="ui-icon-sprite" class="svg-defs-sprite" width="0" height="0" aria-hidden="true" focusable="false">${iconSprite()}</svg>
   <header class="bar scroll-slim">
     <div class="bar-left">
       <span class="brand" title="Topology Dojo">
@@ -214,15 +224,15 @@ app.innerHTML = `
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn ticon" id="tUndo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">↶</button>
-        <button class="tbtn ticon" id="tRedo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">↷</button>
+        <button class="tbtn ticon" id="tUndo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">${icon('undo')}</button>
+        <button class="tbtn ticon" id="tRedo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">${icon('redo')}</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
         <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
         <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
         <select class="tbtn" id="fExport" title="More export formats" aria-label="More export formats">
-          <option value="">⤓ export…</option>
+          <option value="">export…</option>
           <option value="pdf-page">PDF — current frame</option>
           <option value="pdf-all">PDF — all frames</option>
           <option value="flipbook">Flipbook HTML — all frames</option>
@@ -246,36 +256,36 @@ app.innerHTML = `
     </div>
     <div class="bar-right">
       <div class="tgroup">
-        <button class="tbtn on" id="tSelect" title="Select/move tool (V)" aria-label="Select/move tool">⤧<span class="tlabel">select</span></button>
-        <button class="tbtn" id="tLink" title="Draw link tool (L)" aria-label="Draw link tool">🔗<span class="tlabel">link</span></button>
-        <button class="tbtn" id="tAnchor" title="Drop anchor tool (A) — free-floating link endpoints" aria-label="Drop anchor tool">◇<span class="tlabel">anchor</span></button>
+        <button class="tbtn on" id="tSelect" title="Select/move tool (V)" aria-label="Select/move tool">${icon('tool-select')}<span class="tlabel">select</span></button>
+        <button class="tbtn" id="tLink" title="Draw link tool (L)" aria-label="Draw link tool">${icon('tool-link')}<span class="tlabel">link</span></button>
+        <button class="tbtn" id="tAnchor" title="Drop anchor tool (A) — free-floating link endpoints" aria-label="Drop anchor tool">${icon('anchor')}<span class="tlabel">anchor</span></button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn ticon on" id="tGrid" title="Toggle grid (R)" aria-label="Toggle grid">▦</button>
-        <button class="tbtn ticon on" id="tSnap" title="Toggle snap (G)" aria-label="Toggle snap">⌗</button>
-        <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)" aria-label="Calm canvas — pause animations">◓</button>
-        <button class="tbtn ticon on" id="tBadges" title="Toggle on-canvas problem badges" aria-label="Toggle on-canvas problem badges">⚠</button>
-        <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient, glass" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">⚙</button>
-        <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">☀</button>
-        <button class="tbtn ticon" id="tFit" title="Fit view (0)" aria-label="Fit view">⤢</button>
-        <button class="tbtn ticon" id="tPresent" title="Present — full-screen playback of all frames" aria-label="Present full-screen">▶</button>
-        <button class="tbtn ticon" id="tHelp" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
+        <button class="tbtn ticon on" id="tGrid" title="Toggle grid (R)" aria-label="Toggle grid">${icon('grid')}</button>
+        <button class="tbtn ticon on" id="tSnap" title="Toggle snap (G)" aria-label="Toggle snap">${icon('snap')}</button>
+        <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)" aria-label="Calm canvas — pause animations">${icon('calm')}</button>
+        <button class="tbtn ticon on" id="tBadges" title="Toggle on-canvas problem badges" aria-label="Toggle on-canvas problem badges">${icon('badges')}</button>
+        <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">${icon('settings')}</button>
+        <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">${icon('sun')}</button>
+        <button class="tbtn ticon" id="tFit" title="Fit view (0)" aria-label="Fit view">${icon('fit-view')}</button>
+        <button class="tbtn ticon" id="tPresent" title="Present — full-screen playback of all frames" aria-label="Present full-screen">${icon('present')}</button>
+        <button class="tbtn ticon" id="tHelp" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
       </div>
       <span class="bar-div"></span>
       <div class="tgroup">
-        <button class="tbtn" id="tDelete" title="Delete selection (Del)" aria-label="Delete selection">🗑<span class="tlabel">delete</span></button>
-        <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)" aria-label="Tidy layout">✦<span class="tlabel">tidy</span></button>
-        <button class="tbtn" id="tBalance" title="Balance layout — align rows/columns + centre (Shift+T)" aria-label="Balance layout">⚖<span class="tlabel">balance</span></button>
+        <button class="tbtn" id="tDelete" title="Delete selection (Del)" aria-label="Delete selection">${icon('delete')}<span class="tlabel">delete</span></button>
+        <button class="tbtn" id="tTidy" title="Tidy layout — grid-snap + de-overlap (T)" aria-label="Tidy layout">${icon('tidy')}<span class="tlabel">tidy</span></button>
+        <button class="tbtn" id="tBalance" title="Balance layout — align rows/columns + centre (Shift+T)" aria-label="Balance layout">${icon('balance')}<span class="tlabel">balance</span></button>
         <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm" aria-label="Auto-arrange with a layout algorithm">
-          <option value="">⤢ arrange…</option>
+          <option value="">arrange…</option>
           <option value="hierarchical">hierarchical</option>
           <option value="grid">grid</option>
           <option value="circular">circular</option>
           <option value="force">force-directed</option>
         </select>
         <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion" aria-label="Select nodes by a criterion">
-          <option value="">⛶ select…</option>
+          <option value="">select…</option>
           <option value="type">same type</option>
           <option value="color">same color</option>
           <option value="connected">connected (grow)</option>
@@ -284,21 +294,21 @@ app.innerHTML = `
         </select>
       </div>
       <span class="align-group" id="alignGroup" hidden>
-        <button class="tbtn ab" data-align="left" title="Align left" aria-label="Align left">⇤</button>
-        <button class="tbtn ab" data-align="centerH" title="Align centers (h)" aria-label="Align horizontal centers">⇔</button>
-        <button class="tbtn ab" data-align="right" title="Align right" aria-label="Align right">⇥</button>
-        <button class="tbtn ab" data-align="top" title="Align top" aria-label="Align top">⤒</button>
-        <button class="tbtn ab" data-align="middleV" title="Align middles (v)" aria-label="Align vertical middles">⇕</button>
-        <button class="tbtn ab" data-align="bottom" title="Align bottom" aria-label="Align bottom">⤓</button>
-        <button class="tbtn ab" data-dist="h" title="Distribute horizontally" aria-label="Distribute horizontally" disabled>↔̲</button>
-        <button class="tbtn ab" data-dist="v" title="Distribute vertically" aria-label="Distribute vertically" disabled>↕̲</button>
+        <button class="tbtn ab" data-align="left" title="Align left" aria-label="Align left">${icon('align-left')}</button>
+        <button class="tbtn ab" data-align="centerH" title="Align centers (h)" aria-label="Align horizontal centers">${icon('align-center')}</button>
+        <button class="tbtn ab" data-align="right" title="Align right" aria-label="Align right">${icon('align-right')}</button>
+        <button class="tbtn ab" data-align="top" title="Align top" aria-label="Align top">${icon('align-top')}</button>
+        <button class="tbtn ab" data-align="middleV" title="Align middles (v)" aria-label="Align vertical middles">${icon('align-middle')}</button>
+        <button class="tbtn ab" data-align="bottom" title="Align bottom" aria-label="Align bottom">${icon('align-bottom')}</button>
+        <button class="tbtn ab" data-dist="h" title="Distribute horizontally" aria-label="Distribute horizontally" disabled>${icon('distribute-h')}</button>
+        <button class="tbtn ab" data-dist="v" title="Distribute vertically" aria-label="Distribute vertically" disabled>${icon('distribute-v')}</button>
       </span>
       <span class="bar-div" id="workspaceDiv" hidden></span>
       <button class="tbtn workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot" aria-hidden="true"></span><span id="workspaceLabel">agent · local</span></button>
       <button class="tbtn" id="profileChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Authoring Preferences" hidden>prefs</button>
       <button class="tbtn" id="adminChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Admin dashboard" hidden>admin</button>
       <span class="bar-div" id="userDiv" hidden></span>
-      <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" aria-label="Account menu" hidden><span class="uc-dot" aria-hidden="true">●</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">▾</span></button>
+      <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" aria-label="Account menu" hidden><span class="uc-dot" aria-hidden="true">${icon('account')}</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">${icon('chevron-down')}</span></button>
     </div>
   </header>
 
@@ -315,11 +325,11 @@ app.innerHTML = `
   <div class="stage">
     <div class="canvas-area" id="canvas-area">
       <aside class="palette" id="palette">
-        <button class="palette-toggle" id="palette-toggle" title="Hide node library (B)">nodes ◂</button>
+        <button class="palette-toggle" id="palette-toggle" title="Hide node library (B)">nodes ${icon('panel-left-close')}</button>
         <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
         <div class="palette-list scroll-slim" id="palette-list"></div>
         <div class="minimap-dock" id="minimap-dock">
-          <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">map ▾</button>
+          <button class="minimap-toggle" id="minimap-toggle" title="Hide minimap (M)">map ${icon('chevron-down')}</button>
           <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
       </aside>
@@ -336,24 +346,24 @@ app.innerHTML = `
            row while both fit; otherwise the controls sit above the strip. -->
       <div class="canvas-dock" id="canvas-dock">
         <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
-          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="Hide frames (F)">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">◂</span></button>
+          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="Hide frames (F)">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
           <div class="frames-reveal">
             <div class="filmstrip scroll-slim" id="filmstrip"></div>
           </div>
         </div>
         <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Canvas view">
-          <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">✋</button>
-          <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+          <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">${icon('hand')}</button>
+          <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
           <button class="cc-btn cc-zoom" id="ccZoom" title="Fit view (0)" aria-label="Zoom level — fit view">100%</button>
-          <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
-          <button class="cc-btn" id="ccFit" title="Fit to content (0)" aria-label="Fit to content">⤢</button>
+          <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
+          <button class="cc-btn" id="ccFit" title="Fit to content (0)" aria-label="Fit to content">${icon('fit-view')}</button>
         </div>
       </div>
     </div>
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
       <div class="inspector-col">
-        <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ▸</button>
+        <button class="inspector-toggle" id="inspector-toggle" title="Hide properties (P)">hide ${icon('panel-right-close')}</button>
         <div class="inspector-body" id="inspector-body">
           <aside class="inspector scroll-slim" id="inspector"></aside>
         </div>
@@ -362,7 +372,7 @@ app.innerHTML = `
             <span class="pt-label">Problems</span>
             <span class="prob-count" id="prob-count">0</span>
             <span class="prob-hidden-note" id="prob-hidden-note"></span>
-            <span class="pt-chev" aria-hidden="true">▸</span>
+            <span class="pt-chev" aria-hidden="true">${icon('chevron-right')}</span>
           </button>
           <div class="problems scroll-slim" id="problems"></div>
         </div>
@@ -778,7 +788,7 @@ function miniBarHtml(kind: 'node' | 'link'): string {
     (c) =>
       `<button class="mb-sw" data-mbcolor="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}"></button>`,
   ).join('');
-  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this frame" aria-label="Emphasize on this frame">★</button>`;
+  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this frame" aria-label="Emphasize on this frame">${icon('star')}</button>`;
   if (kind === 'link') {
     const info = editor.selectedLinkInfo();
     const typeOpts = linkCatalog()
@@ -1235,7 +1245,7 @@ const pngBtn = app.querySelector<HTMLButtonElement>('#fPng');
  * reader: the chip is a polite live region). */
 function reportExport(kind: string, state: ExportState, detail?: string): void {
   const report = exportReport(kind, state, detail);
-  exportStatus.textContent = report.message;
+  exportStatus.innerHTML = `${icon(report.icon)} ${esc(report.message)}`;
   exportStatus.title = report.detail;
   exportStatus.classList.toggle('export-ok', state === 'ok');
   exportStatus.classList.toggle('export-pending', state === 'pending');
@@ -1459,7 +1469,7 @@ exportSel.addEventListener('change', () => {
 /* New from a starter template. */
 const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
 templateSel.innerHTML =
-  `<option value="">＋ template…</option>` +
+  `<option value="">template…</option>` +
   listTemplates()
     .map(
       (t) =>
@@ -1654,10 +1664,10 @@ let problemsView = problemsDockView({
   collapsedPref: null,
 });
 function statusProblemsHTML(): string {
-  const { severity, statusLabel, statusTitle } = problemsView;
+  const { severity, statusIcon, statusLabel, statusTitle } = problemsView;
   const cls =
     severity === 'error' ? 'has-error' : severity === 'warn' ? 'has-warn' : '';
-  return `<button class="sb-problems ${cls}" id="sb-problems" title="${esc(statusTitle)}" aria-label="${esc(statusTitle)}">${esc(statusLabel)}</button>`;
+  return `<button class="sb-problems ${cls}" id="sb-problems" title="${esc(statusTitle)}" aria-label="${esc(statusTitle)}">${icon(statusIcon)}${statusLabel ? ` ${esc(statusLabel)}` : ''}</button>`;
 }
 function renderStatus(): void {
   if (!statusReady) return; // editor / statusbar not wired yet
@@ -1764,7 +1774,7 @@ const minimapDock = app.querySelector<HTMLDivElement>('#minimap-dock')!;
 const minimapToggle = app.querySelector<HTMLButtonElement>('#minimap-toggle')!;
 function setMinimapCollapsed(collapsed: boolean): void {
   minimapDock.classList.toggle('collapsed', collapsed);
-  minimapToggle.textContent = collapsed ? 'map ▸' : 'map ▾';
+  minimapToggle.innerHTML = `map ${icon(collapsed ? 'chevron-right' : 'chevron-down')}`;
   minimapToggle.title = collapsed ? 'Show minimap (M)' : 'Hide minimap (M)';
   try {
     localStorage.setItem('tds-minimap-collapsed', collapsed ? '1' : '0');
@@ -1782,7 +1792,7 @@ const paletteEl = app.querySelector<HTMLElement>('#palette')!;
 const paletteToggle = app.querySelector<HTMLButtonElement>('#palette-toggle')!;
 function setPaletteCollapsed(collapsed: boolean, persist = true): void {
   paletteEl.classList.toggle('collapsed', collapsed);
-  paletteToggle.textContent = collapsed ? 'nodes ▸' : 'nodes ◂';
+  paletteToggle.innerHTML = `nodes ${icon(collapsed ? 'panel-left-open' : 'panel-left-close')}`;
   paletteToggle.title = collapsed
     ? 'Show node library (B)'
     : 'Hide node library (B)';
@@ -1805,7 +1815,7 @@ function setFramesCollapsed(collapsed: boolean): void {
   framesDock.classList.toggle('collapsed', collapsed);
   framesToggle.setAttribute('aria-expanded', String(!collapsed));
   const chev = framesToggle.querySelector('.frames-chev');
-  if (chev) chev.textContent = collapsed ? '▸' : '◂';
+  if (chev) chev.innerHTML = icon(collapsed ? 'chevron-right' : 'chevron-left');
   framesToggle.title = collapsed ? 'Show frames (F)' : 'Hide frames (F)';
   try {
     localStorage.setItem('tds-frames-collapsed', collapsed ? '1' : '0');
@@ -2027,7 +2037,7 @@ function applyProblemsCollapsed(collapsed: boolean): void {
   problemsDock.classList.toggle('collapsed', collapsed);
   problemsToggle.setAttribute('aria-expanded', String(!collapsed));
   const chev = problemsToggle.querySelector('.pt-chev');
-  if (chev) chev.textContent = collapsed ? '▸' : '▾';
+  if (chev) chev.innerHTML = icon(collapsed ? 'chevron-right' : 'chevron-down');
 }
 function setProblemsCollapsed(collapsed: boolean): void {
   problemsPref = collapsed;
@@ -2085,7 +2095,7 @@ function renderProblems(): void {
         `<span class="prob-dot"></span>` +
         `<span class="prob-msg">${esc(text.message)}<span class="prob-where">${esc(text.where)}</span></span>` +
         `</button>` +
-        `<button class="prob-hide" data-hide="${i}" title="${isHidden ? 'Show this problem again' : 'Hide this problem (it stays in validation)'}" aria-label="${isHidden ? 'Show this problem again' : 'Hide this problem'}">${isHidden ? '↺' : '✕'}</button>` +
+        `<button class="prob-hide" data-hide="${i}" title="${isHidden ? 'Show this problem again' : 'Hide this problem (it stays in validation)'}" aria-label="${isHidden ? 'Show this problem again' : 'Hide this problem'}">${icon(isHidden ? 'eye' : 'eye-off')}</button>` +
         `</div>`
       );
     })
@@ -2250,7 +2260,9 @@ const inspectorToggle =
   app.querySelector<HTMLButtonElement>('#inspector-toggle')!;
 function setInspectorCollapsed(collapsed: boolean, persist = true): void {
   inspectorWrap.classList.toggle('collapsed', collapsed);
-  inspectorToggle.textContent = collapsed ? 'props ◂' : 'hide ▸';
+  inspectorToggle.innerHTML = collapsed
+    ? `props ${icon('panel-right-open')}`
+    : `hide ${icon('panel-right-close')}`;
   inspectorToggle.title = collapsed
     ? 'Show properties (P)'
     : 'Hide properties (P)';
@@ -2438,16 +2450,16 @@ function colorRow(label: string, hex: string, swatches: string): string {
  * compass codes; the centre cell is "auto" (clears the field). Enum fields
  * store the code itself (node labelPlacement); point fields (link
  * labelOffset) store the preset offset for that cell instead. */
-const COMPASS_CELLS: readonly (readonly [code: string, glyph: string])[] = [
-  ['nw', '↖'],
-  ['n', '↑'],
-  ['ne', '↗'],
-  ['w', '←'],
-  ['', '·'],
-  ['e', '→'],
-  ['sw', '↙'],
-  ['s', '↓'],
-  ['se', '↘'],
+const COMPASS_CELLS: readonly (readonly [code: string, icon: IconName])[] = [
+  ['nw', 'arrow-up-left'],
+  ['n', 'arrow-up'],
+  ['ne', 'arrow-up-right'],
+  ['w', 'arrow-left'],
+  ['', 'dot'],
+  ['e', 'arrow-right'],
+  ['sw', 'arrow-down-left'],
+  ['s', 'arrow-down'],
+  ['se', 'arrow-down-right'],
 ];
 const COMPASS_TITLES: Readonly<Record<string, string>> = {
   nw: 'Above left',
@@ -2497,8 +2509,8 @@ function compassControl(
 ): string {
   const cur = compassCodeOf(f, v);
   const cells = COMPASS_CELLS.map(
-    ([code, glyph]) =>
-      `<button type="button" class="cc${code === cur ? ' on' : ''}" data-cval="${code}" title="${COMPASS_TITLES[code]}${code ? ' — click to place; double-click to nudge 1 unit' : ' — reset placement and fine tuning'}" aria-label="${COMPASS_TITLES[code]}" aria-pressed="${code === cur}">${glyph}</button>`,
+    ([code, cellIcon]) =>
+      `<button type="button" class="cc${code === cur ? ' on' : ''}" data-cval="${code}" title="${COMPASS_TITLES[code]}${code ? ' — click to place; double-click to nudge 1 unit' : ' — reset placement and fine tuning'}" aria-label="${COMPASS_TITLES[code]}" aria-pressed="${code === cur}">${icon(cellIcon)}</button>`,
   ).join('');
   return (
     `<div class="insp-row"><span>${f.label}</span>` +
@@ -2508,23 +2520,41 @@ function compassControl(
 }
 
 /**
+ * A mark inside a field label (nested under its parent, drives motion): the
+ * label's 11px text takes a smaller icon than a button does.
+ */
+function labelMark(name: IconName): string {
+  return icon(name, { size: 12 });
+}
+
+/**
  * Row class for a field: labels too long for the label column stack above
  * their control instead of wrapping into three cramped lines.
  */
-function rowClass(f: FieldSpec): string {
-  return f.label.length > 16 ? 'insp-row col' : 'insp-row';
+function rowClass(f: FieldSpec, nested = false): string {
+  // A nested field's mark takes about two characters of the label column.
+  const length = f.label.length + (nested ? 2 : 0);
+  return length > 16 ? 'insp-row col' : 'insp-row';
 }
 
-/** A control for one catalog field, bound to the element's current value. */
-function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
+/**
+ * A control for one catalog field, bound to the element's current value.
+ * `nested` marks a sub-field of an object field, shown under its parent.
+ */
+function fieldControl(
+  f: FieldSpec,
+  cfg: Record<string, unknown>,
+  nested = false,
+): string {
   const v = cfg[f.key];
   if (f.widget === 'compass') return compassControl(f, v, 'data-key');
-  const row = rowClass(f);
+  const row = rowClass(f, nested);
+  const label = nested ? `${labelMark('nested')} ${f.label}` : f.label;
   switch (f.kind) {
     case 'boolean':
-      return `<label class="insp-row"><span>${f.label}${f.animation ? ' ⟳' : ''}</span><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}/></label>`;
+      return `<label class="insp-row"><span>${label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}/></label>`;
     case 'enum':
-      return `<label class="${row}"><span>${f.label}</span><select data-key="${f.key}">${(
+      return `<label class="${row}"><span>${label}</span><select data-key="${f.key}">${(
         f.options ?? []
       )
         .map(
@@ -2534,7 +2564,7 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         .join('')}</select></label>`;
     case 'color':
       return colorRow(
-        f.label,
+        label,
         hexInput(
           `data-key="${f.key}" data-kind="color"`,
           v as string | undefined,
@@ -2542,35 +2572,32 @@ function fieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         swatchRow(f.key, v as string | undefined),
       );
     case 'number':
-      return `<label class="${row}"><span>${f.label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
+      return `<label class="${row}"><span>${label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
     case 'object': {
       // An enable switch on the field itself (checked = the object present,
       // at its defaults), then its nested fields as dotted keys
       // ("linkAttach.pad") that fieldPatch merges back into the object.
       const on = typeof v === 'object' && v !== null;
       const sub = on ? (v as Record<string, unknown>) : {};
-      let html = `<label class="${row}"><span>${f.label}</span><input type="checkbox" data-key="${f.key}" data-kind="object" ${on ? 'checked' : ''}/></label>`;
+      let html = `<label class="${row}"><span>${label}</span><input type="checkbox" data-key="${f.key}" data-kind="object" ${on ? 'checked' : ''}/></label>`;
       if (on)
         for (const s of f.fields ?? []) {
           const key = `${f.key}.${s.key}`;
-          html += fieldControl(
-            { ...s, key, label: `↳ ${s.label}` },
-            { [key]: sub[s.key] },
-          );
+          html += fieldControl({ ...s, key }, { [key]: sub[s.key] }, true);
         }
       return html;
     }
     case 'point':
     case 'points':
-      return `<div class="insp-row"><span>${f.label}</span><span class="insp-val">${Array.isArray(v) ? v.length : 0} pt</span></div>`;
+      return `<div class="insp-row"><span>${label}</span><span class="insp-val">${Array.isArray(v) ? v.length : 0} pt</span></div>`;
     case 'record':
       return ''; // rendered by the dedicated metadata editor
     default:
       // Long-form strings (callout / text `body`) get a stacked textarea so
       // newlines survive; wireFields treats it like any other text control.
       if (f.multiline)
-        return `<label class="insp-row col"><span>${f.label}</span><textarea data-key="${f.key}" rows="4"${f.max ? ` maxlength="${f.max}"` : ''} spellcheck="true">${esc(String(v ?? ''))}</textarea></label>`;
-      return `<label class="${row}"><span>${f.label}</span><input data-key="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
+        return `<label class="insp-row col"><span>${label}</span><textarea data-key="${f.key}" rows="4"${f.max ? ` maxlength="${f.max}"` : ''} spellcheck="true">${esc(String(v ?? ''))}</textarea></label>`;
+      return `<label class="${row}"><span>${label}</span><input data-key="${f.key}" value="${esc(String(v ?? ''))}"/></label>`;
   }
 }
 
@@ -2618,7 +2645,7 @@ function metaHtml(meta?: Record<string, string | number | boolean>): string {
         `<div class="meta-row" data-mk="${esc(k)}">` +
         `<input class="meta-k" value="${esc(k)}" readonly />` +
         `<input class="meta-v" value="${esc(String(v))}" />` +
-        `<button class="meta-x" title="Remove" aria-label="Remove metadata ${esc(k)}">✕</button></div>`,
+        `<button class="meta-x" title="Remove" aria-label="Remove metadata ${esc(k)}">${icon('x')}</button></div>`,
     )
     .join('');
   return (
@@ -2627,7 +2654,7 @@ function metaHtml(meta?: Record<string, string | number | boolean>): string {
     `<div class="meta-row meta-add">` +
     `<input class="meta-nk" placeholder="key" />` +
     `<input class="meta-nv" placeholder="value" />` +
-    `<button class="meta-addbtn" title="Add" aria-label="Add metadata entry">＋</button></div>`
+    `<button class="meta-addbtn" title="Add" aria-label="Add metadata entry">${icon('plus')}</button></div>`
   );
 }
 
@@ -2858,7 +2885,7 @@ function propertiesHtml(): string {
     `<div class="insp-row"><span>Canvas</span><span class="insp-pair">` +
     `<input type="number" id="p-w" min="1" value="${w || 0}" aria-label="Canvas width" title="Width"/>` +
     `<input type="number" id="p-h" min="1" value="${h || 0}" aria-label="Canvas height" title="Height"/></span></div>` +
-    `<div class="insp-row"><span>Size</span><span class="insp-btns"><button class="tbtn ab" id="p-fit" title="Resize the page to wrap all content (Tidy/Balance grow it automatically)">⤢ fit to content</button></span></div>` +
+    `<div class="insp-row"><span>Size</span><span class="insp-btns"><button class="tbtn ab" id="p-fit" title="Resize the page to wrap all content (Tidy/Balance grow it automatically)">${icon('fit-page')} fit to content</button></span></div>` +
     `<div class="insp-h">Playback</div>` +
     `<label class="insp-row"><span>Hold (ms)</span><input type="number" id="p-dur" min="100" step="100" placeholder="${DEFAULT_PAGE_DURATION}" value="${page.duration ?? ''}"/></label>` +
     `<label class="insp-row"><span>Transition</span><select id="p-tr">` +
@@ -2952,17 +2979,18 @@ function layersHtml(): string {
       const op = Math.round((l.opacity ?? 1) * 100);
       return (
         `<div class="layer-row" data-li="${i}">` +
-        `<button class="layer-eye" data-li="${i}" title="Show / hide layer" aria-label="${vis ? 'Hide' : 'Show'} layer ${esc(l.name ?? l.id)}" aria-pressed="${vis}">${vis ? '👁' : '🚫'}</button>` +
+        `<button class="layer-eye" data-li="${i}" title="Show / hide layer" aria-label="${vis ? 'Hide' : 'Show'} layer ${esc(l.name ?? l.id)}" aria-pressed="${vis}">${icon(vis ? 'eye' : 'eye-off')}</button>` +
         `<span class="layer-name">${esc(l.name ?? l.id)}</span>` +
         `<input class="layer-op" data-li="${i}" type="range" min="0" max="100" step="5" value="${op}" title="Layer opacity (${op}%)" aria-label="Opacity of layer ${esc(l.name ?? l.id)}"/>` +
         `</div>`
       );
     })
     .join('');
+  // The plus is an icon, which a screen reader skips: the name says "Add".
   return (
     `<div class="insp-h">Layers</div>` +
     (rows || `<div class="insp-hint">No layers declared.</div>`) +
-    `<button class="insp-btn" id="p-layer-add">＋ Layer</button>`
+    `<button class="insp-btn" id="p-layer-add" aria-label="Add layer">${icon('plus')} Layer</button>`
   );
 }
 
@@ -3331,9 +3359,9 @@ function renderInspector(): void {
       typeRow(link.type, linkCatalog()) +
       endpointRow('from', link.from, link.to) +
       endpointRow('to', link.to, link.from) +
-      `<div class="insp-row"><span>Endpoints</span><span class="insp-btns"><button class="tbtn ab" id="i-swap" title="Swap from/to">⇄ swap</button>${
+      `<div class="insp-row"><span>Endpoints</span><span class="insp-btns"><button class="tbtn ab" id="i-swap" title="Swap from/to">${icon('reverse')} swap</button>${
         editor.selectedLinkHasBends()
-          ? `<button class="tbtn ab" id="i-straighten" title="Clear bends — straight line">╱ straighten</button>`
+          ? `<button class="tbtn ab" id="i-straighten" title="Clear bends — straight line">${icon('slash')} straighten</button>`
           : ''
       }</span></div>` +
       groupedFieldsHtml(info, link as Record<string, unknown>, LINK_GROUPS) +
@@ -3347,7 +3375,7 @@ function renderInspector(): void {
       `<input type="number" id="a-x" value="${anchor.x}" aria-label="Anchor x" title="X"/>` +
       `<input type="number" id="a-y" value="${anchor.y}" aria-label="Anchor y" title="Y"/></span></div>` +
       `<div class="insp-row"><span>Links</span><span class="insp-val">${editor.anchorLinkCount(anchor.id)}</span></div>` +
-      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button class="tbtn ab" id="a-del" title="Delete anchor">🗑 delete</button></span></div>`;
+      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button class="tbtn ab" id="a-del" title="Delete anchor">${icon('delete')} delete</button></span></div>`;
   } else if (zone) {
     // A zone region was clicked on canvas — edit it directly (the same control
     // surface as the annotations list, wired by wireAnnotations()).
@@ -3359,7 +3387,7 @@ function renderInspector(): void {
       html +=
         `<div class="insp-h">Selection (${editor.selectionCount()} nodes)</div>` +
         (canAnalyzePath()
-          ? `<div class="insp-row"><span>Path</span><span class="insp-btns"><button class="tbtn ab" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">⇢ analyze path</button></span></div>`
+          ? `<div class="insp-row"><span>Path</span><span class="insp-btns"><button class="tbtn ab" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">${icon('route')} analyze path</button></span></div>`
           : '') +
         formatRow();
     // Nothing (singly) selected — show document + page properties.
@@ -3514,7 +3542,7 @@ function endpointRow(
   const anchors = p.anchors.filter((a) => a.id !== other);
   let opts = nodes.map((n) => opt(n.id, n.text)).join('');
   if (anchors.length)
-    opts += `<optgroup label="Anchors">${anchors.map((a) => opt(a.id, `⌖ ${a.id}`)).join('')}</optgroup>`;
+    opts += `<optgroup label="Anchors">${anchors.map((a) => opt(a.id, a.id)).join('')}</optgroup>`;
   // A dangling reference still shows (and stays selected) so it can be fixed.
   if (
     !p.nodes.some((n) => n.id === current) &&
@@ -3532,10 +3560,10 @@ function endpointRow(
 function arrangeRow(): string {
   return (
     `<div class="insp-row"><span>Arrange</span><span class="arrange">` +
-    `<button class="tbtn ab" data-z="back" title="Send to back ([Ctrl+[)" aria-label="Send to back">⤓⤓</button>` +
-    `<button class="tbtn ab" data-z="backward" title="Send backward ([)" aria-label="Send backward">⤓</button>` +
-    `<button class="tbtn ab" data-z="forward" title="Bring forward (])" aria-label="Bring forward">⤒</button>` +
-    `<button class="tbtn ab" data-z="front" title="Bring to front (Ctrl+])" aria-label="Bring to front">⤒⤒</button>` +
+    `<button class="tbtn ab" data-z="back" title="Send to back ([Ctrl+[)" aria-label="Send to back">${icon('send-to-back')}</button>` +
+    `<button class="tbtn ab" data-z="backward" title="Send backward ([)" aria-label="Send backward">${icon('arrow-down')}</button>` +
+    `<button class="tbtn ab" data-z="forward" title="Bring forward (])" aria-label="Bring forward">${icon('arrow-up')}</button>` +
+    `<button class="tbtn ab" data-z="front" title="Bring to front (Ctrl+])" aria-label="Bring to front">${icon('bring-to-front')}</button>` +
     `</span></div>`
   );
 }
@@ -3545,8 +3573,8 @@ function arrangeRow(): string {
 function formatRow(): string {
   return (
     `<div class="insp-row"><span>Format</span><span class="insp-btns">` +
-    `<button class="tbtn ab" id="i-copyfmt" title="Copy format (Ctrl/Cmd+Alt+C)"${editor.canCopyFormat() ? '' : ' disabled'}>⧉ copy</button>` +
-    `<button class="tbtn ab" id="i-pastefmt" title="Paste format (Ctrl/Cmd+Alt+V)"${editor.canPasteFormat() ? '' : ' disabled'}>⤹ paste</button>` +
+    `<button class="tbtn ab" id="i-copyfmt" title="Copy format (Ctrl/Cmd+Alt+C)"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} copy</button>` +
+    `<button class="tbtn ab" id="i-pastefmt" title="Paste format (Ctrl/Cmd+Alt+V)"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} paste</button>` +
     `</span></div>`
   );
 }
@@ -3775,30 +3803,44 @@ function aswatchRow(key: string, current: string | undefined): string {
   );
 }
 
-/** Human label for a waypoint/member ref (node label, anchor id, or raw id). */
+/** Whether a waypoint/member ref points at a free-floating anchor. */
+function isAnchorRef(id: string): boolean {
+  return editor.page.anchors.some((a) => a.id === id);
+}
+
+/**
+ * Human label for a waypoint/member ref, as plain text for accessible names:
+ * the node's label, "anchor <id>", or the raw id.
+ */
 function endpointLabel(id: string): string {
   const n = editor.page.nodes.find((m) => m.id === id);
   if (n) {
     const label = (n as { label?: unknown }).label;
     return typeof label === 'string' && label ? label : n.id;
   }
-  if (editor.page.anchors.some((a) => a.id === id)) return `⚓ ${id}`;
+  if (isAnchorRef(id)) return `anchor ${id}`;
   return id; // dangling ref — surface the id so it can be fixed
 }
 
 /** One removable, reorderable chip in a refs editor. */
 function refChip(id: string): string {
+  const name = esc(endpointLabel(id));
+  // An anchor shows its icon and id; its accessible names spell it out. The
+  // icon is 14px, the height of the label's line, which clips its overflow.
+  const shown = isAnchorRef(id)
+    ? `${icon('anchor', { size: 14 })} ${esc(id)}`
+    : name;
   return (
     `<span class="refchip" data-id="${esc(id)}">` +
-    `<button type="button" class="refmv" data-refmove="-1" title="Move earlier" aria-label="Move ${esc(endpointLabel(id))} earlier">‹</button>` +
-    `<span class="reflbl">${esc(endpointLabel(id))}</span>` +
-    `<button type="button" class="refmv" data-refmove="1" title="Move later" aria-label="Move ${esc(endpointLabel(id))} later">›</button>` +
-    `<button type="button" class="refx" data-refdel title="Remove" aria-label="Remove ${esc(endpointLabel(id))}">✕</button>` +
+    `<button type="button" class="refmv" data-refmove="-1" title="Move earlier" aria-label="Move ${name} earlier">${icon('arrow-left')}</button>` +
+    `<span class="reflbl">${shown}</span>` +
+    `<button type="button" class="refmv" data-refmove="1" title="Move later" aria-label="Move ${name} later">${icon('arrow-right')}</button>` +
+    `<button type="button" class="refx" data-refdel title="Remove" aria-label="Remove ${name}">${icon('x')}</button>` +
     `</span>`
   );
 }
 
-/** "+ add…" picker options: every node (by label) then every anchor. */
+/** "add…" picker options: every node (by label), then the anchors as a group. */
 function refAddOptions(): string {
   const nodes = editor.page.nodes
     .map((n) => {
@@ -3808,9 +3850,12 @@ function refAddOptions(): string {
     })
     .join('');
   const anchors = editor.page.anchors
-    .map((a) => `<option value="${esc(a.id)}">⚓ ${esc(a.id)}</option>`)
+    .map((a) => `<option value="${esc(a.id)}">${esc(a.id)}</option>`)
     .join('');
-  return `<option value="">＋ add…</option>${nodes}${anchors}`;
+  return (
+    `<option value="">add…</option>${nodes}` +
+    (anchors ? `<optgroup label="Anchors">${anchors}</optgroup>` : '')
+  );
 }
 
 /** A control for one annotation field (distinct attrs so node wiring won't grab it). */
@@ -3824,7 +3869,7 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
     case 'boolean':
       // A real checkbox: typed into a text box, "false" is stored as a string,
       // which the renderer reads as on.
-      return `<label class="${rowClass(f)}"><span>${f.label}${f.animation ? ' ⟳' : ''}</span><input type="checkbox" data-akey="${f.key}" ${booleanFieldChecked(f.key, v) ? 'checked' : ''}/></label>`;
+      return `<label class="${rowClass(f)}"><span>${f.label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-akey="${f.key}" ${booleanFieldChecked(f.key, v) ? 'checked' : ''}/></label>`;
     case 'enum':
       return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${enumFieldOptions(
         f,
@@ -3850,7 +3895,7 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
       const ids = Array.isArray(v) ? (v as string[]) : [];
       const hint =
         f.key === 'waypoints'
-          ? `<div class="refhint">Order is the route. Add nodes below or select them in order, then “＋ flow”. Reorder with ‹ ›.</div>`
+          ? `<div class="refhint">Order is the route. Add nodes below or select them in order, then “+ flow”. Reorder with the arrows.</div>`
           : '';
       return (
         `<div class="insp-row col"><span>${f.label}${req}</span>` +
@@ -3894,9 +3939,9 @@ function zoneEditorHtml(zone: { id: string }): string {
   return (
     `<details class="anno selected" data-acol="zones" data-aid="${esc(zone.id)}" open>` +
     `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>` +
-    `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">⤧</button>` +
-    `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">⧉</button>` +
-    `<button class="anno-x" data-adel title="Delete" aria-label="Delete zone">✕</button></summary>` +
+    `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
+    `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>` +
+    `<button class="anno-x" data-adel title="Delete" aria-label="Delete zone">${icon('delete')}</button></summary>` +
     info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
     `</details>`
   );
@@ -3916,12 +3961,13 @@ function annotationsHtml(skipId?: string): string {
   const page = editor.page;
   const counts =
     page.zones.length + page.flowPaths.length + page.policyMarkers.length;
+  // Each plus is an icon, which a screen reader skips: the names say "Add".
   let html =
     `<div class="insp-h anno-top">Annotations</div>` +
     `<div class="anno-add">` +
-    `<button class="tbtn" data-add="zone" title="Group selected nodes into a zone">＋ zone</button>` +
-    `<button class="tbtn" data-add="flowPath" title="Route a flow path through selected nodes">＋ flow</button>` +
-    `<button class="tbtn" data-add="policyMarker" title="Badge the selected node">＋ marker</button>` +
+    `<button class="tbtn" data-add="zone" title="Group selected nodes into a zone" aria-label="Add zone">${icon('plus')} zone</button>` +
+    `<button class="tbtn" data-add="flowPath" title="Route a flow path through selected nodes" aria-label="Add flow path">${icon('plus')} flow</button>` +
+    `<button class="tbtn" data-add="policyMarker" title="Badge the selected node" aria-label="Add marker">${icon('plus')} marker</button>` +
     `</div>`;
   if (counts === 0)
     html += `<div class="muted anno-empty">Select node(s), then add a zone, flow path, or marker.</div>`;
@@ -3943,12 +3989,12 @@ function annotationsHtml(skipId?: string): string {
       // Zones are containers (C.2): offer move-members + duplicate-with-contents.
       const zoneBtns =
         g.col === 'zones'
-          ? `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">⤧</button>` +
-            `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">⧉</button>`
+          ? `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
+            `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>`
           : '';
       html +=
         `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
-        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">✕</button></summary>` +
+        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
         `</details>`;
     }
@@ -4113,7 +4159,8 @@ function wireAnnotations(): void {
         );
       });
       // Refs editor (flow waypoints / zone members): add by node picker, reorder
-      // with ‹ ›, remove with ✕ — all by chip position so duplicates behave.
+      // with the arrows, remove with the x — all by chip position so duplicates
+      // behave.
       host.querySelectorAll<HTMLElement>('.refchips').forEach((box) => {
         const key = box.dataset.refkey!;
         const ids = (): string[] =>
@@ -4305,7 +4352,7 @@ function buildPalette(): void {
     for (const info of infos) {
       const item = `<button class="pitem" data-type="${esc(info.type)}">${nodePreviewSVG(info.type)}<span class="plabel">${esc(info.label)}</span></button>`;
       html += info.custom
-        ? `<div class="pcustom">${item}<button class="pedit" data-edit="${esc(info.type)}" title="Edit type" aria-label="Edit type ${esc(info.label)}">✎</button></div>`
+        ? `<div class="pcustom">${item}<button class="pedit" data-edit="${esc(info.type)}" title="Edit type" aria-label="Edit type ${esc(info.label)}">${icon('pencil')}</button></div>`
         : item;
       // §5: surface the EC+Axis container form as its own palette entry — it
       // reads distinctly from a plain EC and from a standalone connector node.
@@ -4324,7 +4371,7 @@ function buildPalette(): void {
   if (stencils.length) {
     html += `<div class="palette-h">Stencils</div>`;
     for (const st of stencils) {
-      html += `<div class="pcustom"><button class="pitem" data-stencil="${esc(st.id)}" title="Stamp '${esc(st.name)}'">${stencilPreviewSVG(st)}<span class="plabel">${esc(st.name)}</span></button><button class="pedit" data-stencil-del="${esc(st.id)}" title="Delete stencil" aria-label="Delete stencil ${esc(st.name)}">✕</button></div>`;
+      html += `<div class="pcustom"><button class="pitem" data-stencil="${esc(st.id)}" title="Stamp '${esc(st.name)}'">${stencilPreviewSVG(st)}<span class="plabel">${esc(st.name)}</span></button><button class="pedit" data-stencil-del="${esc(st.id)}" title="Delete stencil" aria-label="Delete stencil ${esc(st.name)}">${icon('delete')}</button></div>`;
     }
   }
 
@@ -4335,8 +4382,8 @@ function buildPalette(): void {
   // The library actions (design a type, save a stencil) only show when not
   // mid-search — a filtered list is for picking, not authoring.
   if (!searching) {
-    html += `<button class="pitem design" id="pDesign">＋ design node</button>`;
-    html += `<button class="pitem design" id="pSaveStencil" title="Save the selected node(s) as a reusable group">＋ save stencil</button>`;
+    html += `<button class="pitem design" id="pDesign"><span>${icon('plus')} design node</span></button>`;
+    html += `<button class="pitem design" id="pSaveStencil" title="Save the selected node(s) as a reusable group"><span>${icon('plus')} save stencil</span></button>`;
   }
   paletteList.innerHTML = html;
 
@@ -4485,11 +4532,16 @@ async function downscaleImage(
 
 let dragFrom = -1;
 
-/* A just-deleted frame, held so the strip can offer "↩ undo delete" until the
+/* A just-deleted frame, held so the strip can offer "undo delete" until the
  * chip times out or another frame is deleted. Its stashed editor history is
  * kept alive with it, so restoring the frame restores its undo stack too. */
 let pendingFrameDelete: { page: Page; index: number; timer: number } | null =
   null;
+
+/** What the strip's play button shows while playing, or while stopped. */
+function playFlipLabel(playing: boolean): string {
+  return playing ? `${icon('pause')} pause` : `${icon('play')} play`;
+}
 
 /* Flipbook playback: step through pages on their durations (loop). The same
  * timing model drives the MCP export_flipbook artifact (pages/playback). */
@@ -4498,7 +4550,7 @@ function stopPlayback(): void {
   clearTimeout(playTimer);
   playTimer = null;
   const b = strip.querySelector('#playFlip');
-  if (b) b.textContent = '▶ play';
+  if (b) b.innerHTML = playFlipLabel(false);
 }
 function startPlayback(): void {
   if (doc.pages.length < 2) return;
@@ -4515,7 +4567,7 @@ function startPlayback(): void {
   };
   playTimer = window.setTimeout(advance, pageDuration(doc.pages[current]!));
   const b = strip.querySelector('#playFlip');
-  if (b) b.textContent = '⏸ pause';
+  if (b) b.innerHTML = playFlipLabel(true);
 }
 
 /** Keep the frames pill's "current/total" readout live (playback included). */
@@ -4546,7 +4598,7 @@ function renderFilmstrip(): void {
   strip.innerHTML = `
     ${
       doc.pages.length > 1
-        ? `<button class="frame add" id="playFlip" title="Play the flipbook (each frame holds for its duration)">${playTimer !== null ? '⏸ pause' : '▶ play'}</button>`
+        ? `<button class="frame add" id="playFlip" title="Play the flipbook (each frame holds for its duration)">${playFlipLabel(playTimer !== null)}</button>`
         : ''
     }
     ${doc.pages
@@ -4555,15 +4607,15 @@ function renderFilmstrip(): void {
       <div class="frame ${i === current ? 'on' : ''}" data-page="${i}" draggable="true" title="${esc(p.name)} — double-click to rename, drag to reorder">
         <span class="frame-n">${i + 1}</span>
         <span class="frame-name" data-name="${i}">${esc(p.name)}</span>
-        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete frame" aria-label="Delete frame ${esc(p.name)}">✕</button>` : ''}
+        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete frame" aria-label="Delete frame ${esc(p.name)}">${icon('x')}</button>` : ''}
       </div>`,
       )
       .join('')}
-    <button class="frame add" id="dupPage" title="Duplicate current frame">⧉ duplicate</button>
-    <button class="frame add" id="addPage" title="Add blank frame">＋ frame</button>
+    <button class="frame add" id="dupPage" title="Duplicate current frame">${icon('duplicate')} duplicate</button>
+    <button class="frame add" id="addPage" title="Add blank frame" aria-label="Add frame">${icon('plus')} frame</button>
     ${
       pendingFrameDelete
-        ? `<button class="frame add" id="undoDel" title="Restore the deleted frame &quot;${esc(pendingFrameDelete.page.name)}&quot;">↩ undo delete</button>`
+        ? `<button class="frame add" id="undoDel" title="Restore the deleted frame &quot;${esc(pendingFrameDelete.page.name)}&quot;">${icon('restore')} undo delete</button>`
         : ''
     }
   `;
@@ -4823,8 +4875,18 @@ function currentTheme(): RenderTheme {
 }
 function applyTheme(light: boolean): void {
   document.documentElement.classList.toggle('light', light);
+  // The browser's own UI (a phone's address bar, an installed app's title
+  // bar) follows the chrome: the theme's back surface, read from the tokens.
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute(
+      'content',
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--surface-back')
+        .trim(),
+    );
   themeBtn.classList.toggle('on', light);
-  themeBtn.textContent = light ? '🌙' : '☀';
+  themeBtn.innerHTML = icon(light ? 'moon' : 'sun');
   themeBtn.title = light ? 'Switch to dark theme' : 'Switch to light theme';
   // The vendored engine ships a dark canvas. Flip the engine's own light palette
   // on the canvas container (its CSS `--tds-*` background vars) and tell the
@@ -4843,12 +4905,11 @@ themeBtn.addEventListener('click', () =>
   applyTheme(!document.documentElement.classList.contains('light')),
 );
 
-/* Display settings — embellishment controls (ambient backdrop level + panel
- * glass blur), separate from the document and persisted as view preferences.
+/* Display settings — embellishment controls (ambient backdrop level),
+ * separate from the document and persisted as view preferences.
  * Decouples the decorative ambient from the meaningful flow particles. */
 const displayBtn = app.querySelector<HTMLButtonElement>('#tDisplay')!;
 const AMBIENT_KEY = 'tds-ambient';
-const GLASS_KEY = 'tds-glass';
 const displayPop = document.createElement('div');
 displayPop.className = 'display-pop';
 displayPop.setAttribute('role', 'dialog');
@@ -4859,7 +4920,6 @@ displayPop.innerHTML =
   `<label class="dp-row">Ambient backdrop<select id="dpAmbient">` +
   `<option value="animated">Animated</option><option value="static">Static</option><option value="off">Off</option>` +
   `</select></label>` +
-  `<label class="dp-row dp-check"><input type="checkbox" id="dpGlass"/><span>Panel blur (glass)</span></label>` +
   `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (C) pauses those.</div>` +
   `<label class="dp-row">Wheel<select id="dpWheel">` +
   `<option value="auto">Auto</option><option value="zoom">Always zoom</option><option value="pan">Always pan</option>` +
@@ -4873,7 +4933,6 @@ displayPop.innerHTML =
   `<div class="dp-note">Recolours the canvas accents and the app chrome to match your brand. Saved with the document.</div>`;
 document.body.appendChild(displayPop);
 const dpAmbient = displayPop.querySelector<HTMLSelectElement>('#dpAmbient')!;
-const dpGlass = displayPop.querySelector<HTMLInputElement>('#dpGlass')!;
 const dpWheel = displayPop.querySelector<HTMLSelectElement>('#dpWheel')!;
 const dpPresets = displayPop.querySelector<HTMLDivElement>('#dpPresets')!;
 const dpAccent = displayPop.querySelector<HTMLInputElement>('#dpAccent')!;
@@ -4889,15 +4948,6 @@ function applyAmbient(level: 'off' | 'static' | 'animated'): void {
     // storage unavailable — non-fatal
   }
 }
-function applyGlass(on: boolean): void {
-  document.documentElement.classList.toggle('no-glass', !on);
-  dpGlass.checked = on;
-  try {
-    localStorage.setItem(GLASS_KEY, on ? '1' : '0');
-  } catch {
-    // storage unavailable — non-fatal
-  }
-}
 const storedAmbient = localStorage.getItem(AMBIENT_KEY);
 applyAmbient(
   storedAmbient === 'off' ||
@@ -4906,11 +4956,9 @@ applyAmbient(
     ? storedAmbient
     : 'animated',
 );
-applyGlass(localStorage.getItem(GLASS_KEY) !== '0');
 dpAmbient.addEventListener('change', () =>
   applyAmbient(dpAmbient.value as 'off' | 'static' | 'animated'),
 );
-dpGlass.addEventListener('change', () => applyGlass(dpGlass.checked));
 
 /* What a plain wheel event does on the canvas. The default guesses the device
  * (a mouse wheel zooms, a trackpad's two-finger slide pans); the guess cannot
@@ -4966,8 +5014,15 @@ const presetBtns = PALETTE_PRESETS.map((p) => {
 });
 
 function setChromeAccent(hex: string | undefined): void {
-  if (hex) document.documentElement.style.setProperty('--accent', hex);
-  else document.documentElement.style.removeProperty('--accent');
+  const style = document.documentElement.style;
+  // Text and icons drawn on the accent (a primary button's label, a switch's
+  // knob) take whichever ink reads on the brand colour; with no brand colour
+  // both properties fall back to the theme's own values in tokens.css.
+  const ink = hex ? readableInkOn(hex) : null;
+  if (hex) style.setProperty('--accent', hex);
+  else style.removeProperty('--accent');
+  if (ink) style.setProperty('--on-accent', ink);
+  else style.removeProperty('--on-accent');
 }
 
 function syncPaletteInputs(p: BrandPalette | undefined): void {
@@ -5189,7 +5244,7 @@ function openHelp(): void {
   helpEl.innerHTML =
     `<div class="help-card scroll-slim" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">` +
     `<div class="help-head"><h3>Keyboard shortcuts</h3>` +
-    `<button class="tbtn ticon" id="helpClose" title="Close (Esc)" aria-label="Close">✕</button></div>` +
+    `<button class="tbtn ticon" id="helpClose" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
     `<div class="help-cols">${cols}</div></div>`;
   app.appendChild(helpEl);
   helpEl.addEventListener('click', (e) => {
@@ -5236,12 +5291,12 @@ function openPresent(): void {
   root.innerHTML =
     `<div class="present-stage" id="presentStage"></div>` +
     `<div class="present-bar">` +
-    `<button class="tbtn" id="presentPrev" title="Previous frame (←)" aria-label="Previous frame">‹</button>` +
-    `<button class="tbtn" id="presentPlay" title="Play / pause (Space)" aria-label="Play or pause">${playing ? '⏸' : '▶'}</button>` +
-    `<button class="tbtn" id="presentNext" title="Next frame (→)" aria-label="Next frame">›</button>` +
+    `<button class="tbtn" id="presentPrev" title="Previous frame (←)" aria-label="Previous frame">${icon('frame-prev')}</button>` +
+    `<button class="tbtn" id="presentPlay" title="Play / pause (Space)" aria-label="Play or pause">${icon(playing ? 'pause' : 'play')}</button>` +
+    `<button class="tbtn" id="presentNext" title="Next frame (→)" aria-label="Next frame">${icon('frame-next')}</button>` +
     `<span class="present-count" id="presentCount"></span>` +
     `<span class="present-name" id="presentName"></span>` +
-    `<button class="tbtn present-exit" id="presentExit" title="Exit (Esc)" aria-label="Exit presentation">✕ exit</button>` +
+    `<button class="tbtn present-exit" id="presentExit" title="Exit (Esc)" aria-label="Exit presentation">${icon('x')} exit</button>` +
     `</div>`;
   document.body.appendChild(root);
   presentEl = root;
@@ -5276,7 +5331,7 @@ function openPresent(): void {
   };
   const setPlaying = (on: boolean): void => {
     playing = on && doc.pages.length > 1;
-    playBtn.textContent = playing ? '⏸' : '▶';
+    playBtn.innerHTML = icon(playing ? 'pause' : 'play');
     schedule();
   };
   const step = (d: number): void => {
@@ -5363,9 +5418,9 @@ function openShare(): void {
   shareEl.innerHTML =
     `<div class="help-card share-card scroll-slim" role="dialog" aria-modal="true" aria-label="Share">` +
     `<div class="help-head"><h3>Share</h3>` +
-    `<button class="tbtn ticon" id="shareClose" title="Close (Esc)" aria-label="Close">✕</button></div>` +
+    `<button class="tbtn ticon" id="shareClose" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
     `<p class="share-note">Publishing creates a <b>public</b> read-only snapshot at a /v/&lt;id&gt; link — no sign-in needed to view it. Links expire after 30 days; revoking one takes it down early (edge caches may serve it for up to about a minute). Don’t publish internal addresses or policy details unless they’re approved for public access.</p>` +
-    `<div class="share-actions"><button class="tbtn" id="sharePublish">⤴ publish current document</button><span class="share-status" id="shareStatus" role="status"></span></div>` +
+    `<div class="share-actions"><button class="tbtn" id="sharePublish">${icon('publish')} publish current document</button><span class="share-status" id="shareStatus" role="status"></span></div>` +
     `<div class="share-fresh" id="shareFresh" hidden></div>` +
     `<h4 class="share-h">Published links</h4>` +
     `<div class="share-list" id="shareList">loading…</div>` +
@@ -5393,7 +5448,7 @@ function openShare(): void {
     const copy = t.closest<HTMLButtonElement>('.share-copy');
     if (copy) {
       void navigator.clipboard?.writeText(copy.dataset.url!).then(
-        () => (copy.textContent = 'copied ✓'),
+        () => (copy.innerHTML = `copied ${icon('check')}`),
         () => (copy.textContent = 'copy failed'),
       );
       return;
@@ -5401,7 +5456,8 @@ function openShare(): void {
     const revoke = t.closest<HTMLButtonElement>('.share-revoke');
     if (revoke) {
       revoke.disabled = true;
-      revoke.textContent = '…';
+      // Busy: the icon, with the word for a screen reader.
+      revoke.innerHTML = `${icon('busy')}<span class="visually-hidden">revoking</span>`;
       // The canonical revoke route (owner checked via snapshot metadata).
       void fetch(`/api/topology/${encodeURIComponent(revoke.dataset.id!)}`, {
         method: 'DELETE',
@@ -5932,38 +5988,43 @@ function shownPath(): ReturnType<typeof pathPanelView> | null {
 
 const PATH_ACTIONS: {
   key: string;
-  text: string;
+  icon: IconName;
+  /** Words after the icon; an action without them is the icon alone. */
+  text?: string;
   title: string;
   /** Needs a route to act on. */
   route: boolean;
 }[] = [
-  { key: 'prev', text: '‹', title: 'Previous route', route: true },
-  { key: 'next', text: '›', title: 'Next route', route: true },
+  { key: 'prev', icon: 'chevron-left', title: 'Previous route', route: true },
+  { key: 'next', icon: 'chevron-right', title: 'Next route', route: true },
   {
     key: 'swap',
-    text: '⇄',
+    icon: 'reverse',
     title: 'Trace the other way (the flow runs from the first node)',
     route: false,
   },
   {
     key: 'keep',
-    text: '★ emphasize',
+    icon: 'star',
+    text: 'emphasize',
     title: 'Keep this spotlight on the frame',
     route: true,
   },
   {
     key: 'flow',
-    text: '⇢ add flow',
+    icon: 'flow',
+    text: 'add flow',
     title: 'Add a flow along this route',
     route: true,
   },
   {
     key: 'frame',
-    text: '⧉ new frame',
+    icon: 'duplicate',
+    text: 'new frame',
     title: 'Copy this frame with the route spotlit and captioned',
     route: true,
   },
-  { key: 'close', text: '×', title: 'Close path analysis', route: false },
+  { key: 'close', icon: 'x', title: 'Close path analysis', route: false },
 ];
 
 function runPathAction(key: string): void {
@@ -6028,7 +6089,7 @@ function renderPathBar(): void {
       b.type = 'button';
       b.className = 'tbtn';
       b.dataset.path = a.key;
-      b.textContent = a.text;
+      b.innerHTML = a.text ? `${icon(a.icon)} ${a.text}` : icon(a.icon);
       b.title = a.title;
       b.setAttribute('aria-label', a.title);
       b.addEventListener('click', () => runPathAction(a.key));

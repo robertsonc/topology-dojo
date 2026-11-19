@@ -1,0 +1,25 @@
+/* Editor chrome styles. Order is the cascade: later files override earlier
+   ones, so keep this list in sequence (see docs/proposals/0013). */
+@import './tokens.css';
+@import './base.css';
+@import './icons.css';
+@import './controls.css';
+@import './scrollbars.css';
+@import './app-shell.css';
+@import './toolbar.css';
+@import './workspace.css';
+@import './popovers.css';
+@import './inspector-misc.css';
+@import './stage-palette.css';
+@import './inspector.css';
+@import './annotations.css';
+@import './node-designer.css';
+@import './canvas.css';
+@import './context-menu.css';
+@import './menu.css';
+@import './problems.css';
+@import './canvas-overlays.css';
+@import './present-share.css';
+@import './canvas-ctrls.css';
+@import './dialogs.css';
+@import './command-palette.css';

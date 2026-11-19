@@ -25,6 +25,7 @@ import type { AdminSummary, RosterEntry } from '../admin/model.js';
 import type { SessionSummary, ToolCallEvent } from '../agent-activity/model.js';
 import type { WorkspaceListItem } from '../workspace/model.js';
 import { registerOverlay } from './overlay.js';
+import { icon } from './icons.js';
 
 // Local copy of main.ts's `esc()` — the codebase's established per-module
 // pattern for this trivial helper (see `src/ui/profile-panel.ts`).
@@ -413,7 +414,7 @@ export function mountAdminDashboard(
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Admin dashboard');
     panel.innerHTML =
-      `<div class="ws-head"><h3>Admin dashboard</h3><button class="tbtn ticon" id="adminClose" title="Close" aria-label="Close">✕</button></div>` +
+      `<div class="ws-head"><h3>Admin dashboard</h3><button class="tbtn ticon" id="adminClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
       `<div id="adminBody"></div>`;
     document.body.appendChild(panel);
     panel

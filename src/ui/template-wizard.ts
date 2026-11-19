@@ -24,6 +24,7 @@ import {
 } from '../api/templates.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { registerOverlay } from './overlay.js';
+import { icon } from './icons.js';
 
 export interface TemplateWizardHost {
   /** Element the backdrop is appended to (the app root). */
@@ -182,7 +183,7 @@ export function openTemplateWizard(
   root.innerHTML =
     `<div class="help-card sdw-card tpw-card scroll-slim" role="dialog" aria-modal="true" aria-labelledby="tpwTitle">` +
     `<div class="help-head"><h3 id="tpwTitle">${escapeHtml(state.template.name)}</h3>` +
-    `<button class="tbtn ticon" data-act="close" title="Close (Esc)" aria-label="Close">✕</button></div>` +
+    `<button class="tbtn ticon" data-act="close" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
     `<div class="sdw-body"><div class="sdw-form"></div>` +
     `<div class="sdw-side"><div class="sdw-preview" aria-hidden="true"></div>` +
     `<div class="sdw-stats" role="status" aria-live="polite"></div>` +
