@@ -130,6 +130,10 @@ export const ICON_MANIFEST = {
   'frame-prev': 'skip-back',
   'frame-next': 'skip-forward',
   publish: 'share',
+  // The top bar: the Export and Share buttons, the folded menu bar
+  export: 'download',
+  share: 'share-2',
+  menu: 'menu',
   checkpoint: 'flag',
   // States
   warning: 'triangle-alert',
