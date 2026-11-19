@@ -304,7 +304,7 @@ async function openAnnotatedDocument(page: Page): Promise<void> {
   await expect(page.locator('.layer-eye')).toHaveCount(2);
 }
 
-test('icons in the rest of the inspector, the bars and the frames strip', async ({
+test('icons in the rest of the inspector, the Arrange menu and the path bar', async ({
   page,
 }) => {
   await openAnnotatedDocument(page);
@@ -393,6 +393,19 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
   ).toBeVisible();
   expect(await iconProblems(page)).toEqual([]);
   await page.keyboard.press('Escape');
+});
+
+test('icons of a selected link, emphasis, the frames strip and the presentation', async ({
+  page,
+}) => {
+  await openAnnotatedDocument(page);
+  const iconOf = (selector: string): Promise<string | null> =>
+    page.locator(`${selector} .icon use`).first().getAttribute('href');
+  const colour = (selector: string): Promise<string> =>
+    page
+      .locator(selector)
+      .first()
+      .evaluate((el) => getComputedStyle(el).color);
 
   // A selected link: its mini bar, label compass and format row.
   await page.keyboard.press('Escape');

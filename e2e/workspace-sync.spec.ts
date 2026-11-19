@@ -131,21 +131,36 @@ test('a commit the server refuses stops retrying and shows the reason', async ({
 
   await page.keyboard.press('Escape');
   await page.mouse.click(800, 450);
+  // From here the page's timers run on a clock the test moves, so the retry
+  // interval passes without being waited for in real time.
+  await page.clock.install();
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Control+c');
   await page.keyboard.press('Control+v');
 
   // Three attempts (a refusal can be a transient coordinator error), then
   // sync pauses with the server's message instead of an "offline" label.
+  // The clock moves a second at a time, well under the retry interval, so a
+  // fourth attempt could not hide between two readings.
+  await expect
+    .poll(
+      async () => {
+        await page.clock.runFor(1000);
+        return commits.length;
+      },
+      { intervals: [200] },
+    )
+    .toBe(3);
   await page.locator('#workspaceChip').click();
   await expect(page.locator('#wsBody .ws-error')).toHaveText(
     'text exceeds the label limit',
-    { timeout: 20_000 },
   );
   await expect(
     page.locator('#wsBody .ws-row', { hasText: 'Status' }),
-  ).toContainText('sync rejected', { timeout: 20_000 });
+  ).toContainText('sync rejected');
   expect(commits).toHaveLength(3);
-  await page.waitForTimeout(6000); // one retry interval: nothing more is sent
+  // More than one retry interval: nothing more is sent.
+  await page.clock.runFor(6000);
+  await page.waitForTimeout(500); // time for a request, had one been made
   expect(commits).toHaveLength(3);
 });
