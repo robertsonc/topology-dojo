@@ -126,6 +126,7 @@ import {
 import {
   escapeReleasesFocus,
   focusKind,
+  isContextMenuKey,
   releasesFocusAfterChange,
   routeKey,
   type FocusFacts,
@@ -381,7 +382,7 @@ app.innerHTML = `
         </div>
         <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Zoom">
           <button type="button" class="icon-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
-          <button type="button" class="cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom level — fit view">100%</button>
+          <button type="button" class="cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom 100% — fit view">100%</button>
           <button type="button" class="icon-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
           <button type="button" class="icon-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
         </div>
@@ -1809,7 +1810,10 @@ app
 function refreshChrome(): void {
   undoBtn.disabled = !editor.canUndo();
   redoBtn.disabled = !editor.canRedo();
-  ccZoom.textContent = `${Math.round(editor.zoom() * 100)}%`;
+  const pct = Math.round(editor.zoom() * 100);
+  ccZoom.textContent = `${pct}%`;
+  // Its name holds the figure it shows, then what a press does.
+  ccZoom.setAttribute('aria-label', `Zoom ${pct}% — fit view`);
 }
 
 /* Status bar — live tool / cursor / element counts / zoom. */
@@ -6628,9 +6632,16 @@ function renderPathBar(): void {
  * labelled with the command's title (Lock / Unlock says what a press would
  * do), greyed out when the command is not enabled, and run through it. The
  * component closes it on Escape, a press outside, a blur and a resize. */
-function openCtxMenu(clientX: number, clientY: number): void {
+function openCtxMenu(
+  clientX: number,
+  clientY: number,
+  kind?: 'node' | 'link' | 'empty',
+): void {
   closeAllMenus();
-  const hit = editor.pickAt(clientX, clientY);
+  const fromKeyboard = kind !== undefined;
+  // From the pointer, the menu is for what is under it (which it selects);
+  // from the keyboard, for the selection as it is.
+  const hit = kind ? { kind } : editor.pickAt(clientX, clientY);
   renderInspector();
   const ctx = menuContext();
   // What a command does to the selection shows in the properties at once.
@@ -6657,7 +6668,54 @@ function openCtxMenu(clientX: number, clientY: number): void {
   openMenu(entries, {
     anchor: { x: clientX, y: clientY },
     label: 'Canvas context menu',
+    // Opened from the keyboard, it starts on its first item.
+    ...(fromKeyboard ? { focus: 'first' as const } : {}),
   });
+}
+
+/**
+ * Shift+F10 or the menu key: the context menu of the selection, opened at the
+ * middle of its box (kept inside the canvas), or of the empty canvas at the
+ * canvas's middle when nothing is selected. Escape closes it and gives the
+ * keyboard back to the canvas, where it was.
+ */
+function openCtxMenuFromKeyboard(): void {
+  const box = overlaySvg.getBoundingClientRect();
+  const nodes = editor.selectedNodeIds();
+  const link = nodes.length === 0 ? editor.getSelectedLink() : null;
+  const kind = nodes.length > 0 ? 'node' : link ? 'link' : 'empty';
+  // The points the selection is drawn through, in page units.
+  const pts: { x: number; y: number }[] = [];
+  if (nodes.length > 0) {
+    for (const n of editor.page.nodes) {
+      if (!nodes.includes(n.id)) continue;
+      const b = nodeBounds(n);
+      pts.push({ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y + b.h });
+    }
+  } else if (link) {
+    for (const id of [link.from, link.to]) {
+      const end =
+        editor.page.nodes.find((m) => m.id === id) ??
+        editor.page.anchors.find((m) => m.id === id);
+      if (end) pts.push({ x: end.x, y: end.y });
+    }
+    pts.push(...(link.waypoints ?? []));
+  }
+  let x = box.left + box.width / 2;
+  let y = box.top + box.height / 2;
+  if (pts.length > 0) {
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const mid = userToClient(
+      overlaySvg,
+      (Math.min(...xs) + Math.max(...xs)) / 2,
+      (Math.min(...ys) + Math.max(...ys)) / 2,
+    );
+    const pad = 8;
+    x = Math.min(Math.max(mid.x, box.left + pad), box.right - pad);
+    y = Math.min(Math.max(mid.y, box.top + pad), box.bottom - pad);
+  }
+  openCtxMenu(x, y, kind);
 }
 
 // Attached to the canvas host (an HTML box) rather than the overlay <svg>,

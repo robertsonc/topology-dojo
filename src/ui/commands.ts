@@ -1584,6 +1584,7 @@ export const HELP_GESTURES: readonly HelpSection[] = [
     title: 'Dialogs and menus',
     rows: [
       ['Esc', 'Close the open dialog / menu'],
+      ['Shift+F10 / Menu key', 'Open the context menu for the selection'],
       ['Tab / Shift+Tab', 'Cycle focus inside the dialog'],
       [`${UP}${DOWN} · Enter`, 'Navigate / run context-menu items'],
       ['Home / End', 'First / last context-menu item'],

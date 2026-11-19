@@ -483,6 +483,11 @@ Right-click empty canvas for **Paste here**, **Paste in place**,
 **Select all**, **Copy page as image**, **Tidy layout**, **Balance layout**,
 **Auto-place labels**, and **Fit page to content**.
 
+Without a pointer, press **Shift+F10** or the menu key while the keyboard is
+on the canvas (press Escape first if a control has focus): the menu opens on
+its first item for the current selection, or for the empty canvas when nothing
+is selected.
+
 **Auto-place labels** moves each node's label (its **Placement**) to the side
 crossed by the fewest links, so a hub whose links fan downward gets its name
 above it. It never crowds another node or label, grows a zone into its
