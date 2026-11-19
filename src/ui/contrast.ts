@@ -51,3 +51,58 @@ export function readableInkOn(background: string): string | null {
   if (dark === null || light === null) return null;
   return dark >= light ? INK_DARK : INK_LIGHT;
 }
+
+/** `a` mixed toward `b` by `t` (0: all `a`, 1: all `b`), channel by channel
+ * in sRGB as CSS `color-mix(in srgb, …)` does; null if either is not a hex. */
+export function mixHex(a: string, b: string, t: number): string | null {
+  const rgb = (hex: string): number[] | null => {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const h =
+      m[1]!.length === 3
+        ? m[1]!
+            .split('')
+            .map((c) => c + c)
+            .join('')
+        : m[1]!;
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  };
+  const x = rgb(a);
+  const y = rgb(b);
+  if (!x || !y) return null;
+  return (
+    '#' +
+    x
+      .map((c, i) =>
+        Math.round(c + (y[i]! - c) * t)
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')
+  );
+}
+
+/** The contrast accent-coloured text and icons need (WCAG AA, body text). */
+export const ACCENT_TEXT_MIN = 4.5;
+
+/**
+ * The colour for accent text and icons (`--accent-fg`) under a brand accent:
+ * the accent itself when it reads on `surface`, else the accent mixed toward
+ * the theme's `ink` (its strongest text colour) in small steps until it
+ * reaches 4.5:1 there. A dark brand colour on the dark theme lightens, a
+ * pale one on the light theme darkens; the hue stays the brand's. Null when
+ * a colour is not a hex, so the caller can keep the stylesheet's value.
+ */
+export function readableAccentText(
+  accent: string,
+  surface: string,
+  ink: string,
+): string | null {
+  if (contrastRatio(accent, surface) === null) return null;
+  if (contrastRatio(ink, surface) === null) return null;
+  for (let step = 0; step <= 20; step++) {
+    const mixed = mixHex(accent, ink, step / 20)!;
+    if (contrastRatio(mixed, surface)! >= ACCENT_TEXT_MIN) return mixed;
+  }
+  return mixHex(accent, ink, 1);
+}
