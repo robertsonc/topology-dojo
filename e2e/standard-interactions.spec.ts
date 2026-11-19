@@ -7,6 +7,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   bootEditor,
   clickNode,
+  contextItem,
   linkPoint,
   nodeBox,
   savedDocument,
@@ -316,7 +317,7 @@ test('"Paste here" puts the copy at the point that was right-clicked', async ({
 
   const at = await toClient(page, 700, 560); // empty canvas
   await page.mouse.click(at.x, at.y, { button: 'right' });
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Paste here' }).click();
+  await contextItem(page, 'Paste here').click();
 
   const all = await nodes(page);
   expect(all).toHaveLength(8);

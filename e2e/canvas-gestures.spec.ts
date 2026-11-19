@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import { bootEditor, openFixture, statusCount } from './helpers.js';
+import {
+  bootEditor,
+  CONTEXT_MENU,
+  contextItem,
+  openFixture,
+  statusCount,
+} from './helpers.js';
 
 /**
  * Canvas gestures that depend on what the browser actually draws and
@@ -217,9 +223,9 @@ test('a right-click on one of several selected links keeps them all', async ({
   await expect.poll(() => statusCount(page, 'selected')).toBe(2);
 
   await page.mouse.click(b.x, b.y, { button: 'right' });
-  await expect(page.locator('.ctx-menu')).toBeVisible();
+  await expect(page.locator(CONTEXT_MENU)).toBeVisible();
   expect(await statusCount(page, 'selected')).toBe(2);
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Delete' }).click();
+  await contextItem(page, 'Delete').click();
   await expect.poll(() => statusCount(page, 'links')).toBe(links - 2);
 });
 

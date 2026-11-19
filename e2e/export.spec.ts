@@ -2,6 +2,7 @@ import { test, expect, type Download } from '@playwright/test';
 import {
   bootEditor,
   expectExported,
+  exportAs,
   openFixture,
   statusCount,
 } from './helpers.js';
@@ -25,7 +26,7 @@ test('SVG export frames a non-zero-origin viewBox correctly (#206)', async ({
   await expect.poll(() => statusCount(page, 'nodes')).toBe(6);
 
   const downloadPromise = page.waitForEvent('download');
-  await page.locator('#fSvg').click();
+  await exportAs(page, 'svg');
   const download = await downloadPromise;
   const svg = await readDownloadText(download);
 
@@ -43,7 +44,7 @@ test('PNG export downloads a raster or reports status (#222)', async ({
   await expect.poll(() => statusCount(page, 'nodes')).toBe(6);
 
   const downloadPromise = page.waitForEvent('download');
-  await page.locator('#fPng').click();
+  await exportAs(page, 'png');
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.png$/);
   const bytes = await download.path();
@@ -62,7 +63,7 @@ test('export failure is visible when the download cannot start (#222)', async ({
     };
   });
 
-  await page.locator('#fSvg').click();
+  await exportAs(page, 'svg');
   const status = page.locator('#exportStatus');
   await expect(status).toHaveText('svg export failed');
   await expect(status.locator('.icon use')).toHaveAttribute(

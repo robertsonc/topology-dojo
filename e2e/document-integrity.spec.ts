@@ -9,6 +9,7 @@ import path from 'node:path';
 import {
   bootEditor,
   fixturesDir,
+  menuCommand,
   openFixture,
   readAutosave,
   statusCount,
@@ -56,7 +57,7 @@ test('an inline rename committed by clicking another node renames the right one'
 }) => {
   await bootEditor(page);
   page.once('dialog', (d) => void d.accept());
-  await page.locator('#fNew').click();
+  await menuCommand(page, 'file.new');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(0);
 
   const box = (await page.locator('#overlay').boundingBox())!;

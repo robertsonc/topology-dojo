@@ -74,8 +74,6 @@ import { buildTemplate, listTemplates } from './api/templates.js';
 import { openSdwanWizard } from './ui/sdwan-wizard.js';
 import { openTemplateWizard } from './ui/template-wizard.js';
 import { pageLinkTarget } from './api/page-link.js';
-/** Template-picker value that opens the SD-WAN generator instead. */
-const SDWAN_WIZARD = '__sdwan';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import {
   markBaselineNodeTypes,
@@ -89,7 +87,24 @@ import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
 import { mountAdminDashboard } from './ui/admin-dashboard.js';
+import {
+  attachMenuButton,
+  attachMenubar,
+  closeAllMenus,
+  openMenu,
+  type MenuEntry,
+} from './ui/menu.js';
+import {
+  MENUBAR,
+  accountMenu,
+  contextMenu,
+  exportMenu,
+  moreMenu,
+  tidyMenu,
+  type MenuContext,
+} from './ui/menus.js';
 import { overlayActive, registerOverlay } from './ui/overlay.js';
+import { paletteEntries } from './ui/palette-sources.js';
 import { icon, iconSprite, type IconName } from './ui/icons.js';
 import { nodeLabelNudge, linkLabelNudge } from './ui/label-position.js';
 import type { LabelPlacement } from './render/label-placement.js';
@@ -170,6 +185,10 @@ import {
   type CommandHandlers,
   type CommandId,
 } from './ui/commands.js';
+import {
+  openCommandPalette,
+  type PaletteHandle,
+} from './ui/command-palette.js';
 import { enablePaletteDrag } from './ui/palette-drag.js';
 import { findInDocument, type FindMatch } from './ui/find.js';
 import type { WheelMode } from './editor/wheel.js';
@@ -282,40 +301,6 @@ function variantOptions(
     .map((v) => `<option value="${esc(v)}">${esc(labels[v]!)}</option>`)
     .join('');
 }
-/** The export menu's wording of each format. */
-const EXPORT_LABELS: Readonly<Record<string, string>> = {
-  'pdf-page': 'PDF — current frame',
-  'pdf-all': 'PDF — all frames',
-  flipbook: 'Flipbook HTML — all frames',
-  drawio: 'draw.io — all frames (editable, lossy)',
-  vsdx: 'Visio .vsdx — all frames (editable, lossy)',
-  pptx: 'PowerPoint .pptx — slide per frame',
-  'pptx-layers': 'PowerPoint .pptx — slide per layer',
-  mermaid: 'Mermaid — current frame',
-  'copy-png': 'Copy PNG to clipboard',
-  'svg-selection': 'SVG — selection only',
-  'png-selection': 'PNG — selection only',
-};
-/** The arrange menu's wording of each layout algorithm. */
-const LAYOUT_LABELS: Readonly<Record<string, string>> = {
-  hierarchical: 'hierarchical',
-  grid: 'grid',
-  circular: 'circular',
-  force: 'force-directed',
-};
-/** The select-by menu: each option's value, wording and command. */
-const SELECT_BY_OPTIONS: readonly [
-  value: string,
-  label: string,
-  command: CommandId,
-][] = [
-  ['type', 'same type', 'selection.sameType'],
-  ['color', 'same color', 'selection.sameColor'],
-  ['connected', 'connected (grow)', 'selection.growConnected'],
-  ['invert', 'invert', 'selection.invert'],
-  ['all', 'all', 'selection.all'],
-];
-
 const app = document.getElementById('app')!;
 
 app.innerHTML = `
@@ -330,100 +315,53 @@ app.innerHTML = `
        rules: every icon in the shell, the panels and the dialogs is a
        <use href="#i-…"> that resolves here. -->
   <svg id="ui-icon-sprite" class="svg-defs-sprite" width="0" height="0" aria-hidden="true" focusable="false">${iconSprite()}</svg>
-  <header class="bar scroll-slim">
-    <div class="bar-left">
-      <span class="brand" title="Topology Dojo">
-        <svg class="logo-mark" viewBox="0 0 32 32" width="26" height="26" aria-label="Topology Dojo" role="img">
-          <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.45" stroke-linejoin="round"/>
-          <circle cx="16" cy="5" r="2.5" fill="currentColor"/>
-          <circle cx="27" cy="16" r="2.5" fill="currentColor"/>
-          <circle cx="16" cy="27" r="2.5" fill="currentColor"/>
-          <circle cx="5" cy="16" r="2.5" fill="currentColor"/>
-          <circle cx="16" cy="16" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-          <circle cx="16" cy="16" r="1.7" fill="currentColor"/>
-        </svg>
-        <span class="wordmark">topology<b>dojo</b></span>
-      </span>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn" id="fNew" title="New document">new</button>
-        <button class="tbtn" id="fSave" title="Download the document as a JSON file">download</button>
-        <button class="tbtn" id="fOpen" title="Open a JSON file">open</button>
-        <button class="tbtn" id="fShare" title="Publish a public share link / manage published links" hidden>share</button>
-      </div>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn ticon" id="tUndo" title="${tip('edit.undo')}" aria-label="Undo">${icon('undo')}</button>
-        <button class="tbtn ticon" id="tRedo" title="${tip('edit.redo')}" aria-label="Redo">${icon('redo')}</button>
-      </div>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
-        <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
-        <select class="tbtn" id="fExport" title="More export formats" aria-label="More export formats">
-          <option value="">export…</option>
-          ${variantOptions('file.export.', EXPORT_LABELS)}
-        </select>
-        <span class="export-status" id="exportStatus" role="status" aria-live="polite"></span>
-        <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
-      </div>
-      <input type="file" id="fInput" accept="application/json,.json,.drawio,.xml,.mmd,.mermaid,.csv,.txt" hidden />
+  <!-- The top bar is the document: the menus, its title and save state,
+       history, tidy, then presenting, exporting and sharing it, and who is
+       signed in. Nothing in it scrolls. -->
+  <header class="bar topbar" id="topbar">
+    <span class="brand" title="Topology Dojo">
+      <svg class="logo-mark" viewBox="0 0 32 32" width="22" height="22" aria-label="Topology Dojo" role="img">
+        <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.45" stroke-linejoin="round"/>
+        <circle cx="16" cy="5" r="2.5" fill="currentColor"/>
+        <circle cx="27" cy="16" r="2.5" fill="currentColor"/>
+        <circle cx="16" cy="27" r="2.5" fill="currentColor"/>
+        <circle cx="5" cy="16" r="2.5" fill="currentColor"/>
+        <circle cx="16" cy="16" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="16" cy="16" r="1.7" fill="currentColor"/>
+      </svg>
+      <span class="wordmark">topology<b>dojo</b></span>
+    </span>
+    <!-- Five menus, folded into one (#menuMore) in a narrow window. -->
+    <div class="menubar" id="menubar" role="menubar" aria-label="Main menu">
+      ${MENUBAR.map((m) => `<button type="button" class="menubar-item" role="menuitem" data-menu="${m.id}">${m.label}</button>`).join('')}
+      <button type="button" class="menubar-item menubar-more" role="menuitem" data-menu="more" id="menuMore" aria-label="Menu">${icon('menu')}<span class="menubar-more-label">Menu</span></button>
+    </div>
+    <span class="vr"></span>
+    <div class="doc-title">
+      <input class="doc-title-input" id="docTitle" type="text" aria-label="Document title" placeholder="Untitled" spellcheck="false" autocomplete="off" />
       <span class="saved" id="saved"></span>
       <!-- Spoken when a save fails or another tab's version arrives: the
            chip is a button then, so the alert has to be a region of its own. -->
       <span class="visually-hidden" id="saveAlert" role="alert"></span>
     </div>
-    <div class="bar-right">
-      <div class="tgroup">
-        <button class="tbtn on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool">${icon('tool-select')}<span class="tlabel">select</span></button>
-        <button class="tbtn" id="tLink" title="${tip('tool.link')}" aria-label="Draw link tool">${icon('tool-link')}<span class="tlabel">link</span></button>
-        <button class="tbtn" id="tAnchor" title="${tip('tool.anchor')} — free-floating link endpoints" aria-label="Drop anchor tool">${icon('anchor')}<span class="tlabel">anchor</span></button>
-      </div>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn ticon on" id="tGrid" title="${tip('view.toggleGrid')}" aria-label="Toggle grid">${icon('grid')}</button>
-        <button class="tbtn ticon on" id="tSnap" title="${tip('view.toggleSnap')}" aria-label="Toggle snap">${icon('snap')}</button>
-        <button class="tbtn ticon" id="tCalm" title="${tip('view.toggleCalm', 'Calm canvas — pause animations')}" aria-label="Calm canvas — pause animations">${icon('calm')}</button>
-        <button class="tbtn ticon on" id="tBadges" title="Toggle on-canvas problem badges" aria-label="Toggle on-canvas problem badges">${icon('badges')}</button>
-        <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">${icon('settings')}</button>
-        <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">${icon('sun')}</button>
-        <button class="tbtn ticon" id="tFit" title="${tip('view.fit')}" aria-label="Fit view">${icon('fit-view')}</button>
-        <button class="tbtn ticon" id="tPresent" title="Present — full-screen playback of all frames" aria-label="Present full-screen">${icon('present')}</button>
-        <button class="tbtn ticon" id="tHelp" title="${tip('help.shortcuts')}" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
-      </div>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn" id="tDelete" title="${tip('edit.delete', 'Delete selection')}" aria-label="Delete selection">${icon('delete')}<span class="tlabel">delete</span></button>
-        <button class="tbtn" id="tTidy" title="${tip('arrange.tidy', 'Tidy layout — grid-snap + de-overlap')}" aria-label="Tidy layout">${icon('tidy')}<span class="tlabel">tidy</span></button>
-        <button class="tbtn" id="tBalance" title="${tip('arrange.balance', 'Balance layout — align rows/columns + centre')}" aria-label="Balance layout">${icon('balance')}<span class="tlabel">balance</span></button>
-        <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm" aria-label="Auto-arrange with a layout algorithm">
-          <option value="">arrange…</option>
-          ${variantOptions('arrange.layout.', LAYOUT_LABELS)}
-        </select>
-        <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion" aria-label="Select nodes by a criterion">
-          <option value="">select…</option>
-          ${SELECT_BY_OPTIONS.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
-        </select>
-      </div>
-      <span class="align-group" id="alignGroup" hidden>
-        <button class="tbtn ab" data-align="left" title="Align left" aria-label="Align left">${icon('align-left')}</button>
-        <button class="tbtn ab" data-align="centerH" title="Align centers (h)" aria-label="Align horizontal centers">${icon('align-center')}</button>
-        <button class="tbtn ab" data-align="right" title="Align right" aria-label="Align right">${icon('align-right')}</button>
-        <button class="tbtn ab" data-align="top" title="Align top" aria-label="Align top">${icon('align-top')}</button>
-        <button class="tbtn ab" data-align="middleV" title="Align middles (v)" aria-label="Align vertical middles">${icon('align-middle')}</button>
-        <button class="tbtn ab" data-align="bottom" title="Align bottom" aria-label="Align bottom">${icon('align-bottom')}</button>
-        <button class="tbtn ab" data-dist="h" title="Distribute horizontally" aria-label="Distribute horizontally" disabled>${icon('distribute-h')}</button>
-        <button class="tbtn ab" data-dist="v" title="Distribute vertically" aria-label="Distribute vertically" disabled>${icon('distribute-v')}</button>
-      </span>
-      <span class="bar-div" id="workspaceDiv" hidden></span>
-      <button class="tbtn workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot" aria-hidden="true"></span><span id="workspaceLabel">agent · local</span></button>
-      <button class="tbtn" id="profileChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Authoring Preferences" hidden>prefs</button>
-      <button class="tbtn" id="adminChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Admin dashboard" hidden>admin</button>
-      <span class="bar-div" id="userDiv" hidden></span>
-      <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" aria-label="Account menu" hidden><span class="uc-dot" aria-hidden="true">${icon('account')}</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">${icon('chevron-down')}</span></button>
-    </div>
+    <button type="button" class="icon-btn" id="tUndo" title="${tip('edit.undo')}" aria-label="Undo">${icon('undo')}</button>
+    <button type="button" class="icon-btn" id="tRedo" title="${tip('edit.redo')}" aria-label="Redo">${icon('redo')}</button>
+    <span class="vr"></span>
+    <span class="split">
+      <button type="button" class="btn btn-ghost" id="tTidy" title="${tip('arrange.tidy', 'Tidy layout — grid-snap + de-overlap')}" aria-label="Tidy layout">${icon('tidy')}<span class="btn-label">Tidy</span></button>
+      <button type="button" class="icon-btn" id="tTidyMenu" title="Tidy, balance and auto-arrange" aria-label="Tidy, balance and auto-arrange">${icon('chevron-down')}</button>
+    </span>
+    <span class="vr"></span>
+    <span class="export-status" id="exportStatus" role="status" aria-live="polite"></span>
+    <button type="button" class="btn btn-ghost" id="tPresent" title="${tip('view.present', 'Present all pages full screen')}" aria-label="Present">${icon('present')}<span class="btn-label">Present</span></button>
+    <button type="button" class="btn" id="fExportBtn" title="Export the page or the document" aria-label="Export">${icon('export')}<span class="btn-label">Export</span>${icon('chevron-down', { size: 12, className: 'btn-caret' })}</button>
+    <button type="button" class="btn btn-primary" id="fShare" title="Publish a public share link / manage published links" aria-label="Share" hidden>${icon('share')}<span class="btn-label">Share</span></button>
+    <span class="vr" id="workspaceDiv" hidden></span>
+    <button class="chip workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot" aria-hidden="true"></span><span id="workspaceLabel">agent · local</span></button>
+    <span class="vr" id="userDiv" hidden></span>
+    <button class="chip user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" aria-label="Account menu" hidden><span class="uc-dot" aria-hidden="true">${icon('account')}</span><span class="uc-name" id="userName"></span><span class="uc-caret" aria-hidden="true">${icon('chevron-down')}</span></button>
+    <input type="file" id="fInput" accept="application/json,.json,.drawio,.xml,.mmd,.mermaid,.csv,.txt" hidden />
   </header>
-
   <!-- Shown while the document on canvas is a /v/<id> shared snapshot: edits
        autosave to a separate slot so the user's own document stays intact
        until they explicitly adopt the copy (#202). -->
@@ -434,41 +372,70 @@ app.innerHTML = `
     <button class="tbtn" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>unpublish link</button>
   </div>
 
+  <!-- The stage, by scope: the rail (making: the tools, the library), the
+       node library docked beside it, the canvas over the pages bar, and the
+       properties panel. Only the page chips scroll. -->
   <div class="stage">
-    <div class="canvas-area" id="canvas-area">
-      <aside class="palette" id="palette">
-        <button class="palette-toggle" id="palette-toggle" title="${tip('view.toggleLibrary', 'Hide node library')}">nodes ${icon('panel-left-close')}</button>
-        <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
-        <div class="palette-list scroll-slim" id="palette-list"></div>
-        <div class="minimap-dock" id="minimap-dock">
-          <button class="minimap-toggle" id="minimap-toggle" title="${tip('view.toggleMinimap', 'Hide minimap')}">map ${icon('chevron-down')}</button>
-          <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
-        </div>
-      </aside>
-      <div class="tds-root">
-        <div class="tds-canvas-row">
-          <div class="tds-canvas canvas-host">
-            <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
-            <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="rail" id="rail">
+      <div class="rail-tools" role="group" aria-label="Tools">
+      <button type="button" class="icon-btn icon-btn-lg on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool" aria-pressed="true">${icon('tool-select')}</button>
+      <button type="button" class="icon-btn icon-btn-lg" id="ccHand" title="${tip('tool.hand')} — or hold Space to pan anytime" aria-label="Hand / pan tool" aria-pressed="false">${icon('hand')}</button>
+      <button type="button" class="icon-btn icon-btn-lg" id="tLink" title="${tip('tool.link')}" aria-label="Draw link tool" aria-pressed="false">${icon('tool-link')}</button>
+      <button type="button" class="icon-btn icon-btn-lg" id="tAnchor" title="${tip('tool.anchor')} — free-floating link endpoints" aria-label="Drop anchor tool" aria-pressed="false">${icon('anchor')}</button>
+      </div>
+      <span class="rail-sep" aria-hidden="true"></span>
+      <button type="button" class="icon-btn icon-btn-lg" id="palette-toggle" title="${tip('view.toggleLibrary', 'Hide node library')}" aria-label="Node library" aria-pressed="true">${icon('panel-left-close')}</button>
+      <span class="rail-space"></span>
+      <button type="button" class="icon-btn icon-btn-lg" id="tCommand" title="${tip('help.commandPalette')}" aria-label="Command palette">${icon('search')}</button>
+      <button type="button" class="icon-btn icon-btn-lg" id="tHelp" title="${tip('help.shortcuts')}" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
+    </div>
+    <aside class="palette" id="palette" aria-label="Node library">
+      <div class="palette-head">Library</div>
+      <input id="palette-search" class="field palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
+      <div class="palette-list scroll-slim" id="palette-list"></div>
+    </aside>
+    <div class="canvas-col">
+      <div class="canvas-area" id="canvas-area">
+        <div class="tds-root">
+          <div class="tds-canvas-row">
+            <div class="tds-canvas canvas-host">
+              <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
+              <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+            </div>
           </div>
+        </div>
+        <!-- What floats over the canvas: the minimap card, and under it the
+             zoom control in the bottom-right corner. -->
+        <div class="minimap-dock" id="minimap-dock">
+          <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Minimap: click or drag to move the view"></svg>
+        </div>
+        <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Zoom">
+          <button type="button" class="icon-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
+          <button type="button" class="cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom level — fit view">100%</button>
+          <button type="button" class="icon-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
+          <button type="button" class="icon-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
         </div>
       </div>
-      <!-- The canvas's bottom band, floating over it to the right of the node
-           library: the frames strip, then the view controls. They share one
-           row while both fit; otherwise the controls sit above the strip. -->
-      <div class="canvas-dock" id="canvas-dock">
-        <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
-          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="${tip('view.toggleFrames', 'Hide frames')}">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
+      <!-- The pages bar, docked under the canvas: the pages toggle and its
+           chips, then the canvas options at the right end. -->
+      <div class="pages-bar" id="pagesBar">
+        <div class="frames-dock" id="frames-dock" role="region" aria-label="Pages">
+          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="${tip('view.toggleFrames', 'Hide pages')}"><span class="frames-word">Pages</span> <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
+          <!-- Play, the chips, then duplicate, add and undo delete. Only the
+               chips scroll; the buttons on either side stay put. -->
           <div class="frames-reveal">
+            <span class="pages-lead" id="pagesLead"></span>
             <div class="filmstrip scroll-slim" id="filmstrip"></div>
+            <span class="pages-tail" id="pagesTail"></span>
           </div>
         </div>
-        <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Canvas view">
-          <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">${icon('hand')}</button>
-          <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
-          <button class="cc-btn cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom level — fit view">100%</button>
-          <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
-          <button class="cc-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
+        <div class="view-opts" role="group" aria-label="Canvas options">
+          <button type="button" class="icon-btn on" id="tGrid" title="${tip('view.toggleGrid')}" aria-label="Toggle grid" aria-pressed="true">${icon('grid')}</button>
+          <button type="button" class="icon-btn on" id="tSnap" title="${tip('view.toggleSnap')}" aria-label="Toggle snap" aria-pressed="true">${icon('snap')}</button>
+          <button type="button" class="icon-btn" id="tCalm" title="${tip('view.toggleCalm', 'Calm canvas — pause animations')}" aria-label="Calm canvas — pause animations" aria-pressed="false">${icon('calm')}</button>
+          <button type="button" class="icon-btn" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">${icon('settings')}</button>
+          <span class="vr"></span>
+          <button type="button" class="icon-btn" id="minimap-toggle" title="${tip('view.toggleMinimap', 'Hide minimap')}" aria-label="Minimap" aria-pressed="true">${icon('minimap')}</button>
         </div>
       </div>
     </div>
@@ -492,7 +459,7 @@ app.innerHTML = `
     </div>
   </div>
 
-  <footer class="statusbar scroll-slim" id="statusbar"></footer>
+  <footer class="statusbar" id="statusbar"></footer>
 `;
 
 // Populate the root defs sprite once. These are the engine's static shared
@@ -504,11 +471,30 @@ app.querySelector<SVGSVGElement>('#tds-defs-sprite')!.innerHTML = engineDefs();
 const artSvg = app.querySelector<SVGSVGElement>('#page-canvas')!;
 const overlaySvg = app.querySelector<SVGSVGElement>('#overlay')!;
 const strip = app.querySelector<HTMLElement>('#filmstrip')!;
+// The pages bar's buttons on either side of the chips (play; duplicate, add,
+// undo delete), outside the strip so that they never scroll away.
+const pagesLead = app.querySelector<HTMLElement>('#pagesLead')!;
+const pagesTail = app.querySelector<HTMLElement>('#pagesTail')!;
 const framesDock = app.querySelector<HTMLDivElement>('#frames-dock')!;
 const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
 const savedEl = app.querySelector<HTMLElement>('#saved')!;
 const saveAlertEl = app.querySelector<HTMLElement>('#saveAlert')!;
+/* The document title in the top bar. It writes what the Title field of the
+ * page properties writes (doc.title, then the autosave), and the two show
+ * the same text: each updates the other, and a loaded document sets both. */
+const docTitleEl = app.querySelector<HTMLInputElement>('#docTitle')!;
+docTitleEl.value = doc.title;
+docTitleEl.addEventListener('input', () => {
+  doc.title = docTitleEl.value;
+  const field = app.querySelector<HTMLInputElement>('#p-title');
+  if (field) field.value = doc.title;
+  markDirty();
+});
+// Enter is done with the title; the canvas has the keyboard again.
+docTitleEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !isImeKey(e)) docTitleEl.blur();
+});
 
 /* Autosave to localStorage (debounced) whenever the document changes.
  *
@@ -888,9 +874,14 @@ function openQuickAdd(req: InlineEditRequest, connectFrom?: string): void {
 }
 /* ── mini style bar (Phase 1.4) ───────────────────────────────────────
  * A compact contextual bar floating above the selection with the top
- * inspector actions — color swatches + frame emphasis for nodes, plus
+ * inspector actions — color swatches + page emphasis for nodes, plus
  * link type / routing for a selected link. Pure convenience over the
- * inspector (same update paths); view state only, nothing persisted. */
+ * inspector (same update paths); view state only, nothing persisted.
+ * After them come commands of the registry, as icon buttons: align and
+ * distribute for two or more nodes, then bring to front, send to back and
+ * lock for any node or link selection. Each runs its command and is
+ * greyed out when the command cannot run (distribute below three nodes,
+ * z-order for more than one node). */
 const miniBar = document.createElement('div');
 miniBar.className = 'mini-bar';
 miniBar.hidden = true;
@@ -901,7 +892,7 @@ function miniBarHtml(kind: 'node' | 'link'): string {
     (c) =>
       `<button class="mb-sw" data-mbcolor="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}"></button>`,
   ).join('');
-  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this frame" aria-label="Emphasize on this frame">${icon('star')}</button>`;
+  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this page" aria-label="Emphasize on this page">${icon('star')}</button>`;
   if (kind === 'link') {
     const info = editor.selectedLinkInfo();
     const typeOpts = linkCatalog()
@@ -919,10 +910,69 @@ function miniBarHtml(kind: 'node' | 'link'): string {
     return (
       `<select class="mb-sel" id="mbType" title="Link type" aria-label="Link type">${typeOpts}</select>` +
       `<select class="mb-sel" id="mbStyle" title="Routing" aria-label="Link routing">${styleOpts}</select>` +
-      `<span class="mb-div"></span>${swatches}<span class="mb-div"></span>${emph}`
+      `<span class="mb-div"></span>${swatches}<span class="mb-div"></span>${emph}` +
+      miniBarCommandsHtml(MINI_BAR_ORDER)
     );
   }
-  return `${swatches}<span class="mb-div"></span>${emph}`;
+  const multi = (editor.selectionElements()?.nodes.length ?? 0) >= 2;
+  return (
+    `${swatches}<span class="mb-div"></span>${emph}` +
+    (multi
+      ? miniBarCommandsHtml(MINI_BAR_ALIGN) +
+        miniBarCommandsHtml(MINI_BAR_DISTRIBUTE)
+      : '') +
+    miniBarCommandsHtml(MINI_BAR_ORDER)
+  );
+}
+
+const MINI_BAR_ALIGN = [
+  'arrange.alignLeft',
+  'arrange.alignCenterH',
+  'arrange.alignRight',
+  'arrange.alignTop',
+  'arrange.alignMiddleV',
+  'arrange.alignBottom',
+] as const satisfies readonly CommandId[];
+const MINI_BAR_DISTRIBUTE = [
+  'arrange.distributeH',
+  'arrange.distributeV',
+] as const satisfies readonly CommandId[];
+const MINI_BAR_ORDER = [
+  'arrange.bringToFront',
+  'arrange.sendToBack',
+  'edit.toggleLock',
+] as const satisfies readonly CommandId[];
+
+/** A divider, then one icon button per command; their state is set by
+ * `syncMiniBarCommands`. */
+function miniBarCommandsHtml(ids: readonly CommandId[]): string {
+  return (
+    `<span class="mb-div"></span>` +
+    ids
+      .map((id) => {
+        const spec = commands.get(id)!;
+        return `<button type="button" class="icon-btn mb-cmd" data-command="${id}">${spec.icon ? icon(spec.icon) : ''}</button>`;
+      })
+      .join('')
+  );
+}
+
+/** Name, tooltip, enabled and pressed state of the bar's command buttons,
+ * as the registry has them now. */
+function syncMiniBarCommands(): void {
+  for (const b of miniBar.querySelectorAll<HTMLButtonElement>('.mb-cmd')) {
+    const id = b.dataset.command as CommandId;
+    const lock = id === 'edit.toggleLock';
+    const label = lock
+      ? commands.isChecked(id)
+        ? 'Unlock'
+        : 'Lock'
+      : commands.get(id)!.title;
+    b.setAttribute('aria-label', label);
+    b.title = commands.titleWithShortcut(id, label);
+    b.disabled = !commands.isEnabled(id);
+    if (lock) b.setAttribute('aria-pressed', String(commands.isChecked(id)));
+  }
 }
 
 /** Selection anchor (top-centre of the selection bbox) in client coords. */
@@ -973,8 +1023,11 @@ function updateMiniBar(): void {
     return;
   }
   const kind = link ? 'link' : 'node';
-  if (miniBar.dataset.kind !== kind || miniBar.hidden) {
+  // Two or more nodes add the align and distribute buttons.
+  const layout = kind === 'node' && nodeCount >= 2 ? 'nodes' : kind;
+  if (miniBar.dataset.layout !== layout || miniBar.hidden) {
     miniBar.dataset.kind = kind;
+    miniBar.dataset.layout = layout;
     miniBar.innerHTML = miniBarHtml(kind);
   } else if (kind === 'link') {
     // Keep the selects in sync when a different link is picked.
@@ -984,14 +1037,20 @@ function updateMiniBar(): void {
     if (t && info) t.value = info.type;
     if (s && info) s.value = info.style;
   }
+  syncMiniBarCommands();
   miniBar.hidden = false;
   const hostRect = host.getBoundingClientRect();
+  // Measured from the canvas's left edge, so the room to its right does not
+  // decide whether the bar wraps onto a second row.
+  miniBar.style.left = '0px';
   const w = miniBar.offsetWidth || 200;
+  const h = miniBar.offsetHeight || 34;
   const left = Math.max(
     4,
     Math.min(anchor.x - hostRect.left - w / 2, hostRect.width - w - 4),
   );
-  const top = Math.max(4, anchor.y - hostRect.top - 46);
+  // Clear of the selection, by the bar's own height (one row or two).
+  const top = Math.max(4, anchor.y - hostRect.top - h - 12);
   miniBar.style.left = `${Math.round(left)}px`;
   miniBar.style.top = `${Math.round(top)}px`;
   const emph = miniBar.querySelector<HTMLButtonElement>('#mbEmph');
@@ -1009,6 +1068,13 @@ miniBar.addEventListener('click', (e) => {
     if (editor.getSelectedLink()) editor.updateLink({ color });
     else editor.updateSelectedNodes({ color });
     renderInspector();
+    return;
+  }
+  const cmd = t.closest<HTMLButtonElement>('.mb-cmd');
+  if (cmd) {
+    commands.run(cmd.dataset.command as CommandId);
+    renderInspector();
+    updateMiniBar();
     return;
   }
   if (t.closest('#mbEmph')) {
@@ -1060,10 +1126,10 @@ editor.setConnectEmptyHandler((req) =>
 );
 
 /*
- * Tell the editor how much of the canvas the floating panels cover, so
- * fit-to-content frames the *visible* area and never tucks edge content behind
- * the node library, the bottom band or the properties drawer. Recomputed on
- * each fit (panels collapse/expand).
+ * Tell the editor how much of the canvas the panels cover, so fit-to-content
+ * frames the *visible* area and never tucks edge content behind the node
+ * library, the zoom control and minimap in the canvas's corner, or the
+ * properties drawer. Recomputed on each fit (panels collapse/expand).
  */
 /** A floating panel's box, or null while it is collapsed or not laid out. */
 const openPanelBox = (id: string): PanelBox | null => {
@@ -1072,6 +1138,16 @@ const openPanelBox = (id: string): PanelBox | null => {
   const r = el.getBoundingClientRect();
   return r.width > 0 && r.height > 0 ? r : null;
 };
+/** The smallest box that holds both, or the one that is there. */
+function unionBox(a: PanelBox | null, b: PanelBox | null): PanelBox | null {
+  if (!a || !b) return a ?? b;
+  return {
+    left: Math.min(a.left, b.left),
+    top: Math.min(a.top, b.top),
+    right: Math.max(a.right, b.right),
+    bottom: Math.max(a.bottom, b.bottom),
+  };
+}
 /** The left inset the editor's latest fit was computed with (see fitView). */
 let fitLeftInset = 0;
 editor.setViewInsets(() => {
@@ -1079,9 +1155,9 @@ editor.setViewInsets(() => {
     canvas: overlaySvg.getBoundingClientRect(),
     palette: openPanelBox('palette'),
     inspector: openPanelBox('inspector-wrap'),
-    // The view controls are always in the bottom band, so it is reserved
-    // with the frames strip collapsed too.
-    dock: openPanelBox('canvas-dock'),
+    // The zoom control is always there; the minimap card above it only
+    // while it is open.
+    corner: unionBox(openPanelBox('canvasCtrls'), openPanelBox('minimap-dock')),
   });
   fitLeftInset = insets.left;
   return editorInsets(insets);
@@ -1144,6 +1220,7 @@ function loadDoc(
   }
   updateSharedBanner();
   doc.title = next.title;
+  docTitleEl.value = doc.title;
   doc.pages = structuredClone(next.pages);
   doc.customNodes = structuredClone(next.customNodes);
   for (const key of [
@@ -1198,18 +1275,14 @@ const workspacePanelHandle = mountWorkspacePanel({
   chipLabel: app.querySelector<HTMLElement>('#workspaceLabel')!,
   chipDivider: app.querySelector<HTMLElement>('#workspaceDiv')!,
 });
-/* Authoring Preferences (Packet P3, observe-only): a small toolbar chip next
- * to the workspace chip, revealed with it on sign-in. The panel implementation
- * (fetching, pause/forget wiring, panel DOM) lives in
- * `src/ui/profile-panel.ts`. */
-const profilePanelHandle = mountProfilePanel({
-  chip: app.querySelector<HTMLButtonElement>('#profileChip')!,
-});
-/** Owner-only admin dashboard — revealed only when `/api/me` reports `admin`;
- * the panel + fetching live in `src/ui/admin-dashboard.ts`. */
-const adminDashboardHandle = mountAdminDashboard({
-  chip: app.querySelector<HTMLButtonElement>('#adminChip')!,
-});
+/* Authoring Preferences (Packet P3, observe-only) and the owner-only admin
+ * dashboard open from the account menu (account.preferences, account.admin),
+ * which offers them under the conditions their chips were revealed by: a
+ * signed-in user, and for the dashboard the owner flag from `/api/me`. The
+ * panels (fetching, pause/forget wiring, panel DOM) live in
+ * `src/ui/profile-panel.ts` and `src/ui/admin-dashboard.ts`. */
+const profilePanelHandle = mountProfilePanel({});
+const adminDashboardHandle = mountAdminDashboard({});
 function closeWorkspaceForDocumentReplacement(): boolean {
   return workspacePanelHandle.closeForDocumentReplacement();
 }
@@ -1354,12 +1427,6 @@ function newDocument(): void {
   // of their own: say, without blocking, what signing in would add.
   promptSignIn();
 }
-app
-  .querySelector('#fNew')
-  ?.addEventListener('click', () => commands.run('file.new'));
-app
-  .querySelector('#fSave')
-  ?.addEventListener('click', () => commands.run('file.download'));
 
 /* Image export: SVG (vector, honors calm) and PNG (always a static raster).
  * #222: the click used to fire a detached <a download> and revoke the blob
@@ -1367,7 +1434,6 @@ app
  * inserts the anchor and keeps the URL alive; this chip reports success or
  * failure so a swallowed download is never the only outcome. */
 const exportStatus = app.querySelector<HTMLElement>('#exportStatus')!;
-const pngBtn = app.querySelector<HTMLButtonElement>('#fPng');
 /** Show how export `kind` is going in the status chip (and to a screen
  * reader: the chip is a polite live region). */
 function reportExport(kind: string, state: ExportState, detail?: string): void {
@@ -1410,7 +1476,6 @@ function exportPng(): void {
   const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.png`;
   pngExportInFlight = true;
-  if (pngBtn) pngBtn.disabled = true;
   reportExport('png', 'pending', filename);
   void exportPagePNG(filename, page, 2, pageOverlay(page), pageOpts(page))
     .then(() => reportExport('png', 'ok', filename))
@@ -1420,17 +1485,11 @@ function exportPng(): void {
     })
     .finally(() => {
       pngExportInFlight = false;
-      if (pngBtn) pngBtn.disabled = false;
     });
 }
-app
-  .querySelector('#fSvg')
-  ?.addEventListener('click', () => commands.run('file.export.svg'));
-pngBtn?.addEventListener('click', () => commands.run('file.export.png'));
 /* More export formats: PDF (raster @2× through the same pipeline as PNG, so
  * it always matches the canvas), the standalone flipbook HTML (same generator
  * as the MCP tool — no fork), clipboard PNG, and selection-only crops. */
-const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
 /**
  * The page as an image export frames it. Exports render the page frame
  * (viewBox); when drawn content — a zone box, an outside label — extends past
@@ -1599,22 +1658,7 @@ function exportFromMenu(kind: string): void {
     },
   );
 }
-exportSel.addEventListener('change', () => {
-  const kind = exportSel.value;
-  exportSel.value = '';
-  if (kind) runVariant('file.export.', kind);
-});
-/* New from a starter template. */
-const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
-templateSel.innerHTML =
-  `<option value="">template…</option>` +
-  listTemplates()
-    .map(
-      (t) =>
-        `<option value="${t.id}" title="${esc(t.description)}">${esc(t.name)}</option>`,
-    )
-    .join('') +
-  `<option value="${SDWAN_WIZARD}" title="Generate an SD-WAN fabric: vendor, regions, hubs, branches, WAN transports, HA, LAN">Generate SD-WAN…</option>`;
+/* New from a starter template (File ▸ New from template). */
 /** Open the SD-WAN generator; what it creates replaces the document. */
 function generateSdwan(): void {
   openSdwanWizard({
@@ -1661,18 +1705,8 @@ function newFromTemplate(id: string): void {
   if (!closeWorkspaceForDocumentReplacement()) return;
   loadDoc(buildTemplate(id));
 }
-templateSel.addEventListener('change', () => {
-  const id = templateSel.value;
-  templateSel.value = '';
-  if (!id) return;
-  if (id === SDWAN_WIZARD) commands.run('file.generateSdwan');
-  else runVariant('file.template.', id);
-});
 
 const fileInput = app.querySelector<HTMLInputElement>('#fInput')!;
-app
-  .querySelector('#fOpen')
-  ?.addEventListener('click', () => commands.run('file.open'));
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
   fileInput.value = '';
@@ -1739,6 +1773,12 @@ fileInput.addEventListener('change', async () => {
   loadDoc(parsed);
 });
 
+/** Show a toggle button's state: its `on` class and `aria-pressed`. */
+function setPressed(button: HTMLElement, on: boolean): void {
+  button.classList.toggle('on', on);
+  button.setAttribute('aria-pressed', String(on));
+}
+
 /* Tool toggle (select / link) */
 const selectBtn = app.querySelector<HTMLButtonElement>('#tSelect')!;
 const linkBtn = app.querySelector<HTMLButtonElement>('#tLink')!;
@@ -1746,9 +1786,9 @@ const anchorBtn = app.querySelector<HTMLButtonElement>('#tAnchor')!;
 function setTool(t: 'select' | 'link' | 'anchor'): void {
   editor.setTool(t);
   if (editor.isHandActive()) setHand(false); // picking a tool exits Hand mode
-  selectBtn.classList.toggle('on', t === 'select');
-  linkBtn.classList.toggle('on', t === 'link');
-  anchorBtn.classList.toggle('on', t === 'anchor');
+  setPressed(selectBtn, t === 'select');
+  setPressed(linkBtn, t === 'link');
+  setPressed(anchorBtn, t === 'anchor');
   renderStatus();
 }
 selectBtn.addEventListener('click', () => commands.run('tool.select'));
@@ -1764,9 +1804,14 @@ redoBtn.addEventListener('click', () => commands.run('edit.redo'));
 /* On-canvas controls: hand/pan, zoom +/−, zoom %, fit. */
 const handBtn = app.querySelector<HTMLButtonElement>('#ccHand')!;
 const ccZoom = app.querySelector<HTMLButtonElement>('#ccZoom')!;
+/** Hand mode sits on top of the current tool: while it is on, Hand is the
+ * one tool shown pressed; when it goes off, the tool underneath is again. */
 function setHand(on: boolean): void {
   editor.setHandTool(on);
-  handBtn.classList.toggle('on', on);
+  setPressed(handBtn, on);
+  setPressed(selectBtn, !on && editor.tool === 'select');
+  setPressed(linkBtn, !on && editor.tool === 'link');
+  setPressed(anchorBtn, !on && editor.tool === 'anchor');
 }
 handBtn.addEventListener('click', () => commands.run('tool.hand'));
 app
@@ -1786,18 +1831,6 @@ function refreshChrome(): void {
   redoBtn.disabled = !editor.canRedo();
   ccZoom.textContent = `${Math.round(editor.zoom() * 100)}%`;
 }
-
-/* Select-by dropdown — select nodes by a criterion (resets to placeholder). */
-const selectBySel = app.querySelector<HTMLSelectElement>('#tSelectBy')!;
-/** The command behind each option of the menu. */
-const SELECT_BY: Readonly<Record<string, CommandId>> = Object.fromEntries(
-  SELECT_BY_OPTIONS.map(([value, , command]) => [value, command]),
-);
-selectBySel.addEventListener('change', () => {
-  const command = SELECT_BY[selectBySel.value];
-  selectBySel.value = '';
-  if (command) commands.run(command);
-});
 
 /* Status bar — live tool / cursor / element counts / zoom. */
 const statusbar = app.querySelector<HTMLElement>('#statusbar')!;
@@ -1823,13 +1856,13 @@ function renderStatus(): void {
   const cur = cursor ? `${cursor.x}, ${cursor.y}` : '–';
   statusbar.innerHTML =
     `<span><span class="sb-k">tool</span> ${editor.tool}</span>` +
-    `<span><span class="sb-k">x,y</span> ${cur}</span>` +
+    `<span class="sb-minor"><span class="sb-k">x,y</span> ${cur}</span>` +
     `<span><span class="sb-k">nodes</span> ${p.nodes.length}</span>` +
     `<span><span class="sb-k">links</span> ${p.links.length}</span>` +
-    `<span><span class="sb-k">anchors</span> ${p.anchors.length}</span>` +
-    `<span><span class="sb-k">zones</span> ${p.zones.length}</span>` +
+    `<span class="sb-minor"><span class="sb-k">anchors</span> ${p.anchors.length}</span>` +
+    `<span class="sb-minor"><span class="sb-k">zones</span> ${p.zones.length}</span>` +
     `<span><span class="sb-k">selected</span> ${sel}</span>` +
-    `<span><span class="sb-k">history</span> ${editor.historyDepth()}</span>` +
+    `<span class="sb-minor"><span class="sb-k">history</span> ${editor.historyDepth()}</span>` +
     `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>` +
     statusProblemsHTML() +
     `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ? shortcuts</span>`;
@@ -1887,18 +1920,22 @@ function renderMinimap(): void {
   const mx = (x: number): number => ox + (x - px) * s;
   const my = (y: number): number => oy + (y - py) * s;
   const dots = p.nodes
-    .map(
-      (n) =>
-        `<circle cx="${mx(n.x)}" cy="${my(n.y)}" r="2" fill="${n.color || '#7d8a92'}"/>`,
+    .map((n) =>
+      // A node's own colour is the document's; the rest is the theme's
+      // (the mm-* rules in shell.css), so it follows light and dark and
+      // the brand accent.
+      n.color
+        ? `<circle class="mm-node" cx="${mx(n.x)}" cy="${my(n.y)}" r="2" fill="${esc(n.color)}"/>`
+        : `<circle class="mm-node" cx="${mx(n.x)}" cy="${my(n.y)}" r="2"/>`,
     )
     .join('');
   const v = editor.getView();
   minimap.setAttribute('viewBox', `0 0 ${MM_W} ${MM_H}`);
   const html =
-    `<rect x="${ox}" y="${oy}" width="${pw * s}" height="${ph * s}" fill="none" stroke="#7d8a92" stroke-opacity="0.5" stroke-width="1"/>` +
+    `<rect class="mm-page" x="${ox}" y="${oy}" width="${pw * s}" height="${ph * s}"/>` +
     dots +
-    `<rect x="${mx(v.x)}" y="${my(v.y)}" width="${v.w * s}" height="${v.h * s}" fill="#01a982" fill-opacity="0.12" stroke="#01a982" stroke-width="1.5"/>`;
-  // Mirror the canvas brand remap so the minimap dots + viewport box match (#7).
+    `<rect class="mm-view" x="${mx(v.x)}" y="${my(v.y)}" width="${v.w * s}" height="${v.h * s}"/>`;
+  // Mirror the canvas brand remap so a node's own colour matches (#7).
   minimap.innerHTML = doc.palette ? applyPalette(html, doc.palette) : html;
 }
 // Click / drag the minimap to recenter the view there.
@@ -1918,12 +1955,13 @@ minimap.addEventListener('pointermove', (e) => {
   if (e.buttons === 1) minimapPanTo(e);
 });
 
-// Collapse / restore the minimap section docked at the bottom of the left rail.
+// Show / hide the minimap card above the zoom control. Its toggle is at the
+// right end of the pages bar.
 const minimapDock = app.querySelector<HTMLDivElement>('#minimap-dock')!;
 const minimapToggle = app.querySelector<HTMLButtonElement>('#minimap-toggle')!;
 function setMinimapCollapsed(collapsed: boolean): void {
   minimapDock.classList.toggle('collapsed', collapsed);
-  minimapToggle.innerHTML = `map ${icon(collapsed ? 'chevron-right' : 'chevron-down')}`;
+  minimapToggle.setAttribute('aria-pressed', String(!collapsed));
   minimapToggle.title = commands.titleWithShortcut(
     'view.toggleMinimap',
     collapsed ? 'Show minimap' : 'Hide minimap',
@@ -1937,14 +1975,20 @@ function setMinimapCollapsed(collapsed: boolean): void {
 minimapToggle.addEventListener('click', () =>
   commands.run('view.toggleMinimap'),
 );
-setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') === '1');
+// Closed until asked for: open, the card floats over the canvas's corner and
+// every fit gives up a strip of the canvas to it.
+setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') !== '0');
 
-// Collapse / restore the node palette so it stops crowding the left edge.
+// Collapse / restore the node library docked beside the rail (a drawer over
+// the canvas on a phone). Its toggle is the rail's Library button.
 const paletteEl = app.querySelector<HTMLElement>('#palette')!;
 const paletteToggle = app.querySelector<HTMLButtonElement>('#palette-toggle')!;
 function setPaletteCollapsed(collapsed: boolean, persist = true): void {
   paletteEl.classList.toggle('collapsed', collapsed);
-  paletteToggle.innerHTML = `nodes ${icon(collapsed ? 'panel-left-open' : 'panel-left-close')}`;
+  paletteToggle.innerHTML = icon(
+    collapsed ? 'panel-left-open' : 'panel-left-close',
+  );
+  paletteToggle.setAttribute('aria-pressed', String(!collapsed));
   paletteToggle.title = commands.titleWithShortcut(
     'view.toggleLibrary',
     collapsed ? 'Show node library' : 'Hide node library',
@@ -1960,10 +2004,10 @@ paletteToggle.addEventListener('click', () =>
   commands.run('view.toggleLibrary'),
 );
 
-/* Collapse / restore the frames strip — a floating overlay at the canvas's
- * bottom-left, so toggling never resizes the canvas or moves the viewport.
- * Collapsed it shrinks to a pill whose current/total readout stays live
- * (playback keeps running and updating it without forcing the strip open). */
+/* Collapse / restore the page chips in the pages bar. The bar itself stays,
+ * so toggling never resizes the canvas or moves the viewport. Collapsed, the
+ * toggle's current/total readout stays live (playback keeps running and
+ * updating it without forcing the chips open). */
 function setFramesCollapsed(collapsed: boolean): void {
   framesDock.classList.toggle('collapsed', collapsed);
   framesToggle.setAttribute('aria-expanded', String(!collapsed));
@@ -1971,7 +2015,7 @@ function setFramesCollapsed(collapsed: boolean): void {
   if (chev) chev.innerHTML = icon(collapsed ? 'chevron-right' : 'chevron-left');
   framesToggle.title = commands.titleWithShortcut(
     'view.toggleFrames',
-    collapsed ? 'Show frames' : 'Hide frames',
+    collapsed ? 'Show pages' : 'Hide pages',
   );
   try {
     localStorage.setItem('tds-frames-collapsed', collapsed ? '1' : '0');
@@ -2421,6 +2465,9 @@ const inspectorContext: InspectorContext = {
   run: (id) => commands.run(id),
   rerender: renderInspector,
   markDirty,
+  titleChanged: () => {
+    docTitleEl.value = doc.title;
+  },
   firstEdit: () => {
     const first = !editing;
     editing = true;
@@ -2554,43 +2601,11 @@ function onZoneSelectChange(_zoneId: string | null): void {
   renderStatus();
 }
 
-/* Align/distribute toolbar — shown when 2+ nodes are selected. */
-const alignGroup = app.querySelector<HTMLElement>('#alignGroup')!;
-function onSelectionChange(count: number): void {
+function onSelectionChange(_count: number): void {
   if (statusReady) updateMiniBar();
-  alignGroup.hidden = count < 2;
-  alignGroup
-    .querySelectorAll<HTMLButtonElement>('[data-dist]')
-    .forEach((b) => (b.disabled = count < 3));
   renderInspector();
   renderStatus();
 }
-// The buttons name their variant in a data attribute; they must offer
-// exactly the commands' variants.
-for (const [prefix, attr] of [
-  ['arrange.align', 'align'],
-  ['arrange.distribute', 'dist'],
-] as const)
-  checkVariantControls(
-    prefix,
-    [...alignGroup.querySelectorAll<HTMLElement>(`[data-${attr}]`)].map(
-      (b) => b.dataset[attr],
-    ),
-  );
-alignGroup
-  .querySelectorAll<HTMLButtonElement>('[data-align]')
-  .forEach((b) =>
-    b.addEventListener('click', () =>
-      runVariant('arrange.align', b.dataset.align),
-    ),
-  );
-alignGroup
-  .querySelectorAll<HTMLButtonElement>('[data-dist]')
-  .forEach((b) =>
-    b.addEventListener('click', () =>
-      runVariant('arrange.distribute', b.dataset.dist),
-    ),
-  );
 
 /* ── Inspector ──────────────────────────────────────────────────── */
 // One snapshot per edit "session": reset on each focus into the inspector.
@@ -4367,15 +4382,24 @@ async function downscaleImage(
 
 let dragFrom = -1;
 
-/* A just-deleted frame, held so the strip can offer "undo delete" until the
+/* A just-deleted page, held so the bar can offer "Undo delete" until the
  * chip times out or another frame is deleted. Its stashed editor history is
  * kept alive with it, so restoring the frame restores its undo stack too. */
 let pendingFrameDelete: { page: Page; index: number; timer: number } | null =
   null;
 
-/** What the strip's play button shows while playing, or while stopped. */
+/** What the pages bar's play button shows while playing, or while stopped. */
 function playFlipLabel(playing: boolean): string {
-  return playing ? `${icon('pause')} pause` : `${icon('play')} play`;
+  return playing
+    ? `${icon('pause')}<span class="pages-label">Pause</span>`
+    : `${icon('play')}<span class="pages-label">Play</span>`;
+}
+/** Show on the play button whether the player is running. */
+function setPlayFlip(playing: boolean): void {
+  const b = pagesLead.querySelector<HTMLButtonElement>('#playFlip');
+  if (!b) return;
+  b.innerHTML = playFlipLabel(playing);
+  b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
 }
 
 /* Flipbook playback: step through pages on their durations (loop). The same
@@ -4384,8 +4408,7 @@ function stopPlayback(): void {
   if (playTimer === null) return;
   clearTimeout(playTimer);
   playTimer = null;
-  const b = strip.querySelector('#playFlip');
-  if (b) b.innerHTML = playFlipLabel(false);
+  setPlayFlip(false);
 }
 function startPlayback(): void {
   if (doc.pages.length < 2) return;
@@ -4401,8 +4424,7 @@ function startPlayback(): void {
     playTimer = window.setTimeout(advance, pageDuration(doc.pages[next]!));
   };
   playTimer = window.setTimeout(advance, pageDuration(doc.pages[current]!));
-  const b = strip.querySelector('#playFlip');
-  if (b) b.innerHTML = playFlipLabel(true);
+  setPlayFlip(true);
 }
 
 /** Keep the frames pill's "current/total" readout live (playback included). */
@@ -4421,6 +4443,10 @@ function scrollActiveFrameIntoView(): void {
   const pad = 12; // keep a sliver of the neighbour chip visible
   const left = el.offsetLeft;
   const right = left + el.offsetWidth;
+  // A chip already wholly in view stays put: a press on it must not slide
+  // it from under the pointer between the two presses of a double-click.
+  if (left >= strip.scrollLeft && right <= strip.scrollLeft + strip.clientWidth)
+    return;
   if (left - pad < strip.scrollLeft) {
     strip.scrollLeft = Math.max(0, left - pad);
   } else if (right + pad > strip.scrollLeft + strip.clientWidth) {
@@ -4430,27 +4456,28 @@ function scrollActiveFrameIntoView(): void {
 
 function renderFilmstrip(): void {
   const canDelete = doc.pages.length > 1;
-  strip.innerHTML = `
-    ${
-      doc.pages.length > 1
-        ? `<button class="frame add" id="playFlip" title="Play the flipbook (each frame holds for its duration)">${playFlipLabel(playTimer !== null)}</button>`
-        : ''
-    }
-    ${doc.pages
-      .map(
-        (p, i) => `
+  const playing = playTimer !== null;
+  pagesLead.innerHTML =
+    doc.pages.length > 1
+      ? `<button type="button" class="btn btn-ghost" id="playFlip" title="Play the pages on the canvas (each page holds for its duration)" aria-label="${playing ? 'Pause' : 'Play'}">${playFlipLabel(playing)}</button>`
+      : '';
+  // Each chip is a button that goes to its page (Enter or a click; F2 or a
+  // double-click renames it), with its delete button beside it, not in it.
+  strip.innerHTML = doc.pages
+    .map(
+      (p, i) => `
       <div class="frame ${i === current ? 'on' : ''}" data-page="${i}" draggable="true" title="${esc(p.name)} — double-click to rename, drag to reorder">
-        <span class="frame-n">${i + 1}</span>
-        <span class="frame-name" data-name="${i}">${esc(p.name)}</span>
-        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete frame" aria-label="Delete frame ${esc(p.name)}">${icon('x')}</button>` : ''}
+        <button type="button" class="frame-sel"${i === current ? ' aria-current="page"' : ''}><span class="visually-hidden">Page </span><span class="frame-n">${i + 1}</span> <span class="frame-name" data-name="${i}">${esc(p.name)}</span></button>
+        ${canDelete ? `<button type="button" class="frame-x" data-del="${i}" title="Delete page" aria-label="Delete page ${esc(p.name)}">${icon('x')}</button>` : ''}
       </div>`,
-      )
-      .join('')}
-    <button class="frame add" id="dupPage" title="Duplicate current frame">${icon('duplicate')} duplicate</button>
-    <button class="frame add" id="addPage" title="Add blank frame" aria-label="Add frame">${icon('plus')} frame</button>
+    )
+    .join('');
+  pagesTail.innerHTML = `
+    <button type="button" class="btn btn-ghost" id="dupPage" title="Duplicate current page" aria-label="Duplicate page">${icon('duplicate')}<span class="pages-label">Duplicate page</span></button>
+    <button type="button" class="btn btn-ghost" id="addPage" title="Add blank page" aria-label="Add page">${icon('plus')}<span class="pages-label">Add page</span></button>
     ${
       pendingFrameDelete
-        ? `<button class="frame add" id="undoDel" title="Restore the deleted frame &quot;${esc(pendingFrameDelete.page.name)}&quot;">${icon('restore')} undo delete</button>`
+        ? `<button type="button" class="btn btn-ghost" id="undoDel" title="Restore the deleted page &quot;${esc(pendingFrameDelete.page.name)}&quot;" aria-label="Undo delete">${icon('restore')}<span class="pages-label">Undo delete</span></button>`
         : ''
     }
   `;
@@ -4479,22 +4506,33 @@ function renderFilmstrip(): void {
         startRename(Number(el.dataset.name), el),
       ),
     );
+  // F2 renames the focused chip: the keyboard's double-click.
+  strip.querySelectorAll<HTMLButtonElement>('.frame-sel').forEach((b) =>
+    b.addEventListener('keydown', (e) => {
+      if (e.key !== 'F2' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const name = b.querySelector<HTMLElement>('[data-name]');
+      if (!name) return;
+      e.preventDefault();
+      e.stopPropagation();
+      startRename(Number(name.dataset.name), name, true);
+    }),
+  );
   strip.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((b) =>
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       commands.run('page.delete', Number(b.dataset.del));
     }),
   );
-  strip
+  pagesLead
     .querySelector('#playFlip')
     ?.addEventListener('click', () => commands.run('page.playPause'));
-  strip
+  pagesTail
     .querySelector('#addPage')
     ?.addEventListener('click', () => commands.run('page.add'));
-  strip
+  pagesTail
     .querySelector('#dupPage')
     ?.addEventListener('click', () => commands.run('page.duplicate'));
-  strip
+  pagesTail
     .querySelector('#undoDel')
     ?.addEventListener('click', () => commands.run('page.undoDelete'));
 
@@ -4541,31 +4579,56 @@ function gotoPage(i: number): void {
   renderProblems();
 }
 
-function startRename(i: number, span: HTMLElement): void {
+/**
+ * Rename page `i` in place: its name becomes a field. `refocus` (a rename
+ * started from the keyboard): Enter or Escape puts focus back on the chip.
+ */
+function startRename(i: number, span: HTMLElement, refocus = false): void {
   const page = doc.pages[i];
   if (!page) return;
   const input = document.createElement('input');
   input.className = 'frame-rename';
   input.value = page.name;
-  span.replaceWith(input);
+  input.setAttribute('aria-label', `Rename page ${i + 1}`);
+  // A field cannot sit inside the chip's button: while it is open, the
+  // number and the field take the button's place.
+  const chip = span.closest<HTMLElement>('.frame-sel');
+  if (chip) {
+    const box = document.createElement('span');
+    box.className = 'frame-sel frame-editing';
+    const n = chip.querySelector('.frame-n');
+    if (n) box.append(n.cloneNode(true), ' ');
+    box.append(input);
+    chip.replaceWith(box);
+  } else span.replaceWith(input);
   input.focus();
   input.select();
   // Once only: redrawing the strip removes this input, and a removed input
   // that had focus fires blur — which would save the text Escape just
   // cancelled.
   let done = false;
+  let byKey = false;
   const commit = (save: boolean): void => {
     if (done) return;
     done = true;
     if (save) page.name = input.value.trim() || page.name;
     renderFilmstrip();
     if (save) markDirty();
+    if (refocus && byKey)
+      strip
+        .querySelector<HTMLElement>(`[data-page="${i}"] .frame-sel`)
+        ?.focus();
   };
   input.addEventListener('blur', () => commit(true));
   input.addEventListener('keydown', (e) => {
     if (isImeKey(e)) return; // the key belongs to an IME composition
-    if (e.key === 'Enter') input.blur();
-    else if (e.key === 'Escape') commit(false);
+    if (e.key === 'Enter') {
+      byKey = true;
+      input.blur();
+    } else if (e.key === 'Escape') {
+      byKey = true;
+      commit(false);
+    }
   });
 }
 
@@ -4577,7 +4640,7 @@ function finalizeFrameDelete(): void {
   pendingFrameDelete = null;
 }
 
-/** Restore the just-deleted frame at its old position (the strip's undo chip). */
+/** Restore the just-deleted page at its old position (the bar's Undo delete). */
 function undoFrameDelete(): void {
   if (!pendingFrameDelete) return;
   const { page, index, timer } = pendingFrameDelete;
@@ -4646,9 +4709,13 @@ function selectPage(i: number): void {
   // Report the new page to the workspace presence socket (Packet S1).
   workspacePanelHandle.notifyPageChanged();
   // Update highlight without rebuilding the strip (so dblclick-rename survives).
-  strip
-    .querySelectorAll<HTMLElement>('[data-page]')
-    .forEach((el) => el.classList.toggle('on', Number(el.dataset.page) === i));
+  strip.querySelectorAll<HTMLElement>('[data-page]').forEach((el) => {
+    const on = Number(el.dataset.page) === i;
+    el.classList.toggle('on', on);
+    const chip = el.querySelector('.frame-sel');
+    if (on) chip?.setAttribute('aria-current', 'page');
+    else chip?.removeAttribute('aria-current');
+  });
   updateFramesIndicator();
   scrollActiveFrameIntoView();
 }
@@ -4658,11 +4725,11 @@ const gridBtn = app.querySelector<HTMLButtonElement>('#tGrid')!;
 const snapBtn = app.querySelector<HTMLButtonElement>('#tSnap')!;
 function toggleGrid(): void {
   editor.toggleGrid();
-  gridBtn.classList.toggle('on', editor.gridVisible);
+  setPressed(gridBtn, editor.gridVisible);
 }
 function toggleSnap(): void {
   editor.toggleSnap();
-  snapBtn.classList.toggle('on', editor.snap);
+  setPressed(snapBtn, editor.snap);
 }
 gridBtn.addEventListener('click', () => commands.run('view.toggleGrid'));
 snapBtn.addEventListener('click', () => commands.run('view.toggleSnap'));
@@ -4673,7 +4740,7 @@ const calmBtn = app.querySelector<HTMLButtonElement>('#tCalm')!;
 const CALM_KEY = 'topology-dojo:calm';
 function applyCalm(on: boolean): void {
   editor.setCalm(on);
-  calmBtn.classList.toggle('on', on);
+  setPressed(calmBtn, on);
   calmBtn.title = commands.titleWithShortcut(
     'view.toggleCalm',
     on
@@ -4701,14 +4768,8 @@ calmBtn.addEventListener('click', () => commands.run('view.toggleCalm'));
  * sessions like Calm/Grid/Snap (`badgesVisible` + `BADGES_KEY` above, next to
  * the problems panel they mirror). Toggling re-renders the panel + badges
  * together since `renderProblems()` computes both from one problem list. */
-const badgesBtn = app.querySelector<HTMLButtonElement>('#tBadges')!;
 function applyBadgesVisible(on: boolean): void {
   badgesVisible = on;
-  badgesBtn.classList.toggle('on', on);
-  badgesBtn.title = on
-    ? 'Hide on-canvas problem badges'
-    : 'Show on-canvas problem badges';
-  badgesBtn.setAttribute('aria-label', badgesBtn.title);
   try {
     localStorage.setItem(BADGES_KEY, on ? '1' : '0');
   } catch {
@@ -4716,11 +4777,8 @@ function applyBadgesVisible(on: boolean): void {
   }
   renderProblems();
 }
-badgesBtn.classList.toggle('on', badgesVisible);
-badgesBtn.addEventListener('click', () => commands.run('view.toggleBadges'));
 
 /* Light / dark theme — a view preference, persisted across sessions. */
-const themeBtn = app.querySelector<HTMLButtonElement>('#tTheme')!;
 const THEME_KEY = 'topology-dojo:theme';
 const tdsRoot = app.querySelector<HTMLElement>('.tds-root');
 /** The render theme matching the editor's current light/dark toggle (#264). */
@@ -4741,9 +4799,6 @@ function applyTheme(light: boolean): void {
         .getPropertyValue('--surface-back')
         .trim(),
     );
-  themeBtn.classList.toggle('on', light);
-  themeBtn.innerHTML = icon(light ? 'moon' : 'sun');
-  themeBtn.title = light ? 'Switch to dark theme' : 'Switch to light theme';
   // The vendored engine ships a dark canvas. Flip the engine's own light palette
   // on the canvas container (its CSS `--tds-*` background vars) and tell the
   // editor to render a light grid/vignette in the SVG, so the canvas honours
@@ -4757,7 +4812,6 @@ function applyTheme(light: boolean): void {
   }
 }
 applyTheme(localStorage.getItem(THEME_KEY) === 'light');
-themeBtn.addEventListener('click', () => commands.run('view.toggleTheme'));
 
 /* Display settings — embellishment controls (ambient backdrop level),
  * separate from the document and persisted as view preferences.
@@ -4983,8 +5037,10 @@ function closeDisplayPop(): void {
 }
 function toggleDisplayPop(): void {
   if (displayPop.hidden) {
+    // It opens upward from its button at the right end of the pages bar.
     const r = displayBtn.getBoundingClientRect();
-    displayPop.style.top = `${Math.round(r.bottom + 6)}px`;
+    displayPop.style.top = 'auto';
+    displayPop.style.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`;
     displayPop.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
     displayPop.style.left = 'auto';
     displayPop.hidden = false;
@@ -5002,23 +5058,8 @@ displayBtn.addEventListener('click', (e) => {
 closeOnOutsidePress(displayPop, displayBtn, closeDisplayPop);
 
 app
-  .querySelector('#tDelete')
-  ?.addEventListener('click', () => commands.run('edit.delete'));
-app
   .querySelector('#tTidy')
   ?.addEventListener('click', () => commands.run('arrange.tidy'));
-app
-  .querySelector('#tBalance')
-  ?.addEventListener('click', () => commands.run('arrange.balance'));
-const layoutSel = app.querySelector<HTMLSelectElement>('#tLayout')!;
-layoutSel.addEventListener('change', () => {
-  const algorithm = layoutSel.value;
-  layoutSel.value = ''; // reset to the placeholder
-  if (algorithm) runVariant('arrange.layout.', algorithm);
-});
-app
-  .querySelector('#tFit')
-  ?.addEventListener('click', () => commands.run('view.fit'));
 
 /* ── Keyboard-shortcut help overlay (?) ────────────────────────────── */
 /* The sheet lists every command that has a key, group by group, from the
@@ -5075,6 +5116,9 @@ function openHelp(): void {
 app
   .querySelector('#tHelp')
   ?.addEventListener('click', () => commands.run('help.shortcuts'));
+app
+  .querySelector('#tCommand')
+  ?.addEventListener('click', () => commands.run('help.commandPalette'));
 
 /* ── Present mode: full-screen playback of every frame ─────────────────
  * A human-only view feature (DESIGN #2 carve-out — nothing persisted): the
@@ -5342,11 +5386,52 @@ function openShare(): void {
 const shareBtn = app.querySelector<HTMLButtonElement>('#fShare');
 /** Sharing is offered: the hosted Worker reported a signed-in user. */
 let shareAvailable = false;
+/** Who the hosted Worker reports as signed in (null: nobody, or no Worker),
+ * and whether they own the deployment: what the account commands ask. */
+let signedInLogin: string | null = null;
+let signedInAdmin = false;
 shareBtn?.addEventListener('click', () => commands.run('file.share'));
 
+/* Menus. The menu bar, the Tidy and Export buttons and the account chip open
+ * the menus of src/ui/menus.ts. Each is built when it opens, from the
+ * registry and from what is true now (who is signed in, whether sharing is
+ * offered), and every item runs its command through the registry. */
+function menuContext(): MenuContext {
+  return {
+    commands,
+    templates: listTemplates(),
+    shareAvailable,
+    account: signedInLogin
+      ? { login: signedInLogin, admin: signedInAdmin }
+      : null,
+    icon,
+  };
+}
+const MENU_OF: Readonly<Record<string, (ctx: MenuContext) => MenuEntry[]>> =
+  Object.fromEntries([
+    ...MENUBAR.map((m) => [m.id, m.entries] as const),
+    ['more', moreMenu] as const,
+  ]);
+attachMenubar(app.querySelector<HTMLElement>('#menubar')!, (key) => {
+  const entries = MENU_OF[key];
+  if (!entries) throw new Error(`no menu "${key}" in the menu bar`);
+  return entries(menuContext());
+});
+attachMenuButton(
+  app.querySelector<HTMLElement>('#tTidyMenu')!,
+  () => tidyMenu(menuContext()),
+  { placement: 'below-end' },
+);
+attachMenuButton(
+  app.querySelector<HTMLElement>('#fExportBtn')!,
+  () => exportMenu(menuContext()),
+  { placement: 'below-end' },
+);
+
 /* Account menu. The Worker gates the app behind GitHub sign-in and reports the
- * current user at /api/me; when that succeeds we reveal a toolbar chip that opens
- * a small "Signed in as … / Sign out" menu. In Vite dev there's no Worker (auth is
+ * current user at /api/me; when that succeeds we reveal the account chip, whose
+ * menu says who is signed in and holds API keys, Authoring preferences, Admin
+ * (the owner only), Theme and Sign out. In Vite dev there's no Worker (auth is
  * bypassed) so the fetch 404s and the chip stays hidden — no login UI in dev. All
  * failures here are non-fatal. The doc autosaves to localStorage, so signing out
  * (a full navigation to /logout) never loses work. */
@@ -5360,49 +5445,11 @@ function wireAccountMenu(login: string): void {
   chip.hidden = false;
   div.hidden = false;
 
-  // The menu is fixed-positioned on document.body so the toolbar's horizontal
-  // overflow can't clip it.
-  const menu = document.createElement('div');
-  menu.className = 'user-menu';
-  menu.id = 'userMenu';
-  menu.setAttribute('role', 'menu');
-  menu.hidden = true;
-  menu.innerHTML =
-    `<div class="um-head">Signed in as <b></b></div>` +
-    `<a class="um-item" href="/keys" role="menuitem">API keys</a>` +
-    `<a class="um-item" href="/logout" role="menuitem">Sign out</a>`;
-  menu.querySelector('b')!.textContent = login;
-  document.body.appendChild(menu);
-
-  let releaseMenuOverlay: (() => void) | null = null;
-  const close = (): void => {
-    menu.hidden = true;
-    chip.setAttribute('aria-expanded', 'false');
-    releaseMenuOverlay?.();
-    releaseMenuOverlay = null;
-  };
-  const open = (): void => {
-    const r = chip.getBoundingClientRect();
-    menu.style.top = `${Math.round(r.bottom + 6)}px`;
-    menu.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
-    menu.style.left = 'auto';
-    menu.hidden = false;
-    chip.setAttribute('aria-expanded', 'true');
-    // Escape close + focus move/restore (issue #209).
-    releaseMenuOverlay = registerOverlay(menu, { close });
-  };
-  chip.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (menu.hidden) open();
-    else close();
-  });
-  // Dismiss on an outside press (Esc is handled by the overlay primitive).
-  closeOnOutsidePress(menu, chip, close);
-  // Sign out via an explicit navigation — robust even if the anchor default is
-  // ever intercepted; the localStorage autosave preserves the open document.
-  menu.querySelector('a[href="/logout"]')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    window.location.assign('/logout');
+  // Its menu (src/ui/menus.ts accountMenu) says who is signed in and holds
+  // the account's commands and the theme.
+  attachMenuButton(chip, () => accountMenu(menuContext()), {
+    placement: 'below-end',
+    label: 'Account',
   });
 }
 /** Default line in the anonymous sign-in prompt. */
@@ -5497,15 +5544,15 @@ async function showUserChip(): Promise<void> {
       admin?: boolean;
     };
     if (me.login) {
+      signedInLogin = me.login;
+      signedInAdmin = !!me.admin;
       wireAccountMenu(me.login);
       enableWorkspaceUi();
-      profilePanelHandle.enable();
       // Sharing needs the hosted Worker (KV + session); reveal only here.
+      // The account menu offers Admin for the owner alone (signedInAdmin);
+      // the real gate is the /api/admin routes.
       shareAvailable = !!shareBtn;
       if (shareBtn) shareBtn.hidden = false;
-      // The Admin chip is revealed only for the deployment owner; the real gate
-      // is the /api/admin routes, so this is a cosmetic reveal.
-      if (me.admin) adminDashboardHandle.enable();
     }
   } catch {
     // No Worker (dev) or offline — leave the chip hidden.
@@ -5590,6 +5637,50 @@ function zoomToSelection(): void {
   else fitView();
 }
 
+/* ── Command palette ───────────────────────────────────────────────────
+ * Ctrl/Cmd+K, the rail's search button and Help ▸ Command palette: the
+ * commands that can run now, "Add <node type>" for the library's types,
+ * "Go to <label>" for the elements of every page and "Go to page N"
+ * (src/ui/palette-sources.ts says what is listed and why). */
+let paletteHandle: PaletteHandle | null = null;
+
+/** A new node of `type` at the centre of the view, placed as quick-add
+ * places one (on the grid when snap is on). */
+function addNodeAtViewCentre(type: string): void {
+  const host = document.querySelector<HTMLElement>('.canvas-host');
+  if (!host) return;
+  const r = host.getBoundingClientRect();
+  const at = editor.clientToPage(r.left + r.width / 2, r.top + r.height / 2);
+  const g = editor.grid;
+  const x = editor.snap ? Math.round(at.x / g) * g : Math.round(at.x);
+  const y = editor.snap ? Math.round(at.y / g) * g : Math.round(at.y);
+  editor.addNode(type, undefined, { x, y });
+}
+
+function openPalette(): void {
+  paletteHandle = openCommandPalette({
+    entries: () =>
+      paletteEntries({
+        commands,
+        open: {
+          pathAnalysis: pathSession !== null,
+          sharedCopy: activeSlot === 'shared',
+          otherTabVersion: savedEl.classList.contains('save-stale'),
+        },
+        nodeTypes: nodeCatalog(doc.customNodes),
+        pages: doc.pages,
+        current,
+        addNode: addNodeAtViewCentre,
+        goToElement: (pageIndex, kind, id) => {
+          if (pageIndex !== current) choosePage(pageIndex);
+          editor.selectElement(kind, id, { center: true });
+        },
+        goToPage: (i) => choosePage(i),
+        icon,
+      }),
+  });
+}
+
 /* ── Command bindings ──────────────────────────────────────────────────
  * What each command of src/ui/commands.ts does, bound once to the functions
  * above. Every surface runs a command through the registry: the toolbar and
@@ -5624,6 +5715,25 @@ bind('file.generateSdwan', { run: generateSdwan });
 for (const spec of ALL_COMMAND_SPECS)
   if (spec.id.startsWith('file.template.'))
     bind(spec.id, { run: (id) => newFromTemplate(String(id)) });
+const signedIn = (): boolean => signedInLogin !== null;
+bind('account.preferences', {
+  run: () => profilePanelHandle.toggle(),
+  enabled: signedIn,
+});
+// The real gate is the /api/admin routes; this one only hides the way in.
+bind('account.admin', {
+  run: () => adminDashboardHandle.toggle(),
+  enabled: () => signedIn() && signedInAdmin,
+});
+bind('account.apiKeys', {
+  run: () => window.location.assign('/keys'),
+  enabled: signedIn,
+});
+// The autosave keeps the open document, so leaving loses nothing.
+bind('account.signOut', {
+  run: () => window.location.assign('/logout'),
+  enabled: signedIn,
+});
 bind('shared.keepCopy', { run: keepSharedCopy });
 bind('shared.backToMine', { run: backToMyDocument });
 bind('shared.unpublish', {
@@ -5784,11 +5894,15 @@ for (const id of [
   bind(id, {
     run: (mode) =>
       editor.alignSelection(commandArg(id, mode, oneOf(ALIGN_MODES))),
+    // Aligning lines up two or more nodes; with fewer it does nothing.
+    enabled: () => editor.selectedNodeIds().length >= 2,
   });
 for (const id of ['arrange.distributeH', 'arrange.distributeV'] as const)
   bind(id, {
     run: (axis) =>
       editor.distributeSelection(commandArg(id, axis, oneOf(['h', 'v']))),
+    // Spacing evenly needs a node between two others.
+    enabled: () => editor.selectedNodeIds().length >= 3,
   });
 bind('arrange.tidy', { run: () => editor.tidy() });
 bind('arrange.balance', { run: () => editor.balance() });
@@ -5817,15 +5931,15 @@ bind('page.fitToContent', {
 // Tools
 bind('tool.select', {
   run: () => setTool('select'),
-  checked: () => editor.tool === 'select',
+  checked: () => editor.tool === 'select' && !editor.isHandActive(),
 });
 bind('tool.link', {
   run: () => setTool('link'),
-  checked: () => editor.tool === 'link',
+  checked: () => editor.tool === 'link' && !editor.isHandActive(),
 });
 bind('tool.anchor', {
   run: () => setTool('anchor'),
-  checked: () => editor.tool === 'anchor',
+  checked: () => editor.tool === 'anchor' && !editor.isHandActive(),
 });
 bind('tool.hand', {
   run: () => setHand(!editor.isHandActive()),
@@ -5874,6 +5988,14 @@ bind('view.toggleTheme', {
   run: () => applyTheme(!document.documentElement.classList.contains('light')),
   checked: () => document.documentElement.classList.contains('light'),
 });
+for (const id of ['view.theme.dark', 'view.theme.light'] as const)
+  bind(id, {
+    run: (theme) =>
+      applyTheme(commandArg(id, theme, oneOf(['dark', 'light'])) === 'light'),
+    checked: () =>
+      document.documentElement.classList.contains('light') ===
+      (commands.get(id)?.args === 'light'),
+  });
 bind('view.present', { run: openPresent, checked: () => !!presentEl });
 bind('view.toggleLibrary', {
   run: () => setPaletteCollapsed(!paletteEl.classList.contains('collapsed')),
@@ -5917,7 +6039,7 @@ bind('problems.restoreAll', {
   enabled: () => hiddenProblems.size > 0,
 });
 
-// Frames. Delete runs with a frame's index, or deletes the current frame.
+// Pages. Delete runs with a page's index, or deletes the current page.
 bind('page.add', { run: addBlankPage });
 bind('page.duplicate', { run: duplicateCurrentPage });
 bind('page.delete', {
@@ -5943,6 +6065,10 @@ bind('page.emphasis.clear', {
 
 // Help
 bind('help.shortcuts', { run: openHelp, checked: () => !!helpEl });
+bind('help.commandPalette', {
+  run: openPalette,
+  checked: () => !!paletteHandle?.isOpen(),
+});
 
 {
   // A command nothing does would be a menu item or a key that does nothing.
@@ -6193,155 +6319,42 @@ function renderPathBar(): void {
   }
 }
 
-/* Right-click context menu — adaptive to whatever is under the cursor. Every
- * item is a command of the registry: its label is the command's title (unless
- * the item words it for the moment, as Lock / Unlock), it is greyed out when
- * the command is not enabled, and choosing it runs the command. The menu is a
- * second surface onto the same actions as the toolbar/keyboard/inspector. */
-type CtxItem =
-  | { sep: true }
-  | { command: CommandId; label?: string; args?: unknown };
-
-let ctxMenu: HTMLDivElement | null = null;
-let releaseCtxOverlay: (() => void) | null = null;
-
-function closeCtxMenu(): void {
-  ctxMenu?.remove();
-  ctxMenu = null;
-  releaseCtxOverlay?.();
-  releaseCtxOverlay = null;
-}
-
-function ctxItemsFor(
-  kind: 'node' | 'link' | 'empty',
-  at: { x: number; y: number },
-): CtxItem[] {
-  const lock: CtxItem = {
-    command: 'edit.toggleLock',
-    label: editor.selectionLocked() ? 'Unlock' : 'Lock',
-  };
-  if (kind === 'node') {
-    return [
-      // Rename is for one node; a multi-selection has no single label.
-      ...(editor.getSelectedNode()
-        ? [{ command: 'edit.rename' } as const]
-        : []),
-      { command: 'edit.duplicate' },
-      { command: 'edit.cut' },
-      { command: 'edit.copy' },
-      { command: 'edit.copyAsImage' },
-      { command: 'edit.copyFormat' },
-      { command: 'edit.pasteFormat' },
-      { sep: true },
-      { command: 'selection.emphasize' },
-      // Two nodes: the routes between them (the "visual traceroute").
-      ...(canAnalyzePath()
-        ? [{ command: 'selection.analyzePath' } as const]
-        : []),
-      { command: 'selection.groupIntoZone' },
-      { command: 'selection.saveAsStencil' },
-      { command: 'selection.addPolicyMarker' },
-      { sep: true },
-      { command: 'arrange.bringToFront' },
-      { command: 'arrange.sendToBack' },
-      { sep: true },
-      lock,
-      { command: 'edit.delete' },
-    ];
-  }
-  if (kind === 'link') {
-    return [
-      { command: 'link.swapEndpoints' },
-      { command: 'link.straighten' },
-      { command: 'edit.copyFormat' },
-      { command: 'edit.pasteFormat' },
-      { command: 'selection.emphasize' },
-      { sep: true },
-      { command: 'arrange.bringToFront' },
-      { command: 'arrange.sendToBack' },
-      { sep: true },
-      lock,
-      { command: 'edit.delete' },
-    ];
-  }
-  return [
-    // At the point that was right-clicked, as a block centred on it.
-    { command: 'edit.pasteHere', args: at },
-    // At the coordinates it was copied from: the same place on another frame.
-    { command: 'edit.pasteInPlace' },
-    { command: 'selection.all' },
-    { command: 'edit.copyFrameAsImage' },
-    { sep: true },
-    { command: 'arrange.tidy' },
-    { command: 'arrange.balance' },
-    { command: 'arrange.autoPlaceLabels' },
-    { command: 'page.fitToContent' },
-  ];
-}
-
+/* Right-click context menu — adaptive to whatever is under the cursor. Its
+ * items are listed in src/ui/menus.ts (`contextMenu`) and opened with the
+ * shell's menu component at the pointer: each is a command of the registry,
+ * labelled with the command's title (Lock / Unlock says what a press would
+ * do), greyed out when the command is not enabled, and run through it. The
+ * component closes it on Escape, a press outside, a blur and a resize. */
 function openCtxMenu(clientX: number, clientY: number): void {
-  closeCtxMenu();
+  closeAllMenus();
   const hit = editor.pickAt(clientX, clientY);
   renderInspector();
-  const items = ctxItemsFor(hit.kind, editor.clientToPage(clientX, clientY));
-
-  const menu = document.createElement('div');
-  menu.className = 'ctx-menu';
-  menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', 'Canvas context menu');
-  for (const item of items) {
-    if ('sep' in item) {
-      const hr = document.createElement('div');
-      hr.className = 'ctx-sep';
-      menu.appendChild(hr);
-      continue;
-    }
-    const btn = document.createElement('button');
-    btn.className = 'ctx-item';
-    btn.type = 'button';
-    btn.setAttribute('role', 'menuitem');
-    btn.textContent = item.label ?? commands.get(item.command)!.title;
-    btn.disabled = !commands.isEnabled(item.command);
-    btn.addEventListener('click', () => {
-      closeCtxMenu();
-      commands.run(item.command, item.args);
+  const ctx = menuContext();
+  // What a command does to the selection shows in the properties at once.
+  const runThenInspect: MenuContext['commands'] = {
+    get: (id) => commands.get(id),
+    isEnabled: (id) => commands.isEnabled(id),
+    isChecked: (id) => commands.isChecked(id),
+    shortcutLabel: (id) => commands.shortcutLabel(id),
+    run: (id, args, options) => {
+      const ran = commands.run(id, args, options);
       renderInspector();
-    });
-    menu.appendChild(btn);
-  }
-
-  // Keyboard operation (#209): ArrowUp/Down cycle the enabled items, Home/End
-  // jump, Enter/Space activate the focused button natively; Escape closes and
-  // restores focus via the overlay primitive.
-  menu.addEventListener('keydown', (e) => {
-    const enabled = [
-      ...menu.querySelectorAll<HTMLButtonElement>('.ctx-item:not(:disabled)'),
-    ];
-    if (!enabled.length) return;
-    const i = enabled.indexOf(document.activeElement as HTMLButtonElement);
-    let next: number | null = null;
-    if (e.key === 'ArrowDown') next = i < 0 ? 0 : (i + 1) % enabled.length;
-    else if (e.key === 'ArrowUp')
-      next =
-        i < 0 ? enabled.length - 1 : (i - 1 + enabled.length) % enabled.length;
-    else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = enabled.length - 1;
-    if (next === null) return;
-    e.preventDefault();
-    enabled[next]!.focus();
+      return ran;
+    },
+  };
+  const entries = contextMenu(
+    { ...ctx, commands: runThenInspect },
+    {
+      kind: hit.kind,
+      at: editor.clientToPage(clientX, clientY),
+      singleNode: !!editor.getSelectedNode(),
+      canAnalyzePath: canAnalyzePath(),
+    },
+  );
+  openMenu(entries, {
+    anchor: { x: clientX, y: clientY },
+    label: 'Canvas context menu',
   });
-
-  // Place at the cursor, then nudge back on-screen if it would overflow.
-  menu.style.left = '0px';
-  menu.style.top = '0px';
-  document.body.appendChild(menu);
-  const r = menu.getBoundingClientRect();
-  const x = Math.min(clientX, window.innerWidth - r.width - 4);
-  const y = Math.min(clientY, window.innerHeight - r.height - 4);
-  menu.style.left = `${Math.max(4, x)}px`;
-  menu.style.top = `${Math.max(4, y)}px`;
-  ctxMenu = menu;
-  releaseCtxOverlay = registerOverlay(menu, { close: closeCtxMenu });
 }
 
 // Attached to the canvas host (an HTML box) rather than the overlay <svg>,
@@ -6352,17 +6365,11 @@ canvasHost.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   openCtxMenu(e.clientX, e.clientY);
 });
-// Dismiss on outside click, scroll/resize, or Escape.
+// Find closes on a press outside it.
 window.addEventListener('pointerdown', (e) => {
-  if (ctxMenu && !ctxMenu.contains(e.target as Node)) closeCtxMenu();
   if (findEl && !findEl.contains(e.target as Node)) closeFind();
 });
-window.addEventListener('blur', closeCtxMenu);
-window.addEventListener('resize', () => {
-  closeCtxMenu();
-  editor.resync();
-});
-// Escape-to-close is owned by the overlay primitive (src/ui/overlay.ts).
+window.addEventListener('resize', () => editor.resync());
 
 // Release hand mode when Space lifts (or the window loses focus while held).
 window.addEventListener('keyup', (e) => {

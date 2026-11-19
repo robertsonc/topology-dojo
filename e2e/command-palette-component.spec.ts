@@ -183,14 +183,19 @@ async function mountOpeners(page: Page, entries: EntrySpec[]): Promise<void> {
       opener.addEventListener('click', open);
       document.body.append(opener);
       fixture.listeners = new AbortController();
+      // The fixture's Ctrl+K stands in for the shell's own, which opens the
+      // editor's palette: taken first, on the way down, so the shell's
+      // handler never sees it. An open palette takes the key itself.
       window.addEventListener(
         'keydown',
         (e) => {
           if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k') return;
+          if (document.querySelector('.cmdk-scrim')) return;
           e.preventDefault();
+          e.stopImmediatePropagation();
           open();
         },
-        { signal: fixture.listeners.signal },
+        { signal: fixture.listeners.signal, capture: true },
       );
     },
     { modulePath: MODULE_PATH, entries },

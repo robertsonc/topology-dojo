@@ -121,6 +121,7 @@ export function wireDocumentTab(ctx: InspectorContext): void {
   const title = root.querySelector<HTMLInputElement>('#p-title');
   title?.addEventListener('input', () => {
     doc.title = title.value;
+    ctx.titleChanged();
     ctx.markDirty();
   });
   // Legend (B.1) — a per-document setting; redraw the overlay so it shows live.

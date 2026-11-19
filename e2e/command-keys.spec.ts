@@ -11,6 +11,8 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  CONTEXT_MENU,
+  contextItem,
   nodeBox,
   savedDocument,
   savedElement,
@@ -81,13 +83,14 @@ test('with nothing selected the canvas leaves the single keys, the arrows and un
   await watchKeys(page);
 
   // Nothing selected. Left alone: the single keys, the brackets, Escape, the
-  // arrows (they flip frames, or do nothing) and a Ctrl combination the
+  // arrows (they flip pages, or do nothing) and the Ctrl combinations the
   // editor does not bind.
   const left = [
     ...['g', 'g', 'r', 'r', 'm', 'm', 'b', 'b', 'p', 'p', 'f', 'f', 'c', 'c'],
     ...['t', 'T', '0', 'l', 'a', 'v', 'h', 'h', ']', '[', 'Escape'],
     ...['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'],
-    ...['Control+g', 'Control+k', 'Control+Shift+s', 'Control+0'],
+    ...['Control+g', 'Control+j', 'Control+Shift+k', 'Control+Shift+s'],
+    'Control+0',
   ];
   for (const key of left) expect(await taken(page, key), key).toBe(false);
 });
@@ -121,6 +124,13 @@ test('with a selection the canvas takes the arrows too, and still leaves Escape'
     expect(await taken(page, key), key).toBe(true);
   expect(await taken(page, 'Escape')).toBe(false);
   expect(await statusCount(page, 'selected')).toBe(0);
+
+  // Ctrl/Cmd+K is taken: it opens the command palette (last, since the
+  // palette's field then has the keyboard).
+  expect(await taken(page, 'Control+k')).toBe(true);
+  await expect(page.locator('.cmdk')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.cmdk')).toHaveCount(0);
 });
 
 test('Ctrl/Cmd+S downloads the document, +O asks for a file, ? opens the shortcut sheet', async ({
@@ -171,7 +181,7 @@ test('the single keys toggle the panels, the grid, snap, Calm and the hand', asy
   );
   await expect(page.locator('#frames-toggle')).toHaveAttribute(
     'title',
-    'Show frames (F)',
+    'Show pages (F)',
   );
 });
 
@@ -352,13 +362,14 @@ test('Enter on a button that was clicked presses it and renames nothing', async 
 });
 
 /** The open context menu, top to bottom: each item's label (with "(off)"
- * when it is disabled) and a "-" per separator. */
+ * when it is disabled) and a "-" per separator. The shortcut beside an
+ * item is not part of its label. */
 const menuRows = (page: Page): Promise<string[]> =>
-  page.locator('.ctx-menu > *').evaluateAll((els) =>
+  page.locator(`${CONTEXT_MENU} > *`).evaluateAll((els) =>
     els.map((el) => {
-      if (el.classList.contains('ctx-sep')) return '-';
-      const off = (el as HTMLButtonElement).disabled ? ' (off)' : '';
-      return `${el.textContent}${off}`;
+      if (el.classList.contains('menu-sep')) return '-';
+      const off = el.getAttribute('aria-disabled') === 'true' ? ' (off)' : '';
+      return `${el.querySelector('.menu-label')?.textContent}${off}`;
     }),
   );
 
@@ -369,7 +380,7 @@ test('the context menus list the same commands in the same order', async ({
   await page.mouse.click(fw.x + fw.width / 2, fw.y + fw.height / 2, {
     button: 'right',
   });
-  await expect(page.locator('.ctx-menu')).toBeVisible();
+  await expect(page.locator(CONTEXT_MENU)).toBeVisible();
   expect(await menuRows(page)).toEqual([
     'Rename',
     'Duplicate',
@@ -379,7 +390,7 @@ test('the context menus list the same commands in the same order', async ({
     'Copy format',
     'Paste format (off)',
     '-',
-    'Emphasize on this frame',
+    'Emphasize on this page',
     'Group into zone',
     'Save as stencil…',
     'Add policy marker',
@@ -391,11 +402,11 @@ test('the context menus list the same commands in the same order', async ({
     'Delete',
   ]);
   // Copy format, then Lock: the format is there to paste, the label flips.
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Copy format' }).click();
+  await contextItem(page, 'Copy format').click();
   await page.mouse.click(fw.x + fw.width / 2, fw.y + fw.height / 2, {
     button: 'right',
   });
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Lock' }).click();
+  await contextItem(page, 'Lock').click();
   await page.mouse.click(fw.x + fw.width / 2, fw.y + fw.height / 2, {
     button: 'right',
   });
@@ -403,7 +414,7 @@ test('the context menus list the same commands in the same order', async ({
   expect(rows).toContain('Paste format');
   expect(rows).toContain('Unlock');
   expect(rows).not.toContain('Lock');
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Unlock' }).click();
+  await contextItem(page, 'Unlock').click();
   expect((await savedElement(page, 'nodes', 'fw')).locked).not.toBe(true);
 
   // Several nodes: no Rename (there is no one label), z-order has no target.
@@ -428,13 +439,13 @@ test('the context menus list the same commands in the same order', async ({
     return { x: p.x, y: p.y };
   });
   await page.mouse.click(lan.x, lan.y, { button: 'right' });
-  await expect(page.locator('.ctx-menu')).toBeVisible();
+  await expect(page.locator(CONTEXT_MENU)).toBeVisible();
   expect(await menuRows(page)).toEqual([
     'Swap endpoints',
     'Straighten (clear bends) (off)',
     'Copy format',
     'Paste format (off)',
-    'Emphasize on this frame',
+    'Emphasize on this page',
     '-',
     'Bring to front',
     'Send to back',
@@ -447,18 +458,18 @@ test('the context menus list the same commands in the same order', async ({
 
   const empty = await toClient(page, 700, 560);
   await page.mouse.click(empty.x, empty.y, { button: 'right' });
-  await expect(page.locator('.ctx-menu')).toBeVisible();
+  await expect(page.locator(CONTEXT_MENU)).toBeVisible();
   expect(await menuRows(page)).toEqual([
     'Paste here (off)',
     'Paste in place (off)',
     'Select all',
-    'Copy frame as image',
+    'Copy page as image',
     '-',
     'Tidy layout',
     'Balance layout',
     'Auto-place labels',
     'Fit page to content',
   ]);
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Select all' }).click();
+  await contextItem(page, 'Select all').click();
   expect(await statusCount(page, 'selected')).toBeGreaterThan(1);
 });

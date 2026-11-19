@@ -21,14 +21,12 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
     ['#tGrid', 'Toggle grid (R)'],
     ['#tSnap', 'Toggle snap (G)'],
     ['#tCalm', 'Calm canvas — pause animations (C)'],
-    ['#tFit', 'Fit view (0)'],
     ['#tHelp', 'Keyboard shortcuts (?)'],
-    ['#tDelete', 'Delete selection (Del)'],
     ['#tTidy', 'Tidy layout — grid-snap + de-overlap (T)'],
-    ['#tBalance', 'Balance layout — align rows/columns + centre (Shift+T)'],
     ['#palette-toggle', 'Hide node library (B)'],
-    ['#minimap-toggle', 'Hide minimap (M)'],
-    ['#frames-toggle', 'Hide frames (F)'],
+    // The minimap card starts closed.
+    ['#minimap-toggle', 'Show minimap (M)'],
+    ['#frames-toggle', 'Hide pages (F)'],
     ['#inspector-toggle', 'Hide properties (P)'],
     ['#ccZoom', 'Fit view (0)'],
     ['#ccFit', 'Fit to content (0)'],
@@ -39,11 +37,26 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
       title,
     );
 
+  // The commands whose toolbar buttons are now menu items name the same
+  // shortcut beside the item.
+  for (const [menu, command, label, key] of [
+    ['view', 'view.fit', 'Fit to content', '0'],
+    ['edit', 'edit.delete', 'Delete', 'Del'],
+    ['arrange', 'arrange.balance', 'Balance', 'Shift+T'],
+  ] as const) {
+    await page.locator(`#menubar [data-menu="${menu}"]`).click();
+    const item = page.locator(`.menu [data-command="${command}"]`);
+    await expect(item.locator('.menu-label')).toHaveText(label);
+    await expect(item.locator('.menu-hint')).toHaveText(key);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.menu')).toHaveCount(0);
+  }
+
   // A toggle words its tooltip for what a press would do now.
   await page.keyboard.press('m');
   await expect(page.locator('#minimap-toggle')).toHaveAttribute(
     'title',
-    'Show minimap (M)',
+    'Hide minimap (M)',
   );
   await page.locator('#tCalm').click();
   await expect(page.locator('#tCalm')).toHaveAttribute(
@@ -103,7 +116,7 @@ test('the shortcut sheet lists the commands by group, then the gestures', async 
     'Arrange',
     'Tools',
     'View',
-    'Frames',
+    'Pages',
     'Help',
     'Mouse and touch',
     'Dialogs and menus',
@@ -121,7 +134,7 @@ test('the shortcut sheet lists the commands by group, then the gestures', async 
   for (const row of [
     'Ctrl/Cmd+S | Download as JSON',
     'Ctrl/Cmd+Shift+Z · Ctrl/Cmd+Y | Redo',
-    'Ctrl/Cmd+Shift+V | Paste in place (same position, any frame)',
+    'Ctrl/Cmd+Shift+V | Paste in place (same position, any page)',
     'F2 · Enter | Rename the selected node, link or zone',
     'Shift+T | Balance layout',
     'Shift+0 | Zoom to 100%',

@@ -125,7 +125,8 @@ export const ICON_MANIFEST = {
   'paste-format': 'paintbrush',
   'select-members': 'lasso-select',
   duplicate: 'copy-plus',
-  // The properties panel's selection header: what is selected, and its actions
+  // The properties panel's selection header: what is selected, and its
+  // actions. The selection bar's lock button uses the same lock.
   node: 'server',
   zone: 'square-dashed',
   nodes: 'boxes',
@@ -137,6 +138,13 @@ export const ICON_MANIFEST = {
   'frame-prev': 'skip-back',
   'frame-next': 'skip-forward',
   publish: 'share',
+  // The top bar: the Export and Share buttons, the folded menu bar
+  export: 'download',
+  share: 'share-2',
+  menu: 'menu',
+  // The left rail and the pages bar: the command palette, the minimap
+  search: 'search',
+  minimap: 'map',
   checkpoint: 'flag',
   // States
   warning: 'triangle-alert',

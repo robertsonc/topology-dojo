@@ -16,6 +16,9 @@ export interface InspectorContext {
   rerender(): void;
   /** The document changed outside the editor's own updates: autosave it. */
   markDirty(): void;
+  /** The panel's Title field changed the document's title: the top bar's
+   * title field, which edits the same value, shows it. */
+  titleChanged(): void;
   /**
    * Whether this is the first edit of a typing run, which takes the undo
    * snapshot. A run lasts until focus next enters the panel.

@@ -66,7 +66,7 @@
  * to one surface while it is open (the presentation, the Find box, a context
  * menu, a text field) are handled by that surface and listed there too.
  * Actions that need a row or a value to act on (delete THIS annotation, set
- * the link type to X, go to frame N, pick a brand colour) stay with the
+ * the link type to X, go to page N, pick a brand colour) stay with the
  * control that has the row or the value.
  */
 import type { IconName } from './icons.js';
@@ -90,7 +90,7 @@ export const COMMAND_GROUPS: readonly { id: CommandGroup; title: string }[] = [
   { id: 'arrange', title: 'Arrange' },
   { id: 'tools', title: 'Tools' },
   { id: 'view', title: 'View' },
-  { id: 'pages', title: 'Frames' },
+  { id: 'pages', title: 'Pages' },
   { id: 'help', title: 'Help' },
 ];
 
@@ -235,43 +235,43 @@ const FILE = [
     group: 'file',
     keywords: ['publish', 'public link'],
   },
-  { id: 'file.export.svg', title: 'Export frame as SVG', group: 'file' },
-  { id: 'file.export.png', title: 'Export frame as PNG', group: 'file' },
+  { id: 'file.export.svg', title: 'Export page as SVG', group: 'file' },
+  { id: 'file.export.png', title: 'Export page as PNG', group: 'file' },
   // The export menu's formats: each is the menu's export run with `args`.
   {
     id: 'file.export.pdfPage',
-    title: 'Export frame as PDF',
+    title: 'Export page as PDF',
     group: 'file',
     args: 'pdf-page',
   },
   {
     id: 'file.export.pdfAll',
-    title: 'Export all frames as PDF',
+    title: 'Export all pages as PDF',
     group: 'file',
     args: 'pdf-all',
   },
   {
     id: 'file.export.flipbook',
-    title: 'Export all frames as a flipbook (HTML)',
+    title: 'Export all pages as a flipbook (HTML)',
     group: 'file',
     args: 'flipbook',
   },
   {
     id: 'file.export.drawio',
-    title: 'Export all frames as draw.io',
+    title: 'Export all pages as draw.io',
     group: 'file',
     keywords: ['diagrams.net'],
     args: 'drawio',
   },
   {
     id: 'file.export.vsdx',
-    title: 'Export all frames as Visio (.vsdx)',
+    title: 'Export all pages as Visio (.vsdx)',
     group: 'file',
     args: 'vsdx',
   },
   {
     id: 'file.export.pptx',
-    title: 'Export as PowerPoint, a slide per frame',
+    title: 'Export as PowerPoint, a slide per page',
     group: 'file',
     args: 'pptx',
   },
@@ -283,13 +283,13 @@ const FILE = [
   },
   {
     id: 'file.export.mermaid',
-    title: 'Export frame as Mermaid',
+    title: 'Export page as Mermaid',
     group: 'file',
     args: 'mermaid',
   },
   {
     id: 'file.export.copyPng',
-    title: 'Copy frame PNG to the clipboard',
+    title: 'Copy page PNG to the clipboard',
     group: 'file',
     args: 'copy-png',
   },
@@ -310,6 +310,26 @@ const FILE = [
     title: 'Generate an SD-WAN fabric',
     group: 'file',
     keywords: ['template', 'wizard'],
+  },
+  // The account menu's, once the hosted Worker reports a signed-in user.
+  {
+    id: 'account.preferences',
+    title: 'Authoring preferences',
+    group: 'file',
+    keywords: ['learned patterns', 'profile'],
+  },
+  {
+    id: 'account.admin',
+    title: 'Admin dashboard',
+    group: 'file',
+    keywords: ['owner', 'usage'],
+  },
+  { id: 'account.apiKeys', title: 'API keys', group: 'file' },
+  {
+    id: 'account.signOut',
+    title: 'Sign out',
+    group: 'file',
+    keywords: ['log out'],
   },
   // While a shared copy is on the canvas (the banner's three buttons).
   { id: 'shared.keepCopy', title: 'Keep this shared copy', group: 'file' },
@@ -429,7 +449,7 @@ const EDIT = [
     id: 'edit.pasteInPlace',
     title: 'Paste in place',
     group: 'edit',
-    help: 'Paste in place (same position, any frame)',
+    help: 'Paste in place (same position, any page)',
     bindings: [
       {
         key: 'v',
@@ -530,6 +550,7 @@ const EDIT = [
     id: 'edit.toggleLock',
     title: 'Lock / unlock',
     group: 'edit',
+    icon: 'lock',
     bindings: [
       {
         key: 'l',
@@ -545,7 +566,7 @@ const EDIT = [
     title: 'Find',
     group: 'edit',
     keywords: ['search', 'jump to'],
-    help: 'Find a node, link or zone on any frame',
+    help: 'Find a node, link or zone on any page',
     bindings: [
       {
         key: 'f',
@@ -564,7 +585,7 @@ const EDIT = [
   },
   {
     id: 'edit.copyFrameAsImage',
-    title: 'Copy frame as image',
+    title: 'Copy page as image',
     group: 'edit',
     keywords: ['png', 'clipboard'],
   },
@@ -608,7 +629,7 @@ const SELECTION = [
     ],
   },
   // The arrows nudge while something is selected (a selected link counts,
-  // though it has nothing to move); with nothing selected they flip frames.
+  // though it has nothing to move); with nothing selected they flip pages.
   {
     id: 'selection.nudgeLeft',
     title: 'Nudge left',
@@ -639,7 +660,7 @@ const SELECTION = [
   },
   {
     id: 'selection.emphasize',
-    title: 'Emphasize on this frame',
+    title: 'Emphasize on this page',
     group: 'selection',
     icon: 'star',
     keywords: ['spotlight', 'highlight'],
@@ -696,7 +717,7 @@ const SELECTION = [
   },
   {
     id: 'path.keepEmphasis',
-    title: 'Keep the path spotlit on the frame',
+    title: 'Keep the path spotlit on the page',
     group: 'selection',
   },
   {
@@ -706,7 +727,7 @@ const SELECTION = [
   },
   {
     id: 'path.newFrame',
-    title: 'Copy the frame with the path spotlit',
+    title: 'Copy the page with the path spotlit',
     group: 'selection',
   },
   { id: 'path.close', title: 'Close path analysis', group: 'selection' },
@@ -1045,6 +1066,22 @@ const VIEW = [
     group: 'view',
     icon: 'sun',
   },
+  // The theme as a choice of two, beside the toggle: a menu shows the one
+  // that is on.
+  {
+    id: 'view.theme.dark',
+    title: 'Dark theme',
+    group: 'view',
+    icon: 'moon',
+    args: 'dark',
+  },
+  {
+    id: 'view.theme.light',
+    title: 'Light theme',
+    group: 'view',
+    icon: 'sun',
+    args: 'light',
+  },
   {
     id: 'view.present',
     title: 'Present',
@@ -1072,7 +1109,7 @@ const VIEW = [
   },
   {
     id: 'view.toggleFrames',
-    title: 'Toggle frames strip',
+    title: 'Toggle pages',
     group: 'view',
     bindings: [{ key: 'f', ...LENIENT, preventDefault: false, display: 'F' }],
   },
@@ -1097,27 +1134,27 @@ const VIEW = [
 ] as const satisfies readonly CommandSpec[];
 
 const PAGES = [
-  { id: 'page.add', title: 'Add blank frame', group: 'pages', icon: 'plus' },
+  { id: 'page.add', title: 'Add blank page', group: 'pages', icon: 'plus' },
   {
     id: 'page.duplicate',
-    title: 'Duplicate current frame',
+    title: 'Duplicate current page',
     group: 'pages',
     icon: 'duplicate',
   },
-  // Run with a frame's index it deletes that frame; without, the current one.
-  { id: 'page.delete', title: 'Delete frame', group: 'pages' },
+  // Run with a page's index it deletes that page; without, the current one.
+  { id: 'page.delete', title: 'Delete page', group: 'pages' },
   {
     id: 'page.undoDelete',
-    title: 'Undo frame delete',
+    title: 'Undo page delete',
     group: 'pages',
     icon: 'restore',
   },
   {
     id: 'page.next',
-    title: 'Next frame',
+    title: 'Next page',
     group: 'pages',
     icon: 'frame-next',
-    help: 'Next frame (with nothing selected)',
+    help: 'Next page (with nothing selected)',
     bindings: [
       {
         key: 'ArrowRight',
@@ -1130,10 +1167,10 @@ const PAGES = [
   },
   {
     id: 'page.prev',
-    title: 'Previous frame',
+    title: 'Previous page',
     group: 'pages',
     icon: 'frame-prev',
-    help: 'Previous frame (with nothing selected)',
+    help: 'Previous page (with nothing selected)',
     bindings: [
       {
         key: 'ArrowLeft',
@@ -1168,6 +1205,24 @@ const HELP = [
         ...LENIENT,
         preventDefault: true,
         display: '?',
+      },
+    ],
+  },
+  {
+    id: 'help.commandPalette',
+    title: 'Command palette',
+    group: 'help',
+    icon: 'search',
+    keywords: ['search', 'run a command', 'go to'],
+    help: 'Search the commands, the node types, the elements and the pages',
+    bindings: [
+      {
+        key: 'k',
+        mod: true,
+        shift: false,
+        alt: false,
+        preventDefault: true,
+        display: 'Ctrl/Cmd+K',
       },
     ],
   },

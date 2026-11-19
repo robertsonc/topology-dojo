@@ -7,8 +7,10 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   bootEditor,
   clickNode,
+  exportAs,
   inspectorSection,
   inspectorTab,
+  menuCommand,
   nodeBox,
   statusCount,
   statusText,
@@ -95,12 +97,13 @@ test('undo and redo work while a toolbar control has keyboard focus', async ({
   await page.locator('.pitem[data-type="router"]').first().click();
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes + 1);
 
-  await tabTo(page, '#tSelectBy');
+  const edit = '#menubar [data-menu="edit"]';
+  await tabTo(page, edit);
   await page.keyboard.press('Control+z');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes);
   await page.keyboard.press('Control+Shift+z');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes + 1);
-  await expect(page.locator('#tSelectBy')).toBeFocused();
+  await expect(page.locator(edit)).toBeFocused();
 });
 
 test('after a mouse pick in a toolbar menu the canvas shortcuts work again', async ({
@@ -111,9 +114,9 @@ test('after a mouse pick in a toolbar menu the canvas shortcuts work again', asy
   await clickNode(page, 'fw');
   await expect.poll(() => statusCount(page, 'selected')).toBe(1);
 
-  // select… → same type: the firewall is the only one of its type.
-  await pickWithMouse(page, '#tSelectBy', 1);
-  await expect(page.locator('#tSelectBy')).not.toBeFocused();
+  // Edit ▸ Select ▸ Same type: the firewall is the only one of its type.
+  await menuCommand(page, 'selection.sameType');
+  await expect(page.locator('.menu')).toHaveCount(0);
   expect(await statusCount(page, 'selected')).toBe(1);
 
   // "a" is the anchor tool, not type-ahead for the menu's "all".
@@ -128,9 +131,10 @@ test('after a mouse pick in a toolbar menu the canvas shortcuts work again', asy
   await page.keyboard.press('Control+z');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes);
 
-  // arrange… → hierarchical, then H is the hand tool, not another layout.
-  await pickWithMouse(page, '#tLayout', 1);
-  await expect(page.locator('#tLayout')).not.toBeFocused();
+  // Arrange ▸ Auto-arrange ▸ Hierarchical, then H is the hand tool, not
+  // another layout.
+  await menuCommand(page, 'arrange.layout.hierarchical');
+  await expect(page.locator('.menu')).toHaveCount(0);
   const history = await statusCount(page, 'history');
   await page.keyboard.press('h');
   expect(await isOn(page, '#ccHand')).toBe(true);
@@ -144,8 +148,9 @@ test('a key pressed after an export does not start another export', async ({
   const downloads: string[] = [];
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
 
-  // export… → Mermaid (the eighth option).
-  await pickWithMouse(page, '#fExport', 8);
+  // Export ▸ Mermaid.
+  await exportAs(page, 'mermaid');
+  await expect(page.locator('.menu')).toHaveCount(0);
   await expect.poll(() => downloads).toHaveLength(1);
   expect(downloads[0]).toMatch(/\.mmd$/);
 
@@ -166,9 +171,9 @@ test('dismissing a menu with Escape hands the keyboard back to the canvas', asyn
   const downloads: string[] = [];
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
 
-  await page.locator('#fExport').click(); // opens the menu
+  await page.locator('#fExportBtn').click(); // opens the menu
   await page.keyboard.press('Escape'); // closes it without choosing
-  await expect(page.locator('#fExport')).not.toBeFocused();
+  await expect(page.locator('.menu')).toHaveCount(0);
   await page.keyboard.press('l');
   expect(await statusText(page, 'tool')).toBe('link');
   await page.keyboard.press('v');

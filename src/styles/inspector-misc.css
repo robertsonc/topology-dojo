@@ -1,15 +1,5 @@
-/* Align group, .ab buttons, metadata rows (key, value, remove). The
-   arrange row is laid out in inspector.css. */
-.align-group {
-  display: inline-flex;
-  gap: 3px;
-  padding-left: 8px;
-  margin-left: 4px;
-  border-left: 1px solid var(--line);
-}
-.align-group[hidden] {
-  display: none;
-}
+/* .ab buttons, metadata rows (key, value, remove). The arrange row is laid
+   out in inspector.css. */
 .ab {
   padding: 5px 8px;
 }

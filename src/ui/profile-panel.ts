@@ -236,14 +236,21 @@ export function renderProfileBodyHtml(state: ProfilePanelState): string {
 
 /** Everything the panel needs from `main.ts`'s app shell — the narrow seam. */
 export interface ProfilePanelHost {
-  /** The `#profileChip` toolbar button (hidden until sign-in). */
-  chip: HTMLButtonElement;
+  /** A button that opens the panel and shows whether it is open
+   * (`aria-expanded`), revealed by `enable()`. Optional: the shell opens the
+   * panel from its account menu through `toggle()` instead. */
+  chip?: HTMLButtonElement;
+  /** What a press on the chip does. Default: open or close the panel. The
+   * shell passes its command, so the chip runs what the menus run. */
+  onChipPress?: () => void;
 }
 
 /** The call sites `main.ts` needs into the panel. */
 export interface ProfilePanelHandle {
-  /** Reveals the toolbar chip once sign-in is confirmed. */
+  /** Reveals the chip, if there is one, once sign-in is confirmed. */
   enable(): void;
+  /** Opens the panel, or closes it when it is open. */
+  toggle(): void;
 }
 
 export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
@@ -261,7 +268,7 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
   function closePanel(): void {
     panel?.remove();
     panel = null;
-    host.chip.setAttribute('aria-expanded', 'false');
+    host.chip?.setAttribute('aria-expanded', 'false');
     releaseOverlay?.();
     releaseOverlay = null;
   }
@@ -394,19 +401,21 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
     panel
       .querySelector('#prefClose')
       ?.addEventListener('click', () => closePanel());
-    host.chip.setAttribute('aria-expanded', 'true');
+    host.chip?.setAttribute('aria-expanded', 'true');
     // Focus trap + Escape + focus restore (issue #209).
     releaseOverlay = registerOverlay(panel, { close: closePanel });
     void refresh();
   }
 
   function enable(): void {
-    host.chip.hidden = false;
-    host.chip.addEventListener('click', (event) => {
+    const chip = host.chip;
+    if (!chip) return;
+    chip.hidden = false;
+    chip.addEventListener('click', (event) => {
       event.stopPropagation();
-      openPanel();
+      (host.onChipPress ?? openPanel)();
     });
   }
 
-  return { enable };
+  return { enable, toggle: openPanel };
 }

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { bootEditor, statusCount } from './helpers.js';
+import { bootEditor, menuCommand, statusCount } from './helpers.js';
 
 const question = (page: Page, label: string) =>
   page.locator('.sdw-q', {
@@ -10,7 +10,7 @@ test('SD-WAN wizard previews vendor-aware counts and creates the diagram', async
   page,
 }) => {
   await bootEditor(page);
-  await page.selectOption('#fTemplate', '__sdwan');
+  await menuCommand(page, 'file.generateSdwan');
   const card = page.locator('.sdw-card');
   await expect(card).toBeVisible();
   // Defaults: EdgeConnect, 1 region, 2 hubs, 4 branches, 1 Internet link.
@@ -51,7 +51,7 @@ test('Escape closes the SD-WAN wizard without touching the document', async ({
 }) => {
   await bootEditor(page);
   const n0 = await statusCount(page, 'nodes');
-  await page.selectOption('#fTemplate', '__sdwan');
+  await menuCommand(page, 'file.generateSdwan');
   await expect(page.locator('.sdw-card')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('.sdw-card')).toHaveCount(0);
@@ -62,7 +62,7 @@ test('overview mode: named regions, drill down to a region page and back', async
   page,
 }) => {
   await bootEditor(page);
-  await page.selectOption('#fTemplate', '__sdwan');
+  await menuCommand(page, 'file.generateSdwan');
   await question(page, 'Regions').getByRole('button', { name: '2' }).click();
   await page.getByLabel('Region 1 name').fill('West');
   await page.getByLabel('Region 2 branches').selectOption('2');
@@ -104,7 +104,7 @@ test('cloud hub and SSE on-ramp land on the canvas with their counts', async ({
   page,
 }) => {
   await bootEditor(page);
-  await page.selectOption('#fTemplate', '__sdwan');
+  await menuCommand(page, 'file.generateSdwan');
   await question(page, 'Cloud hub per region')
     .getByRole('button', { name: 'AWS' })
     .click();

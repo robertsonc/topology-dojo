@@ -164,13 +164,10 @@ describe('editor stylesheet', () => {
     // declarations each has. A phase of the overhaul that converts a surface
     // takes its file off this list; the count can only go down.
     const NOT_YET: Record<string, number> = {
-      'app-shell.css': 2,
-      'canvas-overlays.css': 3,
-      'canvas.css': 3,
+      'canvas-overlays.css': 2,
       'popovers.css': 2,
       'present-share.css': 1,
-      'stage-palette.css': 4,
-      'toolbar.css': 4,
+      'stage-palette.css': 3,
     };
     const small: Record<string, number> = {};
     for (const d of all) {
