@@ -1342,8 +1342,8 @@ test('looks as designed, in both themes', async ({ page }) => {
     idle: 'rgba(0, 0, 0, 0)',
     markFill: 'rgba(0, 0, 0, 0)',
     markWeight: '600',
-    groupSize: '11.5px',
-    hintSize: '11px',
+    groupSize: '12px',
+    hintSize: '12px',
     divider: '1px',
   });
   expect(String(dark.hintFace)).toContain('JetBrains Mono');

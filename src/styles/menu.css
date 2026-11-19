@@ -132,7 +132,7 @@
   padding-left: 16px;
   color: var(--fg-weak);
   font-family: var(--font);
-  font-size: 11px;
+  font-size: 12px;
 }
 /* The submenu arrow's column, at the end of the row. Every row of a menu
    that has a submenu keeps it (empty), so the hints before it line up. */
@@ -161,6 +161,6 @@
   flex: none;
   padding: 6px 10px 2px;
   color: var(--fg-weak);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }

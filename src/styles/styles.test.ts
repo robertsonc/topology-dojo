@@ -159,6 +159,36 @@ describe('editor stylesheet', () => {
     expect(light).toMatch(/color-scheme: light;/);
   });
 
+  it('sets no text under 12px, outside the surfaces not converted yet', () => {
+    // The stylesheets that still carry small text, with how many
+    // declarations each has. A phase of the overhaul that converts a surface
+    // takes its file off this list; the count can only go down.
+    const NOT_YET: Record<string, number> = {
+      'annotations.css': 5,
+      'app-shell.css': 2,
+      'canvas-overlays.css': 3,
+      'canvas.css': 3,
+      'dialogs.css': 3,
+      'inspector.css': 16,
+      'node-designer.css': 3,
+      'popovers.css': 2,
+      'present-share.css': 1,
+      'problems.css': 7,
+      'stage-palette.css': 4,
+      'toolbar.css': 4,
+      'workspace.css': 7,
+    };
+    const small: Record<string, number> = {};
+    for (const d of all) {
+      if (d.prop !== 'font-size' && d.prop !== 'font') continue;
+      // In the shorthand the size is what comes before the line height.
+      const size = d.prop === 'font' ? d.value.split('/')[0]! : d.value;
+      for (const px of size.matchAll(/(?<![\w.-])(\d+(?:\.\d+)?)px/g))
+        if (Number(px[1]) < 12) small[d.file] = (small[d.file] ?? 0) + 1;
+    }
+    expect(small).toEqual(NOT_YET);
+  });
+
   describe('token contrast (WCAG 2.1)', () => {
     type Rgba = [number, number, number, number];
     const block = (selector: string): Map<string, string> => {

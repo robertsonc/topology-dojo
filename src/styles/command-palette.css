@@ -139,7 +139,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-weak);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .cmdk-group::before {
   content: '·';
@@ -150,7 +150,7 @@
   flex: none;
   color: var(--fg-weak);
   font-family: var(--font);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .cmdk-item[aria-disabled='true'] mark,
