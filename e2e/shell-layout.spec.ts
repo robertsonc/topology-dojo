@@ -509,6 +509,16 @@ for (const width of [1023, 900, 768, 720, 641]) {
     expect(b.inspector!.right - b.inspector!.left).toBe(324);
     expect(b.inspector!.left - b.area!.left).toBeGreaterThanOrEqual(72);
 
+    // However wide the panel is asked to be, 72px of canvas still shows.
+    await page.locator('#inspector').evaluate((el) => {
+      el.style.width = '600px';
+    });
+    b = await expectDrawer('inspector');
+    expect(b.inspector!.left - b.area!.left).toBeGreaterThanOrEqual(72);
+    await page.locator('#inspector').evaluate((el) => {
+      el.style.width = '';
+    });
+
     // Closing it gives the canvas back as it was.
     await page.locator('#inspector-toggle').click();
     expect(await closed(page, 'inspector-wrap')).toBe(true);

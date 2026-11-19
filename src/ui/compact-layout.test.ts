@@ -63,10 +63,21 @@ const css = (file: string): string =>
     '',
   );
 
-/** Each `@media (max-width: Npx)` block of a stylesheet: its width and body. */
-function maxWidthBlocks(text: string): { width: number; body: string }[] {
-  const out: { width: number; body: string }[] = [];
-  for (const m of text.matchAll(/@media\s*\(max-width:\s*(\d+)px\)\s*\{/g)) {
+/** Each `@media` block of a stylesheet with a width in its query: the
+ * query's `max-width` and `min-width` (null when it has none) and the body. */
+function mediaBlocks(
+  text: string,
+): { max: number | null; min: number | null; body: string }[] {
+  const out: { max: number | null; min: number | null; body: string }[] = [];
+  for (const m of text.matchAll(/@media\s*([^{]*)\{/g)) {
+    const query = m[1]!;
+    const width = (name: string): number | null => {
+      const w = new RegExp(`\\(${name}:\\s*(\\d+)px\\)`).exec(query);
+      return w ? Number(w[1]) : null;
+    };
+    const max = width('max-width');
+    const min = width('min-width');
+    if (max === null && min === null) continue;
     let depth = 1;
     let i = m.index + m[0].length;
     const start = i;
@@ -75,9 +86,17 @@ function maxWidthBlocks(text: string): { width: number; body: string }[] {
       else if (text[i] === '}') depth--;
       i++;
     }
-    out.push({ width: Number(m[1]), body: text.slice(start, i - 1) });
+    out.push({ max, min, body: text.slice(start, i - 1) });
   }
   return out;
+}
+
+/** Each `@media (max-width: Npx)` block, with no lower bound: its width and
+ * body. */
+function maxWidthBlocks(text: string): { width: number; body: string }[] {
+  return mediaBlocks(text)
+    .filter((b) => b.max !== null && b.min === null)
+    .map((b) => ({ width: b.max!, body: b.body }));
 }
 
 /** The widths of the blocks that float `selector` as a drawer: a rule for
@@ -111,5 +130,54 @@ describe('the drawers in the stylesheet', () => {
       ),
     );
     expect(block.map((b) => b.width)).toEqual([COMPACT_LAYOUT_MAX_PX]);
+  });
+});
+
+describe('every width the drawers depend on', () => {
+  /** What the compact layout places: the drawers, the panel inside the
+   * properties drawer, and the corner UI that moves beside it. */
+  const drawerish =
+    /(?:^|[\s,}>~])\.(?:palette|inspector-wrap|inspector-col|inspector|canvas-ctrls|minimap-dock)(?![\w-])/m;
+  const blocks = ['shell.css', 'inspector.css'].flatMap((file) =>
+    mediaBlocks(css(file))
+      .filter((b) => drawerish.test(b.body))
+      .map((b) => ({ ...b, file })),
+  );
+
+  it('is the compact breakpoint or the phone one, in an upper bound', () => {
+    const allowed = [COMPACT_LAYOUT_MAX_PX, PHONE_LAYOUT_MAX_PX];
+    for (const b of blocks.filter((b) => b.max !== null))
+      expect(allowed, `${b.file} max-width ${b.max}`).toContain(b.max);
+  });
+
+  it('starts just above a phone, in a lower bound', () => {
+    for (const b of blocks.filter((b) => b.min !== null))
+      expect(b.min, `${b.file} min-width ${b.min}`).toBe(
+        PHONE_LAYOUT_MAX_PX + 1,
+      );
+  });
+
+  it('bounds the rules for the compact layout above a phone on both sides', () => {
+    const between = (file: string) =>
+      blocks.filter(
+        (b) =>
+          b.file === file &&
+          b.min === PHONE_LAYOUT_MAX_PX + 1 &&
+          b.max === COMPACT_LAYOUT_MAX_PX,
+      );
+    // The properties drawer leaves canvas between it and the library ...
+    expect(
+      between('inspector.css').some((b) =>
+        /\.palette:not\(\.collapsed\) ~ \.inspector-wrap/.test(b.body),
+      ),
+    ).toBe(true);
+    // ... and the zoom control and the minimap move left of it.
+    expect(
+      between('shell.css').some((b) =>
+        /\.canvas-ctrls,\s*\.minimap-dock\s*\{[^}]*--insp-drawer-w/.test(
+          b.body,
+        ),
+      ),
+    ).toBe(true);
   });
 });
