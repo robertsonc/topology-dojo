@@ -134,18 +134,29 @@ function show(pop: HTMLElement, button: HTMLElement): void {
   window.addEventListener('resize', () => closeColourPopover(), {
     signal: stop.signal,
   });
-  // The panel scrolling under it would leave it beside nothing.
-  button
-    .closest('.inspector')
-    ?.addEventListener('scroll', () => closeColourPopover(), {
-      signal: stop.signal,
-    });
+  const scroller = button.closest<HTMLElement>('.inspector');
+  const top = scroller?.scrollTop ?? 0;
   const release = registerOverlay(pop, {
     close: () => closeColourPopover(),
     initialFocus:
       pop.querySelector<HTMLElement>('.sw.on') ??
       pop.querySelector<HTMLElement>('input.hex'),
   });
+  // Moving focus into the popover makes the browser scroll the panel to it
+  // (the popover sits inside the panel's scroller, though it is placed with
+  // fixed coordinates). Put the panel back where it was, so the popover
+  // stays beside its button.
+  if (scroller) scroller.scrollTop = top;
+  // The panel scrolling under it would leave it beside nothing. The scroll
+  // event of the focus move above still arrives, after the position has been
+  // put back: only a scroll that leaves the panel elsewhere closes it.
+  scroller?.addEventListener(
+    'scroll',
+    () => {
+      if (scroller.scrollTop !== top) closeColourPopover();
+    },
+    { signal: stop.signal },
+  );
   open = { pop, button, release, stop };
 }
 

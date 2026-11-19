@@ -436,9 +436,16 @@
   cursor: pointer;
 }
 .sw.on {
-  /* Selected marker — --fg so it stays visible in the light theme. */
-  outline: 2px solid var(--fg);
-  outline-offset: 1px;
+  /* Selected marker: a ring inside the swatch (--fg, then a gap of the
+     popover's own surface), so it never looks like the focus ring, which is
+     drawn outside. */
+  box-shadow:
+    inset 0 0 0 2px var(--fg),
+    inset 0 0 0 4px var(--surface-float);
+}
+.sw:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* ── Compass placement picker (3×3) ───────────────────────────────────── */

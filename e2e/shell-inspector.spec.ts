@@ -568,3 +568,134 @@ test('the Type dropdown lists types by label, grouped like the node library', as
   expect(shown.toLowerCase().replace(/\s+/g, '')).toBe(linkType.toLowerCase());
   expect(shown[0]).toBe(shown[0]!.toUpperCase());
 });
+
+/* ── The colour popover and keyboard focus ───────────────────────────────── */
+
+test('a colour popover at the foot of a scrolled panel stays open', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // The flow path's colour button, at the panel's lower edge: moving focus
+  // into its popover used to scroll the panel, and that scroll shut it (or
+  // left it beside nothing).
+  const flow = await openAnnotation(page, 'flowPaths');
+  const button = flow.editor
+    .locator('.colour-ctl')
+    .first()
+    .locator('[data-colour-open]');
+  const panel = page.locator('#inspector');
+  const before = await button.evaluate((el) => {
+    const panel = el.closest('.inspector')!;
+    const gap =
+      el.getBoundingClientRect().bottom - panel.getBoundingClientRect().bottom;
+    panel.scrollTop += gap - 4;
+    (el as HTMLElement).focus({ preventScroll: true });
+    return panel.scrollTop;
+  });
+  await page.keyboard.press('Enter');
+  const pop = flow.editor.locator('.colour-pop').first();
+  await expect(pop).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(pop).toBeVisible();
+  await expect(button).toHaveAttribute('aria-expanded', 'true');
+  expect(await panel.evaluate((el) => el.scrollTop)).toBe(before);
+  // The panel scrolled by hand still closes it.
+  await panel.evaluate((el) => el.scrollBy({ top: -40, behavior: 'instant' }));
+  await expect(pop).toBeHidden();
+});
+
+test('the selected swatch and the focused one look different', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const flow = await openAnnotation(page, 'flowPaths');
+  const control = flow.editor.locator('.colour-ctl').first();
+  await control.locator('[data-colour-open]').focus();
+  await page.keyboard.press('Enter');
+  const selected = control.locator('.sw.on');
+  await expect(selected).toBeFocused();
+  const ring = (el: Element): string => {
+    const s = getComputedStyle(el);
+    return `${s.outlineStyle} ${s.outlineColor} ${s.boxShadow}`;
+  };
+  const focus = await page.evaluate(() =>
+    getComputedStyle(document.documentElement)
+      .getPropertyValue('--focus')
+      .trim(),
+  );
+  // Focused and selected: the focus ring, and the selected marker inside.
+  const both = await selected.evaluate(ring);
+  expect(both).toContain('solid');
+  expect(both).toContain('inset');
+  // Tab on: the next swatch has the focus ring only, and the selected one
+  // keeps its marker and loses the ring.
+  await page.keyboard.press('Tab');
+  const next = control.locator('.sw:focus');
+  await expect(next).not.toHaveClass(/\bon\b/);
+  const nextRing = await next.evaluate(ring);
+  expect(nextRing).toContain('solid');
+  expect(nextRing).not.toContain('inset');
+  expect(await selected.evaluate(ring)).toMatch(/^none .*inset/);
+  expect(
+    await next.evaluate((el, colour) => {
+      const probe = document.createElement('i');
+      probe.style.color = colour;
+      document.body.append(probe);
+      const want = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(el).outlineColor === want;
+    }, focus),
+  ).toBe(true);
+});
+
+test('keyboard focus stays on the control after the panel redraws', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await clickNode(page, 'fw');
+  const lock = page.locator('#inspector [data-head="lock"]');
+  const more = page.locator('#inspector [data-head="more"]');
+
+  // The lock toggle, twice: focus stays on it, so the second press reaches it.
+  await page.locator('#i-type').focus();
+  await page.keyboard.press('Tab');
+  await expect(lock).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  await expect(lock).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await expect(lock).toBeFocused();
+
+  // A command from the "more" menu: back on the menu's button.
+  await page.keyboard.press('Tab');
+  await expect(more).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page
+    .locator('.menu-item', { hasText: 'Bring to front' })
+    .first()
+    .focus();
+  await page.keyboard.press('Enter');
+  await expect(more).toBeFocused();
+
+  // A swatch: back on the colour button, which shows the new colour.
+  const colour = page.locator('#inspector .colour-btn').first();
+  await colour.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('#inspector .colour-pop .sw:focus')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#inspector .colour-btn').first()).toBeFocused();
+  await expect(page.locator('#inspector .colour-pop:visible')).toHaveCount(0);
+
+  // Delete from the menu: the element is gone, focus goes to the tab shown.
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#page-canvas [data-tds-node="fw"]')).toHaveCount(
+    0,
+  );
+  await expect(page.locator('#insp-tab-page')).toBeFocused();
+});

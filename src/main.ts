@@ -122,6 +122,7 @@ import {
 } from './ui/inspector/color-control.js';
 import type { InspectorContext } from './ui/inspector/context.js';
 import { adoptSharedControls } from './ui/inspector/controls.js';
+import { markFocus, restoreFocus } from './ui/inspector/focus-keep.js';
 import {
   documentTabHtml,
   wireDocumentTab,
@@ -3229,6 +3230,7 @@ function renderInspector(): void {
         : '');
   }
   closeColourPopover();
+  const focusMark = markFocus(inspector);
   if (tab !== 'page') leavePageTab();
   inspector.innerHTML = html;
   adoptSharedControls(inspector);
@@ -3341,6 +3343,11 @@ function renderInspector(): void {
   wireSections(inspector, inspectorSections);
   wireAnnotations();
   wireColourControls(inspector);
+  restoreFocus(inspector, focusMark, () =>
+    document.querySelector<HTMLElement>(
+      '#inspector-wrap [role="tab"][aria-selected="true"]',
+    ),
+  );
 }
 
 /** The Selection tab's header, with the shell's command registry. */
