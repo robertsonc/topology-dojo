@@ -427,6 +427,8 @@ describe('the chrome sources', () => {
       '–', // the status bar's pointer position while there is none
       '←↑→↓', // the arrow keys, in the shortcut sheet
     ],
+    // The arrow keys as the shortcut sheet prints them, one each.
+    'ui/commands.ts': ['←', '→', '↑', '↓'],
   };
 
   it('finds a glyph in a string, and nothing in a comment', () => {

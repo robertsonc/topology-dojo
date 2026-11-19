@@ -1,16 +1,16 @@
 /**
- * The canvas shortcuts for the view, renaming and files: which command a key
- * press is, if any. Pure; `main.ts` runs the command.
+ * The canvas shortcuts for the view, renaming and files: which of them a key
+ * press is, if any.
  *
- * Zoom uses plain keys (+ and -) and Shift + a digit, not Ctrl / Cmd + plus,
- * minus and zero: those belong to the browser's own page zoom, which people
- * who need larger text rely on, and a canvas shortcut that reaches the canvas
- * from every control would take it away from them.
- *
- * The Shift + digit shortcuts are matched by physical key (`code`), because
- * the character a shifted digit types depends on the keyboard layout: Shift+0
- * is ")" on a US keyboard and "=" on a German one.
+ * These nine were the first shortcuts to be decided by a pure function. The
+ * decision now lives with every other shortcut in the key table of
+ * `commands.ts` (`matchKey`), where the reasons are written down: zoom on
+ * plain keys so the browser keeps its own page zoom, Shift + digit by
+ * physical key because what a shifted digit types depends on the layout.
+ * This module is that table seen through the old names, and its tests are
+ * the ones that pinned those reasons.
  */
+import { matchKey, type CommandId, type KeyPress } from './commands.js';
 
 export type CanvasKeyCommand =
   | 'zoom-in'
@@ -31,14 +31,19 @@ export type CanvasKeyCommand =
   | 'open';
 
 /** The part of a `KeyboardEvent` the mapping reads. */
-export interface CanvasKey {
-  key: string;
-  code?: string;
-  shiftKey?: boolean;
-  ctrlKey?: boolean;
-  metaKey?: boolean;
-  altKey?: boolean;
-}
+export type CanvasKey = KeyPress;
+
+const CANVAS_KEY_COMMANDS: Partial<Record<CommandId, CanvasKeyCommand>> = {
+  'view.zoomIn': 'zoom-in',
+  'view.zoomOut': 'zoom-out',
+  'view.zoom100': 'zoom-100',
+  'view.fit': 'zoom-fit',
+  'view.zoomToSelection': 'zoom-selection',
+  'edit.rename': 'rename',
+  'edit.pasteInPlace': 'paste-in-place',
+  'file.download': 'save',
+  'file.open': 'open',
+};
 
 /**
  * The command a key press is, or null.
@@ -52,29 +57,9 @@ export function canvasKeyCommand(
   e: CanvasKey,
   focusOnCanvas = true,
 ): CanvasKeyCommand | null {
-  // Alt combinations are other commands (the format painter) or the
-  // platform's own (AltGr characters, menu access keys).
-  if (e.altKey) return null;
-  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-
-  if (e.ctrlKey || e.metaKey) {
-    if (e.shiftKey) return key === 'v' ? 'paste-in-place' : null;
-    if (key === 's') return 'save';
-    if (key === 'o') return 'open';
-    return null;
-  }
-
-  if (e.shiftKey) {
-    if (e.code === 'Digit0') return 'zoom-100';
-    if (e.code === 'Digit1') return 'zoom-fit';
-    if (e.code === 'Digit2') return 'zoom-selection';
-  }
-  // "+" is Shift+"=" on a US keyboard and its own key on many others; the
-  // numpad's keys report the same characters.
-  if (key === '+' || key === '=') return 'zoom-in';
-  if (key === '-' || key === '_') return 'zoom-out';
-  if (e.shiftKey) return null;
-  if (key === 'F2') return 'rename';
-  if (key === 'Enter' && focusOnCanvas) return 'rename';
-  return null;
+  const hit = matchKey(e, { focusOnCanvas, selectionCount: 0 });
+  // Each of the nine takes its key from the browser. The plain "0" fits the
+  // view too, but leaves the key alone: it never was one of them.
+  if (!hit?.preventDefault) return null;
+  return CANVAS_KEY_COMMANDS[hit.id] ?? null;
 }

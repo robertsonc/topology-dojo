@@ -59,6 +59,9 @@ describe('canvasKeyCommand', () => {
     expect(
       canvasKeyCommand({ key: 'Enter', code: 'Enter', shiftKey: true }),
     ).toBeNull();
+    expect(
+      canvasKeyCommand({ key: 'F2', code: 'F2', shiftKey: true }),
+    ).toBeNull();
   });
 
   it('Enter on a focused control is that control’s key, not rename', () => {
@@ -118,5 +121,8 @@ describe('canvasKeyCommand', () => {
       '?',
     ])
       expect(canvasKeyCommand({ key })).toBeNull();
+    // …and for the ones other shortcuts take from the browser.
+    for (const key of ['z', 'c', 'a', 'd'])
+      expect(canvasKeyCommand({ key, ctrlKey: true })).toBeNull();
   });
 });
