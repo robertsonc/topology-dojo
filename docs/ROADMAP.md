@@ -731,8 +731,8 @@ Plan and per-phase status: [`futures/hw-catalog.md`](futures/hw-catalog.md).
 
 ### UI overhaul foundations (proposal 0013, P0 except the command registry, 2026-11-19)
 
-PR #326, merged 2026-11-19 as `e9d0d7f` (its Release run was still in
-progress when this was written). Shipped:
+PR #326, merged 2026-11-19 as `e9d0d7f` (its Release run, 44491161125,
+completed with success at 09:12 UTC the same day). Shipped:
 
 - The editor stylesheet moved out of `index.html` into `src/styles/`;
   `index.css` imports the files in cascade order.

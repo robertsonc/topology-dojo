@@ -230,7 +230,9 @@ checkout with the real typeface, not from a CI artifact; the second does not
 say where its images were made. Both record that each image was looked at
 before it was committed. CI's e2e job passed on the pull request's last commit (`8881941`) before it
 merged; the e2e job of the Release run on the merge commit was still running
-when this was written.
+when this was written. Added 2026-11-19, later that day: that Release run
+(44491161125) completed with success at 09:12 UTC; its e2e job passed at 09:07
+UTC and its production deploy followed.
 
 ---
 

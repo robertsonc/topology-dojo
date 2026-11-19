@@ -62,6 +62,14 @@ implementation program", the `docs/proposals/0005`–`0013` entry and one new
 "Key files" row (chrome building blocks) were written; nothing else in this file was
 re-checked._
 
+_2026-11-19 (still later the same day): the Release run for `e9d0d7f` (GitHub
+Actions run 44491161125, workflow "Release": CI, then the staging and
+production Worker deploys) completed with success at 09:12 UTC, so the caveat
+in the note above, that the run was still in progress and production may not
+have the merge yet, is out of date: the run finished and its production deploy
+job succeeded. Only this note and the "Recently completed" entry for PR #326
+were changed for it._
+
 ## What Topology Dojo is
 
 A production-hosted, collaborative, AI-agent-assisted network-topology
@@ -182,8 +190,8 @@ from `git log --first-parent`):
   (#318); QA and UAT plans brought up to date (#319). #312 and #313 reached
   `main` inside #314's merge.
 - **UI overhaul foundations** (proposal 0013, P0 except the command registry;
-  PR #326, merged 2026-11-19 as `e9d0d7f`; its Release run was still in
-  progress when this was written). Merged: the editor stylesheet moved
+  PR #326, merged 2026-11-19 as `e9d0d7f`; its Release run, 44491161125,
+  completed with success at 09:12 UTC the same day). Merged: the editor stylesheet moved
   from `index.html` to `src/styles/` (`index.css` imports the files in
   cascade order); a token layer (`tokens.css`) for both themes and a flat
   skin with no backdrop blur; the toolbar, properties panel and status bar

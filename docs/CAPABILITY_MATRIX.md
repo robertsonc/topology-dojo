@@ -12,7 +12,8 @@ re-classified) and rows were added for work merged since `e99b012`; see the
 audit log at the end. On 2026-11-19, against `main` at `e9d0d7f`, three rows
 were added for PR #326 (the editor chrome foundations); no other row was
 re-checked. Those rows rest on the rule that a merge is the release; the
-Release run for `e9d0d7f` was still in progress when they were written. Every row cites the code evidence used to classify it.
+Release run for `e9d0d7f` (run 44491161125) completed with success at 09:12 UTC
+that day, after they were written. Every row cites the code evidence used to classify it.
 Classifications:_
 
 - **Shipped-active** — in code, exercised by tests, and live in the current production config (`wrangler.jsonc` top-level).
