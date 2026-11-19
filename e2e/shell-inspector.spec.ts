@@ -12,6 +12,7 @@ import {
   inspectorTab,
   linkPoint,
   nodeBox,
+  openFixture,
   savedDocument,
   savedElement,
 } from './helpers.js';
@@ -698,4 +699,36 @@ test('keyboard focus stays on the control after the panel redraws', async ({
     0,
   );
   await expect(page.locator('#insp-tab-page')).toBeFocused();
+});
+
+test('a zone picked on the canvas is edited on the panel grid, without a card', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await openFixture(page, 'zone-orthogonal.json');
+  const z = await page.evaluate(() => {
+    const svg = document.querySelector('#overlay') as SVGSVGElement;
+    const p = new DOMPoint(400, 280).matrixTransform(svg.getScreenCTM()!);
+    return { x: p.x, y: p.y };
+  });
+  await page.mouse.click(z.x, z.y);
+  await expect(page.locator('#insp-tab-selection')).toHaveText('Zone');
+  await expect(page.locator('#inspector details.anno')).toHaveCount(0);
+  const editor = page.locator('#inspector .anno-solo[data-acol="zones"]');
+  await expect(editor).toHaveCount(1);
+  // Its fields still write the zone.
+  const label = editor.locator('input[data-akey="label"]');
+  await label.fill('Core');
+  expect((await savedElement(page, 'zones', 'z1')).label).toBe('Core');
+  // Its controls start where the panel's do: after the 96px label column
+  // and its 8px gap.
+  const offset = await editor
+    .locator('label.insp-row > :nth-child(2)')
+    .first()
+    .evaluate(
+      (el) =>
+        el.getBoundingClientRect().left -
+        document.querySelector('#inspector')!.getBoundingClientRect().left,
+    );
+  expect(Math.round(offset)).toBe(104);
 });

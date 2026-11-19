@@ -57,6 +57,15 @@ details.anno > summary {
 details.anno > summary::-webkit-details-marker {
   display: none;
 }
+/* The editor's rows: the row gap of the panel, none of its own inset. The
+   card's edge and inset (9px) come off the label column, so the controls
+   line up with those of every other section. */
+details.anno > .anno-rows {
+  padding: 0;
+}
+details.anno .insp-row:not(.col):not(.wide) {
+  grid-template-columns: calc(96px - 9px) minmax(0, 1fr);
+}
 .anno-k {
   padding: 1px 6px;
   border-radius: var(--radius-xs);

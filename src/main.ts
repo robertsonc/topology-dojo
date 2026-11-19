@@ -141,6 +141,7 @@ import {
   pageTabHtml,
   wirePageTab,
 } from './ui/inspector/page-tab.js';
+import { watchPanelWidth } from './ui/inspector/panel-width.js';
 import {
   SectionMemory,
   sectionHtml,
@@ -474,7 +475,7 @@ app.innerHTML = `
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
       <div class="inspector-col">
-        <button class="inspector-toggle" id="inspector-toggle" title="${tip('view.toggleProperties', 'Hide properties')}">hide ${icon('panel-right-close')}</button>
+        <button class="inspector-toggle" id="inspector-toggle" title="${tip('view.toggleProperties', 'Hide properties')}"><span class="toggle-word">hide</span> ${icon('panel-right-close')}</button>
         <div class="inspector-body" id="inspector-body">
           <aside class="inspector scroll-slim" id="inspector"></aside>
         </div>
@@ -2429,8 +2430,8 @@ const inspectorToggle =
 function setInspectorCollapsed(collapsed: boolean, persist = true): void {
   inspectorWrap.classList.toggle('collapsed', collapsed);
   inspectorToggle.innerHTML = collapsed
-    ? `props ${icon('panel-right-open')}`
-    : `hide ${icon('panel-right-close')}`;
+    ? `<span class="toggle-word">props</span> ${icon('panel-right-open')}`
+    : `<span class="toggle-word">hide</span> ${icon('panel-right-close')}`;
   inspectorToggle.title = commands.titleWithShortcut(
     'view.toggleProperties',
     collapsed ? 'Show properties' : 'Hide properties',
@@ -2496,6 +2497,8 @@ try {
 } catch {
   /* storage unavailable — use the default width */
 }
+
+watchPanelWidth(inspector, inspectorWrap);
 
 // Left-edge drag-to-resize (dragging left widens the docked panel).
 inspectorResizer.addEventListener('pointerdown', (e) => {
@@ -3024,13 +3027,18 @@ const ANNOTATE_COMMANDS: Readonly<Record<string, CommandId>> = {
 /**
  * Annotate: make a zone, flow path or marker from what is selected. `bare`
  * draws the buttons as a group of their own across the panel's width (a
- * node's last row), without the plus marks, so the two fit on one line.
+ * node's last row), without the plus marks (`plus` puts them back), so the
+ * two fit on one line.
  */
-function annotateRow(kinds: readonly AnnotationKind[], bare = false): string {
+function annotateRow(
+  kinds: readonly AnnotationKind[],
+  bare = false,
+  plus = !bare,
+): string {
   const buttons = kinds
     .map((kind) => {
       const id = ANNOTATE_COMMANDS[kind]!;
-      return `<button type="button" class="btn btn-sm" data-annotate="${kind}" title="${tip(id)}">${bare ? '' : `${icon('plus')} `}${esc(commands.get(id)!.title)}</button>`;
+      return `<button type="button" class="btn btn-sm" data-annotate="${kind}" title="${tip(id)}">${plus ? `${icon('plus')} ` : ''}${esc(commands.get(id)!.title)}</button>`;
     })
     .join('');
   return bare
@@ -3149,9 +3157,9 @@ function renderInspector(): void {
         nodeFieldControl(node),
         { 'Position and order': arrangeRow() },
       ) +
+      // Copy and paste format are in the header's "more" menu.
       `<div class="insp-rows insp-foot">` +
       annotateRow(['zone', 'policyMarker'], true) +
-      formatRow(true) +
       `</div>`;
   } else if (link) {
     const info = getLinkType(link.type);
@@ -3199,7 +3207,7 @@ function renderInspector(): void {
         kindLabel: 'Zone',
         title: label || zone.id,
         id: zone.id,
-      }) + `<div class="insp-rows insp-top">${zoneEditorHtml(zone)}</div>`;
+      }) + zoneEditorHtml(zone);
   } else {
     // Several nodes: no single-element editor, but arranging, annotating and
     // the format painter apply to all of them (pasteFormat brushes every
@@ -3221,7 +3229,8 @@ function renderInspector(): void {
       sectionHtml(
         inspectorSections,
         'Annotate',
-        annotateRow(['zone', 'flowPath']),
+        // Across the panel: the section's title is the row's label.
+        annotateRow(['zone', 'flowPath'], true, true),
         { open: true },
       ) +
       sectionHtml(inspectorSections, 'Format', formatRow(), { open: true }) +
@@ -3414,14 +3423,11 @@ function arrangeRow(): string {
 
 /** Format painter (issue #211): a touch/keyboard surface onto the same
  * `copyFormat`/`pasteFormat` commands as the context menu + shortcuts. */
-function formatRow(bare = false): string {
-  const word = bare ? ' format' : '';
+function formatRow(): string {
   const buttons =
-    `<button type="button" class="btn btn-sm" id="i-copyfmt" title="${tip('edit.copyFormat')}"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} Copy${word}</button>` +
-    `<button type="button" class="btn btn-sm" id="i-pastefmt" title="${tip('edit.pasteFormat')}"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} Paste${word}</button>`;
-  return bare
-    ? `<div class="insp-btns" role="group" aria-label="Format">${buttons}</div>`
-    : `<div class="insp-row"><span>Format</span><span class="insp-btns">${buttons}</span></div>`;
+    `<button type="button" class="btn btn-sm" id="i-copyfmt" title="${tip('edit.copyFormat')}"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} Copy</button>` +
+    `<button type="button" class="btn btn-sm" id="i-pastefmt" title="${tip('edit.pasteFormat')}"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} Paste</button>`;
+  return `<div class="insp-row"><span>Format</span><span class="insp-btns">${buttons}</span></div>`;
 }
 
 function wireFormatRow(): void {
@@ -3720,19 +3726,23 @@ function readOnlyFieldRow(f: FieldSpec, v: unknown): string {
   );
 }
 
-/** The focused editor for a single selected zone (reuses annotation wiring). */
+/**
+ * The editor for a single selected zone (reuses annotation wiring). The
+ * Selection tab's header already names the zone, so its rows sit straight
+ * on the panel's grid, without the list's card and title row; the card's
+ * actions come first.
+ */
 function zoneEditorHtml(zone: { id: string }): string {
   const info = getAnnotationType('zone')!;
   const cfg = zone as Record<string, unknown>;
-  const title = String(cfg.label ?? zone.id);
   return (
-    `<details class="anno selected" data-acol="zones" data-aid="${esc(zone.id)}" open>` +
-    `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>` +
-    `<button type="button" class="icon-btn anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
-    `<button type="button" class="icon-btn anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>` +
-    `<button type="button" class="icon-btn anno-x" data-adel title="Delete" aria-label="Delete zone">${icon('delete')}</button></summary>` +
+    `<div class="insp-rows insp-top anno-solo" data-acol="zones" data-aid="${esc(zone.id)}">` +
+    `<div class="insp-row"><span>Zone</span><span class="arrange">` +
+    `<button type="button" class="icon-btn" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
+    `<button type="button" class="icon-btn" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>` +
+    `<button type="button" class="icon-btn" data-adel title="Delete" aria-label="Delete zone">${icon('delete')}</button></span></div>` +
     info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
-    `</details>`
+    `</div>`
   );
 }
 
@@ -3780,8 +3790,11 @@ function annotationsHtml(): string {
       html +=
         `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
         `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button type="button" class="icon-btn anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
+        // The rows in their own column, so they keep the panel's row gap
+        // (a gap set on a <details> does not reach its content).
+        `<div class="insp-rows anno-rows">` +
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
-        `</details>`;
+        `</div></details>`;
     }
     html += `</details>`;
   }
@@ -3873,13 +3886,13 @@ function wireAnnotations(): void {
       }),
     );
   inspector
-    .querySelectorAll<HTMLDetailsElement>('details.anno')
+    .querySelectorAll<HTMLElement>('details.anno, .anno-solo')
     .forEach((host) => {
       const col = host.dataset.acol as AnnoCol;
       const id = host.dataset.aid!;
-      // The focused zone editor (a zone clicked on the canvas) is always open
-      // and is not part of the list; only the list's editors are remembered.
-      if (!host.classList.contains('selected'))
+      // The editor of a zone clicked on the canvas has no card to open and
+      // is not part of the list; only the list's editors are remembered.
+      if (host instanceof HTMLDetailsElement)
         host.addEventListener('toggle', () => {
           if (host.open) annoOpen.add(annoKey(col, id));
           else annoOpen.delete(annoKey(col, id));

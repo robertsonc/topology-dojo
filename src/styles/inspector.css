@@ -62,6 +62,7 @@
   min-width: 0;
   flex: 1 1 auto;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -100,6 +101,33 @@
 }
 .inspector-wrap:not(.collapsed) .insp-tabs {
   padding-right: 66px;
+}
+/* Under the default width the toggle is its icon alone, a 28px square level
+   with the tabs, and the tabs share what is left by the length of their
+   labels; the word stays as the button's name. */
+.inspector-wrap.narrow:not(.collapsed) .inspector-toggle {
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+.inspector-wrap.narrow:not(.collapsed) .toggle-word {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.inspector-wrap.narrow:not(.collapsed) .insp-tabs {
+  padding-right: 32px;
+}
+.inspector-wrap.narrow .insp-tabs > .tab {
+  flex: 1 1 auto;
+  padding: 0 2px;
 }
 /* Phone / narrow tablet (#221): the docked properties column plus the
    floating node library can consume a 390px stage, and overflow:hidden
@@ -599,9 +627,10 @@
   color: var(--status-error-fg);
 }
 .refchips > .refadd {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   width: auto;
-  min-width: 84px;
+  min-width: 0;
+  max-width: 100%;
 }
 .refhint {
   color: var(--fg-weak);

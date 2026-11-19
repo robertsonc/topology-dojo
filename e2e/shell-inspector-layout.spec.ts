@@ -1,7 +1,8 @@
 /**
  * The properties panel's layout at a laptop size: the default view of each
  * state fits without scrolling, nothing inside the panel scrolls on its own,
- * and no text in it is under 12px.
+ * and no text in it is under 12px. At the minimum width the tab labels still
+ * read in full and nothing runs off the panel's side.
  */
 import { expect, test, type Page } from '@playwright/test';
 import {
@@ -10,6 +11,7 @@ import {
   clickNode,
   inspectorTab,
   nodeBox,
+  openFixture,
 } from './helpers.js';
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -65,6 +67,26 @@ test('one node fits without scrolling', async ({ page }) => {
   await clickNode(page, 'fw');
   await expect(page.locator('#insp-tab-selection')).toHaveText('Node');
   await expectFits(page, 'one node');
+});
+
+test('one node with type options fits on a page with the anchor box on', async ({
+  page,
+}) => {
+  // The longest default view of a node: its type has an options section and
+  // the attachment line, read from a page with the anchor box on, runs to
+  // two lines.
+  await inspectorTab(page, 'page');
+  await page.locator('#p-attach').click();
+  await expect(page.locator('#p-attach')).toBeChecked();
+  for (const id of ['ec', 'user']) {
+    await clickNode(page, id);
+    await expect(page.locator('#insp-tab-selection')).toHaveText('Node');
+    await expect(
+      page.locator('#inspector details[data-group$=" options"]'),
+    ).toHaveCount(1);
+    await expectFits(page, `node ${id}, anchor box on`);
+    await page.keyboard.press('Escape');
+  }
 });
 
 test('one link fits without scrolling', async ({ page }) => {
@@ -158,4 +180,75 @@ test('no text in the panel is under 12px', async ({ page }) => {
   // The Problems dock, open.
   await page.locator('#problems-toggle').click();
   expect(await smallText(page), 'Problems dock').toEqual([]);
+});
+
+/* ── At the narrowest width ──────────────────────────────────────────────── */
+
+/** The tab labels cut short, as "label clientWidth/scrollWidth". */
+function clippedTabs(page: Page): Promise<string[]> {
+  return page
+    .locator('#inspector-wrap .insp-tabs [role="tab"]')
+    .evaluateAll((tabs) =>
+      tabs
+        .filter((t) => t.scrollWidth > t.clientWidth)
+        .map((t) => `${t.textContent} ${t.clientWidth}/${t.scrollWidth}`),
+    );
+}
+
+async function expectNoSideScroll(page: Page, state: string): Promise<void> {
+  const { wide, box } = await page
+    .locator('#inspector')
+    .evaluate((el) => ({ wide: el.scrollWidth, box: el.clientWidth }));
+  expect(wide, `${state}: content ${wide}px wide in ${box}px`).toBeLessThan(
+    box + 1,
+  );
+}
+
+test('at the minimum width the tabs read in full and nothing runs off the side', async ({
+  page,
+}) => {
+  await page.evaluate(() => localStorage.setItem('tds-inspector-width', '240'));
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator('#inspector')
+        .evaluate((el) => (el as HTMLElement).offsetWidth),
+    )
+    .toBe(240);
+  // The toggle keeps its word as its name, and its tooltip.
+  await expect(page.locator('#inspector-toggle')).toHaveText('hide');
+  await expect(page.locator('#inspector-toggle')).toHaveAttribute(
+    'title',
+    'Hide properties (P)',
+  );
+
+  expect(await clippedTabs(page), 'Page tab').toEqual([]);
+  await expectNoSideScroll(page, 'Page tab');
+  await inspectorTab(page, 'document');
+  expect(await clippedTabs(page), 'Document tab').toEqual([]);
+  await expectNoSideScroll(page, 'Document tab');
+  await clickNode(page, 'fw');
+  expect(await clippedTabs(page), 'one node').toEqual([]);
+  await expectNoSideScroll(page, 'one node');
+  await clickLink(page, 'ec-fw');
+  await expectNoSideScroll(page, 'one link');
+  await page.keyboard.press('Escape');
+  await selectTwoNodes(page);
+  expect(await clippedTabs(page), 'two nodes').toEqual([]);
+  await expectNoSideScroll(page, 'two nodes');
+
+  // A zone, with its member chips and their "add…" picker.
+  await openFixture(page, 'zone-orthogonal.json');
+  const z = await page.evaluate(() => {
+    const svg = document.querySelector('#overlay') as SVGSVGElement;
+    const p = new DOMPoint(400, 280).matrixTransform(svg.getScreenCTM()!);
+    return { x: p.x, y: p.y };
+  });
+  await page.mouse.click(z.x, z.y);
+  await expect(page.locator('#insp-tab-selection')).toHaveText('Zone');
+  await expect(page.locator('#inspector .refadd')).toBeVisible();
+  expect(await clippedTabs(page), 'a zone').toEqual([]);
+  await expectNoSideScroll(page, 'a zone');
 });
