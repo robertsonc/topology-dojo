@@ -522,4 +522,50 @@ test('with a menu, a popover or a dialog open, the undo and redo keys leave the 
     await page.keyboard.press('Escape');
     await expect(page.locator(root).first(), name).toBeHidden();
   }
+
+  // In a text field with no edits of its own, the keys undo nothing else:
+  // the title stays, and so does the focus.
+  const fields: [string, () => Promise<void>, string][] = [
+    [
+      'the command palette search',
+      () => page.keyboard.press('Control+k'),
+      '.cmdk-input',
+    ],
+    [
+      'the node designer name',
+      () => page.locator('#pDesign').click(),
+      '#nd-name',
+    ],
+    [
+      'a properties text field',
+      async () => {
+        await clickNode(page, 'user');
+        await page.locator('#inspector input[data-key="label"]').focus();
+      },
+      '#inspector input[data-key="label"]',
+    ],
+  ];
+  for (const [name, open, field] of fields) {
+    await page.mouse.click(empty.x, empty.y);
+    await open();
+    await expect(page.locator(field), name).toBeFocused();
+    for (const key of ['Control+z', 'Control+Shift+z', 'Control+y']) {
+      await page.keyboard.press(key);
+      await expect(title, `${name}, ${key}`).toHaveValue('UntitledXY');
+      await expect(page.locator(field), `${name}, ${key}`).toBeFocused();
+    }
+    expect((await readAutosave(page))?.title, name).toBe('UntitledXY');
+    await page.keyboard.press('Escape');
+  }
+  // The field's own undo still works.
+  const label = page.locator('#inspector input[data-key="label"]');
+  await clickNode(page, 'user');
+  await label.focus();
+  const before = await label.inputValue();
+  await page.keyboard.press('End');
+  await page.keyboard.type('Z');
+  await expect(label).toHaveValue(`${before}Z`);
+  await page.keyboard.press('Control+z');
+  await expect(label).toHaveValue(before);
+  await expect(title).toHaveValue('UntitledXY');
 });

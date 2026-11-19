@@ -586,8 +586,9 @@ and **Ctrl/Cmd+Shift+Z**. Each page keeps its own edit history when switching
 between pages. Page deletion has its own short-lived **Undo delete** action in
 the pages bar. While a menu, the context menu, a popover such as **Display
 settings**, or a dialog such as the shortcut sheet is open, the undo and redo
-keys do nothing outside a text field: close it first. (In a text field of a
-dialog they undo and redo the typing in that field.)
+keys do nothing outside a text field: close it first. In a text field, here
+or anywhere else, they undo and redo only the typing in that field; a field
+with nothing of its own to undo leaves every other field as it is.
 
 ### Context menus
 
