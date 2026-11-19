@@ -3,7 +3,7 @@
  * the Problems dock, the save chip.
  */
 import { expect, test } from '@playwright/test';
-import { bootEditor, clickNode, statusCount } from './helpers.js';
+import { bootEditor, clickNode, nodeBox, statusCount } from './helpers.js';
 
 test('pressing the canvas closes Display settings and the shortcuts work again', async ({
   page,
@@ -19,8 +19,15 @@ test('pressing the canvas closes Display settings and the shortcuts work again',
   await expect(pop).toBeVisible();
 
   // Pressing a node on the canvas is working on the canvas: the popover
-  // closes, the node is selected, and Delete reaches it.
-  await clickNode(page, 'fw');
+  // closes, the node is selected, and Delete reaches it. The popover opens
+  // over the canvas's right-hand side, so the node pressed is one it leaves
+  // in view.
+  const popBox = (await pop.boundingBox())!;
+  const node = await nodeBox(page, 'user');
+  expect(node.x + node.width, 'the popover covers the node').toBeLessThan(
+    popBox.x,
+  );
+  await clickNode(page, 'user');
   await expect(pop).toBeHidden();
   await expect(page.locator('#tDisplay')).toHaveAttribute(
     'aria-expanded',

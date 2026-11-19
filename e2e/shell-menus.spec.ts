@@ -10,6 +10,7 @@ import {
   bootEditor,
   clickNode,
   CONTEXT_MENU,
+  inspectorTab,
   menuCommand,
   savedDocument,
   statusCount,
@@ -170,15 +171,22 @@ test('a pointer opens a menu, moves across the bar and closes it outside', async
 test('the title in the top bar is the document title', async ({ page }) => {
   await bootEditor(page);
   const title = page.locator('#docTitle');
+  // The same value has a Title field on the properties panel's Document tab.
+  await inspectorTab(page, 'document');
   await expect(title).toHaveValue(await page.locator('#p-title').inputValue());
   await title.fill('Branch office');
-  // The page properties show it, and it is saved with the document.
+  // The Document tab shows it, and it is saved with the document.
   await expect(page.locator('#p-title')).toHaveValue('Branch office');
   expect((await savedDocument(page)).title).toBe('Branch office');
   // And the other way round.
   await page.locator('#p-title').fill('Campus');
   await expect(title).toHaveValue('Campus');
   expect((await savedDocument(page)).title).toBe('Campus');
+  // A title typed while another tab shows is there when the tab comes back.
+  await inspectorTab(page, 'page');
+  await title.fill('Data centre');
+  await inspectorTab(page, 'document');
+  await expect(page.locator('#p-title')).toHaveValue('Data centre');
 });
 
 for (const width of [1024, 1280, 1440, 1920]) {
