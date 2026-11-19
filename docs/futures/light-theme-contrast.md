@@ -177,3 +177,24 @@ light theme, as opposed to the tokens; the surfaces that still set `color:
 var(--accent)` as text (listed in the proposal's P3 status line; the token's own
 comment in `tokens.css` says `--accent` as text can fall under 4.5 : 1 on a tint); and the motion and reduced-motion pass. The
 items under "Out of scope" above are unchanged.
+
+### Update, 2026-11-19, PR #328 (not merged)
+
+On the branch of PR #328 (not in `main`) the chrome's pass was done in part:
+the surfaces that set `color: var(--accent)` as text now use `--accent-fg`
+(`grep -rn "color: var(--accent)" src/styles` finds nothing); for a document's
+brand accent, `readableAccentText` in `src/ui/contrast.ts` mixes the accent
+toward the theme's foreground until it reaches 4.5 : 1 on the front surface and
+`setChromeAccent` sets `--accent-fg` from it (unit tests with a dark, a pale and
+a mid accent in both themes, `src/ui/contrast.test.ts`); present mode has a dark
+scope so its bar reads in the light theme (`.dark-scope`, `src/styles/tokens.css`);
+and every transition and animation in the stylesheets takes a duration token
+(`src/styles/styles.test.ts`, "times every transition and animation with the
+duration tokens"). Each converted surface was measured in a browser, in both
+themes, while it was converted.
+
+Still not done: no test asserts the contrast of a surface as drawn, in either
+theme (QA case EDT-71 is manual); the disabled Selection tab is drawn at
+`opacity: 0.4`, below 4.5 : 1, and is exempt as a disabled control; and
+animation drawn as SVG is outside the motion test. The items under "Out of
+scope" above are unchanged.

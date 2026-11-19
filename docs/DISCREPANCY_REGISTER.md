@@ -272,3 +272,71 @@ proposal's status lines carry the detail):
   context-menu item "Emphasize on this frame"; the item is "Emphasize on this
   page"), its Caption placeholder and empty-list line, the Analyze path
   tooltip and the delete-page confirmation say "frame".
+
+## Follow-up: 2026-11-19, second pass (PR #328, not merged)
+
+The documents were checked again against the branch of PR #328 at `61e4d7e`
+(the code of the later slices of that PR), which is not merged and is not in
+`main`. "Closed" below means closed on that branch only: until #328 merges,
+`main` still has what the first pass of 2026-11-19 recorded. Each item says how
+it is known.
+
+Closed on the branch of PR #328:
+
+- Row 27 (`docs/EXPORTS.md`, UAT-PR-01 step 7 naming the toolbar): both
+  corrected in this pass; `grep -n -i toolbar docs/EXPORTS.md
+docs/launch-readiness/UAT_PLAN.md` finds nothing in them.
+- "Surfaces still in the old skin": `grep -rn tbtn src e2e` finds nothing,
+  `src/styles/toolbar.css` is deleted, `NOT_YET` is gone from
+  `src/styles/styles.test.ts`, and no stylesheet sets text or an icon in
+  `color: var(--accent)` (what remains of `var(--accent)` is borders and
+  `accent-color`). Confirmed by those commands this pass. Whether each surface
+  reaches 4.5 : 1 was measured in a browser while it was converted; the token
+  contrast is asserted, the surfaces' is not (see below).
+- "Guardrails not built": the control budgets, the text-size walk and the
+  sideways-scroll test are `e2e/shell-budget.spec.ts` and
+  `src/ui/shell-budget.test.ts`; the "what moved" note is
+  `src/ui/shell-note.ts`. Confirmed in the tree; an extra top-bar button and a
+  rule setting text at 11 px each fail a unit test (tried this pass).
+- "A jump from a Problems entry ... does not open the section or focus the
+  field": `problemField` and `revealProblemField` do, and a page or document
+  problem calls `InspectorTabs.reveal` (`e2e/problems-panel.spec.ts`, "a jump
+  to a problem about a field opens its section and focuses it").
+- Row 24, "page everywhere": the Find box, the presentation bar and the
+  shortcut sheet's Presentation rows, the path bar and its messages, the Page
+  tab's hints, the Analyze path tooltip and the delete-page confirmation say
+  page (`grep -rn -i frame src/main.ts src/ui` finds code comments, command
+  ids, CSS classes, a storage key and the default page name "Frame N").
+- `docs/futures/light-theme-contrast.md` is unchanged and still about the
+  rendered output; see the note added at its end.
+- A11Y-02's "panel toggles expose no expanded state": the properties toggle has
+  `aria-controls` and `aria-expanded` (`e2e/shell-inspector-tabs.spec.ts`).
+  The register row itself is not edited: its other parts (tool toggles'
+  pressed state, the muted-text token) were not re-checked.
+- The user guide said the shared-copy banner's buttons were "keep this copy",
+  "back to my document" and "unpublish link", and the Share dialog's "copy"
+  and "revoke"; the banner's text had been sentence case since `4fd8ed1`.
+  Corrected to the labels in the tree.
+
+Open, found in this pass and not fixed:
+
+- No test asserts the contrast of the surfaces in the light theme or of the
+  present bar; EDT-71 is manual.
+- The disabled Selection tab is drawn at `opacity: 0.4`
+  (`.tab[aria-disabled='true']` in `src/styles/controls.css`), which puts its
+  text below 4.5 : 1. It is `aria-disabled`, and WCAG exempts a disabled
+  control from the text contrast rule; the text-size walk does not check
+  contrast, so nothing flags it.
+- The Display settings popover keeps its two choices (Ambient backdrop and
+  Wheel) as selects, not as `.seg`, because specs drive them with
+  `selectOption`.
+- The workspace-sync spec "a commit the server refuses stops retrying and
+  shows the reason" took 19.6 s in this pass's CI-settings run (19.7 s in the
+  earlier slice's), within 0.4 s of the 20 s limit the QA plan now sets
+  (§10.2); the ten slowest tests are in the QA plan's §4.4.
+- SVG animation drawn by `src/render-svg` and the editor's pulses is outside
+  the stylesheets, so the new duration test does not cover it.
+- Code comments in `src/main.ts` still say "frame" for what the shell calls a
+  page (for example the Find section's header comment); not edited.
+- Rows 21 to 26 above keep their first-pass text: they record what the
+  documents said and what `main` had then.
