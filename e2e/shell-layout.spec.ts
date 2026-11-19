@@ -132,6 +132,11 @@ for (const viewport of [
     const before = await page.locator('#ccZoom').innerText();
     await page.locator('#ccZoomIn').click();
     await expect(page.locator('#ccZoom')).not.toHaveText(before);
+    // Its accessible name holds the figure it shows (label in name).
+    const shown = await page.locator('#ccZoom').innerText();
+    await expect(page.locator('#ccZoom')).toHaveAccessibleName(
+      `Zoom ${shown} — fit view`,
+    );
   });
 
   test(`tabbing through the view controls never scrolls the canvas at ${size}`, async ({

@@ -448,6 +448,16 @@ const pagesTail = app.querySelector<HTMLElement>('#pagesTail')!;
 const framesDock = app.querySelector<HTMLDivElement>('#frames-dock')!;
 const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
+// The pages bar's height, kept on the stage as --pages-bar-h: on a phone the
+// library drawer ends above the bar (which takes two rows there) instead of
+// covering its page toggle.
+{
+  const pagesBar = app.querySelector<HTMLElement>('#pagesBar')!;
+  const stageEl = app.querySelector<HTMLElement>('.stage')!;
+  new ResizeObserver(() =>
+    stageEl.style.setProperty('--pages-bar-h', `${pagesBar.offsetHeight}px`),
+  ).observe(pagesBar);
+}
 const savedEl = app.querySelector<HTMLElement>('#saved')!;
 const saveAlertEl = app.querySelector<HTMLElement>('#saveAlert')!;
 /* The document title in the top bar. It writes what the Title field of the
@@ -5726,6 +5736,8 @@ function wireAccountMenu(login: string): void {
   if (!chip || !name || !div) return;
   name.textContent = login;
   chip.title = `Signed in as @${login}`;
+  // Its name starts with the login it shows, then says what it opens.
+  chip.setAttribute('aria-label', `${login}, account menu`);
   chip.hidden = false;
   div.hidden = false;
 
@@ -6369,6 +6381,13 @@ window.addEventListener('keydown', (e) => {
   const focus = target ? focusKind(focusFactsOf(target)) : 'canvas';
   if (routeKey(e, focus, keyboardNav) === 'focus') return;
   if (e.key === 'Escape' && escapeReleasesFocus(focus)) releaseFocus(target);
+
+  // The keyboard's right-click: the context menu for the selection.
+  if (focus === 'canvas' && isContextMenuKey(e)) {
+    e.preventDefault();
+    openCtxMenuFromKeyboard();
+    return;
+  }
 
   // Hold Space: hand mode while it is down (a gesture, not a command; the
   // keyup handler below releases it). Prevent page scroll.
