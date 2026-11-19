@@ -445,7 +445,7 @@ app.innerHTML = `
           <button type="button" class="icon-btn" id="ccZoomOut" title="${tip('view.zoomOut')}" aria-label="Zoom out">${icon('zoom-out')}</button>
           <button type="button" class="cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom 100% — fit view">100%</button>
           <button type="button" class="icon-btn" id="ccZoomIn" title="${tip('view.zoomIn')}" aria-label="Zoom in">${icon('zoom-in')}</button>
-          <button type="button" class="icon-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
+          <button type="button" class="icon-btn" id="ccFit" title="${tip('view.fit')}" aria-label="${esc(commands.get('view.fit')!.title)}">${icon('fit-view')}</button>
         </div>
       </div>
       <!-- The pages bar, docked under the canvas: the pages toggle and its

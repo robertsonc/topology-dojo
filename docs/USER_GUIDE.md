@@ -253,9 +253,10 @@ The editor is organized into six areas and a status bar.
      one node selected. The bar hides while you drag, and the properties panel remains the
      complete surface.
    - The **zoom control**, in the bottom-right corner: zoom out, the zoom
-     figure (clicking it fits the view), zoom in and fit to content. The
-     tooltips of **Zoom in** and **Zoom out** name their keys (**+** and
-     **-**), as the tooltip of **Fit to content** names **0**.
+     figure (clicking it fits the view), zoom in and **Fit view**, which does
+     the same as the figure. The tooltips of **Zoom in** and **Zoom out** name
+     their keys (**+** and **-**), as the tooltips of the figure and **Fit
+     view** name **0**.
    - The **minimap**, which opens in a card above the zoom control.
 
    When the properties panel is hidden, a **Properties** button sits in the
@@ -774,7 +775,7 @@ many it holds.
 
 The **Page** tab edits the page on show:
 
-- **Page**: **Name**, **Canvas** (width × height) and **Fit to content** (it resizes the page; the zoom control's button of the same name fits the view, and each is named within its group for a screen reader: the section, and **Zoom**).
+- **Page**: **Name**, **Canvas** (width × height) and **Fit to content** (it resizes the page; the zoom control's **Fit view** fits the view, and each is named within its group for a screen reader: the section, and **Zoom**).
 - **Links**: how links meet nodes on this page. **Anchor box** (with **Box
   padding** and **Distribute ends** once it is on; see
   [Link anchor box](#link-anchor-box)), **Crossings** (draw a hop, an arc or a

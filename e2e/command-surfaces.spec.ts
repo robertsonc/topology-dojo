@@ -31,7 +31,7 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
     ['#ccZoomOut', 'Zoom out (-)'],
     ['#ccZoom', 'Fit view (0)'],
     ['#ccZoomIn', 'Zoom in (+)'],
-    ['#ccFit', 'Fit to content (0)'],
+    ['#ccFit', 'Fit view (0)'],
   ];
   for (const [selector, title] of titles)
     await expect(page.locator(selector), selector).toHaveAttribute(
