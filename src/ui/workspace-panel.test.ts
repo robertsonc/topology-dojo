@@ -415,7 +415,9 @@ describe('renderActiveWorkspaceHtml', () => {
         }),
       }),
     );
-    expect(html).toContain('Direct agent edits allowed only on page p1');
+    expect(html).toContain(
+      'Direct agent edits allowed only on page <span class="data">p1</span>',
+    );
     expect(html).toContain('id="wsRevoke"');
     expect(html).not.toContain('id="wsLease"');
   });
@@ -460,7 +462,7 @@ describe('renderActiveWorkspaceHtml', () => {
     expect(html).toContain('Add a load balancer');
     expect(html).toContain('Improves redundancy');
     expect(html).toContain('2 operations');
-    expect(html).toContain('base r7');
+    expect(html).toContain('base <span class="data">r7</span>');
     expect(html).toContain('· pending</div>');
     expect(html).toContain('add node lb-1');
     expect(html).toContain('data-pid="prop_pending"');
@@ -699,7 +701,7 @@ describe('renderTimelineHtml', () => {
     );
     // The note is the check icon and the words, on the proposal's revision.
     expect(html).toContain(
-      `<div class="ws-note">${icon('check')} accepted proposal</div>`,
+      `<div class="hint">${icon('check')} accepted proposal</div>`,
     );
     expect(html.match(/accepted proposal/g)).toHaveLength(1);
     expect(html).toContain('ws-src-restore');
@@ -723,7 +725,7 @@ describe('renderTimelineHtml', () => {
       }),
     );
     expect(html).toContain(
-      `<div class="ws-note">${icon('checkpoint')} checkpoint “Baseline”</div>`,
+      `<div class="hint">${icon('checkpoint')} checkpoint “Baseline”</div>`,
     );
     expect(html).toContain('Older revisions compacted (floor r5)');
   });
@@ -1393,7 +1395,7 @@ describe('describeProposalConflicts (issue #269)', () => {
     );
     expect(html).toContain('ws-conflict-note');
     expect(html).toContain(
-      'class="tbtn ws-accept-supersede" data-pid="prop_1"',
+      'class="btn btn-sm ws-accept-supersede" data-pid="prop_1"',
     );
   });
 

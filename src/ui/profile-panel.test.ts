@@ -102,7 +102,7 @@ describe('renderPreferencesHtml', () => {
     expect(html).toContain('Spokes were repeatedly moved below their hub.');
     expect(html).toContain('Scope: all my diagrams');
     expect(html).toContain(
-      '<span class="ws-badge pref-status-candidate">candidate</span>',
+      '<span class="badge pref-status-candidate">candidate</span>',
     );
     expect(html).toContain('1 outcome · 1 document · last observed 2026-07-02');
     expect(html).toContain('data-pref="pref_abc123"');
@@ -132,16 +132,16 @@ describe('renderPreferencesHtml', () => {
   it('offers Pause + Forget on an active candidate, Resume on a paused one', () => {
     const active = renderPreferencesHtml([preference()]);
     expect(active).toContain(
-      '<button class="tbtn pref-pause" data-pref-id="pref_abc123">Pause</button>',
+      '<button class="btn btn-sm pref-pause" data-pref-id="pref_abc123">Pause</button>',
     );
     expect(active).toContain(
-      '<button class="tbtn pref-forget" data-pref-id="pref_abc123">Forget</button>',
+      '<button class="btn btn-sm btn-danger pref-forget" data-pref-id="pref_abc123">Forget</button>',
     );
     expect(active).not.toContain('pref-resume');
 
     const paused = renderPreferencesHtml([preference({ status: 'paused' })]);
     expect(paused).toContain(
-      '<button class="tbtn pref-resume" data-pref-id="pref_abc123">Resume</button>',
+      '<button class="btn btn-sm pref-resume" data-pref-id="pref_abc123">Resume</button>',
     );
     expect(paused).toContain('pref-status-paused');
     expect(paused).not.toContain('pref-pause"');
@@ -264,7 +264,7 @@ describe('renderPreferencesHtml', () => {
   it('leads each callout with the icon of its state, and names the state in words', () => {
     // The icon is decorative (aria-hidden), so the words must stand alone.
     const note = (cls: string, name: Parameters<typeof icon>[0]): string =>
-      `<div class="ws-note ${cls}">${icon(name)} `;
+      `<div class="hint ${cls}">${icon(name)} `;
     const seen = { supportingOutcomes: 3, evidenceDocuments: 2 };
     expect(
       renderPreferencesHtml([
@@ -319,7 +319,9 @@ describe('renderPreferencesHtml', () => {
         exceptionWorkspaceIds: ['w9', '<b>ws</b>'],
       }),
     ]);
-    expect(html).toContain('Except in: w9, &lt;b&gt;ws&lt;/b&gt;');
+    expect(html).toContain(
+      'Except in: <span class="data">w9</span>, <span class="data">&lt;b&gt;ws&lt;/b&gt;</span>',
+    );
     expect(html).not.toContain('<b>ws</b>');
   });
 

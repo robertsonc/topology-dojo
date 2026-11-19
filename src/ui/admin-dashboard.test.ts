@@ -209,7 +209,7 @@ describe('renderSessionsHtml', () => {
     expect(html).toContain('Agent Sessions');
     expect(html).toContain('alice');
     expect(html).toContain('3 calls');
-    expect(html).toContain('session abc123');
+    expect(html).toContain('session <span class="data">abc123</span>');
     expect(html).toContain('>Trail</button>');
     expect(html).toContain('no prompts, arguments, or diagram contents');
   });
