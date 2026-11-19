@@ -1228,6 +1228,13 @@ const HELP = [
       },
     ],
   },
+  {
+    id: 'help.whatMoved',
+    title: 'What moved',
+    group: 'help',
+    keywords: ['new layout', 'toolbar', 'where is'],
+    help: 'Show where the controls of the old toolbar went',
+  },
 ] as const satisfies readonly CommandSpec[];
 
 type IdOf<T extends readonly CommandSpec[]> = T[number]['id'];

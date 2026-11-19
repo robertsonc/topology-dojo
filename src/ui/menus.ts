@@ -243,7 +243,11 @@ function arrangeDefs(): Def[] {
 }
 
 function helpDefs(): Def[] {
-  return [cmd('help.shortcuts'), cmd('help.commandPalette')];
+  return [
+    cmd('help.shortcuts'),
+    cmd('help.commandPalette'),
+    cmd('help.whatMoved'),
+  ];
 }
 
 function tidyDefs(): Def[] {

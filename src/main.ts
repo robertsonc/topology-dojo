@@ -241,6 +241,26 @@ import {
 } from './api/catalog.js';
 import { SHARE_PUBLIC_WARNING } from './share/copy.js';
 import { readableAccentText, readableInkOn } from './ui/contrast.js';
+import {
+  mountShellNote,
+  SHELL_NOTE_KEY,
+  shellNoteStart,
+  storageKeys,
+  type ShellNote,
+} from './ui/shell-note.js';
+
+// The "what moved" note is for a browser that used the editor before: read
+// what is in storage now, before anything below writes to it.
+const shellNoteAtStart = (() => {
+  try {
+    return shellNoteStart(
+      storageKeys(localStorage),
+      localStorage.getItem(SHELL_NOTE_KEY),
+    );
+  } catch {
+    return 'none' as const;
+  }
+})();
 
 // Restore the last session from localStorage, else start from the sample.
 const restoredDoc = loadLocal();
@@ -5412,6 +5432,9 @@ app
  * and the same per-frame SVG the exports produce. ←/→ step, Space toggles
  * autoplay, Esc leaves. */
 let presentEl: HTMLElement | null = null;
+// The "what moved" note (mounted with the Help commands): out of sight while
+// presenting.
+let shellNote: ShellNote | null = null;
 let releasePresentOverlay: (() => void) | null = null;
 let presentTimer: number | null = null;
 function closePresent(): void {
@@ -5422,6 +5445,7 @@ function closePresent(): void {
   presentEl = null;
   releasePresentOverlay?.();
   releasePresentOverlay = null;
+  shellNote?.hold(false);
 }
 function openPresent(): void {
   if (presentEl) {
@@ -5429,6 +5453,7 @@ function openPresent(): void {
     return;
   }
   stopPlayback();
+  shellNote?.hold(true);
   let frame = current;
   let playing = doc.pages.length > 1;
   const root = document.createElement('div');
@@ -6364,6 +6389,18 @@ bind('help.commandPalette', {
   run: openPalette,
   checked: () => !!paletteHandle?.isOpen(),
 });
+// The one-time "what moved" note, over the canvas's bottom-left corner. A
+// shared link opens on its banner: the note waits for a later visit.
+shellNote = mountShellNote(
+  {
+    host: app.querySelector<HTMLElement>('#canvas-area')!,
+    storage: localStorage,
+    paletteKey: commands.shortcutLabel('help.commandPalette') ?? 'Ctrl/Cmd+K',
+    showShortcuts: () => commands.run('help.shortcuts'),
+  },
+  shareMatch && shellNoteAtStart === 'show' ? 'none' : shellNoteAtStart,
+);
+bind('help.whatMoved', { run: () => shellNote?.show() });
 
 {
   // A command nothing does would be a menu item or a key that does nothing.

@@ -229,6 +229,7 @@ describe('the menus', () => {
     expect(shape(helpMenu(ctx))).toEqual([
       'help.shortcuts',
       'help.commandPalette',
+      'help.whatMoved',
     ]);
     expect(shape(exportMenu(ctx))).toEqual(EXPORT_SHAPE);
     expect(shape(tidyMenu(ctx))).toEqual([
