@@ -434,14 +434,14 @@ The result is laid out: at every parameter value, `validate_topology` and
 there is nothing to tidy before editing. A shape too large for the standard
 1050 × 700 page gets a larger `viewBox` instead of a crowded one, and a wide
 fan or mesh has its links pinned to the facing sides of its nodes
-(`fromPort` / `toPort`). The same code builds the editor's **＋ template…**
+(`fromPort` / `toPort`). The same code builds the editor's **template…**
 menu, so a person and an agent get the same document for the same values.
 
 ### SD-WAN generator (`generate_sdwan_topology`)
 
 Builds a hub-and-spoke SD-WAN fabric as a new document from intent and
 returns `{ id, title, stats, intent }` (the resolved intent with defaults
-filled in). It is the same generator as the editor's **＋ template… →
+filled in). It is the same generator as the editor's **template… →
 Generate SD-WAN…** wizard; the vendor semantics (tunnel and HA counts,
 layers) are described in the
 [user guide](../../docs/USER_GUIDE.md#generate-an-sd-wan-fabric) and
