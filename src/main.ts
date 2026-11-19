@@ -2236,6 +2236,25 @@ strip.addEventListener(
   { passive: false },
 );
 
+// A chip's button that takes the keyboard focus scrolls wholly into the
+// strip, its focus ring with it, as the current page's chip does.
+strip.addEventListener('focusin', (e) => {
+  const el = e.target as HTMLElement;
+  const pad = 4; // the focus ring
+  const reveal = (): void => {
+    if (document.activeElement !== el) return;
+    const r = el.getBoundingClientRect();
+    const box = strip.getBoundingClientRect();
+    const left = box.left + strip.clientLeft;
+    const right = left + strip.clientWidth;
+    if (r.left - pad < left) strip.scrollLeft -= left - (r.left - pad);
+    else if (r.right + pad > right) strip.scrollLeft += r.right + pad - right;
+  };
+  reveal();
+  // Again once the browser has scrolled the focus into view its own way.
+  requestAnimationFrame(reveal);
+});
+
 /* Problems panel — runs the same checks as the MCP `validate_topology`
  * (semantic validation + layout analysis) live in the studio, so overlapping
  * zones, off-canvas nodes, dangling refs, etc. surface as you edit instead of

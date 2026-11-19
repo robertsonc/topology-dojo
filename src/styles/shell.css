@@ -628,6 +628,11 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
+/* The strip scrolls far enough to show the last delete button's focus ring
+   whole: the strip's own end padding does not add to how far it scrolls. */
+.filmstrip > .frame:last-child {
+  margin-inline-end: 4px;
+}
 /* A page chip: a button with its number and name, then its delete button. */
 .frame {
   display: inline-flex;

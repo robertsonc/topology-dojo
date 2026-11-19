@@ -201,3 +201,38 @@ test('after a pointer press on Add page or Duplicate page, Enter does not press 
   await expect(page.locator('#frames-ind')).toHaveText('3/3');
   expect(await focusedTag()).toBe('BODY');
 });
+
+test('a page chip reached by Tab scrolls wholly into the strip', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await bootEditor(page);
+  for (let i = 1; i < 12; i++) await page.locator('#addPage').click();
+  await expect(page.locator('#frames-ind')).toHaveText('12/12');
+  await page.locator('#filmstrip [data-page="0"] .frame-sel').click();
+  await page.locator('#playFlip').focus();
+  const hidden: string[] = [];
+  for (let stop = 0; stop < 24; stop++) {
+    await page.keyboard.press('Tab');
+    // As it is drawn: a frame after the key.
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => done(null))),
+    );
+    const seen = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement;
+      const strip = document.getElementById('filmstrip')!;
+      if (!strip.contains(el)) return null;
+      const r = el.getBoundingClientRect();
+      const s = strip.getBoundingClientRect();
+      const left = s.left + strip.clientLeft;
+      const right = left + strip.clientWidth;
+      // The focus ring (2px, 2px out) included.
+      return r.left - 4 >= left - 0.5 && r.right + 4 <= right + 0.5
+        ? ''
+        : (el.getAttribute('aria-label') ?? el.textContent ?? '');
+    });
+    if (seen === null) break;
+    if (seen) hidden.push(seen);
+  }
+  expect(hidden).toEqual([]);
+});
