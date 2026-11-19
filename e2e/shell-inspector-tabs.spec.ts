@@ -380,3 +380,21 @@ test('the hide toggle exposes whether the panel is open', async ({ page }) => {
   await page.keyboard.press('p');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 });
+
+test('each section is a group named for its title, so two buttons of one name are told apart', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await inspectorTab(page, 'page');
+  // The Page section's Fit to content resizes the page; the zoom control's
+  // fits the view. Each is found by its group's name.
+  const pageFit = page
+    .getByRole('group', { name: 'Page', exact: true })
+    .getByRole('button', { name: 'Fit to content' });
+  await expect(pageFit).toHaveId('p-fit');
+  const viewFit = page
+    .getByRole('group', { name: 'Zoom', exact: true })
+    .getByRole('button', { name: 'Fit to content' });
+  await expect(viewFit).toHaveId('ccFit');
+  await expect(section(page, 'Links')).toHaveAccessibleName('Links');
+});

@@ -249,7 +249,7 @@ The editor is organized into six areas and a status bar.
      **-**), as the tooltip of **Fit to content** names **0**.
    - The **minimap**, which opens in a card above the zoom control.
 
-   When the properties panel is hidden, a **props** button sits in the
+   When the properties panel is hidden, a **Properties** button sits in the
    canvas's top-right corner to bring it back.
 
 5. **Pages bar.** Docked under the canvas. At its left is the **Pages**
@@ -735,10 +735,10 @@ Wi-Fi, PoE, and optical.
 
 ### The properties panel
 
-The panel is the right-hand column (**P** shows and hides it; **hide** at the
+The panel is the right-hand column (**P** shows and hides it; **Hide** at the
 right of its tab row does the same). It is 300px wide at first. Drag the grip
 on its left edge to resize it between 240px and 480px; the width is
-remembered. Under 300px the **hide** button shows only its icon. In a window
+remembered. Under 300px the **Hide** button shows only its icon. In a window
 narrower than 1,024px the panel is a drawer over the canvas. It always leaves
 at least 72px of canvas showing, so a drawer can be narrower than the width
 you set. On a phone (640px wide or less) the drawer starts 240px wide and is
@@ -767,7 +767,7 @@ many it holds.
 
 The **Page** tab edits the page on show:
 
-- **Page**: **Name**, **Canvas** (width × height) and **Fit to content**.
+- **Page**: **Name**, **Canvas** (width × height) and **Fit to content** (it resizes the page; the zoom control's button of the same name fits the view, and each is named within its group for a screen reader: the section, and **Zoom**).
 - **Links**: how links meet nodes on this page. **Anchor box** (with **Box
   padding** and **Distribute ends** once it is on; see
   [Link anchor box](#link-anchor-box)), **Crossings** (draw a hop, an arc or a
@@ -1541,7 +1541,7 @@ autosave separately. They can:
 - choose **Back to my document** to return to their prior local draft;
 - choose **File → Download JSON** first to keep both as files.
 
-A recipient does not need an account. Without one, a **sign in** chip sits at
+A recipient does not need an account. Without one, a **Sign in** chip sits at
 the right end of the top bar, and starting a **new** document or choosing
 **Keep this copy** opens a prompt: _Sign in to save your copy to your
 workspace._ It can be dismissed; the editor keeps working and saving to the

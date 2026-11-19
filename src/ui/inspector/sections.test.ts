@@ -92,7 +92,7 @@ describe('a section', () => {
       hint: 'What it is for.',
     });
     expect(html).toBe(
-      '<details class="insp-group" data-group="Annotations" data-open-default="false">' +
+      '<details class="insp-group" data-group="Annotations" aria-label="Annotations" data-open-default="false">' +
         `<summary class="insp-h">${CARET}Annotations <span class="badge insp-count">3</span></summary>` +
         '<div class="insp-rows"><div class="insp-hint">What it is for.</div><p>rows</p></div></details>',
     );
@@ -102,7 +102,7 @@ describe('a section', () => {
     const left = new SectionMemory(null);
     left.remember('Wiring', true, false);
     expect(sectionHtml(left, 'Wiring', 'x', { open: false })).toContain(
-      'data-group="Wiring" data-open-default="false" open>',
+      'data-group="Wiring" aria-label="Wiring" data-open-default="false" open>',
     );
   });
 
@@ -114,7 +114,7 @@ describe('a section', () => {
     expect(
       sectionHtml(memory, '<b>"x"</b> options', 'x', { open: true }),
     ).toContain(
-      `data-group="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" data-open-default="true" open><summary class="insp-h">${CARET}&lt;b&gt;&quot;x&quot;&lt;/b&gt; options</summary>`,
+      `data-group="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" aria-label="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" data-open-default="true" open><summary class="insp-h">${CARET}&lt;b&gt;&quot;x&quot;&lt;/b&gt; options</summary>`,
     );
   });
 });

@@ -401,7 +401,7 @@ app.innerHTML = `
     <span class="shared-banner-text">${SHARE_PUBLIC_WARNING} Viewing a shared copy — your own document is untouched.</span>
     <button type="button" class="btn btn-sm" id="sharedKeep" title="Replace your locally saved document with this shared copy">Keep this copy</button>
     <button type="button" class="btn btn-sm btn-ghost" id="sharedBack" title="Return to your own locally saved document">Back to my document</button>
-    <button type="button" class="btn btn-sm btn-ghost" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>Unpublish link</button>
+    <button type="button" class="btn btn-sm btn-danger" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>Unpublish link</button>
   </div>
 
   <!-- The stage, by scope: the rail (making: the tools, the library), the
@@ -474,7 +474,7 @@ app.innerHTML = `
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
       <div class="inspector-col">
-        <button type="button" class="btn btn-sm btn-ghost inspector-toggle" id="inspector-toggle" aria-controls="inspector-wrap" aria-expanded="true" title="${tip('view.toggleProperties', 'Hide properties')}" aria-label="Hide properties"><span class="toggle-word">hide</span> ${icon('panel-right-close')}</button>
+        <button type="button" class="btn btn-sm btn-ghost inspector-toggle" id="inspector-toggle" aria-controls="inspector-wrap" aria-expanded="true" title="${tip('view.toggleProperties', 'Hide properties')}" aria-label="Hide properties"><span class="toggle-word">Hide</span> ${icon('panel-right-close')}</button>
         <div class="inspector-body" id="inspector-body">
           <aside class="inspector scroll-slim" id="inspector"></aside>
         </div>
@@ -2656,13 +2656,14 @@ inspectorTabs.tabList.after(inspectorToggle);
 function setInspectorCollapsed(collapsed: boolean, persist = true): void {
   inspectorWrap.classList.toggle('collapsed', collapsed);
   inspectorToggle.innerHTML = collapsed
-    ? `<span class="toggle-word">props</span> ${icon('panel-right-open')}`
-    : `<span class="toggle-word">hide</span> ${icon('panel-right-close')}`;
+    ? `<span class="toggle-word">Properties</span> ${icon('panel-right-open')}`
+    : `<span class="toggle-word">Hide</span> ${icon('panel-right-close')}`;
   inspectorToggle.title = commands.titleWithShortcut(
     'view.toggleProperties',
     collapsed ? 'Show properties' : 'Hide properties',
   );
-  // Its name says what it does; the word it shows is the start of it.
+  // Its name says what it does, and holds the word it shows (Hide, or
+  // Properties), so a speech user can say what they see.
   inspectorToggle.setAttribute(
     'aria-label',
     collapsed ? 'Show properties' : 'Hide properties',
@@ -5889,7 +5890,7 @@ function wireSignInChip(): void {
   const name = app.querySelector<HTMLElement>('#userName');
   const div = app.querySelector<HTMLElement>('#userDiv');
   if (!chip || !name || !div) return;
-  name.textContent = 'sign in';
+  name.textContent = 'Sign in';
   chip.title = 'Sign in with GitHub';
   chip.setAttribute('aria-label', 'Sign in');
   chip.setAttribute('aria-haspopup', 'dialog');

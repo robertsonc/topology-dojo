@@ -24,7 +24,7 @@ test('an anonymous visitor is offered sign-in, never forced', async ({
 
   const chip = page.locator('#userChip');
   await expect(chip).toBeVisible();
-  await expect(chip).toHaveText(/sign in/);
+  await expect(chip).toHaveText(/Sign in/);
   const prompt = page.locator('#signInPrompt');
   await expect(prompt).toBeHidden();
 
@@ -48,7 +48,7 @@ test('an anonymous visitor is offered sign-in, never forced', async ({
   await expect(prompt).toBeVisible();
 });
 
-test('on a phone the sign-in chip still says sign in', async ({ page }) => {
+test('on a phone the sign-in chip still says Sign in', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route(
     (url) => url.pathname === '/api/me',
@@ -63,7 +63,7 @@ test('on a phone the sign-in chip still says sign in', async ({ page }) => {
   const chip = page.locator('#userChip');
   await expect(chip).toBeVisible();
   // The words are on screen, not only in the markup.
-  expect((await chip.innerText()).trim()).toBe('sign in');
+  expect((await chip.innerText()).trim()).toBe('Sign in');
   const box = (await chip.boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(390);
 });

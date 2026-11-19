@@ -97,7 +97,10 @@ export function sectionHtml(
     ? `<div class="insp-hint">${esc(opts.hint)}</div>`
     : '';
   return (
-    `<details class="insp-group" data-group="${esc(title)}" data-open-default="${opts.open}"${open ? ' open' : ''}>` +
+    // Named for its title, so a control in it is told apart from one of the
+    // same name elsewhere (the Page section's Fit to content resizes the
+    // page; the zoom control's fits the view).
+    `<details class="insp-group" data-group="${esc(title)}" aria-label="${esc(title)}" data-open-default="${opts.open}"${open ? ' open' : ''}>` +
     `<summary class="insp-h">${CARET}${esc(title)}${count}</summary>` +
     `<div class="insp-rows">${hint}${body}</div>` +
     `</details>`

@@ -281,7 +281,7 @@ test('at the minimum width the tabs read in full and nothing runs off the side',
     )
     .toBe(240);
   // The toggle keeps its word as its name, and its tooltip.
-  await expect(page.locator('#inspector-toggle')).toHaveText('hide');
+  await expect(page.locator('#inspector-toggle')).toHaveText('Hide');
   await expect(page.locator('#inspector-toggle')).toHaveAttribute(
     'title',
     'Hide properties (P)',

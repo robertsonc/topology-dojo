@@ -575,10 +575,10 @@ test('an icon swap keeps the words and the accessible name', async ({
   await palette.click();
 
   const inspector = page.locator('#inspector-toggle');
-  await expect(inspector).toHaveText('hide');
+  await expect(inspector).toHaveText('Hide');
   expect(await iconOf('#inspector-toggle')).toBe('#i-panel-right-close');
   await inspector.click();
-  await expect(inspector).toHaveText('props');
+  await expect(inspector).toHaveText('Properties');
   expect(await iconOf('#inspector-toggle')).toBe('#i-panel-right-open');
   await inspector.click();
 
