@@ -236,7 +236,7 @@
    chips (and the panels' own lists). */
 .stage {
   /* The pages bar's height: the shell keeps it current (it takes two rows in
-     a narrow column); the phone's library drawer ends above the bar. */
+     a narrow column); the drawers of the compact layout end above the bar. */
   --pages-bar-h: 44px;
   position: relative;
   display: grid;
@@ -263,8 +263,8 @@
 }
 /* Closed, the properties panel is only its toggle: it leaves the grid and
    floats in the canvas's top-right corner, so the canvas column (and the
-   pages bar under it) runs to the window's edge. On a phone it is a drawer
-   placed by inspector.css. */
+   pages bar under it) runs to the window's edge. Below 1,024px, open, it is
+   a drawer placed by inspector.css. */
 @media (min-width: 641px) {
   .stage > .inspector-wrap.collapsed {
     position: absolute;
@@ -274,6 +274,29 @@
   /* Sized to its toggle, which keeps its word and icon on one line. */
   .stage > .inspector-wrap.collapsed .inspector-toggle {
     white-space: nowrap;
+  }
+}
+/* The compact layout: below 1,024px both panels are drawers over the canvas
+   (a half-screen window, a zoomed laptop, a tablet, a phone), so the canvas
+   column runs from the rail to the window's edge and opening a drawer never
+   resizes it. The breakpoint is COMPACT_LAYOUT_MAX_PX in
+   src/ui/compact-layout.ts, which says what moves here and what stays a
+   phone rule at 640px; a unit test keeps the two numbers the same. The
+   properties drawer is placed by inspector.css. */
+@media (max-width: 1023px) {
+  /* Both drawers are placed against the whole stage. */
+  .stage > .palette,
+  .stage > .inspector-wrap {
+    grid-column: 1 / -1;
+  }
+  .palette {
+    position: absolute;
+    top: 0;
+    /* It ends at the top of the pages bar, so the bar stays in reach. */
+    bottom: var(--pages-bar-h);
+    left: 44px;
+    z-index: var(--z-panel);
+    box-shadow: var(--shadow-float);
   }
 }
 
@@ -629,10 +652,12 @@
     display: none;
   }
 }
-/* Too narrow for the pages and the canvas options side by side (a narrow
-   window with both panels docked, or a phone): the bar takes two rows, the
-   pages over the options, so that nothing is clipped or drawn over. */
-@container canvas-col (max-width: 420px) {
+/* Too narrow for the pages and the canvas options side by side (a window
+   of 1,024px or a little more with both panels docked, or a phone): the bar
+   takes two rows, the pages over the options, so that nothing is clipped or
+   drawn over. At 1,024px the column is 448px, and one page chip would be cut
+   short between the buttons on either side of it. */
+@container canvas-col (max-width: 460px) {
   .pages-bar {
     flex-wrap: wrap;
     row-gap: 4px;
@@ -810,23 +835,10 @@
   .brand {
     display: none;
   }
-  /* The node library opens as a drawer over the canvas instead of taking a
-     column, and the canvas keeps a usable box. */
-  /* Both drawers are placed against the whole stage. */
-  .stage > .palette,
-  .stage > .inspector-wrap {
-    grid-column: 1 / -1;
-  }
+  /* The library drawer (the compact layout, above) leaves canvas showing
+     beside it, and the canvas keeps a usable box. */
   .palette {
-    position: absolute;
-    top: 0;
-    /* It ends at the top of the pages bar, so the bar's page toggle stays
-       in reach. */
-    bottom: var(--pages-bar-h);
-    left: 44px;
-    z-index: var(--z-panel);
     width: min(208px, calc(100% - 44px - 72px));
-    box-shadow: var(--shadow-float);
   }
   .canvas-area {
     min-width: 160px;
@@ -857,5 +869,12 @@
   }
   .statusbar .sb-problems {
     order: -1;
+  }
+}
+/* The narrowest phones: the bar's items keep a tighter gap, so the zoom at
+   its end stays inside the window. */
+@media (max-width: 400px) {
+  .statusbar {
+    gap: 6px;
   }
 }
