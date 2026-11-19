@@ -373,7 +373,9 @@
   max-width: 100%;
   height: 28px;
   padding: 0 8px 0 6px;
+  /* A field: the line under it marks it, as on the shared .field. */
   border: 1px solid transparent;
+  border-bottom-color: var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-field);
   color: var(--fg);

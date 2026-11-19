@@ -173,14 +173,17 @@
 }
 
 /* ── Fields ───────────────────────────────────────────────────────────── */
-/* Text inputs, number inputs, selects and textareas: a filled well with no
-   outline at rest, an outline on hover, the shared focus ring on focus. */
+/* Text inputs, number inputs, selects and textareas: a filled well. The fill
+   is too close to the panel to mark a field by itself, so a line under the
+   well does (3:1 against every surface); the whole outline shows on hover,
+   the shared focus ring on focus. */
 .field {
   width: 100%;
   min-width: 0;
   height: 28px;
   padding: 0 8px;
   border: 1px solid transparent;
+  border-bottom-color: var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-field);
   color: var(--fg);
@@ -362,7 +365,8 @@ textarea.field {
 .seg > button[aria-pressed='true'],
 .seg > button[aria-checked='true'] {
   background: var(--surface-front);
-  box-shadow: 0 0 0 1px var(--line);
+  /* The chosen segment's outline is what marks it: 3:1 against the well. */
+  box-shadow: 0 0 0 1px var(--line-strong);
   color: var(--fg-strong);
 }
 
