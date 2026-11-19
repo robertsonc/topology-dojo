@@ -73,7 +73,9 @@ async function toClient(page: Page, x: number, y: number) {
 const nodeIds = async (page: Page): Promise<string[]> =>
   (await savedDocument(page)).pages[0]!.nodes.map((n) => n.id);
 
-test('the canvas takes the keys it binds and leaves the others to the browser', async ({
+// Three tests rather than one: some seventy presses in a single test ran past
+// the per-test time limit on the CI runners.
+test('with nothing selected the canvas leaves the single keys, the arrows and unbound combinations to the browser', async ({
   page,
 }) => {
   await watchKeys(page);
@@ -88,6 +90,12 @@ test('the canvas takes the keys it binds and leaves the others to the browser', 
     ...['Control+g', 'Control+k', 'Control+Shift+s', 'Control+0'],
   ];
   for (const key of left) expect(await taken(page, key), key).toBe(false);
+});
+
+test('the canvas takes the keys it binds, whether or not the command has anything to act on', async ({
+  page,
+}) => {
+  await watchKeys(page);
 
   // Taken, whether or not the command has anything to act on.
   const consumed = [
@@ -99,6 +107,12 @@ test('the canvas takes the keys it binds and leaves the others to the browser', 
     ...['Meta+z', 'Meta+d'],
   ];
   for (const key of consumed) expect(await taken(page, key), key).toBe(true);
+});
+
+test('with a selection the canvas takes the arrows too, and still leaves Escape', async ({
+  page,
+}) => {
+  await watchKeys(page);
 
   // Select all: taken; with a selection the arrows are taken too (they nudge).
   expect(await taken(page, 'Control+a')).toBe(true);
