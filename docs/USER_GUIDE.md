@@ -340,6 +340,11 @@ shortcut sheet and leaves the card where it is. **Help → What moved** (or
 with nothing of the editor's in its storage never sees it, and a visit that
 opens a shared link does not show it, so it waits for the next visit.
 
+Two defaults changed with the new layout, and the card does not name them.
+The minimap now starts closed (open it with **M**); a browser that had shown
+or hidden it keeps that choice. The properties panel now starts 300px wide,
+and a width remembered from before that is over 480px opens at 480px.
+
 Use **Ctrl/Cmd+F** (or **Edit → Find…**) to find a node, link or zone on any
 page. Nodes are searched by label, identifier, type, sublabel, and metadata
 keys/values (find a node by the IP address, hostname, or model stored on it);
