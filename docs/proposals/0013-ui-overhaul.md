@@ -435,8 +435,13 @@ _Done when_ ("the toolbar cannot grow past its budget without a failing
 test") is met. Checked on 2026-11-19 by trying it: an extra button in the top
 bar's markup fails `src/ui/shell-budget.test.ts`, and a rule setting text at
 11 px fails "sets no text under 12px" in `src/styles/styles.test.ts`; both
-changes were undone. The browser versions of the budgets were not tried
-that way.
+changes were undone. The browser versions were tried the same way on
+2026-11-19, against the browser suite with CI's settings: an extra button
+beside Present fails "the top bar, the rail and the pages bar hold no more
+controls than their budgets" in `e2e/shell-budget.spec.ts` (at most 15,
+found 16), and `.hint` set at 11 px fails 12 of its 16 "no text under 12px"
+walks (the four "menus, each open, and present mode" walks show no hint and
+pass); both changes were undone.
 
 ## Risks
 
