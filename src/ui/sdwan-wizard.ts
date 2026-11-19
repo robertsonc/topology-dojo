@@ -112,17 +112,17 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
   let result: SdwanResult | null = null;
 
   const root = document.createElement('div');
-  root.className = 'help-backdrop';
+  root.className = 'sdw-scrim';
   root.innerHTML =
-    `<div class="help-card sdw-card scroll-slim" role="dialog" aria-modal="true" aria-labelledby="sdwTitle">` +
-    `<div class="help-head"><h3 id="sdwTitle">Generate SD-WAN topology</h3>` +
-    `<button class="tbtn ticon" data-act="close" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
-    `<div class="sdw-body"><div class="sdw-form"></div>` +
+    `<div class="dialog sdw-card" role="dialog" aria-modal="true" aria-labelledby="sdwTitle">` +
+    `<div class="dialog-head"><h3 class="dialog-title" id="sdwTitle">Generate SD-WAN topology</h3>` +
+    `<button type="button" class="icon-btn" data-act="close" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
+    `<div class="dialog-body sdw-body scroll-slim"><div class="sdw-form"></div>` +
     `<div class="sdw-side"><div class="sdw-preview" aria-hidden="true"></div>` +
     `<div class="sdw-stats" role="status" aria-live="polite"></div>` +
-    `<p class="sdw-note"></p></div></div>` +
-    `<div class="sdw-foot"><button class="tbtn" data-act="close">Cancel</button>` +
-    `<button class="tbtn sdw-create" data-act="create">Create diagram</button></div></div>`;
+    `<p class="hint sdw-note"></p></div></div>` +
+    `<div class="dialog-foot"><button type="button" class="btn" data-act="close">Cancel</button>` +
+    `<button type="button" class="btn btn-primary sdw-create" data-act="create">Create diagram</button></div></div>`;
   const form = root.querySelector<HTMLElement>('.sdw-form')!;
   const preview = root.querySelector<HTMLElement>('.sdw-preview')!;
   const stats = root.querySelector<HTMLElement>('.sdw-stats')!;
@@ -140,12 +140,12 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
     const id = `sdw-${Math.random().toString(36).slice(2, 8)}`;
     wrap.innerHTML =
       `<div class="sdw-label" id="${id}">${escapeHtml(label)}</div>` +
-      `<div class="sdw-seg" role="group" aria-labelledby="${id}"></div>`;
+      `<div class="seg sdw-seg" role="group" aria-labelledby="${id}"></div>`;
     const seg = wrap.querySelector<HTMLElement>('.sdw-seg')!;
     for (const c of choices) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'tbtn sdw-opt';
+      b.className = 'sdw-opt';
       b.textContent = c.label;
       b.setAttribute('aria-pressed', String(c.value === current));
       b.addEventListener('click', () => {
@@ -171,7 +171,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
       row.className = 'sdw-region';
       const name = document.createElement('input');
       name.type = 'text';
-      name.className = 'sdw-region-name';
+      name.className = 'field sdw-region-name';
       name.maxLength = 24;
       name.value = intent.names[r]!;
       name.placeholder = DEFAULT_REGION_NAMES[r]!;
@@ -181,7 +181,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
         regenerate();
       });
       const count = document.createElement('select');
-      count.className = 'tbtn sdw-region-count';
+      count.className = 'field sdw-region-count';
       count.setAttribute('aria-label', `Region ${r + 1} branches`);
       for (const c of range(
         SDWAN_LIMITS.branchesPerRegion.min,
@@ -374,10 +374,12 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
     } catch (err) {
       result = null;
       stats.textContent = err instanceof Error ? err.message : String(err);
+      stats.classList.add('sdw-error');
       preview.replaceChildren();
       createBtn.disabled = true;
       return;
     }
+    stats.classList.remove('sdw-error');
     createBtn.disabled = false;
     preview.innerHTML = host.render(result.doc);
     const s = result.stats;

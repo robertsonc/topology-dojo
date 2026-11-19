@@ -107,7 +107,7 @@ describe('renderTemplateFormHtml', () => {
     );
     // The parameter's one-line description sits under its control.
     expect(web).toContain(
-      '<p class="sdw-note tpw-hint" id="tpw-webServers-hint">Web servers behind the firewall.</p>',
+      '<p class="hint tpw-hint" id="tpw-webServers-hint">Web servers behind the firewall.</p>',
     );
   });
 
@@ -116,7 +116,7 @@ describe('renderTemplateFormHtml', () => {
     const spines = question(html, 'spines');
     expect(spines.match(/<button /g)).toHaveLength(4);
     expect(spines).toContain(
-      '<button type="button" class="tbtn sdw-opt" data-value="2" aria-pressed="true">2</button>',
+      '<button type="button" class="sdw-opt" data-value="2" aria-pressed="true">2</button>',
     );
     expect(spines.match(/aria-pressed="true"/g)).toHaveLength(1);
     expect(spines).not.toContain('type="range"');
@@ -140,7 +140,9 @@ describe('renderTemplateFormHtml', () => {
     expect(leaves).toContain(
       '<input type="range" id="tpw-leaves-input" min="2" max="16" step="1" value="12" aria-describedby="tpw-leaves-hint"/>',
     );
-    expect(leaves).toContain('<output for="tpw-leaves-input">12</output>');
+    expect(leaves).toContain(
+      '<output class="data" for="tpw-leaves-input">12</output>',
+    );
     expect(leaves).not.toContain('<button');
   });
 
