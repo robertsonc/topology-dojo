@@ -108,6 +108,7 @@ import {
   type MenuContext,
 } from './ui/menus.js';
 import { overlayActive, registerOverlay } from './ui/overlay.js';
+import { paletteEntries } from './ui/palette-sources.js';
 import { icon, iconSprite, type IconName } from './ui/icons.js';
 import { nodeLabelNudge, linkLabelNudge } from './ui/label-position.js';
 import type { LabelPlacement } from './render/label-placement.js';
@@ -139,7 +140,6 @@ import {
 import { isImeKey } from './ui/ime.js';
 import {
   commandArg,
-  COMMAND_GROUPS,
   COMMAND_SPECS,
   commandVariant,
   createCommandRegistry,
@@ -5850,24 +5850,46 @@ function zoomToSelection(): void {
 }
 
 /* ── Command palette ───────────────────────────────────────────────────
- * Lists the commands that can run now, by title, group and shortcut. */
+ * Ctrl/Cmd+K, the rail's search button and Help ▸ Command palette: the
+ * commands that can run now, "Add <node type>" for the library's types,
+ * "Go to <label>" for the elements of every page and "Go to page N"
+ * (src/ui/palette-sources.ts says what is listed and why). */
 let paletteHandle: PaletteHandle | null = null;
+
+/** A new node of `type` at the centre of the view, placed as quick-add
+ * places one (on the grid when snap is on). */
+function addNodeAtViewCentre(type: string): void {
+  const host = document.querySelector<HTMLElement>('.canvas-host');
+  if (!host) return;
+  const r = host.getBoundingClientRect();
+  const at = editor.clientToPage(r.left + r.width / 2, r.top + r.height / 2);
+  const g = editor.grid;
+  const x = editor.snap ? Math.round(at.x / g) * g : Math.round(at.x);
+  const y = editor.snap ? Math.round(at.y / g) * g : Math.round(at.y);
+  editor.addNode(type, undefined, { x, y });
+}
+
 function openPalette(): void {
   paletteHandle = openCommandPalette({
     entries: () =>
-      commands
-        .list()
-        .filter(
-          (s) => s.id !== 'help.commandPalette' && commands.isEnabled(s.id),
-        )
-        .map((s) => ({
-          id: s.id,
-          title: s.title,
-          group: COMMAND_GROUPS.find((g) => g.id === s.group)?.title,
-          hint: commands.shortcutLabel(s.id),
-          keywords: s.keywords,
-          run: () => void commands.run(s.id),
-        })),
+      paletteEntries({
+        commands,
+        open: {
+          pathAnalysis: pathSession !== null,
+          sharedCopy: activeSlot === 'shared',
+          otherTabVersion: savedEl.classList.contains('save-stale'),
+        },
+        nodeTypes: nodeCatalog(doc.customNodes),
+        pages: doc.pages,
+        current,
+        addNode: addNodeAtViewCentre,
+        goToElement: (pageIndex, kind, id) => {
+          if (pageIndex !== current) choosePage(pageIndex);
+          editor.selectElement(kind, id, { center: true });
+        },
+        goToPage: (i) => choosePage(i),
+        icon,
+      }),
   });
 }
 

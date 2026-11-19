@@ -1212,7 +1212,19 @@ const HELP = [
     id: 'help.commandPalette',
     title: 'Command palette',
     group: 'help',
+    icon: 'search',
     keywords: ['search', 'run a command', 'go to'],
+    help: 'Search the commands, the node types, the elements and the pages',
+    bindings: [
+      {
+        key: 'k',
+        mod: true,
+        shift: false,
+        alt: false,
+        preventDefault: true,
+        display: 'Ctrl/Cmd+K',
+      },
+    ],
   },
 ] as const satisfies readonly CommandSpec[];
 

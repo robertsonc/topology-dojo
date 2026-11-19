@@ -81,13 +81,14 @@ test('the canvas takes the keys it binds and leaves the others to the browser', 
   await watchKeys(page);
 
   // Nothing selected. Left alone: the single keys, the brackets, Escape, the
-  // arrows (they flip frames, or do nothing) and a Ctrl combination the
+  // arrows (they flip pages, or do nothing) and the Ctrl combinations the
   // editor does not bind.
   const left = [
     ...['g', 'g', 'r', 'r', 'm', 'm', 'b', 'b', 'p', 'p', 'f', 'f', 'c', 'c'],
     ...['t', 'T', '0', 'l', 'a', 'v', 'h', 'h', ']', '[', 'Escape'],
     ...['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'],
-    ...['Control+g', 'Control+k', 'Control+Shift+s', 'Control+0'],
+    ...['Control+g', 'Control+j', 'Control+Shift+k', 'Control+Shift+s'],
+    'Control+0',
   ];
   for (const key of left) expect(await taken(page, key), key).toBe(false);
 
@@ -109,6 +110,13 @@ test('the canvas takes the keys it binds and leaves the others to the browser', 
     expect(await taken(page, key), key).toBe(true);
   expect(await taken(page, 'Escape')).toBe(false);
   expect(await statusCount(page, 'selected')).toBe(0);
+
+  // Ctrl/Cmd+K is taken: it opens the command palette (last, since the
+  // palette's field then has the keyboard).
+  expect(await taken(page, 'Control+k')).toBe(true);
+  await expect(page.locator('.cmdk')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.cmdk')).toHaveCount(0);
 });
 
 test('Ctrl/Cmd+S downloads the document, +O asks for a file, ? opens the shortcut sheet', async ({

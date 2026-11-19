@@ -357,8 +357,10 @@ describe('matchKey', () => {
     ['K4k Ctrl+L', ctrl('l'), CANVAS, hit('edit.toggleLock', true)],
     ['K4l Ctrl+]', ctrl(']'), CANVAS, hit('arrange.bringToFront', true)],
     ['K4m Ctrl+[', ctrl('['), CANVAS, hit('arrange.sendToBack', true)],
+    ['K4n Ctrl+K', ctrl('k'), CANVAS, hit('help.commandPalette', true)],
     // K4z: any other Ctrl/Cmd combination is the browser's, untouched.
-    ['K4z Ctrl+K', ctrl('k'), CANVAS, null],
+    ['K4z Ctrl+J', ctrl('j'), CANVAS, null],
+    ['K4z Ctrl+Shift+K', ctrl('K', { shiftKey: true }), CANVAS, null],
     // K5–K22: the plain keys.
     ['K5 Delete', { key: 'Delete' }, CANVAS, hit('edit.delete', true)],
     ['K5 Backspace', { key: 'Backspace' }, CANVAS, hit('edit.delete', true)],
@@ -521,7 +523,7 @@ describe('matchKey', () => {
         if (found) expect(found.preventDefault, key).toBe(true);
         else expect(found, key).toBeNull();
       }
-    for (const key of ['g', 'r', 'm', 'b', 'p', 't', 'T', '0', 'h', 'k'])
+    for (const key of ['g', 'r', 'm', 'b', 'p', 't', 'T', '0', 'h', 'j'])
       expect(matchKey(ctrl(key), CANVAS), key).toBeNull();
     for (const key of ['Delete', 'Backspace', 'Escape', 'F2', 'Enter'])
       expect(matchKey(ctrl(key), SELECTED), key).toBeNull();
@@ -819,6 +821,11 @@ function legacyHandler(e: KeyPress, ctx: KeyContext): KeyMatch[] {
       } else if (e.key === '[') {
         preventDefault();
         run('arrange.sendToBack');
+      } else if (k === 'k' && !e.shiftKey && !e.altKey) {
+        // Added since: Ctrl/Cmd+K opens the command palette. Before, the
+        // browser had it.
+        preventDefault();
+        run('help.commandPalette');
       }
       return; // other mod combos: leave to the browser
     }
@@ -1416,10 +1423,20 @@ describe('the shortcut sheet', () => {
     expect(text).toMatch(/save chip/);
   });
 
-  it('does not list Ctrl/Cmd+K: nothing is bound to it yet', () => {
-    expect(matchKey({ key: 'k', ctrlKey: true }, CANVAS)).toBeNull();
-    expect(matchKey({ key: 'k', metaKey: true }, CANVAS)).toBeNull();
-    expect([...shortcuts].some((s) => /\+K$/.test(s))).toBe(false);
+  it('lists Ctrl/Cmd+K, the command palette, and only without Shift or Alt', () => {
+    for (const press of [
+      { key: 'k', ctrlKey: true },
+      { key: 'k', metaKey: true },
+      { key: 'K', ctrlKey: true },
+    ])
+      expect(matchKey(press, CANVAS)).toEqual(hit('help.commandPalette', true));
+    expect(
+      matchKey({ key: 'K', ctrlKey: true, shiftKey: true }, CANVAS),
+    ).toBeNull();
+    expect(
+      matchKey({ key: 'k', ctrlKey: true, altKey: true }, CANVAS),
+    ).toBeNull();
+    expect(shortcuts.has('Ctrl/Cmd+K')).toBe(true);
   });
 
   it('keeps gestures out of the commands', () => {
