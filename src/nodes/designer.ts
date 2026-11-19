@@ -23,6 +23,7 @@ import { nodeSpecToCode } from './codegen.js';
 import { engineDefs } from '../vendor/topology-ds.js';
 import { registerOverlay } from '../ui/overlay.js';
 import { icon } from '../ui/icons.js';
+import { paintRange, paintRanges } from '../ui/range.js';
 import {
   DEFAULT_TYPE_NAME,
   replaceTypeQuestion,
@@ -60,7 +61,7 @@ function slider(
   value: unknown,
 ): string {
   const [min, max] = DESIGNER_RANGES[key];
-  return `<input type="range" class="nd-range" min="${min}" max="${max}" step="${step}" data-num="${key}" value="${esc(String(value))}"/>`;
+  return `<input type="range" class="range nd-range" min="${min}" max="${max}" step="${step}" data-num="${key}" value="${esc(String(value))}"/>`;
 }
 
 function shapeThumb(shape: string): string {
@@ -248,11 +249,13 @@ export function openNodeDesigner(
     );
   });
   // Numeric sliders
+  paintRanges(root);
   root.querySelectorAll<HTMLInputElement>('[data-num]').forEach((inp) =>
     inp.addEventListener('input', () => {
       (spec[inp.dataset.num as keyof CustomNodeSpec] as unknown) = Number(
         inp.value,
       );
+      paintRange(inp);
       draw();
     }),
   );

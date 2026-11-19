@@ -25,6 +25,7 @@ import {
 import type { TopologyDocument } from '../pages/model.js';
 import { registerOverlay } from './overlay.js';
 import { icon } from './icons.js';
+import { paintRanges } from './range.js';
 
 export interface TemplateWizardHost {
   /** Element the backdrop is appended to (the app root). */
@@ -127,7 +128,7 @@ function questionHtml(
       open +
       `<label class="section-label sdw-label" id="${id}" for="${id}-input">${escapeHtml(spec.label)}</label>` +
       `<div class="tpw-range">` +
-      `<input type="range" id="${id}-input" min="${spec.min}" max="${spec.max}" step="1" value="${Number(value)}" aria-describedby="${id}-hint"/>` +
+      `<input type="range" class="range" id="${id}-input" min="${spec.min}" max="${spec.max}" step="1" value="${Number(value)}" aria-describedby="${id}-hint"/>` +
       `<output class="data" for="${id}-input">${Number(value)}</output>` +
       `</div>` +
       hint
@@ -159,22 +160,6 @@ export function templateStatsText(stats: TemplateStats): string {
   const plural = (n: number, w: string): string =>
     `${n} ${w}${n === 1 ? '' : 's'}`;
   return `${plural(stats.nodes, 'node')} · ${plural(stats.links, 'link')}`;
-}
-
-/**
- * Tell each slider's track how much of it lies before the thumb. The
- * stylesheet fills that part with the accent (`--tpw-fill` in dialogs.css):
- * a styled track has no fill of its own outside Firefox.
- */
-function paintSliders(form: HTMLElement): void {
-  for (const input of form.querySelectorAll<HTMLInputElement>(
-    'input[type="range"]',
-  )) {
-    const min = Number(input.min);
-    const max = Number(input.max);
-    const share = max > min ? (Number(input.value) - min) / (max - min) : 0;
-    input.style.setProperty('--tpw-fill', `${(share * 100).toFixed(2)}%`);
-  }
 }
 
 let open: { close: () => void } | null = null;
@@ -232,7 +217,7 @@ export function openTemplateWizard(
   /** Draw the questions for the current values. */
   const renderForm = (): void => {
     form.innerHTML = renderTemplateFormHtml(state);
-    paintSliders(form);
+    paintRanges(form);
   };
 
   const paramOf = (el: Element): string | null =>
@@ -262,7 +247,7 @@ export function openTemplateWizard(
     state = withTemplateParam(state, name, input.value);
     const out = input.parentElement?.querySelector('output');
     if (out) out.textContent = String(state.values[name]);
-    paintSliders(form);
+    paintRanges(form);
     regenerate();
   });
 

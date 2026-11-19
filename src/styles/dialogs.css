@@ -138,64 +138,6 @@
   align-self: stretch;
   gap: 12px;
 }
-/* The slider: a 4px track in a 28px hit area and a round accent thumb. The
-   part before the thumb is filled with the accent up to --tpw-fill, which
-   the dialog sets from the value (Firefox draws its own progress part). */
-.tpw-range input {
-  --tpw-fill: 0%;
-  appearance: none;
-  flex: 1;
-  min-width: 0;
-  height: 28px;
-  margin: 0;
-  padding: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  cursor: pointer;
-}
-.tpw-range input::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(
-    to right,
-    var(--accent) var(--tpw-fill),
-    var(--line-strong) var(--tpw-fill)
-  );
-}
-.tpw-range input::-webkit-slider-thumb {
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  margin-top: -6px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  transition: box-shadow var(--dur-fast) var(--ease);
-}
-.tpw-range input:hover::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px var(--accent-soft-strong);
-}
-.tpw-range input::-moz-range-track {
-  height: 4px;
-  border-radius: var(--radius-full);
-  background: var(--line-strong);
-}
-.tpw-range input::-moz-range-progress {
-  height: 4px;
-  border-radius: var(--radius-full);
-  background: var(--accent);
-}
-.tpw-range input::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  transition: box-shadow var(--dur-fast) var(--ease);
-}
-.tpw-range input:hover::-moz-range-thumb {
-  box-shadow: 0 0 0 4px var(--accent-soft-strong);
-}
 .tpw-range output {
   min-width: 2ch;
   font-size: 12px;

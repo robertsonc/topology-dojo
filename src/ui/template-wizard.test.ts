@@ -138,7 +138,7 @@ describe('renderTemplateFormHtml', () => {
       '<label class="section-label sdw-label" id="tpw-leaves" for="tpw-leaves-input">Leaves</label>',
     );
     expect(leaves).toContain(
-      '<input type="range" id="tpw-leaves-input" min="2" max="16" step="1" value="12" aria-describedby="tpw-leaves-hint"/>',
+      '<input type="range" class="range" id="tpw-leaves-input" min="2" max="16" step="1" value="12" aria-describedby="tpw-leaves-hint"/>',
     );
     expect(leaves).toContain(
       '<output class="data" for="tpw-leaves-input">12</output>',

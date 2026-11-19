@@ -2,10 +2,7 @@
    proposal toast, and the proposal preview. The three panels share one shell
    (.workspace-panel: a .panel-head over a scrolling .ws-body) and one set of
    parts built from the shared controls; this file keeps their layout and
-   what is unique to them. Three rules stand in for shared parts that do not
-   exist yet, each marked "Stopgap" below: the recessed card inside a card,
-   the pressed look of the preview toggle and the outline of a danger
-   button in the light theme. */
+   what is unique to them. */
 /* The status dot inside the toolbar's workspace chip. */
 .workspace-chip .ws-dot {
   display: inline-block;
@@ -79,16 +76,16 @@
   margin-top: 0;
 }
 
-/* A card's parts are 8px apart. Stopgap: a card inside a card is drawn as a
-   recessed well, which the shared .card has no variant for yet. */
+/* A card's parts are 8px apart. A card inside a card is the shared recessed
+   well (controls.css); the scope chooser stays a raised card. */
 .ws-body .card {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.ws-body .card .card:not(.pref-scope-chooser) {
-  border-color: transparent;
-  background: var(--surface-field);
+.ws-body .card .pref-scope-chooser {
+  border-color: var(--line);
+  background: var(--surface-front);
 }
 
 /* ── Rows ─────────────────────────────────────────────────────────────── */
@@ -141,12 +138,6 @@
   margin: 0 4px 0 0;
   vertical-align: -3px;
 }
-/* Stopgap: in the light theme --status-error is under 3:1 on white, and it
-   is the only outline a danger button has. Its text colour holds 3:1. */
-.ws-body .btn-danger {
-  border-color: var(--status-error-fg);
-}
-
 /* An error or conflict notice: text on a tinted well. */
 .ws-error {
   padding: 8px 12px;
@@ -288,12 +279,6 @@
   color: var(--fg-strong);
   text-decoration: underline dotted;
 }
-/* Stopgap: the shared .btn has no pressed state yet. */
-.ws-preview-toggle[aria-pressed='true'] {
-  background: var(--accent-soft);
-  color: var(--fg-strong);
-}
-
 /* Rendered before/after proposal preview (Packet R1). */
 .ws-preview {
   display: flex;
