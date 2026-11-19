@@ -98,6 +98,52 @@ removed) were written for it; nothing else in this file was re-checked. The
 statement in the `e9d0d7f` note above that the registry "is in progress" is
 superseded: it is draft PR #327._
 
+_2026-11-19 (later still the same day; `main` at `d224979`, and the branch of
+PR #328, not merged, at `d24f6a4`): PR #327, "UI overhaul: command registry,
+shell, properties panel (proposal 0013: rest of P0, P1, P2, part of P3)",
+merged into `main` as `d224979`. That supersedes the note above, dated for the
+branch of draft PR #327 at `1ebbccb`: #327 is not a draft and is merged, `main`
+has the registry, and P1 and P2 have changed surfaces. It also supersedes the
+sentence in the `e9d0d7f` note that the menu component, the command palette,
+the shared control classes and the tab rules are used by no surface: PR #327
+uses them. On `main` now: the command registry; the top bar (File, Edit, View,
+Arrange and Help, folded into one **Menu** button at 1,100 px and below; the
+document title with the save state beside it; Undo and Redo; Tidy; Present;
+Export; and, where the deployment offers them, Share and the workspace and
+account chips), built from `src/ui/menus.ts` on the menu component
+(`src/ui/menu.ts`); the left rail (the four tools, the library toggle, the
+command palette and the shortcut sheet); the node library docked at 208 px;
+the canvas over a pages bar, with the zoom control and the minimap card (closed
+until opened) in the canvas's corner; a 24 px status bar; the selection bar with
+align, distribute, order and lock; the context menu on the menu component; the
+command palette on Ctrl/Cmd+K (`src/ui/command-palette.ts`,
+`src/ui/palette-sources.ts`); the properties panel as three tabs (Selection,
+Page, Document) with sections that each remember whether they are open
+(`src/ui/inspector/`, `src/ui/inspector-tabs.ts`), a selection header with a
+lock toggle and a "more" menu, a colour button that opens a popover, and a
+Link attachment section; the panel is 300 px wide at first (240 to 480 px); the
+shared controls on both wizards, the workspace, preferences and admin panels
+and the node designer. In the app's own words a page is a "page", not a
+"frame", in the menus, the pages bar, the command titles and the shortcut
+sheet's command rows; the sheet's Presentation rows still say "Previous frame"
+and "Next frame". Not done: the
+Share dialog, the presentation controls, the shortcut sheet's close button and
+the path bar still use the old `.tbtn` buttons; seven font-size rules under
+12 px remain; no test caps the top bar's controls and there is no "what moved"
+note; Find and quick-add were not folded into the palette; "frame" is still in
+the Find box, the presentation controls and the shortcut sheet's Presentation
+rows, the path bar and the path analysis messages, the Page tab's Story hint
+(which names the context-menu item "Emphasize on this frame"; the item is
+"Emphasize on this page"), its Caption placeholder and its empty-list line,
+the Analyze path tooltip, and the delete-page confirmation. PR #328 (not merged) adds the compact layout (below 1,024 px the
+library and the properties panel are drawers over the canvas;
+`src/ui/compact-layout.ts`) and brings the user guide, the README image and
+these documents up to date. Only this note, the "Recently completed" entries
+for PRs #326 and #327, the paragraph dated 2026-11-19 under "Active
+implementation program", the `docs/proposals/0005`-`0013` entry and the "Key
+files" rows for the editor chrome were written for it; nothing else in this
+file was re-checked._
+
 ## What Topology Dojo is
 
 A production-hosted, collaborative, AI-agent-assisted network-topology
@@ -222,8 +268,8 @@ from `git log --first-parent`):
   completed with success at 09:12 UTC the same day). Merged: the editor stylesheet moved
   from `index.html` to `src/styles/` (`index.css` imports the files in
   cascade order); a token layer (`tokens.css`) for both themes and a flat
-  skin with no backdrop blur; the toolbar, properties panel and status bar
-  docked; neutral scrollbars shown on hover or keyboard focus; `color-scheme`
+  skin with no backdrop blur; the toolbar (replaced by the top bar in PR #327),
+  properties panel and status bar docked; neutral scrollbars shown on hover or keyboard focus; `color-scheme`
   and `theme-color` following the theme; the "Panel blur (glass)" display
   setting removed; one SVG icon set (Lucide, generated into an inline sprite
   by `scripts/build-icons.ts`) in place of symbol characters; ink on the brand
@@ -233,12 +279,38 @@ from `git log --first-parent`):
   under 12 px), `src/ui/icons.test.ts`, `src/ui/contrast.test.ts` and
   `e2e/icons.spec.ts`. The three canvas screenshot baselines were regenerated
   in that PR; CI's e2e job passed on the pull request's last commit, `8881941`,
-  before it merged. Also on `main` and used by nothing yet:
-  `controls.css`, Inter, `menu.ts` and `menu.css`, `command-palette.ts` and
-  `command-palette.css`, `inspector-tabs.ts`, with the browser specs
-  `e2e/menu-component.spec.ts` and `e2e/command-palette-component.spec.ts`.
-  Not done on `main`: the command registry (PR #327, draft, not merged: see
-  the dated note for it near the top of this file), and P1–P4 (see "Active implementation program").
+  before it merged. Also on `main` at `e9d0d7f`, and used by nothing until
+  PR #327: `controls.css`, Inter, `menu.ts` and `menu.css`,
+  `command-palette.ts` and `command-palette.css`, `inspector-tabs.ts`, with
+  the browser specs `e2e/menu-component.spec.ts` and
+  `e2e/command-palette-component.spec.ts`.
+  The command registry and P1 to P3, in part, followed in PR #327 (next entry).
+- **UI overhaul: command registry, shell, properties panel** (proposal 0013,
+  the rest of P0, P1, P2 and part of P3; PR #327, merged 2026-11-19 as
+  `d224979`). Merged: `src/ui/commands.ts`, the command table with every key
+  binding as data, bound once in `src/main.ts`; the top bar, left rail, docked
+  library, pages bar, zoom control, status bar and selection bar
+  (`src/styles/shell.css`, the shell template in `src/main.ts`,
+  `src/ui/menus.ts`, `src/ui/selection-bar-place.ts`); the command palette on
+  Ctrl/Cmd+K (`src/ui/palette-sources.ts`); the properties panel's tabs,
+  sections, header, colour popover and Link attachment line
+  (`src/ui/inspector/`, `src/styles/inspector.css`); the shared controls on
+  the wizards, the workspace, preferences and admin panels and the node
+  designer; "page" for "frame" in the menus, the pages bar and the command
+  titles (some labels still say "frame"; proposal 0013's section "What P1 and
+  P2 changed from this text" lists them).
+  Guards added: `src/ui/menus.test.ts`, `src/ui/palette-sources.test.ts`,
+  `src/ui/selection-bar-place.test.ts`, `src/ui/inspector-tabs.test.ts`,
+  `src/ui/inspector/sections.test.ts`, `src/ui/inspector/field-groups.test.ts`,
+  `src/ui/inspector/link-attachment.test.ts`, `src/ui/commands.test.ts`, and
+  the browser specs `e2e/shell-menus.spec.ts`, `e2e/selection-bar.spec.ts`,
+  `e2e/shell-inspector-layout.spec.ts`, `e2e/shell-inspector-tabs.spec.ts`,
+  `e2e/command-keys.spec.ts`, `e2e/command-surfaces.spec.ts`; the three canvas
+  screenshot baselines were regenerated for the narrower canvas column
+  (704 x 608). Departures from the proposal's text are in its section "What P1
+  and P2 changed from this text". Not done: see the dated note near the top of
+  this file. PR #328 (not merged): the compact layout (below 1,024 px the
+  panels are drawers), the user guide, the README image and these documents.
 
 ## Active implementation program
 
@@ -276,14 +348,18 @@ base fabric), so the gate the packet assumed does not follow.
 
 2026-11-19: proposal 0013 (the UI overhaul of the editor chrome, accepted
 this date) is likewise driven from its own file, not from this table. Its P0
-is merged except the command registry: PR #326 merged on
-2026-11-19 as `e9d0d7f`, and the command registry (`src/ui/commands.ts`), the
-rest of P0, is draft PR #327 (until it merges, `main` has none of it); no surface of
-P1–P4 has changed yet (the 12 px text ratchet, a first form of P4's budget test, is already on
-`main`). The menu component, the command palette, the shared control classes and the
-properties-panel tab rules, which belong to those phases, are on `main` but
-used by no surface yet. Those phase labels are the proposal's own and are
-unrelated to proposal 0003's packets P1–P5.
+(foundations) is merged: PR #326 as `e9d0d7f` and PR #327, with the command
+registry, as `d224979`. P1 (shell) and P2 (properties panel) are merged in
+PR #327, and so is part of P3 (the skin sweep: the wizards, the workspace,
+preferences and admin panels and the node designer are on the shared controls;
+the Share dialog, the presentation controls, the shortcut sheet's close
+button and the path bar are not). P4
+(guardrails) is partly there: the 12 px text ratchet and the properties
+panel's layout spec exist; a cap on the top bar's controls and a "what moved"
+note do not. PR #328 (not merged) adds the compact layout (drawers below
+1,024 px). The proposal's status header and its section "What P1 and P2
+changed from this text" are the record. Those phase labels are the
+proposal's own and are unrelated to proposal 0003's packets P1–P5.
 
 Before starting a July implementation packet, revalidate its premise against
 `ROADMAP.md`, `CAPABILITY_MATRIX.md`, and current code. O1/O2 remain explicitly
@@ -402,29 +478,32 @@ reviewed Darwin baselines are deliberately added. See `launch-readiness/QA_TEST_
 
 ## Key files
 
-| Area                                          | Files                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Document model + persistence                  | `src/pages/model.ts`, `src/pages/persist.ts`                                                                                                                                                                                                                                                        |
-| Headless authoring API                        | `src/api/{builder,edit,validate,layout,autolayout,catalog,tidy}.ts`                                                                                                                                                                                                                                 |
-| MCP tools (both transports)                   | `src/mcp/tools.ts` (source of truth), `src/mcp/{export-tools,hardware-tools}.ts`, `src/mcp/register.ts`, `src/mcp/server.ts` (stdio), `worker/mcp.ts` (remote)                                                                                                                                      |
-| Connector/flow-compiler platform              | `src/connect/{types,mock,edgeconnect,compile}.ts`                                                                                                                                                                                                                                                   |
-| SD-WAN generator + wizard                     | `src/connect/generate.ts`, `src/ui/sdwan-wizard.ts`, `src/render/backdrops.ts` (proposal 0010)                                                                                                                                                                                                      |
-| Scenario stories (library only)               | `src/stories/{types,compile,frame,annotate}.ts` (initiative T, packets T1–T3)                                                                                                                                                                                                                       |
-| Export / import formats                       | `src/export/` (scene, PNG, PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedule), `src/import/`, `worker/raster.ts`; contract in `docs/EXPORTS.md`                                                                                                                                              |
-| Hardware catalog + wire sheets                | `catalog/` (data, schema, Python reference tools), `src/catalog/`, `src/api/hardware.ts`, `src/render/wiresheet.ts`, `worker/catalog.ts`, `scripts/catalog-*.ts`                                                                                                                                    |
-| API keys (proposal 0005)                      | `worker/api-keys.ts`, `worker/api-keys-page.ts`, `src/server/api-key.ts`                                                                                                                                                                                                                            |
-| Shared workspace coordinator                  | `worker/document.ts` (revisions/proposals/leases/checkpoints/presence), `worker/registry.ts`, `worker/workspaces.ts`                                                                                                                                                                                |
-| Workspace client                              | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                                                                                                                                                                                   |
-| Adaptive authoring profiles                   | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`                                                                                                                                                                    |
-| Admin/analytics dashboard                     | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`, `src/agent-activity/`                                                                                                                                                                                      |
-| Editor chrome styles                          | `src/styles/index.css` (imports the other files in cascade order), `src/styles/tokens.css` (semantic tokens, both themes), `src/styles/styles.test.ts` (guards); proposal 0013                                                                                                                      |
-| Editor chrome icons                           | `scripts/build-icons.ts` (manifest + generator, `npm run build:icons`), `src/ui/icons.generated.ts` (generated from `lucide-static`), `src/ui/icons.ts`, `src/styles/icons.css`                                                                                                                     |
-| Ink on the brand accent                       | `src/ui/contrast.ts` (`readableInkOn`), called by `setChromeAccent` in `src/main.ts`                                                                                                                                                                                                                |
-| Chrome building blocks                        | Not used by any surface yet: `src/styles/controls.css` (shared control classes), `src/ui/menu.ts` + `src/styles/menu.css`, `src/ui/command-palette.ts` + `src/styles/command-palette.css`, `src/ui/inspector-tabs.ts`; proposal 0013 P1–P3.                                                         |
-| Command registry (PR #327, draft, not merged) | `src/ui/commands.ts` (the command table, `matchKey`, `createCommandRegistry`, `HELP_GESTURES`; pure, no DOM), `src/ui/commands.test.ts`, `src/ui/canvas-keys.test.ts` (tests `matchKey`), `e2e/command-keys.spec.ts`, `e2e/command-surfaces.spec.ts`; bound once in `src/main.ts`; proposal 0013 P0 |
-| Auth + landing page + showcase                | `worker/auth.ts`, `worker/landing.ts`, `public/landing/`, `public/showcase/*.webp`                                                                                                                                                                                                                  |
-| Deployment config                             | `wrangler.jsonc`, `.github/workflows/{release,deploy-worker,deploy-staging,ci,production-verify,nightly-staging-smoke}.yml`, `scripts/{check-wrangler-env,migration-guard}.mjs`                                                                                                                     |
-| Flags                                         | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `liveDataEnabled`, `isAdmin`), `worker/api-keys.ts` (`apiKeysEnabled`)                                                                                                                                                  |
+| Area                                            | Files                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Document model + persistence                    | `src/pages/model.ts`, `src/pages/persist.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Headless authoring API                          | `src/api/{builder,edit,validate,layout,autolayout,catalog,tidy}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| MCP tools (both transports)                     | `src/mcp/tools.ts` (source of truth), `src/mcp/{export-tools,hardware-tools}.ts`, `src/mcp/register.ts`, `src/mcp/server.ts` (stdio), `worker/mcp.ts` (remote)                                                                                                                                                                                                                                                                                                                                                  |
+| Connector/flow-compiler platform                | `src/connect/{types,mock,edgeconnect,compile}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| SD-WAN generator + wizard                       | `src/connect/generate.ts`, `src/ui/sdwan-wizard.ts`, `src/render/backdrops.ts` (proposal 0010)                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Scenario stories (library only)                 | `src/stories/{types,compile,frame,annotate}.ts` (initiative T, packets T1–T3)                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Export / import formats                         | `src/export/` (scene, PNG, PDF, draw.io, Visio, PowerPoint, Mermaid, cable schedule), `src/import/`, `worker/raster.ts`; contract in `docs/EXPORTS.md`                                                                                                                                                                                                                                                                                                                                                          |
+| Hardware catalog + wire sheets                  | `catalog/` (data, schema, Python reference tools), `src/catalog/`, `src/api/hardware.ts`, `src/render/wiresheet.ts`, `worker/catalog.ts`, `scripts/catalog-*.ts`                                                                                                                                                                                                                                                                                                                                                |
+| API keys (proposal 0005)                        | `worker/api-keys.ts`, `worker/api-keys-page.ts`, `src/server/api-key.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Shared workspace coordinator                    | `worker/document.ts` (revisions/proposals/leases/checkpoints/presence), `worker/registry.ts`, `worker/workspaces.ts`                                                                                                                                                                                                                                                                                                                                                                                            |
+| Workspace client                                | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Adaptive authoring profiles                     | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`                                                                                                                                                                                                                                                                                                                                                                                |
+| Admin/analytics dashboard                       | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`, `src/agent-activity/`                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Editor chrome styles                            | `src/styles/index.css` (imports the other files in cascade order), `src/styles/tokens.css` (semantic tokens, both themes), `src/styles/controls.css` (the shared control classes), `src/styles/shell.css`, `src/styles/inspector.css`, `src/styles/styles.test.ts` (guards, and `NOT_YET`, the stylesheets that still carry text under 12 px); proposal 0013                                                                                                                                                    |
+| Editor chrome icons                             | `scripts/build-icons.ts` (manifest + generator, `npm run build:icons`), `src/ui/icons.generated.ts` (generated from `lucide-static`), `src/ui/icons.ts`, `src/styles/icons.css`                                                                                                                                                                                                                                                                                                                                 |
+| Ink on the brand accent                         | `src/ui/contrast.ts` (`readableInkOn`), called by `setChromeAccent` in `src/main.ts`                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Menus and command palette                       | `src/ui/menu.ts` + `src/styles/menu.css` (the menu component), `src/ui/menus.ts` (the File, Edit, View, Arrange, Help, folded, Export, Tidy, account and context menus, as data), `src/ui/former-toolbar.ts` (the old toolbar's controls, for the tests that check none was lost), `src/ui/command-palette.ts` + `src/styles/command-palette.css`, `src/ui/palette-sources.ts` (what the palette lists); specs `e2e/shell-menus.spec.ts`, `e2e/menu-component.spec.ts`, `e2e/command-palette-component.spec.ts` |
+| Command registry (PR #327, merged as `d224979`) | `src/ui/commands.ts` (the command table, `matchKey`, `createCommandRegistry`, `HELP_GESTURES`; pure, no DOM), `src/ui/commands.test.ts`, `src/ui/canvas-keys.test.ts` (tests `matchKey`), `e2e/command-keys.spec.ts`, `e2e/command-surfaces.spec.ts`; bound once in `src/main.ts`; proposal 0013 P0                                                                                                                                                                                                             |
+| Shell (PR #327, merged as `d224979`)            | The shell template and its wiring in `src/main.ts` (top bar, left rail, docked library, canvas column, pages bar, zoom control, status bar), `src/styles/shell.css`, `src/ui/selection-bar-place.ts` (where the selection bar goes), `src/ui/fit-insets.ts` (fit view clears what floats over the canvas); specs `e2e/shell-layout.spec.ts`, `e2e/selection-bar.spec.ts`, `e2e/shell-frames.spec.ts`; proposal 0013 P1                                                                                          |
+| Properties panel (PR #327, merged as `d224979`) | `src/ui/inspector/` (`tabs.ts`, `sections.ts`, `field-groups.ts`, `selection-header.ts`, `color-control.ts`, `page-tab.ts`, `document-tab.ts`, `link-attachment.ts`, `focus-keep.ts`, `panel-width.ts`), `src/ui/inspector-tabs.ts` (the tab rules), `src/styles/inspector.css`; specs `e2e/shell-inspector.spec.ts`, `e2e/shell-inspector-tabs.spec.ts`, `e2e/shell-inspector-layout.spec.ts`; proposal 0013 P2                                                                                                |
+| Compact layout (PR #328, not merged)            | `src/ui/compact-layout.ts` (the one breakpoint: at 1,023 px and below, that is below 1,024 px, the library and the properties panel are drawers), `src/ui/compact-layout.test.ts`; the drawer rules in `src/styles/shell.css` and `src/styles/inspector.css`; the compact cases of `e2e/shell-layout.spec.ts`                                                                                                                                                                                                   |
+| Auth + landing page + showcase                  | `worker/auth.ts`, `worker/landing.ts`, `public/landing/`, `public/showcase/*.webp`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Deployment config                               | `wrangler.jsonc`, `.github/workflows/{release,deploy-worker,deploy-staging,ci,production-verify,nightly-staging-smoke}.yml`, `scripts/{check-wrangler-env,migration-guard}.mjs`                                                                                                                                                                                                                                                                                                                                 |
+| Flags                                           | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `liveDataEnabled`, `isAdmin`), `worker/api-keys.ts` (`apiKeysEnabled`)                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Known risks (from the launch-readiness findings register)
 
@@ -509,7 +588,7 @@ staging` with a generated ≥16-char value kept only in the operator's
   vendor-neutral diagramming-tool direction (**Proposed**, not accepted),
   the SD-WAN generator (slices 1–4 implemented), the icon gap review
   (tiers 1–2 shipped), SD-WAN vendor research (research only), and the UI
-  overhaul of the editor chrome (accepted 2026-11-19; P0 is merged except the command registry: #326 merged as `e9d0d7f`; the registry, the rest of P0, is draft PR #327 (not merged); no surface of P1–P4 changed yet). Each
+  overhaul of the editor chrome (accepted 2026-11-19; P0, P1 and P2 are merged, P3 and P4 partly: #326 as `e9d0d7f` and #327 as `d224979`; the compact layout and these documents are PR #328, not merged). Each
   file's status header is authoritative.
 - `docs/EXPORTS.md` — the export/import fidelity contract.
 - `docs/futures/hw-catalog.md` — hardware-catalog phase status;

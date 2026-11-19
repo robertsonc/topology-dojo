@@ -3,7 +3,7 @@
 Network topology diagrams that a person can draw and an AI agent can generate,
 in the same format, with the same renderer.
 
-![The editor showing a generated three-region SD-WAN fabric: hubs and branches per region over continent map backdrops](docs/images/editor-sdwan.png)
+![The editor in the dark theme showing a generated three-region SD-WAN fabric (hubs and branches per region over continent map backdrops), with the top bar and menus, the left rail and node library, the pages bar and the properties panel around the canvas](docs/images/editor-sdwan.png)
 
 There are two ways to author a diagram, and they produce the same document:
 

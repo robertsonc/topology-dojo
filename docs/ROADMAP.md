@@ -10,7 +10,9 @@ documentation and quality audit; status lines revalidated 2026-11-13 against
 [`DISCREPANCY_REGISTER.md`](DISCREPANCY_REGISTER.md) for what this reset
 corrected). The active implementation plan is
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md); its predecessor is
-preserved at [`archive/IMPLEMENTATION_PLAN_2026-07-12.md`](archive/IMPLEMENTATION_PLAN_2026-07-12.md)._
+preserved at [`archive/IMPLEMENTATION_PLAN_2026-07-12.md`](archive/IMPLEMENTATION_PLAN_2026-07-12.md).
+The passages on proposal 0013 were updated 2026-11-19 for PR #327 (merged as
+`d224979`); nothing else was re-checked then._
 
 ## Current production baseline
 
@@ -178,16 +180,21 @@ accepted it re-cuts _Now/Next_.
 
 [Proposal 0013](proposals/0013-ui-overhaul.md) (the UI overhaul of the editor
 chrome: placement first, then a flat skin) was **accepted 2026-11-19**. Its
-phase P0 (foundations) is merged except the command registry: PR #326 merged
-the same day as `e9d0d7f` (see "UI overhaul foundations" under
-"Completed historical milestones"), and the rest of P0, the command registry
-(`src/ui/commands.ts`: one table of every command and its keys, read by the
-key handler, the context menu and the shortcut sheet), is draft PR #327 (not merged). Until #327
-merges, `main` has none of it. Its
-phases P1–P4 (shell, properties panel, skin sweep, guardrails) have not
-changed a surface yet; the 12 px text ratchet, a first form of P4's budget
-test, and the P1 and P2 building blocks are already on `main`. P0–P4 are that proposal's own labels, unrelated to proposal 0003's
-packets P1–P5 and to the "Phase 0" and "Phase 1" milestones below.
+phase P0 (foundations), P1 (shell) and P2 (properties panel) are merged, and
+P3 (skin sweep) and P4 (guardrails) are partly done. PR #326 merged the same
+day as `e9d0d7f` (see "UI overhaul foundations" under "Completed historical
+milestones"), and PR #327 merged as `d224979` with the command registry
+(`src/ui/commands.ts`: one table of every command and its keys), the top bar
+with its menus, the left rail, the docked library, the pages bar, the command
+palette on Ctrl/Cmd+K and the tabbed properties panel (see "UI overhaul:
+command registry, shell and properties panel"). What is left of the proposal:
+the Share dialog, the presentation controls, the shortcut sheet's close
+button and the path bar are still in the old skin, seven rules under 12 px
+remain, and P4's top-bar budget test and "what moved" note are not built.
+PR #328 (not merged) adds the compact layout (below 1,024 px the node library
+and the properties panel are drawers over the canvas). P0–P4 are that
+proposal's own labels, unrelated to proposal 0003's packets P1–P5 and to the
+"Phase 0" and "Phase 1" milestones below.
 
 ## Next
 
@@ -731,6 +738,60 @@ Plan and per-phase status: [`futures/hw-catalog.md`](futures/hw-catalog.md).
 - Not done: branch-to-branch mesh (deferred) and more vendors (slice 5 —
   research only, [proposal 0012](proposals/0012-sdwan-vendor-research.md)).
 
+### UI overhaul: command registry, shell and properties panel (proposal 0013, rest of P0, P1, P2 and part of P3, 2026-11-19)
+
+PR #327, "UI overhaul: command registry, shell, properties panel", merged
+2026-11-19 as `d224979`. Merged:
+
+- **The command registry** (`src/ui/commands.ts`): every command with its key
+  bindings as data, bound once in `src/main.ts`; the window key handler, the
+  context menu, the shortcut sheet and the menus read it. The group "Frames" is
+  "Pages" and command titles say "page".
+- **The top bar** (`src/ui/menus.ts` on the menu component `src/ui/menu.ts`):
+  the File, Edit, View, Arrange and Help menus (one **Menu** button at 1,100 px
+  and below), the document title with the save state, Undo and Redo, Tidy,
+  Present, Export, and, where the deployment offers them, Share and the
+  workspace and account chips. The toolbar is gone; `src/ui/former-toolbar.ts`
+  lists its controls and two tests check that each is in a menu.
+- **The shell around the canvas** (`src/styles/shell.css`): a left rail (four
+  tools, the library toggle, the command palette, the shortcut sheet), the node
+  library docked at 208 px, a pages bar under the canvas (page chips, grid,
+  snap, Calm canvas, Display settings, the minimap toggle), the zoom control
+  and the minimap card (closed until opened) in the canvas's corner, a 24 px
+  status bar, and a selection bar with align, distribute, order and lock
+  (`src/ui/selection-bar-place.ts` places it).
+- **The command palette** on Ctrl/Cmd+K (`src/ui/command-palette.ts`,
+  `src/ui/palette-sources.ts`): commands, "Add" a node type, "Go to" an
+  element or a page. Ctrl/Cmd+K was the browser's before; it is the one key
+  that changed meaning.
+- **The properties panel** (`src/ui/inspector/`): Selection, Page and Document
+  tabs, sections that remember whether they are open, a selection header with
+  a lock toggle and a "more" menu, a colour button with a popover, a Link
+  attachment section that says what the page gives a node and lets the node
+  override it, and a 300 px default width (240 to 480 px).
+- **Shared controls** on the template and SD-WAN wizards, the workspace,
+  preferences and admin panels, and the node designer.
+- Guards: `src/ui/menus.test.ts`, `src/ui/palette-sources.test.ts`,
+  `src/ui/selection-bar-place.test.ts`, `src/ui/inspector-tabs.test.ts`,
+  `src/ui/inspector/{sections,field-groups,link-attachment}.test.ts`,
+  `src/ui/commands.test.ts`; `e2e/shell-menus.spec.ts`,
+  `e2e/selection-bar.spec.ts`, `e2e/shell-inspector-layout.spec.ts`,
+  `e2e/shell-inspector-tabs.spec.ts`, `e2e/command-keys.spec.ts`,
+  `e2e/command-surfaces.spec.ts`. The three canvas screenshot baselines were
+  regenerated for the narrower canvas column.
+
+Not done: the Share dialog, the presentation controls, the shortcut sheet's
+close button and the path bar still use `.tbtn`; seven `font-size` rules under
+12 px remain (`NOT_YET` in `src/styles/styles.test.ts`); no test caps the top
+bar's controls and there is no "what moved" note; Find and quick-add were not
+folded into the palette; the Find box, the presentation controls and the shortcut sheet's
+Presentation rows, the path bar and the path analysis messages, the Page tab's
+Story hint, Caption placeholder and empty-list line, the Analyze path tooltip
+and the delete-page confirmation still say "frame"; and two or more nodes have
+no shared fields in the panel (QA-2026-11-14-UI-04). The proposal's section
+"What P1 and P2 changed from this text" lists each departure. The compact
+layout, below 1,024 px, is PR #328 and is not merged.
+
 ### UI overhaul foundations (proposal 0013, P0 except the command registry, 2026-11-19)
 
 PR #326, merged 2026-11-19 as `e9d0d7f` (its Release run, 44491161125,
@@ -740,8 +801,8 @@ completed with success at 09:12 UTC the same day). Shipped:
   `index.css` imports the files in cascade order.
 - A token layer (`src/styles/tokens.css`) for both themes and a flat skin:
   three elevation levels, no backdrop blur. The toolbar, properties panel and
-  status bar are docked; the node library and the pages dock still float over
-  the canvas.
+  status bar are docked; the node library and the pages dock still floated over
+  the canvas (PR #327 docked them).
 - Neutral scrollbars, shown on hover or keyboard focus.
 - `color-scheme` and `theme-color` follow the theme; the "Panel blur (glass)"
   display setting is removed.
@@ -756,11 +817,10 @@ On `main` but used by no surface yet (building blocks for P1–P3, not
 capabilities): the shared control classes, the Inter typeface, the menu
 component, the command palette and the properties-panel tab rules.
 
-Not shipped: any change to a surface from P1–P4. The command registry, the
-rest of P0, is PR #327, a draft and not merged: it adds `src/ui/commands.ts`,
-makes the key handler, the toolbar and canvas controls, the context menu and
-the shortcut sheet read one command table, and removes `src/ui/canvas-keys.ts`;
-it is not on `main`, and no key or command is meant to behave differently.
+Not in that PR: the command registry and any change to a surface from P1 to
+P4; they followed in PR #327 (the section above). The statement under "On
+`main` but used by no surface yet" is as of `e9d0d7f`: PR #327 uses those
+building blocks.
 
 ### Wiring-sheet conventions (proposal 0008, 2026-10-15)
 

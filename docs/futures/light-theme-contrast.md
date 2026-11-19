@@ -156,3 +156,24 @@ leave it for a follow-up issue.
   · [after](light-theme-contrast/EdgeHA_after.light.after.png).
 - **Still out of scope:** text is 7-9px in ~2000-unit viewBoxes (3-4pt on a
   fitted PDF page) — a font-floor vs export-scale decision for a follow-up.
+
+## Note, 2026-11-19: this is the rendered output, not the editor chrome
+
+Everything above is about the drawn diagram (`render_svg`, the exports, the
+flipbook; PR #289). [Proposal 0013](../proposals/0013-ui-overhaul.md) lists a
+"light theme contrast pass" under P3 and links here, but that pass is for the
+editor chrome, which this document does not cover.
+
+What exists for the chrome: semantic tokens for both themes
+(`src/styles/tokens.css`), with the contrast of text, outlines and the focus
+ring on every surface, and of ink on the accent and status fills, computed from
+them for the dark and the light theme (`src/styles/styles.test.ts`, "token
+contrast (WCAG 2.1)"); `readableInkOn` in `src/ui/contrast.ts` picks the ink on
+a brand accent. One screenshot baseline is in the light theme, of the canvas
+only (`e2e/visual.spec.ts`, "EdgeHA fixture in light theme").
+
+Not done, or not checked: a contrast check of each surface as drawn in the
+light theme, as opposed to the tokens; the surfaces that still set `color:
+var(--accent)` as text (listed in the proposal's P3 status line; the token's own
+comment in `tokens.css` says `--accent` as text can fall under 4.5 : 1 on a tint); and the motion and reduced-motion pass. The
+items under "Out of scope" above are unchanged.
