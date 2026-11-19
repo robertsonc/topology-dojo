@@ -309,7 +309,14 @@ page's clock instead of waiting on three real retry intervals, and still
 checks that exactly three commits are sent. Run alone with one worker three
 times on 2026-11-19, it took 5.1 to 5.4 seconds.
 
-Final run before the push: TO-FILL
+A later run the same day, on the code at `2a03a64` (after the review fixes; the
+commits that follow it change documentation only), with the same settings and
+nothing else using the machine: `npm run check:wrangler`, `npm run typecheck`,
+`npm run catalog:check`, `npm run lint` and `npm run build` passed; `npm test`
+passed, 216 files and 3,415 tests; and the browser suite passed all 346 tests
+in 8.7 minutes, with none reported flaky. The slowest test took 10.0 seconds
+(`shell-inspector.spec.ts` "clearing a number field removes the property
+instead of storing 0"); the next, 8.8 seconds.
 
 ## 5. Exact automated release gates and commands
 
