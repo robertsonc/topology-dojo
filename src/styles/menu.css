@@ -134,6 +134,8 @@
   font-family: var(--font);
   font-size: 11px;
 }
+/* The submenu arrow's column, at the end of the row. Every row of a menu
+   that has a submenu keeps it (empty), so the hints before it line up. */
 .menu-caret {
   margin-right: -4px;
   color: var(--fg-weak);

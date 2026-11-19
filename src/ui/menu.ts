@@ -18,11 +18,14 @@
  * `document.body`; the popup, `<div class="menu" role="menu">`, and every open
  * submenu are its children, `position: fixed`. Items are
  * `<button role="menuitem">` (`menuitemcheckbox` + `aria-checked` when
- * `checked` is defined), carry `data-command="<id>"`, and use a roving
- * tabindex. A heading starts a `role="group"` named after it, which runs to
- * the next separator or heading. `label` and `hint` are text; `iconHtml` is
- * the one field inserted as markup, so it must come from the caller's own
- * code (an icon sprite), never from a document or the network.
+ * `checked` is defined, `menuitemradio` with `radio`), carry
+ * `data-command="<id>"`, and use a roving tabindex. The popup is named by
+ * `options.label`, else after its trigger; a menu opened at a point has no
+ * trigger, so give it a `label`. A heading starts a `role="group"` named
+ * after it, which runs to the next separator or heading. `label` and `hint`
+ * are text; `iconHtml` is the one field inserted as markup, so it must come
+ * from the caller's own code (an icon sprite), never from a document or the
+ * network.
  *
  * Keys, inside a menu: ArrowDown / ArrowUp move with wrap-around and stop on
  * disabled items (they are focusable, announced as unavailable, and inert);
@@ -31,7 +34,10 @@
  * Tab closes everything and lets focus move on from the trigger. Enter and
  * Space are left to the browser: it turns them into a click on the focused
  * button, at the moment each engine activates a button (Space on key-up), so
- * focus never changes hands between a key going down and coming up.
+ * focus never changes hands between a key going down and coming up. Enter
+ * acts on key-down and a held key repeats, so the press that chose an item
+ * is spent: until the key comes up its repeats reach nothing, neither the
+ * trigger (which would reopen the menu) nor whatever the command focused.
  *
  * Pointer: the item under the pointer takes focus, so there is one highlight
  * and the arrow keys continue from where the pointer is. Focus the pointer
@@ -40,6 +46,11 @@
  * submenu opens after a short hover and survives a diagonal move toward it.
  * A press outside closes the menu and still lands; a press on the trigger is
  * left to the trigger's click, which closes the menu it finds open.
+ *
+ * Focus stays in the menu for as long as it is open, which is what keeps the
+ * keyboard working: a press on the trigger does not move focus (so a press
+ * that slides off and never becomes a click leaves the menu usable), and
+ * focus put anywhere else, the trigger included, closes the menu.
  *
  * Triggers (`attachMenubar`, `attachMenuButton`) follow the shell's key
  * routing (`./key-routing.ts`): a trigger that a pointer focused leaves the
@@ -58,7 +69,10 @@
  * item is (`tabindex="0"`), so it is inside that list too. Tab then reaches
  * this module un-prevented: it closes the chain, puts focus back on the
  * trigger, and the browser's own Tab carries on from there.
- * `e2e/menu-component.spec.ts` pins this from every focus position.
+ * `e2e/menu-component.spec.ts` pins this from every focus position. One
+ * exception: a menu opened from inside another overlay (a dialog). There the
+ * dialog's own trap never saw this Tab, so it only closes the menu and focus
+ * stays on the trigger, inside the dialog.
  *
  * Beyond the packet's API (all additive):
  * - `MenuOptions.focus` also takes `'last'` (ArrowUp on a menu bar button).
@@ -72,10 +86,15 @@
  * - `toggleMenu` and `attachMenuButton` for button menus.
  * - An anchor that declares `aria-haspopup` gets its `aria-expanded` kept in
  *   step, however the menu closes.
+ * - `MenuItem.radio`: an exclusive choice, `role="menuitemradio"`.
+ * - `attachMenubar` also returns `refresh()`, for a bar whose buttons the
+ *   caller adds or removes.
+ * - Three more pure helpers behind the above: `menuItemRole`, `triggerName`
+ *   and `rovingTabStop`.
  */
 
 import { isImeKey } from './ime.js';
-import { registerOverlay } from './overlay.js';
+import { overlayActive, registerOverlay } from './overlay.js';
 
 /* ── Entries and options ────────────────────────────────────────────── */
 
@@ -95,6 +114,13 @@ export interface MenuItem {
   iconHtml?: string;
   /** Defined: the row is a checkbox item showing this state. */
   checked?: boolean;
+  /**
+   * One of a set of choices of which exactly one is on (Theme: Dark / Light):
+   * announced as a radio item, `checked` being whether this is the one. Keep
+   * the set together, apart from other items (its own submenu, or between
+   * separators).
+   */
+  radio?: boolean;
   /** Focusable and announced as unavailable, but does nothing. */
   disabled?: boolean;
   /** Destructive action: drawn in the error colour. */
@@ -149,11 +175,18 @@ export interface MenuOptions {
   anchor: HTMLElement | { x: number; y: number };
   /** Preferred side and alignment; default `'below-start'`. */
   placement?: Exclude<MenuPlacement, 'left-start'>;
-  /** The popup's accessible name; defaults to the anchor element's own. */
+  /**
+   * The popup's accessible name. Defaults to the anchor element's own (see
+   * `triggerName`); a menu opened at a point has no other name, so pass one.
+   */
   label?: string;
   /** Default `'menu'`. */
   focus?: MenuFocus;
-  /** Called once, after the menu is gone and focus has been restored. */
+  /**
+   * Called once, after the menu is gone and focus has been restored. If it
+   * throws, the error is reported (`reportError`) rather than passed on, so
+   * that closing always completes and the chosen command still runs.
+   */
   onClose?: (reason: MenuCloseReason) => void;
   /**
    * ArrowLeft at the root level (`'previous'`), or ArrowRight on an item
@@ -178,6 +211,70 @@ export function isMenuItem(entry: MenuEntry | undefined): entry is MenuItem {
   return (
     entry !== undefined && (entry.kind === undefined || entry.kind === 'item')
   );
+}
+
+/**
+ * The ARIA role of an item: a checkbox item once `checked` is defined, a
+ * radio item with `radio` (which then counts as unchecked while `checked` is
+ * not set), a plain item otherwise.
+ */
+export function menuItemRole(
+  entry: MenuItem,
+): 'menuitem' | 'menuitemcheckbox' | 'menuitemradio' {
+  if (entry.radio) return 'menuitemradio';
+  return entry.checked === undefined ? 'menuitem' : 'menuitemcheckbox';
+}
+
+/** What `triggerName` knows about a trigger element. */
+export interface TriggerNameFacts {
+  /** The text of each element its `aria-labelledby` points at, in order. */
+  labelledBy?: readonly string[];
+  ariaLabel?: string | null;
+  /** Its text content. */
+  text?: string | null;
+  title?: string | null;
+}
+
+/**
+ * The name a menu takes from its trigger when the caller gives no `label`:
+ * the first of `aria-labelledby`, `aria-label`, the text content and `title`
+ * that is not blank, in the order the browser itself names a button. White
+ * space is collapsed. '' when the trigger has no name; the menu then has
+ * none either.
+ */
+export function triggerName(facts: TriggerNameFacts): string {
+  const clean = (text: string | null | undefined): string =>
+    (text ?? '').replace(/\s+/g, ' ').trim();
+  const candidates = [
+    facts.labelledBy?.map(clean).filter(Boolean).join(' '),
+    facts.ariaLabel,
+    facts.text,
+    facts.title,
+  ];
+  for (const candidate of candidates) {
+    const name = clean(candidate);
+    if (name) return name;
+  }
+  return '';
+}
+
+/**
+ * Which top-level button of a menu bar holds its one tab stop. `shown[i]` is
+ * whether button `i` is displayed, `current` the index of the present stop
+ * (-1: none yet). The stop stays where it is while that button is displayed;
+ * once it is hidden the first displayed button takes over, so the bar never
+ * drops out of the tab order. With nothing displayed the stop stays put (the
+ * first button when there was none). -1 for a bar without buttons.
+ */
+export function rovingTabStop(
+  shown: readonly boolean[],
+  current: number,
+): number {
+  if (shown[current]) return current;
+  const first = shown.indexOf(true);
+  if (first >= 0) return first;
+  if (current >= 0 && current < shown.length) return current;
+  return shown.length > 0 ? 0 : -1;
 }
 
 /**
@@ -395,6 +492,8 @@ interface Chain {
   anchor: HTMLElement | null;
   options: MenuOptions;
   open: boolean;
+  /** Enter is down, pressed (or still held) inside this menu. */
+  enterDown: boolean;
   /** Aborting it removes every listener the chain added. */
   listeners: AbortController;
   /** Unregisters the overlay. */
@@ -414,7 +513,16 @@ function resolve(entries: MenuEntries): MenuEntry[] {
 
 /** An element's accessible name, as far as it can be read cheaply. */
 function nameOf(el: HTMLElement): string {
-  return el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '';
+  const ids = el.getAttribute('aria-labelledby')?.split(/\s+/) ?? [];
+  return triggerName({
+    labelledBy: ids.map((id) => {
+      const by = id ? document.getElementById(id) : null;
+      return by?.getAttribute('aria-label') ?? by?.textContent ?? '';
+    }),
+    ariaLabel: el.getAttribute('aria-label'),
+    text: el.textContent,
+    title: el.getAttribute('title'),
+  });
 }
 
 function span(className: string): HTMLSpanElement {
@@ -435,14 +543,23 @@ function hasSubmenu(entry: MenuEntry | undefined): entry is MenuItem {
   return isMenuItem(entry) && !!entry.submenu && !entry.disabled;
 }
 
-function itemButton(entry: MenuItem, columns: 0 | 1 | 2): HTMLButtonElement {
+/** Whether an item shows a checked state: a checkbox or a radio item. */
+function isCheckable(entry: MenuItem): boolean {
+  return menuItemRole(entry) !== 'menuitem';
+}
+
+function itemButton(
+  entry: MenuItem,
+  columns: 0 | 1 | 2,
+  caretColumn: boolean,
+): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = entry.danger ? 'menu-item danger' : 'menu-item';
   btn.tabIndex = -1;
-  const checkable = entry.checked !== undefined;
-  btn.setAttribute('role', checkable ? 'menuitemcheckbox' : 'menuitem');
-  if (checkable) btn.setAttribute('aria-checked', String(entry.checked));
+  const checkable = isCheckable(entry);
+  btn.setAttribute('role', menuItemRole(entry));
+  if (checkable) btn.setAttribute('aria-checked', String(!!entry.checked));
   if (entry.id !== undefined) btn.dataset.command = entry.id;
   if (entry.disabled) btn.setAttribute('aria-disabled', 'true');
   if (entry.submenu) {
@@ -472,9 +589,12 @@ function itemButton(entry: MenuItem, columns: 0 | 1 | 2): HTMLButtonElement {
     hint.textContent = entry.hint;
     btn.append(hint);
   }
-  if (entry.submenu) {
+  // Trailing slot: the submenu arrow. Like the leading slots, every row gets
+  // it once one row needs it, so the hints line up down the menu.
+  if (entry.submenu || caretColumn) {
     const caret = span('menu-caret');
-    caret.innerHTML = CARET_SVG;
+    caret.setAttribute('aria-hidden', 'true');
+    if (entry.submenu) caret.innerHTML = CARET_SVG;
     btn.append(caret);
   }
   return btn;
@@ -493,17 +613,17 @@ function buildLevel(
   el.tabIndex = 0;
 
   const items = entries.filter(isMenuItem);
-  const ticked = (e: MenuItem): boolean => e.checked !== undefined;
-  const columns = items.some((e) => ticked(e) && !!e.iconHtml)
+  const columns = items.some((e) => isCheckable(e) && !!e.iconHtml)
     ? 2
-    : items.some((e) => ticked(e) || !!e.iconHtml)
+    : items.some((e) => isCheckable(e) || !!e.iconHtml)
       ? 1
       : 0;
+  const caretColumn = items.some((e) => !!e.submenu);
   const buttons: (HTMLButtonElement | null)[] = [];
   let group: HTMLElement = el;
   for (const entry of entries) {
     if (isMenuItem(entry)) {
-      const btn = itemButton(entry, columns);
+      const btn = itemButton(entry, columns, caretColumn);
       group.append(btn);
       buttons.push(btn);
       continue;
@@ -702,7 +822,50 @@ function closeChain(chain: Chain, reason: MenuCloseReason): void {
   chain.layer.remove();
   if (chain.anchor?.hasAttribute('aria-haspopup'))
     chain.anchor.setAttribute('aria-expanded', 'false');
-  chain.options.onClose?.(reason);
+  // The caller's code runs last, and an error in it is the caller's: it is
+  // reported, not thrown through whoever closed the menu. Otherwise the
+  // command an item was chosen for would never run, and a menu about to
+  // replace this one would never open.
+  try {
+    chain.options.onClose?.(reason);
+  } catch (error) {
+    reportError(error);
+  }
+}
+
+/** Removes the listeners of `spendEnter`; null while there are none. */
+let enterSpent: AbortController | null = null;
+
+/**
+ * Enter presses a button when the key goes down, and a held key repeats. Once
+ * an item has been chosen that way focus is on the trigger again, or wherever
+ * the command put it, and each repeat would press that: reopen the menu,
+ * confirm the dialog the command opened, commit the field it started. So the
+ * press that chose the item is spent: until the key comes up (or another key
+ * goes down, which ends the repeat) its repeats reach nothing.
+ */
+function spendEnter(): void {
+  enterSpent?.abort();
+  const spent = new AbortController();
+  enterSpent = spent;
+  const done = (): void => {
+    spent.abort();
+    if (enterSpent === spent) enterSpent = null;
+  };
+  const { signal } = spent;
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key !== 'Enter' || !e.repeat) return done();
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    { capture: true, signal },
+  );
+  window.addEventListener('keyup', done, { capture: true, signal });
+  // The window's own blur (not captured: that would be every element's, and
+  // focus moves as part of choosing an item). The key-up may never arrive.
+  window.addEventListener('blur', done, { signal });
 }
 
 /** Escape: one level at a time, deepest first. */
@@ -720,10 +883,16 @@ function onKeydown(chain: Chain, e: KeyboardEvent): void {
   if (!level) return;
   // The keyboard is driving again: the focus ring is back (see onPointerMove).
   chain.layer.removeAttribute('data-pointer');
+  if (e.key === 'Enter') chain.enterDown = true; // see onClick
   if (e.key === 'Tab') {
     // Not prevented: with focus back on the trigger, the browser's own Tab
     // moves on from there.
     closeChain(chain, 'tab');
+    // Unless the trigger is inside another overlay (a dialog): its focus trap
+    // did not get to see this Tab, which was the menu's when the primitive
+    // looked, so the browser's Tab could walk out of the dialog. There, Tab
+    // closes the menu and focus stays on the trigger.
+    if (overlayActive()) e.preventDefault();
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -791,6 +960,7 @@ function onClick(chain: Chain, e: MouseEvent): void {
   // Close first, so a command that opens a dialog starts from a clean focus
   // state: no menu in the DOM, focus on the trigger.
   closeChain(chain, 'select');
+  if (chain.enterDown) spendEnter();
   run();
 }
 
@@ -857,12 +1027,19 @@ function onFocusIn(chain: Chain, e: FocusEvent): void {
 function listen(chain: Chain): void {
   const { layer, anchor } = chain;
   const { signal } = chain.listeners;
-  const outside = (target: EventTarget | null): boolean =>
-    target instanceof Node &&
-    !layer.contains(target) &&
-    !anchor?.contains(target);
+  const inMenu = (target: EventTarget | null): boolean =>
+    target instanceof Node && layer.contains(target);
+  const onTrigger = (target: EventTarget | null): boolean =>
+    target instanceof Node && !!anchor?.contains(target);
 
   layer.addEventListener('keydown', (e) => onKeydown(chain, e), { signal });
+  layer.addEventListener(
+    'keyup',
+    (e) => {
+      if (e.key === 'Enter') chain.enterDown = false;
+    },
+    { signal },
+  );
   layer.addEventListener('click', (e) => onClick(chain, e), { signal });
   layer.addEventListener('pointermove', (e) => onPointerMove(chain, e), {
     signal,
@@ -878,17 +1055,32 @@ function listen(chain: Chain): void {
   window.addEventListener(
     'pointerdown',
     (e) => {
-      if (outside(e.target)) closeChain(chain, 'outside');
+      if (e.target instanceof Node && !inMenu(e.target) && !onTrigger(e.target))
+        closeChain(chain, 'outside');
+    },
+    { capture: true, signal },
+  );
+  // That press must not take focus out of the menu either. If it did and
+  // never became a click (the pointer slid off before it came up), focus
+  // would rest on the trigger with the menu still open, where no key reaches
+  // the menu and the overlay primitive swallows Tab. Without the default
+  // action focus stays where it is, and the click still happens.
+  window.addEventListener(
+    'mousedown',
+    (e) => {
+      if (onTrigger(e.target)) e.preventDefault();
     },
     { capture: true, signal },
   );
   // Focus taken elsewhere (by the application, or by assistive technology)
   // leaves nothing to drive the menu with, so it closes without pulling
-  // focus back.
+  // focus back. The trigger is elsewhere too: with focus on it, the menu
+  // could only be closed, never used.
   document.addEventListener(
     'focusin',
     (e) => {
-      if (outside(e.target)) closeChain(chain, 'blur');
+      if (e.target instanceof Node && !inMenu(e.target))
+        closeChain(chain, 'blur');
     },
     { signal },
   );
@@ -924,6 +1116,7 @@ export function openMenu(
     anchor,
     options,
     open: true,
+    enterDown: false,
     listeners: new AbortController(),
     release: () => {},
   };
@@ -1085,6 +1278,18 @@ export function attachMenuButton(
   };
 }
 
+/** What `attachMenubar` returns. */
+export interface MenubarHandle {
+  /**
+   * Re-read the bar: adopt buttons added since (their ARIA attributes, and
+   * watching whether they are displayed) and move the tab stop off a button
+   * that is hidden or gone.
+   */
+  refresh(): void;
+  /** Remove every listener, and close the bar's menu if it is open. */
+  destroy(): void;
+}
+
 /**
  * Drive a menu bar (WAI-ARIA "Menubar"). `bar` is the `role="menubar"`
  * element; its top-level items are the `button[data-menu][role="menuitem"]`
@@ -1097,29 +1302,39 @@ export function attachMenuButton(
  * End go to the ends; with a menu open they open the neighbour's menu on its
  * first item instead. ArrowDown, Enter and Space open on the first item,
  * ArrowUp on the last. While a menu is open, moving the pointer onto another
- * button switches to its menu. Buttons that are not displayed are skipped.
+ * button switches to its menu.
+ *
+ * Buttons that are not displayed are skipped, by the arrows and by the tab
+ * stop: when the button holding it is hidden (a narrow window that folds the
+ * menus into one button, say) the stop moves to the first one displayed, so
+ * the bar stays in the tab order. That is watched for. Buttons the caller
+ * adds to the bar later are not: call `refresh()` after adding or removing
+ * one.
  */
 export function attachMenubar(
   bar: HTMLElement,
   menuFor: (key: string) => MenuEntry[],
-): { destroy(): void } {
+): MenubarHandle {
   const listeners = new AbortController();
   const { signal } = listeners;
   const keyboard = keyboardFocus(bar, signal);
   let open: { button: HTMLElement; handle: MenuHandle } | null = null;
+  /** The button holding the bar's tab stop. */
+  let stop: HTMLElement | undefined;
 
   const all = (): HTMLElement[] => [
     ...bar.querySelectorAll<HTMLElement>('[data-menu]'),
   ];
-  const shown = (): HTMLElement[] =>
-    all().filter((b) => b.getClientRects().length > 0);
+  const displayed = (b: HTMLElement): boolean => b.getClientRects().length > 0;
+  const shown = (): HTMLElement[] => all().filter(displayed);
   const buttonAt = (target: EventTarget | null): HTMLElement | null =>
     target instanceof Element
       ? target.closest<HTMLElement>('[data-menu]')
       : null;
   const isOpen = (): boolean => !!open?.handle.isOpen();
-  const setTabStop = (stop: HTMLElement | undefined): void => {
-    for (const b of all()) b.tabIndex = b === stop ? 0 : -1;
+  const setTabStop = (to: HTMLElement | undefined): void => {
+    stop = to;
+    for (const b of all()) b.tabIndex = b === to ? 0 : -1;
   };
   const neighbour = (of: HTMLElement, dir: 1 | -1): HTMLElement | undefined => {
     const list = shown();
@@ -1149,13 +1364,27 @@ export function attachMenubar(
     else to.focus();
   };
 
-  for (const b of all()) {
-    b.setAttribute('aria-haspopup', 'menu');
-    b.setAttribute('aria-expanded', 'false');
-  }
-  setTabStop(
-    all().find((b) => b === document.activeElement) ?? shown()[0] ?? all()[0],
-  );
+  // A button going to or from `display: none` changes size, which is the one
+  // signal for "hidden" that covers a media query as well as a class.
+  const sizes = new ResizeObserver(() => refresh());
+  /** The buttons already set up, each once. */
+  const adopted = new WeakSet<HTMLElement>();
+  /** Take the bar as it is now: its buttons, and which are displayed. */
+  const refresh = (): void => {
+    if (signal.aborted) return; // destroyed
+    const buttons = all();
+    for (const b of buttons) {
+      if (adopted.has(b)) continue;
+      adopted.add(b);
+      b.setAttribute('aria-haspopup', 'menu');
+      b.setAttribute('aria-expanded', 'false');
+      sizes.observe(b);
+    }
+    const at = stop ? buttons.indexOf(stop) : -1;
+    setTabStop(buttons[rovingTabStop(buttons.map(displayed), at)]);
+  };
+  stop = all().find((b) => b === document.activeElement);
+  refresh();
 
   bar.addEventListener(
     'click',
@@ -1224,8 +1453,10 @@ export function attachMenubar(
   );
 
   return {
+    refresh,
     destroy(): void {
       listeners.abort();
+      sizes.disconnect();
       if (open && isOpen()) open.handle.close();
       open = null;
     },

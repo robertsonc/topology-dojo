@@ -4,8 +4,11 @@ import {
   firstEnabledIndex,
   isMenuItem,
   lastEnabledIndex,
+  menuItemRole,
   nextEnabledIndex,
   placeMenu,
+  rovingTabStop,
+  triggerName,
   typeaheadIndex,
   type MenuEntry,
 } from './menu.js';
@@ -24,6 +27,130 @@ describe('isMenuItem', () => {
     expect(isMenuItem(SEP)).toBe(false);
     expect(isMenuItem(head('Image'))).toBe(false);
     expect(isMenuItem(undefined)).toBe(false);
+  });
+});
+
+describe('menuItemRole', () => {
+  it('is a plain item until a checked state is given', () => {
+    expect(menuItemRole({ label: 'Copy' })).toBe('menuitem');
+    expect(menuItemRole({ label: 'Copy', disabled: true })).toBe('menuitem');
+    expect(menuItemRole({ label: 'More', submenu: [] })).toBe('menuitem');
+  });
+
+  it('is a checkbox item once checked is defined, on or off', () => {
+    expect(menuItemRole({ label: 'Grid', checked: true })).toBe(
+      'menuitemcheckbox',
+    );
+    expect(menuItemRole({ label: 'Grid', checked: false })).toBe(
+      'menuitemcheckbox',
+    );
+    expect(menuItemRole({ label: 'Grid', checked: true, radio: false })).toBe(
+      'menuitemcheckbox',
+    );
+  });
+
+  it('is a radio item for an exclusive choice, whether or not it is the one', () => {
+    expect(menuItemRole({ label: 'Dark', radio: true, checked: true })).toBe(
+      'menuitemradio',
+    );
+    expect(menuItemRole({ label: 'Light', radio: true, checked: false })).toBe(
+      'menuitemradio',
+    );
+    // With no state given it is still a radio item (an unchecked one).
+    expect(menuItemRole({ label: 'Light', radio: true })).toBe('menuitemradio');
+  });
+});
+
+describe('triggerName', () => {
+  it('takes the text of a button with text', () => {
+    expect(triggerName({ text: 'Export' })).toBe('Export');
+  });
+
+  it('falls back to the title of a button without text (an icon button)', () => {
+    expect(triggerName({ text: '', title: 'Export' })).toBe('Export');
+    expect(triggerName({ text: '  \n ', title: 'Tidy options' })).toBe(
+      'Tidy options',
+    );
+    expect(triggerName({ ariaLabel: null, text: null, title: 'Export' })).toBe(
+      'Export',
+    );
+  });
+
+  it('prefers aria-label to the text, and the text to the title', () => {
+    expect(
+      triggerName({ ariaLabel: 'Account', text: 'CR', title: 'Signed in' }),
+    ).toBe('Account');
+    expect(triggerName({ text: 'File', title: 'File menu' })).toBe('File');
+  });
+
+  it('prefers what aria-labelledby points at to everything else', () => {
+    expect(
+      triggerName({
+        labelledBy: ['Layout', 'options'],
+        ariaLabel: 'Tidy',
+        text: 'T',
+        title: 'Tidy',
+      }),
+    ).toBe('Layout options');
+  });
+
+  it('skips a blank source instead of naming the menu with it', () => {
+    expect(triggerName({ labelledBy: ['', '  '], ariaLabel: 'Tidy' })).toBe(
+      'Tidy',
+    );
+    expect(triggerName({ labelledBy: [], ariaLabel: '', text: 'File' })).toBe(
+      'File',
+    );
+    expect(triggerName({ ariaLabel: '   ', text: '', title: 'Export' })).toBe(
+      'Export',
+    );
+  });
+
+  it('collapses white space', () => {
+    expect(triggerName({ text: '\n    Export\n    as  PNG\n  ' })).toBe(
+      'Export as PNG',
+    );
+  });
+
+  it('is empty when the trigger has no name at all', () => {
+    expect(triggerName({})).toBe('');
+    expect(triggerName({ ariaLabel: null, text: ' ', title: null })).toBe('');
+  });
+});
+
+describe('rovingTabStop', () => {
+  it('starts on the first displayed button', () => {
+    expect(rovingTabStop([true, true, true], -1)).toBe(0);
+    expect(rovingTabStop([false, true, true], -1)).toBe(1);
+  });
+
+  it('stays where it is while that button is displayed', () => {
+    expect(rovingTabStop([true, true, true], 2)).toBe(2);
+    expect(rovingTabStop([false, true, false], 1)).toBe(1);
+  });
+
+  it('moves to the first displayed button when its own is hidden', () => {
+    expect(rovingTabStop([true, false, true], 1)).toBe(0);
+    // The fold: File / Edit / View go, and the one "Menu" button appears.
+    expect(rovingTabStop([true, false, false, false], 1)).toBe(0);
+    // And back: "Menu" held the stop, and is hidden again.
+    expect(rovingTabStop([false, true, true, true], 0)).toBe(1);
+  });
+
+  it('moves on when its button is gone from the bar', () => {
+    expect(rovingTabStop([true, true], 5)).toBe(0);
+    expect(rovingTabStop([false, true], -1)).toBe(1);
+  });
+
+  it('stays put while nothing is displayed, on the first button if it had none', () => {
+    expect(rovingTabStop([false, false, false], 2)).toBe(2);
+    expect(rovingTabStop([false, false, false], -1)).toBe(0);
+    expect(rovingTabStop([false, false], 7)).toBe(0);
+  });
+
+  it('is -1 for a bar without buttons', () => {
+    expect(rovingTabStop([], -1)).toBe(-1);
+    expect(rovingTabStop([], 0)).toBe(-1);
   });
 });
 

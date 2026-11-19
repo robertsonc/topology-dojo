@@ -22,6 +22,7 @@ import {
 } from './helpers.js';
 
 type MenuModule = typeof import('../src/ui/menu.js');
+type OverlayModule = typeof import('../src/ui/overlay.js');
 
 interface Bench {
   menu: MenuModule;
@@ -29,8 +30,10 @@ interface Bench {
   log: string[];
   /** The state the "Grid" checkbox item reads when its menu opens. */
   grid: boolean;
-  bar: { destroy(): void };
+  bar: { destroy(): void; refresh(): void };
   button: { destroy(): void };
+  /** What a single test added to the bench, undone after it (last first). */
+  cleanup: (() => void)[];
 }
 
 declare global {
@@ -40,6 +43,8 @@ declare global {
 }
 
 const MODULE = '/src/ui/menu.ts';
+/** The overlay primitive, by the same route: the instance the editor uses. */
+const OVERLAY = '/src/ui/overlay.ts';
 
 /**
  * Mount the bench. In tab order: Before, Actions (a plain trigger using
@@ -175,7 +180,7 @@ async function mountBench(page: Page): Promise<void> {
     };
     const bar = menu.attachMenubar(el('mb-bar'), (key) => barMenus[key] ?? []);
 
-    window.menuBench = { menu, log, grid: true, bar, button };
+    window.menuBench = { menu, log, grid: true, bar, button, cleanup: [] };
   }, MODULE);
 }
 
@@ -189,6 +194,7 @@ test.afterEach(async ({ page }) => {
     const bench = window.menuBench;
     if (!bench) return;
     bench.menu.closeAllMenus();
+    for (const undo of bench.cleanup.reverse()) undo();
     bench.bar.destroy();
     bench.button.destroy();
     document.getElementById('menu-bench')?.remove();
@@ -399,6 +405,177 @@ test('entries given as a function are built each time the menu opens', async ({
   await expect(item(page, 'Grid').locator('.menu-check svg')).toHaveCount(0);
 });
 
+test('a menu is named after its trigger, however the trigger is named', async ({
+  page,
+}) => {
+  const names = await page.evaluate(() => {
+    const bench = window.menuBench!;
+    const host = document.getElementById('menu-bench')!;
+    // An icon-only button: no text of its own.
+    const icon = document.createElement('button');
+    icon.type = 'button';
+    icon.id = 'mb-icon';
+    icon.innerHTML =
+      '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"></svg>';
+    const caption = document.createElement('span');
+    caption.id = 'mb-caption';
+    caption.textContent = 'Layout options';
+    host.append(icon, caption);
+
+    const name = (
+      anchor: HTMLElement | { x: number; y: number },
+      label?: string,
+    ): string | null => {
+      const handle = bench.menu.openMenu([{ label: 'One' }], { anchor, label });
+      const given = handle.element.getAttribute('aria-label');
+      handle.close();
+      return given;
+    };
+    const unnamed = name(icon);
+    icon.title = 'Tidy options';
+    const byTitle = name(icon);
+    icon.setAttribute('aria-label', 'Tidy');
+    const byAriaLabel = name(icon);
+    icon.setAttribute('aria-labelledby', 'mb-caption');
+    const byLabelledBy = name(icon);
+    const given = name(icon, 'Given');
+    // A menu opened at a point has no trigger to be named after.
+    const atPoint = name({ x: 600, y: 300 });
+    const atPointGiven = name({ x: 600, y: 300 }, 'Canvas');
+
+    // Left open for the check below: the icon button named by its title only.
+    icon.removeAttribute('aria-label');
+    icon.removeAttribute('aria-labelledby');
+    bench.menu.openMenu([{ label: 'One' }], { anchor: icon, focus: 'first' });
+    return {
+      unnamed,
+      byTitle,
+      byAriaLabel,
+      byLabelledBy,
+      given,
+      atPoint,
+      atPointGiven,
+    };
+  });
+  expect(names).toEqual({
+    unnamed: null,
+    byTitle: 'Tidy options',
+    byAriaLabel: 'Tidy',
+    byLabelledBy: 'Layout options',
+    given: 'Given',
+    atPoint: null,
+    atPointGiven: 'Canvas',
+  });
+  // What the browser makes of it: the menu and its trigger share the name.
+  await expect(page.getByRole('menu', { name: 'Tidy options' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tidy options' })).toHaveId(
+    'mb-icon',
+  );
+});
+
+test('exclusive choices are radio items, apart from the checkbox items', async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    window.menuBench!.menu.openMenu(
+      [
+        { kind: 'heading', label: 'Theme' },
+        { id: 'theme.dark', label: 'Dark', radio: true, checked: true },
+        { id: 'theme.light', label: 'Light', radio: true, checked: false },
+        // No state given: an exclusive choice that is not the chosen one.
+        { id: 'theme.system', label: 'System', radio: true },
+        { kind: 'separator' },
+        { id: 'view.grid', label: 'Grid', checked: true },
+      ],
+      {
+        anchor: document.getElementById('mb-trigger')!,
+        label: 'View',
+        focus: 'first',
+      },
+    );
+  });
+  await expect(item(page, 'Dark')).toBeFocused();
+  await expect(page.locator('.menu-layer')).toMatchAriaSnapshot(`
+    - menu "View":
+      - group "Theme":
+        - menuitemradio "Dark" [checked]
+        - menuitemradio "Light"
+        - menuitemradio "System"
+      - separator
+      - menuitemcheckbox "Grid" [checked]
+  `);
+  await expect(item(page, 'Dark')).toHaveAttribute('role', 'menuitemradio');
+  await expect(item(page, 'Dark')).toHaveAttribute('aria-checked', 'true');
+  await expect(item(page, 'Light')).toHaveAttribute('aria-checked', 'false');
+  await expect(item(page, 'System')).toHaveAttribute('aria-checked', 'false');
+  await expect(item(page, 'Grid')).toHaveAttribute('role', 'menuitemcheckbox');
+  // The chosen one carries the mark; the others keep the column empty.
+  await expect(item(page, 'Dark').locator('.menu-check svg')).toHaveCount(1);
+  await expect(item(page, 'Light').locator('.menu-check svg')).toHaveCount(0);
+  await expect(item(page, 'System').locator('.menu-check')).toHaveCount(1);
+  await expect(item(page, 'System').locator('.menu-check svg')).toHaveCount(0);
+});
+
+test('shortcut hints line up, also where a row has both a hint and a submenu', async ({
+  page,
+}) => {
+  /** Per row: how far its hint ends from the row's right edge, if it has one. */
+  const hintInsets = (): Promise<(number | null)[]> =>
+    menus(page)
+      .first()
+      .evaluate((menu) =>
+        [...menu.querySelectorAll('.menu-item')].map((row) => {
+          const hint = row.querySelector('.menu-hint');
+          if (!hint) return null;
+          const gap =
+            row.getBoundingClientRect().right -
+            hint.getBoundingClientRect().right;
+          return Math.round(gap * 10) / 10;
+        }),
+      );
+  const open = (withSubmenu: boolean): Promise<void> =>
+    page.evaluate((nested) => {
+      const entries: MenuEntry[] = [
+        { label: 'Copy', hint: 'Ctrl+C' },
+        { label: 'Paste', hint: 'Ctrl+V' },
+        { label: 'Plain' },
+      ];
+      if (nested)
+        entries.push(
+          { label: 'Share', hint: 'Ctrl+E', submenu: [{ label: 'Link' }] },
+          { label: 'Arrange', submenu: [{ label: 'Front' }] },
+        );
+      window.menuBench!.menu.openMenu(entries, {
+        anchor: document.getElementById('mb-trigger')!,
+        focus: 'first',
+      });
+    }, withSubmenu);
+
+  // One row has a hint and a submenu arrow: every row keeps the arrow's
+  // column, so the hints end at the same place.
+  await open(true);
+  await expect(item(page, 'Copy')).toBeFocused();
+  const nested = await hintInsets();
+  expect(nested).toEqual([nested[0], nested[0], null, nested[0], null]);
+  await expect(menus(page).first().locator('.menu-caret')).toHaveCount(5);
+  await expect(menus(page).first().locator('.menu-caret svg')).toHaveCount(2);
+  // The arrow comes after the hint.
+  const order = await item(page, 'Share').evaluate((row) => {
+    const hint = row.querySelector('.menu-hint')!.getBoundingClientRect();
+    const caret = row.querySelector('.menu-caret')!.getBoundingClientRect();
+    return hint.right <= caret.left;
+  });
+  expect(order).toBe(true);
+
+  // A menu without submenus keeps no such column: its hints sit at the edge.
+  await open(false);
+  await expect(item(page, 'Copy')).toBeFocused();
+  const flat = await hintInsets();
+  expect(flat).toEqual([flat[0], flat[0], null]);
+  await expect(menus(page).first().locator('.menu-caret')).toHaveCount(0);
+  expect(flat[0]).toBeLessThan(nested[0]!);
+});
+
 /* ── Keys inside a menu ─────────────────────────────────────────────── */
 
 test('the arrows wrap, skip separators and headings, and stop on disabled items; Home and End', async ({
@@ -533,6 +710,138 @@ test('a click runs the command the same way, from a submenu too', async ({
     'run:share.embed menus=0 focus=mb-trigger',
   ]);
   expect(await leftovers(page)).toBe(0);
+});
+
+test('holding Enter on an item runs it once: the key repeat does not reopen the menu', async ({
+  page,
+}) => {
+  const runs = async (): Promise<string[]> =>
+    (await log(page)).filter((entry) => entry.startsWith('run:'));
+  // A trigger with its own click handler (toggleMenu), a menu button and a
+  // menu bar button: the browser turns each repeat of Enter on a focused
+  // button into another click.
+  const cases = [
+    {
+      opener: trigger(page),
+      first: 'Cut',
+      ran: 'edit.cut',
+      focus: 'mb-trigger',
+    },
+    {
+      opener: page.locator('#mb-button'),
+      first: 'Refresh',
+      ran: 'more.refresh',
+      focus: 'mb-button',
+    },
+    {
+      opener: barButton(page, 'file'),
+      first: 'New',
+      ran: 'file.new',
+      focus: 'file',
+    },
+  ];
+  for (const [n, c] of cases.entries()) {
+    await c.opener.focus();
+    await press(page, 'Enter');
+    await expect(item(page, c.first)).toBeFocused();
+
+    await page.keyboard.down('Enter');
+    await expect(menus(page)).toHaveCount(0);
+    await expect(c.opener).toBeFocused();
+    // The key is still down: each further key-down is its auto-repeat.
+    await page.keyboard.down('Enter');
+    await page.keyboard.down('Enter');
+    expect(await leftovers(page)).toBe(0);
+    await expect(c.opener).toBeFocused();
+    await expect(c.opener).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.up('Enter');
+    expect(await leftovers(page)).toBe(0);
+    expect((await runs()).slice(n)).toEqual([
+      `run:${c.ran} menus=0 focus=${c.focus}`,
+    ]);
+
+    // The next press is a new one: it opens the menu again.
+    await press(page, 'Enter');
+    await expect(item(page, c.first)).toBeFocused();
+    await press(page, 'Escape');
+    await expect(menus(page)).toHaveCount(0);
+  }
+
+  // Nor does the repeat press whatever the command moved focus to.
+  await page.evaluate(() => {
+    window.menuBench!.menu.openMenu(
+      [
+        {
+          label: 'Go',
+          run: () => document.getElementById('mb-after')!.focus(),
+        },
+      ],
+      { anchor: document.getElementById('mb-trigger')!, focus: 'first' },
+    );
+  });
+  await expect(item(page, 'Go')).toBeFocused();
+  const before = await log(page);
+  await page.keyboard.down('Enter');
+  await expect(page.locator('#mb-after')).toBeFocused();
+  await page.keyboard.down('Enter');
+  await page.keyboard.down('Enter');
+  await page.keyboard.up('Enter');
+  expect(await log(page)).toEqual(before);
+  // Once the key has come up, Enter presses that button as usual.
+  await press(page, 'Enter');
+  expect(await log(page)).toEqual([...before, 'after:click']);
+});
+
+test('an error in onClose is reported, and the command still runs', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const openFailing = (): Promise<void> =>
+    page.evaluate(() => {
+      const bench = window.menuBench!;
+      bench.menu.openMenu(
+        [{ label: 'Go', run: () => bench.log.push('run:go') }],
+        {
+          anchor: document.getElementById('mb-trigger')!,
+          focus: 'first',
+          onClose: (reason) => {
+            bench.log.push(`close:${reason}`);
+            throw new Error('onClose failed');
+          },
+        },
+      );
+    });
+
+  await openFailing();
+  await expect(item(page, 'Go')).toBeFocused();
+  await press(page, 'Enter');
+  await expect(menus(page)).toHaveCount(0);
+  await expect(trigger(page)).toBeFocused();
+  expect(await log(page)).toEqual(['close:select', 'run:go']);
+  await expect.poll(() => errors).toEqual(['onClose failed']);
+  expect(await leftovers(page)).toBe(0);
+
+  // Nor does it keep the next menu from opening over the one it closes.
+  await openFailing();
+  await barButton(page, 'edit').focus();
+  await expect(menus(page)).toHaveCount(0);
+  await openFailing();
+  const replaced = await page.evaluate(() => {
+    const handle = window.menuBench!.menu.openMenu([{ label: 'Next' }], {
+      anchor: { x: 600, y: 300 },
+      label: 'Next',
+    });
+    return handle.isOpen();
+  });
+  expect(replaced).toBe(true);
+  await expect(menus(page)).toHaveCount(1);
+  await expect(menus(page).first()).toHaveAttribute('aria-label', 'Next');
+  expect((await log(page)).slice(2)).toEqual([
+    'close:blur',
+    'close:programmatic',
+  ]);
+  await expect.poll(() => errors).toHaveLength(3);
 });
 
 /* ── Submenus ───────────────────────────────────────────────────────── */
@@ -800,6 +1109,105 @@ test('a press on the trigger of an open menu closes it instead of reopening it',
   await expect(trigger(page)).toHaveAttribute('aria-expanded', 'true');
 });
 
+test('a press on the trigger that never becomes a click leaves the keyboard with the menu', async ({
+  page,
+}) => {
+  const more = page.locator('#mb-button');
+  const file = barButton(page, 'file');
+  /** Press on `target`, slide off it onto the inert "Before" button, let go. */
+  const pressAndSlideOff = async (target: Locator): Promise<void> => {
+    const from = await centre(target);
+    const to = await centre(page.locator('#mb-before'));
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 4 });
+    await page.mouse.up();
+  };
+
+  // A menu button. No click came of the press, so the menu is still open,
+  // and focus never left it for the trigger.
+  await more.click();
+  await expect(menus(page).first()).toBeFocused();
+  await pressAndSlideOff(more);
+  await expect(menus(page)).toHaveCount(1);
+  await expect(menus(page).first()).toBeFocused();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  // So every key still reaches the menu…
+  await press(page, 'ArrowDown');
+  await expect(item(page, 'Refresh')).toBeFocused();
+  await press(page, 'End');
+  await expect(item(page, 'Unavailable')).toBeFocused();
+  await press(page, 'r');
+  await expect(item(page, 'Refresh')).toBeFocused();
+  // …and Tab closes it and moves on from the trigger.
+  await press(page, 'Tab');
+  await expect(menus(page)).toHaveCount(0);
+  await expect(file).toBeFocused();
+  expect(await log(page)).toEqual(['close:tab']);
+
+  // A menu bar button, with Shift+Tab; and from an item the keyboard focused.
+  await file.click();
+  await press(page, 'ArrowDown');
+  await expect(item(page, 'New')).toBeFocused();
+  await pressAndSlideOff(file);
+  await expect(menus(page)).toHaveCount(1);
+  await expect(item(page, 'New')).toBeFocused();
+  await press(page, 'Shift+Tab');
+  await expect(menus(page)).toHaveCount(0);
+  await expect(more).toBeFocused();
+
+  // A press that does become a click still closes the menu, focus on the
+  // trigger.
+  await file.click();
+  await expect(menus(page).first()).toBeFocused();
+  await file.click();
+  await expect(menus(page)).toHaveCount(0);
+  await expect(file).toBeFocused();
+  expect(await leftovers(page)).toBe(0);
+});
+
+test('focus put on the trigger closes the menu, so the keyboard is never stranded there', async ({
+  page,
+}) => {
+  // What a script does, or assistive technology moving focus to the button:
+  // with focus on the trigger no key could reach the open menu.
+  await openByKeyboard(page);
+  await page.evaluate(() => document.getElementById('mb-trigger')!.focus());
+  await expect(menus(page)).toHaveCount(0);
+  await expect(trigger(page)).toBeFocused();
+  await expect(trigger(page)).toHaveAttribute('aria-expanded', 'false');
+  expect(await log(page)).toEqual(['close:blur']);
+  expect(await leftovers(page)).toBe(0);
+  // Tab moves on from it, and it opens again like any closed trigger.
+  await press(page, 'Tab');
+  await expect(page.locator('#mb-button')).toBeFocused();
+  await press(page, 'Shift+Tab', 'Enter');
+  await expect(item(page, 'Cut')).toBeFocused();
+  await press(page, 'Escape');
+
+  // The same for a menu button and a menu bar button.
+  const more = page.locator('#mb-button');
+  await more.focus();
+  await press(page, 'ArrowDown');
+  await expect(item(page, 'Refresh')).toBeFocused();
+  await more.focus();
+  await expect(menus(page)).toHaveCount(0);
+  await press(page, 'Tab');
+  await expect(barButton(page, 'file')).toBeFocused();
+
+  await press(page, 'ArrowDown');
+  await expect(item(page, 'New')).toBeFocused();
+  await barButton(page, 'file').focus();
+  await expect(menus(page)).toHaveCount(0);
+  await expect(barButton(page, 'file')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await press(page, 'Shift+Tab');
+  await expect(more).toBeFocused();
+  expect(await leftovers(page)).toBe(0);
+});
+
 test('Tab closes everything and focus moves on from the trigger', async ({
   page,
 }) => {
@@ -862,6 +1270,75 @@ test('Tab closes everything and focus moves on from the trigger', async ({
   await expect(page.locator('#mb-before')).toBeFocused();
 
   expect(await log(page)).toEqual(Array<string>(6).fill('close:tab'));
+  expect(await leftovers(page)).toBe(0);
+});
+
+test('Tab from a menu opened inside a dialog closes the menu and stays in the dialog', async ({
+  page,
+}) => {
+  // A dialog registered with the overlay primitive, in front of "After" in
+  // the tab order: a Tab that got out of the dialog would land there.
+  await page.evaluate(async (url) => {
+    const bench = window.menuBench!;
+    const overlay = (await import(/* @vite-ignore */ url)) as OverlayModule;
+    const dialog = document.createElement('div');
+    dialog.id = 'mb-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-label', 'Bench dialog');
+    dialog.innerHTML =
+      '<button type="button" id="md-first">First</button>' +
+      '<button type="button" id="md-options">Options</button>';
+    document.getElementById('mb-after')!.before(dialog);
+    const button = bench.menu.attachMenuButton(
+      document.getElementById('md-options')!,
+      [{ label: 'One' }, { label: 'Two' }],
+      { onClose: (reason) => bench.log.push(`close:${reason}`) },
+    );
+    const release = overlay.registerOverlay(dialog, { close: () => {} });
+    bench.cleanup.push(() => {
+      button.destroy();
+      release();
+      dialog.remove();
+    });
+  }, OVERLAY);
+  const first = page.locator('#md-first');
+  const options = page.locator('#md-options');
+
+  // The dialog traps Tab: from its last control round to its first.
+  await expect(first).toBeFocused();
+  await press(page, 'Tab');
+  await expect(options).toBeFocused();
+  await press(page, 'Tab');
+  await expect(first).toBeFocused();
+
+  // A menu on the dialog's last control. Tab closes the menu and goes no
+  // further: focus is on the trigger, inside the dialog.
+  await press(page, 'Tab', 'ArrowDown');
+  await expect(item(page, 'One')).toBeFocused();
+  await press(page, 'Tab');
+  await expect(menus(page)).toHaveCount(0);
+  await expect(options).toBeFocused();
+  expect(await log(page)).toEqual(['close:tab']);
+  // The next Tab is the dialog's own, and wraps.
+  await press(page, 'Tab');
+  await expect(first).toBeFocused();
+
+  // Shift+Tab likewise.
+  await press(page, 'Tab', 'ArrowUp');
+  await expect(item(page, 'Two')).toBeFocused();
+  await press(page, 'Shift+Tab');
+  await expect(menus(page)).toHaveCount(0);
+  await expect(options).toBeFocused();
+  await press(page, 'Shift+Tab');
+  await expect(first).toBeFocused();
+
+  // Escape closes the menu only.
+  await press(page, 'Tab', 'Enter');
+  await expect(item(page, 'One')).toBeFocused();
+  await press(page, 'Escape');
+  await expect(menus(page)).toHaveCount(0);
+  await expect(options).toBeFocused();
+  await expect(page.locator('#mb-dialog')).toBeVisible();
   expect(await leftovers(page)).toBe(0);
 });
 
@@ -1364,7 +1841,8 @@ test('menu bar: a click toggles, hovering switches while a menu is open, and des
   await file.hover();
   await expect(menus(page)).toHaveCount(0);
 
-  // A click on another button while one is open moves to it.
+  // With the bar closed again, the next click opens a menu as before, and
+  // choosing an item closes it.
   await file.click();
   await expect(menus(page).first()).toHaveAttribute('aria-label', 'File');
   await item(page, 'New').click();
@@ -1377,6 +1855,153 @@ test('menu bar: a click toggles, hovering switches while a menu is open, and des
   await press(page, 'ArrowDown', 'ArrowRight');
   await expect(menus(page)).toHaveCount(0);
   expect(await leftovers(page)).toBe(0);
+});
+
+test.describe('touch', () => {
+  test.use({ hasTouch: true });
+
+  test('menu bar: a tap on another button while a menu is open moves to its menu', async ({
+    page,
+  }) => {
+    const file = barButton(page, 'file');
+    const edit = barButton(page, 'edit');
+    // A tap has no hover before it, so the switch is the press closing the
+    // open menu (reason "outside") and the click opening the other one. With
+    // a mouse the pointer is over the button first, which switches by hover.
+    const tap = async (target: Locator): Promise<void> => {
+      const at = await centre(target);
+      await page.touchscreen.tap(at.x, at.y);
+    };
+
+    await tap(file);
+    await expect(menus(page)).toHaveCount(1);
+    await expect(menus(page).first()).toHaveAttribute('aria-label', 'File');
+    await expect(file).toHaveAttribute('aria-expanded', 'true');
+
+    await tap(edit);
+    await expect(menus(page)).toHaveCount(1);
+    await expect(menus(page).first()).toHaveAttribute('aria-label', 'Edit');
+    await expect(menus(page).first()).toBeFocused();
+    await expect(file).toHaveAttribute('aria-expanded', 'false');
+    await expect(edit).toHaveAttribute('aria-expanded', 'true');
+    await expect(edit).toHaveAttribute('tabindex', '0');
+
+    // A tap on the open menu's own button closes it.
+    await tap(edit);
+    await expect(menus(page)).toHaveCount(0);
+    await expect(edit).toHaveAttribute('aria-expanded', 'false');
+
+    // And a tap on an item chooses it.
+    await tap(file);
+    await tap(item(page, 'Open'));
+    await expect(menus(page)).toHaveCount(0);
+    expect(await log(page)).toEqual(['run:file.open menus=0 focus=file']);
+    expect(await leftovers(page)).toBe(0);
+  });
+});
+
+test('menu bar: the tab stop moves off a button that is hidden, so the bar stays in the tab order', async ({
+  page,
+}) => {
+  const file = barButton(page, 'file');
+  const edit = barButton(page, 'edit');
+  const view = barButton(page, 'view');
+  const show = (target: Locator, shown: boolean): Promise<void> =>
+    target.evaluate((el: HTMLElement, on) => {
+      el.style.display = on ? '' : 'none';
+    }, shown);
+  /** Let the page render once, which is when it notices a hidden button. */
+  const frame = (): Promise<void> =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => setTimeout(resolve, 0)),
+        ),
+    );
+  await expect(file).toHaveAttribute('tabindex', '0');
+
+  // The button holding the tab stop is hidden: the first one still displayed
+  // takes it over.
+  await show(file, false);
+  await expect(edit).toHaveAttribute('tabindex', '0');
+  await expect(file).toHaveAttribute('tabindex', '-1');
+  await page.locator('#mb-button').focus();
+  await press(page, 'Tab');
+  await expect(edit).toBeFocused();
+  await press(page, 'Tab');
+  await expect(page.locator('#mb-after')).toBeFocused();
+  await press(page, 'Shift+Tab');
+  await expect(edit).toBeFocused();
+
+  // The fold of a narrow window: the buttons shown so far go, and one that
+  // was hidden appears. It becomes the stop.
+  await page.locator('#mb-button').focus();
+  await show(file, true);
+  await show(edit, false);
+  await show(view, false);
+  await expect(file).toHaveAttribute('tabindex', '0');
+  await expect(edit).toHaveAttribute('tabindex', '-1');
+  await press(page, 'Tab');
+  await expect(file).toBeFocused();
+  await press(page, 'Tab');
+  await expect(page.locator('#mb-after')).toBeFocused();
+  await press(page, 'Shift+Tab');
+  await expect(file).toBeFocused();
+  // The arrows have nowhere else to go.
+  await press(page, 'ArrowRight');
+  await expect(file).toBeFocused();
+
+  // A stop that is still displayed stays where the user left it.
+  await show(edit, true);
+  await show(view, true);
+  await press(page, 'ArrowRight', 'ArrowRight');
+  await expect(view).toBeFocused();
+  await show(file, false);
+  await frame();
+  await show(file, true);
+  await frame();
+  await expect(file).toHaveAttribute('tabindex', '-1');
+  await expect(view).toHaveAttribute('tabindex', '0');
+
+  // refresh() does the same at once, and adopts a button added to the bar.
+  const refreshed = await page.evaluate(() => {
+    const bar = document.getElementById('mb-bar')!;
+    const late = document.createElement('button');
+    late.type = 'button';
+    late.id = 'mb-late';
+    late.setAttribute('role', 'menuitem');
+    late.dataset.menu = 'view';
+    late.textContent = 'Late';
+    bar.append(late);
+    bar.querySelector<HTMLElement>('[data-menu="view"]')!.style.display =
+      'none';
+    window.menuBench!.bar.refresh();
+    return [...bar.querySelectorAll('[data-menu]')].map((b) =>
+      [
+        b.textContent,
+        b.getAttribute('tabindex'),
+        b.getAttribute('aria-haspopup'),
+        b.getAttribute('aria-expanded'),
+      ].join(' '),
+    );
+  });
+  expect(refreshed).toEqual([
+    'File 0 menu false',
+    'Edit -1 menu false',
+    'View -1 menu false',
+    'Late -1 menu false',
+  ]);
+  // The new button is part of the bar: one tab stop, reached by the arrows.
+  await file.focus();
+  await press(page, 'ArrowLeft');
+  await expect(page.locator('#mb-late')).toBeFocused();
+  await press(page, 'ArrowDown');
+  await expect(item(page, 'Zoom in')).toBeFocused();
+  await expect(page.locator('#mb-late')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await press(page, 'Escape');
 });
 
 test('a trigger that was only clicked does not keep the arrow keys from the canvas', async ({
