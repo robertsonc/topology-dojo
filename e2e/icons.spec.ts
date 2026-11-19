@@ -395,7 +395,7 @@ test('icons in the rest of the inspector, the Arrange menu and the path bar', as
   await page.keyboard.press('Escape');
 });
 
-test('icons of a selected link, emphasis, the frames strip and the presentation', async ({
+test('icons of a selected link, emphasis, the pages bar and the presentation', async ({
   page,
 }) => {
   await openAnnotatedDocument(page);
@@ -434,7 +434,7 @@ test('icons of a selected link, emphasis, the frames strip and the presentation'
   await expect(page.locator('#mbEmph')).not.toHaveClass(/\bon\b/);
   expect(await starFill()).toBe('none');
 
-  // The frames strip: a second frame brings the play button and the delete
+  // The pages bar: a second page brings the play button and the delete
   // crosses; deleting it leaves the undo chip.
   await page.locator('#addPage').click();
   await expect(page.locator('.frame-x .icon')).toHaveCount(2);

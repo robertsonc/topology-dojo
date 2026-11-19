@@ -82,7 +82,7 @@ test('tracing a path spotlights it without changing the document', async ({
   expect(await spotlit(page)).toEqual([]);
 });
 
-test('the route can be kept as emphasis, as a flow, or as a new frame', async ({
+test('the route can be kept as emphasis, as a flow, or as a new page', async ({
   page,
 }) => {
   await bootEditor(page);
@@ -122,9 +122,9 @@ test('the route can be kept as emphasis, as a flow, or as a new frame', async ({
   expect(doc.pages[1]!.name).toBe('Path: User -> App · 3 hops');
   expect(doc.pages[1]!.caption).toBe(TITLE);
   expect([...(doc.pages[1]!.emphasis as string[])].sort()).toEqual(ROUTE);
-  // The frame it was made from is as it was.
+  // The page it was made from is as it was.
   expect(doc.pages[0]!.emphasis ?? null).toBeNull();
-  // The new frame is the one on show, drawn with its own emphasis.
+  // The new page is the one on show, drawn with its own emphasis.
   expect(await spotlit(page)).toEqual(ROUTE);
 });
 
