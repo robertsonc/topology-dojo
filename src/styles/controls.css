@@ -59,7 +59,7 @@
 }
 /* A button that stays down while something it opened is showing. */
 .btn[aria-pressed='true'] {
-  border-color: var(--accent-line);
+  border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--fg-strong);
 }
