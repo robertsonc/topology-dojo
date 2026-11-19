@@ -367,7 +367,7 @@ app.innerHTML = `
     <!-- Five menus, folded into one (#menuMore) in a narrow window. -->
     <div class="menubar" id="menubar" role="menubar" aria-label="Main menu">
       ${MENUBAR.map((m) => `<button type="button" class="menubar-item" role="menuitem" data-menu="${m.id}">${m.label}</button>`).join('')}
-      <button type="button" class="menubar-item menubar-more" role="menuitem" data-menu="more" id="menuMore" aria-label="Menu">${icon('menu')}<span class="menubar-more-label">Menu</span></button>
+      <button type="button" class="menubar-item menubar-more" role="menuitem" data-menu="more" id="menuMore" aria-label="Menu" title="Menu">${icon('menu')}<span class="menubar-more-label">Menu</span></button>
     </div>
     <span class="vr"></span>
     <div class="doc-title">

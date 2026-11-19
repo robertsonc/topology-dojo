@@ -318,6 +318,9 @@ test('the folded menu holds the five menus as submenus', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 800 });
   await bootEditor(page);
   const more = page.locator('#menuMore');
+  // It shows only its icon here, so it has a tooltip as well as its name.
+  await expect(more).toHaveAccessibleName('Menu');
+  await expect(more).toHaveAttribute('title', 'Menu');
   await tabTo(page, '#menuMore');
   await page.keyboard.press('ArrowDown');
   const menus = page.locator('.menu-layer .menu');
