@@ -7,6 +7,8 @@ import {
   contrastRatio,
   mixHex,
   readableAccentText,
+  accentTextGrounds,
+  parseColour,
   readableInkOn,
   relativeLuminance,
 } from './contrast.js';
@@ -165,5 +167,90 @@ describe('readableAccentText', () => {
   });
   it('gives null for a colour that is not a hex', () => {
     expect(readableAccentText('teal', '#ffffff', '#000000')).toBeNull();
+  });
+
+  // Every ground accent text can sit on, as setChromeAccent works them out:
+  // the three surfaces, and the hover, press and accent tints over each.
+  const rgba = (block: string, name: string): string => {
+    const start = tokens.indexOf(`${block} {`);
+    const body = tokens.slice(start, tokens.indexOf('\n}', start));
+    return new RegExp(`${name}:\\s*(rgba\\([^)]+\\))`).exec(body)![1]!;
+  };
+  const share = (name: string): number =>
+    Number(
+      new RegExp(
+        `${name}: color-mix\\(in srgb, var\\(--accent\\) (\\d+)%, transparent\\)`,
+      ).exec(tokens)![1],
+    ) / 100;
+  const groundsFor = (block: string, accent: string): string[] => {
+    const [r, g, b] = parseColour(accent)!;
+    return accentTextGrounds(
+      ['--surface-back', '--surface-front', '--surface-float'].map((t) =>
+        value(block, t),
+      ),
+      [
+        ...['--surface-field', '--surface-hover', '--surface-press'].map((t) =>
+          rgba(block, t),
+        ),
+        `rgba(${r}, ${g}, ${b}, ${share('--accent-soft')})`,
+        `rgba(${r}, ${g}, ${b}, ${share('--accent-soft-strong')})`,
+      ],
+    );
+  };
+  const BLOCKS = { dark: ':root', light: ':root.light' };
+  for (const [theme, block] of Object.entries(BLOCKS))
+    for (const [kind, accent] of Object.entries({
+      ...ACCENTS,
+      'mid-pale': '#7fd1ff',
+      'dark green': '#03785b',
+    }))
+      it(`a ${kind} accent reads on every surface and tint of the ${theme} theme`, () => {
+        const grounds = groundsFor(block, accent);
+        expect(grounds).toHaveLength(3 * 6);
+        const fg = readableAccentText(
+          accent,
+          grounds,
+          value(block, '--fg-strong'),
+        )!;
+        const worst = Math.min(...grounds.map((g) => contrastRatio(fg, g)!));
+        expect(worst).toBeGreaterThanOrEqual(ACCENT_TEXT_MIN);
+      });
+
+  it('reads the pale sky blue the front surface alone let through', () => {
+    // On white alone #7fd1ff mixes to a colour that reads there but not on
+    // the back surface or a pressed button's tint.
+    const light = THEMES.light;
+    const front = readableAccentText('#7fd1ff', light.surface, light.ink)!;
+    const grounds = groundsFor(':root.light', '#7fd1ff');
+    expect(
+      Math.min(...grounds.map((g) => contrastRatio(front, g)!)),
+    ).toBeLessThan(ACCENT_TEXT_MIN);
+    const all = readableAccentText('#7fd1ff', grounds, light.ink)!;
+    expect(
+      Math.min(...grounds.map((g) => contrastRatio(all, g)!)),
+    ).toBeGreaterThanOrEqual(ACCENT_TEXT_MIN);
+  });
+});
+
+describe('parseColour', () => {
+  it('reads what the browser computes a colour to', () => {
+    expect(parseColour('#1d1f27')).toEqual([29, 31, 39, 1]);
+    expect(parseColour('rgb(255, 255, 255)')).toEqual([255, 255, 255, 1]);
+    expect(parseColour('rgba(0, 0, 0, 0.05)')).toEqual([0, 0, 0, 0.05]);
+    expect(parseColour('color(srgb 1 0.5 0 / 0.16)')).toEqual([
+      255, 127.5, 0, 0.16,
+    ]);
+    expect(parseColour('teal')).toBeNull();
+  });
+});
+
+describe('accentTextGrounds', () => {
+  it('lays each tint over each opaque surface', () => {
+    expect(
+      accentTextGrounds(
+        ['#ffffff', 'rgba(0, 0, 0, 0.5)'],
+        ['rgba(0, 0, 0, 0.5)', 'nonsense'],
+      ),
+    ).toEqual(['#ffffff', '#808080']);
   });
 });

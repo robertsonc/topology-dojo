@@ -242,7 +242,13 @@ import {
   type NodeTypeInfo,
 } from './api/catalog.js';
 import { SHARE_PUBLIC_WARNING } from './share/copy.js';
-import { readableAccentText, readableInkOn } from './ui/contrast.js';
+import {
+  accentTextGrounds,
+  hexOf,
+  parseColour,
+  readableAccentText,
+  readableInkOn,
+} from './ui/contrast.js';
 import {
   mountShellNote,
   SHELL_NOTE_KEY,
@@ -5308,8 +5314,8 @@ function setChromeAccent(hex: string | undefined): void {
 
 /**
  * Accent text and icons (`--accent-fg`) under a brand accent: the accent,
- * mixed toward the theme's strongest text until it reads (4.5:1) on the
- * front surface. A dark brand on the dark theme, or a pale one on the light
+ * mixed toward the theme's strongest text until it reads (4.5:1) on every
+ * surface and every tint it can sit on. A dark brand on the dark theme, or a pale one on the light
  * theme, would otherwise be unreadable as text. With no brand accent the
  * theme's own value in tokens.css stands.
  */
@@ -5317,12 +5323,34 @@ function syncAccentText(): void {
   const root = document.documentElement;
   root.style.removeProperty('--accent-fg');
   if (!chromeAccentHex) return;
-  const tokens = getComputedStyle(root);
-  const fg = readableAccentText(
-    chromeAccentHex,
-    tokens.getPropertyValue('--surface-front').trim(),
-    tokens.getPropertyValue('--fg-strong').trim(),
+  // Each token as the browser computes it (the tints are color-mix() of the
+  // brand accent, or translucent white or black), read through a probe.
+  const probe = document.createElement('span');
+  probe.hidden = true;
+  document.body.append(probe);
+  const computed = (token: string): string => {
+    probe.style.color = `var(${token})`;
+    return getComputedStyle(probe).color;
+  };
+  // Accent text sits on the three surfaces, and on the tints laid over them:
+  // a hovered or pressed control, a selected row (--accent-soft), the
+  // compass's chosen side (--accent-soft-strong).
+  const grounds = accentTextGrounds(
+    ['--surface-back', '--surface-front', '--surface-float'].map(computed),
+    [
+      '--surface-field',
+      '--surface-hover',
+      '--surface-press',
+      '--accent-soft',
+      '--accent-soft-strong',
+    ].map(computed),
   );
+  const ink = computed('--fg-strong');
+  probe.remove();
+  const inkRgb = parseColour(ink);
+  const fg = inkRgb
+    ? readableAccentText(chromeAccentHex, grounds, hexOf(inkRgb))
+    : null;
   if (fg) root.style.setProperty('--accent-fg', fg);
 }
 

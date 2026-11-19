@@ -1646,7 +1646,7 @@ accent, its tints on selected controls, and the ink drawn on accent-filled
 buttons, which switches between dark and light to stay readable on the brand
 colour. Where the accent is used as the colour of text or an icon, the editor
 mixes it toward the theme's foreground until it reaches a contrast of 4.5:1
-against the panel, so a very dark brand colour on the dark theme, or a pale one
+on every panel and bar, and on a selected or pressed control, so a very dark brand colour on the dark theme, or a pale one
 on the light theme, still reads.
 
 ### Keyboard and focus behavior
