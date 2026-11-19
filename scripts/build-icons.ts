@@ -134,6 +134,9 @@ export const ICON_MANIFEST = {
   export: 'download',
   share: 'share-2',
   menu: 'menu',
+  // The left rail and the pages bar: the command palette, the minimap
+  search: 'search',
+  minimap: 'map',
   checkpoint: 'flag',
   // States
   warning: 'triangle-alert',
