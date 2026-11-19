@@ -3,12 +3,15 @@
 Phase 1 ("remove adoption blockers") makes a Topology Dojo diagram usable
 where network teams already work. This page is the fidelity contract: what
 each format keeps, what it drops, and why. Exports are reachable from the
-editor toolbar (**svg**, **png**, and the **export…** menu) and from MCP
+editor's top bar (the **Export** button, which opens the same menu as
+**File → Export**) and from MCP
 (`render_svg`, `export_flipbook`, `export_topology`); the "Where it runs"
-column says which side has each format. Imports go through **open** and
+column says which side has each format. Imports go through **File → Open…** and
 `import_topology`.
 
-_Last reviewed 2026-11-13 against `main` at `e99b012`._
+_Last reviewed 2026-11-13 against `main` at `e99b012`. On 2026-11-19, in PR #328
+(not merged), the opening paragraph's names for where exports and imports are in
+the editor were corrected against the code; nothing else was re-read._
 
 | Format                      | Direction | Editable in the target tool | Fidelity                                      | Where it runs                    |
 | --------------------------- | --------- | --------------------------- | --------------------------------------------- | -------------------------------- |
@@ -236,7 +239,7 @@ header row, autofilter, sized columns.
 
 ## draw.io import — migrate existing diagrams in
 
-`import_topology` and the editor's **open** accept `.drawio` / `.xml`
+`import_topology` and the editor's **File → Open…** accept `.drawio` / `.xml`
 (`<mxfile>` or a bare `<mxGraphModel>`, plain or compressed):
 
 - pages → pages; extra layers → declared layers (visibility kept);

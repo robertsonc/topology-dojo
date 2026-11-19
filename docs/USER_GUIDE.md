@@ -1,26 +1,27 @@
 # Topology Dojo User Guide
 
 **Last reviewed:** 2026-11-19, in PR #328 (not merged), against the branch at
-`d24f6a4`. Earlier the same day PR #326 (the first part of
+`61e4d7e`. Earlier the same day PR #326 (the first part of
 [proposal 0013](proposals/0013-ui-overhaul.md)) merged as `e9d0d7f`, and
 pull request #327 (the command registry, the rebuilt shell and the properties
-panel) merged as `d224979`. This review checked the editor's chrome against the
-running app (the dev server, 1,440 × 900 in the dark theme, and 1,100, 1,024,
-1,023, 900, 700 and 400 px wide for the top bar and the drawers) and against
-the code: "Editor anatomy" (top bar and its menus, left rail, library, canvas
-controls, selection bar, pages bar, Problems, command palette, narrow
-windows), the new "The properties panel" (the three tabs, sections and their
-memory, the header with its lock and **More actions** menu, the colour
-popover, **Link attachment**, the emphasis picker, the width limits, and what
-the panel shows for nothing, a node, a link, two links, two nodes, an anchor
-and a zone), the context menus, the keyboard table (row by row against the
-shortcut sheet), and every sentence elsewhere that names where a field or a
-button now is (links, wiring sheets, layers, the legend, captions, path
-analysis, the File and Export menus). Not re-checked: the hosted pieces (sign-in,
-the account menu, the Share dialog, workspace and admin surfaces), anything in
-the light theme or on a touch screen, the matching rules and ranking of Find, how
-long **Undo delete** stays, the node designer and the wizards, the generated
-diagrams, import and export output, and the MCP sections.
+panel) merged as `d224979`; neither the compact layout nor anything described
+below as new in this review is in `main`. The first review of the day (at
+`d24f6a4`) checked the editor's chrome against the running app and the code:
+"Editor anatomy", the properties panel, the context menus, the keyboard table
+and every sentence that names where a field or a button now is. This review
+re-checked, against the code and the running app (the dev server, 1,440 × 900
+in both themes): the library's button names and tiles, the selection bar, the
+zoom control's tooltips, the Problems dock (its footer buttons and what a jump
+does), the drawers' closing rule, the new "what moved" note and **Help → What
+moved**, where Find and the path bar sit, the path bar's button names, present
+mode's buttons and its look in the light theme, the Share dialog's and the
+shared-copy banner's button names, Display settings in a short window, the
+brand accent's text colour, and the link-attachment override's two fields.
+Not re-checked: the hosted pieces beyond those button names (sign-in, the
+account menu, workspace and admin surfaces), anything on a touch screen, the
+matching rules and ranking of Find, how long **Undo delete** stays, the node
+designer and the wizards, the generated diagrams, import and export output,
+the MCP sections, and the rest of the guide since the first review of the day.
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
 edit a diagram directly on the canvas, or an MCP-capable agent can author the
@@ -184,13 +185,13 @@ shared, or public.
 | Data                                      | Storage location                                                               | Who can reach it                                                      | Retention and recovery                                                                                                                                                                                                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Normal browser draft                      | Browser localStorage on the current browser/profile                            | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **File → Download JSON** for a portable backup.                                                                                    |
-| Shared-link working copy                  | A separate browser localStorage slot                                           | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **keep this copy** to adopt it or **back to my document** to discard it from the canvas.                                                                                                   |
+| Shared-link working copy                  | A separate browser localStorage slot                                           | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **Keep this copy** to adopt it or **Back to my document** to discard it from the canvas.                                                                                                   |
 | Downloaded JSON                           | A file chosen by the browser                                                   | Anyone who receives the file                                          | Full portable document backup under the user's control.                                                                                                                                                                                                                          |
 | Local MCP private draft                   | Memory in the local MCP process                                                | The connected local MCP client                                        | Treat as temporary. Export or retrieve the JSON before stopping the process.                                                                                                                                                                                                     |
 | Hosted MCP private draft                  | Per-user hosted registry                                                       | The authenticated GitHub owner and that owner's MCP session           | No user-facing automatic expiry is documented. The browser owner can open or hand the draft into a canonical workspace.                                                                                                                                                          |
 | Canonical Agent Workspace                 | Hosted per-document coordinator                                                | The authenticated owner and authorized tools operating for that owner | Revisioned and server-backed. Recent history can be compacted. Named checkpoints are capped at 12.                                                                                                                                                                               |
 | Workspace offline cache and pending queue | IndexedDB in the current browser plus a lightweight local workspace pointer    | The person using that browser profile                                 | Supports reload and reconnection recovery. Do not clear site data while operations are pending.                                                                                                                                                                                  |
-| Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                           | Anyone with the URL; no login to view                                 | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. The publisher can revoke with **unpublish_topology** or **unpublish link** (signed-in `DELETE /api/topology/<id>`). Public GETs may be cached for about a minute. |
+| Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                           | Anyone with the URL; no login to view                                 | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. The publisher can revoke with **unpublish_topology** or **Unpublish link** (signed-in `DELETE /api/topology/<id>`). Public GETs may be cached for about a minute. |
 | Exported file (SVG, PNG, PDF, flipbook…)  | Downloaded file or MCP result                                                  | Anyone who receives the artifact                                      | Outside Topology Dojo after export. Handle it according to the content's sensitivity.                                                                                                                                                                                            |
 | Authoring preferences                     | Hosted profile store, when enabled                                             | The owner; agents can read confirmed guidance only                    | The owner can confirm, pause, reject, or forget rules.                                                                                                                                                                                                                           |
 | Login analytics                           | Hosted analytics store, when enabled                                           | The configured deployment administrator                               | Login and workspace metadata only; no diagram contents. Collection is going-forward and best-effort.                                                                                                                                                                             |
@@ -224,13 +225,15 @@ The editor is organized into six areas and a status bar.
 3. **Node library.** A column docked beside the rail, headed **Library**, with
    a **Search nodes…** box above the catalog's categories. The
    document's own node types follow under **Custom**, and its stencils under
-   **Stencils**. The **design node** and **save stencil** buttons end the list
-   (they are hidden while you search). Hiding the library gives its
-   width to the canvas.
+   **Stencils**. The **Design node** and **Save stencil** buttons end the list
+   (they are hidden while you search). Each node type is a tile with its name
+   under the icon; a long name wraps onto a second line between words and is
+   never cut inside a word. Hiding the library gives its width to the canvas.
 4. **Canvas.** The current page, selection overlay, smart guides, link handles,
    problem badges, and three controls that float over it:
    - The **selection bar**, above whatever is selected (below it when there is
-     no room above). It appears for nodes and links, not for anchors or
+     no room above). It keeps clear of the box and, for a node, of the four
+     quick-connect arrows around it. It appears for nodes and links, not for anchors or
      zones. For a node it holds the nine colour swatches, the page-emphasis
      star, **Bring to front**, **Send to back** and **Lock**. With two or more
      nodes selected it also has the six align buttons and the two distribute
@@ -241,7 +244,9 @@ The editor is organized into six areas and a status bar.
      one node selected. The bar hides while you drag, and the properties panel remains the
      complete surface.
    - The **zoom control**, in the bottom-right corner: zoom out, the zoom
-     figure (clicking it fits the view), zoom in and fit to content.
+     figure (clicking it fits the view), zoom in and fit to content. The
+     tooltips of **Zoom in** and **Zoom out** name their keys (**+** and
+     **-**), as the tooltip of **Fit to content** names **0**.
    - The **minimap**, which opens in a card above the zoom control.
 
    When the properties panel is hidden, a **props** button sits in the
@@ -260,10 +265,15 @@ The editor is organized into six areas and a status bar.
    count in the status bar, to open the list. Each finding names elements by
    their label. Click one to ring every element it refers to and bring them into
    view; the properties panel switches to the Selection tab for the element it
-   selects. Hover a finding and choose
+   selects, and when the finding is about one of its fields (a wrong `opacity`,
+   say) the section holding that field opens and the focus goes to it. A
+   finding about a page or about the document shows the **Page** or
+   **Document** tab instead (going to that page first when it is another one).
+   Hover a finding and choose
    **Hide this problem** (the crossed-out eye) to hide it in this browser; the
-   list then ends with "N hidden" and the buttons **show** and **restore all**.
-   A hidden finding is still reported by `validate_topology`.
+   list then ends with "N hidden" and the buttons **Show them** (it reads
+   **Hide them** while the hidden findings are listed) and **Restore all**. A
+   hidden finding is still reported by `validate_topology`.
 
 The status bar reports the active tool, cursor location, element counts, how
 many are selected, history, zoom and the current error and warning counts.
@@ -284,7 +294,12 @@ zoomed to 150% or more, a tablet or a phone) the Node library and Properties
 panel are drawers over the canvas instead of columns beside it, so the canvas
 keeps the whole width from the rail to the window's edge. They start closed
 unless you opened them last time; **B** and **P** open and close them, and
-opening one does not resize the canvas or move the drawing. **Fit view** fits
+opening one does not resize the canvas or move the drawing. A drawer opened
+while the other is open closes the other on a phone (640px and below) and
+wherever the two would leave less than 160px of canvas between them; the one
+that closed keeps its remembered setting. (This applies when you open a
+drawer, not when the editor starts: a browser that remembers both open
+starts with both open.) **Fit view** fits
 the drawing into the part of the canvas the open drawers leave showing, and
 the zoom control and the minimap move beside an open Properties drawer.
 
@@ -295,6 +310,20 @@ a node type (placed at the centre of the view), **Go to** followed by the
 label of a node, link or zone on any page, and **Go to page** followed by its
 number and name. The arrow keys move through the results, Enter runs the one
 highlighted, and Escape closes the palette and puts focus back where it was.
+
+**The "what moved" note.** A browser that used the editor before it had a
+menu bar and a left rail shows, once, a small card at the bottom left of the
+canvas titled **The editor has a new layout**. Its five lines say where the old
+toolbar's controls went: the menus hold the File, Edit, View and Arrange
+commands; the tools are on the left rail; pages, grid, snap and the minimap
+are on the bar under the canvas; Properties has Selection, Page and Document
+tabs; and **Ctrl/Cmd+K** finds any command. The card does not take the focus
+or block the canvas or any key, and it is not shown in present mode.
+**Got it** dismisses it for good in this browser; **Show shortcuts** opens the
+shortcut sheet and leaves the card where it is. **Help → What moved** (or
+"What moved" in the command palette) shows it again at any time. A browser
+with nothing of the editor's in its storage never sees it, and a visit that
+opens a shared link does not show it, so it waits for the next visit.
 
 Use **Ctrl/Cmd+F** (or **Edit → Find…**) to find a node, link or zone on any
 page. Nodes are searched by label, identifier, type, sublabel, and metadata
@@ -307,6 +336,10 @@ it. With the box empty it lists the current page's nodes.
 The minimap provides an overview of content outside the current viewport.
 It starts closed; open it with **M**, the minimap button at the right end of
 the pages bar, or **View → Minimap**, and it stays the way you leave it.
+
+Find and the path analysis bar sit over the canvas, centred, a little below
+its top edge, and are never wider than it, so they follow the canvas as the
+library and the properties panel open and close.
 
 ## 5. Build and edit a topology
 
@@ -816,8 +849,8 @@ and focus goes back to the button.
 node's link ends and where it comes from: "From page: off. Links meet the icon
 edge." or "From page: anchor box on, 6 px padding, ends not distributed." Under
 it, **Override for this node** is a switch. Turning it on makes the line begin
-"This node:" and shows **Box padding** and **Distribute ends** for the node
-alone; turning it off returns the node to the page's setting. The page's
+"This node:" and shows **Box padding** and **Distribute ends**, side by side on one row,
+for the node alone; turning it off returns the node to the page's setting. The page's
 setting is the **Anchor box** switch on the Page tab (see
 [Link anchor box](#link-anchor-box)).
 
@@ -1055,7 +1088,10 @@ values, overlap, crowding, and off-page content.
 
 - Expand **Problems** to see details.
 - Select a problem to switch to its page and focus the related element when one
-  is available.
+  is available. The properties panel shows the tab where it is fixed, opens the
+  section that holds the field at fault and puts the focus on that field; for a
+  problem about a page or the document it shows the **Page** or **Document**
+  tab.
 - Turn on-canvas problem badges on or off with **View → Problem badges**.
 - Click a badge to open the related problem.
 
@@ -1124,7 +1160,10 @@ visual transition; page hold duration controls when the next page starts.
 Choose **Present** in the top bar (or **File → Present**) to play the document full-screen: every page
 renders exactly as exports do (caption, legend, emphasis, fade transitions),
 looping on each page's hold time. Use **←/→** (or **PageUp/PageDown**) to step manually, **Space** to
-pause/resume autoplay, and **Escape** to exit.
+pause/resume autoplay, and **Escape** to exit. The bar at the foot of the
+screen has **Previous page**, **Play or pause**, **Next page** and **Exit**
+buttons, and its stage is dark in both themes, so the bar reads the same in the
+light theme.
 
 ### Captions and emphasis
 
@@ -1149,7 +1188,7 @@ routes between them over the links the page draws and spotlights the shortest: i
 full strength, everything else dimmed. The first node you selected is the
 start.
 
-A bar under the top bar says what was found, for example
+A bar over the top of the canvas says what was found, for example
 `Path: User -> App · 3 hops via EC-Branch, EC-Hub`, and offers the controls
 below. Those that show only an icon are named by their tooltip:
 
@@ -1157,9 +1196,9 @@ below. Those that show only an icon are named by their tooltip:
 | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | **Previous route** / **Next route** (the two chevrons)                            | Step through the alternative routes, shortest first (shown when there is more than one).    |
 | **Trace the other way** (the opposed arrows; the tooltip begins with these words) | Trace the other way round. The route is the same; a flow added from it runs from the start. |
-| **emphasize**                                                                     | Keep the spotlight as this page's emphasis (one undo step).                                 |
-| **add flow**                                                                      | Add a flow path along the route, labelled with its ends and hop count.                      |
-| **new frame**                                                                     | Copy the page, with the route emphasized and captioned, as the next page of the flipbook.   |
+| **Emphasize**                                                                     | Keep the spotlight as this page's emphasis (one undo step).                                 |
+| **Add flow**                                                                      | Add a flow path along the route, labelled with its ends and hop count.                      |
+| **New page**                                                                      | Copy the page, with the route emphasized and captioned, as the next page of the flipbook.   |
 | **Close path analysis** (the x) or Escape                                         | Close the bar. The spotlight goes with it.                                                  |
 
 Tracing is a read: until you choose one of the three keep actions nothing in
@@ -1448,8 +1487,9 @@ The MCP **import_topology** tool accepts the same text formats via
 On a hosted deployment, the top bar's **Share** button (shown after sign-in,
 and also **File → Share…**)
 opens the Share dialog: publish the current document, copy the fresh link,
-and see every live link you have published — each with **copy** and
-**revoke**. Revoking deletes the public snapshot; edge caches can serve it
+and see every live link you have published — each with **Copy link** and
+**Revoke link**. The dialog's one primary button is **Publish this
+document**. Revoking deletes the public snapshot; edge caches can serve it
 for up to about a minute. Links published before owner metadata existed
 cannot be listed or revoked and expire on their original schedule.
 
@@ -1474,7 +1514,7 @@ The link:
 - may remain in browser or edge caches for about a minute;
 - can be revoked by the publisher from the Share dialog, with the
   **unpublish_topology** MCP tool (**list_shares** enumerates live links), or
-  via **unpublish link** on the shared-viewer banner
+  via **Unpublish link** on the shared-viewer banner
   (`DELETE /api/topology/<id>`, signed in as the same GitHub user).
 
 Do not publish internal addresses, credentials, sensitive metadata, or policy
@@ -1484,14 +1524,14 @@ When a recipient opens the link, the banner says
 **Viewing a shared copy — your own document is untouched.** Their edits
 autosave separately. They can:
 
-- choose **keep this copy** to replace their normal browser-local draft after
+- choose **Keep this copy** to replace their normal browser-local draft after
   confirmation;
-- choose **back to my document** to return to their prior local draft;
+- choose **Back to my document** to return to their prior local draft;
 - choose **File → Download JSON** first to keep both as files.
 
 A recipient does not need an account. Without one, a **sign in** chip sits at
 the right end of the top bar, and starting a **new** document or choosing
-**keep this copy** opens a prompt: _Sign in to save your copy to your
+**Keep this copy** opens a prompt: _Sign in to save your copy to your
 workspace._ It can be dismissed; the editor keeps working and saving to the
 browser. Signing in returns to the same document.
 
@@ -1499,7 +1539,7 @@ browser. Signing in returns to the same document.
 
 ### Node Designer
 
-Choose **design node** at the bottom of the unfiltered Node library. The Node
+Choose **Design node** at the bottom of the unfiltered Node library. The Node
 Designer provides a live preview and supports:
 
 - type name and base shape/icon;
@@ -1527,7 +1567,7 @@ A stencil is a reusable group of selected nodes and the links internal to that
 selection.
 
 1. Select one or more nodes.
-2. Choose **save stencil** in the Node library or
+2. Choose **Save stencil** in the Node library or
    **Save as stencil…** in the context menu.
 3. Name the stencil.
 4. Click its thumbnail under **Stencils** to stamp a fresh copy centered on the
@@ -1554,6 +1594,8 @@ These controls are local view preferences:
 In **Display settings**, Ambient backdrop can be **Animated**, **Static**, or
 **Off**. Turning it off removes decorative drifting bits, scan lines, and radar.
 Flow particles are separate; **Calm canvas** pauses glow and flow animation.
+In a short window (for example 450px tall) the Display settings panel stays
+inside the window and scrolls inside itself.
 
 If no Calm preference has been stored, the editor follows the operating
 system's reduced-motion preference. The user can still toggle Calm afterward.
@@ -1590,7 +1632,10 @@ Unlike ambient and light/dark settings, a non-default brand palette is saved
 in the document and travels with it. It also recolours the app chrome: the
 accent, its tints on selected controls, and the ink drawn on accent-filled
 buttons, which switches between dark and light to stay readable on the brand
-colour.
+colour. Where the accent is used as the colour of text or an icon, the editor
+mixes it toward the theme's foreground until it reaches a contrast of 4.5:1
+against the panel, so a very dark brand colour on the dark theme, or a pale one
+on the light theme, still reads.
 
 ### Keyboard and focus behavior
 
@@ -2079,8 +2124,8 @@ There is no recovery from the public URL alone after expiry.
 ### Opening a shared link seems to replace my canvas
 
 The canvas changes, but the banner indicates that the shared copy is in a
-separate autosave slot. Choose **back to my document** to return. Choose
-**File → Download JSON** before **keep this copy** if both versions are needed.
+separate autosave slot. Choose **Back to my document** to return. Choose
+**File → Download JSON** before **Keep this copy** if both versions are needed.
 
 ### The editor reports an invalid JSON file
 

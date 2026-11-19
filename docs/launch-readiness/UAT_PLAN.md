@@ -619,19 +619,19 @@ local document; browser B is signed out or signed in but contains
 2. Edit the shared copy and refresh. Its edits resume from the separate shared
    autosave slot; no claim is made that the published snapshot itself changed.
 3. Open the same link in browser B. The shared-copy banner states that the
-   recipient's own document is untouched and provides `back to my document` and
-   `keep this copy` choices.
-4. Make a distinctive edit to the shared copy, select `back to my document`,
+   recipient's own document is untouched and provides **Back to my document** and
+   **Keep this copy** choices.
+4. Make a distinctive edit to the shared copy, select **Back to my document**,
    and verify `TD-UAT-LOCAL-MARKER` returns with both original pages and unique
    nodes intact.
-5. Open the link again, select `keep this copy`, and verify an explicit
+5. Open the link again, select **Keep this copy**, and verify an explicit
    confirmation warns that the locally saved document will be replaced. Cancel
    once and confirm local work remains; repeat and confirm only after accepting.
 6. Confirm the user guide or publish guidance states that the URL is public to
    anyone who has it, expires after 30 days, can be revoked by the publisher,
    and may be cached for about a minute. No sensitive fixture data is used.
-7. In browser A, still signed out, find the **sign in** chip in the toolbar.
-   Choose **keep this copy**, or start a **new** document: a prompt offers
+7. In browser A, still signed out, find the **sign in** chip in the top bar.
+   Choose **Keep this copy**, or start a **new** document: a prompt offers
    sign-in, says the work stays in this browser until then, can be dismissed,
    and blocks nothing. The editor keeps working and the status reads saved.
 
@@ -1282,7 +1282,7 @@ Required cycle artifacts are:
 
 Record facts rather than conclusions alone. For example, capture the local
 document title before opening a share, the shared-slot title after opening, and
-the restored title after `back to my document`, instead of recording only
+the restored title after **Back to my document**, instead of recording only
 “share passed.”
 
 ---
