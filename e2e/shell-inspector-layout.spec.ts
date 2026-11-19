@@ -156,6 +156,48 @@ test('nothing inside the panel scrolls on its own, the emphasis list included', 
   expect(await nestedScrollers(page)).toEqual([]);
 });
 
+test('nothing inside the panel scrolls on its own for the other selections', async ({
+  page,
+}) => {
+  // The states the test above does not reach: two nodes, a node with its
+  // own link attachment and its colour popover open, an anchor, and a zone
+  // with its member picker. Every state the panel draws is then covered.
+  await selectTwoNodes(page);
+  expect(await nestedScrollers(page), 'two nodes').toEqual([]);
+  await page.keyboard.press('Escape');
+
+  await clickNode(page, 'ec');
+  await page.locator('#inspector input[data-key="linkAttach"]').check();
+  await page.locator('#inspector [data-colour-open]').first().click();
+  await expect(page.locator('#inspector .colour-pop:visible')).toHaveCount(1);
+  expect(
+    await nestedScrollers(page),
+    'a node, its link attachment and colour popover',
+  ).toEqual([]);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  // An anchor, dropped with the anchor tool on an empty part of the canvas.
+  const canvas = (await page.locator('#page-canvas').boundingBox())!;
+  await page.keyboard.press('A');
+  await page.mouse.click(canvas.x + canvas.width / 2, canvas.y + 40);
+  await expect(page.locator('#insp-tab-selection')).toHaveText('Anchor');
+  expect(await nestedScrollers(page), 'an anchor').toEqual([]);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  await openFixture(page, 'zone-orthogonal.json');
+  const z = await page.evaluate(() => {
+    const svg = document.querySelector('#overlay') as SVGSVGElement;
+    const p = new DOMPoint(400, 280).matrixTransform(svg.getScreenCTM()!);
+    return { x: p.x, y: p.y };
+  });
+  await page.mouse.click(z.x, z.y);
+  await expect(page.locator('#insp-tab-selection')).toHaveText('Zone');
+  await expect(page.locator('#inspector .refadd')).toBeVisible();
+  expect(await nestedScrollers(page), 'a zone').toEqual([]);
+});
+
 /**
  * Text in the panel (the Problems dock included) set under 12px, with every
  * section and annotation editor opened first so that all of it is drawn.
