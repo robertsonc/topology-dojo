@@ -313,8 +313,10 @@ wherever the two would leave less than 160px of canvas between them; the one
 that closed keeps its remembered setting. On a phone this also applies when
 the editor starts or the window narrows to a phone's width: a browser that
 remembers both open shows the Node library and closes Properties, again
-without changing either remembered setting. Above a phone's width a browser
-that remembers both open starts with both open. In a window under 480px
+without changing either remembered setting, unless you are typing in one of
+the Properties fields. Above a phone's width a browser that remembers both
+open starts with both open, and widening the window from a phone's width
+opens both again. In a window under 480px
 tall (a phone, or a laptop browser zoomed to 300% or more) the rail scrolls,
 the canvas shrinks above the pages bar, and an open drawer runs down over the
 pages bar so its list keeps some height. **Fit view** fits

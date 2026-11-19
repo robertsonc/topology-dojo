@@ -2798,9 +2798,13 @@ syncPanelLayoutFromPrefs();
 window
   .matchMedia?.(COMPACT_LAYOUT_MQ)
   ?.addEventListener?.('change', syncPanelLayoutFromPrefs);
+// Narrowing to a phone closes one of two open drawers; widening again puts
+// back what is stored, as a load at that width would show.
 window
   .matchMedia?.(PHONE_LAYOUT_MQ)
-  ?.addEventListener?.('change', settleCrowdedDrawers);
+  ?.addEventListener?.('change', (e) =>
+    e.matches ? settleCrowdedDrawers() : syncPanelLayoutFromPrefs(),
+  );
 
 /* From 1,024px up the properties panel is a docked right column (full stage
  * height), so its annotations / zones list is never clipped or overlapped;

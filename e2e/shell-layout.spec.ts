@@ -793,6 +793,11 @@ test('on a phone, two drawers stored open load as one, and their stored choices 
   expect(
     await page.evaluate(() => localStorage.getItem('tds-inspector-collapsed')),
   ).toBe('0');
+
+  // Widening again shows what a load at that width shows: both open.
+  await page.setViewportSize({ width: 800, height: 844 });
+  await expect.poll(() => closed(page, 'inspector-wrap')).toBe(false);
+  expect(await closed(page, 'palette')).toBe(false);
 });
 
 test('narrowing to a phone while a properties field is typed in keeps the drawer open', async ({
