@@ -10,8 +10,8 @@
  *
  * Follows `profile-panel.ts`: pure `render*Html` string builders
  * (characterization-testable without a DOM — see `admin-dashboard.test.ts`)
- * plus one `mountAdminDashboard(host)` controller that owns the panel DOM,
- * fetching, and wiring behind a narrow host seam.
+ * plus one `mountAdminDashboard()` controller that owns the panel DOM,
+ * fetching, and wiring, and that the shell opens through `toggle()`.
  */
 import {
   AdminDisabledError,
@@ -245,29 +245,14 @@ export function renderAdminBodyHtml(state: AdminPanelState): string {
   );
 }
 
-/** Everything the dashboard needs from `main.ts` — the narrow seam. */
-export interface AdminDashboardHost {
-  /** A button that opens the dashboard and shows whether it is open
-   * (`aria-expanded`), revealed by `enable()`. Optional: the shell opens the
-   * dashboard from its account menu through `toggle()` instead. */
-  chip?: HTMLButtonElement;
-  /** What a press on the chip does. Default: open or close the dashboard.
-   * The shell passes its command, so the chip runs what the menus run. */
-  onChipPress?: () => void;
-}
-
-/** The call sites `main.ts` needs. */
+/** The call sites `main.ts` needs. The shell opens the dashboard from the
+ * account menu (Admin, the owner only). */
 export interface AdminDashboardHandle {
-  /** Reveals the chip, if there is one, once the signed-in user is
-   * confirmed admin. */
-  enable(): void;
   /** Opens the dashboard, or closes it when it is open. */
   toggle(): void;
 }
 
-export function mountAdminDashboard(
-  host: AdminDashboardHost,
-): AdminDashboardHandle {
+export function mountAdminDashboard(): AdminDashboardHandle {
   let panel: HTMLElement | null = null;
   let releaseOverlay: (() => void) | null = null;
   const state: AdminPanelState = {
@@ -291,7 +276,6 @@ export function mountAdminDashboard(
   function closePanel(): void {
     panel?.remove();
     panel = null;
-    host.chip?.setAttribute('aria-expanded', 'false');
     releaseOverlay?.();
     releaseOverlay = null;
   }
@@ -428,21 +412,10 @@ export function mountAdminDashboard(
     panel
       .querySelector('#adminClose')
       ?.addEventListener('click', () => closePanel());
-    host.chip?.setAttribute('aria-expanded', 'true');
     // Focus trap + Escape + focus restore (issue #209).
     releaseOverlay = registerOverlay(panel, { close: closePanel });
     void refresh();
   }
 
-  function enable(): void {
-    const chip = host.chip;
-    if (!chip) return;
-    chip.hidden = false;
-    chip.addEventListener('click', (event) => {
-      event.stopPropagation();
-      (host.onChipPress ?? openPanel)();
-    });
-  }
-
-  return { enable, toggle: openPanel };
+  return { toggle: openPanel };
 }

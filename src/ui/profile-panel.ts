@@ -13,8 +13,8 @@
  *
  * Follows `workspace-panel.ts` conventions: pure `render*Html` string builders
  * (characterization-testable without a DOM — see `profile-panel.test.ts`) plus
- * one `mountProfilePanel(host)` controller that owns the panel DOM, fetching,
- * and action wiring behind a narrow host seam.
+ * one `mountProfilePanel()` controller that owns the panel DOM, fetching,
+ * and action wiring, and that the shell opens through `toggle()`.
  */
 import {
   confirmAuthoringPreference,
@@ -220,26 +220,14 @@ export function renderProfileBodyHtml(state: ProfilePanelState): string {
   );
 }
 
-/** Everything the panel needs from `main.ts`'s app shell — the narrow seam. */
-export interface ProfilePanelHost {
-  /** A button that opens the panel and shows whether it is open
-   * (`aria-expanded`), revealed by `enable()`. Optional: the shell opens the
-   * panel from its account menu through `toggle()` instead. */
-  chip?: HTMLButtonElement;
-  /** What a press on the chip does. Default: open or close the panel. The
-   * shell passes its command, so the chip runs what the menus run. */
-  onChipPress?: () => void;
-}
-
-/** The call sites `main.ts` needs into the panel. */
+/** The call sites `main.ts` needs into the panel. The shell opens it from
+ * the account menu (Authoring preferences). */
 export interface ProfilePanelHandle {
-  /** Reveals the chip, if there is one, once sign-in is confirmed. */
-  enable(): void;
   /** Opens the panel, or closes it when it is open. */
   toggle(): void;
 }
 
-export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
+export function mountProfilePanel(): ProfilePanelHandle {
   let panel: HTMLElement | null = null;
   let releaseOverlay: (() => void) | null = null;
   const state: ProfilePanelState = {
@@ -254,7 +242,6 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
   function closePanel(): void {
     panel?.remove();
     panel = null;
-    host.chip?.setAttribute('aria-expanded', 'false');
     releaseOverlay?.();
     releaseOverlay = null;
   }
@@ -387,21 +374,10 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
     panel
       .querySelector('#prefClose')
       ?.addEventListener('click', () => closePanel());
-    host.chip?.setAttribute('aria-expanded', 'true');
     // Focus trap + Escape + focus restore (issue #209).
     releaseOverlay = registerOverlay(panel, { close: closePanel });
     void refresh();
   }
 
-  function enable(): void {
-    const chip = host.chip;
-    if (!chip) return;
-    chip.hidden = false;
-    chip.addEventListener('click', (event) => {
-      event.stopPropagation();
-      (host.onChipPress ?? openPanel)();
-    });
-  }
-
-  return { enable, toggle: openPanel };
+  return { toggle: openPanel };
 }

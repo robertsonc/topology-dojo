@@ -1262,8 +1262,8 @@ const workspacePanelHandle = mountWorkspacePanel({
  * signed-in user, and for the dashboard the owner flag from `/api/me`. The
  * panels (fetching, pause/forget wiring, panel DOM) live in
  * `src/ui/profile-panel.ts` and `src/ui/admin-dashboard.ts`. */
-const profilePanelHandle = mountProfilePanel({});
-const adminDashboardHandle = mountAdminDashboard({});
+const profilePanelHandle = mountProfilePanel();
+const adminDashboardHandle = mountAdminDashboard();
 function closeWorkspaceForDocumentReplacement(): boolean {
   return workspacePanelHandle.closeForDocumentReplacement();
 }
