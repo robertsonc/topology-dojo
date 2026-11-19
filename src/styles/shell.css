@@ -685,8 +685,9 @@
 }
 /* A phone's column is too narrow for the pages and the canvas options side
    by side: the bar takes two rows, the pages over the options, so that
-   nothing is clipped or drawn over. (Wider windows always leave the column
-   more than 460px: the panels are drawers below 1,024px.) */
+   nothing is clipped or drawn over. From 641 to 1,023px the panels are
+   drawers and the column is at least 597px; from 1,024px up the bar keeps
+   one row, tightened above. */
 @media (max-width: 640px) {
   @container canvas-col (max-width: 460px) {
     .pages-bar {
