@@ -91,9 +91,9 @@ function renderRosterRowHtml(
     entry.name && entry.name !== entry.login ? ` (${entry.name})` : '';
   return (
     `<div class="card admin-user" data-uid="${esc(entry.uid)}">` +
-    `<div class="ws-row"><span class="ws-v admin-login data">${esc(entry.login)}${esc(name)}</span>` +
+    `<div class="ws-row"><span class="ws-v admin-login"><span class="data">${esc(entry.login)}</span>${esc(name)}</span>` +
     `<span class="badge">${entry.loginCount} login${entry.loginCount === 1 ? '' : 's'}</span></div>` +
-    `<div class="hint">Last ${esc(formatWhen(entry.lastLoginAt))} · first ${esc(formatWhen(entry.firstSeenAt))} · id <span class="data">${esc(entry.uid)}</span></div>` +
+    `<div class="hint">Last <span class="data">${esc(formatWhen(entry.lastLoginAt))}</span> · first <span class="data">${esc(formatWhen(entry.firstSeenAt))}</span> · id <span class="data">${esc(entry.uid)}</span></div>` +
     `<div class="ws-actions"><button class="btn btn-sm admin-ws-toggle" data-uid="${esc(entry.uid)}">${expanded ? 'Hide workspaces' : 'Workspaces'}</button></div>` +
     (expanded && workspaces
       ? `<div class="card admin-ws-list">${renderUserWorkspacesHtml(workspaces)}</div>`
@@ -144,7 +144,8 @@ export function renderSessionTrailHtml(state: SessionTrailState): string {
       (event) =>
         `<div class="hint admin-trail-row">` +
         `<span class="badge">${esc(event.outcome)}</span> ` +
-        `<span class="data">${esc(event.toolName)} · ${esc(formatWhen(event.at))}</span>` +
+        `<span class="admin-trail-what"><span class="data">${esc(event.toolName)}</span> · ` +
+        `<span class="data admin-trail-when">${esc(formatWhen(event.at))}</span></span>` +
         `</div>`,
     )
     .join('');
@@ -157,14 +158,14 @@ export function renderSessionRowHtml(
   trail: SessionTrailState | undefined,
 ): string {
   const who = session.ownerLogin
-    ? `${session.ownerLogin}`
-    : `id ${session.ownerId}`;
+    ? `<span class="data">${esc(session.ownerLogin)}</span>`
+    : `id <span class="data">${esc(session.ownerId)}</span>`;
   const when = session.lastToolAt ?? session.startedAt;
   return (
     `<div class="card admin-session" data-sid="${esc(session.sessionId)}">` +
-    `<div class="ws-row"><span class="ws-v admin-login data">${esc(who)}</span>` +
+    `<div class="ws-row"><span class="ws-v admin-login">${who}</span>` +
     `<span class="badge">${session.toolCallCount} call${session.toolCallCount === 1 ? '' : 's'}</span></div>` +
-    `<div class="hint">Last ${esc(formatWhen(when))} · started ${esc(formatWhen(session.startedAt))}</div>` +
+    `<div class="hint">Last <span class="data">${esc(formatWhen(when))}</span> · started <span class="data">${esc(formatWhen(session.startedAt))}</span></div>` +
     `<div class="hint">session <span class="data">${esc(session.sessionId)}</span></div>` +
     `<div class="ws-actions"><button class="btn btn-sm admin-session-toggle" data-sid="${esc(session.sessionId)}">${expanded ? 'Hide trail' : 'Trail'}</button></div>` +
     (expanded && trail

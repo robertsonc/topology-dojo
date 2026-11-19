@@ -320,7 +320,7 @@ export function renderCheckpointsHtml(workspace: ActiveWorkspace): string {
           (checkpoint) =>
             `<div class="ws-checkpoint" data-cid="${esc(checkpoint.id)}">` +
             `<div class="ws-checkpoint-head"><span class="ws-v">${esc(checkpoint.name)}</span>` +
-            `<span class="hint data">r${checkpoint.revision} · ${checkpoint.pageCount} page${checkpoint.pageCount === 1 ? '' : 's'} · ${esc(checkpoint.createdBy.kind)}</span></div>` +
+            `<span class="hint"><span class="data">r${checkpoint.revision}</span> · ${checkpoint.pageCount} page${checkpoint.pageCount === 1 ? '' : 's'} · ${esc(checkpoint.createdBy.kind)}</span></div>` +
             `<div class="ws-actions">` +
             `<button class="btn btn-sm ws-cp-restore" data-cid="${esc(checkpoint.id)}">Restore</button>` +
             `<button class="btn btn-sm ws-cp-fork" data-cid="${esc(checkpoint.id)}">Fork</button>` +
@@ -330,7 +330,7 @@ export function renderCheckpointsHtml(workspace: ActiveWorkspace): string {
         .join('')
     : `<div class="hint">No checkpoints yet.</div>`;
   return (
-    `<h4 class="section-label">Checkpoints (${workspace.checkpoints.length}/12)</h4>` +
+    `<h4 class="section-label">Checkpoints <span class="data">(${workspace.checkpoints.length}/12)</span></h4>` +
     `<div class="card"><div class="ws-row">` +
     `<input id="wsCheckpointName" class="field" type="text" maxlength="120" placeholder="Name this checkpoint…" aria-label="Checkpoint name"${atCap ? ' disabled' : ''}>` +
     `<button class="btn" id="wsCheckpointCreate"${atCap ? ' disabled' : ''}>Save</button></div>` +
@@ -401,7 +401,7 @@ export function renderTimelineHtml(workspace: ActiveWorkspace): string {
       ? `<div class="hint ws-rev-floor">Older revisions compacted (floor r${log.historyFloor}).</div>`
       : '';
   return (
-    `<h4 class="section-label">Timeline (r${log.revision})</h4>` +
+    `<h4 class="section-label">Timeline <span class="data">(r${log.revision})</span></h4>` +
     `<div class="card ws-timeline">${rows}${floor}</div>`
   );
 }
@@ -419,13 +419,13 @@ export function renderPresenceHtml(presence: WorkspacePresence[]): string {
         ? `<span class="ws-presence-page data">${esc(entry.pageId)}</span>`
         : '';
       return (
-        `<span class="ws-presence-chip ws-presence-${esc(entry.kind)}">` +
+        `<span class="badge${entry.kind === 'agent' ? ' badge-accent' : ''} ws-presence-chip ws-presence-${esc(entry.kind)}">` +
         `${who}${where}</span>`
       );
     })
     .join('');
   return (
-    `<h4 class="section-label">Present (${presence.length})</h4>` +
+    `<h4 class="section-label">Present <span class="data">(${presence.length})</span></h4>` +
     `<div class="card ws-presence">${chips}</div>`
   );
 }
@@ -561,8 +561,10 @@ export function renderActiveWorkspaceHtml(
             (describeProposalConflicts(proposal)?.supersedable
               ? `<button class="btn btn-sm ws-accept-supersede" data-pid="${esc(proposal.id)}" title="Rebase over this agent's own earlier writes and apply the newer values">Accept · supersede</button>`
               : '') +
-            `<button class="btn btn-sm btn-danger ws-reject" data-pid="${esc(proposal.id)}">Reject</button>` +
-            `<button class="btn btn-sm ws-preview-toggle" data-pid="${esc(proposal.id)}" aria-pressed="false">Preview</button></div>` +
+            // Reject comes last so that, when the row wraps, the destructive
+            // action never leads a line on its own.
+            `<button class="btn btn-sm ws-preview-toggle" data-pid="${esc(proposal.id)}" aria-pressed="false">Preview</button>` +
+            `<button class="btn btn-sm btn-danger ws-reject" data-pid="${esc(proposal.id)}">Reject</button></div>` +
             `<div class="ws-preview" data-pid="${esc(proposal.id)}" hidden></div></div>`,
         )
         .join('')
@@ -596,7 +598,7 @@ export function renderActiveWorkspaceHtml(
       ? `<button class="btn btn-sm btn-danger" id="wsRevoke">Revoke now</button>`
       : `<button class="btn btn-sm" id="wsLease">Grant current page · 10 min</button>`) +
     `</div></div>` +
-    `<h4 class="section-label">Proposals (${workspace.proposals.length})</h4>` +
+    `<h4 class="section-label">Proposals <span class="data">(${workspace.proposals.length})</span></h4>` +
     proposalHtml +
     renderCheckpointsHtml(workspace) +
     renderTimelineHtml(workspace)

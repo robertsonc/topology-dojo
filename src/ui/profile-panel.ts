@@ -62,6 +62,20 @@ export function formatEvidenceSummary(pref: AuthoringPreference): string {
   return `${outcomes} · ${documents} · last observed ${pref.lastObservedAt.slice(0, 10)}`;
 }
 
+/** The scope label as markup: a workspace id is data, in the mono face. */
+function preferenceScopeHtml(scope: PreferenceScope): string {
+  return scope?.kind === 'workspace'
+    ? `workspace <span class="data">${esc(scope.workspaceId)}</span>`
+    : esc(preferenceScopeLabel(scope));
+}
+
+/** The evidence line as markup: the same words, with the date as data. */
+function evidenceSummaryHtml(pref: AuthoringPreference): string {
+  const text = formatEvidenceSummary(pref);
+  const day = pref.lastObservedAt.slice(0, 10);
+  return `${esc(text.slice(0, text.length - day.length))}<span class="data">${esc(day)}</span>`;
+}
+
 /** Pure: the panel body when the profile surface is disabled on this
  * deployment (`PROFILES_ENABLED` gate — mirrors the workspace panel's
  * disabled notice). */
@@ -134,13 +148,13 @@ function renderPreferenceCardHtml(
   } else if (pref.status === 'candidate' && pref.supportingOutcomes >= 2) {
     callout = `<div class="hint pref-observed">${icon('observed')} Observed ${pref.supportingOutcomes}× — a repeated pattern. It changes nothing until you confirm it.</div>`;
   } else if (confirmed) {
-    callout = `<div class="hint pref-confirmed-note">${icon('confirmed')} Confirmed${pref.confirmedAt ? ` ${pref.confirmedAt.slice(0, 10)}` : ''} — supplied to agents when it applies.</div>`;
+    callout = `<div class="hint pref-confirmed-note">${icon('confirmed')} Confirmed${pref.confirmedAt ? ` <span class="data">${esc(pref.confirmedAt.slice(0, 10))}</span>` : ''} — supplied to agents when it applies.</div>`;
   } else if (rejected) {
     callout = `<div class="hint pref-rejected-note">${icon('rejected')} Rejected — this pattern will not be learned again. Forget it to clear the record.</div>`;
   }
   const stale =
     now && staleForReview(pref, now)
-      ? `<div class="hint pref-stale">${icon('stale')} Not observed since ${pref.lastObservedAt.slice(0, 10)} — stale. Keep, pause, or forget it.</div>`
+      ? `<div class="hint pref-stale">${icon('stale')} Not observed since <span class="data">${esc(pref.lastObservedAt.slice(0, 10))}</span> — stale. Keep, pause, or forget it.</div>`
       : '';
   const exceptions = pref.exceptionWorkspaceIds?.length
     ? `<div class="hint pref-exceptions">Except in: ${pref.exceptionWorkspaceIds.map((id) => `<span class="data">${esc(id)}</span>`).join(', ')}</div>`
@@ -161,11 +175,11 @@ function renderPreferenceCardHtml(
     (pref.rationale && pref.rationale !== pref.directive
       ? `<div class="hint pref-rationale">${esc(pref.rationale)}</div>`
       : '') +
-    `<div class="hint pref-scope">Scope: ${esc(preferenceScopeLabel(pref.scope))}</div>` +
+    `<div class="hint pref-scope">Scope: ${preferenceScopeHtml(pref.scope)}</div>` +
     exceptions +
     callout +
     stale +
-    `<div class="hint pref-evidence">${esc(formatEvidenceSummary(pref))}</div>` +
+    `<div class="hint pref-evidence">${evidenceSummaryHtml(pref)}</div>` +
     `<div class="ws-actions">${actions}</div>` +
     (confirmingId === pref.id ? renderScopeChooserHtml(pref) : '') +
     `</div>`
