@@ -16,7 +16,9 @@
  * site", three regions, two independent hubs per region, four branches per
  * region, one Internet WAN link per branch, a single edge at each branch, and
  * the region-continents map backdrop. The hubs of the regions are meshed (the
- * wizard's default). The page and the view are fitted to the content, and nothing is selected.
+ * wizard's default). The page is fitted to the content, the node library and
+ * the properties panel are closed, the view is fitted to the page, and
+ * nothing is selected.
  *
  * Set CHROMIUM_PATH to a Chromium executable to use that browser instead of
  * the one Playwright installed.
@@ -85,9 +87,12 @@ try {
   await dialog.getByRole('button', { name: 'Create diagram' }).click();
   await dialog.waitFor({ state: 'hidden' });
 
-  // Fit the page to its content, then the view to the page, let it settle,
-  // then take the shot.
+  // Fit the page to its content. Then close the node library and the
+  // properties panel, so the diagram, which is what the image is for, gets
+  // the width; fit the view to the page, let it settle, and take the shot.
   await page.getByRole('button', { name: 'Fit to content' }).first().click();
+  await page.click('#palette-toggle');
+  await page.click('#inspector-toggle');
   await page.click('#ccFit');
   await page.waitForTimeout(1500);
   await page.mouse.move(700, 880);

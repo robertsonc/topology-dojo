@@ -101,7 +101,12 @@ superseded: it is draft PR #327._
 _2026-11-19 (later still the same day; `main` at `d224979`, and the branch of
 PR #328, not merged, at `d24f6a4`): PR #327, "UI overhaul: command registry,
 shell, properties panel (proposal 0013: rest of P0, P1, P2, part of P3)",
-merged into `main` as `d224979`. That supersedes the note above, dated for the
+merged into `main` as `d224979`. The Release run for that merge (run 44554032473) failed in CI's browser job (three tests in that run: two past the
+30-second limit and the pages bar's layout at 720 x 450), so its `stage` and
+`production` jobs were skipped and it deployed nothing. PR #328 fixes both
+causes: the compact layout, and the browser tests' time (the menu helper goes
+straight to an item; CI records a trace only when it retries a failed test,
+`playwright.config.ts`); CI passed on its commit `ee278eb`. That supersedes the note above, dated for the
 branch of draft PR #327 at `1ebbccb`: #327 is not a draft and is merged, `main`
 has the registry, and P1 and P2 have changed surfaces. It also supersedes the
 sentence in the `e9d0d7f` note that the menu component, the command palette,

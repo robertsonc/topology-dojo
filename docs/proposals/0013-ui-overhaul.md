@@ -13,9 +13,14 @@ zoom control, the selection bar's align, distribute, order and lock buttons,
 the command palette on Ctrl/Cmd+K, the context menu on the shared menu
 component, the properties panel's three tabs and regrouped sections, and the
 shared controls on the wizards, the workspace, preferences and admin panels
-and the node designer. PR #328 (not merged) adds the compact layout (below
+and the node designer. The Release run for `d224979` (run 44554032473) failed
+in CI's browser job, so its `stage` and `production` jobs were skipped: that
+run deployed nothing. PR #328 (not merged) adds the compact layout (below
 1,024 px the node library and the properties panel are drawers over the
-canvas, `src/ui/compact-layout.ts`) and brings the documentation up to date.
+canvas, `src/ui/compact-layout.ts`), brings the browser tests back inside
+CI's 30-second limit (`menuCommand` in `e2e/helpers.ts` goes straight to a
+menu item, and CI records a trace only when it retries a failed test) and
+brings the documentation up to date.
 What is not done: the rest of P3 (the Share dialog, the presentation controls,
 the shortcut sheet's close button and the path bar still use the old `.tbtn`
 button class, and seven font-size rules under 12 px remain in four

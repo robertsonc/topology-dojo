@@ -741,7 +741,9 @@ Plan and per-phase status: [`futures/hw-catalog.md`](futures/hw-catalog.md).
 ### UI overhaul: command registry, shell and properties panel (proposal 0013, rest of P0, P1, P2 and part of P3, 2026-11-19)
 
 PR #327, "UI overhaul: command registry, shell, properties panel", merged
-2026-11-19 as `d224979`. Merged:
+2026-11-19 as `d224979`. Its Release run (44554032473) failed in CI's browser
+job, so the `stage` and `production` jobs were skipped and it deployed nothing;
+PR #328 (not merged) carries the fixes. Merged:
 
 - **The command registry** (`src/ui/commands.ts`): every command with its key
   bindings as data, bound once in `src/main.ts`; the window key handler, the

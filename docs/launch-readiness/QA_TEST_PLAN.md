@@ -246,6 +246,21 @@ pages dock drawn over it, so each image is 704 x 608 at the test's window
 (they were 1018 x 646). The commit records that the images were regenerated
 from an ordinary checkout and each was looked at.
 
+2026-11-19, CI on the shell (not part of the run above). On `bccbe9a`, the
+head PR #327 merged, the pull request's browser job failed nine tests of 277
+(28.2 minutes): the pages bar's layout at 720 x 450 (an assertion, EDT-45's
+defect) and eight tests past the 30-second limit on all three attempts. The
+Release run for the merge, `d224979` (run 44554032473), failed three of them
+(274 passed, 19.8 minutes), and its `stage` and `production` jobs were
+skipped. The cause of the timeouts was measured: CI recorded a trace of every
+test, which doubles what a test costs (the same nine tests took 34 s without
+and 72 s with), and the helper that runs a command from the menu bar opened
+every menu and submenu until it found the item. On `ee278eb` (PR #328: the
+compact layout, a helper that goes straight to the item, and a trace only for
+a retried test) CI's `check`, `visio` and `e2e` jobs passed, and the whole
+browser suite run locally with CI's settings (`CI=1`) passed: 285 tests, none
+failed or flaky, 13.1 minutes, the longest test 23 s.
+
 2026-11-19, local run for §7.16–§7.18 (not part of the run above): on the code
 of `d24f6a4` (PR #328's branch: `d224979` plus the compact layout), in a Linux
 sandbox with a pre-provisioned headless Chromium, `npx playwright test` of
