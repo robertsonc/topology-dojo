@@ -222,9 +222,10 @@ The editor is organized into six areas and a status bar.
    is the **Node library** toggle. At the bottom are the **Command palette**
    and **Keyboard shortcuts** buttons.
 3. **Node library.** A column docked beside the rail, headed **Library**, with
-   a **Search nodes…** box above the catalog's categories. A **Custom**
-   group at the end holds the document's custom nodes and stencils, with the
-   **design node** and **save stencil** buttons. Hiding the library gives its
+   a **Search nodes…** box above the catalog's categories. The
+   document's own node types follow under **Custom**, and its stencils under
+   **Stencils**. The **design node** and **save stencil** buttons end the list
+   (they are hidden while you search). Hiding the library gives its
    width to the canvas.
 4. **Canvas.** The current page, selection overlay, smart guides, link handles,
    problem badges, and three controls that float over it:
@@ -236,7 +237,8 @@ The editor is organized into six areas and a status bar.
      buttons (distribute needs three nodes). For a link it starts with the
      link type and routing pickers, then the same swatches, star, stacking
      and lock buttons. Colour changes and emphasis apply to every selected
-     node. The bar hides while you drag, and the properties panel remains the
+     node. **Bring to front** and **Send to back** are greyed out with more than
+     one node selected. The bar hides while you drag, and the properties panel remains the
      complete surface.
    - The **zoom control**, in the bottom-right corner: zoom out, the zoom
      figure (clicking it fits the view), zoom in and fit to content.
@@ -247,7 +249,8 @@ The editor is organized into six areas and a status bar.
 
 5. **Pages bar.** Docked under the canvas. At its left is the **Pages**
    toggle with the page count (for example "Pages 2/2"); clicking it, or
-   pressing **F**, folds the bar down to that toggle. Next come **Play** (with
+   pressing **F**, hides **Play**, the page chips and the page buttons, leaving
+   the toggle and the five buttons at the right. Next come **Play** (with
    two or more pages), a chip for each page, **Duplicate page** and **Add
    page**. At its right end are five buttons: grid, snap and **Calm canvas**
    (each shows whether it is on), **Display settings**, and the minimap toggle.
@@ -296,9 +299,9 @@ Use **Ctrl/Cmd+F** (or **Edit → Find…**) to find a node, link or zone on any
 page. Nodes are searched by label, identifier, type, sublabel, and metadata
 keys/values (find a node by the IP address, hostname, or model stored on it);
 links by label, port label, identifier, type and metadata; zones by label.
-Matches on the current frame come first, a match on another frame names its
-frame, and choosing one goes to that frame, selects the element and centres
-it. With the box empty it lists the current frame's nodes.
+Matches on the current page come first, a match on another page names its
+page, and choosing one goes to that page, selects the element and centres
+it. With the box empty it lists the current page's nodes.
 
 The minimap provides an overview of content outside the current viewport.
 It starts closed; open it with **M**, the minimap button at the right end of
@@ -501,10 +504,10 @@ positions around its auto position; the center cell restores auto placement.
 - Use **Ctrl/Cmd+C**, **X**, and **V** for copy, cut, and paste. A paste lands
   one step down and to the right of where it was copied from; repeated pastes
   step on instead of stacking. When that spot is out of view (you panned
-  away, or pasted onto another frame) it lands in the middle of the view.
+  away, or pasted onto another page) it lands in the middle of the view.
 - **Ctrl/Cmd+Shift+V** pastes **in place**: at the exact coordinates it was
   copied from. Use it to put the same device at the same position on another
-  frame of a flipbook.
+  page of a flipbook.
 - Right-click empty canvas and choose **Paste here** to place the copy,
   centred as a block, at that point.
 - Use **Ctrl/Cmd+D** to duplicate.
@@ -536,7 +539,8 @@ Right-click a node selection for:
 - **Analyze path**, when exactly two nodes are selected (see
   [Analyze a path between two nodes](#analyze-a-path-between-two-nodes));
 - **Group into zone**, **Save as stencil…**, and **Add policy marker**;
-- **Bring to front**, **Send to back**, **Lock** or **Unlock**, and **Delete**.
+- **Bring to front**, **Send to back** (stacking needs a single node), **Lock**
+  or **Unlock**, and **Delete**.
 
 Right-click a link for:
 
@@ -578,8 +582,10 @@ Pages and Help; each row says what the command does and shows each of its
 shortcuts as a key cap (a command with two shortcuts, such as redo, shows two).
 After those come four more groups: Mouse and touch, Dialogs and menus,
 Presentation, and Find and the node library. The table below is a summary;
-where the two differ, the sheet is right. A button or menu item whose command
-has a key names its first shortcut in its tooltip or beside it.
+where the two differ, the sheet is right. Most buttons and every menu item whose
+command has a key name its first shortcut in the tooltip or beside the item.
+The zoom control's **Zoom in** and **Zoom out** buttons do not; their keys are
+**+** and **-**.
 
 | Keys                               | Action                                                                            |
 | ---------------------------------- | --------------------------------------------------------------------------------- |
@@ -691,8 +697,10 @@ The panel is the right-hand column (**P** shows and hides it; **hide** at the
 right of its tab row does the same). It is 300px wide at first. Drag the grip
 on its left edge to resize it between 240px and 480px; the width is
 remembered. Under 300px the **hide** button shows only its icon. In a window
-narrower than 1,024px the panel is a drawer over the canvas and the same
-width limits apply.
+narrower than 1,024px the panel is a drawer over the canvas. It always leaves
+at least 72px of canvas showing, so a drawer can be narrower than the width
+you set. On a phone (640px wide or less) the drawer starts 240px wide and is
+never wider than 280px.
 
 **Tabs.** A row of three tabs heads the panel: the Selection tab, **Page** and
 **Document**. The first tab is named for what is selected: **Node**, **Link**,
@@ -840,15 +848,19 @@ fields: **Label**, **Sublabel**, **Description**, **Member nodes**, **Color**,
 **Border**, **Padding**, **Label align**, **Label edge**, **Parent zone**,
 **Map backdrop**, **Link**, **Tooltip** and **Layer**.
 
-**Several nodes.** The header names them ("Selection (2 nodes)") and the
-sections are:
+**Several nodes.** The header names them by their labels ("User, EC-Branch")
+over the line "Selection (2 nodes)", with **Lock** and **More actions** at its
+right, and the sections are:
 
 - **Arrange**: the six **Align** buttons and the two **Distribute** buttons
   (distribute needs three nodes; the panel says so).
 - **Annotate**: **Group into zone** and **Add flow path**.
 - **Format**: **Copy** (greyed out: it needs a single node or link) and
-  **Paste**, and with two nodes selected an **Analyze path** button (see
-  [Analyze a path between two nodes](#analyze-a-path-between-two-nodes)).
+  **Paste**.
+
+With exactly two nodes (and nothing else) selected, a **Path** row under the
+sections holds the **Analyze path** button (see
+[Analyze a path between two nodes](#analyze-a-path-between-two-nodes)).
 
 ## 7. Zones, flows, markers, layers, and legend
 
@@ -1100,15 +1112,15 @@ When a document has multiple pages, choose **Play** in the pages bar (it
 reads **Pause** while playing). Playback loops through the pages. For each
 page, set:
 
-- **Hold (ms)** — how long the frame remains visible;
+- **Hold (ms)** — how long the page remains visible;
 - **Transition** — **cut** or **fade**.
 
 Manual page selection stops playback. During playback, a fade uses a short
-visual transition; page hold duration controls when the next frame starts.
+visual transition; page hold duration controls when the next page starts.
 
 ### Present mode
 
-Choose **Present** in the top bar (or **File → Present**) to play the document full-screen: every frame
+Choose **Present** in the top bar (or **File → Present**) to play the document full-screen: every page
 renders exactly as exports do (caption, legend, emphasis, fade transitions),
 looping on each page's hold time. Use **←/→** (or **PageUp/PageDown**) to step manually, **Space** to
 pause/resume autoplay, and **Escape** to exit.
@@ -1117,8 +1129,8 @@ pause/resume autoplay, and **Escape** to exit.
 
 With nothing selected, open the Page tab's **Story** section:
 
-- Enter a **Caption** describing what the frame shows. It appears at the bottom
-  of the frame and travels with supported exports.
+- Enter a **Caption** describing what the page shows. It appears at the bottom
+  of the page and travels with supported exports.
 - **Emphasis** reads "N of M": how many of the page's elements are
   spotlighted. **Choose…** opens a filtered checklist of the page's nodes and
   links; tick the ones to spotlight while other elements dim.
@@ -1131,8 +1143,8 @@ You can also select elements, right-click, and choose
 
 Select two nodes (click one, then Shift-click or Ctrl-click the other) and
 choose **Analyze path** from the right-click menu, or the **Analyze path**
-button in the **Format** section of the Selection tab. The editor traces the
-routes between them over the links the frame draws and spotlights the shortest: its nodes and links at
+button in the **Path** row at the foot of the Selection tab. The editor traces the
+routes between them over the links the page draws and spotlights the shortest: its nodes and links at
 full strength, everything else dimmed. The first node you selected is the
 start.
 
@@ -1144,9 +1156,9 @@ below. Those that show only an icon are named by their tooltip:
 | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | **Previous route** / **Next route** (the two chevrons)                            | Step through the alternative routes, shortest first (shown when there is more than one).    |
 | **Trace the other way** (the opposed arrows; the tooltip begins with these words) | Trace the other way round. The route is the same; a flow added from it runs from the start. |
-| **emphasize**                                                                     | Keep the spotlight as this frame's emphasis (one undo step).                                |
+| **emphasize**                                                                     | Keep the spotlight as this page's emphasis (one undo step).                                 |
 | **add flow**                                                                      | Add a flow path along the route, labelled with its ends and hop count.                      |
-| **new frame**                                                                     | Copy the frame, with the route emphasized and captioned, as the next frame of the flipbook. |
+| **new frame**                                                                     | Copy the page, with the route emphasized and captioned, as the next page of the flipbook.   |
 | **Close path analysis** (the x) or Escape                                         | Close the bar. The spotlight goes with it.                                                  |
 
 Tracing is a read: until you choose one of the three keep actions nothing in
@@ -1156,7 +1168,7 @@ shows at once what the route becomes, or that there no longer is one.
 
 What counts as a path:
 
-- Only what the frame draws. A link on a hidden layer is not part of any
+- Only what the page draws. A link on a hidden layer is not part of any
   route; when the two nodes are joined only through hidden layers the bar
   names the layers to show.
 - Links run both ways, whatever their from and to. Several links between the
@@ -1333,7 +1345,7 @@ they can be repaired.
 
 Choose **Export → SVG** in the top bar to download the current page as
 standalone vector SVG. The
-export includes the current layer presentation, frame emphasis, legend, and
+export includes the current layer presentation, page emphasis, legend, and
 caption. Calm canvas affects animated presentation in the SVG.
 
 ### Light and dark exports
@@ -1384,7 +1396,7 @@ three office formats are editable and deliberately lossy; what each keeps and
 drops is specified in the [export fidelity contract](EXPORTS.md).
 
 - **draw.io** downloads a `.drawio` file (one draw.io page per
-  frame) for draw.io / diagrams.net / Confluence users. Geometry, labels,
+  page) for draw.io / diagrams.net / Confluence users. Geometry, labels,
   waypoints, colors, declared layers (as draw.io layers), zones (as
   containers), and node metadata survive; a `.drawio` file can be opened
   again with **File → Open…**.
@@ -1581,8 +1593,10 @@ colour.
 
 ### Keyboard and focus behavior
 
-All principal top bar, rail and pages bar actions have accessible names, and
-every command they hold is also in a menu. Dialogs, panels, menus,
+All principal top bar, rail and pages bar actions have accessible names. Every
+command on the top bar and the rail is also in a menu. The pages bar's **Add
+page**, **Duplicate page**, **Play** and **Undo delete** are not in a menu,
+but the command palette (Ctrl/Cmd+K) lists each of them whenever it can run. Dialogs, panels, menus,
 and popovers:
 
 - move focus into the opened surface;
