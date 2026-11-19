@@ -650,6 +650,40 @@ for (const width of [641, 720]) {
   });
 }
 
+test('on a phone, two drawers stored open load as one, and their stored choices stay', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+  });
+  expect(await closed(page, 'palette')).toBe(false);
+  expect(await closed(page, 'inspector-wrap')).toBe(true);
+  // Some canvas shows beside the library.
+  const b = await boxes(page, { lib: '#palette', area: '#canvas-area' });
+  expect(b.area!.right - b.lib!.right).toBeGreaterThanOrEqual(72);
+  expect(
+    await page.evaluate(() => [
+      localStorage.getItem('tds-palette-collapsed'),
+      localStorage.getItem('tds-inspector-collapsed'),
+    ]),
+  ).toEqual(['0', '0']);
+
+  // Narrowing a window to a phone with both open does the same.
+  await page.setViewportSize({ width: 768, height: 844 });
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+  expect(await closed(page, 'palette')).toBe(false);
+  expect(await closed(page, 'inspector-wrap')).toBe(false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => closed(page, 'inspector-wrap')).toBe(true);
+  expect(await closed(page, 'palette')).toBe(false);
+  expect(
+    await page.evaluate(() => localStorage.getItem('tds-inspector-collapsed')),
+  ).toBe('0');
+});
+
 test('the zoom control and the minimap move left of an open properties drawer', async ({
   page,
 }) => {

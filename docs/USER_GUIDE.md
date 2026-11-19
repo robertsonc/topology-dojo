@@ -297,9 +297,11 @@ unless you opened them last time; **B** and **P** open and close them, and
 opening one does not resize the canvas or move the drawing. A drawer opened
 while the other is open closes the other on a phone (640px and below) and
 wherever the two would leave less than 160px of canvas between them; the one
-that closed keeps its remembered setting. (This applies when you open a
-drawer, not when the editor starts: a browser that remembers both open
-starts with both open.) **Fit view** fits
+that closed keeps its remembered setting. On a phone this also applies when
+the editor starts or the window narrows to a phone's width: a browser that
+remembers both open shows the Node library and closes Properties, again
+without changing either remembered setting. Above a phone's width a browser
+that remembers both open starts with both open. **Fit view** fits
 the drawing into the part of the canvas the open drawers leave showing, and
 the zoom control and the minimap move beside an open Properties drawer.
 

@@ -36,6 +36,8 @@ export const COMPACT_LAYOUT_MQ = `(max-width: ${COMPACT_LAYOUT_MAX_PX}px)`;
 /** The widest window laid out as a phone (the 640px blocks above). */
 export const PHONE_LAYOUT_MAX_PX = 640;
 
+export const PHONE_LAYOUT_MQ = `(max-width: ${PHONE_LAYOUT_MAX_PX}px)`;
+
 /** True when the layout width is at or below the compact breakpoint. */
 export function isCompactLayoutWidth(width: number): boolean {
   return width <= COMPACT_LAYOUT_MAX_PX;
@@ -82,4 +84,14 @@ export const DRAWER_MIN_CANVAS_PX = 160;
 export function drawersCrowd(width: number, between: number): boolean {
   if (!isCompactLayoutWidth(width)) return false;
   return width <= PHONE_LAYOUT_MAX_PX || between < DRAWER_MIN_CANVAS_PX;
+}
+
+/**
+ * Whether two drawers that are both open, with neither just opened (at load,
+ * or as the window narrows), should be shown as one. On a phone the two
+ * cover each other and the whole canvas, so only one is shown; above a phone
+ * they keep at least 72px of canvas and stay as the person left them.
+ */
+export function drawersCrowdAtRest(width: number): boolean {
+  return width <= PHONE_LAYOUT_MAX_PX;
 }

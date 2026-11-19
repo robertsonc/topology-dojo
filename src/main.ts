@@ -111,9 +111,11 @@ import { nodeLabelNudge, linkLabelNudge } from './ui/label-position.js';
 import type { LabelPlacement } from './render/label-placement.js';
 import {
   COMPACT_LAYOUT_MQ,
+  PHONE_LAYOUT_MQ,
   defaultPanelCollapsed,
   isCompactAbovePhone,
   drawersCrowd,
+  drawersCrowdAtRest,
   isCompactLayoutWidth,
 } from './ui/compact-layout.js';
 import {
@@ -2729,6 +2731,22 @@ function syncPanelLayoutFromPrefs(): void {
   close(inspectorWrap, inspectorToggle, inspectorShut, () =>
     setInspectorCollapsed(inspectorShut, inspectorPref !== null),
   );
+  settleCrowdedDrawers();
+}
+
+/**
+ * At load, or as the window narrows to a phone, with both drawers open (a
+ * browser that stored both open on a wider window): the properties drawer
+ * closes, so the library and some canvas show. As with opening a drawer,
+ * that is not the person's choice, so neither stored choice changes.
+ */
+function settleCrowdedDrawers(): void {
+  if (!drawersCrowdAtRest(window.innerWidth)) return;
+  if (paletteEl.classList.contains('collapsed')) return;
+  if (inspectorWrap.classList.contains('collapsed')) return;
+  const held = inspectorWrap.contains(document.activeElement);
+  setInspectorCollapsed(true, false);
+  if (held) inspectorToggle.focus({ preventScroll: true });
 }
 
 /**
@@ -2766,6 +2784,9 @@ syncPanelLayoutFromPrefs();
 window
   .matchMedia?.(COMPACT_LAYOUT_MQ)
   ?.addEventListener?.('change', syncPanelLayoutFromPrefs);
+window
+  .matchMedia?.(PHONE_LAYOUT_MQ)
+  ?.addEventListener?.('change', settleCrowdedDrawers);
 
 /* From 1,024px up the properties panel is a docked right column (full stage
  * height), so its annotations / zones list is never clipped or overlapped;

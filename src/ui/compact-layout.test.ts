@@ -7,8 +7,10 @@ import {
   COMPACT_LAYOUT_MQ,
   DRAWER_MIN_CANVAS_PX,
   PHONE_LAYOUT_MAX_PX,
+  PHONE_LAYOUT_MQ,
   defaultPanelCollapsed,
   drawersCrowd,
+  drawersCrowdAtRest,
   isCompactAbovePhone,
   isCompactLayoutWidth,
 } from './compact-layout.js';
@@ -51,6 +53,19 @@ describe('defaultPanelCollapsed', () => {
       expect(defaultPanelCollapsed('0', compact)).toBe(false);
       expect(defaultPanelCollapsed('1', compact)).toBe(true);
     }
+  });
+});
+
+describe('drawersCrowdAtRest', () => {
+  it('shows one of two open drawers on a phone, at load or as it narrows', () => {
+    expect(drawersCrowdAtRest(390)).toBe(true);
+    expect(drawersCrowdAtRest(PHONE_LAYOUT_MAX_PX)).toBe(true);
+    expect(PHONE_LAYOUT_MQ).toBe(`(max-width: ${PHONE_LAYOUT_MAX_PX}px)`);
+  });
+  it('leaves both as they were above a phone', () => {
+    expect(drawersCrowdAtRest(PHONE_LAYOUT_MAX_PX + 1)).toBe(false);
+    expect(drawersCrowdAtRest(720)).toBe(false);
+    expect(drawersCrowdAtRest(1440)).toBe(false);
   });
 });
 
