@@ -125,7 +125,7 @@ function questionHtml(
   if (usesSlider(spec) && spec.type === 'integer')
     return (
       open +
-      `<label class="sdw-label" id="${id}" for="${id}-input">${escapeHtml(spec.label)}</label>` +
+      `<label class="section-label sdw-label" id="${id}" for="${id}-input">${escapeHtml(spec.label)}</label>` +
       `<div class="tpw-range">` +
       `<input type="range" id="${id}-input" min="${spec.min}" max="${spec.max}" step="1" value="${Number(value)}" aria-describedby="${id}-hint"/>` +
       `<output class="data" for="${id}-input">${Number(value)}</output>` +
@@ -134,7 +134,7 @@ function questionHtml(
     );
   return (
     open +
-    `<div class="sdw-label" id="${id}">${escapeHtml(spec.label)}</div>` +
+    `<div class="section-label sdw-label" id="${id}">${escapeHtml(spec.label)}</div>` +
     `<div class="seg sdw-seg" role="group" aria-labelledby="${id}" aria-describedby="${id}-hint">` +
     choices(spec)
       .map(

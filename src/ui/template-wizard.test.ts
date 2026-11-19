@@ -100,7 +100,7 @@ describe('renderTemplateFormHtml', () => {
     );
     const web = question(html, 'webServers');
     expect(web).toContain(
-      '<div class="sdw-label" id="tpw-webServers">Web servers</div>',
+      '<div class="section-label sdw-label" id="tpw-webServers">Web servers</div>',
     );
     expect(web).toContain(
       'role="group" aria-labelledby="tpw-webServers" aria-describedby="tpw-webServers-hint"',
@@ -135,7 +135,7 @@ describe('renderTemplateFormHtml', () => {
     const s = withTemplateParam(state('spine-leaf'), 'leaves', '12');
     const leaves = question(renderTemplateFormHtml(s), 'leaves');
     expect(leaves).toContain(
-      '<label class="sdw-label" id="tpw-leaves" for="tpw-leaves-input">Leaves</label>',
+      '<label class="section-label sdw-label" id="tpw-leaves" for="tpw-leaves-input">Leaves</label>',
     );
     expect(leaves).toContain(
       '<input type="range" id="tpw-leaves-input" min="2" max="16" step="1" value="12" aria-describedby="tpw-leaves-hint"/>',

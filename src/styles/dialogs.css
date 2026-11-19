@@ -43,8 +43,8 @@
   min-width: 0;
 }
 .sdw-label {
-  color: var(--fg);
-  font: 500 12px/1.3 var(--font-ui);
+  /* Typography comes from .section-label; this class is the hook. */
+  margin: 0;
 }
 /* A long set of choices wraps inside its well when the dialog is narrow. */
 .sdw-seg {
@@ -170,7 +170,7 @@
   border: 0;
   border-radius: 50%;
   background: var(--accent);
-  transition: box-shadow var(--dur-fast);
+  transition: box-shadow var(--dur-fast) var(--ease);
 }
 .tpw-range input:hover::-webkit-slider-thumb {
   box-shadow: 0 0 0 4px var(--accent-soft-strong);
@@ -191,7 +191,7 @@
   border: 0;
   border-radius: 50%;
   background: var(--accent);
-  transition: box-shadow var(--dur-fast);
+  transition: box-shadow var(--dur-fast) var(--ease);
 }
 .tpw-range input:hover::-moz-range-thumb {
   box-shadow: 0 0 0 4px var(--accent-soft-strong);

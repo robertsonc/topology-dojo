@@ -139,7 +139,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
     wrap.className = 'sdw-q';
     const id = `sdw-${Math.random().toString(36).slice(2, 8)}`;
     wrap.innerHTML =
-      `<div class="sdw-label" id="${id}">${escapeHtml(label)}</div>` +
+      `<div class="section-label sdw-label" id="${id}">${escapeHtml(label)}</div>` +
       `<div class="seg sdw-seg" role="group" aria-labelledby="${id}"></div>`;
     const seg = wrap.querySelector<HTMLElement>('.sdw-seg')!;
     for (const c of choices) {
@@ -163,7 +163,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
     const wrap = document.createElement('div');
     wrap.className = 'sdw-q';
     wrap.innerHTML =
-      `<div class="sdw-label" id="sdw-regions">Regions: name and branches</div>` +
+      `<div class="section-label sdw-label" id="sdw-regions">Regions: name and branches</div>` +
       `<div class="sdw-regions" role="group" aria-labelledby="sdw-regions"></div>`;
     const rows = wrap.querySelector<HTMLElement>('.sdw-regions')!;
     for (let r = 0; r < intent.regions; r++) {
