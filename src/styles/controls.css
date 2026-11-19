@@ -78,6 +78,15 @@
   background: var(--status-error-soft);
   color: var(--status-error-fg);
 }
+/* On a tinted surface (the shared-copy banner, tinted by the accent) the
+   button keeps the theme's own surface under its words, at rest and on
+   hover, so they read at 4.5:1 whatever the accent. */
+.shared-banner .btn-danger {
+  background: var(--surface-back);
+}
+.shared-banner .btn-danger:hover {
+  background: color-mix(in srgb, var(--status-error) 8%, var(--surface-back));
+}
 .btn-sm {
   height: 24px;
   padding: 0 10px;

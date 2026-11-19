@@ -70,3 +70,62 @@ test('a share link opens as a shared copy without touching local work (#202)', a
   await expect(page.locator('#sharedBanner')).toBeHidden();
   await expect.poll(() => statusCount(page, 'nodes')).toBe(n0 + 1);
 });
+
+test('the shared-copy banner’s Unpublish link reads at 4.5:1 in both themes, at rest and on hover', async ({
+  page,
+}) => {
+  const shared = readFileSync(
+    path.join(fixturesDir, 'spine-leaf.json'),
+    'utf8',
+  );
+  await page.route('**/api/topology/e2etest', (route) =>
+    route.fulfill({ contentType: 'application/json', body: shared }),
+  );
+  await bootEditor(page);
+  /** Its words against its own fill, which must be opaque: the banner under
+   * it is tinted by the accent. */
+  const reading = () =>
+    page.locator('#sharedUnpublish').evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const ctx = document.createElement('canvas').getContext('2d')!;
+      const rgba = (css: string) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = css;
+        ctx.fillRect(0, 0, 1, 1);
+        return [...ctx.getImageData(0, 0, 1, 1).data];
+      };
+      const lum = ([r, g, b]: number[]) => {
+        const c = [r!, g!, b!].map((v) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
+      };
+      const fg = rgba(cs.color);
+      const bg = rgba(cs.backgroundColor);
+      const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+      return { alpha: bg[3], ratio: (hi! + 0.05) / (lo! + 0.05) };
+    });
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate(
+      (t) => localStorage.setItem('topology-dojo:theme', t),
+      theme,
+    );
+    await page.goto('/v/e2etest');
+    await expect(page.locator('#sharedUnpublish')).toBeVisible();
+    await page.mouse.move(0, 400);
+    const rest = await reading();
+    await page.locator('#sharedUnpublish').hover();
+    await expect
+      .poll(async () => (await reading()).alpha, { timeout: 2000 })
+      .toBe(255);
+    const hover = await reading();
+    for (const [state, r] of [
+      ['at rest', rest],
+      ['on hover', hover],
+    ] as const) {
+      expect(r.alpha, `${theme}, ${state}: its fill is opaque`).toBe(255);
+      expect(r.ratio, `${theme}, ${state}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});
