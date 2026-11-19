@@ -16,7 +16,11 @@
  * Only the shapes are copied: the outer `<svg>` and its presentation
  * attributes are dropped (the chrome styles stroke and size itself), and the
  * markup is checked against a short allow-list of elements and geometry
- * attributes, so nothing scriptable can reach the page through an icon.
+ * attributes, so nothing scriptable can reach the page through an icon. The
+ * rest of the file is checked as well, though none of it is copied: it must
+ * be one `<svg>` with the attributes Lucide ships, after at most a comment,
+ * so a file that is not the drawing it should be fails the build instead of
+ * having the odd part dropped in silence.
  *
  * Lucide is licensed under the ISC License (Copyright (c) Lucide Icons and
  * Contributors); the icons it derives from Feather are under the MIT License
@@ -166,22 +170,86 @@ export const ICON_ATTRIBUTES: ReadonlySet<string> = new Set([
   'points',
 ]);
 
+/**
+ * What the outer `<svg>` of a Lucide file may carry, and the value each
+ * attribute must have. None of it is copied. The chrome draws every icon on
+ * this grid with this stroke (`src/styles/icons.css` states the same), so a
+ * file that says otherwise would be drawn wrong; and an attribute that is
+ * not here is not Lucide's.
+ */
+export const ICON_ROOT_ATTRIBUTES: ReadonlyMap<string, RegExp> = new Map([
+  ['class', /^lucide(?: lucide-[a-z0-9-]+)*$/],
+  ['xmlns', /^http:\/\/www\.w3\.org\/2000\/svg$/],
+  ['width', /^24$/],
+  ['height', /^24$/],
+  ['viewBox', /^0 0 24 24$/],
+  ['fill', /^none$/],
+  ['stroke', /^currentColor$/],
+  ['stroke-width', /^2$/],
+  ['stroke-linecap', /^round$/],
+  ['stroke-linejoin', /^round$/],
+]);
+
+/** The root attributes that say how to draw the shapes: all must be there. */
+const ICON_ROOT_REQUIRED: readonly string[] = [
+  'viewBox',
+  'fill',
+  'stroke',
+  'stroke-width',
+  'stroke-linecap',
+  'stroke-linejoin',
+];
+
 /** Numbers and path commands only: no quotes, brackets, urls or entities. */
 const GEOMETRY_VALUE = /^[0-9A-Za-z .,+-]+$/;
 const ICON_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const TAG =
   /^<(\/?)([A-Za-z][A-Za-z0-9:-]*)((?:\s+[^\s"'<>/=]+="[^"]*")*)\s*(\/?)>/;
 const ATTRIBUTE = /([^\s"'<>/=]+)="([^"]*)"/g;
+/** What may come before the `<svg>`: one comment (Lucide's licence line). */
+const PROLOGUE = /^\s*(?:<!--(?:(?!-->)[\s\S])*-->\s*)?/;
+/** The outer tag, its attributes written as `TAG` requires of any tag. */
+const ROOT_OPEN = /^<svg((?:\s+[^\s"'<>/=]+="[^"]*")*)\s*>/;
+const ROOT_CLOSE = /<\/svg>\s*$/;
+
+/**
+ * The inner markup of one Lucide SVG file, once the file around it has been
+ * checked: one `<svg>` and nothing else but a leading comment, carrying only
+ * the root attributes above with the values the chrome draws by.
+ */
+function iconDocumentBody(svg: string, label: string): string {
+  const start = PROLOGUE.exec(svg)?.[0].length ?? 0;
+  const open = ROOT_OPEN.exec(svg.slice(start));
+  const close = ROOT_CLOSE.exec(svg);
+  if (!open || !close || close.index < start + open[0].length)
+    throw new Error(
+      `${label}: not an <svg> document (one <svg> with double-quoted attributes, after at most one comment)`,
+    );
+  const seen = new Set<string>();
+  for (const match of (open[1] ?? '').matchAll(ATTRIBUTE)) {
+    const attr = match[1] ?? '';
+    const value = match[2] ?? '';
+    const expected = ICON_ROOT_ATTRIBUTES.get(attr);
+    if (!expected)
+      throw new Error(`${label}: attribute "${attr}" on <svg> is not allowed`);
+    if (!expected.test(value))
+      throw new Error(
+        `${label}: <svg ${attr}="${value}"> is not how the chrome draws an icon`,
+      );
+    seen.add(attr);
+  }
+  for (const attr of ICON_ROOT_REQUIRED)
+    if (!seen.has(attr)) throw new Error(`${label}: <svg> has no ${attr}`);
+  return svg.slice(start + open[0].length, close.index);
+}
 
 /**
  * The shapes of one Lucide SVG file as compact markup, without the outer
- * `<svg>`. Throws on anything outside the allow-lists above (`label` names
- * the icon in the message).
+ * `<svg>`. Throws on anything outside the allow-lists above, in the shapes
+ * or around them (`label` names the icon in the message).
  */
 export function iconBody(svg: string, label: string): string {
-  const doc = /<svg\b[^>]*>([\s\S]*)<\/svg>\s*$/.exec(svg);
-  if (!doc) throw new Error(`${label}: not an <svg> document`);
-  let rest = (doc[1] ?? '').trim();
+  let rest = iconDocumentBody(svg, label).trim();
   let out = '';
   const open: string[] = [];
   while (rest) {

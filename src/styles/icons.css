@@ -55,10 +55,18 @@
   vertical-align: calc(0.36em - var(--icon-size) / 2);
 }
 
-/* The layer toggle sets no text colour: its emoji brought their own. */
-.layer-eye > .icon {
+/* The layer toggle set no text colour (its emoji brought their own), so the
+   button gets one here and its icon takes it like any other. */
+.layer-eye {
   color: var(--text);
 }
-.layer-eye[aria-pressed='false'] > .icon {
+.layer-eye[aria-pressed='false'] {
   color: var(--muted);
+}
+
+/* The one icon that is filled: the mini style bar's star is solid while the
+   selection is emphasized and an outline while it is not, so the state does
+   not rest on the accent colour alone (hover has that colour too). */
+.mb-btn.on .icon {
+  fill: currentColor;
 }

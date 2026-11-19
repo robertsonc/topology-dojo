@@ -6,6 +6,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
   buildIconsModule,
@@ -13,6 +14,7 @@ import {
   ICON_ATTRIBUTES,
   ICON_ELEMENTS,
   ICON_MANIFEST,
+  ICON_ROOT_ATTRIBUTES,
 } from '../../scripts/build-icons.js';
 import { ICON_BODIES } from './icons.generated.js';
 import {
@@ -151,8 +153,12 @@ describe('the generated drawings', () => {
 });
 
 describe('iconBody', () => {
-  const svg = (inner: string): string =>
-    `<!-- @license -->\n<svg class="lucide" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">\n${inner}\n</svg>\n`;
+  /** The outer `<svg>` of a Lucide file, as the package ships it. */
+  const ROOT =
+    'class="lucide lucide-x" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+  const svg = (inner: string, root: string = ROOT): string =>
+    `<!-- @license lucide-static v0.0.0 - ISC -->\n<svg ${root}>\n${inner}\n</svg>\n`;
+  const shape = '<path d="M0 0" />';
 
   it('keeps the shapes and drops the outer svg and its presentation', () => {
     expect(
@@ -197,6 +203,72 @@ describe('iconBody', () => {
     );
   });
 
+  it('refuses a file that is more than the one svg Lucide ships', () => {
+    // Nothing around the shapes is copied, so none of this could reach the
+    // page; it fails all the same, as a file that is not what it should be.
+    const good = svg(shape);
+    expect(iconBody(good, 'ok')).toBe('<path d="M0 0"/>');
+    // The comment is optional, and so are the attributes that draw nothing.
+    expect(iconBody(good.replace(/<!--.*-->\n/, ''), 'ok')).toBe(
+      '<path d="M0 0"/>',
+    );
+    expect(iconBody(svg(shape, ROOT.replace(/class="[^"]*" /, '')), 'ok')).toBe(
+      '<path d="M0 0"/>',
+    );
+
+    const notOneSvg = /not an <svg> document/;
+    const refused: [file: string, reason: RegExp][] = [
+      [`<script>alert(1)</script>${good}`, notOneSvg],
+      [`<?xml version="1.0"?>${good}`, notOneSvg],
+      [`<!-- one --><!-- two -->${good}`, notOneSvg],
+      [`text${good}`, notOneSvg],
+      [`${good}<script>alert(1)</script>`, notOneSvg],
+      [`${good}${good}`, /<svg> is not an allowed icon element/],
+      [svg(shape, `${ROOT} onload='alert(1)'`), notOneSvg],
+      [svg(shape, `${ROOT} hidden`), notOneSvg],
+      [svg(shape, `${ROOT} onload="alert(1)"`), /attribute "onload" on <svg>/],
+      [svg(shape, `${ROOT} style="display:none"`), /attribute "style" on/],
+      [svg(shape, `${ROOT} data-x=">"`), /attribute "data-x" on <svg>/],
+      [
+        svg(shape, ROOT.replace('0 0 24 24', '0 0 48 48')),
+        /<svg viewBox="0 0 48 48"> is not how the chrome draws an icon/,
+      ],
+      [
+        svg(shape, ROOT.replace('fill="none"', 'fill="currentColor"')),
+        /<svg fill="currentColor"> is not how/,
+      ],
+      [
+        svg(shape, ROOT.replace('stroke-width="2"', 'stroke-width="1.5"')),
+        /<svg stroke-width="1.5"> is not how/,
+      ],
+      [
+        svg(shape, ROOT.replace('lucide lucide-x', 'lucide" onload="x')),
+        /attribute "onload" on <svg>/,
+      ],
+      [svg(shape, ROOT.replace('lucide lucide-x', 'x y')), /<svg class="x y">/],
+      [svg(shape, ROOT.replace(' viewBox="0 0 24 24"', '')), /no viewBox/],
+      [svg(shape, ROOT.replace(' fill="none"', '')), /<svg> has no fill/],
+      [
+        svg(shape, ROOT.replace(' stroke-linecap="round"', '')),
+        /<svg> has no stroke-linecap/,
+      ],
+    ];
+    for (const [file, reason] of refused)
+      expect(() => iconBody(file, 'bad'), file).toThrow(reason);
+  });
+
+  it('allows on the root the attributes Lucide writes, and no more', () => {
+    // Every attribute of the allow-list is on a real file: a list that named
+    // more would let more through. (That every drawing of the manifest
+    // passes is the build itself, in "the generated drawings" above.)
+    const lucide = source(
+      `../../node_modules/lucide-static/icons/${ICON_MANIFEST.undo}.svg`,
+    );
+    const root = /<svg\b([^>]*)>/.exec(lucide)?.[1] ?? '';
+    const names = [...root.matchAll(/([^\s=]+)="/g)].map((m) => m[1]);
+    expect(names.sort()).toEqual([...ICON_ROOT_ATTRIBUTES.keys()].sort());
+  });
+
   it('fails the build on a bad drawing or a bad name', async () => {
     await expect(
       buildIconsModule({ ok: 'any' }, () => svg('<script>x</script>'), '0.0.0'),
@@ -223,24 +295,169 @@ function chromeUiFiles(): string[] {
     .sort();
 }
 
+/** One string of a source file: a literal, or one part of a template. */
+interface SourceString {
+  text: string;
+  /** A whole literal, as opposed to a part of a template with `${…}` in it. */
+  whole: boolean;
+}
+
+/**
+ * The strings of a TypeScript source: its string literals, the parts of its
+ * templates and its regular expressions. A literal or template part is the
+ * value it evaluates to, so a glyph written as a `\u` escape is the glyph
+ * here. Comments are not strings: what one says about a glyph is not in the
+ * result.
+ */
+function sourceStrings(code: string): SourceString[] {
+  const strings: SourceString[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteralLike(node))
+      strings.push({ text: node.text, whole: true });
+    else if (
+      ts.isTemplateLiteralToken(node) ||
+      ts.isRegularExpressionLiteral(node)
+    )
+      strings.push({ text: node.text, whole: false });
+    ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile('source.ts', code, ts.ScriptTarget.Latest));
+  return strings;
+}
+
+/**
+ * Characters above ASCII that the chrome writes as text: dashes, quotes, the
+ * ellipsis, the dot and bullet between words, the times sign and the arrows
+ * of a key legend. Any other one is a glyph, and a glyph in the chrome was
+ * an icon drawn by whatever fallback font the OS had.
+ */
+const TYPOGRAPHY = '—–…·•×“”’←↑→↓';
+
+/** Markup's own escapes. Any other reference names a glyph (`&times;`). */
+const ESCAPES: ReadonlySet<string> = new Set([
+  '&amp;',
+  '&lt;',
+  '&gt;',
+  '&quot;',
+  '&#39;',
+]);
+
+/** A string as a failure shows it: whole when short, else around `at`. */
+function excerpt(text: string, at: number): string {
+  if (text.length <= 48) return text;
+  return `…${text.slice(Math.max(0, at - 16), at + 16).replace(/\s+/g, ' ')}…`;
+}
+
+/**
+ * Where a source draws an icon with a character instead of the set:
+ *
+ * - `glyphs`: every string with a character outside ASCII and `TYPOGRAPHY`,
+ *   or with a character reference that is not one of markup's escapes;
+ * - `symbols`: every label that is a symbol and no words, which is how a
+ *   glyph icon stood in a button (`>×</button>`, `text: '…'`, a compass
+ *   cell's `'↑'`): a markup text node with no letter or digit, or a whole
+ *   literal that has a character above ASCII and no letter or digit. A
+ *   symbol between two spaces (`' · '`) joins words and is not one.
+ *
+ * Each string is listed once per place it is written, in source order.
+ */
+function glyphIcons(code: string): { glyphs: string[]; symbols: string[] } {
+  const glyphs: string[] = [];
+  const symbols: string[] = [];
+  const words = /[\p{L}\p{N}]/u;
+  for (const { text, whole } of sourceStrings(code)) {
+    const glyph =
+      [...text.matchAll(/[^\0-\x7f]/gu)].find(
+        (m) => !TYPOGRAPHY.includes(m[0]),
+      ) ??
+      [...text.matchAll(/&#?[A-Za-z0-9]+;/g)].find((m) => !ESCAPES.has(m[0]));
+    if (glyph) glyphs.push(excerpt(text, glyph.index));
+    if (
+      whole &&
+      /[^\0-\x7f]/.test(text) &&
+      !words.test(text) &&
+      !/^\s+\S+\s+$/.test(text)
+    )
+      symbols.push(text);
+    for (const node of text.matchAll(/>([^<>]+)</g)) {
+      const label = (node[1] ?? '').trim();
+      if (label && !words.test(label)) symbols.push(label);
+    }
+  }
+  return { glyphs, symbols };
+}
+
 describe('the chrome sources', () => {
   /**
-   * The symbols and emoji the chrome used as icons (each drawn by whatever
-   * fallback font the OS had). Punctuation that is also ordinary text (the
-   * ellipsis, the middle dot, the arrows of key legends) is not listed.
+   * Strings with a glyph that stay, each one whole, once per place it is
+   * written: the save chip's text, which the e2e suite reads as its "saved"
+   * signal and which the next phase redesigns.
    */
-  const GLYPH_ICONS =
-    '↶↷⤓⤧🔗◇▦⌗◓⚠⚙☀⤢▶🗑✦⚖⛶⇤⇔⇥⤒⇕↔↕●▾◂✋▸★👁✓＋↺✕↖↗↙↘⟳↳🚫⇄╱⇢⌖⧉⤹⚓‹›✎⏸↩🌙⤴◎◌◈';
-
-  /**
-   * Glyphs that stay, by file: the save chip's text, which the e2e suite
-   * reads as its "saved" signal and which the next phase redesigns.
-   */
-  const KEPT: Readonly<Record<string, string>> = {
-    'main.ts': '👁✓', // okText: "👁 shared copy" / "✓ synced"
-    'ui/save-status.ts': '⚠✓', // "✓ saved", "⚠ not saved — download JSON", …
-    'ui/workspace-panel.ts': '✓', // "✓ synced", written to the same chip
+  const KEPT_GLYPHS: Readonly<Record<string, string[]>> = {
+    'main.ts': ['👁 shared copy', '✓ synced'],
+    'ui/save-status.ts': [
+      '⚠ not saved — download JSON',
+      '⚠ changed in another tab — load it',
+      '✓ saved · shared copy',
+      '✓ saved',
+    ],
+    'ui/workspace-panel.ts': ['✓ synced'],
   };
+
+  /** Labels that are a symbol and no words, and are text all the same. */
+  const KEPT_SYMBOLS: Readonly<Record<string, string[]>> = {
+    'main.ts': [
+      '…', // the save chip while a change waits to be saved (kept, as above)
+      '–', // the status bar's pointer position while there is none
+      '←↑→↓', // the arrow keys, in the shortcut sheet
+    ],
+  };
+
+  it('finds a glyph in a string, and nothing in a comment', () => {
+    expect(
+      glyphIcons(
+        "// ✕ closes it\nconst a = 'close'; /* ⚙ */\n" +
+          'const b = `<b title="a — b">${a} · ${a}…</b>`;\n' +
+          "const c = [a, 'x'].join(' · ') + '&amp;&lt;&gt;&quot;&#39;';",
+      ),
+    ).toEqual({ glyphs: [], symbols: [] });
+
+    const found = (code: string): string[] => {
+      const { glyphs, symbols } = glyphIcons(code);
+      return [...glyphs.map((g) => `glyph ${g}`), ...symbols];
+    };
+    // A glyph anywhere in a string, written out, escaped or as a reference.
+    expect(found('x = `${n} copied ✓`')).toEqual(['glyph  copied ✓']);
+    expect(found("x = '\\u2716 exit'")).toEqual(['glyph ✖ exit']);
+    expect(found("x = '<b>&times;</b>'")).toEqual(['glyph <b>&times;</b>']);
+    expect(found("x = '<b>&#10003; done</b>'")).toEqual([
+      'glyph <b>&#10003; done</b>',
+    ]);
+    expect(found('x = /^✓/')).toEqual(['glyph /^✓/']);
+    // A long string is shown around its glyph.
+    expect(found(`x = '${'a'.repeat(60)}☰${'b'.repeat(60)}'`)).toEqual([
+      `glyph …${'a'.repeat(16)}☰${'b'.repeat(15)}…`,
+    ]);
+    // Typography alone as a label: in markup, or as the text handed to it.
+    expect(found('x = `<button id="z">−</button>`')).toEqual([
+      'glyph <button id="z">−</button>',
+      '−',
+    ]);
+    expect(found('x = `<button>${i}</button><button>×</button>`')).toEqual([
+      '×',
+    ]);
+    expect(found("x = { key: 'close', text: '×' }")).toEqual(['×']);
+    expect(found("x = [['n', '↑'], ['', '·'], ['s', '↓']]")).toEqual([
+      '↑',
+      '·',
+      '↓',
+    ]);
+    expect(found("revoke.textContent = '…'")).toEqual(['…']);
+    // A character that is not a letter is a label of that kind in ASCII too.
+    expect(found("x = '<button>+</button> <button>add</button>'")).toEqual([
+      '+',
+    ]);
+  });
 
   it('draw icons from the set, not from glyphs', () => {
     const files = [
@@ -248,18 +465,15 @@ describe('the chrome sources', () => {
       'nodes/designer.ts',
       ...chromeUiFiles().map((file) => `ui/${file}`),
     ];
-    const found: Record<string, string> = {};
+    const glyphs: Record<string, string[]> = {};
+    const symbols: Record<string, string[]> = {};
     for (const file of files) {
-      const text = source(`../${file}`);
-      const glyphs = [...new Set(GLYPH_ICONS)].filter((g) => text.includes(g));
-      if (glyphs.length) found[file] = glyphs.sort().join('');
+      const found = glyphIcons(source(`../${file}`));
+      if (found.glyphs.length) glyphs[file] = found.glyphs;
+      if (found.symbols.length) symbols[file] = found.symbols;
     }
-    const kept = Object.fromEntries(
-      Object.entries(KEPT).map(([file, glyphs]) => [
-        file,
-        [...glyphs].sort().join(''),
-      ]),
-    );
-    expect(found).toEqual(kept);
+    // A new entry here is an icon drawn as a character: use icon(name).
+    expect(glyphs).toEqual(KEPT_GLYPHS);
+    expect(symbols).toEqual(KEPT_SYMBOLS);
   });
 });

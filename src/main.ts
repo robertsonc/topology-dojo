@@ -2982,10 +2982,11 @@ function layersHtml(): string {
       );
     })
     .join('');
+  // The plus is an icon, which a screen reader skips: the name says "Add".
   return (
     `<div class="insp-h">Layers</div>` +
     (rows || `<div class="insp-hint">No layers declared.</div>`) +
-    `<button class="insp-btn" id="p-layer-add">${icon('plus')} Layer</button>`
+    `<button class="insp-btn" id="p-layer-add" aria-label="Add layer">${icon('plus')} Layer</button>`
   );
 }
 
@@ -3820,8 +3821,11 @@ function endpointLabel(id: string): string {
 /** One removable, reorderable chip in a refs editor. */
 function refChip(id: string): string {
   const name = esc(endpointLabel(id));
-  // An anchor shows its icon and id; its accessible names spell it out.
-  const shown = isAnchorRef(id) ? `${icon('anchor')} ${esc(id)}` : name;
+  // An anchor shows its icon and id; its accessible names spell it out. The
+  // icon is 14px, the height of the label's line, which clips its overflow.
+  const shown = isAnchorRef(id)
+    ? `${icon('anchor', { size: 14 })} ${esc(id)}`
+    : name;
   return (
     `<span class="refchip" data-id="${esc(id)}">` +
     `<button type="button" class="refmv" data-refmove="-1" title="Move earlier" aria-label="Move ${name} earlier">${icon('arrow-left')}</button>` +
@@ -3953,12 +3957,13 @@ function annotationsHtml(skipId?: string): string {
   const page = editor.page;
   const counts =
     page.zones.length + page.flowPaths.length + page.policyMarkers.length;
+  // Each plus is an icon, which a screen reader skips: the names say "Add".
   let html =
     `<div class="insp-h anno-top">Annotations</div>` +
     `<div class="anno-add">` +
-    `<button class="tbtn" data-add="zone" title="Group selected nodes into a zone">${icon('plus')} zone</button>` +
-    `<button class="tbtn" data-add="flowPath" title="Route a flow path through selected nodes">${icon('plus')} flow</button>` +
-    `<button class="tbtn" data-add="policyMarker" title="Badge the selected node">${icon('plus')} marker</button>` +
+    `<button class="tbtn" data-add="zone" title="Group selected nodes into a zone" aria-label="Add zone">${icon('plus')} zone</button>` +
+    `<button class="tbtn" data-add="flowPath" title="Route a flow path through selected nodes" aria-label="Add flow path">${icon('plus')} flow</button>` +
+    `<button class="tbtn" data-add="policyMarker" title="Badge the selected node" aria-label="Add marker">${icon('plus')} marker</button>` +
     `</div>`;
   if (counts === 0)
     html += `<div class="muted anno-empty">Select node(s), then add a zone, flow path, or marker.</div>`;
@@ -4603,7 +4608,7 @@ function renderFilmstrip(): void {
       )
       .join('')}
     <button class="frame add" id="dupPage" title="Duplicate current frame">${icon('duplicate')} duplicate</button>
-    <button class="frame add" id="addPage" title="Add blank frame">${icon('plus')} frame</button>
+    <button class="frame add" id="addPage" title="Add blank frame" aria-label="Add frame">${icon('plus')} frame</button>
     ${
       pendingFrameDelete
         ? `<button class="frame add" id="undoDel" title="Restore the deleted frame &quot;${esc(pendingFrameDelete.page.name)}&quot;">${icon('restore')} undo delete</button>`
