@@ -795,6 +795,33 @@ test('on a phone, two drawers stored open load as one, and their stored choices 
   ).toBe('0');
 });
 
+test('narrowing to a phone while a properties field is typed in keeps the drawer open', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 844 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+  });
+  const node = (await nodeBoxes(page))[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  await inspectorTab(page, 'selection');
+  const label = page.locator('#inspector input[data-key="label"]');
+  await label.click();
+  await page.keyboard.press('End');
+  const before = await label.inputValue();
+  await page.keyboard.type('ab');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(100);
+  expect(await closed(page, 'inspector-wrap')).toBe(false);
+  await expect(label).toBeFocused();
+  await page.keyboard.type('cd');
+  await expect(label).toHaveValue(`${before}abcd`);
+});
+
 test('the zoom control and the minimap move left of an open properties drawer', async ({
   page,
 }) => {

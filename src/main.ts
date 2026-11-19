@@ -2704,26 +2704,30 @@ function readCollapsedPref(key: string): string | null {
  * field being typed in is not closed under it; a panel that closes while it
  * holds the focus hands the focus to its toggle, not to the page.
  */
-function syncPanelLayoutFromPrefs(): void {
-  const compact = isCompactLayoutWidth(window.innerWidth);
-  // A field being typed in, not a button or a section heading with focus.
+/**
+ * Whether a field inside `panel` is being typed in (not a button or a section
+ * heading with focus). The resize that crossed a breakpoint may already have
+ * moved the focus (the colour popover closes on a resize and gives it back to
+ * its button), so what had it when the resize began counts too.
+ */
+function editingIn(panel: HTMLElement): boolean {
   const isField = (el: Element | null): boolean =>
     el instanceof HTMLElement &&
     (el.matches('input, textarea, select') || el.isContentEditable);
-  // The resize that crossed the breakpoint may already have moved the focus
-  // (the colour popover closes on a resize and gives it back to its button),
-  // so what had it when the resize began counts too.
-  const editing = (el: HTMLElement): boolean =>
-    [document.activeElement, focusAtResize].some(
-      (f) => isField(f) && el.contains(f),
-    );
+  return [document.activeElement, focusAtResize].some(
+    (f) => isField(f) && panel.contains(f),
+  );
+}
+
+function syncPanelLayoutFromPrefs(): void {
+  const compact = isCompactLayoutWidth(window.innerWidth);
   const close = (
     el: HTMLElement,
     toggle: HTMLElement,
     shut: boolean,
     apply: () => void,
   ): void => {
-    if (shut && editing(el)) return;
+    if (shut && editingIn(el)) return;
     const held = shut && el.contains(document.activeElement);
     apply();
     if (held && document.activeElement !== toggle)
@@ -2752,6 +2756,8 @@ function settleCrowdedDrawers(): void {
   if (!drawersCrowdAtRest(window.innerWidth)) return;
   if (paletteEl.classList.contains('collapsed')) return;
   if (inspectorWrap.classList.contains('collapsed')) return;
+  // Not under a field being typed in: the next keys would go to the canvas.
+  if (editingIn(inspectorWrap)) return;
   const held = inspectorWrap.contains(document.activeElement);
   setInspectorCollapsed(true, false);
   if (held) inspectorToggle.focus({ preventScroll: true });
