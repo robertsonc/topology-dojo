@@ -259,6 +259,34 @@
   flex: 1;
   width: auto;
 }
+/* In a narrow panel it takes its own row across the header, under the
+   icon, the name and the lock and More buttons, so the longest type name
+   ("Switch Enterprise") reads in full. */
+.inspector-wrap.narrow .insp-head:has(#i-type) .insp-name,
+.inspector-wrap.narrow .insp-head:has(#i-type) .insp-sub {
+  display: contents;
+}
+.inspector-wrap.narrow .insp-head:has(#i-type) {
+  row-gap: 2px;
+}
+.inspector-wrap.narrow .insp-head:has(#i-type) > .insp-glyph {
+  grid-area: 1 / 1 / 3 / 2;
+}
+.inspector-wrap.narrow .insp-head:has(#i-type) .insp-title {
+  grid-area: 1 / 2;
+  min-width: 0;
+}
+.inspector-wrap.narrow .insp-head:has(#i-type) .insp-kind {
+  grid-area: 2 / 2;
+}
+.inspector-wrap.narrow .insp-head:has(#i-type) > .insp-actions {
+  grid-area: 1 / 3 / 3 / 4;
+}
+.inspector-wrap.narrow .insp-head #i-type {
+  grid-area: 3 / 1 / 4 / 4;
+  width: 100%;
+  margin-top: 6px;
+}
 /* Rows under the header that belong to no section (a link's ends). */
 .insp-top {
   padding-top: 0;
@@ -382,9 +410,32 @@
 .insp-pair:has(> select:first-child + input) {
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 }
-/* On a phone the control column is too narrow for a choice's longer words
-   ("None (no indicator)", "chip beside the wire"): a choice takes the row's
-   width under its label. */
+/* In a narrow panel (under 300px: the narrowest docked width, and every
+   phone drawer) the control column is too narrow for a choice's longer
+   words ("None (no indicator)", "chip beside the wire"): a choice takes the
+   row's width under its label, a pair of fields takes a row each, and a
+   link's two ends one row each with Swap beside them. */
+.inspector-wrap.narrow .insp-row:has(> select:last-child),
+.inspector-wrap.narrow .insp-row:has(> .insp-pair) {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 4px;
+}
+.inspector-wrap.narrow .insp-pair,
+.inspector-wrap.narrow .insp-pair:has(> select:first-child + input) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.inspector-wrap.narrow .insp-ends {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.inspector-wrap.narrow .insp-ends > #i-from {
+  grid-area: 1 / 1;
+}
+.inspector-wrap.narrow .insp-ends > #i-swap {
+  grid-area: 1 / 2 / 3 / 3;
+}
+.inspector-wrap.narrow .insp-ends > #i-to {
+  grid-area: 2 / 1;
+}
 @media (max-width: 640px) {
   .insp-row:has(> select:last-child) {
     grid-template-columns: minmax(0, 1fr);

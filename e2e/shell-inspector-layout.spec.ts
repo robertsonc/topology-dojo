@@ -9,6 +9,7 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  inspectorSection,
   inspectorTab,
   nodeBox,
   openFixture,
@@ -473,5 +474,113 @@ for (const width of [240, 300, 480]) {
         hide.x,
       );
     }
+  });
+}
+
+/** Each choice and number named, by the words it shows (a field's
+ * placeholder when it is empty), whose words its box cuts short. */
+async function cutChoices(page: Page, selectors: string[]): Promise<string[]> {
+  const cut: string[] = [];
+  for (const selector of selectors) {
+    const found = await page.locator(selector).evaluate((el) => {
+      const field = el as HTMLSelectElement | HTMLInputElement;
+      const cs = getComputedStyle(field);
+      const words =
+        field instanceof HTMLSelectElement
+          ? (field.selectedOptions[0]?.text ?? '')
+          : field.value || field.placeholder;
+      const probe = document.createElement('span');
+      probe.style.font = cs.font;
+      probe.style.position = 'absolute';
+      probe.style.whiteSpace = 'pre';
+      probe.textContent = words;
+      document.body.append(probe);
+      const text = probe.getBoundingClientRect().width;
+      probe.remove();
+      // A select draws its arrow in about 20px at the right.
+      const inner =
+        field.clientWidth -
+        parseFloat(cs.paddingLeft) -
+        parseFloat(cs.paddingRight) -
+        (field instanceof HTMLSelectElement ? 20 : 0);
+      return text <= inner
+        ? ''
+        : `"${words}" (${Math.round(text)}px in ${Math.round(inner)}px)`;
+    });
+    if (found) cut.push(`${selector}: ${found}`);
+  }
+  return cut;
+}
+
+// In a narrow panel (the 240px docked minimum, and the phone drawers) no
+// choice is cut short: the selection header's type picker with the longest
+// type name, a node's Status, the Page tab's Port labels, a link's two ends,
+// its Routing and its corner radius.
+for (const size of [
+  { width: 1440, height: 900, panel: 240 },
+  { width: 390, height: 844 },
+  { width: 320, height: 640 },
+]) {
+  const where = size.panel
+    ? `a ${size.panel}px panel`
+    : `a ${size.width}px phone`;
+  test(`in ${where} no choice in the properties panel is cut short`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    if (size.panel)
+      await page.evaluate(
+        (w) => localStorage.setItem('tds-inspector-width', String(w)),
+        size.panel,
+      );
+    await page.reload();
+    await expect(page.locator('#page-canvas')).toBeVisible();
+    const phone = !size.panel;
+    const panel = page.locator('#inspector-wrap');
+    const setPanel = async (open: boolean) => {
+      const shut = await panel.evaluate((el) =>
+        el.classList.contains('collapsed'),
+      );
+      if (shut === open) await page.locator('#inspector-toggle').click();
+    };
+
+    // The longest type name in the catalogue.
+    if (phone) {
+      await setPanel(false);
+      await page.locator('#palette-toggle').click();
+    }
+    await page.locator('.pitem[data-type="switchEnterprise"]').first().click();
+    if (phone) {
+      await page.locator('#palette-toggle').click();
+      await setPanel(true);
+    }
+    await inspectorTab(page, 'selection');
+    await expect(page.locator('#i-type')).toHaveValue('switchEnterprise');
+    await inspectorSection(page, 'Style');
+    const cut = await cutChoices(page, [
+      '#i-type',
+      '#inspector select[data-key="status"]',
+    ]);
+    // The lock and More buttons stay in the header, in reach.
+    await expect(page.locator('#inspector [data-head="more"]')).toBeVisible();
+
+    await inspectorTab(page, 'page');
+    cut.push(...(await cutChoices(page, ['#p-portlabels'])));
+
+    if (phone) await setPanel(false);
+    await openFixture(page, 'zone-orthogonal.json');
+    await clickLink(page, 'orth');
+    if (phone) await setPanel(true);
+    await inspectorTab(page, 'selection');
+    await inspectorSection(page, 'Routing');
+    cut.push(
+      ...(await cutChoices(page, [
+        '#i-from',
+        '#i-to',
+        '#inspector select[data-key="lineStyle"]',
+        '#inspector input[data-key="cornerRadius"]',
+      ])),
+    );
+    expect(cut).toEqual([]);
   });
 }
