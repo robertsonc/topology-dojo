@@ -279,9 +279,9 @@ export function computeChipAnnouncement(
 /** Pure: the panel body when workspaces are disabled on this deployment. */
 export function renderWorkspaceDisabledHtml(): string {
   return (
-    `<div class="ws-note">Workspaces are not enabled on this deployment.</div>` +
-    `<div class="ws-card"><div class="ws-note">The agent workspace surface is turned off for this deployment. Local editing and autosave still work as usual.</div>` +
-    `<div class="ws-actions"><button class="tbtn" id="wsRefreshList">Check again</button></div></div>`
+    `<div class="hint">Workspaces are not enabled on this deployment.</div>` +
+    `<div class="card"><div class="hint">The agent workspace surface is turned off for this deployment. Local editing and autosave still work as usual.</div>` +
+    `<div class="ws-actions"><button class="btn btn-sm" id="wsRefreshList">Check again</button></div></div>`
   );
 }
 
@@ -290,22 +290,22 @@ export function renderWorkspaceChoicesHtml(
   choices: WorkspaceListItem[],
 ): string {
   const choicesHtml = choices.length
-    ? `<div class="ws-section">Existing workspaces</div>` +
+    ? `<h4 class="section-label">Existing workspaces</h4>` +
       choices
         .slice(0, 20)
         .map(
           (item) =>
-            `<div class="ws-card"><div class="ws-row"><span class="ws-v">${esc(item.title)}</span>` +
-            `<button class="tbtn ws-open" data-wid="${esc(item.id)}">open</button></div>` +
-            `<div class="ws-note">${esc(item.id)} · ${item.pages} page${item.pages === 1 ? '' : 's'} · ${item.migrated ? `r${item.revision ?? 0}` : 'legacy · migrates on open'}</div></div>`,
+            `<div class="card"><div class="ws-row"><span class="ws-v">${esc(item.title)}</span>` +
+            `<button class="btn btn-sm ws-open" data-wid="${esc(item.id)}">open</button></div>` +
+            `<div class="hint"><span class="data">${esc(item.id)}</span> · ${item.pages} page${item.pages === 1 ? '' : 's'} · ${item.migrated ? `<span class="data">r${item.revision ?? 0}</span>` : 'legacy · migrates on open'}</div></div>`,
         )
         .join('')
     : '';
   return (
-    `<div class="ws-note">Hand this document to the canonical workspace so the browser and your agent share revisions—not copies.</div>` +
-    `<div class="ws-card"><div class="ws-row"><span class="ws-k">Default</span><span class="ws-v ws-policy">Suggest only</span></div>` +
-    `<div class="ws-note">Agent edits arrive as reviewable proposals. Browser synchronization does not consume model tokens.</div>` +
-    `<div class="ws-actions"><button class="tbtn" id="wsHandoff">Hand off current document</button><button class="tbtn" id="wsRefreshList">Refresh list</button></div></div>` +
+    `<div class="hint">Hand this document to the canonical workspace so the browser and your agent share revisions—not copies.</div>` +
+    `<div class="card"><div class="ws-row"><span class="ws-k">Default</span><span class="ws-v ws-policy">Suggest only</span></div>` +
+    `<div class="hint">Agent edits arrive as reviewable proposals. Browser synchronization does not consume model tokens.</div>` +
+    `<div class="ws-actions"><button class="btn btn-sm btn-primary" id="wsHandoff">Hand off current document</button><button class="btn btn-sm" id="wsRefreshList">Refresh list</button></div></div>` +
     choicesHtml
   );
 }
@@ -320,22 +320,22 @@ export function renderCheckpointsHtml(workspace: ActiveWorkspace): string {
           (checkpoint) =>
             `<div class="ws-checkpoint" data-cid="${esc(checkpoint.id)}">` +
             `<div class="ws-checkpoint-head"><span class="ws-v">${esc(checkpoint.name)}</span>` +
-            `<span class="ws-note">r${checkpoint.revision} · ${checkpoint.pageCount} page${checkpoint.pageCount === 1 ? '' : 's'} · ${esc(checkpoint.createdBy.kind)}</span></div>` +
+            `<span class="hint"><span class="data">r${checkpoint.revision}</span> · ${checkpoint.pageCount} page${checkpoint.pageCount === 1 ? '' : 's'} · ${esc(checkpoint.createdBy.kind)}</span></div>` +
             `<div class="ws-actions">` +
-            `<button class="tbtn ws-cp-restore" data-cid="${esc(checkpoint.id)}">Restore</button>` +
-            `<button class="tbtn ws-cp-fork" data-cid="${esc(checkpoint.id)}">Fork</button>` +
-            `<button class="tbtn ws-cp-delete" data-cid="${esc(checkpoint.id)}">Delete</button>` +
+            `<button class="btn btn-sm ws-cp-restore" data-cid="${esc(checkpoint.id)}">Restore</button>` +
+            `<button class="btn btn-sm ws-cp-fork" data-cid="${esc(checkpoint.id)}">Fork</button>` +
+            `<button class="btn btn-sm btn-danger ws-cp-delete" data-cid="${esc(checkpoint.id)}">Delete</button>` +
             `</div></div>`,
         )
         .join('')
-    : `<div class="ws-empty">No checkpoints yet.</div>`;
+    : `<div class="hint">No checkpoints yet.</div>`;
   return (
-    `<div class="ws-section">Checkpoints (${workspace.checkpoints.length}/12)</div>` +
-    `<div class="ws-card"><div class="ws-row">` +
-    `<input id="wsCheckpointName" class="ws-input" type="text" maxlength="120" placeholder="Name this checkpoint…"${atCap ? ' disabled' : ''}>` +
-    `<button class="tbtn" id="wsCheckpointCreate"${atCap ? ' disabled' : ''}>Save</button></div>` +
+    `<h4 class="section-label">Checkpoints <span class="data">(${workspace.checkpoints.length}/12)</span></h4>` +
+    `<div class="card"><div class="ws-row">` +
+    `<input id="wsCheckpointName" class="field" type="text" maxlength="120" placeholder="Name this checkpoint…" aria-label="Checkpoint name"${atCap ? ' disabled' : ''}>` +
+    `<button class="btn" id="wsCheckpointCreate"${atCap ? ' disabled' : ''}>Save</button></div>` +
     (atCap
-      ? `<div class="ws-note">Checkpoint limit reached — delete one to save another.</div>`
+      ? `<div class="hint">Checkpoint limit reached — delete one to save another.</div>`
       : '') +
     list +
     `</div>`
@@ -357,8 +357,8 @@ export function renderTimelineHtml(workspace: ActiveWorkspace): string {
   const log = workspace.timeline;
   if (!log || log.changes.length === 0) {
     return (
-      `<div class="ws-section">Timeline</div>` +
-      `<div class="ws-card"><div class="ws-empty">No revisions yet.</div></div>`
+      `<h4 class="section-label">Timeline</h4>` +
+      `<div class="card"><div class="hint">No revisions yet.</div></div>`
     );
   }
   const checkpointsAt = new Map<number, string[]>();
@@ -376,20 +376,20 @@ export function renderTimelineHtml(workspace: ActiveWorkspace): string {
       const first = change.summary.descriptions[0];
       return (
         `<div class="ws-rev">` +
-        `<div class="ws-rev-head"><span class="ws-rev-n">r${change.revision}</span>` +
-        `<span class="ws-badge ws-src-${esc(change.source)}">${esc(source)}</span>` +
-        `<span class="ws-note">${esc(actor)}</span></div>` +
-        `<div class="ws-note">${change.summary.count} op${change.summary.count === 1 ? '' : 's'}${first ? ` · ${esc(first)}` : ''}</div>` +
+        `<div class="ws-rev-head"><span class="ws-rev-n data">r${change.revision}</span>` +
+        `<span class="badge ws-src-${esc(change.source)}${change.source === 'proposal' ? ' badge-accent' : change.source === 'restore' ? ' badge-warn' : ''}">${esc(source)}</span>` +
+        `<span class="hint">${esc(actor)}</span></div>` +
+        `<div class="hint">${change.summary.count} op${change.summary.count === 1 ? '' : 's'}${first ? ` · ${esc(first)}` : ''}</div>` +
         (change.proposalId
-          ? `<div class="ws-note">${icon('check')} accepted proposal</div>`
+          ? `<div class="hint">${icon('check')} accepted proposal</div>`
           : '') +
         (change.guidanceConsultedBefore
-          ? `<div class="ws-note" title="get_authoring_guidance ran in the same MCP session before this revision. This is not a claim that the guidance caused the edit.">Guidance was consulted before this edit</div>`
+          ? `<div class="hint" title="get_authoring_guidance ran in the same MCP session before this revision. This is not a claim that the guidance caused the edit.">Guidance was consulted before this edit</div>`
           : '') +
         marks
           .map(
             (name) =>
-              `<div class="ws-note">${icon('checkpoint')} checkpoint “${esc(name)}”</div>`,
+              `<div class="hint">${icon('checkpoint')} checkpoint “${esc(name)}”</div>`,
           )
           .join('') +
         `</div>`
@@ -398,11 +398,11 @@ export function renderTimelineHtml(workspace: ActiveWorkspace): string {
     .join('');
   const floor =
     log.historyFloor > 0
-      ? `<div class="ws-note ws-rev-floor">Older revisions compacted (floor r${log.historyFloor}).</div>`
+      ? `<div class="hint ws-rev-floor">Older revisions compacted (floor r${log.historyFloor}).</div>`
       : '';
   return (
-    `<div class="ws-section">Timeline (r${log.revision})</div>` +
-    `<div class="ws-card">${rows}${floor}</div>`
+    `<h4 class="section-label">Timeline <span class="data">(r${log.revision})</span></h4>` +
+    `<div class="card ws-timeline">${rows}${floor}</div>`
   );
 }
 
@@ -416,17 +416,17 @@ export function renderPresenceHtml(presence: WorkspacePresence[]): string {
     .map((entry) => {
       const who = esc(entry.label || entry.kind);
       const where = entry.pageId
-        ? `<span class="ws-presence-page">${esc(entry.pageId)}</span>`
+        ? `<span class="ws-presence-page data">${esc(entry.pageId)}</span>`
         : '';
       return (
-        `<span class="ws-presence-chip ws-presence-${esc(entry.kind)}">` +
+        `<span class="badge${entry.kind === 'agent' ? ' badge-accent' : ''} ws-presence-chip ws-presence-${esc(entry.kind)}">` +
         `${who}${where}</span>`
       );
     })
     .join('');
   return (
-    `<div class="ws-section">Present (${presence.length})</div>` +
-    `<div class="ws-card ws-presence">${chips}</div>`
+    `<h4 class="section-label">Present <span class="data">(${presence.length})</span></h4>` +
+    `<div class="card ws-presence">${chips}</div>`
   );
 }
 
@@ -523,20 +523,23 @@ export function renderActiveWorkspaceHtml(
 ): string {
   const lease = workspace.manifest?.lease;
   const leaseLive = lease && Date.parse(lease.expiresAt) > Date.now();
+  const firstPending = workspace.proposals.findIndex(
+    (p) => p.status === 'pending',
+  );
   const proposalHtml = workspace.proposals.length
     ? workspace.proposals
         .map(
-          (proposal) =>
-            `<div class="ws-card" data-proposal="${esc(proposal.id)}">` +
+          (proposal, index) =>
+            `<div class="card" data-proposal="${esc(proposal.id)}">` +
             `<div class="ws-proposal-title">${esc(proposal.title)}</div>` +
-            `<div class="ws-proposal-meta">${proposal.summary.count} operation${proposal.summary.count === 1 ? '' : 's'} · base r${proposal.baseRevision} · ${esc(proposal.status)}</div>` +
+            `<div class="ws-proposal-meta hint">${proposal.summary.count} operation${proposal.summary.count === 1 ? '' : 's'} · base <span class="data">r${proposal.baseRevision}</span> · ${esc(proposal.status)}</div>` +
             (proposal.rationale
-              ? `<div class="ws-note">${esc(proposal.rationale)}</div>`
+              ? `<div class="hint">${esc(proposal.rationale)}</div>`
               : '') +
             (() => {
               const detail = describeProposalConflicts(proposal);
               return detail
-                ? `<div class="ws-note ws-conflict-note">${esc(detail.note)}</div>`
+                ? `<div class="hint ws-conflict-note">${esc(detail.note)}</div>`
                 : '';
             })() +
             // The description is a button (interactive content inside the
@@ -550,48 +553,52 @@ export function renderActiveWorkspaceHtml(
               )
               .join('')}${
               proposal.summary.count > proposal.summary.descriptions.length
-                ? `<li class="ws-note">…and ${proposal.summary.count - proposal.summary.descriptions.length} more (use “Accept all”)</li>`
+                ? `<li class="hint">…and ${proposal.summary.count - proposal.summary.descriptions.length} more (use “Accept all”)</li>`
                 : ''
             }</ul>` +
-            `<div class="ws-actions"><button class="tbtn ws-accept" data-pid="${esc(proposal.id)}">Accept all</button>` +
-            `<button class="tbtn ws-accept-selected" data-pid="${esc(proposal.id)}">Accept selected</button>` +
+            `<div class="ws-actions"><button class="btn btn-sm${index === firstPending ? ' btn-primary' : ''} ws-accept" data-pid="${esc(proposal.id)}">Accept all</button>` +
+            `<button class="btn btn-sm ws-accept-selected" data-pid="${esc(proposal.id)}">Accept selected</button>` +
             (describeProposalConflicts(proposal)?.supersedable
-              ? `<button class="tbtn ws-accept-supersede" data-pid="${esc(proposal.id)}" title="Rebase over this agent's own earlier writes and apply the newer values">Accept · supersede</button>`
+              ? `<button class="btn btn-sm ws-accept-supersede" data-pid="${esc(proposal.id)}" title="Rebase over this agent's own earlier writes and apply the newer values">Accept · supersede</button>`
               : '') +
-            `<button class="tbtn ws-reject" data-pid="${esc(proposal.id)}">Reject</button>` +
-            `<button class="tbtn ws-preview-toggle" data-pid="${esc(proposal.id)}">Preview</button></div>` +
+            // Reject comes last so that, when the row wraps, the destructive
+            // action never leads a line on its own.
+            `<button class="btn btn-sm ws-preview-toggle" data-pid="${esc(proposal.id)}" aria-pressed="false">Preview</button>` +
+            `<button class="btn btn-sm btn-danger ws-reject" data-pid="${esc(proposal.id)}">Reject</button></div>` +
             `<div class="ws-preview" data-pid="${esc(proposal.id)}" hidden></div></div>`,
         )
         .join('')
-    : `<div class="ws-empty">No pending agent proposals.</div>`;
+    : `<div class="hint">No pending agent proposals.</div>`;
 
   return (
-    `<div class="ws-card">` +
-    `<div class="ws-row"><span class="ws-k">Workspace</span><span class="ws-v">${esc(workspace.id)}</span><button class="tbtn" id="wsCopy">copy</button></div>` +
-    `<div class="ws-row"><span class="ws-k">Revision</span><span class="ws-v">r${workspace.revision}</span></div>` +
+    `<div class="card">` +
+    `<div class="ws-kv">` +
+    `<div class="ws-row"><span class="ws-k">Workspace</span><span class="ws-v data">${esc(workspace.id)}</span><button class="btn btn-sm btn-ghost" id="wsCopy">copy</button></div>` +
+    `<div class="ws-row"><span class="ws-k">Revision</span><span class="ws-v data">r${workspace.revision}</span></div>` +
     `<div class="ws-row"><span class="ws-k">Policy</span><span class="ws-v ws-policy">Suggest only</span></div>` +
     `<div class="ws-row"><span class="ws-k">Status</span><span class="ws-v">${esc(workspace.status)}</span></div>` +
+    `</div>` +
     (workspace.error
       ? `<div class="ws-error">${esc(workspace.error)}</div>`
       : '') +
     renderOfflineStatusHtml(workspace, online) +
-    `<div class="ws-actions"><button class="tbtn" id="wsSync" title="Push local edits and apply newer server revisions to the canvas">Sync now</button>` +
+    `<div class="ws-actions"><button class="btn btn-sm" id="wsSync" title="Push local edits and apply newer server revisions to the canvas">Sync now</button>` +
     (workspace.paused
-      ? `<button class="tbtn" id="wsResume" title="Treat this browser document as intended and sync it">Sync local copy</button>`
+      ? `<button class="btn btn-sm" id="wsResume" title="Treat this browser document as intended and sync it">Sync local copy</button>`
       : '') +
-    `<button class="tbtn" id="wsReload" title="Discard unsynced browser edits and load the canonical workspace">Reload server</button><button class="tbtn" id="wsDetach">Close workspace</button></div></div>` +
+    `<button class="btn btn-sm" id="wsReload" title="Discard unsynced browser edits and load the canonical workspace">Reload server</button><button class="btn btn-sm" id="wsDetach">Close workspace</button></div></div>` +
     renderPresenceHtml(workspace.presence) +
-    `<div class="ws-section">Agent control</div>` +
-    `<div class="ws-card"><div class="ws-note">${
+    `<h4 class="section-label">Agent control</h4>` +
+    `<div class="card"><div class="hint">${
       leaseLive
-        ? `Direct agent edits allowed only on page ${esc(lease.scope.pageId)} until ${esc(new Date(lease.expiresAt).toLocaleTimeString())}.`
+        ? `Direct agent edits allowed only on page <span class="data">${esc(lease.scope.pageId)}</span> until <span class="data">${esc(new Date(lease.expiresAt).toLocaleTimeString())}</span>.`
         : 'No lease. Agent changes must be proposals.'
     }</div><div class="ws-actions">` +
     (leaseLive
-      ? `<button class="tbtn" id="wsRevoke">Revoke now</button>`
-      : `<button class="tbtn" id="wsLease">Grant current page · 10 min</button>`) +
+      ? `<button class="btn btn-sm btn-danger" id="wsRevoke">Revoke now</button>`
+      : `<button class="btn btn-sm" id="wsLease">Grant current page · 10 min</button>`) +
     `</div></div>` +
-    `<div class="ws-section">Proposals (${workspace.proposals.length})</div>` +
+    `<h4 class="section-label">Proposals <span class="data">(${workspace.proposals.length})</span></h4>` +
     proposalHtml +
     renderCheckpointsHtml(workspace) +
     renderTimelineHtml(workspace)
@@ -758,7 +765,7 @@ export function renderProposalPreviewHtml(
 ): string {
   if (!frames.length)
     return (
-      `<div class="ws-note">No page-level preview for this proposal — ` +
+      `<div class="hint">No page-level preview for this proposal — ` +
       `it only changes document-level settings (see the operation list above).</div>`
     );
   const more = totalAffected - frames.length;
@@ -772,17 +779,17 @@ export function renderProposalPreviewHtml(
           `<div class="ws-preview-frames">` +
           `<div class="ws-preview-frame"><div class="ws-preview-frame-label">Before</div>` +
           (frame.beforeSvg ??
-            `<div class="ws-note ws-preview-empty">New page</div>`) +
+            `<div class="hint ws-preview-empty">New page</div>`) +
           `</div>` +
           `<div class="ws-preview-frame"><div class="ws-preview-frame-label">After</div>` +
           (frame.afterSvg ??
-            `<div class="ws-note ws-preview-empty">Page removed</div>`) +
+            `<div class="hint ws-preview-empty">Page removed</div>`) +
           `</div></div></div>`,
       )
       .join('') +
     `</div>` +
     (more > 0
-      ? `<div class="ws-note ws-preview-more">+${more} more page${more === 1 ? '' : 's'} affected</div>`
+      ? `<div class="hint ws-preview-more">+${more} more page${more === 1 ? '' : 's'} affected</div>`
       : '')
   );
 }
@@ -791,7 +798,7 @@ export function renderProposalPreviewHtml(
  * the accept/reject actions above stay intact either way. */
 export function renderProposalPreviewErrorHtml(message: string): string {
   return (
-    `<div class="ws-note">Preview unavailable (${esc(message)}) — ` +
+    `<div class="hint">Preview unavailable (${esc(message)}) — ` +
     `see the operation list above.</div>`
   );
 }
@@ -917,7 +924,7 @@ export function mountWorkspacePanel(
       return;
     }
     if (state.status === 'loading')
-      container.innerHTML = `<div class="ws-note">Rendering preview…</div>`;
+      container.innerHTML = `<div class="hint">Rendering preview…</div>`;
     else if (state.status === 'error')
       container.innerHTML = renderProposalPreviewErrorHtml(state.message);
     else
@@ -988,15 +995,30 @@ export function mountWorkspacePanel(
     paintProposalPreview(proposalId);
   }
 
+  /** Mirror whether a proposal's preview is open onto its toggle button. */
+  function syncPreviewToggle(proposalId: string): void {
+    workspacePanel
+      ?.querySelectorAll<HTMLElement>('.ws-preview-toggle')
+      .forEach((button) => {
+        if (button.dataset.pid === proposalId)
+          button.setAttribute(
+            'aria-pressed',
+            String(previewOpen.has(proposalId)),
+          );
+      });
+  }
+
   function toggleProposalPreview(proposalId: string): void {
     const container = findPreviewContainer(proposalId);
     if (previewOpen.has(proposalId)) {
       previewOpen.delete(proposalId);
       if (container) container.hidden = true;
+      syncPreviewToggle(proposalId);
       return;
     }
     previewOpen.add(proposalId);
     if (container) container.hidden = false;
+    syncPreviewToggle(proposalId);
     if (previewState.has(proposalId)) paintProposalPreview(proposalId);
     else void loadProposalPreview(proposalId);
   }
@@ -1036,6 +1058,7 @@ export function mountWorkspacePanel(
   ): Promise<void> {
     if (!previewOpen.has(proposalId)) {
       previewOpen.add(proposalId);
+      syncPreviewToggle(proposalId);
       const container = findPreviewContainer(proposalId);
       if (container) container.hidden = false;
       if (previewState.has(proposalId)) paintProposalPreview(proposalId);
@@ -1836,6 +1859,7 @@ export function mountWorkspacePanel(
       const proposalId = container.dataset.pid!;
       if (previewOpen.has(proposalId)) {
         container.hidden = false;
+        syncPreviewToggle(proposalId);
         paintProposalPreview(proposalId);
       }
     });
@@ -1928,12 +1952,12 @@ export function mountWorkspacePanel(
       return;
     }
     workspacePanel = document.createElement('div');
-    workspacePanel.className = 'workspace-panel scroll-slim';
+    workspacePanel.className = 'workspace-panel';
     workspacePanel.setAttribute('role', 'dialog');
     workspacePanel.setAttribute('aria-label', 'Agent Workspace');
     workspacePanel.innerHTML =
-      `<div class="ws-head"><h3>Agent Workspace</h3><button class="tbtn ticon" id="wsClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
-      `<div id="wsBody"></div>`;
+      `<div class="panel-head"><h3 class="panel-title">Agent Workspace</h3><button class="icon-btn" id="wsClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
+      `<div id="wsBody" class="ws-body scroll-slim"></div>`;
     document.body.appendChild(workspacePanel);
     workspacePanel
       .querySelector('#wsClose')
@@ -2037,7 +2061,7 @@ export function mountWorkspacePanel(
     if (!workspacePanel) openWorkspacePanel();
     scrollPanelTo(() => {
       const cards = workspacePanel?.querySelectorAll<HTMLElement>(
-        '.ws-card[data-proposal]',
+        '.card[data-proposal]',
       );
       if (!cards?.length) return null;
       if (!id) return cards[0] ?? null;

@@ -62,14 +62,28 @@ export function formatEvidenceSummary(pref: AuthoringPreference): string {
   return `${outcomes} · ${documents} · last observed ${pref.lastObservedAt.slice(0, 10)}`;
 }
 
+/** The scope label as markup: a workspace id is data, in the mono face. */
+function preferenceScopeHtml(scope: PreferenceScope): string {
+  return scope?.kind === 'workspace'
+    ? `workspace <span class="data">${esc(scope.workspaceId)}</span>`
+    : esc(preferenceScopeLabel(scope));
+}
+
+/** The evidence line as markup: the same words, with the date as data. */
+function evidenceSummaryHtml(pref: AuthoringPreference): string {
+  const text = formatEvidenceSummary(pref);
+  const day = pref.lastObservedAt.slice(0, 10);
+  return `${esc(text.slice(0, text.length - day.length))}<span class="data">${esc(day)}</span>`;
+}
+
 /** Pure: the panel body when the profile surface is disabled on this
  * deployment (`PROFILES_ENABLED` gate — mirrors the workspace panel's
  * disabled notice). */
 export function renderProfileDisabledHtml(): string {
   return (
-    `<div class="ws-note">Authoring preferences are not enabled on this deployment.</div>` +
-    `<div class="ws-card"><div class="ws-note">Preference learning is turned off for this deployment. Editing and agent workspaces work as usual.</div>` +
-    `<div class="ws-actions"><button class="tbtn" id="prefRefresh">Check again</button></div></div>`
+    `<div class="hint">Authoring preferences are not enabled on this deployment.</div>` +
+    `<div class="card"><div class="hint">Preference learning is turned off for this deployment. Editing and agent workspaces work as usual.</div>` +
+    `<div class="ws-actions"><button class="btn btn-sm" id="prefRefresh">Check again</button></div></div>`
   );
 }
 
@@ -94,18 +108,18 @@ export function renderScopeChooserHtml(pref: AuthoringPreference): string {
   const documentRefs = [...new Set(pref.sourceRevisionRefs.map(documentRefOf))];
   const workspaceRef = documentRefs.length === 1 ? documentRefs[0]! : null;
   return (
-    `<div class="ws-card pref-scope-chooser" data-pref="${id}">` +
-    `<div class="ws-note">Where should this preference apply?</div>` +
+    `<div class="card pref-scope-chooser" data-pref="${id}">` +
+    `<div class="hint">Where should this preference apply?</div>` +
     `<div class="ws-actions">` +
-    `<button class="tbtn pref-scope-option" data-pref-id="${id}" data-scope-kind="user">All my diagrams</button>` +
+    `<button class="btn btn-sm btn-primary pref-scope-option" data-pref-id="${id}" data-scope-kind="user">All my diagrams</button>` +
     (archetype
-      ? `<button class="tbtn pref-scope-option" data-pref-id="${id}" data-scope-kind="archetype" data-scope-archetype="${esc(archetype)}">Only ${esc(archetype)} diagrams</button>`
+      ? `<button class="btn btn-sm pref-scope-option" data-pref-id="${id}" data-scope-kind="archetype" data-scope-archetype="${esc(archetype)}">Only ${esc(archetype)} diagrams</button>`
       : '') +
     (workspaceRef
-      ? `<button class="tbtn pref-scope-option" data-pref-id="${id}" data-scope-kind="workspace" data-scope-workspace="${esc(workspaceRef)}">Only workspace ${esc(workspaceRef)}</button>`
+      ? `<button class="btn btn-sm pref-scope-option" data-pref-id="${id}" data-scope-kind="workspace" data-scope-workspace="${esc(workspaceRef)}">Only workspace <span class="data">${esc(workspaceRef)}</span></button>`
       : '') +
-    `<button class="tbtn pref-reject" data-pref-id="${id}">Don’t learn this</button>` +
-    `<button class="tbtn pref-confirm-cancel" data-pref-id="${id}">Cancel</button>` +
+    `<button class="btn btn-sm pref-reject" data-pref-id="${id}">Don’t learn this</button>` +
+    `<button class="btn btn-sm btn-ghost pref-confirm-cancel" data-pref-id="${id}">Cancel</button>` +
     `</div></div>`
   );
 }
@@ -127,45 +141,45 @@ function renderPreferenceCardHtml(
   let callout = '';
   if (pref.needsReview) {
     callout = confirmed
-      ? `<div class="ws-note pref-review">${icon('warning')} Overridden ${pref.contradictingOutcomes}× by your corrections — review it: re-confirm, rescope, or reject.</div>`
-      : `<div class="ws-note pref-review">${icon('warning')} Conflicting evidence (${pref.contradictingOutcomes} contradiction${pref.contradictingOutcomes === 1 ? '' : 's'}) — confirm the direction you want, or forget it.</div>`;
+      ? `<div class="hint pref-review">${icon('warning')} Overridden ${pref.contradictingOutcomes}× by your corrections — review it: re-confirm, rescope, or reject.</div>`
+      : `<div class="hint pref-review">${icon('warning')} Conflicting evidence (${pref.contradictingOutcomes} contradiction${pref.contradictingOutcomes === 1 ? '' : 's'}) — confirm the direction you want, or forget it.</div>`;
   } else if (shouldAskToConfirm(pref)) {
-    callout = `<div class="ws-note pref-ask">${icon('question')} You have made this correction ${pref.supportingOutcomes} times across ${pref.evidenceDocuments} documents. Should Topology Dojo prefer it in future agent-authored diagrams?</div>`;
+    callout = `<div class="hint pref-ask">${icon('question')} You have made this correction ${pref.supportingOutcomes} times across ${pref.evidenceDocuments} documents. Should Topology Dojo prefer it in future agent-authored diagrams?</div>`;
   } else if (pref.status === 'candidate' && pref.supportingOutcomes >= 2) {
-    callout = `<div class="ws-note pref-observed">${icon('observed')} Observed ${pref.supportingOutcomes}× — a repeated pattern. It changes nothing until you confirm it.</div>`;
+    callout = `<div class="hint pref-observed">${icon('observed')} Observed ${pref.supportingOutcomes}× — a repeated pattern. It changes nothing until you confirm it.</div>`;
   } else if (confirmed) {
-    callout = `<div class="ws-note pref-confirmed-note">${icon('confirmed')} Confirmed${pref.confirmedAt ? ` ${pref.confirmedAt.slice(0, 10)}` : ''} — supplied to agents when it applies.</div>`;
+    callout = `<div class="hint pref-confirmed-note">${icon('confirmed')} Confirmed${pref.confirmedAt ? ` <span class="data">${esc(pref.confirmedAt.slice(0, 10))}</span>` : ''} — supplied to agents when it applies.</div>`;
   } else if (rejected) {
-    callout = `<div class="ws-note pref-rejected-note">${icon('rejected')} Rejected — this pattern will not be learned again. Forget it to clear the record.</div>`;
+    callout = `<div class="hint pref-rejected-note">${icon('rejected')} Rejected — this pattern will not be learned again. Forget it to clear the record.</div>`;
   }
   const stale =
     now && staleForReview(pref, now)
-      ? `<div class="ws-note pref-stale">${icon('stale')} Not observed since ${pref.lastObservedAt.slice(0, 10)} — stale. Keep, pause, or forget it.</div>`
+      ? `<div class="hint pref-stale">${icon('stale')} Not observed since <span class="data">${esc(pref.lastObservedAt.slice(0, 10))}</span> — stale. Keep, pause, or forget it.</div>`
       : '';
   const exceptions = pref.exceptionWorkspaceIds?.length
-    ? `<div class="ws-note pref-exceptions">Except in: ${pref.exceptionWorkspaceIds.map((id) => esc(id)).join(', ')}</div>`
+    ? `<div class="hint pref-exceptions">Except in: ${pref.exceptionWorkspaceIds.map((id) => `<span class="data">${esc(id)}</span>`).join(', ')}</div>`
     : '';
   const confirmable =
     pref.status === 'candidate' || (confirmed && pref.needsReview);
   const actions = rejected
-    ? `<button class="tbtn pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>`
+    ? `<button class="btn btn-sm btn-danger pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>`
     : (confirmable
-        ? `<button class="tbtn pref-confirm-open" data-pref-id="${esc(pref.id)}">${confirmed ? 'Re-confirm…' : 'Make this a preference…'}</button>`
+        ? `<button class="btn btn-sm pref-confirm-open" data-pref-id="${esc(pref.id)}">${confirmed ? 'Re-confirm…' : 'Make this a preference…'}</button>`
         : '') +
-      `<button class="tbtn ${paused ? 'pref-resume' : 'pref-pause'}" data-pref-id="${esc(pref.id)}">${paused ? 'Resume' : 'Pause'}</button>` +
-      `<button class="tbtn pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>`;
+      `<button class="btn btn-sm ${paused ? 'pref-resume' : 'pref-pause'}" data-pref-id="${esc(pref.id)}">${paused ? 'Resume' : 'Pause'}</button>` +
+      `<button class="btn btn-sm btn-danger pref-forget" data-pref-id="${esc(pref.id)}">Forget</button>`;
   return (
-    `<div class="ws-card pref-card" data-pref="${esc(pref.id)}">` +
-    `<div class="ws-row"><span class="ws-v pref-directive">${esc(pref.directive)}</span>` +
-    `<span class="ws-badge pref-status-${esc(pref.status)}">${esc(pref.status)}</span></div>` +
+    `<div class="card pref-card" data-pref="${esc(pref.id)}">` +
+    `<div class="ws-row"><span class="pref-directive">${esc(pref.directive)}</span>` +
+    `<span class="badge pref-status-${esc(pref.status)}${pref.status === 'confirmed' ? ' badge-accent' : pref.status === 'paused' ? ' badge-warn' : ''}">${esc(pref.status)}</span></div>` +
     (pref.rationale && pref.rationale !== pref.directive
-      ? `<div class="ws-note pref-rationale">${esc(pref.rationale)}</div>`
+      ? `<div class="hint pref-rationale">${esc(pref.rationale)}</div>`
       : '') +
-    `<div class="ws-note pref-scope">Scope: ${esc(preferenceScopeLabel(pref.scope))}</div>` +
+    `<div class="hint pref-scope">Scope: ${preferenceScopeHtml(pref.scope)}</div>` +
     exceptions +
     callout +
     stale +
-    `<div class="ws-note pref-evidence">${esc(formatEvidenceSummary(pref))}</div>` +
+    `<div class="hint pref-evidence">${evidenceSummaryHtml(pref)}</div>` +
     `<div class="ws-actions">${actions}</div>` +
     (confirmingId === pref.id ? renderScopeChooserHtml(pref) : '') +
     `</div>`
@@ -181,12 +195,12 @@ export function renderPreferencesHtml(
   now: string | null = null,
 ): string {
   const intro =
-    `<div class="ws-note">Patterns observed from your corrections to agent-authored diagrams. ` +
+    `<div class="hint">Patterns observed from your corrections to agent-authored diagrams. ` +
     `Only rules you confirm are supplied to agents — and you can pause or forget them at any time.</div>`;
   if (!prefs.length) {
     return (
       intro +
-      `<div class="ws-card"><div class="ws-empty">No learned candidates yet. When you repeatedly correct agent work the same way, the pattern will appear here.</div></div>`
+      `<div class="card"><div class="hint">No learned candidates yet. When you repeatedly correct agent work the same way, the pattern will appear here.</div></div>`
     );
   }
   return (
@@ -215,7 +229,7 @@ export function renderProfileBodyHtml(state: ProfilePanelState): string {
   return (
     (state.error ? `<div class="ws-error">${esc(state.error)}</div>` : '') +
     (state.loading
-      ? `<div class="ws-note">Loading preferences…</div>`
+      ? `<div class="hint">Loading preferences…</div>`
       : renderPreferencesHtml(state.preferences, state.confirmingId, state.now))
   );
 }
@@ -370,12 +384,12 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
       return;
     }
     panel = document.createElement('div');
-    panel.className = 'workspace-panel profile-panel scroll-slim';
+    panel.className = 'workspace-panel profile-panel';
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Authoring Preferences');
     panel.innerHTML =
-      `<div class="ws-head"><h3>Authoring Preferences</h3><button class="tbtn ticon" id="prefClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
-      `<div id="prefBody"></div>`;
+      `<div class="panel-head"><h3 class="panel-title">Authoring Preferences</h3><button class="icon-btn" id="prefClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
+      `<div id="prefBody" class="ws-body scroll-slim"></div>`;
     document.body.appendChild(panel);
     panel
       .querySelector('#prefClose')
