@@ -1,6 +1,13 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listTemplates } from '../src/api/templates.js';
+import {
+  COMMAND_SPECS,
+  createCommandRegistry,
+  templateCommandSpecs,
+} from '../src/ui/commands.js';
+import { menuBarPath, type MenuContext } from '../src/ui/menus.js';
 
 export const fixturesDir = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -255,58 +262,64 @@ export async function chooseSwatch(swatch: Locator): Promise<void> {
   await swatch.click();
 }
 
-/** Close every open menu by pressing its trigger again, or with Escape. */
-async function closeMenus(page: Page, trigger: Locator): Promise<void> {
-  const layer = page.locator('.menu-layer');
-  if ((await layer.count()) > 0) await trigger.click();
-  await expect(layer).toHaveCount(0);
-}
+/**
+ * The menu bar as the shell defines it (src/ui/menus.ts), with every command
+ * offered: where each command is, so a test goes straight to it as a person
+ * who knows the menus does. What the running page offers is still the
+ * page's own: an item it does not show is an error here.
+ */
+const MENU_PATHS: MenuContext = (() => {
+  const templates = listTemplates();
+  const specs = [...COMMAND_SPECS, ...templateCommandSpecs(templates)];
+  const commands = createCommandRegistry(specs);
+  for (const spec of specs) commands.bind(spec.id, { run: () => undefined });
+  return {
+    commands,
+    templates,
+    shareAvailable: true,
+    account: { login: 'e2e', admin: true },
+  };
+})();
 
-/** Open, one after another, the submenus of the menu at `level` (0: the
- * menu a trigger opened) until `item` is on screen. False if it is in none. */
-async function revealMenuItem(
-  page: Page,
-  item: Locator,
-  level: number,
-): Promise<boolean> {
-  if (await item.isVisible()) return true;
-  const menus = page.locator('.menu-layer .menu');
-  const parents = menus.nth(level).locator('[aria-haspopup="menu"]');
-  const count = await parents.count();
-  for (let i = 0; i < count; i++) {
-    await parents.nth(i).click();
-    await expect(menus.nth(level + 1)).toBeVisible();
-    if (await revealMenuItem(page, item, level + 1)) return true;
-  }
-  return false;
-}
+/** A regular expression that matches exactly `text`. */
+const exactly = (text: string): RegExp =>
+  new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
 
 /**
- * Run a command from the menu bar the way a mouse user does: open the
- * top-level menu that holds it (the one Menu button, in a window narrow
- * enough to fold the menus), walk into submenus until the item is shown,
- * and click it (`data-command` is the command id).
+ * Run a command from the menu bar the way a mouse user does: open the menu
+ * that holds it (through the one Menu button, in a window narrow enough to
+ * fold the menus), open the submenus on the way, and click the item
+ * (`data-command` is the command id).
  */
 export async function menuCommand(
   page: Page,
   commandId: string,
 ): Promise<void> {
-  const item = page.locator(
-    `.menu-layer [data-command="${commandId.replace(/"/g, '\\"')}"]`,
-  );
-  const tops = page.locator('#menubar [data-menu]');
-  for (let i = 0; i < (await tops.count()); i++) {
-    const top = tops.nth(i);
-    if (!(await top.isVisible())) continue;
-    await top.click();
-    await expect(page.locator('.menu-layer .menu').first()).toBeVisible();
-    if (await revealMenuItem(page, item, 0)) {
-      await item.click();
-      return;
-    }
-    await closeMenus(page, top);
+  const path = menuBarPath(MENU_PATHS, commandId);
+  if (!path) throw new Error(`no menu of the menu bar holds "${commandId}"`);
+  const onBar = page.locator(`#menubar [data-menu="${path.menu}"]`);
+  // Folded, the bar's menus are the submenus of the Menu button's menu.
+  const folded = !(await onBar.isVisible());
+  const submenus = folded ? [path.menuLabel, ...path.submenus] : path.submenus;
+  await (folded ? page.locator('#menuMore') : onBar).click();
+  const menus = page.locator('.menu-layer .menu');
+  await expect(menus.first()).toBeVisible();
+  for (const [level, label] of submenus.entries()) {
+    await menus
+      .nth(level)
+      .locator('[aria-haspopup="menu"]')
+      .filter({ has: page.locator('.menu-label', { hasText: exactly(label) }) })
+      .click();
+    await expect(menus.nth(level + 1)).toBeVisible();
   }
-  throw new Error(`no menu of the menu bar holds "${commandId}"`);
+  const item = menus
+    .nth(submenus.length)
+    .locator(`[data-command="${commandId.replace(/"/g, '\\"')}"]`);
+  if ((await item.count()) === 0)
+    throw new Error(
+      `the page's ${[path.menuLabel, ...path.submenus].join(' ▸ ')} menu does not offer "${commandId}"`,
+    );
+  await item.click();
 }
 
 /**

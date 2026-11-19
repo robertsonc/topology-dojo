@@ -435,3 +435,46 @@ export const MENUBAR: readonly {
  * the five menus as a submenu. */
 export const moreMenu = (ctx: MenuContext): MenuEntry[] =>
   MENUBAR.map((m) => ({ label: m.label, submenu: m.entries(ctx) }));
+
+/** Where the menu bar offers a command. */
+export interface MenuBarPath {
+  /** The menu that holds it (`data-menu`). */
+  readonly menu: (typeof MENUBAR)[number]['id'];
+  /** That menu's text on the bar. */
+  readonly menuLabel: string;
+  /** The submenus to open on the way to it, outermost first, by their text. */
+  readonly submenus: readonly string[];
+}
+
+/**
+ * Where the menu bar offers a command: the menu, and the submenus to open
+ * on the way. A command the bar offers twice is found where someone reading
+ * the bar from the left, each menu from the top, meets it first. Null when no
+ * menu of the bar offers it.
+ */
+export function menuBarPath(
+  ctx: MenuContext,
+  command: string,
+): MenuBarPath | null {
+  const within = (
+    entries: readonly MenuEntry[],
+    trail: readonly string[],
+  ): readonly string[] | null => {
+    for (const entry of entries) {
+      // Separators and headings hold nothing.
+      if (entry.kind !== undefined && entry.kind !== 'item') continue;
+      if (entry.id === command) return trail;
+      if (!entry.submenu) continue;
+      const inner =
+        typeof entry.submenu === 'function' ? entry.submenu() : entry.submenu;
+      const found = within(inner, [...trail, entry.label]);
+      if (found) return found;
+    }
+    return null;
+  };
+  for (const menu of MENUBAR) {
+    const submenus = within(menu.entries(ctx), []);
+    if (submenus) return { menu: menu.id, menuLabel: menu.label, submenus };
+  }
+  return null;
+}
