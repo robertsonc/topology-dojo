@@ -239,6 +239,29 @@ for (const width of [700, 1101, 1160]) {
   });
 }
 
+// Between 1,024 and 1,279px the menus and the chips share the bar with the
+// title: Tidy and Present give up their words first, and the title keeps
+// room for a short name.
+for (const width of [1024, 1101, 1160, 1279]) {
+  test(`the document title keeps room for a short name at ${width}px, signed in`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await signIn(page);
+    await bootEditor(page);
+    await expect(page.locator('#userChip')).toBeVisible();
+    await page.locator('#docTitle').fill('Spine-leaf fabric');
+    const title = (await page.locator('#docTitle').boundingBox())!;
+    expect(title.width).toBeGreaterThanOrEqual(120);
+    for (const id of ['#tTidy', '#tPresent']) {
+      await expect(page.locator(`${id} .btn-label`)).toBeHidden();
+      await expect(page.locator(id)).toBeVisible();
+    }
+    await expect(page.locator('#tTidy')).toHaveAccessibleName('Tidy layout');
+    await expect(page.locator('#tPresent')).toHaveAccessibleName('Present');
+  });
+}
+
 test('the folded menu holds the five menus as submenus', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 800 });
   await bootEditor(page);

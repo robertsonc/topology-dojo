@@ -221,8 +221,10 @@ The editor is organized into six areas and a status bar.
    deployments. The account menu holds **API keys**, **Authoring preferences**,
    **Admin** (for the deployment's owner), **Theme** and **Sign out**. In a
    window 1,100px wide or less the five menus fold into one **Menu** button.
-   In a narrower window the top bar gives up first the words on its buttons,
-   then the menu beside **Tidy**, then **Present**; every command it dropped is
+   Below 1,280px **Tidy** and **Present** show only their icons, so the title
+   keeps room for a short name. In a narrower window the top bar gives up
+   first the words on its other buttons, then the menu beside **Tidy**, then
+   **Present**; every command it dropped is
    still in the menus (**Arrange** and **File → Present**).
 2. **Left rail.** A narrow column of icon buttons. At the top are the four
    tools: **Select/move tool**, **Hand / pan tool**, **Draw link tool** and

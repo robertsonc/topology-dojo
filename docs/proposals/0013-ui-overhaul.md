@@ -519,8 +519,10 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   `main`: PR #327 merged after both commits, with no strip in the tree.
 - **The menus fold at 1,100 px and below, in steps.** The text says "below
   1,100 px". The bar gives way in this order: the wordmark at 1,360 px and
-  below; the five menus into one **Menu** button at 1,100 px and below; the
-  words on Present, Export and Share at 1,023 px and below; the layout menu
+  below; the words on Tidy and Present at 1,279 px and below, so the
+  document title keeps 120 px; the five menus into one **Menu** button at
+  1,100 px and below; the words on Export and Share at 1,023 px and below;
+  the layout menu
   beside Tidy and the chips' words at 760 px and below; Present and the logo
   at 640 px and below (`src/styles/shell.css`). Reason (`a0a6c42`, `59c30b0`): the bar never scrolls
   sideways, and a long login had pushed the account chip off the bar between

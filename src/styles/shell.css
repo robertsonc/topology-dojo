@@ -31,7 +31,8 @@
    Logo, menus, the document title and save state, undo / redo, Tidy, then
    the export status, Present, Export, Share, the workspace chip and the
    account. 44px tall, and it never scrolls: the title gives up its room
-   first, then the labels of the buttons, then the menus fold into one. */
+   down to a short name, then the words of the buttons and the chips' names
+   give way, then the menus fold into one. */
 .topbar {
   display: flex;
   align-items: center;
@@ -114,10 +115,12 @@
   gap: 8px;
   min-width: 64px;
 }
+/* The title keeps room for a short name (about 16 characters): the chips'
+   names give way with an ellipsis before it does. */
 .doc-title-input {
   flex: 0 1 430px;
   width: 0;
-  min-width: 0;
+  min-width: 120px;
   height: 28px;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -857,6 +860,15 @@
     display: none;
   }
 }
+/* Tidy and Present give up their words to the document's title (their
+   icons, names and tooltips stay), so a title still reads where the menus
+   take the bar's room. */
+@media (max-width: 1279px) {
+  #tTidy .btn-label,
+  #tPresent .btn-label {
+    display: none;
+  }
+}
 /* The five menus fold into one. */
 @media (max-width: 1100px) {
   .menubar-item[data-menu]:not(.menubar-more) {
@@ -866,7 +878,7 @@
     display: inline-flex;
   }
 }
-/* Present, Export and Share keep their words down to 1,024px. */
+/* Export and Share keep their words down to 1,024px. */
 @media (max-width: 1023px) {
   .topbar .btn-label {
     display: none;
@@ -907,6 +919,9 @@
   }
   .doc-title {
     min-width: 40px;
+  }
+  .doc-title-input {
+    min-width: 0;
   }
   /* Present is in File (and runs on its key): on a phone its room goes to
      the document's title. */
