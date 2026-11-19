@@ -175,6 +175,8 @@ describe('the menus', () => {
       'edit.toggleLock',
       '—',
       'edit.find',
+      '—',
+      { Tools: ['tool.select', 'tool.hand', 'tool.link', 'tool.anchor'] },
     ]);
     expect(shape(viewMenu(ctx))).toEqual([
       'view.toggleGrid',
@@ -409,20 +411,13 @@ const FORMER_TOOLBAR: readonly (readonly [string, readonly CommandId[]])[] = [
       'arrange.distributeV',
     ],
   ],
+  ['#tSelect', ['tool.select']],
+  ['#tLink', ['tool.link']],
+  ['#tAnchor', ['tool.anchor']],
   ['#profileChip', ['account.preferences']],
   ['#adminChip', ['account.admin']],
   ['#userChip', ['account.apiKeys', 'account.signOut']],
 ];
-/**
- * The toolbar's tools. They stay always-present buttons (the left rail) and
- * have their keys; the specification's menus give them no entry.
- */
-const TOOLS_THAT_STAY_BUTTONS: readonly CommandId[] = [
-  'tool.select',
-  'tool.link',
-  'tool.anchor',
-];
-
 describe('the former toolbar', () => {
   it('lists each export format and each template of the old selects', () => {
     const exportIds = FORMER_TOOLBAR.find(([c]) => c === '#fExport')![1];
@@ -443,11 +438,6 @@ describe('the former toolbar', () => {
       ids.filter((id) => !offered.has(id)).map((id) => `${control}: ${id}`),
     );
     expect(missing).toEqual([]);
-    for (const id of TOOLS_THAT_STAY_BUTTONS)
-      expect(
-        SPECS.some((s) => s.id === id),
-        id,
-      ).toBe(true);
   });
 });
 

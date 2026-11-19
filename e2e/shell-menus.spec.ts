@@ -204,6 +204,29 @@ for (const width of [1024, 1280, 1440, 1920]) {
   });
 }
 
+// A login long enough to fill the account chip, at the widths where the bar
+// is tightest: just above the menus' fold, and a narrow window whose labels
+// have gone.
+for (const width of [700, 1101, 1160]) {
+  test(`the top bar never scrolls sideways at ${width}px with a long login`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await signIn(page, 'a-login-of-thirty-six-characters-xyz');
+    await bootEditor(page);
+    for (const id of ['#fShare', '#workspaceChip', '#userChip'])
+      await expect(page.locator(id), id).toBeVisible();
+    const bar = await page.locator('#topbar').evaluate((el) => ({
+      scroll: el.scrollWidth,
+      client: el.clientWidth,
+      chipRight: el.querySelector('#userChip')!.getBoundingClientRect().right,
+    }));
+    expect(bar.scroll).toBeLessThanOrEqual(bar.client);
+    // The account chip, and so the account menu, is inside the window.
+    expect(bar.chipRight).toBeLessThanOrEqual(width);
+  });
+}
+
 test('the folded menu holds the five menus as submenus', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 800 });
   await bootEditor(page);
@@ -348,6 +371,9 @@ const FORMER_TOOLBAR: readonly (readonly [string, readonly string[]])[] = [
       'arrange.distributeV',
     ],
   ],
+  ['#tSelect', ['tool.select']],
+  ['#tLink', ['tool.link']],
+  ['#tAnchor', ['tool.anchor']],
   ['#profileChip', ['account.preferences']],
   ['#adminChip', ['account.admin']],
   ['#userChip', ['account.apiKeys', 'account.signOut']],
@@ -370,7 +396,7 @@ test('every command the old toolbar ran is in a menu', async ({ page }) => {
     ids.filter((id) => !offered.has(id)).map((id) => `${control}: ${id}`),
   );
   expect(missing).toEqual([]);
-  // The tools stay buttons, on the rail.
+  // The tools are also buttons, on the rail.
   for (const id of ['#tSelect', '#tLink', '#tAnchor'])
     await expect(page.locator(id), id).toBeVisible();
 });

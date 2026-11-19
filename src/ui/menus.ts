@@ -165,6 +165,15 @@ function editDefs(): Def[] {
     cmd('edit.toggleLock'),
     SEP,
     cmd('edit.find', 'Find…'),
+    SEP,
+    // The rail's tools, one of them current. Named for the tool, as the
+    // rail's tooltips name it.
+    submenu('Tools', [
+      cmd('tool.select', 'Select', 'radio'),
+      cmd('tool.hand', 'Hand', 'radio'),
+      cmd('tool.link', 'Draw link', 'radio'),
+      cmd('tool.anchor', 'Drop anchor', 'radio'),
+    ]),
   ];
 }
 
