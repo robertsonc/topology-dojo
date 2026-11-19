@@ -4791,6 +4791,10 @@ function restorePagesBarFocus(was: PagesBarFocus): void {
     (document.activeElement && document.activeElement !== document.body)
   )
     return;
+  // Only for the keyboard. After a pointer press the keyboard goes back to
+  // the canvas, as it always has: a button kept focused would take the next
+  // Enter and add, duplicate or play again.
+  if (!keyboardNav) return;
   const chipButton = (i: number): HTMLElement | null =>
     strip.querySelector<HTMLElement>(`[data-page="${i}"] .frame-sel`);
   let target: HTMLElement | null = null;

@@ -181,3 +181,23 @@ test('adding, duplicating and deleting a page from the keyboard keeps the focus 
     page.locator('#pagesBar .frame-sel[aria-current="page"]'),
   ).toBeFocused();
 });
+
+test('after a pointer press on Add page or Duplicate page, Enter does not press it again', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const focusedTag = () => page.evaluate(() => document.activeElement?.tagName);
+  await page.locator('#addPage').click();
+  await expect(page.locator('#frames-ind')).toHaveText('2/2');
+  expect(await focusedTag()).toBe('BODY');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('2/2');
+  expect(await focusedTag()).toBe('BODY');
+
+  await page.locator('#dupPage').click();
+  await expect(page.locator('#frames-ind')).toHaveText('3/3');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('3/3');
+  expect(await focusedTag()).toBe('BODY');
+});
