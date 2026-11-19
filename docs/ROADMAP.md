@@ -178,11 +178,11 @@ accepted it re-cuts _Now/Next_.
 
 [Proposal 0013](proposals/0013-ui-overhaul.md) (the UI overhaul of the editor
 chrome: placement first, then a flat skin) was **accepted 2026-11-19**. Its
-phase P0 (foundations) is complete with PR #327, a draft that is not merged:
-PR #326 merged the same day as `e9d0d7f` (see "UI overhaul foundations" under
+phase P0 (foundations) is merged except the command registry: PR #326 merged
+the same day as `e9d0d7f` (see "UI overhaul foundations" under
 "Completed historical milestones"), and the rest of P0, the command registry
 (`src/ui/commands.ts`: one table of every command and its keys, read by the
-key handler, the context menu and the shortcut sheet), is PR #327. Until #327
+key handler, the context menu and the shortcut sheet), is draft PR #327 (not merged). Until #327
 merges, `main` has none of it. Its
 phases P1–P4 (shell, properties panel, skin sweep, guardrails) have not
 changed a surface yet; the 12 px text ratchet, a first form of P4's budget

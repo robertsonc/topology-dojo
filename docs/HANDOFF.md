@@ -90,9 +90,13 @@ key and no command is meant to behave differently: `src/ui/commands.test.ts`,
 `e2e/command-keys.spec.ts` and `e2e/command-surfaces.spec.ts` pin that. Not
 started as a change to any surface: P1 (shell), P2 (properties panel), P3 (skin
 sweep) and P4 (guardrails). Until #327 merges, `main` has none of this. Only
-this note, the "Recently completed" entry, the paragraph dated 2026-11-19 under
-"Active implementation program", the `docs/proposals/0005`–`0013` entry and a
-"Key files" row were written for it; nothing else in this file was re-checked._
+this note, the "Not done" line of the PR #326 entry under "Recently completed",
+the paragraph dated 2026-11-19 under "Active implementation program", the
+`docs/proposals/0005`–`0013` entry, a "Key files" row and the "Chrome building
+blocks" row (from which a sentence saying the registry is not on `main` was
+removed) were written for it; nothing else in this file was re-checked. The
+statement in the `e9d0d7f` note above that the registry "is in progress" is
+superseded: it is draft PR #327._
 
 ## What Topology Dojo is
 
@@ -234,20 +238,7 @@ from `git log --first-parent`):
   `command-palette.css`, `inspector-tabs.ts`, with the browser specs
   `e2e/menu-component.spec.ts` and `e2e/command-palette-component.spec.ts`.
   Not done on `main`: the command registry (PR #327, draft, not merged: see
-  the next entry), and P1–P4 (see "Active implementation program").
-- **Command registry** (proposal 0013, the rest of P0; PR #327, a draft and not
-  merged; described as it is on the branch at `1ebbccb`). One table in
-  `src/ui/commands.ts` gives each command its id, title, group, icon and key
-  bindings; `matchKey` says which command a key press means and
-  `createCommandRegistry` gives the shell `run`, `isEnabled`, `isChecked` and the
-  shortcut text. `src/main.ts` binds every command once; the window key
-  handler, the toolbar and canvas controls, the context menu and the shortcut
-  sheet read it, and `src/ui/canvas-keys.ts` is removed. The sheet is grouped
-  File, Edit, Selection, Arrange, Tools, View, Frames, Help, then Mouse and
-  touch, Dialogs and menus, Presentation, Find and the node library. Tests:
-  `src/ui/commands.test.ts`, `src/ui/canvas-keys.test.ts` (now `matchKey`),
-  `e2e/command-keys.spec.ts`, `e2e/command-surfaces.spec.ts`. No key and no
-  command is meant to behave differently.
+  the dated note for it near the top of this file), and P1–P4 (see "Active implementation program").
 
 ## Active implementation program
 
@@ -285,9 +276,9 @@ base fabric), so the gate the packet assumed does not follow.
 
 2026-11-19: proposal 0013 (the UI overhaul of the editor chrome, accepted
 this date) is likewise driven from its own file, not from this table. Its P0
-is complete with PR #327, a draft that is not merged: PR #326 merged on
+is merged except the command registry: PR #326 merged on
 2026-11-19 as `e9d0d7f`, and the command registry (`src/ui/commands.ts`), the
-rest of P0, is PR #327 (until it merges, `main` has none of it); no surface of
+rest of P0, is draft PR #327 (until it merges, `main` has none of it); no surface of
 P1–P4 has changed yet (the 12 px text ratchet, a first form of P4's budget test, is already on
 `main`). The menu component, the command palette, the shared control classes and the
 properties-panel tab rules, which belong to those phases, are on `main` but
@@ -518,7 +509,7 @@ staging` with a generated ≥16-char value kept only in the operator's
   vendor-neutral diagramming-tool direction (**Proposed**, not accepted),
   the SD-WAN generator (slices 1–4 implemented), the icon gap review
   (tiers 1–2 shipped), SD-WAN vendor research (research only), and the UI
-  overhaul of the editor chrome (accepted 2026-11-19; P0 is complete with PR #327, a draft not merged: #326 merged as `e9d0d7f` and the command registry is #327; no surface of P1–P4 changed yet). Each
+  overhaul of the editor chrome (accepted 2026-11-19; P0 is merged except the command registry: #326 merged as `e9d0d7f`; the registry, the rest of P0, is draft PR #327 (not merged); no surface of P1–P4 changed yet). Each
   file's status header is authoritative.
 - `docs/EXPORTS.md` — the export/import fidelity contract.
 - `docs/futures/hw-catalog.md` — hardware-catalog phase status;

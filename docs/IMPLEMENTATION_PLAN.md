@@ -78,8 +78,8 @@ Work that merged since August came from proposals 0005–0008, 0010, 0011 and
 0013 (the UI overhaul of the editor chrome) was accepted 2026-11-19 and is
 not a packet series of this plan either: its phases stay in
 [`proposals/0013-ui-overhaul.md`](proposals/0013-ui-overhaul.md). Its P0 is
-complete with PR #327, a draft that is not merged: PR #326 merged 2026-11-19
-as `e9d0d7f`, and the command registry is #327. No surface of P1–P4 has changed yet. Those labels are
+merged except the command registry: PR #326 merged 2026-11-19
+as `e9d0d7f`, and the registry, the rest of P0, is draft PR #327 (not merged). No surface of P1–P4 has changed yet. Those labels are
 unrelated to proposal 0003's packets P1–P5.
 
 ## How to use this document

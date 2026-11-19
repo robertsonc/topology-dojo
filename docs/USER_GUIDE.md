@@ -475,7 +475,9 @@ command does and shows each of its shortcuts as a key cap (a command with two
 shortcuts, such as redo, shows two). After those come four more groups: Mouse
 and touch, Dialogs and menus, Presentation, and Find and the node library.
 The table below is a summary; where the two differ, the sheet is right. A
-toolbar button's tooltip ends with the command's first shortcut.
+toolbar button whose command has a key names its first shortcut in brackets in
+its tooltip. (This describes the sheet as of PR #327, not yet merged; until it
+merges, the sheet's groups are Tools, Edit, Select, Canvas, and Dialogs & menus.)
 
 | Keys                               | Action                                                                        |
 | ---------------------------------- | ----------------------------------------------------------------------------- |
@@ -484,7 +486,7 @@ toolbar button's tooltip ends with the command's first shortcut.
 | A                                  | Drop anchor                                                                   |
 | Space or H                         | Hand tool; drag to pan                                                        |
 | Ctrl/Cmd+Z                         | Undo                                                                          |
-| Ctrl/Cmd+Shift+Z or Ctrl+Y         | Redo                                                                          |
+| Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y     | Redo                                                                          |
 | Ctrl/Cmd+C, X, V                   | Copy, cut, paste                                                              |
 | Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any frame)                               |
 | F2 or Enter                        | Rename the selected node, link or zone                                        |
@@ -498,7 +500,7 @@ toolbar button's tooltip ends with the command's first shortcut.
 | Ctrl/Cmd+A                         | Select all                                                                    |
 | Shift-click or Ctrl/Cmd-click      | Add to or remove from the selection (nodes, anchors, links)                   |
 | Arrow keys                         | Nudge; Shift makes the step ten times larger                                  |
-| Left/Right Arrow with no selection | Move to the previous or next page                                             |
+| Left/Right Arrow with no selection | Move to the previous or next frame (page)                                     |
 | Mouse wheel                        | Zoom toward the cursor                                                        |
 | Two-finger slide (trackpad)        | Pan                                                                           |
 | Pinch (trackpad), Ctrl/Cmd+wheel   | Zoom toward the cursor                                                        |
@@ -519,7 +521,7 @@ toolbar button's tooltip ends with the command's first shortcut.
 | G                                  | Toggle snap                                                                   |
 | M or P                             | Toggle minimap or Properties                                                  |
 | B                                  | Toggle Node library                                                           |
-| F                                  | Toggle pages strip                                                            |
+| F                                  | Toggle frames strip (pages strip)                                             |
 | C                                  | Calm Canvas                                                                   |
 | T                                  | Tidy layout                                                                   |
 | Shift+T                            | Balance layout                                                                |

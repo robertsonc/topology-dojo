@@ -1,7 +1,7 @@
 # Proposal 0013 — UI overhaul: placement first, then a flat skin
 
-**Status:** Accepted (2026-11-19). P0 (foundations) is complete with PR #327,
-which is a draft and not merged. PR #326 merged into `main` on 2026-11-19 as
+**Status:** Accepted (2026-11-19). P0 (foundations) is merged except the command
+registry, which is draft PR #327 (not merged). PR #326 merged into `main` on 2026-11-19 as
 `e9d0d7f` (its Release run completed with success the same day): the
 stylesheet move, the token layer, the flat skin, the docked chrome, the
 neutral scrollbars and the icon sprite are on `main`. PR #327, "Command
@@ -342,23 +342,6 @@ _Done when:_ the toolbar cannot grow past its budget without a failing test.
   toolbar, the properties panel and the status bar on 12 px margins. Without
   it they sit docked, as the base rules always had them. The node library and
   the pages dock still float over the canvas until P1.
-
-## Non-goals
-
-Canvas rendering, node art, exports, the document schema, MCP tools, and an
-outline panel that would merge the emphasis, annotation and layer lists.
-
-## Guideline cross-check
-
-Vercel's Web Interface Guidelines served as the audit checklist. Already
-right: one visible `:focus-visible` ring on every control; `aria-label` on
-icon-only buttons; live regions for save and export status; no
-`transition: all`; tabular numerals on number fields; canvas deletes go on
-the undo stack. Gaps this proposal closes: no `color-scheme` or `theme-color`;
-content wider than the viewport; Unicode and emoji as icons; label contrast
-under 4.5 : 1; eight font sizes and thirteen z-index values; clipped labels;
-hover transforms that ignore reduced motion.
-
 - **The command registry splits the table from the handlers (PR #327, draft,
   not merged).** The proposal listed "id, title, group, shortcut, icon,
   enabled, checked, run" as one record. In `src/ui/commands.ts` the table
@@ -375,3 +358,19 @@ hover transforms that ignore reduced motion.
   and the sheet. Two inspector tooltips were wrong and are corrected: "Send to
   back ([Ctrl+[)" is now "Send to back (Ctrl/Cmd+[)", and "Bring to front
   (Ctrl+])" is now "Bring to front (Ctrl/Cmd+])".
+
+## Non-goals
+
+Canvas rendering, node art, exports, the document schema, MCP tools, and an
+outline panel that would merge the emphasis, annotation and layer lists.
+
+## Guideline cross-check
+
+Vercel's Web Interface Guidelines served as the audit checklist. Already
+right: one visible `:focus-visible` ring on every control; `aria-label` on
+icon-only buttons; live regions for save and export status; no
+`transition: all`; tabular numerals on number fields; canvas deletes go on
+the undo stack. Gaps this proposal closes: no `color-scheme` or `theme-color`;
+content wider than the viewport; Unicode and emoji as icons; label contrast
+under 4.5 : 1; eight font sizes and thirteen z-index values; clipped labels;
+hover transforms that ignore reduced motion.
