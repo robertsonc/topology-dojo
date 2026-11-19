@@ -337,9 +337,9 @@ app.innerHTML = `
        until they explicitly adopt the copy (#202). -->
   <div class="shared-banner" id="sharedBanner" role="status" hidden>
     <span class="shared-banner-text">${SHARE_PUBLIC_WARNING} Viewing a shared copy — your own document is untouched.</span>
-    <button class="tbtn" id="sharedKeep" title="Replace your locally saved document with this shared copy">keep this copy</button>
-    <button class="tbtn" id="sharedBack" title="Return to your own locally saved document">back to my document</button>
-    <button class="tbtn" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>unpublish link</button>
+    <button type="button" class="btn btn-sm" id="sharedKeep" title="Replace your locally saved document with this shared copy">Keep this copy</button>
+    <button type="button" class="btn btn-sm btn-ghost" id="sharedBack" title="Return to your own locally saved document">Back to my document</button>
+    <button type="button" class="btn btn-sm btn-ghost" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>Unpublish link</button>
   </div>
 
   <!-- The stage, by scope: the rail (making: the tools, the library), the
