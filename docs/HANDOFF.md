@@ -99,8 +99,8 @@ statement in the `e9d0d7f` note above that the registry "is in progress" is
 superseded: it is draft PR #327._
 
 _2026-11-19 (later still the same day; `main` at `d224979`, and the branch of
-PR #328, not merged, at `d24f6a4`): PR #327, "UI overhaul: command registry,
-shell, properties panel (proposal 0013: rest of P0, P1, P2, part of P3)",
+PR #328, not merged, at `d24f6a4`): PR #327 (proposal 0013: the command registry,
+the shell, the properties panel; the rest of P0, P1, P2 and part of P3)
 merged into `main` as `d224979`. The Release run for that merge (run 44554032473) failed in CI's browser job (three tests in that run: two past the
 30-second limit and the pages bar's layout at 720 x 450), so its `stage` and
 `production` jobs were skipped and it deployed nothing. PR #328 fixes both

@@ -5,9 +5,9 @@
 for PR #328 (not merged) on the integration branch `wip/int2`, not yet pushed: the pull request's own head is still `01c21db`, and are not in `main`. Two pull requests merged into
 `main` on 2026-11-19. PR #326 merged as `e9d0d7f` (its Release run completed
 with success the same day): the stylesheet move, the token layer, the flat
-skin, the docked chrome, the neutral scrollbars and the icon sprite. PR #327,
-"UI overhaul: command registry, shell, properties panel (proposal 0013: rest
-of P0, P1, P2, part of P3)", merged as `d224979`: the command registry
+skin, the docked chrome, the neutral scrollbars and the icon sprite. PR #327
+(the command registry, the shell and the properties panel: the rest of P0,
+P1, P2 and part of P3) merged as `d224979`: the command registry
 (`src/ui/commands.ts`), the top bar with its menus, the left rail, the docked
 library, the pages bar, the zoom control, the selection bar's align,
 distribute, order and lock buttons, the command palette on Ctrl/Cmd+K, the
