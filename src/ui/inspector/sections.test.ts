@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { icon } from '../icons.js';
 import {
   INSPECTOR_SECTIONS_KEY,
+  keepSections,
   SectionMemory,
   sectionHtml,
 } from './sections.js';
@@ -116,5 +117,38 @@ describe('a section', () => {
     ).toContain(
       `data-group="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" aria-label="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" data-open-default="true" open><summary class="insp-h">${CARET}&lt;b&gt;&quot;x&quot;&lt;/b&gt; options</summary>`,
     );
+  });
+});
+
+describe('the sections on show before a redraw', () => {
+  /** A panel's sections as the DOM has them: title, open, default. */
+  const panel = (sections: [string, boolean, boolean][]) =>
+    ({
+      querySelectorAll: () =>
+        sections.map(([group, open, fallback]) => ({
+          open,
+          dataset: { group, openDefault: String(fallback) },
+        })),
+    }) as unknown as ParentNode;
+
+  it('are remembered as they are, so a press whose toggle event has not come yet is kept', () => {
+    const memory = new SectionMemory(memoryStorage());
+    // "Position and order" starts closed and has just been opened; "Style"
+    // starts open and is open.
+    keepSections(
+      panel([
+        ['Position and order', true, false],
+        ['Style', true, true],
+      ]),
+      memory,
+    );
+    expect(memory.isOpen('Position and order', false)).toBe(true);
+    expect(memory.isOpen('Style', true)).toBe(true);
+  });
+
+  it('write nothing for sections left as they start', () => {
+    const storage = memoryStorage();
+    keepSections(panel([['Style', true, true]]), new SectionMemory(storage));
+    expect(storage.data.size).toBe(0);
   });
 });

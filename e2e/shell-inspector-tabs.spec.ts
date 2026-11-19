@@ -432,3 +432,26 @@ test('each section is a group named for its title, so a button is found within i
   await expect(viewFit).toHaveId('ccFit');
   await expect(section(page, 'Links')).toHaveAccessibleName('Links');
 });
+
+// A section's toggle event comes a moment after the press on its title. A
+// redraw that lands in between (here a switch to Page and back, in the same
+// task as the press) must not lose the press.
+test('a section opened just before the panel redraws stays open', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await clickNode(page, 'fw');
+  const group = 'Position and order';
+  expect(await isOpen(page, group)).toBe(false);
+  await page.evaluate((title) => {
+    document
+      .querySelector<HTMLElement>(
+        `#inspector details[data-group="${title}"] > summary`,
+      )!
+      .click();
+    document.querySelector<HTMLElement>('#insp-tab-page')!.click();
+    document.querySelector<HTMLElement>('#insp-tab-selection')!.click();
+  }, group);
+  await expect(section(page, group)).toHaveAttribute('open', '');
+  await expect(page.locator('#inspector input[data-key="x"]')).toBeVisible();
+});

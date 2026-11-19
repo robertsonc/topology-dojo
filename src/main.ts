@@ -164,6 +164,7 @@ import {
 } from './ui/inspector/page-tab.js';
 import { watchPanelWidth } from './ui/inspector/panel-width.js';
 import {
+  keepSections,
   SectionMemory,
   sectionHtml,
   wireSections,
@@ -3464,6 +3465,8 @@ function inspectorSelection(): {
 
 /** Render the inspector for the current selection, driven entirely by the catalog. */
 function renderInspector(): void {
+  // What the sections on show are, before they are drawn again.
+  keepSections(inspector, inspectorSections);
   const link = editor.getSelectedLink();
   const node = link ? null : editor.getSelectedNode();
   const anchor = link || node ? null : editor.getSelectedAnchor();

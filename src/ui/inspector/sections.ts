@@ -107,6 +107,25 @@ export function sectionHtml(
   );
 }
 
+/**
+ * Remember the open / closed state of each section on show, before a redraw
+ * replaces them. A section's toggle event comes a moment after its summary
+ * is pressed: a redraw in between (a drag, a tab switch) replaced the
+ * section first, and the press was lost, so the section the user had just
+ * opened came back closed.
+ */
+export function keepSections(root: ParentNode, memory: SectionMemory): void {
+  root
+    .querySelectorAll<HTMLDetailsElement>('details.insp-group[data-group]')
+    .forEach((d) =>
+      memory.remember(
+        d.dataset.group!,
+        d.open,
+        d.dataset.openDefault === 'true',
+      ),
+    );
+}
+
 /** Remember each section's open / closed state as the user toggles it. */
 export function wireSections(root: ParentNode, memory: SectionMemory): void {
   root
