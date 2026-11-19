@@ -94,7 +94,7 @@ test('the shortcut sheet lists the commands by group, then the gestures', async 
     'Arrange',
     'Tools',
     'View',
-    'Frames',
+    'Pages',
     'Help',
     'Mouse and touch',
     'Dialogs and menus',
@@ -112,7 +112,7 @@ test('the shortcut sheet lists the commands by group, then the gestures', async 
   for (const row of [
     'Ctrl/Cmd+S | Download as JSON',
     'Ctrl/Cmd+Shift+Z · Ctrl/Cmd+Y | Redo',
-    'Ctrl/Cmd+Shift+V | Paste in place (same position, any frame)',
+    'Ctrl/Cmd+Shift+V | Paste in place (same position, any page)',
     'F2 · Enter | Rename the selected node, link or zone',
     'Shift+T | Balance layout',
     'Shift+0 | Zoom to 100%',

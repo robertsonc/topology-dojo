@@ -249,12 +249,17 @@ export function renderAdminBodyHtml(state: AdminPanelState): string {
 export interface AdminDashboardHost {
   /** The `#adminChip` toolbar button (hidden until the admin signs in). */
   chip: HTMLButtonElement;
+  /** What a press on the chip does. Default: open or close the dashboard.
+   * The shell passes its command, so the chip runs what the menus run. */
+  onChipPress?: () => void;
 }
 
 /** The call sites `main.ts` needs. */
 export interface AdminDashboardHandle {
   /** Reveals the toolbar chip once the signed-in user is confirmed admin. */
   enable(): void;
+  /** Opens the dashboard, or closes it when it is open. */
+  toggle(): void;
 }
 
 export function mountAdminDashboard(
@@ -430,9 +435,9 @@ export function mountAdminDashboard(
     host.chip.hidden = false;
     host.chip.addEventListener('click', (event) => {
       event.stopPropagation();
-      openPanel();
+      (host.onChipPress ?? openPanel)();
     });
   }
 
-  return { enable };
+  return { enable, toggle: openPanel };
 }

@@ -435,7 +435,7 @@ Right-click a node selection for:
 
 - **Rename** (one node), **Duplicate**, **Cut**, **Copy**, **Copy format**,
   and **Paste format**;
-- **Emphasize on this frame**;
+- **Emphasize on this page**;
 - **Analyze path**, when exactly two nodes are selected (see
   [Analyze a path between two nodes](#analyze-a-path-between-two-nodes));
 - **Group into zone**, **Save as stencil…**, and **Add policy marker**;
@@ -885,7 +885,7 @@ With nothing selected, use the **Frame** section:
 - Use **Clear emphasis** to restore equal prominence.
 
 You can also select elements, right-click, and choose
-**Emphasize on this frame**.
+**Emphasize on this page**.
 
 ### Analyze a path between two nodes
 
@@ -1128,7 +1128,7 @@ The **export…** toolbar menu adds:
   pipeline as PNG, so it always matches the canvas. Over MCP,
   **export_topology** `format: "pdf"` renders the same pages server-side.
 - **Copy PNG to clipboard** (also on the right-click menu as **Copy as
-  image** for a selection and **Copy frame as image** on empty canvas).
+  image** for a selection and **Copy page as image** on empty canvas).
 - **SVG — selection only** and **PNG — selection only**: a cropped export of
   just the selected nodes and the links between them.
 

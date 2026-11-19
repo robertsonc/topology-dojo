@@ -1390,12 +1390,9 @@ describe('the shortcut sheet', () => {
   });
 
   it('lists the shortcuts that worked but were never on the sheet', () => {
-    // Frames by arrow key, Escape on the canvas, = and _ to zoom.
-    expect(rows).toContainEqual(['→', 'Next frame (with nothing selected)']);
-    expect(rows).toContainEqual([
-      '←',
-      'Previous frame (with nothing selected)',
-    ]);
+    // Pages by arrow key, Escape on the canvas, = and _ to zoom.
+    expect(rows).toContainEqual(['→', 'Next page (with nothing selected)']);
+    expect(rows).toContainEqual(['←', 'Previous page (with nothing selected)']);
     expect(
       rows.find(([keys, text]) => keys === 'Esc' && /selection/.test(text)),
     ).toBeDefined();

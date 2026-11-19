@@ -125,6 +125,7 @@ import {
 import { isImeKey } from './ui/ime.js';
 import {
   commandArg,
+  COMMAND_GROUPS,
   COMMAND_SPECS,
   commandVariant,
   createCommandRegistry,
@@ -139,6 +140,10 @@ import {
   type CommandHandlers,
   type CommandId,
 } from './ui/commands.js';
+import {
+  openCommandPalette,
+  type PaletteHandle,
+} from './ui/command-palette.js';
 import { enablePaletteDrag } from './ui/palette-drag.js';
 import { findInDocument, type FindMatch } from './ui/find.js';
 import type { WheelMode } from './editor/wheel.js';
@@ -1174,11 +1179,13 @@ const workspacePanelHandle = mountWorkspacePanel({
  * `src/ui/profile-panel.ts`. */
 const profilePanelHandle = mountProfilePanel({
   chip: app.querySelector<HTMLButtonElement>('#profileChip')!,
+  onChipPress: () => commands.run('account.preferences'),
 });
 /** Owner-only admin dashboard — revealed only when `/api/me` reports `admin`;
  * the panel + fetching live in `src/ui/admin-dashboard.ts`. */
 const adminDashboardHandle = mountAdminDashboard({
   chip: app.querySelector<HTMLButtonElement>('#adminChip')!,
+  onChipPress: () => commands.run('account.admin'),
 });
 function closeWorkspaceForDocumentReplacement(): boolean {
   return workspacePanelHandle.closeForDocumentReplacement();
@@ -5628,6 +5635,10 @@ function openShare(): void {
 const shareBtn = app.querySelector<HTMLButtonElement>('#fShare');
 /** Sharing is offered: the hosted Worker reported a signed-in user. */
 let shareAvailable = false;
+/** Who the hosted Worker reports as signed in (null: nobody, or no Worker),
+ * and whether they own the deployment: what the account commands ask. */
+let signedInLogin: string | null = null;
+let signedInAdmin = false;
 shareBtn?.addEventListener('click', () => commands.run('file.share'));
 
 /* Account menu. The Worker gates the app behind GitHub sign-in and reports the
@@ -5688,7 +5699,7 @@ function wireAccountMenu(login: string): void {
   // ever intercepted; the localStorage autosave preserves the open document.
   menu.querySelector('a[href="/logout"]')?.addEventListener('click', (e) => {
     e.preventDefault();
-    window.location.assign('/logout');
+    commands.run('account.signOut');
   });
 }
 /** Default line in the anonymous sign-in prompt. */
@@ -5783,6 +5794,8 @@ async function showUserChip(): Promise<void> {
       admin?: boolean;
     };
     if (me.login) {
+      signedInLogin = me.login;
+      signedInAdmin = !!me.admin;
       wireAccountMenu(me.login);
       enableWorkspaceUi();
       profilePanelHandle.enable();
@@ -5876,6 +5889,28 @@ function zoomToSelection(): void {
   else fitView();
 }
 
+/* ── Command palette ───────────────────────────────────────────────────
+ * Lists the commands that can run now, by title, group and shortcut. */
+let paletteHandle: PaletteHandle | null = null;
+function openPalette(): void {
+  paletteHandle = openCommandPalette({
+    entries: () =>
+      commands
+        .list()
+        .filter(
+          (s) => s.id !== 'help.commandPalette' && commands.isEnabled(s.id),
+        )
+        .map((s) => ({
+          id: s.id,
+          title: s.title,
+          group: COMMAND_GROUPS.find((g) => g.id === s.group)?.title,
+          hint: commands.shortcutLabel(s.id),
+          keywords: s.keywords,
+          run: () => void commands.run(s.id),
+        })),
+  });
+}
+
 /* ── Command bindings ──────────────────────────────────────────────────
  * What each command of src/ui/commands.ts does, bound once to the functions
  * above. Every surface runs a command through the registry: the toolbar and
@@ -5910,6 +5945,25 @@ bind('file.generateSdwan', { run: generateSdwan });
 for (const spec of ALL_COMMAND_SPECS)
   if (spec.id.startsWith('file.template.'))
     bind(spec.id, { run: (id) => newFromTemplate(String(id)) });
+const signedIn = (): boolean => signedInLogin !== null;
+bind('account.preferences', {
+  run: () => profilePanelHandle.toggle(),
+  enabled: signedIn,
+});
+// The real gate is the /api/admin routes; this one only hides the way in.
+bind('account.admin', {
+  run: () => adminDashboardHandle.toggle(),
+  enabled: () => signedIn() && signedInAdmin,
+});
+bind('account.apiKeys', {
+  run: () => window.location.assign('/keys'),
+  enabled: signedIn,
+});
+// The autosave keeps the open document, so leaving loses nothing.
+bind('account.signOut', {
+  run: () => window.location.assign('/logout'),
+  enabled: signedIn,
+});
 bind('shared.keepCopy', { run: keepSharedCopy });
 bind('shared.backToMine', { run: backToMyDocument });
 bind('shared.unpublish', {
@@ -6160,6 +6214,14 @@ bind('view.toggleTheme', {
   run: () => applyTheme(!document.documentElement.classList.contains('light')),
   checked: () => document.documentElement.classList.contains('light'),
 });
+for (const id of ['view.theme.dark', 'view.theme.light'] as const)
+  bind(id, {
+    run: (theme) =>
+      applyTheme(commandArg(id, theme, oneOf(['dark', 'light'])) === 'light'),
+    checked: () =>
+      document.documentElement.classList.contains('light') ===
+      (commands.get(id)?.args === 'light'),
+  });
 bind('view.present', { run: openPresent, checked: () => !!presentEl });
 bind('view.toggleLibrary', {
   run: () => setPaletteCollapsed(!paletteEl.classList.contains('collapsed')),
@@ -6203,7 +6265,7 @@ bind('problems.restoreAll', {
   enabled: () => hiddenProblems.size > 0,
 });
 
-// Frames. Delete runs with a frame's index, or deletes the current frame.
+// Pages. Delete runs with a page's index, or deletes the current page.
 bind('page.add', { run: addBlankPage });
 bind('page.duplicate', { run: duplicateCurrentPage });
 bind('page.delete', {
@@ -6229,6 +6291,10 @@ bind('page.emphasis.clear', {
 
 // Help
 bind('help.shortcuts', { run: openHelp, checked: () => !!helpEl });
+bind('help.commandPalette', {
+  run: openPalette,
+  checked: () => !!paletteHandle?.isOpen(),
+});
 
 {
   // A command nothing does would be a menu item or a key that does nothing.

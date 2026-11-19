@@ -224,12 +224,17 @@ export function renderProfileBodyHtml(state: ProfilePanelState): string {
 export interface ProfilePanelHost {
   /** The `#profileChip` toolbar button (hidden until sign-in). */
   chip: HTMLButtonElement;
+  /** What a press on the chip does. Default: open or close the panel. The
+   * shell passes its command, so the chip runs what the menus run. */
+  onChipPress?: () => void;
 }
 
 /** The call sites `main.ts` needs into the panel. */
 export interface ProfilePanelHandle {
   /** Reveals the toolbar chip once sign-in is confirmed. */
   enable(): void;
+  /** Opens the panel, or closes it when it is open. */
+  toggle(): void;
 }
 
 export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
@@ -390,9 +395,9 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
     host.chip.hidden = false;
     host.chip.addEventListener('click', (event) => {
       event.stopPropagation();
-      openPanel();
+      (host.onChipPress ?? openPanel)();
     });
   }
 
-  return { enable };
+  return { enable, toggle: openPanel };
 }
