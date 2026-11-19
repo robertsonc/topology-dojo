@@ -299,6 +299,9 @@ The editor is organized into six areas and a status bar.
 
 The status bar reports the active tool, cursor location, element counts, how
 many are selected, history, zoom and the current error and warning counts.
+In a narrow window the cursor location, the anchor, zone and history counts
+and the hint step aside, and on the narrowest phones (400px and below) the
+selection count steps aside too while there are problems to show.
 
 Many buttons show an icon and no text. This guide names such a button by its
 tooltip, which appears when the pointer rests on it: **Undo** is the top bar

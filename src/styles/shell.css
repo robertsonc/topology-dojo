@@ -1004,10 +1004,14 @@
   }
 }
 /* The narrowest phones: the bar's items keep a tighter gap, so the zoom at
-   its end stays inside the window. */
+   its end stays inside the window; with problems to show, the selection
+   count steps aside for them. */
 @media (max-width: 400px) {
   .statusbar {
     gap: 6px;
+  }
+  .statusbar:has(.sb-problems:is(.has-warn, .has-error)) .sb-sel {
+    display: none;
   }
 }
 

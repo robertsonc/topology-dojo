@@ -348,6 +348,36 @@ test('on a phone the status bar keeps the problems indicator on screen', async (
   await expect(
     page.locator('#statusbar span', { hasText: 'nodes' }).first(),
   ).toBeVisible();
+
+  // With a three-digit count of problems on the narrowest phones, the zoom
+  // at the bar's end still shows whole.
+  await page.evaluate(() => {
+    const nodes = [];
+    for (let k = 0; k < 120; k++)
+      nodes.push({ id: `off${k}`, type: 'host', x: -2000 - k * 300, y: 200 });
+    localStorage.setItem(
+      'topology-dojo:doc',
+      JSON.stringify({
+        title: 'Far away',
+        pages: [{ id: 'p1', name: 'Page 1', nodes, links: [], zones: [] }],
+      }),
+    );
+  });
+  await page.reload();
+  await expect(problems).toContainText(/\d{3}/);
+  for (const width of [360, 380, 400]) {
+    await page.setViewportSize({ width, height: 844 });
+    const past = await page.locator('#statusbar').evaluate((el) => {
+      const edge = el.getBoundingClientRect().right;
+      return [...el.children]
+        .filter((c) => c.getBoundingClientRect().right > edge + 0.5)
+        .map((c) => c.textContent);
+    });
+    expect(past, `${width}px`).toEqual([]);
+    await expect(
+      page.locator('#statusbar span', { hasText: 'zoom' }).first(),
+    ).toBeVisible();
+  }
 });
 
 test('with the properties panel closed the canvas column runs to the window edge', async ({

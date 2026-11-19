@@ -2054,7 +2054,7 @@ function renderStatus(): void {
     `<span><span class="sb-k">links</span> ${p.links.length}</span>` +
     `<span class="sb-minor"><span class="sb-k">anchors</span> ${p.anchors.length}</span>` +
     `<span class="sb-minor"><span class="sb-k">zones</span> ${p.zones.length}</span>` +
-    `<span><span class="sb-k">selected</span> ${sel}</span>` +
+    `<span class="sb-sel"><span class="sb-k">selected</span> ${sel}</span>` +
     `<span class="sb-minor"><span class="sb-k">history</span> ${editor.historyDepth()}</span>` +
     `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>` +
     statusProblemsHTML() +
