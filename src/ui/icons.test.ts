@@ -9,12 +9,13 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
-  buildIconsModule,
-  iconBody,
   ICON_ATTRIBUTES,
   ICON_ELEMENTS,
   ICON_MANIFEST,
   ICON_ROOT_ATTRIBUTES,
+  buildIconsModule,
+  iconBody,
+  licenseComment,
 } from '../../scripts/build-icons.js';
 import { ICON_BODIES } from './icons.generated.js';
 import {
@@ -121,11 +122,25 @@ describe('the generated drawings', () => {
     expect(source('./icons.generated.ts')).toBe(await buildIconsModule());
   });
 
-  it('record the icon set and its licence', () => {
-    const header = source('./icons.generated.ts').split('\n\n')[0];
-    expect(header).toMatch(/lucide-static \d+\.\d+\.\d+/);
-    expect(header).toContain('ISC License');
-    expect(header).toContain('MIT License');
+  it('carry the licence text of the icon set, in a comment the bundler keeps', () => {
+    const text = source('./icons.generated.ts');
+    // `/*!` marks a legal comment: minifiers leave it in the shipped script.
+    const notice = /\/\*!([\s\S]*?)\*\//.exec(text)?.[1] ?? '';
+    expect(notice).toMatch(/lucide-static \d+\.\d+\.\d+/);
+    // Both licences ask for their copyright line and permission notice to
+    // travel with every copy: the full text, not a pointer to node_modules.
+    expect(notice).toContain('ISC License');
+    expect(notice).toContain('Lucide Icons and Contributors');
+    expect(notice).toContain('appear in all copies');
+    expect(notice).toContain('The MIT License (MIT)');
+    expect(notice).toContain('Cole Bemis');
+    expect(notice).toContain('shall be included in all');
+    // The notice comes before the drawings it covers.
+    expect(text.indexOf('/*!')).toBeLessThan(text.indexOf('ICON_BODIES'));
+  });
+
+  it('keep a licence text from ending the comment it is quoted in', () => {
+    expect(licenseComment('a */ b\n\nc')).toBe(' * a * / b\n *\n * c\n');
   });
 
   it('hold only shape elements with plain geometry attributes', () => {

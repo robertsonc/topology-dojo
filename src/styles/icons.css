@@ -58,10 +58,10 @@
 /* The layer toggle set no text colour (its emoji brought their own), so the
    button gets one here and its icon takes it like any other. */
 .layer-eye {
-  color: var(--text);
+  color: var(--fg);
 }
 .layer-eye[aria-pressed='false'] {
-  color: var(--muted);
+  color: var(--fg-weak);
 }
 
 /* The one icon that is filled: the mini style bar's star is solid while the
