@@ -343,8 +343,9 @@ function sourceStrings(code: string): SourceString[] {
 /**
  * Characters above ASCII that the chrome writes as text: dashes, quotes, the
  * ellipsis, the dot and bullet between words, the times sign and the arrows
- * of a key legend. Any other one is a glyph, and a glyph in the chrome was
- * an icon drawn by whatever fallback font the OS had.
+ * of a key legend. A letter of any script is text too (the command palette
+ * folds `ß` and `æ` when it matches). Any other one is a glyph, and a glyph
+ * in the chrome was an icon drawn by whatever fallback font the OS had.
  */
 const TYPOGRAPHY = '—–…·•×“”’←↑→↓';
 
@@ -383,7 +384,7 @@ function glyphIcons(code: string): { glyphs: string[]; symbols: string[] } {
   for (const { text, whole } of sourceStrings(code)) {
     const glyph =
       [...text.matchAll(/[^\0-\x7f]/gu)].find(
-        (m) => !TYPOGRAPHY.includes(m[0]),
+        (m) => !TYPOGRAPHY.includes(m[0]) && !/[\p{L}\p{M}]/u.test(m[0]),
       ) ??
       [...text.matchAll(/&#?[A-Za-z0-9]+;/g)].find((m) => !ESCAPES.has(m[0]));
     if (glyph) glyphs.push(excerpt(text, glyph.index));
@@ -468,6 +469,11 @@ describe('the chrome sources', () => {
       '↓',
     ]);
     expect(found("revoke.textContent = '…'")).toEqual(['…']);
+    // A letter is text in any script; a symbol that looks like one is not.
+    expect(found("x = { ß: 'ss', ς: 'σ' }; y = /[æœø]/g; z = 'Zoë'")).toEqual(
+      [],
+    );
+    expect(found("x = 'Ⓐ'")).toEqual(['glyph Ⓐ', 'Ⓐ']);
     // A character that is not a letter is a label of that kind in ASCII too.
     expect(found("x = '<button>+</button> <button>add</button>'")).toEqual([
       '+',
