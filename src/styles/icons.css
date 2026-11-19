@@ -1,0 +1,64 @@
+/* Chrome icons: the inline SVG sprite (src/ui/icons.ts). An icon is drawn by
+   stroke in the colour of the text around it, 16px unless asked otherwise. */
+.icon {
+  /* icon(name, { size }) sets this; width, height and alignment follow. */
+  --icon-size: 16px;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+  /* An icon stands where a glyph of the 12px UI font stood, and must not
+     resize the button it replaced the glyph in. So it takes 2px less room
+     than it draws on every side (12px for a 16px icon) and draws over the
+     button's padding, centred on the line of text it sits in: 0.36em is the
+     middle of that line above the baseline, at any font size. Without the
+     margin, vertical-align: -3px puts a 16px icon in the same place beside
+     12-13px text, but makes buttons with smaller text 2-3px taller. */
+  margin: -2px;
+  vertical-align: calc(0.36em - var(--icon-size) / 2 + 2px);
+}
+
+/* A toolbar label keeps its 5px from the icon's drawn edge. */
+.icon + .tlabel {
+  margin-left: 7px;
+}
+
+/* Tight rows: the glyphs these icons replaced were 7-9px wide, and a wider
+   icon wraps the row (the inspector's Format buttons, a flow's waypoint
+   chips, the mark before a nested field's label in the 88px label column).
+   The icon keeps its 16px and gives up more of the room around it. */
+.insp-btns .icon {
+  margin-inline: -4px -3px;
+}
+.refchip .icon {
+  margin-inline: -4px;
+}
+/* The inspector clips at the label column's left edge, so this mark gives
+   up room on its right only. */
+.insp-row > :first-child > .icon:first-child {
+  margin-inline: -1px -3px;
+}
+
+/* Boxes that clip their overflow. A chip label's icon starts at the label's
+   left edge; the export chip's line is too short for an icon, so there it
+   takes its full height (still centred on the text). */
+.refchip .reflbl .icon {
+  margin-inline: 0 -2px;
+}
+.export-status .icon {
+  margin: 0 -3px;
+  vertical-align: calc(0.36em - var(--icon-size) / 2);
+}
+
+/* The layer toggle sets no text colour: its emoji brought their own. */
+.layer-eye > .icon {
+  color: var(--text);
+}
+.layer-eye[aria-pressed='false'] > .icon {
+  color: var(--muted);
+}

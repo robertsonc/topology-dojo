@@ -2,6 +2,7 @@
    ones, so keep this list in sequence (see docs/proposals/0013). */
 @import './tokens.css';
 @import './base.css';
+@import './icons.css';
 @import './scrollbars.css';
 @import './app-shell.css';
 @import './toolbar.css';
