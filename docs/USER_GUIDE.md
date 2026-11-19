@@ -262,6 +262,8 @@ choosing one goes to that frame, selects the element and centres it. With the
 box empty it lists the current frame's nodes.
 
 The minimap provides an overview of content outside the current viewport.
+It starts closed; open it with **M**, the minimap button at the right end of
+the pages bar, or **View → Minimap**, and it stays the way you leave it.
 
 ## 5. Build and edit a topology
 
