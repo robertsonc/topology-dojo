@@ -170,7 +170,6 @@ describe('editor stylesheet', () => {
       'canvas.css': 3,
       'dialogs.css': 3,
       'inspector.css': 16,
-      'node-designer.css': 3,
       'popovers.css': 2,
       'present-share.css': 1,
       'problems.css': 7,

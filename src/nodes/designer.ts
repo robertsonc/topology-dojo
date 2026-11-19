@@ -60,12 +60,12 @@ function slider(
   value: unknown,
 ): string {
   const [min, max] = DESIGNER_RANGES[key];
-  return `<input type="range" min="${min}" max="${max}" step="${step}" data-num="${key}" value="${esc(String(value))}"/>`;
+  return `<input type="range" class="nd-range" min="${min}" max="${max}" step="${step}" data-num="${key}" value="${esc(String(value))}"/>`;
 }
 
 function shapeThumb(shape: string): string {
   const g = shapeGeom(shape, 14, 14, 10, 2);
-  return `<svg viewBox="0 0 28 28" aria-hidden="true"><${g.tag} ${g.attrs} fill="none" stroke="#b1b9be" stroke-width="1.2"/></svg>`;
+  return `<svg viewBox="0 0 28 28" aria-hidden="true"><${g.tag} ${g.attrs} fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 }
 
 function swatchRow(field: string, current: string): string {
@@ -109,38 +109,37 @@ export function openNodeDesigner(
 
   const iconCats = [...new Set(Object.values(ICONS).map((i) => i.cat))];
   const iconPicker =
-    `<button class="nd-icon ${spec.icon === null ? 'on' : ''}" data-icon="">none</button>` +
+    `<button class="nd-icon ${spec.icon === null ? 'on' : ''}" data-icon="" aria-pressed="${spec.icon === null}">none</button>` +
     iconCats
       .map((cat) =>
         Object.entries(ICONS)
           .filter(([, v]) => v.cat === cat)
           .map(
             ([key, v]) =>
-              `<button class="nd-icon ${spec.icon === key ? 'on' : ''}" data-icon="${key}" title="${key}" aria-label="Icon ${key}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${v.d}" fill="#b1b9be"/></svg></button>`,
+              `<button class="nd-icon ${spec.icon === key ? 'on' : ''}" data-icon="${key}" title="${key}" aria-label="Icon ${key}" aria-pressed="${spec.icon === key}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${v.d}" fill="currentColor"/></svg></button>`,
           )
           .join(''),
       )
       .join('');
 
   const toggle = (field: string, label: string): string =>
-    `<label class="nd-toggle"><input type="checkbox" data-bool="${field}" ${spec[field as keyof CustomNodeSpec] ? 'checked' : ''}/> ${label}</label>`;
+    `<label class="nd-toggle"><span>${label}</span><input type="checkbox" class="switch" data-bool="${field}" ${spec[field as keyof CustomNodeSpec] ? 'checked' : ''}/></label>`;
 
   root.innerHTML = `
-    <div class="nd-dialog" role="dialog" aria-modal="true" aria-label="Node Designer">
-      <div class="nd-head">
-        <span class="nd-title">Node Designer</span>
-        <input class="nd-name" id="nd-name" value="${esc(spec.typeName)}" placeholder="type name" aria-label="Type name" aria-describedby="nd-name-msg"/>
+    <div class="nd-dialog dialog" role="dialog" aria-modal="true" aria-labelledby="nd-title">
+      <div class="dialog-head">
+        <h2 class="dialog-title" id="nd-title">Node Designer</h2>
+        <button class="icon-btn" id="nd-close" aria-label="Close" title="Close">${icon('x')}</button>
+      </div>
+      <div class="nd-namebar">
+        <input class="field data nd-name" id="nd-name" value="${esc(spec.typeName)}" placeholder="type name" aria-label="Type name" aria-describedby="nd-name-msg"/>
         <span class="nd-name-msg" id="nd-name-msg" role="alert"></span>
-        <span class="nd-spacer"></span>
-        <button class="nd-btn" id="nd-cancel">Cancel</button>
-        <button class="nd-btn" id="nd-code" title="Copy a self-contained registerNodeType() snippet">Copy as code</button>
-        <button class="nd-btn primary" id="nd-save">Save</button>
       </div>
       <div class="nd-body">
         <div class="nd-col scroll-slim nd-left">
-          <div class="nd-h">Base shape</div>
-          <div class="nd-shapes">${SHAPE_KEYS.map((s) => `<button class="nd-shape ${s === spec.shape ? 'on' : ''}" data-shape="${s}" title="${s}" aria-label="Shape ${s}">${shapeThumb(s)}</button>`).join('')}</div>
-          <div class="nd-h">Icon</div>
+          <div class="section-label nd-h">Base shape</div>
+          <div class="nd-shapes">${SHAPE_KEYS.map((s) => `<button class="nd-shape ${s === spec.shape ? 'on' : ''}" data-shape="${s}" title="${s}" aria-label="Shape ${s}" aria-pressed="${s === spec.shape}">${shapeThumb(s)}</button>`).join('')}</div>
+          <div class="section-label nd-h">Icon</div>
           <div class="nd-icons">${iconPicker}</div>
         </div>
         <div class="nd-col scroll-slim nd-center">
@@ -149,39 +148,44 @@ export function openNodeDesigner(
           </div>
         </div>
         <div class="nd-col scroll-slim nd-right">
-          <div class="nd-h">Colors</div>
-          <label class="nd-row">Stroke</label>${swatchRow('colorStroke', spec.colorStroke)}
-          <label class="nd-row">Fill</label>${swatchRow('colorFill', spec.colorFill)}
-          <div class="nd-h">Dimensions</div>
+          <div class="section-label nd-h">Colors</div>
+          <div class="nd-label">Stroke</div>${swatchRow('colorStroke', spec.colorStroke)}
+          <div class="nd-label">Fill</div>${swatchRow('colorFill', spec.colorFill)}
+          <div class="section-label nd-h">Dimensions</div>
           <label class="nd-row">Size ${slider('size', 1, spec.size)}</label>
           <label class="nd-row">Stroke width ${slider('strokeW', 0.1, spec.strokeW)}</label>
           <label class="nd-row">Corner radius ${slider('radius', 1, spec.radius)}</label>
-          <div class="nd-h">Embellishments</div>
+          <div class="section-label nd-h">Embellishments</div>
           ${toggle('glow', 'Glow')}
           ${toggle('highlight', 'Highlight bar')}
           ${toggle('innerRing', 'Inner ring')}
           ${toggle('antenna', 'Antenna')}
           ${toggle('pattern', 'Pattern')}
           <div class="nd-sub" data-sub="pattern" ${spec.pattern ? '' : 'hidden'}>
-            <select data-sel="patternType">${PATTERN_KEYS.map((p) => `<option value="${p}" ${p === spec.patternType ? 'selected' : ''}>${p}</option>`).join('')}</select>
+            <select class="field" data-sel="patternType">${PATTERN_KEYS.map((p) => `<option value="${p}" ${p === spec.patternType ? 'selected' : ''}>${p}</option>`).join('')}</select>
           </div>
           ${toggle('leds', 'Status LEDs')}
           <div class="nd-sub" data-sub="leds" ${spec.leds ? '' : 'hidden'}>
             <label class="nd-row">Count ${slider('ledCount', 1, spec.ledCount)}</label>
             ${swatchRow('ledColor', spec.ledColor)}
-            <select data-sel="ledPos">${['bottom', 'top', 'left', 'right'].map((p) => `<option value="${p}" ${p === spec.ledPos ? 'selected' : ''}>${p}</option>`).join('')}</select>
+            <select class="field" data-sel="ledPos">${['bottom', 'top', 'left', 'right'].map((p) => `<option value="${p}" ${p === spec.ledPos ? 'selected' : ''}>${p}</option>`).join('')}</select>
           </div>
           ${toggle('badge', 'Badge')}
           <div class="nd-sub" data-sub="badge" ${spec.badge ? '' : 'hidden'}>
-            <input type="text" data-text="badgeText" maxlength="${CUSTOM_NODE_BADGE_MAX}" value="${esc(spec.badgeText)}" placeholder="badge text"/>
+            <input type="text" class="field" data-text="badgeText" maxlength="${CUSTOM_NODE_BADGE_MAX}" value="${esc(spec.badgeText)}" placeholder="badge text"/>
             ${swatchRow('badgeColor', spec.badgeColor)}
           </div>
           ${toggle('ports', 'Ports')}
           <div class="nd-sub" data-sub="ports" ${spec.ports ? '' : 'hidden'}>
             <label class="nd-row">Count ${slider('portCount', 1, spec.portCount)}</label>
-            <select data-sel="portPos">${['bottom', 'top'].map((p) => `<option value="${p}" ${p === spec.portPos ? 'selected' : ''}>${p}</option>`).join('')}</select>
+            <select class="field" data-sel="portPos">${['bottom', 'top'].map((p) => `<option value="${p}" ${p === spec.portPos ? 'selected' : ''}>${p}</option>`).join('')}</select>
           </div>
         </div>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn" id="nd-cancel">Cancel</button>
+        <button class="btn" id="nd-code" title="Copy a self-contained registerNodeType() snippet">Copy as code</button>
+        <button class="btn btn-primary" id="nd-save">Save</button>
       </div>
     </div>`;
 
@@ -207,13 +211,16 @@ export function openNodeDesigner(
     initialFocus: $<HTMLInputElement>('#nd-name'),
   });
 
+  /** Mark one button of a picker as the chosen one. */
+  const setOn = (el: Element, on: boolean): void => {
+    el.classList.toggle('on', on);
+    el.setAttribute('aria-pressed', String(on));
+  };
   // Shapes
   root.querySelectorAll<HTMLButtonElement>('[data-shape]').forEach((b) =>
     b.addEventListener('click', () => {
       spec.shape = b.dataset.shape as CustomNodeSpec['shape'];
-      root
-        .querySelectorAll('[data-shape]')
-        .forEach((x) => x.classList.toggle('on', x === b));
+      root.querySelectorAll('[data-shape]').forEach((x) => setOn(x, x === b));
       draw();
     }),
   );
@@ -221,9 +228,7 @@ export function openNodeDesigner(
   root.querySelectorAll<HTMLButtonElement>('[data-icon]').forEach((b) =>
     b.addEventListener('click', () => {
       spec.icon = b.dataset.icon ? b.dataset.icon : null;
-      root
-        .querySelectorAll('[data-icon]')
-        .forEach((x) => x.classList.toggle('on', x === b));
+      root.querySelectorAll('[data-icon]').forEach((x) => setOn(x, x === b));
       draw();
     }),
   );
@@ -235,7 +240,7 @@ export function openNodeDesigner(
         (spec[field] as unknown) = b.dataset.color!;
         group
           .querySelectorAll('[data-color]')
-          .forEach((x) => x.classList.toggle('on', x === b));
+          .forEach((x) => setOn(x, x === b));
         draw();
       }),
     );
@@ -294,6 +299,7 @@ export function openNodeDesigner(
   });
 
   $('#nd-cancel').addEventListener('click', close);
+  $('#nd-close').addEventListener('click', close);
   root.addEventListener('click', (e) => {
     if (e.target === root) close(); // click backdrop
   });
