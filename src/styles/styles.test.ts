@@ -175,7 +175,6 @@ describe('editor stylesheet', () => {
       'present-share.css': 1,
       'problems.css': 7,
       'stage-palette.css': 4,
-      'toolbar.css': 4,
       'workspace.css': 7,
     };
     const small: Record<string, number> = {};

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import { bootEditor, menuCommand } from './helpers.js';
 
 interface Commit {
   operations: number;
@@ -83,7 +83,7 @@ test('a change over the commit limit syncs as several commits', async ({
   await bootEditor(page);
 
   // A fabric large enough that pasting a copy of it is > 250 operations.
-  await page.selectOption('#fTemplate', '__sdwan');
+  await menuCommand(page, 'file.generateSdwan');
   await question(page, 'Regions')
     .getByRole('button', { name: '3', exact: true })
     .click();

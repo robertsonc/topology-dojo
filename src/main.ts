@@ -78,8 +78,6 @@ import { buildTemplate, listTemplates } from './api/templates.js';
 import { openSdwanWizard } from './ui/sdwan-wizard.js';
 import { openTemplateWizard } from './ui/template-wizard.js';
 import { pageLinkTarget } from './api/page-link.js';
-/** Template-picker value that opens the SD-WAN generator instead. */
-const SDWAN_WIZARD = '__sdwan';
 import { registerCustomNode, registerCustomNodes } from './nodes/render.js';
 import {
   markBaselineNodeTypes,
@@ -93,6 +91,15 @@ import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
 import { mountAdminDashboard } from './ui/admin-dashboard.js';
+import { attachMenuButton, attachMenubar, type MenuEntry } from './ui/menu.js';
+import {
+  MENUBAR,
+  accountMenu,
+  exportMenu,
+  moreMenu,
+  tidyMenu,
+  type MenuContext,
+} from './ui/menus.js';
 import { overlayActive, registerOverlay } from './ui/overlay.js';
 import { icon, iconSprite, type IconName } from './ui/icons.js';
 import { nodeLabelNudge, linkLabelNudge } from './ui/label-position.js';
@@ -257,40 +264,6 @@ function variantOptions(
     .map((v) => `<option value="${esc(v)}">${esc(labels[v]!)}</option>`)
     .join('');
 }
-/** The export menu's wording of each format. */
-const EXPORT_LABELS: Readonly<Record<string, string>> = {
-  'pdf-page': 'PDF — current frame',
-  'pdf-all': 'PDF — all frames',
-  flipbook: 'Flipbook HTML — all frames',
-  drawio: 'draw.io — all frames (editable, lossy)',
-  vsdx: 'Visio .vsdx — all frames (editable, lossy)',
-  pptx: 'PowerPoint .pptx — slide per frame',
-  'pptx-layers': 'PowerPoint .pptx — slide per layer',
-  mermaid: 'Mermaid — current frame',
-  'copy-png': 'Copy PNG to clipboard',
-  'svg-selection': 'SVG — selection only',
-  'png-selection': 'PNG — selection only',
-};
-/** The arrange menu's wording of each layout algorithm. */
-const LAYOUT_LABELS: Readonly<Record<string, string>> = {
-  hierarchical: 'hierarchical',
-  grid: 'grid',
-  circular: 'circular',
-  force: 'force-directed',
-};
-/** The select-by menu: each option's value, wording and command. */
-const SELECT_BY_OPTIONS: readonly [
-  value: string,
-  label: string,
-  command: CommandId,
-][] = [
-  ['type', 'same type', 'selection.sameType'],
-  ['color', 'same color', 'selection.sameColor'],
-  ['connected', 'connected (grow)', 'selection.growConnected'],
-  ['invert', 'invert', 'selection.invert'],
-  ['all', 'all', 'selection.all'],
-];
-
 const app = document.getElementById('app')!;
 
 app.innerHTML = `
@@ -305,99 +278,67 @@ app.innerHTML = `
        rules: every icon in the shell, the panels and the dialogs is a
        <use href="#i-…"> that resolves here. -->
   <svg id="ui-icon-sprite" class="svg-defs-sprite" width="0" height="0" aria-hidden="true" focusable="false">${iconSprite()}</svg>
-  <header class="bar scroll-slim">
-    <div class="bar-left">
-      <span class="brand" title="Topology Dojo">
-        <svg class="logo-mark" viewBox="0 0 32 32" width="26" height="26" aria-label="Topology Dojo" role="img">
-          <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.45" stroke-linejoin="round"/>
-          <circle cx="16" cy="5" r="2.5" fill="currentColor"/>
-          <circle cx="27" cy="16" r="2.5" fill="currentColor"/>
-          <circle cx="16" cy="27" r="2.5" fill="currentColor"/>
-          <circle cx="5" cy="16" r="2.5" fill="currentColor"/>
-          <circle cx="16" cy="16" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-          <circle cx="16" cy="16" r="1.7" fill="currentColor"/>
-        </svg>
-        <span class="wordmark">topology<b>dojo</b></span>
-      </span>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn" id="fNew" title="New document">new</button>
-        <button class="tbtn" id="fSave" title="Download the document as a JSON file">download</button>
-        <button class="tbtn" id="fOpen" title="Open a JSON file">open</button>
-        <button class="tbtn" id="fShare" title="Publish a public share link / manage published links" hidden>share</button>
-      </div>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn ticon" id="tUndo" title="${tip('edit.undo')}" aria-label="Undo">${icon('undo')}</button>
-        <button class="tbtn ticon" id="tRedo" title="${tip('edit.redo')}" aria-label="Redo">${icon('redo')}</button>
-      </div>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn" id="fSvg" title="Export current frame as SVG">svg</button>
-        <button class="tbtn" id="fPng" title="Export current frame as PNG">png</button>
-        <select class="tbtn" id="fExport" title="More export formats" aria-label="More export formats">
-          <option value="">export…</option>
-          ${variantOptions('file.export.', EXPORT_LABELS)}
-        </select>
-        <span class="export-status" id="exportStatus" role="status" aria-live="polite"></span>
-        <select class="tbtn" id="fTemplate" title="New from a starter template" aria-label="New from a starter template"></select>
-      </div>
-      <input type="file" id="fInput" accept="application/json,.json,.drawio,.xml,.mmd,.mermaid,.csv,.txt" hidden />
+  <!-- The top bar is the document: the menus, its title and save state,
+       history, tidy, then presenting, exporting and sharing it, and who is
+       signed in. Nothing in it scrolls. -->
+  <header class="bar topbar" id="topbar">
+    <span class="brand" title="Topology Dojo">
+      <svg class="logo-mark" viewBox="0 0 32 32" width="22" height="22" aria-label="Topology Dojo" role="img">
+        <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.45" stroke-linejoin="round"/>
+        <circle cx="16" cy="5" r="2.5" fill="currentColor"/>
+        <circle cx="27" cy="16" r="2.5" fill="currentColor"/>
+        <circle cx="16" cy="27" r="2.5" fill="currentColor"/>
+        <circle cx="5" cy="16" r="2.5" fill="currentColor"/>
+        <circle cx="16" cy="16" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="16" cy="16" r="1.7" fill="currentColor"/>
+      </svg>
+      <span class="wordmark">topology<b>dojo</b></span>
+    </span>
+    <!-- Five menus, folded into one (#menuMore) in a narrow window. -->
+    <div class="menubar" id="menubar" role="menubar" aria-label="Main menu">
+      ${MENUBAR.map((m) => `<button type="button" class="menubar-item" role="menuitem" data-menu="${m.id}">${m.label}</button>`).join('')}
+      <button type="button" class="menubar-item menubar-more" role="menuitem" data-menu="more" id="menuMore" aria-label="Menu">${icon('menu')}<span class="menubar-more-label">Menu</span></button>
+    </div>
+    <span class="vr"></span>
+    <div class="doc-title">
+      <input class="doc-title-input" id="docTitle" type="text" aria-label="Document title" placeholder="Untitled" spellcheck="false" autocomplete="off" />
       <span class="saved" id="saved"></span>
       <!-- Spoken when a save fails or another tab's version arrives: the
            chip is a button then, so the alert has to be a region of its own. -->
       <span class="visually-hidden" id="saveAlert" role="alert"></span>
     </div>
-    <div class="bar-right">
-      <div class="tgroup">
-        <button class="tbtn on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool">${icon('tool-select')}<span class="tlabel">select</span></button>
-        <button class="tbtn" id="tLink" title="${tip('tool.link')}" aria-label="Draw link tool">${icon('tool-link')}<span class="tlabel">link</span></button>
-        <button class="tbtn" id="tAnchor" title="${tip('tool.anchor')} — free-floating link endpoints" aria-label="Drop anchor tool">${icon('anchor')}<span class="tlabel">anchor</span></button>
-      </div>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn ticon on" id="tGrid" title="${tip('view.toggleGrid')}" aria-label="Toggle grid">${icon('grid')}</button>
-        <button class="tbtn ticon on" id="tSnap" title="${tip('view.toggleSnap')}" aria-label="Toggle snap">${icon('snap')}</button>
-        <button class="tbtn ticon" id="tCalm" title="${tip('view.toggleCalm', 'Calm canvas — pause animations')}" aria-label="Calm canvas — pause animations">${icon('calm')}</button>
-        <button class="tbtn ticon on" id="tBadges" title="Toggle on-canvas problem badges" aria-label="Toggle on-canvas problem badges">${icon('badges')}</button>
-        <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">${icon('settings')}</button>
-        <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">${icon('sun')}</button>
-        <button class="tbtn ticon" id="tFit" title="${tip('view.fit')}" aria-label="Fit view">${icon('fit-view')}</button>
-        <button class="tbtn ticon" id="tPresent" title="Present — full-screen playback of all frames" aria-label="Present full-screen">${icon('present')}</button>
-        <button class="tbtn ticon" id="tHelp" title="${tip('help.shortcuts')}" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
-      </div>
-      <span class="bar-div"></span>
-      <div class="tgroup">
-        <button class="tbtn" id="tDelete" title="${tip('edit.delete', 'Delete selection')}" aria-label="Delete selection">${icon('delete')}<span class="tlabel">delete</span></button>
-        <button class="tbtn" id="tTidy" title="${tip('arrange.tidy', 'Tidy layout — grid-snap + de-overlap')}" aria-label="Tidy layout">${icon('tidy')}<span class="tlabel">tidy</span></button>
-        <button class="tbtn" id="tBalance" title="${tip('arrange.balance', 'Balance layout — align rows/columns + centre')}" aria-label="Balance layout">${icon('balance')}<span class="tlabel">balance</span></button>
-        <select class="tbtn" id="tLayout" title="Auto-arrange with a layout algorithm" aria-label="Auto-arrange with a layout algorithm">
-          <option value="">arrange…</option>
-          ${variantOptions('arrange.layout.', LAYOUT_LABELS)}
-        </select>
-        <select class="tbtn" id="tSelectBy" title="Select nodes by a criterion" aria-label="Select nodes by a criterion">
-          <option value="">select…</option>
-          ${SELECT_BY_OPTIONS.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
-        </select>
-      </div>
-      <span class="align-group" id="alignGroup" hidden>
-        <button class="tbtn ab" data-align="left" title="Align left" aria-label="Align left">${icon('align-left')}</button>
-        <button class="tbtn ab" data-align="centerH" title="Align centers (h)" aria-label="Align horizontal centers">${icon('align-center')}</button>
-        <button class="tbtn ab" data-align="right" title="Align right" aria-label="Align right">${icon('align-right')}</button>
-        <button class="tbtn ab" data-align="top" title="Align top" aria-label="Align top">${icon('align-top')}</button>
-        <button class="tbtn ab" data-align="middleV" title="Align middles (v)" aria-label="Align vertical middles">${icon('align-middle')}</button>
-        <button class="tbtn ab" data-align="bottom" title="Align bottom" aria-label="Align bottom">${icon('align-bottom')}</button>
-        <button class="tbtn ab" data-dist="h" title="Distribute horizontally" aria-label="Distribute horizontally" disabled>${icon('distribute-h')}</button>
-        <button class="tbtn ab" data-dist="v" title="Distribute vertically" aria-label="Distribute vertically" disabled>${icon('distribute-v')}</button>
-      </span>
-      <span class="bar-div" id="workspaceDiv" hidden></span>
-      <button class="tbtn workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot" aria-hidden="true"></span><span id="workspaceLabel">agent · local</span></button>
-      <button class="tbtn" id="profileChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Authoring Preferences" hidden>prefs</button>
-      <button class="tbtn" id="adminChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Admin dashboard" hidden>admin</button>
-      <span class="bar-div" id="userDiv" hidden></span>
-      <button class="tbtn user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" aria-label="Account menu" hidden><span class="uc-dot" aria-hidden="true">${icon('account')}</span><span class="tlabel" id="userName"></span><span class="uc-caret" aria-hidden="true">${icon('chevron-down')}</span></button>
-    </div>
+    <button type="button" class="icon-btn" id="tUndo" title="${tip('edit.undo')}" aria-label="Undo">${icon('undo')}</button>
+    <button type="button" class="icon-btn" id="tRedo" title="${tip('edit.redo')}" aria-label="Redo">${icon('redo')}</button>
+    <span class="vr"></span>
+    <span class="split">
+      <button type="button" class="btn btn-ghost" id="tTidy" title="${tip('arrange.tidy', 'Tidy layout — grid-snap + de-overlap')}" aria-label="Tidy layout">${icon('tidy')}<span class="btn-label">Tidy</span></button>
+      <button type="button" class="icon-btn" id="tTidyMenu" title="Tidy, balance and auto-arrange" aria-label="Tidy, balance and auto-arrange">${icon('chevron-down')}</button>
+    </span>
+    <span class="vr"></span>
+    <span class="export-status" id="exportStatus" role="status" aria-live="polite"></span>
+    <button type="button" class="btn btn-ghost" id="tPresent" title="${tip('view.present', 'Present all pages full screen')}" aria-label="Present">${icon('present')}<span class="btn-label">Present</span></button>
+    <button type="button" class="btn" id="fExportBtn" title="Export the page or the document" aria-label="Export">${icon('export')}<span class="btn-label">Export</span>${icon('chevron-down', { size: 12, className: 'btn-caret' })}</button>
+    <button type="button" class="btn btn-primary" id="fShare" title="Publish a public share link / manage published links" aria-label="Share" hidden>${icon('share')}<span class="btn-label">Share</span></button>
+    <span class="vr" id="workspaceDiv" hidden></span>
+    <button class="chip workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog" aria-expanded="false" title="Agent Workspace" hidden><span class="ws-dot" aria-hidden="true"></span><span id="workspaceLabel">agent · local</span></button>
+    <span class="vr" id="userDiv" hidden></span>
+    <button class="chip user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" aria-label="Account menu" hidden><span class="uc-dot" aria-hidden="true">${icon('account')}</span><span class="uc-name" id="userName"></span><span class="uc-caret" aria-hidden="true">${icon('chevron-down')}</span></button>
+    <input type="file" id="fInput" accept="application/json,.json,.drawio,.xml,.mmd,.mermaid,.csv,.txt" hidden />
   </header>
+  <!-- The tools and view toggles, until they move to the rail and the pages
+       bar. -->
+  <div class="tool-strip" id="toolStrip" role="group" aria-label="Tools and view">
+    <button class="tbtn ticon on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool">${icon('tool-select')}</button>
+    <button class="tbtn ticon" id="tLink" title="${tip('tool.link')}" aria-label="Draw link tool">${icon('tool-link')}</button>
+    <button class="tbtn ticon" id="tAnchor" title="${tip('tool.anchor')} — free-floating link endpoints" aria-label="Drop anchor tool">${icon('anchor')}</button>
+    <span class="vr"></span>
+    <button class="tbtn ticon on" id="tGrid" title="${tip('view.toggleGrid')}" aria-label="Toggle grid">${icon('grid')}</button>
+    <button class="tbtn ticon on" id="tSnap" title="${tip('view.toggleSnap')}" aria-label="Toggle snap">${icon('snap')}</button>
+    <button class="tbtn ticon" id="tCalm" title="${tip('view.toggleCalm', 'Calm canvas — pause animations')}" aria-label="Calm canvas — pause animations">${icon('calm')}</button>
+    <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">${icon('settings')}</button>
+    <span class="vr"></span>
+    <button class="tbtn ticon" id="tHelp" title="${tip('help.shortcuts')}" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
+  </div>
 
   <!-- Shown while the document on canvas is a /v/<id> shared snapshot: edits
        autosave to a separate slot so the user's own document stays intact
@@ -484,6 +425,21 @@ const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
 const savedEl = app.querySelector<HTMLElement>('#saved')!;
 const saveAlertEl = app.querySelector<HTMLElement>('#saveAlert')!;
+/* The document title in the top bar. It writes what the Title field of the
+ * page properties writes (doc.title, then the autosave), and the two show
+ * the same text: each updates the other, and a loaded document sets both. */
+const docTitleEl = app.querySelector<HTMLInputElement>('#docTitle')!;
+docTitleEl.value = doc.title;
+docTitleEl.addEventListener('input', () => {
+  doc.title = docTitleEl.value;
+  const field = app.querySelector<HTMLInputElement>('#p-title');
+  if (field) field.value = doc.title;
+  markDirty();
+});
+// Enter is done with the title; the canvas has the keyboard again.
+docTitleEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !isImeKey(e)) docTitleEl.blur();
+});
 
 /* Autosave to localStorage (debounced) whenever the document changes.
  *
@@ -1119,6 +1075,7 @@ function loadDoc(
   }
   updateSharedBanner();
   doc.title = next.title;
+  docTitleEl.value = doc.title;
   doc.pages = structuredClone(next.pages);
   doc.customNodes = structuredClone(next.customNodes);
   for (const key of [
@@ -1173,20 +1130,14 @@ const workspacePanelHandle = mountWorkspacePanel({
   chipLabel: app.querySelector<HTMLElement>('#workspaceLabel')!,
   chipDivider: app.querySelector<HTMLElement>('#workspaceDiv')!,
 });
-/* Authoring Preferences (Packet P3, observe-only): a small toolbar chip next
- * to the workspace chip, revealed with it on sign-in. The panel implementation
- * (fetching, pause/forget wiring, panel DOM) lives in
- * `src/ui/profile-panel.ts`. */
-const profilePanelHandle = mountProfilePanel({
-  chip: app.querySelector<HTMLButtonElement>('#profileChip')!,
-  onChipPress: () => commands.run('account.preferences'),
-});
-/** Owner-only admin dashboard — revealed only when `/api/me` reports `admin`;
- * the panel + fetching live in `src/ui/admin-dashboard.ts`. */
-const adminDashboardHandle = mountAdminDashboard({
-  chip: app.querySelector<HTMLButtonElement>('#adminChip')!,
-  onChipPress: () => commands.run('account.admin'),
-});
+/* Authoring Preferences (Packet P3, observe-only) and the owner-only admin
+ * dashboard open from the account menu (account.preferences, account.admin),
+ * which offers them under the conditions their chips were revealed by: a
+ * signed-in user, and for the dashboard the owner flag from `/api/me`. The
+ * panels (fetching, pause/forget wiring, panel DOM) live in
+ * `src/ui/profile-panel.ts` and `src/ui/admin-dashboard.ts`. */
+const profilePanelHandle = mountProfilePanel({});
+const adminDashboardHandle = mountAdminDashboard({});
 function closeWorkspaceForDocumentReplacement(): boolean {
   return workspacePanelHandle.closeForDocumentReplacement();
 }
@@ -1331,12 +1282,6 @@ function newDocument(): void {
   // of their own: say, without blocking, what signing in would add.
   promptSignIn();
 }
-app
-  .querySelector('#fNew')
-  ?.addEventListener('click', () => commands.run('file.new'));
-app
-  .querySelector('#fSave')
-  ?.addEventListener('click', () => commands.run('file.download'));
 
 /* Image export: SVG (vector, honors calm) and PNG (always a static raster).
  * #222: the click used to fire a detached <a download> and revoke the blob
@@ -1344,7 +1289,6 @@ app
  * inserts the anchor and keeps the URL alive; this chip reports success or
  * failure so a swallowed download is never the only outcome. */
 const exportStatus = app.querySelector<HTMLElement>('#exportStatus')!;
-const pngBtn = app.querySelector<HTMLButtonElement>('#fPng');
 /** Show how export `kind` is going in the status chip (and to a screen
  * reader: the chip is a polite live region). */
 function reportExport(kind: string, state: ExportState, detail?: string): void {
@@ -1387,7 +1331,6 @@ function exportPng(): void {
   const page = framed(doc.pages[current]!);
   const filename = `${exportBase()}.png`;
   pngExportInFlight = true;
-  if (pngBtn) pngBtn.disabled = true;
   reportExport('png', 'pending', filename);
   void exportPagePNG(filename, page, 2, pageOverlay(page), pageOpts(page))
     .then(() => reportExport('png', 'ok', filename))
@@ -1397,17 +1340,11 @@ function exportPng(): void {
     })
     .finally(() => {
       pngExportInFlight = false;
-      if (pngBtn) pngBtn.disabled = false;
     });
 }
-app
-  .querySelector('#fSvg')
-  ?.addEventListener('click', () => commands.run('file.export.svg'));
-pngBtn?.addEventListener('click', () => commands.run('file.export.png'));
 /* More export formats: PDF (raster @2× through the same pipeline as PNG, so
  * it always matches the canvas), the standalone flipbook HTML (same generator
  * as the MCP tool — no fork), clipboard PNG, and selection-only crops. */
-const exportSel = app.querySelector<HTMLSelectElement>('#fExport')!;
 /**
  * The page as an image export frames it. Exports render the page frame
  * (viewBox); when drawn content — a zone box, an outside label — extends past
@@ -1576,22 +1513,7 @@ function exportFromMenu(kind: string): void {
     },
   );
 }
-exportSel.addEventListener('change', () => {
-  const kind = exportSel.value;
-  exportSel.value = '';
-  if (kind) runVariant('file.export.', kind);
-});
-/* New from a starter template. */
-const templateSel = app.querySelector<HTMLSelectElement>('#fTemplate')!;
-templateSel.innerHTML =
-  `<option value="">template…</option>` +
-  listTemplates()
-    .map(
-      (t) =>
-        `<option value="${t.id}" title="${esc(t.description)}">${esc(t.name)}</option>`,
-    )
-    .join('') +
-  `<option value="${SDWAN_WIZARD}" title="Generate an SD-WAN fabric: vendor, regions, hubs, branches, WAN transports, HA, LAN">Generate SD-WAN…</option>`;
+/* New from a starter template (File ▸ New from template). */
 /** Open the SD-WAN generator; what it creates replaces the document. */
 function generateSdwan(): void {
   openSdwanWizard({
@@ -1638,18 +1560,8 @@ function newFromTemplate(id: string): void {
   if (!closeWorkspaceForDocumentReplacement()) return;
   loadDoc(buildTemplate(id));
 }
-templateSel.addEventListener('change', () => {
-  const id = templateSel.value;
-  templateSel.value = '';
-  if (!id) return;
-  if (id === SDWAN_WIZARD) commands.run('file.generateSdwan');
-  else runVariant('file.template.', id);
-});
 
 const fileInput = app.querySelector<HTMLInputElement>('#fInput')!;
-app
-  .querySelector('#fOpen')
-  ?.addEventListener('click', () => commands.run('file.open'));
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
   fileInput.value = '';
@@ -1763,18 +1675,6 @@ function refreshChrome(): void {
   redoBtn.disabled = !editor.canRedo();
   ccZoom.textContent = `${Math.round(editor.zoom() * 100)}%`;
 }
-
-/* Select-by dropdown — select nodes by a criterion (resets to placeholder). */
-const selectBySel = app.querySelector<HTMLSelectElement>('#tSelectBy')!;
-/** The command behind each option of the menu. */
-const SELECT_BY: Readonly<Record<string, CommandId>> = Object.fromEntries(
-  SELECT_BY_OPTIONS.map(([value, , command]) => [value, command]),
-);
-selectBySel.addEventListener('change', () => {
-  const command = SELECT_BY[selectBySel.value];
-  selectBySel.value = '';
-  if (command) commands.run(command);
-});
 
 /* Status bar — live tool / cursor / element counts / zoom. */
 const statusbar = app.querySelector<HTMLElement>('#statusbar')!;
@@ -2490,43 +2390,11 @@ function onZoneSelectChange(_zoneId: string | null): void {
   renderStatus();
 }
 
-/* Align/distribute toolbar — shown when 2+ nodes are selected. */
-const alignGroup = app.querySelector<HTMLElement>('#alignGroup')!;
-function onSelectionChange(count: number): void {
+function onSelectionChange(_count: number): void {
   if (statusReady) updateMiniBar();
-  alignGroup.hidden = count < 2;
-  alignGroup
-    .querySelectorAll<HTMLButtonElement>('[data-dist]')
-    .forEach((b) => (b.disabled = count < 3));
   renderInspector();
   renderStatus();
 }
-// The buttons name their variant in a data attribute; they must offer
-// exactly the commands' variants.
-for (const [prefix, attr] of [
-  ['arrange.align', 'align'],
-  ['arrange.distribute', 'dist'],
-] as const)
-  checkVariantControls(
-    prefix,
-    [...alignGroup.querySelectorAll<HTMLElement>(`[data-${attr}]`)].map(
-      (b) => b.dataset[attr],
-    ),
-  );
-alignGroup
-  .querySelectorAll<HTMLButtonElement>('[data-align]')
-  .forEach((b) =>
-    b.addEventListener('click', () =>
-      runVariant('arrange.align', b.dataset.align),
-    ),
-  );
-alignGroup
-  .querySelectorAll<HTMLButtonElement>('[data-dist]')
-  .forEach((b) =>
-    b.addEventListener('click', () =>
-      runVariant('arrange.distribute', b.dataset.dist),
-    ),
-  );
 
 /* ── Inspector ──────────────────────────────────────────────────── */
 const SWATCHES = [
@@ -3155,6 +3023,7 @@ function wireProperties(): void {
   const title = inspector.querySelector<HTMLInputElement>('#p-title');
   title?.addEventListener('input', () => {
     doc.title = title.value;
+    docTitleEl.value = doc.title;
     markDirty();
   });
   const name = inspector.querySelector<HTMLInputElement>('#p-name');
@@ -4994,14 +4863,8 @@ calmBtn.addEventListener('click', () => commands.run('view.toggleCalm'));
  * sessions like Calm/Grid/Snap (`badgesVisible` + `BADGES_KEY` above, next to
  * the problems panel they mirror). Toggling re-renders the panel + badges
  * together since `renderProblems()` computes both from one problem list. */
-const badgesBtn = app.querySelector<HTMLButtonElement>('#tBadges')!;
 function applyBadgesVisible(on: boolean): void {
   badgesVisible = on;
-  badgesBtn.classList.toggle('on', on);
-  badgesBtn.title = on
-    ? 'Hide on-canvas problem badges'
-    : 'Show on-canvas problem badges';
-  badgesBtn.setAttribute('aria-label', badgesBtn.title);
   try {
     localStorage.setItem(BADGES_KEY, on ? '1' : '0');
   } catch {
@@ -5009,11 +4872,8 @@ function applyBadgesVisible(on: boolean): void {
   }
   renderProblems();
 }
-badgesBtn.classList.toggle('on', badgesVisible);
-badgesBtn.addEventListener('click', () => commands.run('view.toggleBadges'));
 
 /* Light / dark theme — a view preference, persisted across sessions. */
-const themeBtn = app.querySelector<HTMLButtonElement>('#tTheme')!;
 const THEME_KEY = 'topology-dojo:theme';
 const tdsRoot = app.querySelector<HTMLElement>('.tds-root');
 /** The render theme matching the editor's current light/dark toggle (#264). */
@@ -5034,9 +4894,6 @@ function applyTheme(light: boolean): void {
         .getPropertyValue('--surface-back')
         .trim(),
     );
-  themeBtn.classList.toggle('on', light);
-  themeBtn.innerHTML = icon(light ? 'moon' : 'sun');
-  themeBtn.title = light ? 'Switch to dark theme' : 'Switch to light theme';
   // The vendored engine ships a dark canvas. Flip the engine's own light palette
   // on the canvas container (its CSS `--tds-*` background vars) and tell the
   // editor to render a light grid/vignette in the SVG, so the canvas honours
@@ -5050,7 +4907,6 @@ function applyTheme(light: boolean): void {
   }
 }
 applyTheme(localStorage.getItem(THEME_KEY) === 'light');
-themeBtn.addEventListener('click', () => commands.run('view.toggleTheme'));
 
 /* Display settings — embellishment controls (ambient backdrop level),
  * separate from the document and persisted as view preferences.
@@ -5295,23 +5151,8 @@ displayBtn.addEventListener('click', (e) => {
 closeOnOutsidePress(displayPop, displayBtn, closeDisplayPop);
 
 app
-  .querySelector('#tDelete')
-  ?.addEventListener('click', () => commands.run('edit.delete'));
-app
   .querySelector('#tTidy')
   ?.addEventListener('click', () => commands.run('arrange.tidy'));
-app
-  .querySelector('#tBalance')
-  ?.addEventListener('click', () => commands.run('arrange.balance'));
-const layoutSel = app.querySelector<HTMLSelectElement>('#tLayout')!;
-layoutSel.addEventListener('change', () => {
-  const algorithm = layoutSel.value;
-  layoutSel.value = ''; // reset to the placeholder
-  if (algorithm) runVariant('arrange.layout.', algorithm);
-});
-app
-  .querySelector('#tFit')
-  ?.addEventListener('click', () => commands.run('view.fit'));
 
 /* ── Keyboard-shortcut help overlay (?) ────────────────────────────── */
 /* The sheet lists every command that has a key, group by group, from the
@@ -5641,9 +5482,46 @@ let signedInLogin: string | null = null;
 let signedInAdmin = false;
 shareBtn?.addEventListener('click', () => commands.run('file.share'));
 
+/* Menus. The menu bar, the Tidy and Export buttons and the account chip open
+ * the menus of src/ui/menus.ts. Each is built when it opens, from the
+ * registry and from what is true now (who is signed in, whether sharing is
+ * offered), and every item runs its command through the registry. */
+function menuContext(): MenuContext {
+  return {
+    commands,
+    templates: listTemplates(),
+    shareAvailable,
+    account: signedInLogin
+      ? { login: signedInLogin, admin: signedInAdmin }
+      : null,
+    icon,
+  };
+}
+const MENU_OF: Readonly<Record<string, (ctx: MenuContext) => MenuEntry[]>> =
+  Object.fromEntries([
+    ...MENUBAR.map((m) => [m.id, m.entries] as const),
+    ['more', moreMenu] as const,
+  ]);
+attachMenubar(app.querySelector<HTMLElement>('#menubar')!, (key) => {
+  const entries = MENU_OF[key];
+  if (!entries) throw new Error(`no menu "${key}" in the menu bar`);
+  return entries(menuContext());
+});
+attachMenuButton(
+  app.querySelector<HTMLElement>('#tTidyMenu')!,
+  () => tidyMenu(menuContext()),
+  { placement: 'below-end' },
+);
+attachMenuButton(
+  app.querySelector<HTMLElement>('#fExportBtn')!,
+  () => exportMenu(menuContext()),
+  { placement: 'below-end' },
+);
+
 /* Account menu. The Worker gates the app behind GitHub sign-in and reports the
- * current user at /api/me; when that succeeds we reveal a toolbar chip that opens
- * a small "Signed in as … / Sign out" menu. In Vite dev there's no Worker (auth is
+ * current user at /api/me; when that succeeds we reveal the account chip, whose
+ * menu says who is signed in and holds API keys, Authoring preferences, Admin
+ * (the owner only), Theme and Sign out. In Vite dev there's no Worker (auth is
  * bypassed) so the fetch 404s and the chip stays hidden — no login UI in dev. All
  * failures here are non-fatal. The doc autosaves to localStorage, so signing out
  * (a full navigation to /logout) never loses work. */
@@ -5657,49 +5535,11 @@ function wireAccountMenu(login: string): void {
   chip.hidden = false;
   div.hidden = false;
 
-  // The menu is fixed-positioned on document.body so the toolbar's horizontal
-  // overflow can't clip it.
-  const menu = document.createElement('div');
-  menu.className = 'user-menu';
-  menu.id = 'userMenu';
-  menu.setAttribute('role', 'menu');
-  menu.hidden = true;
-  menu.innerHTML =
-    `<div class="um-head">Signed in as <b></b></div>` +
-    `<a class="um-item" href="/keys" role="menuitem">API keys</a>` +
-    `<a class="um-item" href="/logout" role="menuitem">Sign out</a>`;
-  menu.querySelector('b')!.textContent = login;
-  document.body.appendChild(menu);
-
-  let releaseMenuOverlay: (() => void) | null = null;
-  const close = (): void => {
-    menu.hidden = true;
-    chip.setAttribute('aria-expanded', 'false');
-    releaseMenuOverlay?.();
-    releaseMenuOverlay = null;
-  };
-  const open = (): void => {
-    const r = chip.getBoundingClientRect();
-    menu.style.top = `${Math.round(r.bottom + 6)}px`;
-    menu.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
-    menu.style.left = 'auto';
-    menu.hidden = false;
-    chip.setAttribute('aria-expanded', 'true');
-    // Escape close + focus move/restore (issue #209).
-    releaseMenuOverlay = registerOverlay(menu, { close });
-  };
-  chip.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (menu.hidden) open();
-    else close();
-  });
-  // Dismiss on an outside press (Esc is handled by the overlay primitive).
-  closeOnOutsidePress(menu, chip, close);
-  // Sign out via an explicit navigation — robust even if the anchor default is
-  // ever intercepted; the localStorage autosave preserves the open document.
-  menu.querySelector('a[href="/logout"]')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    commands.run('account.signOut');
+  // Its menu (src/ui/menus.ts accountMenu) says who is signed in and holds
+  // the account's commands and the theme.
+  attachMenuButton(chip, () => accountMenu(menuContext()), {
+    placement: 'below-end',
+    label: 'Account',
   });
 }
 /** Default line in the anonymous sign-in prompt. */
@@ -5798,13 +5638,11 @@ async function showUserChip(): Promise<void> {
       signedInAdmin = !!me.admin;
       wireAccountMenu(me.login);
       enableWorkspaceUi();
-      profilePanelHandle.enable();
       // Sharing needs the hosted Worker (KV + session); reveal only here.
+      // The account menu offers Admin for the owner alone (signedInAdmin);
+      // the real gate is the /api/admin routes.
       shareAvailable = !!shareBtn;
       if (shareBtn) shareBtn.hidden = false;
-      // The Admin chip is revealed only for the deployment owner; the real gate
-      // is the /api/admin routes, so this is a cosmetic reveal.
-      if (me.admin) adminDashboardHandle.enable();
     }
   } catch {
     // No Worker (dev) or offline — leave the chip hidden.

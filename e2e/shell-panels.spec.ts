@@ -254,7 +254,7 @@ test('a failed autosave is one readable line, is announced, and downloads the do
   await expect(chip).toHaveText('⚠ not saved — download JSON');
   // One line, not a narrow column of wrapped words.
   const box = (await chip.boundingBox())!;
-  const button = (await page.locator('#fSvg').boundingBox())!;
+  const button = (await page.locator('#fExportBtn').boundingBox())!;
   expect(box.height).toBeLessThanOrEqual(button.height);
   expect(box.width).toBeGreaterThan(120);
   // Announced to assistive technology, not just coloured red.
@@ -296,7 +296,7 @@ test('a newer version saved by another tab is announced, on one line', async ({
   const chip = idle.locator('#saved');
   await expect(chip).toHaveText('⚠ changed in another tab — load it');
   const box = (await chip.boundingBox())!;
-  const button = (await idle.locator('#fSvg').boundingBox())!;
+  const button = (await idle.locator('#fExportBtn').boundingBox())!;
   expect(box.height).toBeLessThanOrEqual(button.height);
   await expect(
     idle.locator('[role="alert"]', { hasText: 'Another tab saved' }),

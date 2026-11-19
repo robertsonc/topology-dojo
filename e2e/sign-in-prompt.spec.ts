@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import { bootEditor, menuCommand } from './helpers.js';
 
 /**
  * A visitor who arrives through a public share link has no session. Nothing
@@ -29,7 +29,7 @@ test('an anonymous visitor is offered sign-in, never forced', async ({
   await expect(prompt).toBeHidden();
 
   // Starting a new document opens the prompt, and the editor still works.
-  await page.locator('#fNew').click();
+  await menuCommand(page, 'file.new');
   await expect(prompt).toBeVisible();
   await expect(prompt).toContainText(
     'Sign in to save your copy to your workspace.',
@@ -52,6 +52,6 @@ test('no sign-in chip without the hosted backend', async ({ page }) => {
   await bootEditor(page);
   await expect(page.locator('#userChip')).toBeHidden();
   page.on('dialog', (dialog) => void dialog.accept());
-  await page.locator('#fNew').click();
+  await menuCommand(page, 'file.new');
   await expect(page.locator('#signInPrompt')).toHaveCount(0);
 });

@@ -7,7 +7,9 @@ import { test, expect, type Page } from '@playwright/test';
 import path from 'node:path';
 import {
   bootEditor,
+  exportAs,
   fixturesDir,
+  menuCommand,
   readAutosave,
   statusCount,
 } from './helpers.js';
@@ -32,7 +34,7 @@ async function nodeScreenPos(
 /** A fresh empty document (confirm dialog accepted). */
 async function newDocument(page: Page): Promise<void> {
   page.once('dialog', (d) => void d.accept());
-  await page.locator('#fNew').click();
+  await menuCommand(page, 'file.new');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(0);
 }
 
@@ -139,7 +141,7 @@ test('PDF export downloads a real PDF of the current frame', async ({
 }) => {
   await bootEditor(page);
   const downloadPromise = page.waitForEvent('download');
-  await page.locator('#fExport').selectOption('pdf-page');
+  await exportAs(page, 'pdf-page');
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.pdf$/);
   const head = await new Promise<string>((resolve, reject) => {

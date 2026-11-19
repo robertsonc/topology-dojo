@@ -4,7 +4,7 @@
  * fit leaves the content clear of the panels around it.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import { bootEditor, menuCommand } from './helpers.js';
 
 interface Box {
   left: number;
@@ -192,10 +192,10 @@ for (const viewport of [
       .toBeGreaterThan(174);
     await expectContentVisible(page, true);
 
-    // Each way of asking for a fit: the shortcut, the toolbar, the canvas.
+    // Each way of asking for a fit: the shortcut, the View menu, the canvas.
     for (const fit of [
       () => page.keyboard.press('0'),
-      () => page.locator('#tFit').click(),
+      () => menuCommand(page, 'view.fit'),
       () => page.locator('#ccFit').click(),
       () => page.locator('#ccZoom').click(),
     ]) {

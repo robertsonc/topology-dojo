@@ -21,11 +21,8 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
     ['#tGrid', 'Toggle grid (R)'],
     ['#tSnap', 'Toggle snap (G)'],
     ['#tCalm', 'Calm canvas — pause animations (C)'],
-    ['#tFit', 'Fit view (0)'],
     ['#tHelp', 'Keyboard shortcuts (?)'],
-    ['#tDelete', 'Delete selection (Del)'],
     ['#tTidy', 'Tidy layout — grid-snap + de-overlap (T)'],
-    ['#tBalance', 'Balance layout — align rows/columns + centre (Shift+T)'],
     ['#palette-toggle', 'Hide node library (B)'],
     ['#minimap-toggle', 'Hide minimap (M)'],
     ['#frames-toggle', 'Hide frames (F)'],
@@ -38,6 +35,21 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
       'title',
       title,
     );
+
+  // The commands whose toolbar buttons are now menu items name the same
+  // shortcut beside the item.
+  for (const [menu, command, label, key] of [
+    ['view', 'view.fit', 'Fit to content', '0'],
+    ['edit', 'edit.delete', 'Delete', 'Del'],
+    ['arrange', 'arrange.balance', 'Balance', 'Shift+T'],
+  ] as const) {
+    await page.locator(`#menubar [data-menu="${menu}"]`).click();
+    const item = page.locator(`.menu [data-command="${command}"]`);
+    await expect(item.locator('.menu-label')).toHaveText(label);
+    await expect(item.locator('.menu-hint')).toHaveText(key);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.menu')).toHaveCount(0);
+  }
 
   // A toggle words its tooltip for what a press would do now.
   await page.keyboard.press('m');

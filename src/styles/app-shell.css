@@ -8,15 +8,32 @@ body {
   font-family: var(--font);
   overflow: hidden;
 }
+/* Rows: the top bar, the tool strip, the shared-copy banner (when shown),
+   the stage, the status bar. */
 #app {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   /* Constrain the single column so the wide legacy canvas can't blow out
      the grid past the viewport (keeps absolute UI like the minimap in view). */
   grid-template-columns: minmax(0, 1fr);
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+}
+#app > .topbar {
+  grid-row: 1;
+}
+#app > .tool-strip {
+  grid-row: 2;
+}
+#app > .shared-banner {
+  grid-row: 3;
+}
+#app > .stage {
+  grid-row: 4;
+}
+#app > .statusbar {
+  grid-row: 5;
 }
 
 /* Status bar — live tool / cursor / counts / zoom readout. */

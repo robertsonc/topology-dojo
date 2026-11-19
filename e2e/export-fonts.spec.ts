@@ -4,7 +4,7 @@
  * page CSS and used to draw every label in the default serif.
  */
 import { expect, test, type Download, type Page } from '@playwright/test';
-import { bootEditor, statusCount } from './helpers.js';
+import { bootEditor, exportAs, statusCount } from './helpers.js';
 
 const WIDE = 'MMMMMMMMMMMMMMMM';
 const NARROW = 'iiiiiiiiiiiiiiii';
@@ -53,7 +53,7 @@ test('the SVG export names the diagram typeface on its root', async ({
 }) => {
   await open(page);
   const downloading = page.waitForEvent('download');
-  await page.locator('#fSvg').click();
+  await exportAs(page, 'svg');
   const svg = (await bytes(await downloading)).toString();
   expect(/^<svg\b[^>]*>/.exec(svg)![0]).toContain(
     `font-family="'JetBrains Mono', ui-monospace`,
@@ -63,7 +63,7 @@ test('the SVG export names the diagram typeface on its root', async ({
 test('the PNG export draws labels in a fixed-width face', async ({ page }) => {
   await open(page);
   const downloading = page.waitForEvent('download');
-  await page.locator('#fPng').click();
+  await exportAs(page, 'png');
   const png = await bytes(await downloading);
 
   // Measure each label's drawn width in the PNG (2× the page). In a

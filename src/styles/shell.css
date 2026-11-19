@@ -1,0 +1,278 @@
+/* The shell (proposal 0013, P1): the top bar, and for now the strip that
+   holds the tools and view toggles. Controls come from controls.css; this
+   file lays them out. */
+
+/* ── Top bar: the document ────────────────────────────────────────────
+   Logo, menus, the document title and save state, undo / redo, Tidy, then
+   the export status, Present, Export, Share, the workspace chip and the
+   account. 44px tall, and it never scrolls: the title gives up its room
+   first, then the labels of the buttons, then the menus fold into one. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-back);
+  font-family: var(--font-ui);
+}
+.brand {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 2px;
+  user-select: none;
+}
+.logo-mark {
+  display: block;
+  flex: none;
+  color: var(--accent);
+}
+.wordmark {
+  color: var(--fg-weak);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.wordmark b {
+  margin-left: 2px;
+  color: var(--fg);
+  font-weight: 700;
+}
+
+/* The menu bar: File, Edit, View, Arrange, Help, or the one Menu button
+   that holds them in a narrow window. */
+.menubar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0;
+}
+.menubar-item {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font: 400 13px/1 var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menubar-item:hover,
+.menubar-item[aria-expanded='true'] {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.menubar-item > .icon {
+  margin: 0;
+}
+.menubar-more {
+  display: none;
+}
+
+/* The document title, with the save state after it. The one part of the bar
+   that grows and shrinks. */
+.doc-title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 64px;
+}
+.doc-title-input {
+  flex: 0 1 430px;
+  width: 0;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-strong);
+  font: 500 13px/1 var(--font-ui);
+  text-overflow: ellipsis;
+}
+.doc-title-input:hover {
+  border-color: var(--line);
+}
+.doc-title-input:focus {
+  border-color: var(--line-strong);
+  background: var(--surface-field);
+}
+.doc-title-input::placeholder {
+  color: var(--fg-weak);
+  opacity: 1;
+}
+
+/* The save state beside the title. A failed save and another tab's newer
+   version are recovery affordances, not states: they stay loud and
+   clickable until resolved (#203), on one line. */
+.saved {
+  flex: none;
+  color: var(--fg-weak);
+  font: 400 12px/1 var(--font-ui);
+  white-space: nowrap;
+}
+.saved.save-failed {
+  color: var(--status-error-fg);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.saved.save-stale {
+  color: var(--status-warn-fg);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* A little tighter than the controls' defaults, so that signed in, with
+   every chip showing, the bar fits a 1,101px window with its menus out. */
+.topbar .vr {
+  margin: 0 4px;
+}
+.topbar .btn {
+  padding: 0 10px;
+}
+
+/* Tidy and the menu of the other layout commands beside it. */
+.split {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+.split > .btn {
+  padding-right: 6px;
+}
+.split > .icon-btn {
+  width: 22px;
+}
+
+/* The result of the last export (#222): what it was and how it went. It
+   gives up its width before anything else on the bar. */
+.export-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--fg-weak);
+  font: 400 12px/1 var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.export-status.export-ok {
+  color: var(--accent-fg);
+}
+.export-status.export-failed {
+  color: var(--status-error-fg);
+  font-weight: 600;
+}
+
+.btn > .btn-caret {
+  margin-left: -2px;
+}
+
+/* The workspace and account chips. */
+.workspace-chip,
+.user-chip {
+  max-width: 180px;
+}
+.uc-name,
+#workspaceLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-chip .uc-dot {
+  display: inline-flex;
+  color: var(--accent-fg);
+}
+.user-chip .uc-caret {
+  display: inline-flex;
+  opacity: 0.75;
+}
+/* Anonymous visitor: the account chip is an offer to sign in. */
+.user-chip.signed-out {
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.user-chip.signed-out .uc-dot,
+.user-chip.signed-out .uc-caret {
+  display: none;
+}
+
+/* ── The tools and view toggles ───────────────────────────────────────
+   A plain row under the top bar until the rail and the pages bar take them
+   (P1 slice 3). */
+.tool-strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-back);
+}
+
+/* ── Narrow windows ───────────────────────────────────────────────── */
+@media (max-width: 1360px) {
+  .wordmark {
+    display: none;
+  }
+}
+/* The five menus fold into one. */
+@media (max-width: 1100px) {
+  .menubar-item[data-menu]:not(.menubar-more) {
+    display: none;
+  }
+  .menubar-more {
+    display: inline-flex;
+  }
+}
+/* Present, Export and Share keep their words down to 1,024px. */
+@media (max-width: 1023px) {
+  .topbar .btn-label {
+    display: none;
+  }
+  .topbar .btn {
+    padding: 0 8px;
+  }
+  .menubar-more-label {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .topbar {
+    gap: 2px;
+    padding: 0 6px;
+  }
+  .topbar .vr {
+    display: none;
+  }
+  .topbar .btn {
+    padding: 0 6px;
+  }
+  .doc-title {
+    min-width: 40px;
+  }
+  /* Room for the document's own controls: the logo, the chips' words and
+     the layout menu (it is also Arrange ▸ in the menu) give way. */
+  .brand,
+  #tTidyMenu,
+  #workspaceLabel,
+  .uc-name {
+    display: none;
+  }
+}

@@ -4,7 +4,13 @@
  * it sits in, and leaves the control's accessible name where it was.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor, clickLink, clickNode, nodeBox } from './helpers.js';
+import {
+  bootEditor,
+  clickLink,
+  clickNode,
+  menuCommand,
+  nodeBox,
+} from './helpers.js';
 
 /**
  * What is wrong with the icons and labels on the page right now (empty =
@@ -168,10 +174,15 @@ test('every chrome icon is a symbol of the one sprite', async ({ page }) => {
     'the sprite has its symbols',
   ).toBeGreaterThan(50);
 
-  // The shell as it boots: toolbar, canvas controls, panel toggles, frames,
-  // the page inspector and the status bar.
+  // The shell as it boots: top bar, tool strip, canvas controls, panel
+  // toggles, frames, the page inspector and the status bar, with the
+  // Arrange menu open, which holds the arrange buttons the toolbar had.
+  const arrange = page.locator('#menubar [data-menu="arrange"]');
+  await arrange.click();
   expect(await shownIcons(page), 'icons on screen at boot').toBeGreaterThan(40);
   expect(await iconProblems(page)).toEqual([]);
+  await arrange.click();
+  await expect(page.locator('.menu-layer')).toHaveCount(0);
 
   // A selected node: the mini style bar, arrange and format rows, metadata.
   await clickNode(page, 'fw');
@@ -189,11 +200,11 @@ test('every chrome icon is a symbol of the one sprite', async ({ page }) => {
   await expect(page.locator('.display-pop')).toBeVisible();
   expect(await iconProblems(page)).toEqual([]);
   await page.keyboard.press('Escape');
-  for (const [template, card] of [
-    ['spine-leaf', '.tpw-card'],
-    ['__sdwan', '.sdw-card'],
+  for (const [command, card] of [
+    ['file.template.spine-leaf', '.tpw-card'],
+    ['file.generateSdwan', '.sdw-card'],
   ] as const) {
-    await page.selectOption('#fTemplate', template);
+    await menuCommand(page, command);
     await expect(
       page.locator(`${card} [data-act="close"] .icon`),
     ).toBeVisible();
@@ -201,7 +212,7 @@ test('every chrome icon is a symbol of the one sprite', async ({ page }) => {
     await page.keyboard.press('Escape');
     await expect(page.locator(card)).toBeHidden();
   }
-  await page.locator('#tTheme').click();
+  await menuCommand(page, 'view.theme.light');
   await expect(page.locator('html')).toHaveClass(/light/);
   expect(await iconProblems(page)).toEqual([]);
 });
@@ -211,13 +222,16 @@ test('an icon that is on the page but not drawn is reported', async ({
 }) => {
   // The checks above are only worth something if they can fail: collapse
   // the icons of the visible chrome to nothing, as a stylesheet slip would.
+  // (The bar's icons are the top bar, the strip of tools and view toggles
+  // under it, the pages strip and the canvas controls.)
   await bootEditor(page);
   const shown = await shownIcons(page);
+  const chrome = ['header.bar', '#toolStrip', '#frames-dock', '#canvasCtrls'];
   await page.addStyleTag({
-    content: 'header.bar .icon, #canvasCtrls .icon { width: 0; height: 0; }',
+    content: `${chrome.map((c) => `${c} .icon`).join(', ')} { width: 0; height: 0; }`,
   });
   const collapsed = await page
-    .locator('header.bar svg.icon, #canvasCtrls svg.icon')
+    .locator(chrome.map((c) => `${c} svg.icon`).join(', '))
     .evaluateAll(
       (icons) => icons.filter((icon) => icon.checkVisibility()).length,
     );
@@ -324,7 +338,8 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
   ).toHaveCount(10);
   expect(await iconProblems(page)).toEqual([]);
 
-  // Two nodes selected: the toolbar's align group and the path button.
+  // Two nodes selected: Arrange ▸ Align and Distribute, and the path
+  // button.
   await clickNode(page, 's1');
   const second = await nodeBox(page, 'l1');
   await page.keyboard.down('Shift');
@@ -333,7 +348,25 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
     second.y + second.height / 2,
   );
   await page.keyboard.up('Shift');
-  await expect(page.locator('#alignGroup .icon:visible')).toHaveCount(8);
+  const arrange = page.locator('#menubar [data-menu="arrange"]');
+  await arrange.click();
+  const submenu = page.locator('.menu-layer .menu').nth(1);
+  for (const [name, icons] of [
+    ['Align', 6],
+    ['Distribute', 2],
+  ] as const) {
+    await page
+      .locator('.menu-layer .menu')
+      .first()
+      .getByRole('menuitem', { name, exact: true })
+      .click();
+    await expect(submenu.locator('.menu-icon .icon:visible')).toHaveCount(
+      icons,
+    );
+    expect(await iconProblems(page)).toEqual([]);
+  }
+  await arrange.click();
+  await expect(page.locator('.menu-layer')).toHaveCount(0);
   await expect(page.locator('#i-path .icon')).toBeVisible();
   expect(await iconProblems(page)).toEqual([]);
 
@@ -464,21 +497,32 @@ test('an icon swap keeps the words and the accessible name', async ({
   const iconOf = (selector: string): Promise<string | null> =>
     page.locator(`${selector} .icon use`).first().getAttribute('href');
 
-  // The theme button shows what a click switches to; its name stays put.
-  const theme = page.locator('#tTheme');
-  await expect(theme).toHaveAttribute(
-    'aria-label',
-    'Toggle light / dark theme',
-  );
-  expect(await iconOf('#tTheme')).toBe('#i-sun');
-  await theme.click();
-  expect(await iconOf('#tTheme')).toBe('#i-moon');
-  await expect(theme).toHaveText('');
-  await expect(theme).toHaveAttribute('title', 'Switch to dark theme');
-  await expect(theme).toHaveAttribute(
-    'aria-label',
-    'Toggle light / dark theme',
-  );
+  // The theme is a choice in View ▸ Theme: the item that is on follows the
+  // theme, and the two keep their names.
+  const themeItems = async (): Promise<[string, string | null][]> => {
+    await page.locator('#menubar [data-menu="view"]').click();
+    await page.getByRole('menuitem', { name: 'Theme', exact: true }).click();
+    const items = page.locator('.menu-layer .menu').nth(1).locator('button');
+    const out: [string, string | null][] = [];
+    for (let i = 0; i < (await items.count()); i++)
+      out.push([
+        await items.nth(i).innerText(),
+        await items.nth(i).getAttribute('aria-checked'),
+      ]);
+    await page.locator('#menubar [data-menu="view"]').click();
+    await expect(page.locator('.menu-layer')).toHaveCount(0);
+    return out;
+  };
+  expect(await themeItems()).toEqual([
+    ['Dark', 'true'],
+    ['Light', 'false'],
+  ]);
+  await menuCommand(page, 'view.theme.light');
+  await expect(page.locator('html')).toHaveClass(/light/);
+  expect(await themeItems()).toEqual([
+    ['Dark', 'false'],
+    ['Light', 'true'],
+  ]);
 
   // Panel toggles keep their word and change the icon beside it.
   const palette = page.locator('#palette-toggle');
@@ -514,12 +558,17 @@ test('an icon swap keeps the words and the accessible name', async ({
   await page.locator('#problems-toggle').click();
   expect(await iconOf('#problems-toggle')).toBe('#i-chevron-down');
 
-  // Menus cannot hold an icon: their placeholders are the words alone.
-  for (const [menu, words] of [
-    ['#fExport', 'export…'],
-    ['#tLayout', 'arrange…'],
-    ['#tSelectBy', 'select…'],
-    ['#fTemplate', 'template…'],
-  ] as const)
-    await expect(page.locator(`${menu} option[value=""]`)).toHaveText(words);
+  // The buttons that open a menu keep their words beside the icon, and the
+  // one without words is named.
+  for (const [button, words, glyph] of [
+    ['#fExportBtn', 'Export', '#i-export'],
+    ['#tTidy', 'Tidy', '#i-tidy'],
+    ['#tTidyMenu', '', '#i-chevron-down'],
+  ] as const) {
+    await expect(page.locator(button)).toHaveText(words);
+    expect(await iconOf(button)).toBe(glyph);
+  }
+  await expect(page.locator('#tTidyMenu')).toHaveAccessibleName(
+    'Tidy, balance and auto-arrange',
+  );
 });

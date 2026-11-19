@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { bootEditor, statusCount } from './helpers.js';
+import { bootEditor, newFromTemplate, statusCount } from './helpers.js';
 
 const question = (page: Page, label: string) =>
   page.locator('.sdw-q', {
@@ -13,7 +13,7 @@ test('a parametric template asks for its parameters, previews the counts and cre
   page,
 }) => {
   await bootEditor(page);
-  await page.selectOption('#fTemplate', 'spine-leaf');
+  await newFromTemplate(page, 'spine-leaf');
   const card = page.locator('.tpw-card');
   await expect(card).toBeVisible();
   await expect(card.getByRole('heading')).toHaveText('Spine-leaf fabric');
@@ -61,14 +61,14 @@ test('Escape closes the template dialog without touching the document', async ({
 }) => {
   await bootEditor(page);
   const n0 = await statusCount(page, 'nodes');
-  await page.selectOption('#fTemplate', 'hub-spoke');
+  await newFromTemplate(page, 'hub-spoke');
   await expect(page.locator('.tpw-card')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('.tpw-card')).toHaveCount(0);
   expect(await statusCount(page, 'nodes')).toBe(n0);
 
   // Declining the confirmation after Create keeps the document as well.
-  await page.selectOption('#fTemplate', 'hub-spoke');
+  await newFromTemplate(page, 'hub-spoke');
   page.once('dialog', (d) => void d.dismiss());
   await page.getByRole('button', { name: 'Create diagram' }).click();
   await expect(page.locator('.tpw-card')).toHaveCount(0);
@@ -77,7 +77,7 @@ test('Escape closes the template dialog without touching the document', async ({
 
 test('hub and spoke with two hubs and nine sites', async ({ page }) => {
   await bootEditor(page);
-  await page.selectOption('#fTemplate', 'hub-spoke');
+  await newFromTemplate(page, 'hub-spoke');
   await expect(page.locator('.sdw-stats')).toHaveText('7 nodes · 6 links');
   await choose(page, 'Hubs', '2').click();
   await page.getByLabel('Sites').fill('9');
@@ -97,7 +97,7 @@ test('a yes/no parameter: firewall + DMZ with an internal firewall', async ({
   page,
 }) => {
   await bootEditor(page);
-  await page.selectOption('#fTemplate', 'firewall-dmz');
+  await newFromTemplate(page, 'firewall-dmz');
   await expect(page.locator('.sdw-stats')).toHaveText('6 nodes · 5 links');
   await choose(page, 'DMZ servers', '5').click();
   await choose(page, 'Internal firewall', 'Yes').click();
@@ -119,7 +119,7 @@ test('a template without parameters starts as before, with no dialog', async ({
     asked = d.message();
     void d.accept();
   });
-  await page.selectOption('#fTemplate', 'ztna');
+  await newFromTemplate(page, 'ztna');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(5);
   await expect.poll(() => statusCount(page, 'links')).toBe(4);
   expect(asked).toBe('Start from this template? Unsaved changes are lost.');
