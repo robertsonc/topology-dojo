@@ -238,6 +238,9 @@
   /* The pages bar's height: the shell keeps it current (it takes two rows in
      a narrow column); the drawers of the compact layout end above the bar. */
   --pages-bar-h: 44px;
+  /* The open properties panel's width, 0 while it is closed, kept current by
+     the shell: below 1,024px the zoom control moves left by it. */
+  --insp-drawer-w: 0px;
   position: relative;
   display: grid;
   grid-template-columns: 44px auto minmax(0, 1fr) auto;
@@ -437,6 +440,15 @@
 }
 .minimap-dock.collapsed {
   display: none;
+}
+/* The compact layout above a phone: an open properties drawer covers the
+   canvas's right side, so the zoom control and the minimap card sit left of
+   it, where they stay in reach (--insp-drawer-w, on the stage). */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .canvas-ctrls,
+  .minimap-dock {
+    right: calc(var(--insp-drawer-w) + 10px);
+  }
 }
 .minimap {
   display: block;

@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPACT_LAYOUT_MAX_PX,
   COMPACT_LAYOUT_MQ,
+  PHONE_LAYOUT_MAX_PX,
   defaultPanelCollapsed,
+  isCompactAbovePhone,
   isCompactLayoutWidth,
 } from './compact-layout.js';
 
@@ -23,6 +25,16 @@ describe('isCompactLayoutWidth', () => {
 
   it('names the same width in its media query', () => {
     expect(COMPACT_LAYOUT_MQ).toBe('(max-width: 1023px)');
+  });
+});
+
+describe('isCompactAbovePhone', () => {
+  it('is the compact layout above a phone, 641 to 1,023px', () => {
+    expect(PHONE_LAYOUT_MAX_PX).toBe(640);
+    for (const width of [641, 720, 900, 1023])
+      expect(isCompactAbovePhone(width), `${width}px`).toBe(true);
+    for (const width of [360, 390, 640, 1024, 1280])
+      expect(isCompactAbovePhone(width), `${width}px`).toBe(false);
   });
 });
 

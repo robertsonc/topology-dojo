@@ -112,6 +112,7 @@ import type { LabelPlacement } from './render/label-placement.js';
 import {
   COMPACT_LAYOUT_MQ,
   defaultPanelCollapsed,
+  isCompactAbovePhone,
   isCompactLayoutWidth,
 } from './ui/compact-layout.js';
 import {
@@ -1069,6 +1070,32 @@ function updateMiniBar(): void {
   syncMiniBarCommands();
   miniBar.hidden = false;
   const hostRect = host.getBoundingClientRect();
+  // Below 1,024px (above a phone) open drawers cover the canvas's edges and
+  // are drawn over the bar: it keeps to the canvas they leave showing.
+  let bandLeft = 0;
+  let bandRight = hostRect.width;
+  if (isCompactAbovePhone(window.innerWidth)) {
+    const drawer = (id: string): DOMRect | null => {
+      const el = document.getElementById(id);
+      return el && !el.classList.contains('collapsed')
+        ? el.getBoundingClientRect()
+        : null;
+    };
+    const lib = drawer('palette');
+    const props = drawer('inspector-wrap');
+    if (lib) bandLeft = Math.max(0, lib.right - hostRect.left);
+    if (props)
+      bandRight = Math.max(
+        bandLeft,
+        Math.min(hostRect.width, props.left - hostRect.left),
+      );
+  }
+  // In a narrow strip the bar takes more rows rather than run under a
+  // drawer, down to a width where its rows would stack too tall.
+  miniBar.style.maxWidth =
+    bandRight - bandLeft < hostRect.width
+      ? `${Math.max(160, bandRight - bandLeft - 8)}px`
+      : '';
   // Measured from the canvas's left edge, so the room to its right does not
   // decide whether the bar wraps onto a second row.
   miniBar.style.left = '0px';
@@ -1076,15 +1103,15 @@ function updateMiniBar(): void {
   // above. The bar's own size (one row or two) decides what fits.
   const at = placeSelectionBar(
     {
-      left: selection.left - hostRect.left,
+      left: selection.left - hostRect.left - bandLeft,
       top: selection.top - hostRect.top,
-      right: selection.right - hostRect.left,
+      right: selection.right - hostRect.left - bandLeft,
       bottom: selection.bottom - hostRect.top,
     },
     { width: miniBar.offsetWidth || 200, height: miniBar.offsetHeight || 34 },
-    { width: hostRect.width, height: hostRect.height },
+    { width: bandRight - bandLeft, height: hostRect.height },
   );
-  miniBar.style.left = `${at.left}px`;
+  miniBar.style.left = `${at.left + bandLeft}px`;
   miniBar.style.top = `${at.top}px`;
   const emph = miniBar.querySelector<HTMLButtonElement>('#mbEmph');
   if (emph) {
@@ -1191,6 +1218,7 @@ editor.setViewInsets(() => {
     // The zoom control is always there; the minimap card above it only
     // while it is open.
     corner: unionBox(openPanelBox('canvasCtrls'), openPanelBox('minimap-dock')),
+    drawers: isCompactAbovePhone(window.innerWidth),
   });
   fitLeftInset = insets.left;
   return editorInsets(insets);
@@ -2609,6 +2637,25 @@ try {
 }
 
 watchPanelWidth(inspector, inspectorWrap);
+
+// Below 1,024px the drawers float over the canvas. The open properties
+// drawer's width is kept on the stage as --insp-drawer-w, so the zoom control
+// and the minimap card move left of it instead of being covered (shell.css);
+// and the selection's mini bar moves into the canvas the drawers leave.
+{
+  const stageEl = app.querySelector<HTMLElement>('.stage')!;
+  new ResizeObserver(() => {
+    const open = !inspectorWrap.classList.contains('collapsed');
+    stageEl.style.setProperty(
+      '--insp-drawer-w',
+      `${open ? inspectorWrap.offsetWidth : 0}px`,
+    );
+    if (statusReady) updateMiniBar();
+  }).observe(inspectorWrap);
+  new ResizeObserver(() => {
+    if (statusReady) updateMiniBar();
+  }).observe(paletteEl);
+}
 
 // Left-edge drag-to-resize (dragging left widens the docked panel). A drawer
 // below 1,024px can be narrower than the stored width (it leaves canvas

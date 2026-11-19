@@ -33,9 +33,25 @@ export const COMPACT_LAYOUT_MAX_PX = 1023;
 
 export const COMPACT_LAYOUT_MQ = `(max-width: ${COMPACT_LAYOUT_MAX_PX}px)`;
 
+/** The widest window laid out as a phone (the 640px blocks above). */
+export const PHONE_LAYOUT_MAX_PX = 640;
+
 /** True when the layout width is at or below the compact breakpoint. */
 export function isCompactLayoutWidth(width: number): boolean {
   return width <= COMPACT_LAYOUT_MAX_PX;
+}
+
+/**
+ * True for the compact layout above a phone (641-1,023px), where the
+ * drawers keep at least 72px of canvas between them: there, fit view clears
+ * what they cover whole, the selection's mini bar keeps to the canvas they
+ * leave showing, and the zoom control and the minimap move left of an open
+ * properties drawer (the `(min-width: 641px) and (max-width: 1023px)` blocks).
+ * A phone's drawers can cover the canvas between them, and keep the phone's
+ * own rules.
+ */
+export function isCompactAbovePhone(width: number): boolean {
+  return width > PHONE_LAYOUT_MAX_PX && isCompactLayoutWidth(width);
 }
 
 /**

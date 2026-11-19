@@ -581,6 +581,84 @@ async function bootStored(
   await expect(page.locator('#page-canvas')).toBeVisible();
 }
 
+/** The drawers' inner edges: the canvas they leave showing between them. */
+async function band(page: Page): Promise<{ left: number; right: number }> {
+  const b = await boxes(page, { lib: '#palette', props: '#inspector-wrap' });
+  return { left: b.lib!.right, right: b.props!.left };
+}
+
+for (const width of [641, 720]) {
+  test(`fit view keeps the content between both open drawers at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await bootStored(page, {
+      'tds-palette-collapsed': '0',
+      'tds-inspector-collapsed': '0',
+    });
+    expect(await closed(page, 'palette')).toBe(false);
+    expect(await closed(page, 'inspector-wrap')).toBe(false);
+    await page.keyboard.press('0');
+    const strip = await band(page);
+    const nodes = await nodeBoxes(page);
+    expect(nodes.length).toBeGreaterThan(0);
+    for (const n of nodes) {
+      expect(n.left).toBeGreaterThanOrEqual(strip.left);
+      expect(n.right).toBeLessThanOrEqual(strip.right);
+    }
+    // The zoom control's fit button is in reach beside the drawer.
+    expect(await hits(page, ['ccFit'])).toEqual(['ccFit']);
+  });
+}
+
+test('the zoom control and the minimap move left of an open properties drawer', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await bootEditor(page);
+  await page.locator('#minimap-toggle').click();
+  await page.locator('#inspector-toggle').click();
+  const b = await boxes(page, {
+    props: '#inspector-wrap',
+    ctrls: '#canvasCtrls',
+    map: '#minimap-dock',
+  });
+  expect(b.ctrls!.right).toBeLessThanOrEqual(b.props!.left);
+  expect(b.map!.right).toBeLessThanOrEqual(b.props!.left);
+  expect(await hits(page, [...CONTROL_IDS, 'minimap'])).toEqual([
+    ...CONTROL_IDS,
+    'minimap',
+  ]);
+  // Closed, the drawer gives the corner back.
+  await page.locator('#inspector-toggle').click();
+  const area = (await boxes(page, { area: '#canvas-area' })).area!;
+  const ctrls = (await boxes(page, { c: '#canvasCtrls' })).c!;
+  expect(area.right - ctrls.right).toBe(10);
+});
+
+test('the selection bar keeps to the canvas between open drawers', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 768, height: 800 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+  });
+  await page.keyboard.press('0');
+  // The rightmost node, beside the properties drawer.
+  const node = (await nodeBoxes(page)).sort((a, c) => c.right - a.right)[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  const bar = page.locator('.mini-bar');
+  await expect(bar).toBeVisible();
+  const strip = await band(page);
+  const box = (await boxes(page, { bar: '.mini-bar' })).bar!;
+  expect(box.left).toBeGreaterThanOrEqual(strip.left);
+  expect(box.right).toBeLessThanOrEqual(strip.right);
+});
+
 test('a press on the resize grip of a narrowed drawer keeps the stored width', async ({
   page,
 }) => {
