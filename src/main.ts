@@ -834,9 +834,14 @@ function openQuickAdd(req: InlineEditRequest, connectFrom?: string): void {
 }
 /* ── mini style bar (Phase 1.4) ───────────────────────────────────────
  * A compact contextual bar floating above the selection with the top
- * inspector actions — color swatches + frame emphasis for nodes, plus
+ * inspector actions — color swatches + page emphasis for nodes, plus
  * link type / routing for a selected link. Pure convenience over the
- * inspector (same update paths); view state only, nothing persisted. */
+ * inspector (same update paths); view state only, nothing persisted.
+ * After them come commands of the registry, as icon buttons: align and
+ * distribute for two or more nodes, then bring to front, send to back and
+ * lock for any node or link selection. Each runs its command and is
+ * greyed out when the command cannot run (distribute below three nodes,
+ * z-order for more than one node). */
 const miniBar = document.createElement('div');
 miniBar.className = 'mini-bar';
 miniBar.hidden = true;
@@ -847,7 +852,7 @@ function miniBarHtml(kind: 'node' | 'link'): string {
     (c) =>
       `<button class="mb-sw" data-mbcolor="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}"></button>`,
   ).join('');
-  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this frame" aria-label="Emphasize on this frame">${icon('star')}</button>`;
+  const emph = `<button class="mb-btn" id="mbEmph" title="Emphasize on this page" aria-label="Emphasize on this page">${icon('star')}</button>`;
   if (kind === 'link') {
     const info = editor.selectedLinkInfo();
     const typeOpts = linkCatalog()
@@ -865,10 +870,69 @@ function miniBarHtml(kind: 'node' | 'link'): string {
     return (
       `<select class="mb-sel" id="mbType" title="Link type" aria-label="Link type">${typeOpts}</select>` +
       `<select class="mb-sel" id="mbStyle" title="Routing" aria-label="Link routing">${styleOpts}</select>` +
-      `<span class="mb-div"></span>${swatches}<span class="mb-div"></span>${emph}`
+      `<span class="mb-div"></span>${swatches}<span class="mb-div"></span>${emph}` +
+      miniBarCommandsHtml(MINI_BAR_ORDER)
     );
   }
-  return `${swatches}<span class="mb-div"></span>${emph}`;
+  const multi = (editor.selectionElements()?.nodes.length ?? 0) >= 2;
+  return (
+    `${swatches}<span class="mb-div"></span>${emph}` +
+    (multi
+      ? miniBarCommandsHtml(MINI_BAR_ALIGN) +
+        miniBarCommandsHtml(MINI_BAR_DISTRIBUTE)
+      : '') +
+    miniBarCommandsHtml(MINI_BAR_ORDER)
+  );
+}
+
+const MINI_BAR_ALIGN = [
+  'arrange.alignLeft',
+  'arrange.alignCenterH',
+  'arrange.alignRight',
+  'arrange.alignTop',
+  'arrange.alignMiddleV',
+  'arrange.alignBottom',
+] as const satisfies readonly CommandId[];
+const MINI_BAR_DISTRIBUTE = [
+  'arrange.distributeH',
+  'arrange.distributeV',
+] as const satisfies readonly CommandId[];
+const MINI_BAR_ORDER = [
+  'arrange.bringToFront',
+  'arrange.sendToBack',
+  'edit.toggleLock',
+] as const satisfies readonly CommandId[];
+
+/** A divider, then one icon button per command; their state is set by
+ * `syncMiniBarCommands`. */
+function miniBarCommandsHtml(ids: readonly CommandId[]): string {
+  return (
+    `<span class="mb-div"></span>` +
+    ids
+      .map((id) => {
+        const spec = commands.get(id)!;
+        return `<button type="button" class="icon-btn mb-cmd" data-command="${id}">${spec.icon ? icon(spec.icon) : ''}</button>`;
+      })
+      .join('')
+  );
+}
+
+/** Name, tooltip, enabled and pressed state of the bar's command buttons,
+ * as the registry has them now. */
+function syncMiniBarCommands(): void {
+  for (const b of miniBar.querySelectorAll<HTMLButtonElement>('.mb-cmd')) {
+    const id = b.dataset.command as CommandId;
+    const lock = id === 'edit.toggleLock';
+    const label = lock
+      ? commands.isChecked(id)
+        ? 'Unlock'
+        : 'Lock'
+      : commands.get(id)!.title;
+    b.setAttribute('aria-label', label);
+    b.title = commands.titleWithShortcut(id, label);
+    b.disabled = !commands.isEnabled(id);
+    if (lock) b.setAttribute('aria-pressed', String(commands.isChecked(id)));
+  }
 }
 
 /** Selection anchor (top-centre of the selection bbox) in client coords. */
@@ -919,8 +983,11 @@ function updateMiniBar(): void {
     return;
   }
   const kind = link ? 'link' : 'node';
-  if (miniBar.dataset.kind !== kind || miniBar.hidden) {
+  // Two or more nodes add the align and distribute buttons.
+  const layout = kind === 'node' && nodeCount >= 2 ? 'nodes' : kind;
+  if (miniBar.dataset.layout !== layout || miniBar.hidden) {
     miniBar.dataset.kind = kind;
+    miniBar.dataset.layout = layout;
     miniBar.innerHTML = miniBarHtml(kind);
   } else if (kind === 'link') {
     // Keep the selects in sync when a different link is picked.
@@ -930,6 +997,7 @@ function updateMiniBar(): void {
     if (t && info) t.value = info.type;
     if (s && info) s.value = info.style;
   }
+  syncMiniBarCommands();
   miniBar.hidden = false;
   const hostRect = host.getBoundingClientRect();
   const w = miniBar.offsetWidth || 200;
@@ -955,6 +1023,13 @@ miniBar.addEventListener('click', (e) => {
     if (editor.getSelectedLink()) editor.updateLink({ color });
     else editor.updateSelectedNodes({ color });
     renderInspector();
+    return;
+  }
+  const cmd = t.closest<HTMLButtonElement>('.mb-cmd');
+  if (cmd) {
+    commands.run(cmd.dataset.command as CommandId);
+    renderInspector();
+    updateMiniBar();
     return;
   }
   if (t.closest('#mbEmph')) {
@@ -6009,11 +6084,15 @@ for (const id of [
   bind(id, {
     run: (mode) =>
       editor.alignSelection(commandArg(id, mode, oneOf(ALIGN_MODES))),
+    // Aligning lines up two or more nodes; with fewer it does nothing.
+    enabled: () => editor.selectedNodeIds().length >= 2,
   });
 for (const id of ['arrange.distributeH', 'arrange.distributeV'] as const)
   bind(id, {
     run: (axis) =>
       editor.distributeSelection(commandArg(id, axis, oneOf(['h', 'v']))),
+    // Spacing evenly needs a node between two others.
+    enabled: () => editor.selectedNodeIds().length >= 3,
   });
 bind('arrange.tidy', { run: () => editor.tidy() });
 bind('arrange.balance', { run: () => editor.balance() });

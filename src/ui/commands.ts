@@ -550,6 +550,7 @@ const EDIT = [
     id: 'edit.toggleLock',
     title: 'Lock / unlock',
     group: 'edit',
+    icon: 'lock',
     bindings: [
       {
         key: 'l',
