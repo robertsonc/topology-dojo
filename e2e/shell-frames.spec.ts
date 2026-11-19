@@ -147,3 +147,37 @@ test('the page chips work from the keyboard', async ({ page }) => {
   await expect(frameName(page, 1)).toHaveText('Core');
   await expect(chip(1)).toBeFocused();
 });
+
+test('adding, duplicating and deleting a page from the keyboard keeps the focus in the pages bar', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const chip = (index: number) =>
+    page.locator(`#filmstrip [data-page="${index}"] .frame-sel`);
+  // Add page and Duplicate page keep the focus on themselves, so the next
+  // Tab moves on in the bar's order.
+  await page.locator('#addPage').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('2/2');
+  await expect(page.locator('#addPage')).toBeFocused();
+  await page.locator('#dupPage').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('3/3');
+  await expect(page.locator('#dupPage')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#addPage')).toBeFocused();
+
+  // Deleting a page moves the focus to the chip that takes its place.
+  await page.locator('[data-del="1"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText(/\/2$/);
+  await expect(chip(1)).toBeFocused();
+  // Undo delete, once used, gives way to the current page's chip.
+  await page.locator('#undoDel').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText(/\/3$/);
+  await expect(page.locator('#undoDel')).toHaveCount(0);
+  await expect(
+    page.locator('#pagesBar .frame-sel[aria-current="page"]'),
+  ).toBeFocused();
+});

@@ -4730,7 +4730,60 @@ function scrollActiveFrameIntoView(): void {
   }
 }
 
+/**
+ * Where the keyboard focus is in the pages bar, so a redraw (which replaces
+ * its buttons) can put it back: the button's id, or a page chip's index and
+ * which of its two buttons it was.
+ */
+type PagesBarFocus =
+  | { id: string }
+  | { page: number; part: 'sel' | 'del' }
+  | null;
+
+function pagesBarFocus(): PagesBarFocus {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLButtonElement)) return null;
+  if (!pagesLead.contains(el) && !strip.contains(el) && !pagesTail.contains(el))
+    return null;
+  if (el.id) return { id: el.id };
+  const chip = el.closest<HTMLElement>('[data-page]');
+  if (!chip) return null;
+  return {
+    page: Number(chip.dataset.page),
+    part: el.classList.contains('frame-x') ? 'del' : 'sel',
+  };
+}
+
+function restorePagesBarFocus(was: PagesBarFocus): void {
+  // Only when the redraw dropped it: a control elsewhere that took the focus
+  // meanwhile keeps it.
+  if (
+    !was ||
+    (document.activeElement && document.activeElement !== document.body)
+  )
+    return;
+  const chipButton = (i: number): HTMLElement | null =>
+    strip.querySelector<HTMLElement>(`[data-page="${i}"] .frame-sel`);
+  let target: HTMLElement | null = null;
+  if ('id' in was)
+    // The same button if it is still there; Undo delete, once used, gives
+    // way to the page it brought back.
+    target =
+      app.querySelector<HTMLElement>(`#pagesBar #${was.id}`) ??
+      chipButton(current);
+  else if (was.part === 'sel')
+    target = chipButton(was.page) ?? chipButton(current);
+  else
+    // The chip whose delete button it was is gone: its neighbour, which now
+    // holds its place in the bar.
+    target =
+      chipButton(Math.min(was.page, doc.pages.length - 1)) ??
+      chipButton(current);
+  target?.focus();
+}
+
 function renderFilmstrip(): void {
+  const hadFocus = pagesBarFocus();
   const canDelete = doc.pages.length > 1;
   const playing = playTimer !== null;
   pagesLead.innerHTML =
@@ -4812,6 +4865,7 @@ function renderFilmstrip(): void {
     .querySelector('#undoDel')
     ?.addEventListener('click', () => commands.run('page.undoDelete'));
 
+  restorePagesBarFocus(hadFocus);
   updateFramesIndicator();
   scrollActiveFrameIntoView();
 }

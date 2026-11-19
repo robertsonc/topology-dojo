@@ -1145,6 +1145,10 @@ The pages bar under the canvas shows the current page number and total.
   asks for confirmation.
 - After deletion, **Undo delete** remains available for about eight seconds.
   Only the most recent deleted page is recoverable this way.
+- From the keyboard, the focus stays in the pages bar: **Add page** and
+  **Duplicate page** keep it, deleting a page moves it to the chip that takes
+  the deleted one's place, and **Undo delete** hands it to the current page's
+  chip.
 
 ### Playback
 
