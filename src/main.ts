@@ -5,7 +5,8 @@
  * canvas (art + interaction overlay) and the filmstrip — a hideable overlay
  * floating at the canvas's bottom-left — is re-rendered on page changes.
  */
-// Self-hosted JetBrains Mono (bundled by Vite — no external font fetch at runtime).
+// Self-hosted JetBrains Mono (data, canvas) and Inter (labels), bundled by
+// Vite: no external font fetch at runtime.
 // Latin-only subset: the UI is latin, and the aggregate weight CSS ships six
 // @font-face subsets (cyrillic/greek/vietnamese/…) per weight, bloating the
 // deployed bundle 6x for glyphs this app never draws.
@@ -14,6 +15,9 @@ import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-500.css';
 import '@fontsource/jetbrains-mono/latin-600.css';
 import '@fontsource/jetbrains-mono/latin-700.css';
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter/latin-600.css';
 import { Editor, type InlineEditRequest } from './editor/editor.js';
 import { clientToUser } from './editor/coords.js';
 import {
