@@ -630,7 +630,7 @@ local document; browser B is signed out or signed in but contains
 6. Confirm the user guide or publish guidance states that the URL is public to
    anyone who has it, expires after 30 days, can be revoked by the publisher,
    and may be cached for about a minute. No sensitive fixture data is used.
-7. In browser A, still signed out, find the **sign in** chip in the top bar.
+7. In browser A, still signed out, find the **Sign in** chip in the top bar.
    Choose **Keep this copy**, or start a **new** document: a prompt offers
    sign-in, says the work stays in this browser until then, can be dismissed,
    and blocks nothing. The editor keeps working and the status reads saved.

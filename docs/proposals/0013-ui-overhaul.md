@@ -551,7 +551,7 @@ and the tree agree, nothing is listed. Short hashes name the commit.
 - **Properties and Display settings keep a button as well as a menu entry.**
   The text puts "Properties in View" and Display settings under View. Both
   entries are there (View ▸ Properties, View ▸ Display…), and so are a
-  **hide** button at the end of the tab row (a **props** button in the
+  **Hide** button at the end of the tab row (a **Properties** button in the
   canvas's top-right corner while the panel is hidden) and a gear button at
   the right of the pages bar. Reason for the corner button (`2bdb496`): with
   the panel closed its column stayed and left a notch.
