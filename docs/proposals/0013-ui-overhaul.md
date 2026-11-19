@@ -558,11 +558,6 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   endpoints, type and swap in the header. The header has the icon, the title
   ("EC-Hub → App"), the kind with the type picker, the lock and the "more"
   menu; the two end pickers with Swap between them follow it as their own row.
-- **Position and order holds position only.** The text names it for a node's
-  position and order; its fields are X and Y. Bring to front, Send to back and,
-  for a link, the two single steps are on the selection bar and in the
-  header's "more" menu (`966b231` put the single steps back after a link lost
-  them).
 - **Problems entries show the Selection tab, not the field.** The text says
   they "open the tab and field they refer to". A jump selects the element and
   shows the Selection tab even when the Page or Document tab had been picked
