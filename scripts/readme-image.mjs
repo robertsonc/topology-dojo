@@ -2,7 +2,7 @@
 /**
  * Regenerates the README's lead image, docs/images/editor-sdwan.png: the
  * editor showing a generated three-region SD-WAN fabric, in the dark theme,
- * from empty browser storage, at 1440 x 900 CSS pixels and device scale
+ * from browser storage holding only the theme and the dismissed "what moved" note, at 1440 x 900 CSS pixels and device scale
  * factor 2 (a 2880 x 1800 image).
  *
  * It drives a running dev server and nothing else. It is not part of any
@@ -56,6 +56,9 @@ try {
   });
   await context.addInitScript(() => {
     localStorage.setItem('topology-dojo:theme', 'dark');
+    // A stored theme counts as a past visit, which would show the one-time
+    // "what moved" note over the canvas; the image is of the editor itself.
+    localStorage.setItem('topology-dojo:shell-note', '1');
   });
   const page = await context.newPage();
   // The wizard asks to replace the current diagram with a browser confirm.
