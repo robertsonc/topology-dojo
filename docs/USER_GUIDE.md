@@ -900,14 +900,14 @@ A bar under the toolbar says what was found, for example
 `Path: User -> App · 3 hops via EC-Branch, EC-Hub`, and offers the controls
 below. Those that show only an icon are named by their tooltip:
 
-| Control                                                | What it does                                                                                |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| **Previous route** / **Next route** (the two chevrons) | Step through the alternative routes, shortest first (shown when there is more than one).    |
-| **Trace the other way** (the opposed arrows)           | Trace the other way round. The route is the same; a flow added from it runs from the start. |
-| **emphasize**                                          | Keep the spotlight as this frame's emphasis (one undo step).                                |
-| **add flow**                                           | Add a flow path along the route, labelled with its ends and hop count.                      |
-| **new frame**                                          | Copy the frame, with the route emphasized and captioned, as the next frame of the flipbook. |
-| **Close path analysis** (the x) or Escape              | Close the bar. The spotlight goes with it.                                                  |
+| Control                                                                           | What it does                                                                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Previous route** / **Next route** (the two chevrons)                            | Step through the alternative routes, shortest first (shown when there is more than one).    |
+| **Trace the other way** (the opposed arrows; the tooltip begins with these words) | Trace the other way round. The route is the same; a flow added from it runs from the start. |
+| **emphasize**                                                                     | Keep the spotlight as this frame's emphasis (one undo step).                                |
+| **add flow**                                                                      | Add a flow path along the route, labelled with its ends and hop count.                      |
+| **new frame**                                                                     | Copy the frame, with the route emphasized and captioned, as the next frame of the flipbook. |
+| **Close path analysis** (the x) or Escape                                         | Close the bar. The spotlight goes with it.                                                  |
 
 Tracing is a read: until you choose one of the three keep actions nothing in
 the document changes, and exports and the saved file are unaffected. While the
