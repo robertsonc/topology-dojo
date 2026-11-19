@@ -1,10 +1,18 @@
 # Proposal 0013 — UI overhaul: placement first, then a flat skin
 
-**Status:** Accepted (2026-11-19). P0 (foundations) is in progress on draft
-PR #326: at `3765dc3` the stylesheet move, the token layer, the flat skin and
-the icon sprite are in; the command registry is not yet. Nothing of P1–P4 is
-on that branch at that commit. The section "What P0 changed from this text"
-records where the implementation departed from the proposal as first written.
+**Status:** Accepted (2026-11-19). P0 (foundations) is merged except its
+command registry: PR #326 merged into `main` on 2026-11-19 as `e9d0d7f`, and
+the stylesheet move, the token layer, the flat skin, the docked chrome, the
+neutral scrollbars and the icon sprite are live. `src/ui/commands.ts` is not
+on `main` yet; it is the rest of P0 and is in progress. P1 (shell), P2
+(properties panel), P3 (skin sweep) and P4 (guardrails) have not started: no
+surface has moved or been converted. Some of their building blocks are on
+`main` but used by no surface yet: the shared control classes
+(`src/styles/controls.css`), the menu component and the command palette
+(both listed under P1) and the rules for properties-panel tabs
+(`src/ui/inspector-tabs.ts`, under P2). The section
+"What P0 changed from this text" records where the implementation departed
+from the proposal as first written. Checked against `main` at `e9d0d7f`.
 
 **Captured:** 2026-11-18
 
