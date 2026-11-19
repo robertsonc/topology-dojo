@@ -169,7 +169,6 @@ describe('editor stylesheet', () => {
       'canvas-overlays.css': 3,
       'canvas.css': 3,
       'inspector.css': 16,
-      'node-designer.css': 3,
       'popovers.css': 2,
       'present-share.css': 1,
       'problems.css': 7,
