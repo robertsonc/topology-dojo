@@ -244,9 +244,15 @@ Use **B**, **M**, **P**, and **F** to toggle the Node library, minimap,
 Properties, and pages bar; **View** lists the same toggles with a check mark
 for each one that is showing. The Node library, pages bar, minimap, Problems
 panel, and Properties panel remember their local display state when browser
-storage is available. On a phone-width viewport (640px and below) the Node
-library and Properties panel start collapsed and open as drawers over the
-canvas, so the drawing surface stays visible and reachable.
+storage is available.
+
+In a window narrower than 1,024px (half of a laptop screen, a browser zoomed
+to 150% or more, a tablet or a phone) the Node library and Properties panel
+are drawers over the canvas instead of columns beside it, so the canvas keeps
+the whole width from the rail to the window's edge. They start closed unless
+you opened them last time; **B** and **P** open and close them, and opening
+one does not resize the canvas or move the drawing. **Fit view** fits the
+drawing into the part of the canvas an open drawer leaves showing.
 
 Press **Ctrl/Cmd+K**, or choose the rail's **Command palette** button or
 **Help → Command palette**, to search everything the editor can do from one
