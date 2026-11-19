@@ -1614,7 +1614,7 @@ In **Display settings**, Ambient backdrop can be **Animated**, **Static**, or
 **Off**. Turning it off removes decorative drifting bits, scan lines, and radar.
 Flow particles are separate; **Calm canvas** pauses glow and flow animation.
 In a short window (for example 450px tall) the Display settings panel stays
-inside the window and scrolls inside itself.
+inside the window, below the top bar, and scrolls inside itself.
 
 If no Calm preference has been stored, the editor follows the operating
 system's reduced-motion preference. The user can still toggle Calm afterward.

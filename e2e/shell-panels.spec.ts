@@ -6,7 +6,8 @@ import { expect, test } from '@playwright/test';
 import { bootEditor, clickNode, nodeBox, statusCount } from './helpers.js';
 
 // A window 450px tall is shorter than Display settings: it stays inside the
-// window and scrolls inside itself, down to its last control.
+// window, below the top bar, and scrolls inside itself, down to its last
+// control.
 test('Display settings stays inside a short window', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 450 });
   await bootEditor(page);
@@ -15,6 +16,17 @@ test('Display settings stays inside a short window', async ({ page }) => {
   await expect(pop).toBeVisible();
   const box = (await pop.boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(0);
+  // It leaves the top bar's buttons uncovered.
+  const bar = (await page.locator('#topbar').boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(bar.y + bar.height);
+  for (const id of ['#tTidy', '#tPresent', '#fExportBtn']) {
+    const b = (await page.locator(id).boundingBox())!;
+    const hit = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.id,
+      [b.x + b.width / 2, b.y + b.height / 2] as const,
+    );
+    expect(hit, id).toBe(id.slice(1));
+  }
   expect(box.y + box.height).toBeLessThanOrEqual(450);
   const scroll = await pop.evaluate((el) => ({
     content: el.scrollHeight,

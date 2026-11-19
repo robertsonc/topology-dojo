@@ -5448,8 +5448,13 @@ function toggleDisplayPop(): void {
     displayPop.style.top = 'auto';
     const bottom = Math.round(window.innerHeight - r.top + 6);
     displayPop.style.bottom = `${bottom}px`;
-    // In a short window it keeps inside it and scrolls within itself.
-    displayPop.style.maxHeight = `${Math.max(120, window.innerHeight - bottom - 8)}px`;
+    // In a short window it keeps below the top bar and scrolls within
+    // itself, so Tidy, Present and Export stay in sight.
+    const ceiling = Math.round(
+      (document.getElementById('topbar')?.getBoundingClientRect().bottom ?? 0) +
+        8,
+    );
+    displayPop.style.maxHeight = `${Math.max(120, window.innerHeight - bottom - ceiling)}px`;
     displayPop.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
     displayPop.style.left = 'auto';
     displayPop.hidden = false;
