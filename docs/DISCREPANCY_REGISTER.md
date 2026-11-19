@@ -307,8 +307,8 @@ docs/launch-readiness/UAT_PLAN.md` finds nothing in them.
   tab's hints, the Analyze path tooltip and the delete-page confirmation say
   page (`grep -rn -i frame src/main.ts src/ui` finds code comments, command
   ids, CSS classes, a storage key and the default page name "Frame N").
-- `docs/futures/light-theme-contrast.md` is unchanged and still about the
-  rendered output; see the note added at its end.
+- `docs/futures/light-theme-contrast.md` keeps its body about the rendered
+  output; a dated update for the chrome was added at its end.
 - A11Y-02's "panel toggles expose no expanded state": the properties toggle has
   `aria-controls` and `aria-expanded` (`e2e/shell-inspector-tabs.spec.ts`).
   The register row itself is not edited: its other parts (tool toggles'
