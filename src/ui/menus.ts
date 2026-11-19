@@ -52,6 +52,8 @@ type Def =
       label?: string;
       /** Show whether it is on: a check mark, or one of a set of choices. */
       check?: 'checkbox' | 'radio';
+      /** A longer description, the item's tooltip. */
+      title?: string;
       /** What the command is run with, for one that takes a caller's
        * argument (Paste here: the point that was right-clicked). */
       args?: unknown;
@@ -77,13 +79,23 @@ const submenu = (label: string, entries: Def[]): Def => ({
   submenu: entries,
 });
 
-/** The Generate SD-WAN wizard: the last entry of the old template picker. */
-const SDWAN = cmd('file.generateSdwan', 'Generate SD-WAN…');
+/** The Generate SD-WAN wizard: the last entry of the old template picker,
+ * with the tooltip it had there. */
+const SDWAN: Def = {
+  ...cmd('file.generateSdwan', 'Generate SD-WAN…'),
+  title:
+    'Generate an SD-WAN fabric: vendor, regions, hubs, branches, WAN transports, HA, LAN',
+};
 
+/** One item per template, each with the template's description as its
+ * tooltip, as the old picker's options had. */
 function templateDefs(ctx: MenuContext): Def[] {
   return [
-    ...ctx.templates.map((t) =>
-      cmd(`file.template.${t.id}` as CommandId, t.name),
+    ...ctx.templates.map(
+      (t): Def => ({
+        ...cmd(`file.template.${t.id}` as CommandId, t.name),
+        ...(t.description ? { title: t.description } : {}),
+      }),
     ),
     SDWAN,
   ];
@@ -359,6 +371,7 @@ function commandItem(
       void (args === undefined ? commands.run(id) : commands.run(id, args)),
   };
   if (hint !== undefined) item.hint = hint;
+  if (def.title) item.title = def.title;
   if (spec.icon !== undefined && ctx.icon) item.iconHtml = ctx.icon(spec.icon);
   if (def.check) item.checked = commands.isChecked(id);
   if (def.check === 'radio') item.radio = true;

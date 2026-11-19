@@ -528,6 +528,25 @@ describe('what the context decides', () => {
     ]);
   });
 
+  it('gives each template item its description as a tooltip, as the old picker did', () => {
+    const templates = [
+      { id: 'a', name: 'First one', description: 'Two sites and a hub' },
+      { id: 'b', name: 'Second one' },
+    ];
+    const commands = createCommandRegistry([
+      ...COMMAND_SPECS,
+      ...templateCommandSpecs(templates),
+    ]);
+    const entry = fileMenu(context({ commands, templates }))[1] as MenuItem;
+    expect(
+      submenuOf(entry).map((e) => (isMenuItem(e) ? e.title : e.kind)),
+    ).toEqual([
+      'Two sites and a hub',
+      undefined,
+      'Generate an SD-WAN fabric: vendor, regions, hubs, branches, WAN transports, HA, LAN',
+    ]);
+  });
+
   it('offers Admin to the owner only, and only Theme to nobody signed in', () => {
     const member = commandIds(
       accountMenu(context({ account: { login: 'octocat', admin: false } })),

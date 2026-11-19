@@ -348,6 +348,8 @@ export type TemplateCommandId = `file.template.${string}`;
 export interface TemplateEntry {
   readonly id: string;
   readonly name: string;
+  /** What the template holds: the menu item's tooltip. */
+  readonly description?: string;
 }
 
 /**
