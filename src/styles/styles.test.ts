@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { contrastRatio } from '../ui/contrast.js';
 
 /**
  * Guards for the editor stylesheet (proposal 0013). They keep the rules the
@@ -87,6 +88,7 @@ describe('editor stylesheet', () => {
       '--status-info',
       '--surface-press',
       '--fg-disabled',
+      '--accent-fg',
     ]);
     const unused = declarations(TOKENS)
       .map((d) => d.prop)
@@ -155,5 +157,133 @@ describe('editor stylesheet', () => {
       expect(light, token).toMatch(new RegExp(`${token}:`));
     expect(css).toMatch(/:root \{\s*color-scheme: dark;/);
     expect(light).toMatch(/color-scheme: light;/);
+  });
+
+  describe('token contrast (WCAG 2.1)', () => {
+    type Rgba = [number, number, number, number];
+    const block = (selector: string): Map<string, string> => {
+      const css = read(TOKENS);
+      const start = css.indexOf(`${selector} {`);
+      const body = css.slice(start, css.indexOf('\n}', start));
+      return new Map(
+        [...body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [
+          m[1]!,
+          m[2]!.replace(/\s+/g, ' ').trim(),
+        ]),
+      );
+    };
+    const dark = block(':root');
+    const themes = {
+      dark,
+      light: new Map([...dark, ...block(':root.light')]),
+    };
+
+    /** A token's colour, following var() and the color-mix forms tokens use. */
+    function colour(value: string, tokens: Map<string, string>): Rgba {
+      const v = value.trim();
+      if (v === 'white') return [255, 255, 255, 1];
+      if (v === 'black') return [0, 0, 0, 1];
+      if (v === 'transparent') return [0, 0, 0, 0];
+      const ref = /^var\((--[\w-]+)\)$/.exec(v);
+      if (ref) return colour(tokens.get(ref[1]!)!, tokens);
+      const hex = /^#([0-9a-f]{6})$/i.exec(v);
+      if (hex) {
+        const n = parseInt(hex[1]!, 16);
+        return [n >> 16, (n >> 8) & 255, n & 255, 1];
+      }
+      const fn = /^rgba?\(([^)]+)\)$/.exec(v);
+      if (fn) {
+        const [r, g, b, a = 1] = fn[1]!.split(',').map(Number);
+        return [r!, g!, b!, a];
+      }
+      const mix = /^color-mix\(in srgb, (.+) (\d+)%, (\w+)\)$/.exec(v);
+      if (mix) {
+        const [r, g, b, a] = colour(mix[1]!, tokens);
+        const p = Number(mix[2]) / 100;
+        if (mix[3] === 'transparent') return [r, g, b, a * p];
+        const [or, og, ob] = colour(mix[3]!, tokens);
+        return [
+          r * p + or * (1 - p),
+          g * p + og * (1 - p),
+          b * p + ob * (1 - p),
+          a,
+        ];
+      }
+      throw new Error(`cannot read the colour "${value}"`);
+    }
+    const over = (top: Rgba, under: Rgba): Rgba => [
+      top[0] * top[3] + under[0] * (1 - top[3]),
+      top[1] * top[3] + under[1] * (1 - top[3]),
+      top[2] * top[3] + under[2] * (1 - top[3]),
+      1,
+    ];
+    const hex = (c: Rgba): string =>
+      '#' +
+      c
+        .slice(0, 3)
+        .map((n) => Math.round(n).toString(16).padStart(2, '0'))
+        .join('');
+
+    const SURFACES = ['--surface-back', '--surface-front', '--surface-float'];
+    const QUIET = ['--surface-field', '--surface-hover'];
+    const TINTS = [
+      ...QUIET,
+      '--surface-press',
+      '--accent-soft',
+      '--accent-soft-strong',
+    ];
+    /** [foreground, the fills it may sit on besides a bare surface, minimum]. */
+    const PAIRS: [string, string[], number][] = [
+      ['--fg-strong', TINTS, 4.5],
+      ['--fg', TINTS, 4.5],
+      // Weak text is for labels and hints on a resting or hovered surface. A
+      // pressed or selected row takes --fg or --fg-strong.
+      ['--fg-weak', QUIET, 4.5],
+      ['--accent-fg', TINTS, 4.5],
+      ['--status-error-fg', [], 4.5],
+      ['--status-warn-fg', [], 4.5],
+      ['--status-ok', [], 4.5],
+      ['--status-info', [], 4.5],
+      // 1.4.11: an outline that is the only edge of a control.
+      ['--line-strong', [], 3],
+      ['--focus', TINTS, 3],
+    ];
+
+    for (const [name, tokens] of Object.entries(themes)) {
+      const get = (token: string): Rgba => colour(tokens.get(token)!, tokens);
+
+      it(`${name}: text, outlines and the focus ring read on every surface`, () => {
+        const low: string[] = [];
+        for (const surface of SURFACES)
+          for (const [fg, fills, min] of PAIRS)
+            for (const fill of [null, ...fills]) {
+              const ground = fill
+                ? over(get(fill), get(surface))
+                : get(surface);
+              const ratio = contrastRatio(
+                hex(over(get(fg), ground)),
+                hex(ground),
+              )!;
+              if (ratio < min)
+                low.push(
+                  `${fg} on ${surface}${fill ? ` + ${fill}` : ''}: ` +
+                    `${ratio.toFixed(2)} < ${min}`,
+                );
+            }
+        expect(low).toEqual([]);
+      });
+
+      it(`${name}: ink on the accent and status fills reads`, () => {
+        for (const [ink, fill] of [
+          ['--on-accent', '--accent'],
+          ['--on-status', '--status-warn'],
+          ['--on-status', '--status-error'],
+        ] as const)
+          expect(
+            contrastRatio(hex(get(ink)), hex(get(fill)))!,
+            `${ink} on ${fill}`,
+          ).toBeGreaterThanOrEqual(4.5);
+      });
+    }
   });
 });

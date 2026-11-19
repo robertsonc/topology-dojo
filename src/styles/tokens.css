@@ -55,6 +55,10 @@
      selection handles on the canvas and selected chrome read as one colour. */
   --accent: #01a982;
   --on-accent: #1d1f27; /* text and icons on an accent fill (5.5:1) */
+  /* Accent-coloured text and icons. `--accent` itself is a fill colour: as
+     text it drops below 4.5:1 on a hover or selected tint. This lighter mix
+     holds 4.5:1 on every surface and every tint above. */
+  --accent-fg: color-mix(in srgb, var(--accent) 60%, white);
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
   --accent-soft-strong: color-mix(in srgb, var(--accent) 28%, transparent);
   --accent-line: color-mix(in srgb, var(--accent) 55%, transparent);
@@ -148,15 +152,19 @@
   --fg-disabled: rgba(0, 0, 0, 0.38);
 
   --line: rgba(0, 0, 0, 0.12);
-  --line-strong: rgba(0, 0, 0, 0.36);
+  --line-strong: rgba(0, 0, 0, 0.45); /* 3.3:1: a control's only outline */
 
   /* Darker than the canvas accent: #01a982 is only 3:1 on white. This is
      5.1:1 on the back surface and 5.5:1 on white, and white text on it is
      5.5:1. */
   --accent: #03785b;
   --on-accent: #ffffff;
+  --accent-fg: color-mix(in srgb, var(--accent) 80%, black);
   --focus: #1d1f27;
 
+  /* The dark theme's ok and info are 2:1 on a light surface. */
+  --status-ok: #17804d;
+  --status-info: #1d6fc4;
   --status-error-fg: #cc1f1a;
   --status-warn-fg: #8a5a00;
 
