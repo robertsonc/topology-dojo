@@ -301,7 +301,10 @@ that closed keeps its remembered setting. On a phone this also applies when
 the editor starts or the window narrows to a phone's width: a browser that
 remembers both open shows the Node library and closes Properties, again
 without changing either remembered setting. Above a phone's width a browser
-that remembers both open starts with both open. **Fit view** fits
+that remembers both open starts with both open. In a window under 480px
+tall (a phone, or a laptop browser zoomed to 300% or more) the rail scrolls,
+the canvas shrinks above the pages bar, and an open drawer runs down over the
+pages bar so its list keeps some height. **Fit view** fits
 the drawing into the part of the canvas the open drawers leave showing, and
 the zoom control and the minimap move beside an open Properties drawer.
 

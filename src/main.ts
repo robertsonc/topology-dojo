@@ -402,7 +402,7 @@ app.innerHTML = `
        node library docked beside it, the canvas over the pages bar, and the
        properties panel. Only the page chips scroll. -->
   <div class="stage">
-    <div class="rail" id="rail">
+    <div class="rail scroll-slim" id="rail">
       <div class="rail-tools" role="group" aria-label="Tools">
       <button type="button" class="icon-btn icon-btn-lg on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool" aria-pressed="true">${icon('tool-select')}</button>
       <button type="button" class="icon-btn icon-btn-lg" id="ccHand" title="${tip('tool.hand')} — or hold Space to pan anytime" aria-label="Hand / pan tool" aria-pressed="false">${icon('hand')}</button>

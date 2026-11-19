@@ -650,6 +650,71 @@ for (const width of [641, 720]) {
   });
 }
 
+// A window under 480px tall: a phone or a small laptop zoomed to 300% or
+// 400% (360 x 225 is 1,440 x 900 at 400%). Every control outside the canvas
+// is inside the window and is what a press at its centre reaches, once it
+// is scrolled into view (the rail scrolls in a window this short), and an
+// open drawer keeps room for its list.
+for (const [width, height] of [
+  [360, 225],
+  [320, 256],
+] as const)
+  test(`in a ${width} x ${height} window every control can be reached and the drawers keep their lists`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await bootEditor(page);
+    const unreachable = await page.evaluate(() => {
+      const out: string[] = [];
+      const controls = document.querySelectorAll<HTMLElement>(
+        'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      for (const el of controls) {
+        if (el.closest('svg') || (el as HTMLButtonElement).disabled) continue;
+        if (getComputedStyle(el).visibility === 'hidden') continue;
+        if (!el.getBoundingClientRect().width) continue;
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          r.left + r.width / 2,
+          r.top + r.height / 2,
+        );
+        const inside =
+          r.left >= 0 &&
+          r.top >= 0 &&
+          r.right <= window.innerWidth + 0.5 &&
+          r.bottom <= window.innerHeight + 0.5;
+        if (!inside || !hit || !el.contains(hit))
+          out.push(
+            `${el.id ? `#${el.id}` : el.className} at ` +
+              `${Math.round(r.left)},${Math.round(r.top)} reaches ` +
+              `${hit ? hit.id || hit.getAttribute('class') || hit.tagName : 'nothing'}`,
+          );
+      }
+      return out;
+    });
+    expect(unreachable).toEqual([]);
+
+    // The canvas ends above the pages bar, and the zoom control inside it.
+    const b = await boxes(page, {
+      area: '#canvas-area',
+      bar: '#pagesBar',
+      ctrls: '#canvasCtrls',
+    });
+    expect(b.area!.bottom).toBeLessThanOrEqual(b.bar!.top);
+    expectInside(b.ctrls!, b.area!);
+
+    const height_ = (selector: string) =>
+      page
+        .locator(selector)
+        .evaluate((el) => el.getBoundingClientRect().height);
+    await page.locator('#palette-toggle').click();
+    expect(await height_('#palette-list')).toBeGreaterThanOrEqual(60);
+    await page.locator('#palette-toggle').click();
+    await page.locator('#inspector-toggle').click();
+    expect(await height_('#inspector')).toBeGreaterThanOrEqual(60);
+  });
+
 test('on a phone, two drawers stored open load as one, and their stored choices stay', async ({
   page,
 }) => {

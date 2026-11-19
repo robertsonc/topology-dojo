@@ -177,6 +177,12 @@
     top: 12px;
     right: 12px;
   }
+  /* The open library drawer covers the closed toggle where the two meet in
+     a narrow window, as it covers the zoom control: the toggle is canvas UI
+     there, not half of a drawer drawn over the library's tiles. */
+  .palette:not(.collapsed) ~ .inspector-wrap.collapsed {
+    z-index: var(--z-canvas-ui);
+  }
   .inspector {
     width: min(240px, calc(100vw - 88px));
     min-width: 0;

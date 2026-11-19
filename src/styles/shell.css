@@ -314,6 +314,9 @@
   min-height: 0;
   padding: 8px 0;
   overflow: hidden;
+  /* Its slim scrollbar (.scroll-slim) only takes room in a window too short
+     for the rail's buttons, where the rail scrolls (below). */
+  scrollbar-gutter: auto;
   border-right: 1px solid var(--line);
   background: var(--surface-back);
 }
@@ -955,6 +958,42 @@
 @media (max-width: 400px) {
   .statusbar {
     gap: 6px;
+  }
+}
+
+/* A window under 480px tall (a laptop or a phone zoomed to 300% or 400%):
+   the canvas gives up its least height, so it shrinks above the pages bar
+   instead of running under it and the status bar; the rail scrolls; the
+   drawers run down over the pages bar, so their lists keep some height; and
+   the zoom control and the closed properties toggle sit closer to the
+   canvas's edges, so both fit in a short canvas. */
+@media (max-height: 480px) {
+  .canvas-area {
+    min-height: 0;
+  }
+  .rail {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .canvas-ctrls {
+    bottom: 4px;
+  }
+  /* The "what moved" note takes the canvas's height and scrolls inside
+     itself, so its title and its lines are not cut off above the canvas.
+     It covers the corner controls until it is dismissed. */
+  .shell-note {
+    top: 4px;
+    bottom: 4px;
+    overflow-y: auto;
+  }
+}
+@media (max-height: 480px) and (max-width: 1023px) {
+  .stage > .palette,
+  .stage > .inspector-wrap:not(.collapsed) {
+    bottom: 0;
+  }
+  .stage > .inspector-wrap.collapsed {
+    top: 4px;
   }
 }
 
