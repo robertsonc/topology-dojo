@@ -137,6 +137,8 @@ export const ICON_MANIFEST = {
   // The left rail and the pages bar: the command palette, the minimap
   search: 'search',
   minimap: 'map',
+  // The selection bar: lock and unlock
+  lock: 'lock',
   checkpoint: 'flag',
   // States
   warning: 'triangle-alert',
