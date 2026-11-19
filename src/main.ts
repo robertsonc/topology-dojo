@@ -110,10 +110,10 @@ import { icon, iconSprite, type IconName } from './ui/icons.js';
 import { nodeLabelNudge, linkLabelNudge } from './ui/label-position.js';
 import type { LabelPlacement } from './render/label-placement.js';
 import {
-  MOBILE_LAYOUT_MQ,
+  COMPACT_LAYOUT_MQ,
   defaultPanelCollapsed,
-  isMobileLayoutWidth,
-} from './ui/mobile-layout.js';
+  isCompactLayoutWidth,
+} from './ui/compact-layout.js';
 import {
   editorInsets,
   fitInsets,
@@ -480,8 +480,8 @@ const pagesTail = app.querySelector<HTMLElement>('#pagesTail')!;
 const framesDock = app.querySelector<HTMLDivElement>('#frames-dock')!;
 const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
-// The pages bar's height, kept on the stage as --pages-bar-h: on a phone the
-// library drawer ends above the bar (which takes two rows there) instead of
+// The pages bar's height, kept on the stage as --pages-bar-h: below 1,024px
+// the drawers end above the bar (which takes two rows on a phone) instead of
 // covering its page toggle.
 {
   const pagesBar = app.querySelector<HTMLElement>('#pagesBar')!;
@@ -2016,7 +2016,7 @@ minimapToggle.addEventListener('click', () =>
 setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') !== '0');
 
 // Collapse / restore the node library docked beside the rail (a drawer over
-// the canvas on a phone). Its toggle is the rail's Library button.
+// the canvas below 1,024px). Its toggle is the rail's Library button.
 const paletteEl = app.querySelector<HTMLElement>('#palette')!;
 const paletteToggle = app.querySelector<HTMLButtonElement>('#palette-toggle')!;
 function setPaletteCollapsed(collapsed: boolean, persist = true): void {
@@ -2553,33 +2553,46 @@ function readCollapsedPref(key: string): string | null {
 }
 
 /**
- * Open/close the node library and properties rail from stored prefs, or from
- * the phone-width default when the user has never chosen (#221). Inferred
- * defaults are not written to storage, so crossing the breakpoint can still
- * flip them; an explicit B/P toggle persists and wins on every viewport.
+ * Open/close the node library and properties panel from stored prefs, or from
+ * the default when the person has never chosen: below 1,024px the panels are
+ * drawers and start closed, from 1,024px up they dock and start open (#221).
+ * Inferred defaults are not written to storage, so crossing the breakpoint
+ * can still flip them; an explicit B/P toggle persists and wins at every
+ * width. Crossing the breakpoint only toggles the panels' classes, so the
+ * selection, the panel's tab and its sections are untouched; and a panel
+ * holding the focus (a field being edited) is not closed under it.
  */
 function syncPanelLayoutFromPrefs(): void {
-  const mobile = isMobileLayoutWidth(window.innerWidth);
+  const compact = isCompactLayoutWidth(window.innerWidth);
+  // A field being typed in, not a button or a section heading with focus.
+  const focused = (el: HTMLElement): boolean => {
+    const active = document.activeElement;
+    return (
+      active instanceof HTMLElement &&
+      el.contains(active) &&
+      (active.matches('input, textarea, select') || active.isContentEditable)
+    );
+  };
   const palettePref = readCollapsedPref('tds-palette-collapsed');
-  setPaletteCollapsed(
-    defaultPanelCollapsed(palettePref, mobile),
-    palettePref !== null,
-  );
+  const paletteShut = defaultPanelCollapsed(palettePref, compact);
+  if (!(paletteShut && focused(paletteEl)))
+    setPaletteCollapsed(paletteShut, palettePref !== null);
   const inspectorPref = readCollapsedPref('tds-inspector-collapsed');
-  setInspectorCollapsed(
-    defaultPanelCollapsed(inspectorPref, mobile),
-    inspectorPref !== null,
-  );
+  const inspectorShut = defaultPanelCollapsed(inspectorPref, compact);
+  if (!(inspectorShut && focused(inspectorWrap)))
+    setInspectorCollapsed(inspectorShut, inspectorPref !== null);
 }
 
 syncPanelLayoutFromPrefs();
 window
-  .matchMedia?.(MOBILE_LAYOUT_MQ)
+  .matchMedia?.(COMPACT_LAYOUT_MQ)
   ?.addEventListener?.('change', syncPanelLayoutFromPrefs);
 
-/* The properties panel is a docked right column (full stage height), so its
- * annotations / zones list is never clipped or overlapped.
- * A left-edge grip resizes its width (persisted). */
+/* From 1,024px up the properties panel is a docked right column (full stage
+ * height), so its annotations / zones list is never clipped or overlapped;
+ * below it, a drawer over the canvas's right side. A left-edge grip resizes
+ * its width (persisted) in both: the drawer is anchored to the window's right
+ * edge, so it widens to the left as the docked column does. */
 const inspectorResizer = app.querySelector<HTMLElement>('#inspector-resizer')!;
 const INSPECTOR_W_KEY = 'tds-inspector-width';
 // The default width (300px) is the stylesheet's; a stored width wins.

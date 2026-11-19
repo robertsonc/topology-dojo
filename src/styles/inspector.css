@@ -127,26 +127,54 @@
   flex: 1 1 auto;
   padding: 0 2px;
 }
-/* Phone / narrow tablet (#221): the docked properties column can consume a
-   390px stage, so it lifts into a right drawer and an open panel still
-   leaves canvas peeking (the library does the same on the left; see
-   shell.css). JS defaults both panels closed at this breakpoint when the
-   user has no stored preference. */
-@media (max-width: 640px) {
+/* The compact layout (#221): below 1,024px the docked column would leave the
+   canvas too little room, so it lifts into a drawer over the canvas's right
+   side, as wide as the docked panel and never so wide that less than 72px
+   of canvas shows beside it (the library does the same on the left; see
+   shell.css). It ends above the pages bar. The breakpoint is
+   COMPACT_LAYOUT_MAX_PX in src/ui/compact-layout.ts, which also defaults
+   both panels closed here when the person has no stored choice. The resize
+   grip on its left edge works as when docked: the drawer is anchored to the
+   window's right edge, so dragging the grip left widens it. */
+@media (max-width: 1023px) {
   .inspector-wrap {
     position: absolute;
     top: 0;
     right: 0;
-    bottom: 0;
-    max-width: min(280px, calc(100% - 72px));
+    bottom: var(--pages-bar-h);
+    /* The stage less the rail and 72px of canvas. */
+    max-width: calc(100% - 44px - 72px);
     box-shadow: var(--shadow-float);
+  }
+  .inspector-wrap.collapsed {
+    bottom: auto;
+    max-width: none;
+    box-shadow: none;
+  }
+  /* A drawer narrower than the panel's width: the panel gives way. */
+  .inspector-col {
+    min-width: 0;
+  }
+  .inspector {
+    max-width: 100%;
+  }
+}
+/* Above a phone, with the library open as well, 72px of canvas still shows
+   between the two drawers. */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .palette:not(.collapsed) ~ .inspector-wrap:not(.collapsed) {
+    max-width: calc(100% - 44px - 208px - 72px);
+  }
+}
+/* A phone: the drawer is narrower, and its toggle sits inset from the
+   corner while it is closed. */
+@media (max-width: 640px) {
+  .inspector-wrap {
+    max-width: min(280px, calc(100% - 72px));
   }
   .inspector-wrap.collapsed {
     top: 12px;
     right: 12px;
-    bottom: auto;
-    max-width: none;
-    box-shadow: none;
   }
   .inspector {
     width: min(240px, calc(100vw - 88px));
