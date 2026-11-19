@@ -70,7 +70,10 @@ describe('shell budgets', () => {
   it('the left rail holds 7 controls', () => {
     expect(
       controlIds(
-        slice('<div class="rail scroll-slim" id="rail">', '<aside class="palette"'),
+        slice(
+          '<div class="rail scroll-slim" id="rail">',
+          '<aside class="palette"',
+        ),
       ),
     ).toEqual([
       'tSelect',
