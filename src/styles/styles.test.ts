@@ -168,7 +168,6 @@ describe('editor stylesheet', () => {
       'app-shell.css': 2,
       'canvas-overlays.css': 3,
       'canvas.css': 3,
-      'dialogs.css': 1,
       'inspector.css': 16,
       'node-designer.css': 3,
       'popovers.css': 2,

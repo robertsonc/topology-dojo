@@ -121,25 +121,25 @@ function questionHtml(
   const id = fieldId(spec.name);
   const open = `<div class="sdw-q" data-param="${escapeHtml(spec.name)}">`;
   // The parameter's one-line description, read out with its control.
-  const hint = `<p class="sdw-note tpw-hint" id="${id}-hint">${escapeHtml(spec.description)}</p></div>`;
+  const hint = `<p class="hint tpw-hint" id="${id}-hint">${escapeHtml(spec.description)}</p></div>`;
   if (usesSlider(spec) && spec.type === 'integer')
     return (
       open +
-      `<label class="sdw-label" id="${id}" for="${id}-input">${escapeHtml(spec.label)}</label>` +
+      `<label class="section-label sdw-label" id="${id}" for="${id}-input">${escapeHtml(spec.label)}</label>` +
       `<div class="tpw-range">` +
       `<input type="range" id="${id}-input" min="${spec.min}" max="${spec.max}" step="1" value="${Number(value)}" aria-describedby="${id}-hint"/>` +
-      `<output for="${id}-input">${Number(value)}</output>` +
+      `<output class="data" for="${id}-input">${Number(value)}</output>` +
       `</div>` +
       hint
     );
   return (
     open +
-    `<div class="sdw-label" id="${id}">${escapeHtml(spec.label)}</div>` +
-    `<div class="sdw-seg" role="group" aria-labelledby="${id}" aria-describedby="${id}-hint">` +
+    `<div class="section-label sdw-label" id="${id}">${escapeHtml(spec.label)}</div>` +
+    `<div class="seg sdw-seg" role="group" aria-labelledby="${id}" aria-describedby="${id}-hint">` +
     choices(spec)
       .map(
         ([v, caption]) =>
-          `<button type="button" class="tbtn sdw-opt" data-value="${v}" aria-pressed="${String(v === String(value))}">${caption}</button>`,
+          `<button type="button" class="sdw-opt" data-value="${v}" aria-pressed="${String(v === String(value))}">${caption}</button>`,
       )
       .join('') +
     `</div>` +
@@ -161,6 +161,22 @@ export function templateStatsText(stats: TemplateStats): string {
   return `${plural(stats.nodes, 'node')} · ${plural(stats.links, 'link')}`;
 }
 
+/**
+ * Tell each slider's track how much of it lies before the thumb. The
+ * stylesheet fills that part with the accent (`--tpw-fill` in dialogs.css):
+ * a styled track has no fill of its own outside Firefox.
+ */
+function paintSliders(form: HTMLElement): void {
+  for (const input of form.querySelectorAll<HTMLInputElement>(
+    'input[type="range"]',
+  )) {
+    const min = Number(input.min);
+    const max = Number(input.max);
+    const share = max > min ? (Number(input.value) - min) / (max - min) : 0;
+    input.style.setProperty('--tpw-fill', `${(share * 100).toFixed(2)}%`);
+  }
+}
+
 let open: { close: () => void } | null = null;
 
 /**
@@ -179,17 +195,17 @@ export function openTemplateWizard(
   let doc: TopologyDocument | null = null;
 
   const root = document.createElement('div');
-  root.className = 'help-backdrop';
+  root.className = 'sdw-scrim';
   root.innerHTML =
-    `<div class="help-card sdw-card tpw-card scroll-slim" role="dialog" aria-modal="true" aria-labelledby="tpwTitle">` +
-    `<div class="help-head"><h3 id="tpwTitle">${escapeHtml(state.template.name)}</h3>` +
-    `<button class="tbtn ticon" data-act="close" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
-    `<div class="sdw-body"><div class="sdw-form"></div>` +
+    `<div class="dialog sdw-card tpw-card" role="dialog" aria-modal="true" aria-labelledby="tpwTitle">` +
+    `<div class="dialog-head"><h3 class="dialog-title" id="tpwTitle">${escapeHtml(state.template.name)}</h3>` +
+    `<button type="button" class="icon-btn" data-act="close" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
+    `<div class="dialog-body sdw-body scroll-slim"><div class="sdw-form"></div>` +
     `<div class="sdw-side"><div class="sdw-preview" aria-hidden="true"></div>` +
     `<div class="sdw-stats" role="status" aria-live="polite"></div>` +
-    `<p class="sdw-note">${escapeHtml(state.template.description)}</p></div></div>` +
-    `<div class="sdw-foot"><button class="tbtn" data-act="close">Cancel</button>` +
-    `<button class="tbtn sdw-create" data-act="create">Create diagram</button></div></div>`;
+    `<p class="hint sdw-note">${escapeHtml(state.template.description)}</p></div></div>` +
+    `<div class="dialog-foot"><button type="button" class="btn" data-act="close">Cancel</button>` +
+    `<button type="button" class="btn btn-primary sdw-create" data-act="create">Create diagram</button></div></div>`;
   const form = root.querySelector<HTMLElement>('.sdw-form')!;
   const preview = root.querySelector<HTMLElement>('.sdw-preview')!;
   const stats = root.querySelector<HTMLElement>('.sdw-stats')!;
@@ -202,13 +218,21 @@ export function openTemplateWizard(
       doc = result.doc;
       preview.innerHTML = host.render(result.doc);
       stats.textContent = templateStatsText(result.stats);
+      stats.classList.remove('sdw-error');
       createBtn.disabled = false;
     } catch (err) {
       doc = null;
       preview.replaceChildren();
       stats.textContent = err instanceof Error ? err.message : String(err);
+      stats.classList.add('sdw-error');
       createBtn.disabled = true;
     }
+  };
+
+  /** Draw the questions for the current values. */
+  const renderForm = (): void => {
+    form.innerHTML = renderTemplateFormHtml(state);
+    paintSliders(form);
   };
 
   const paramOf = (el: Element): string | null =>
@@ -222,7 +246,7 @@ export function openTemplateWizard(
     if (!btn || !name) return;
     const value = btn.getAttribute('data-value')!;
     state = withTemplateParam(state, name, value);
-    form.innerHTML = renderTemplateFormHtml(state);
+    renderForm();
     form
       .querySelector<HTMLElement>(
         `[data-param="${name}"] [data-value="${value}"]`,
@@ -238,6 +262,7 @@ export function openTemplateWizard(
     state = withTemplateParam(state, name, input.value);
     const out = input.parentElement?.querySelector('output');
     if (out) out.textContent = String(state.values[name]);
+    paintSliders(form);
     regenerate();
   });
 
@@ -260,7 +285,7 @@ export function openTemplateWizard(
     }
   });
 
-  form.innerHTML = renderTemplateFormHtml(state);
+  renderForm();
   regenerate();
   host.mount.appendChild(root);
   open = { close };
