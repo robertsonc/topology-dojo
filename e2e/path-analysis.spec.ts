@@ -8,6 +8,8 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  CONTEXT_MENU,
+  contextItem,
   nodeBox,
   savedDocument,
 } from './helpers.js';
@@ -170,14 +172,14 @@ test('the context menu offers it for two nodes, and only for two', async ({
   page,
 }) => {
   await bootEditor(page);
-  const item = page.locator('.ctx-menu .ctx-item', { hasText: 'Analyze path' });
+  const item = contextItem(page, 'Analyze path');
 
   await clickNode(page, 'user');
   const one = await nodeBox(page, 'user');
   await page.mouse.click(one.x + one.width / 2, one.y + one.height / 2, {
     button: 'right',
   });
-  await expect(page.locator('.ctx-menu')).toBeVisible();
+  await expect(page.locator(CONTEXT_MENU)).toBeVisible();
   await expect(item).toHaveCount(0);
   await page.keyboard.press('Escape');
 

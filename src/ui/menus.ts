@@ -1,7 +1,7 @@
 /**
  * The shell's menus, as data: what the menu bar (File, Edit, View, Arrange,
- * Help), the folded menu bar of a narrow window, the Export and Tidy buttons
- * and the account chip each offer, in order.
+ * Help), the folded menu bar of a narrow window, the Export and Tidy buttons,
+ * the account chip and the canvas's right-click menu each offer, in order.
  *
  * Each function returns the entries `openMenu` (./menu.ts) renders. An item
  * that runs a command is built from the registry: it carries the command's
@@ -52,6 +52,9 @@ type Def =
       label?: string;
       /** Show whether it is on: a check mark, or one of a set of choices. */
       check?: 'checkbox' | 'radio';
+      /** What the command is run with, for one that takes a caller's
+       * argument (Paste here: the point that was right-clicked). */
+      args?: unknown;
     }
   | { label: string; submenu: Def[] }
   | { separator: true }
@@ -255,6 +258,75 @@ function accountDefs(ctx: MenuContext): Def[] {
   ];
 }
 
+/** What was right-clicked, as the context menu needs to know it. */
+export interface ContextTarget {
+  /** A node (or several), a link, or the empty canvas. */
+  readonly kind: 'node' | 'link' | 'empty';
+  /** The page point that was right-clicked: where Paste here pastes. */
+  readonly at: { readonly x: number; readonly y: number };
+  /** Exactly one node is selected: it has a label to rename. */
+  readonly singleNode: boolean;
+  /** Two nodes are selected: the routes between them can be traced. */
+  readonly canAnalyzePath: boolean;
+}
+
+/* The context menu's items are worded as the registry titles them, not
+ * shortened as the menu bar's are: it names what it acts on, out of any
+ * menu that would say it. */
+function contextDefs(target: ContextTarget): Def[] {
+  if (target.kind === 'node')
+    return [
+      // Rename is for one node; a multi-selection has no single label.
+      ...(target.singleNode ? [cmd('edit.rename')] : []),
+      cmd('edit.duplicate'),
+      cmd('edit.cut'),
+      cmd('edit.copy'),
+      cmd('edit.copyAsImage'),
+      cmd('edit.copyFormat'),
+      cmd('edit.pasteFormat'),
+      SEP,
+      cmd('selection.emphasize'),
+      // Two nodes: the routes between them (the "visual traceroute").
+      ...(target.canAnalyzePath ? [cmd('selection.analyzePath')] : []),
+      cmd('selection.groupIntoZone'),
+      cmd('selection.saveAsStencil'),
+      cmd('selection.addPolicyMarker'),
+      SEP,
+      cmd('arrange.bringToFront'),
+      cmd('arrange.sendToBack'),
+      SEP,
+      cmd('edit.toggleLock'),
+      cmd('edit.delete'),
+    ];
+  if (target.kind === 'link')
+    return [
+      cmd('link.swapEndpoints'),
+      cmd('link.straighten'),
+      cmd('edit.copyFormat'),
+      cmd('edit.pasteFormat'),
+      cmd('selection.emphasize'),
+      SEP,
+      cmd('arrange.bringToFront'),
+      cmd('arrange.sendToBack'),
+      SEP,
+      cmd('edit.toggleLock'),
+      cmd('edit.delete'),
+    ];
+  return [
+    // At the point that was right-clicked, as a block centred on it.
+    { command: 'edit.pasteHere', args: { x: target.at.x, y: target.at.y } },
+    // At the coordinates it was copied from: the same place on another page.
+    cmd('edit.pasteInPlace'),
+    cmd('selection.all'),
+    cmd('edit.copyFrameAsImage'),
+    SEP,
+    cmd('arrange.tidy'),
+    cmd('arrange.balance'),
+    cmd('arrange.autoPlaceLabels'),
+    cmd('page.fitToContent'),
+  ];
+}
+
 /* ── From definitions to menu entries ───────────────────────────────── */
 
 function commandItem(
@@ -270,10 +342,12 @@ function commandItem(
   if (id === 'edit.toggleLock')
     label = commands.isChecked(id) ? 'Unlock' : 'Lock';
   const hint = commands.shortcutLabel(id);
+  const { args } = def;
   const item: MenuItem = {
     id,
     label,
-    run: () => void commands.run(id),
+    run: () =>
+      void (args === undefined ? commands.run(id) : commands.run(id, args)),
   };
   if (hint !== undefined) item.hint = hint;
   if (spec.icon !== undefined && ctx.icon) item.iconHtml = ctx.icon(spec.icon);
@@ -314,6 +388,12 @@ export const tidyMenu = (ctx: MenuContext): MenuEntry[] =>
 /** The account chip's menu. */
 export const accountMenu = (ctx: MenuContext): MenuEntry[] =>
   resolve(ctx, accountDefs(ctx));
+
+/** The right-click menu of the canvas, for what is under the pointer. */
+export const contextMenu = (
+  ctx: MenuContext,
+  target: ContextTarget,
+): MenuEntry[] => resolve(ctx, contextDefs(target));
 
 /** The menu bar's menus, in order: `data-menu`, the button's text, its
  * entries. */

@@ -11,6 +11,7 @@ import { isMenuItem, type MenuEntry, type MenuItem } from './menu.js';
 import {
   accountMenu,
   arrangeMenu,
+  contextMenu,
   editMenu,
   exportMenu,
   fileMenu,
@@ -19,6 +20,7 @@ import {
   moreMenu,
   tidyMenu,
   viewMenu,
+  type ContextTarget,
   type MenuContext,
 } from './menus.js';
 
@@ -545,5 +547,108 @@ describe('what the context decides', () => {
     expect(shape(accountMenu(context({ account: null })))).toEqual([
       THEME_SHAPE,
     ]);
+  });
+});
+
+describe('the context menu', () => {
+  const at = { x: 120, y: 80 };
+  const target = (over: Partial<ContextTarget>): ContextTarget => ({
+    kind: 'node',
+    at,
+    singleNode: true,
+    canAnalyzePath: false,
+    ...over,
+  });
+
+  it('lists what it listed before, in the same order, by registry title', () => {
+    const ctx = context();
+    const rows = (t: ContextTarget): string[] =>
+      contextMenu(ctx, t).map((e) =>
+        isMenuItem(e) ? e.label : e.kind === 'separator' ? '-' : e.label,
+      );
+    expect(rows(target({}))).toEqual([
+      'Rename',
+      'Duplicate',
+      'Cut',
+      'Copy',
+      'Copy as image',
+      'Copy format',
+      'Paste format',
+      '-',
+      'Emphasize on this page',
+      'Group into zone',
+      'Save as stencil…',
+      'Add policy marker',
+      '-',
+      'Bring to front',
+      'Send to back',
+      '-',
+      'Lock',
+      'Delete',
+    ]);
+    // Several nodes: no Rename. Two of them: the path between them.
+    const two = rows(target({ singleNode: false, canAnalyzePath: true }));
+    expect(two[0]).toBe('Duplicate');
+    expect(two.slice(7, 10)).toEqual([
+      'Emphasize on this page',
+      'Analyze path',
+      'Group into zone',
+    ]);
+    expect(rows(target({ kind: 'link' }))).toEqual([
+      'Swap endpoints',
+      'Straighten (clear bends)',
+      'Copy format',
+      'Paste format',
+      'Emphasize on this page',
+      '-',
+      'Bring to front',
+      'Send to back',
+      '-',
+      'Lock',
+      'Delete',
+    ]);
+    expect(rows(target({ kind: 'empty' }))).toEqual([
+      'Paste here',
+      'Paste in place',
+      'Select all',
+      'Copy page as image',
+      '-',
+      'Tidy layout',
+      'Balance layout',
+      'Auto-place labels',
+      'Fit page to content',
+    ]);
+  });
+
+  it('greys out what cannot run, says Unlock when locked, and names no command twice', () => {
+    const { commands } = registry({
+      off: ['edit.pasteFormat', 'arrange.bringToFront'],
+      on: ['edit.toggleLock'],
+    });
+    const menu = items(contextMenu(context({ commands }), target({})));
+    const byId = (id: string): MenuItem => menu.find((i) => i.id === id)!;
+    expect(byId('edit.pasteFormat').disabled).toBe(true);
+    expect(byId('arrange.bringToFront').disabled).toBe(true);
+    expect(byId('edit.copy').disabled).toBeUndefined();
+    expect(byId('edit.toggleLock').label).toBe('Unlock');
+    for (const kind of ['node', 'link', 'empty'] as const) {
+      const ids = commandIds(contextMenu(context(), target({ kind })));
+      expect(new Set(ids).size, kind).toBe(ids.length);
+    }
+  });
+
+  it('pastes at the point that was right-clicked', () => {
+    const commands = createCommandRegistry(SPECS);
+    const calls: unknown[] = [];
+    for (const spec of SPECS)
+      commands.bind(spec.id, {
+        run:
+          spec.id === 'edit.pasteHere' ? (args) => calls.push(args) : () => {},
+      });
+    const paste = items(
+      contextMenu(context({ commands }), target({ kind: 'empty' })),
+    ).find((i) => i.id === 'edit.pasteHere')!;
+    paste.run!();
+    expect(calls).toEqual([at]);
   });
 });

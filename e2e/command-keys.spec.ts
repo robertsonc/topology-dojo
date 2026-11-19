@@ -11,6 +11,8 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  CONTEXT_MENU,
+  contextItem,
   nodeBox,
   savedDocument,
   savedElement,
@@ -338,13 +340,14 @@ test('Enter on a button that was clicked presses it and renames nothing', async 
 });
 
 /** The open context menu, top to bottom: each item's label (with "(off)"
- * when it is disabled) and a "-" per separator. */
+ * when it is disabled) and a "-" per separator. The shortcut beside an
+ * item is not part of its label. */
 const menuRows = (page: Page): Promise<string[]> =>
-  page.locator('.ctx-menu > *').evaluateAll((els) =>
+  page.locator(`${CONTEXT_MENU} > *`).evaluateAll((els) =>
     els.map((el) => {
-      if (el.classList.contains('ctx-sep')) return '-';
-      const off = (el as HTMLButtonElement).disabled ? ' (off)' : '';
-      return `${el.textContent}${off}`;
+      if (el.classList.contains('menu-sep')) return '-';
+      const off = el.getAttribute('aria-disabled') === 'true' ? ' (off)' : '';
+      return `${el.querySelector('.menu-label')?.textContent}${off}`;
     }),
   );
 
@@ -355,7 +358,7 @@ test('the context menus list the same commands in the same order', async ({
   await page.mouse.click(fw.x + fw.width / 2, fw.y + fw.height / 2, {
     button: 'right',
   });
-  await expect(page.locator('.ctx-menu')).toBeVisible();
+  await expect(page.locator(CONTEXT_MENU)).toBeVisible();
   expect(await menuRows(page)).toEqual([
     'Rename',
     'Duplicate',
@@ -377,11 +380,11 @@ test('the context menus list the same commands in the same order', async ({
     'Delete',
   ]);
   // Copy format, then Lock: the format is there to paste, the label flips.
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Copy format' }).click();
+  await contextItem(page, 'Copy format').click();
   await page.mouse.click(fw.x + fw.width / 2, fw.y + fw.height / 2, {
     button: 'right',
   });
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Lock' }).click();
+  await contextItem(page, 'Lock').click();
   await page.mouse.click(fw.x + fw.width / 2, fw.y + fw.height / 2, {
     button: 'right',
   });
@@ -389,7 +392,7 @@ test('the context menus list the same commands in the same order', async ({
   expect(rows).toContain('Paste format');
   expect(rows).toContain('Unlock');
   expect(rows).not.toContain('Lock');
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Unlock' }).click();
+  await contextItem(page, 'Unlock').click();
   expect((await savedElement(page, 'nodes', 'fw')).locked).not.toBe(true);
 
   // Several nodes: no Rename (there is no one label), z-order has no target.
@@ -414,7 +417,7 @@ test('the context menus list the same commands in the same order', async ({
     return { x: p.x, y: p.y };
   });
   await page.mouse.click(lan.x, lan.y, { button: 'right' });
-  await expect(page.locator('.ctx-menu')).toBeVisible();
+  await expect(page.locator(CONTEXT_MENU)).toBeVisible();
   expect(await menuRows(page)).toEqual([
     'Swap endpoints',
     'Straighten (clear bends) (off)',
@@ -433,7 +436,7 @@ test('the context menus list the same commands in the same order', async ({
 
   const empty = await toClient(page, 700, 560);
   await page.mouse.click(empty.x, empty.y, { button: 'right' });
-  await expect(page.locator('.ctx-menu')).toBeVisible();
+  await expect(page.locator(CONTEXT_MENU)).toBeVisible();
   expect(await menuRows(page)).toEqual([
     'Paste here (off)',
     'Paste in place (off)',
@@ -445,6 +448,6 @@ test('the context menus list the same commands in the same order', async ({
     'Auto-place labels',
     'Fit page to content',
   ]);
-  await page.locator('.ctx-menu .ctx-item', { hasText: 'Select all' }).click();
+  await contextItem(page, 'Select all').click();
   expect(await statusCount(page, 'selected')).toBeGreaterThan(1);
 });

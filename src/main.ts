@@ -91,10 +91,17 @@ import type { CustomNodeSpec } from './nodes/spec.js';
 import { mountWorkspacePanel } from './ui/workspace-panel.js';
 import { mountProfilePanel } from './ui/profile-panel.js';
 import { mountAdminDashboard } from './ui/admin-dashboard.js';
-import { attachMenuButton, attachMenubar, type MenuEntry } from './ui/menu.js';
+import {
+  attachMenuButton,
+  attachMenubar,
+  closeAllMenus,
+  openMenu,
+  type MenuEntry,
+} from './ui/menu.js';
 import {
   MENUBAR,
   accountMenu,
+  contextMenu,
   exportMenu,
   moreMenu,
   tidyMenu,
@@ -6423,155 +6430,42 @@ function renderPathBar(): void {
   }
 }
 
-/* Right-click context menu — adaptive to whatever is under the cursor. Every
- * item is a command of the registry: its label is the command's title (unless
- * the item words it for the moment, as Lock / Unlock), it is greyed out when
- * the command is not enabled, and choosing it runs the command. The menu is a
- * second surface onto the same actions as the toolbar/keyboard/inspector. */
-type CtxItem =
-  | { sep: true }
-  | { command: CommandId; label?: string; args?: unknown };
-
-let ctxMenu: HTMLDivElement | null = null;
-let releaseCtxOverlay: (() => void) | null = null;
-
-function closeCtxMenu(): void {
-  ctxMenu?.remove();
-  ctxMenu = null;
-  releaseCtxOverlay?.();
-  releaseCtxOverlay = null;
-}
-
-function ctxItemsFor(
-  kind: 'node' | 'link' | 'empty',
-  at: { x: number; y: number },
-): CtxItem[] {
-  const lock: CtxItem = {
-    command: 'edit.toggleLock',
-    label: editor.selectionLocked() ? 'Unlock' : 'Lock',
-  };
-  if (kind === 'node') {
-    return [
-      // Rename is for one node; a multi-selection has no single label.
-      ...(editor.getSelectedNode()
-        ? [{ command: 'edit.rename' } as const]
-        : []),
-      { command: 'edit.duplicate' },
-      { command: 'edit.cut' },
-      { command: 'edit.copy' },
-      { command: 'edit.copyAsImage' },
-      { command: 'edit.copyFormat' },
-      { command: 'edit.pasteFormat' },
-      { sep: true },
-      { command: 'selection.emphasize' },
-      // Two nodes: the routes between them (the "visual traceroute").
-      ...(canAnalyzePath()
-        ? [{ command: 'selection.analyzePath' } as const]
-        : []),
-      { command: 'selection.groupIntoZone' },
-      { command: 'selection.saveAsStencil' },
-      { command: 'selection.addPolicyMarker' },
-      { sep: true },
-      { command: 'arrange.bringToFront' },
-      { command: 'arrange.sendToBack' },
-      { sep: true },
-      lock,
-      { command: 'edit.delete' },
-    ];
-  }
-  if (kind === 'link') {
-    return [
-      { command: 'link.swapEndpoints' },
-      { command: 'link.straighten' },
-      { command: 'edit.copyFormat' },
-      { command: 'edit.pasteFormat' },
-      { command: 'selection.emphasize' },
-      { sep: true },
-      { command: 'arrange.bringToFront' },
-      { command: 'arrange.sendToBack' },
-      { sep: true },
-      lock,
-      { command: 'edit.delete' },
-    ];
-  }
-  return [
-    // At the point that was right-clicked, as a block centred on it.
-    { command: 'edit.pasteHere', args: at },
-    // At the coordinates it was copied from: the same place on another frame.
-    { command: 'edit.pasteInPlace' },
-    { command: 'selection.all' },
-    { command: 'edit.copyFrameAsImage' },
-    { sep: true },
-    { command: 'arrange.tidy' },
-    { command: 'arrange.balance' },
-    { command: 'arrange.autoPlaceLabels' },
-    { command: 'page.fitToContent' },
-  ];
-}
-
+/* Right-click context menu — adaptive to whatever is under the cursor. Its
+ * items are listed in src/ui/menus.ts (`contextMenu`) and opened with the
+ * shell's menu component at the pointer: each is a command of the registry,
+ * labelled with the command's title (Lock / Unlock says what a press would
+ * do), greyed out when the command is not enabled, and run through it. The
+ * component closes it on Escape, a press outside, a blur and a resize. */
 function openCtxMenu(clientX: number, clientY: number): void {
-  closeCtxMenu();
+  closeAllMenus();
   const hit = editor.pickAt(clientX, clientY);
   renderInspector();
-  const items = ctxItemsFor(hit.kind, editor.clientToPage(clientX, clientY));
-
-  const menu = document.createElement('div');
-  menu.className = 'ctx-menu';
-  menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', 'Canvas context menu');
-  for (const item of items) {
-    if ('sep' in item) {
-      const hr = document.createElement('div');
-      hr.className = 'ctx-sep';
-      menu.appendChild(hr);
-      continue;
-    }
-    const btn = document.createElement('button');
-    btn.className = 'ctx-item';
-    btn.type = 'button';
-    btn.setAttribute('role', 'menuitem');
-    btn.textContent = item.label ?? commands.get(item.command)!.title;
-    btn.disabled = !commands.isEnabled(item.command);
-    btn.addEventListener('click', () => {
-      closeCtxMenu();
-      commands.run(item.command, item.args);
+  const ctx = menuContext();
+  // What a command does to the selection shows in the properties at once.
+  const runThenInspect: MenuContext['commands'] = {
+    get: (id) => commands.get(id),
+    isEnabled: (id) => commands.isEnabled(id),
+    isChecked: (id) => commands.isChecked(id),
+    shortcutLabel: (id) => commands.shortcutLabel(id),
+    run: (id, args, options) => {
+      const ran = commands.run(id, args, options);
       renderInspector();
-    });
-    menu.appendChild(btn);
-  }
-
-  // Keyboard operation (#209): ArrowUp/Down cycle the enabled items, Home/End
-  // jump, Enter/Space activate the focused button natively; Escape closes and
-  // restores focus via the overlay primitive.
-  menu.addEventListener('keydown', (e) => {
-    const enabled = [
-      ...menu.querySelectorAll<HTMLButtonElement>('.ctx-item:not(:disabled)'),
-    ];
-    if (!enabled.length) return;
-    const i = enabled.indexOf(document.activeElement as HTMLButtonElement);
-    let next: number | null = null;
-    if (e.key === 'ArrowDown') next = i < 0 ? 0 : (i + 1) % enabled.length;
-    else if (e.key === 'ArrowUp')
-      next =
-        i < 0 ? enabled.length - 1 : (i - 1 + enabled.length) % enabled.length;
-    else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = enabled.length - 1;
-    if (next === null) return;
-    e.preventDefault();
-    enabled[next]!.focus();
+      return ran;
+    },
+  };
+  const entries = contextMenu(
+    { ...ctx, commands: runThenInspect },
+    {
+      kind: hit.kind,
+      at: editor.clientToPage(clientX, clientY),
+      singleNode: !!editor.getSelectedNode(),
+      canAnalyzePath: canAnalyzePath(),
+    },
+  );
+  openMenu(entries, {
+    anchor: { x: clientX, y: clientY },
+    label: 'Canvas context menu',
   });
-
-  // Place at the cursor, then nudge back on-screen if it would overflow.
-  menu.style.left = '0px';
-  menu.style.top = '0px';
-  document.body.appendChild(menu);
-  const r = menu.getBoundingClientRect();
-  const x = Math.min(clientX, window.innerWidth - r.width - 4);
-  const y = Math.min(clientY, window.innerHeight - r.height - 4);
-  menu.style.left = `${Math.max(4, x)}px`;
-  menu.style.top = `${Math.max(4, y)}px`;
-  ctxMenu = menu;
-  releaseCtxOverlay = registerOverlay(menu, { close: closeCtxMenu });
 }
 
 // Attached to the canvas host (an HTML box) rather than the overlay <svg>,
@@ -6582,17 +6476,11 @@ canvasHost.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   openCtxMenu(e.clientX, e.clientY);
 });
-// Dismiss on outside click, scroll/resize, or Escape.
+// Find closes on a press outside it.
 window.addEventListener('pointerdown', (e) => {
-  if (ctxMenu && !ctxMenu.contains(e.target as Node)) closeCtxMenu();
   if (findEl && !findEl.contains(e.target as Node)) closeFind();
 });
-window.addEventListener('blur', closeCtxMenu);
-window.addEventListener('resize', () => {
-  closeCtxMenu();
-  editor.resync();
-});
-// Escape-to-close is owned by the overlay primitive (src/ui/overlay.ts).
+window.addEventListener('resize', () => editor.resync());
 
 // Release hand mode when Space lifts (or the window loses focus while held).
 window.addEventListener('keyup', (e) => {

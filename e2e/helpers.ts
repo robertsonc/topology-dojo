@@ -290,3 +290,9 @@ export async function exportAs(page: Page, kind: string): Promise<void> {
 export async function newFromTemplate(page: Page, id: string): Promise<void> {
   await menuCommand(page, `file.template.${id}`);
 }
+
+/** The canvas's right-click menu, opened with the shell's menu component. */
+export const CONTEXT_MENU = '.menu[aria-label="Canvas context menu"]';
+/** An item of the open context menu whose text has `text`. */
+export const contextItem = (page: Page, text: string): Locator =>
+  page.locator(`${CONTEXT_MENU} .menu-item`, { hasText: text });
