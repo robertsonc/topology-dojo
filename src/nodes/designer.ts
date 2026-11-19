@@ -131,6 +131,7 @@ export function openNodeDesigner(
         <h2 class="dialog-title" id="nd-title">Node Designer</h2>
         <button class="icon-btn" id="nd-close" aria-label="Close" title="Close">${icon('x')}</button>
       </div>
+      <div class="dialog-body nd-body-wrap">
       <div class="nd-namebar">
         <input class="field data nd-name" id="nd-name" value="${esc(spec.typeName)}" placeholder="type name" aria-label="Type name" aria-describedby="nd-name-msg"/>
         <span class="nd-name-msg" id="nd-name-msg" role="alert"></span>
@@ -181,6 +182,7 @@ export function openNodeDesigner(
             <select class="field" data-sel="portPos">${['bottom', 'top'].map((p) => `<option value="${p}" ${p === spec.portPos ? 'selected' : ''}>${p}</option>`).join('')}</select>
           </div>
         </div>
+      </div>
       </div>
       <div class="dialog-foot">
         <button class="btn" id="nd-cancel">Cancel</button>

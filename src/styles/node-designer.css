@@ -33,10 +33,14 @@
   background: var(--surface-press);
 }
 .pitem.design {
-  border: 1px dashed var(--accent-line);
+  border: 1px dashed var(--accent-fg);
   color: var(--accent-fg);
   font-family: var(--font-ui);
   font-size: 12px;
+  /* Keep the library's 28px row whatever the face. */
+  box-sizing: border-box;
+  height: 28px;
+  line-height: 1;
   transition:
     background-color var(--dur-fast),
     border-color var(--dur-fast),
@@ -60,7 +64,14 @@
 }
 .nd-dialog {
   width: min(960px, 94vw);
-  height: min(640px, 92vh);
+  height: min(744px, 92vh);
+  overflow: hidden;
+}
+/* The body holds the name bar and the columns, which scroll on their own. */
+.nd-body-wrap {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   overflow: hidden;
 }
 /* The type name, under the title, with the reason it cannot be used. */
@@ -69,7 +80,7 @@
   align-items: center;
   flex: none;
   gap: 12px;
-  padding: 0 16px 12px;
+  padding: 4px 16px 12px;
 }
 .nd-name {
   width: 280px;
@@ -107,7 +118,10 @@
   justify-content: center;
   background: var(--canvas-bg);
 }
-.nd-preview-wrap {
+/* The vendored root fills the viewport; the preview is a fixed square. */
+.nd-preview-wrap.tds-root {
+  min-height: 0;
+  padding: 0;
   width: 240px;
   height: 240px;
 }
@@ -116,7 +130,7 @@
   height: 100%;
 }
 .nd-h {
-  margin: 16px 0 8px;
+  margin: 12px 0 8px;
 }
 .nd-h:first-child {
   margin-top: 0;
@@ -161,7 +175,7 @@
 .nd-shape[aria-pressed='true'],
 .nd-icon[aria-pressed='true'] {
   background: var(--accent-soft);
-  border-color: var(--accent-line);
+  border-color: var(--accent-fg);
   color: var(--fg-strong);
 }
 .nd-icon[data-icon=''] {
@@ -175,7 +189,7 @@
 /* ── Colours, sliders, switches ───────────────────────────────────────── */
 .nd-label {
   margin: 0 0 4px;
-  color: var(--fg-weak);
+  color: var(--fg);
   font: 400 12px/1.3 var(--font-ui);
 }
 .nd-swatches {
@@ -191,17 +205,21 @@
   border-radius: var(--radius-xs);
   cursor: pointer;
   padding: 0;
-  transition: outline-color var(--dur-fast);
+  transition: box-shadow var(--dur-fast);
 }
+/* Hover and selection are rings drawn with a shadow, so the shared focus
+   outline stays free to show on a focused swatch. */
 .nd-sw:hover {
-  outline: 2px solid var(--line-strong);
-  outline-offset: 1px;
+  box-shadow:
+    0 0 0 1px var(--surface-float),
+    0 0 0 3px var(--line-strong);
 }
 .nd-sw.on,
 .nd-sw[aria-pressed='true'] {
   /* Selected marker: the text colour, so it shows in both themes. */
-  outline: 2px solid var(--fg-strong);
-  outline-offset: 1px;
+  box-shadow:
+    0 0 0 1px var(--surface-float),
+    0 0 0 3px var(--fg-strong);
 }
 .nd-row {
   display: grid;
@@ -262,7 +280,7 @@
   gap: 8px;
   min-height: 28px;
   color: var(--fg);
-  font: 400 13px/1.3 var(--font-ui);
+  font: 400 12px/1.3 var(--font-ui);
   cursor: pointer;
 }
 /* The settings an embellishment adds, indented under its switch. */
