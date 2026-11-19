@@ -67,3 +67,19 @@ export function defaultPanelCollapsed(
   if (stored === '0') return false;
   return compact;
 }
+
+/** The least canvas two open drawers may leave between them. */
+export const DRAWER_MIN_CANVAS_PX = 160;
+
+/**
+ * Whether opening one drawer should close the other: always on a phone
+ * (640px and below), and wherever the two open drawers would leave less than
+ * `DRAWER_MIN_CANVAS_PX` of canvas between them. `between` is the canvas
+ * width the two leave showing (negative when they overlap). Only the
+ * compact layout has drawers; docked panels never close each other. Closing
+ * by this rule is not the person's choice, so it is never stored.
+ */
+export function drawersCrowd(width: number, between: number): boolean {
+  if (!isCompactLayoutWidth(width)) return false;
+  return width <= PHONE_LAYOUT_MAX_PX || between < DRAWER_MIN_CANVAS_PX;
+}

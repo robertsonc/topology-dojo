@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPACT_LAYOUT_MAX_PX,
   COMPACT_LAYOUT_MQ,
+  DRAWER_MIN_CANVAS_PX,
   PHONE_LAYOUT_MAX_PX,
   defaultPanelCollapsed,
+  drawersCrowd,
   isCompactAbovePhone,
   isCompactLayoutWidth,
 } from './compact-layout.js';
@@ -179,5 +181,23 @@ describe('every width the drawers depend on', () => {
         ),
       ),
     ).toBe(true);
+  });
+});
+
+describe('drawersCrowd', () => {
+  it('lets a phone show one drawer at a time, however much is left', () => {
+    for (const width of [360, 390, 640])
+      expect(drawersCrowd(width, 400), `${width}px`).toBe(true);
+  });
+  it('above a phone, closes the other drawer under 160px of canvas', () => {
+    expect(DRAWER_MIN_CANVAS_PX).toBe(160);
+    expect(drawersCrowd(720, 159)).toBe(true);
+    expect(drawersCrowd(720, -20)).toBe(true);
+    expect(drawersCrowd(720, 160)).toBe(false);
+    expect(drawersCrowd(1023, 400)).toBe(false);
+  });
+  it('never applies to docked panels', () => {
+    expect(drawersCrowd(1024, 0)).toBe(false);
+    expect(drawersCrowd(1440, -100)).toBe(false);
   });
 });

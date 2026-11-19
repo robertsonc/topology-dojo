@@ -85,3 +85,57 @@ export function problemsDockView(p: ProblemsSummary): ProblemsDockView {
     statusTitle,
   };
 }
+
+/** Where in the properties panel a problem is fixed: the tab that shows it
+ * and, when the problem is about one field, that field's selector. */
+export interface ProblemField {
+  tab: 'selection' | 'page' | 'document';
+  /** A selector inside the panel, or null when no one field is at fault. */
+  field: string | null;
+}
+
+/** Page fields of the Page tab, by the document key a problem names. */
+const PAGE_FIELDS: Readonly<Record<string, string>> = {
+  duration: '#p-dur',
+  transition: '#p-tr',
+  lineJumps: '#p-jumps',
+  portLabels: '#p-portlabels',
+  viewBox: '#p-w',
+  linkAttach: '#p-attach',
+};
+
+/**
+ * Where a problem is fixed. A problem about an element (its `where` names a
+ * node, link or zone) is fixed on the Selection tab; one about a page on the
+ * Page tab; one about the document's layers, tiers, bundles, link styles or
+ * custom types on the Document tab. The field is the one the message starts
+ * with when it is a key followed by what is wrong with it ("href must …",
+ * "opacity 2 should …", "labelScale 9 should …"); the type for an unknown
+ * type, the link field for a page link that points nowhere.
+ */
+export function problemField(p: {
+  where: string;
+  message: string;
+}): ProblemField | null {
+  const lead = /^([a-z][A-Za-z]*) (?:must|should|is|out|not|"|'|-?\d)/.exec(
+    p.message,
+  )?.[1];
+  if (/^page\[\d+\](?: "[^"]*")?$/.test(p.where))
+    return { tab: 'page', field: (lead && PAGE_FIELDS[lead]) ?? null };
+  if (/ (?:node|link|zone) "/.test(p.where)) {
+    if (/^unknown (?:node|link) type /.test(p.message))
+      return { tab: 'selection', field: '#i-type' };
+    if (/^page link /.test(p.message))
+      return { tab: 'selection', field: '[data-key="href"]' };
+    return {
+      tab: 'selection',
+      field: lead ? `[data-key="${lead}"]` : null,
+    };
+  }
+  if (
+    p.where === 'document' ||
+    /^(?:layers|tiers|bundles|linkStyles|customNodes)\[/.test(p.where)
+  )
+    return { tab: 'document', field: null };
+  return null;
+}
