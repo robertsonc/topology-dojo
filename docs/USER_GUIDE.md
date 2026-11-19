@@ -237,7 +237,10 @@ The editor is organized into six areas and a status bar.
    **Stencils**. The **Design node** and **Save stencil** buttons end the list
    (they are hidden while you search). Each node type is a tile with its name
    under the icon; a long name wraps onto a second line between words and is
-   never cut inside a word. Hiding the library gives its width to the canvas.
+   never cut inside a word, and a name longer than two lines ends with an
+   ellipsis (for example **EC + Axis Connector (container)** shows "EC + Axis
+   Connector…"). That tile's tooltip describes the node, and does not
+   repeat its full name. Hiding the library gives its width to the canvas.
 4. **Canvas.** The current page, selection overlay, smart guides, link handles,
    problem badges, and three controls that float over it:
    - The **selection bar**, above whatever is selected (below it when there is
