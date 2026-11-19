@@ -767,4 +767,46 @@ test('crossing 1,024px keeps the selection, the tab and the sections', async ({
   await expect(field).toHaveValue('Data centre');
   await page.setViewportSize({ width: 1280, height: 800 });
   await field.blur();
+
+  // A panel that closes while a button in it has the focus hands the focus
+  // to its toggle, not to the page.
+  await page.locator('#insp-tab-document').focus();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  await expect(page.locator('#inspector-toggle')).toBeFocused();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+
+  // Kept open by choice, it stays open across the breakpoint, both ways.
+  await page.locator('#inspector-toggle').click();
+  await page.locator('#inspector-toggle').click();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expectKept();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expectKept();
+});
+
+test('crossing 1,024px while a colour is typed keeps the panel open', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bootEditor(page);
+  const node = (await nodeBoxes(page))[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  await inspectorTab(page, 'selection');
+  const colour = page.locator('#inspector .colour-btn').first();
+  await colour.click();
+  const hex = page.locator('#inspector .colour-pop:visible input.hex');
+  await hex.fill('#12ab');
+  await hex.focus();
+  // The popover closes on any resize and gives the focus back to its
+  // button; the panel it was typed in stays open, with the focus in it.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expect(colour).toBeFocused();
 });

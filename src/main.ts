@@ -2587,29 +2587,57 @@ function readCollapsedPref(key: string): string | null {
  * Inferred defaults are not written to storage, so crossing the breakpoint
  * can still flip them; an explicit B/P toggle persists and wins at every
  * width. Crossing the breakpoint only toggles the panels' classes, so the
- * selection, the panel's tab and its sections are untouched; and a panel
- * holding the focus (a field being edited) is not closed under it.
+ * selection, the panel's tab and its sections are untouched. A panel with a
+ * field being typed in is not closed under it; a panel that closes while it
+ * holds the focus hands the focus to its toggle, not to the page.
  */
 function syncPanelLayoutFromPrefs(): void {
   const compact = isCompactLayoutWidth(window.innerWidth);
   // A field being typed in, not a button or a section heading with focus.
-  const focused = (el: HTMLElement): boolean => {
-    const active = document.activeElement;
-    return (
-      active instanceof HTMLElement &&
-      el.contains(active) &&
-      (active.matches('input, textarea, select') || active.isContentEditable)
+  const isField = (el: Element | null): boolean =>
+    el instanceof HTMLElement &&
+    (el.matches('input, textarea, select') || el.isContentEditable);
+  // The resize that crossed the breakpoint may already have moved the focus
+  // (the colour popover closes on a resize and gives it back to its button),
+  // so what had it when the resize began counts too.
+  const editing = (el: HTMLElement): boolean =>
+    [document.activeElement, focusAtResize].some(
+      (f) => isField(f) && el.contains(f),
     );
+  const close = (
+    el: HTMLElement,
+    toggle: HTMLElement,
+    shut: boolean,
+    apply: () => void,
+  ): void => {
+    if (shut && editing(el)) return;
+    const held = shut && el.contains(document.activeElement);
+    apply();
+    if (held && document.activeElement !== toggle)
+      toggle.focus({ preventScroll: true });
   };
   const palettePref = readCollapsedPref('tds-palette-collapsed');
   const paletteShut = defaultPanelCollapsed(palettePref, compact);
-  if (!(paletteShut && focused(paletteEl)))
-    setPaletteCollapsed(paletteShut, palettePref !== null);
+  close(paletteEl, paletteToggle, paletteShut, () =>
+    setPaletteCollapsed(paletteShut, palettePref !== null),
+  );
   const inspectorPref = readCollapsedPref('tds-inspector-collapsed');
   const inspectorShut = defaultPanelCollapsed(inspectorPref, compact);
-  if (!(inspectorShut && focused(inspectorWrap)))
-    setInspectorCollapsed(inspectorShut, inspectorPref !== null);
+  close(inspectorWrap, inspectorToggle, inspectorShut, () =>
+    setInspectorCollapsed(inspectorShut, inspectorPref !== null),
+  );
 }
+
+/** What had the focus as the latest resize began: a capture listener on the
+ * window runs before the ones that react to the resize. */
+let focusAtResize: Element | null = null;
+window.addEventListener(
+  'resize',
+  () => {
+    focusAtResize = document.activeElement;
+  },
+  { capture: true },
+);
 
 syncPanelLayoutFromPrefs();
 window
