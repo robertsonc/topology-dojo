@@ -42,7 +42,7 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
   // The commands whose toolbar buttons are now menu items name the same
   // shortcut beside the item.
   for (const [menu, command, label, key] of [
-    ['view', 'view.fit', 'Fit to content', '0'],
+    ['view', 'view.fit', 'Fit view', '0'],
     ['edit', 'edit.delete', 'Delete', 'Del'],
     ['arrange', 'arrange.balance', 'Balance', 'Shift+T'],
   ] as const) {
@@ -140,7 +140,7 @@ test('the shortcut sheet lists the commands by group, then the gestures', async 
     'F2 · Enter | Rename the selected node, link or zone',
     'Shift+T | Balance layout',
     'Shift+0 | Zoom to 100%',
-    '0 · Shift+1 | Fit to content',
+    '0 · Shift+1 | Fit view',
     'H | Hand: drag to pan',
     '? | This shortcut reference',
     'Space / Middle-drag | Pan (hold Space and drag)',

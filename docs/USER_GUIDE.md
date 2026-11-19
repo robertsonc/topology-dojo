@@ -688,7 +688,7 @@ command has a key name its first shortcut in the tooltip or beside the item.
 | Shift+wheel                        | Pan sideways                                                                      |
 | Space-drag or middle-drag          | Pan                                                                               |
 | + or = / - or \_                   | Zoom in / zoom out                                                                |
-| 0 or Shift+1                       | Fit to content                                                                    |
+| 0 or Shift+1                       | Fit view                                                                          |
 | Shift+0                            | Zoom to 100% (one page unit per pixel)                                            |
 | Shift+2                            | Zoom to the selection (fit to content when nothing is selected)                   |
 | Ctrl/Cmd+S                         | Download the document as JSON                                                     |
@@ -1159,7 +1159,7 @@ The top bar's **Tidy** button runs tidy; the menu beside it, and
   render the page frame; if drawn content still extends past it, the export is
   widened to include it. A document with a **Sheet frame** always exports
   exactly its frame.
-- **View → Fit to content**, the zoom control's fit button, or **0**: change
+- **View → Fit view**, the zoom control's **Fit view** button, or **0**: change
   only the viewport so content is visible.
 
 Tidy/Balance can grow the page when needed. Layout operations are undoable.

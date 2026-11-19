@@ -204,7 +204,7 @@ function viewDefs(): Def[] {
     cmd('view.zoomIn'),
     cmd('view.zoomOut'),
     cmd('view.zoom100'),
-    cmd('view.fit', 'Fit to content'),
+    cmd('view.fit'),
     cmd('view.zoomToSelection'),
     SEP,
     submenu('Theme', THEMES),

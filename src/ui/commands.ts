@@ -976,7 +976,7 @@ const VIEW = [
     title: 'Fit view',
     group: 'view',
     icon: 'fit-view',
-    help: 'Fit to content',
+    help: 'Fit view',
     bindings: [
       { key: '0', ...LENIENT, preventDefault: false, display: '0' },
       { code: 'Digit1', shift: true, preventDefault: true, display: 'Shift+1' },
