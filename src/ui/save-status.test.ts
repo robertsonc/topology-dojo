@@ -6,6 +6,8 @@ describe('saveChip', () => {
     expect(saveChip('saved')).toEqual({
       state: 'saved',
       text: '✓ saved',
+      short: '✓',
+      mark: '✓',
       title: 'Autosaved to this browser',
       actionable: false,
       announcement: '',
@@ -20,6 +22,7 @@ describe('saveChip', () => {
 
   it('uses the wording given for a load or a sync', () => {
     expect(saveChip('saved', { okText: '✓ synced' }).text).toBe('✓ synced');
+    expect(saveChip('saved', { okText: '✓ synced' }).mark).toBe('✓');
     expect(
       saveChip('saved', { shared: true, okText: '👁 shared copy' }).text,
     ).toBe('👁 shared copy');
@@ -28,6 +31,7 @@ describe('saveChip', () => {
   it('makes a failed save a button that is announced', () => {
     const chip = saveChip('failed');
     expect(chip.text).toBe('⚠ not saved — download JSON');
+    expect([chip.short, chip.mark]).toEqual(['⚠ not saved', '⚠']);
     expect(chip.actionable).toBe(true);
     expect(chip.announcement).toMatch(/^Not saved/);
     // The announcement names the control that rescues the work.
@@ -37,6 +41,7 @@ describe('saveChip', () => {
   it('makes a version from another tab a button that is announced', () => {
     const chip = saveChip('stale');
     expect(chip.text).toBe('⚠ changed in another tab — load it');
+    expect([chip.short, chip.mark]).toEqual(['⚠ newer copy', '⚠']);
     expect(chip.actionable).toBe(true);
     expect(chip.announcement).toMatch(/^Another tab saved/);
   });

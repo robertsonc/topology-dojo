@@ -21,6 +21,11 @@ export interface SaveChip {
   state: SaveState;
   /** The chip's visible text. */
   text: string;
+  /** What it shows where the top bar runs short: a warning keeps its first
+   * words, a plain save only its mark. */
+  short: string;
+  /** What it shows where the bar is shorter still: the mark alone. */
+  mark: string;
   /** Its tooltip. */
   title: string;
   /** Whether the chip is a button (a click or Enter acts on the warning). */
@@ -45,6 +50,8 @@ export function saveChip(
     return {
       state,
       text: '⚠ not saved — download JSON',
+      short: '⚠ not saved',
+      mark: '⚠',
       title:
         'Browser storage failed (full or unavailable). ' +
         'Click to download the document as JSON so no work is lost.',
@@ -57,6 +64,8 @@ export function saveChip(
     return {
       state,
       text: '⚠ changed in another tab — load it',
+      short: '⚠ newer copy',
+      mark: '⚠',
       title:
         'Another tab saved a different version of this document. Click to load ' +
         'it here. If you keep editing in this tab, this tab’s version is saved.',
@@ -65,9 +74,14 @@ export function saveChip(
         'Another tab saved a different version of this document. ' +
         'Use the “changed in another tab — load it” button in the toolbar to load it.',
     };
+  const text =
+    opts.okText ?? (opts.shared ? '✓ saved · shared copy' : '✓ saved');
+  const mark = text.split(' ')[0]!;
   return {
     state,
-    text: opts.okText ?? (opts.shared ? '✓ saved · shared copy' : '✓ saved'),
+    text,
+    short: mark,
+    mark,
     title: opts.shared
       ? 'Autosaved separately — your own document is untouched'
       : 'Autosaved to this browser',

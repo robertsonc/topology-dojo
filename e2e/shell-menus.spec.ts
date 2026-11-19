@@ -241,24 +241,76 @@ for (const width of [700, 1101, 1160]) {
 
 // Between 1,024 and 1,279px the menus and the chips share the bar with the
 // title: Tidy and Present give up their words first, and the title keeps
-// room for a short name.
-for (const width of [1024, 1101, 1160, 1279]) {
+// room for a short name. Up to 1,440px the title and its save state, once
+// the title is saved, or a save fails, never run under Undo or anything else.
+const LONG_LOGIN = 'abcdefghijklmnopqrstuvwxyz0123';
+
+/** Pairs of visible top-bar controls (the save state among them) drawn over
+ * each other, by id. */
+function topBarOverlaps(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const shown = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.topbar button, .topbar input, .topbar .saved',
+      ),
+    ]
+      .filter((el) => el.checkVisibility())
+      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      .filter(({ r }) => r.width > 0.5);
+    const out: string[] = [];
+    for (let i = 0; i < shown.length; i++)
+      for (let j = i + 1; j < shown.length; j++) {
+        const a = shown[i]!;
+        const b = shown[j]!;
+        if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        const x = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+        const y = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+        if (x > 0.5 && y > 0.5) out.push(`${a.el.id} x ${b.el.id}`);
+      }
+    return out;
+  });
+}
+
+for (const width of [1024, 1101, 1160, 1180, 1279, 1280, 1366, 1440]) {
   test(`the document title keeps room for a short name at ${width}px, signed in`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 800 });
-    await signIn(page);
+    await signIn(page, LONG_LOGIN);
     await bootEditor(page);
     await expect(page.locator('#userChip')).toBeVisible();
-    await page.locator('#docTitle').fill('Spine-leaf fabric');
-    const title = (await page.locator('#docTitle').boundingBox())!;
+    const docTitle = page.locator('#docTitle');
+    await docTitle.fill('Spine-leaf fabric');
+    await docTitle.press('Enter');
+    await expect(page.locator('#saved')).toHaveText('✓ saved');
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    const title = (await docTitle.boundingBox())!;
     expect(title.width).toBeGreaterThanOrEqual(120);
-    for (const id of ['#tTidy', '#tPresent']) {
-      await expect(page.locator(`${id} .btn-label`)).toBeHidden();
-      await expect(page.locator(id)).toBeVisible();
-    }
+    expect(await topBarOverlaps(page)).toEqual([]);
+    if (width < 1280)
+      for (const id of ['#tTidy', '#tPresent']) {
+        await expect(page.locator(`${id} .btn-label`)).toBeHidden();
+        await expect(page.locator(id)).toBeVisible();
+      }
     await expect(page.locator('#tTidy')).toHaveAccessibleName('Tidy layout');
     await expect(page.locator('#tPresent')).toHaveAccessibleName('Present');
+
+    // A failed save's warning is wider: it shortens, and still overlaps
+    // nothing.
+    await page.evaluate(() => {
+      const write = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key.startsWith('topology-dojo:doc'))
+          throw new DOMException('full', 'QuotaExceededError');
+        return write.call(this, key, value);
+      };
+    });
+    await docTitle.fill('Spine-leaf fabric B');
+    await docTitle.press('Enter');
+    await expect(page.locator('#saved')).toHaveClass(/save-failed/);
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    expect((await docTitle.boundingBox())!.width).toBeGreaterThanOrEqual(120);
+    expect(await topBarOverlaps(page)).toEqual([]);
   });
 }
 

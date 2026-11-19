@@ -584,21 +584,112 @@ if (!restoredDoc) saveSerialized(serializeDoc(doc), 'local');
 /** Show a save state in the toolbar chip, and announce it when it is a
  * warning. */
 function showSaveChip(chip: SaveChip): void {
-  savedEl.textContent = chip.text;
+  const words = document.createElement('span');
+  words.className = 'saved-full';
+  words.textContent = chip.text;
+  savedEl.replaceChildren(words);
+  // The shorter forms are drawn from these where the bar runs short.
+  savedEl.dataset.short = chip.short;
+  savedEl.dataset.mark = chip.mark;
   savedEl.title = chip.title;
   savedEl.classList.toggle('save-failed', chip.state === 'failed');
   savedEl.classList.toggle('save-stale', chip.state === 'stale');
   if (chip.actionable) {
     savedEl.setAttribute('role', 'button');
     savedEl.tabIndex = 0;
+    // Its name is the whole warning, whichever form it shows.
+    savedEl.setAttribute('aria-label', chip.text);
   } else {
     savedEl.removeAttribute('role');
     savedEl.removeAttribute('tabindex');
+    savedEl.removeAttribute('aria-label');
   }
+  fitSaveChip();
   // Written only when it changes: every edit made while storage is failing
   // fails again, and re-writing the alert would repeat it each time.
   if (saveAlertEl.textContent !== chip.announcement)
     saveAlertEl.textContent = chip.announcement;
+}
+
+/** Show plain words in the save chip (no shorter forms): the pending "…",
+ * or a hint. */
+function showSaveText(text: string): void {
+  savedEl.textContent = text;
+  delete savedEl.dataset.short;
+  delete savedEl.dataset.mark;
+  delete savedEl.dataset.fit;
+  savedEl.removeAttribute('aria-label');
+  fitSaveChip();
+}
+
+/**
+ * The top bar never overlaps or drops a control: the title and the save chip
+ * keep their own room. Where the bar runs short the save chip gives way first,
+ * to its first words, then to its mark alone; then the workspace chip's name,
+ * the account chip's name, the logo,
+ * the account chip's caret and a plain save's mark step aside, before the
+ * title goes under 120px (on a phone, 64px) or a chip's name under three
+ * letters.
+ */
+function topBarRoomy(bar: HTMLElement): boolean {
+  if (bar.scrollWidth > bar.clientWidth + 1) return false;
+  const phone = window.matchMedia?.(PHONE_LAYOUT_MQ).matches ?? false;
+  if (docTitleEl.getBoundingClientRect().width < (phone ? 64 : 120) - 0.5)
+    return false;
+  for (const name of bar.querySelectorAll<HTMLElement>(
+    '#workspaceLabel, .uc-name',
+  ))
+    if (
+      name.offsetWidth > 0 &&
+      name.scrollWidth > name.clientWidth + 1 &&
+      name.clientWidth < 40
+    )
+      return false;
+  // A chip squeezed past its own icons.
+  for (const chip of bar.querySelectorAll<HTMLElement>('.chip'))
+    if (chip.offsetWidth > 0 && chip.scrollWidth > chip.clientWidth + 1)
+      return false;
+  return true;
+}
+/** What steps aside, in turn, once the save chip shows only its mark. A plain
+ * save's mark is the last: a warning always shows. */
+const TOP_BAR_SQUEEZE = [
+  'workspace',
+  'names',
+  'brand',
+  'caret',
+  'quiet',
+] as const;
+function fitSaveChip(): void {
+  const bar = app.querySelector<HTMLElement>('#topbar')!;
+  delete bar.dataset.squeeze;
+  const forms =
+    savedEl.dataset.short === undefined
+      ? []
+      : savedEl.dataset.short === savedEl.dataset.mark
+        ? ['full', 'mark']
+        : ['full', 'short', 'mark'];
+  for (const form of forms) {
+    savedEl.dataset.fit = form;
+    if (topBarRoomy(bar)) return;
+  }
+  if (topBarRoomy(bar)) return;
+  for (let i = 1; i <= TOP_BAR_SQUEEZE.length; i++) {
+    bar.dataset.squeeze = TOP_BAR_SQUEEZE.slice(0, i).join(' ');
+    if (topBarRoomy(bar)) return;
+  }
+}
+window.addEventListener('resize', fitSaveChip);
+{
+  // The chips at the bar's end change size as an account signs in, a
+  // workspace connects or an export reports: fit again once they have.
+  let pending = 0;
+  const observer = new ResizeObserver(() => {
+    cancelAnimationFrame(pending);
+    pending = requestAnimationFrame(fitSaveChip);
+  });
+  for (const id of ['#userChip', '#workspaceChip', '#exportStatus', '#fShare'])
+    observer.observe(app.querySelector(id)!);
 }
 
 /** Another tab saved a different document to this tab's slot. Say so, and
@@ -636,7 +727,7 @@ savedEl.addEventListener('keydown', (e) => {
 });
 
 function markDirty(): void {
-  savedEl.textContent = '…';
+  showSaveText('…');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     reportSave(writeAutosave());
@@ -4471,7 +4562,7 @@ function stencilPreviewSVG(st: Stencil): string {
 function saveSelectionAsStencil(): void {
   const sel = editor.selectionElements();
   if (!sel || sel.nodes.length === 0) {
-    savedEl.textContent = 'select node(s) first';
+    showSaveText('select node(s) first');
     return;
   }
   const suggested = `Group ${(doc.stencils?.length ?? 0) + 1}`;

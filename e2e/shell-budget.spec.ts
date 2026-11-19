@@ -349,13 +349,21 @@ for (const vp of VIEWPORTS)
 // The body clips what overflows, so the document's own scroll width cannot
 // show a bar that runs past the window: each bar is measured too, and every
 // visible control outside the canvas must end inside the window.
-const WIDTHS = Array.from({ length: 40 }, (_, i) => 360 + i * 40);
+// Plus the widths where the shell's own rules change, each side of them.
+const WIDTHS = [
+  ...Array.from({ length: 40 }, (_, i) => 360 + i * 40),
+  ...[640, 641, 700, 701, 760, 761, 1023, 1024, 1100, 1101, 1279, 1280],
+  ...[1359, 1360, 1366, 1520],
+].sort((a, b) => a - b);
 const LONG_LOGIN = 'octocat-network-engineering-01';
 const BARS = ['.topbar', '#statusbar', '#pagesBar', '.stage'];
 
-async function overflowing(page: Page): Promise<string[]> {
+async function overflowing(
+  page: Page,
+  widths: number[] = WIDTHS,
+): Promise<string[]> {
   const out: string[] = [];
-  for (const width of WIDTHS) {
+  for (const width of widths) {
     await page.setViewportSize({ width, height: 800 });
     // Let the shell's resize observers lay the bars out at the new width.
     const found = await page.evaluate(
@@ -390,6 +398,72 @@ async function overflowing(page: Page): Promise<string[]> {
                       `${Math.round(r.left)}..${Math.round(r.right)}`,
                   );
               }
+              // No two visible controls of a bar are drawn over each other
+              // (the save state beside the title counts as one), and no item
+              // of the status bar ends past its edge.
+              const label = (el: Element) =>
+                el.id ? `#${el.id}` : el.className || el.tagName;
+              for (const selector of [
+                '.topbar',
+                '#pagesBar',
+                '#rail',
+                '#statusbar',
+              ]) {
+                const bar = document.querySelector(selector);
+                if (!bar) continue;
+                const barBox = bar.getBoundingClientRect();
+                const shown = [
+                  ...bar.querySelectorAll<HTMLElement>(
+                    'button, input, select, [tabindex="0"], .saved, .sb-k',
+                  ),
+                ]
+                  .filter((el) => {
+                    if (!el.checkVisibility({ visibilityProperty: true }))
+                      return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0.5 && r.height > 0.5;
+                  })
+                  .map((el) => {
+                    // Cut to the scrolling strip it sits in, if any.
+                    let r = el.getBoundingClientRect();
+                    const strip = el.closest('.filmstrip, #rail');
+                    if (strip && strip !== el) {
+                      const c = strip.getBoundingClientRect();
+                      r = new DOMRect(
+                        Math.max(r.left, c.left),
+                        Math.max(r.top, c.top),
+                        Math.min(r.right, c.right) - Math.max(r.left, c.left),
+                        Math.min(r.bottom, c.bottom) - Math.max(r.top, c.top),
+                      );
+                    }
+                    return { el, r };
+                  })
+                  .filter(({ r }) => r.width > 0.5 && r.height > 0.5);
+                for (let i = 0; i < shown.length; i++)
+                  for (let j = i + 1; j < shown.length; j++) {
+                    const a = shown[i]!;
+                    const b = shown[j]!;
+                    if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+                    const x =
+                      Math.min(a.r.right, b.r.right) -
+                      Math.max(a.r.left, b.r.left);
+                    const y =
+                      Math.min(a.r.bottom, b.r.bottom) -
+                      Math.max(a.r.top, b.r.top);
+                    if (x > 0.5 && y > 0.5)
+                      over.push(
+                        `${label(a.el)} and ${label(b.el)} overlap by ${Math.round(x)}px`,
+                      );
+                  }
+                if (selector === '#statusbar')
+                  for (const item of bar.children) {
+                    const r = item.getBoundingClientRect();
+                    if (r.width > 0 && r.right > barBox.right + 0.5)
+                      over.push(
+                        `${label(item)} ends ${Math.round(r.right - barBox.right)}px past the status bar`,
+                      );
+                  }
+              }
               resolve(over);
             }),
           ),
@@ -401,19 +475,80 @@ async function overflowing(page: Page): Promise<string[]> {
   return out;
 }
 
-test('the document never scrolls sideways from 360 to 1,920px, signed out', async ({
-  page,
-}) => {
-  await bootEditor(page);
-  expect(await overflowing(page)).toEqual([]);
-});
+/** Commit a short title, so the save state beside it says "✓ saved". */
+async function saveTitle(page: Page): Promise<void> {
+  await page.locator('#docTitle').fill('Branch A');
+  await page.locator('#docTitle').press('Enter');
+  await expect(page.locator('#saved')).toHaveText('✓ saved');
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+}
 
-test('the document never scrolls sideways from 360 to 1,920px, signed in under a long login', async ({
-  page,
-}) => {
-  expect(LONG_LOGIN).toHaveLength(30);
-  await signIn(page, LONG_LOGIN);
-  await bootEditor(page);
-  await expect(page.locator('#userName')).toHaveText(LONG_LOGIN);
-  expect(await overflowing(page)).toEqual([]);
-});
+/** Make browser storage refuse the document, then make an edit: the save
+ * state turns into the warning that offers the download. */
+async function failSave(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const write = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key.startsWith('topology-dojo:doc'))
+        throw new DOMException('full', 'QuotaExceededError');
+      return write.call(this, key, value);
+    };
+  });
+  await page.locator('#docTitle').fill('Branch B');
+  await page.locator('#docTitle').press('Enter');
+  await expect(page.locator('#saved')).toHaveText(
+    '⚠ not saved — download JSON',
+  );
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+}
+
+// Each walk runs in three parts, so none takes long.
+for (const range of [
+  { name: '360 to 999px', widths: WIDTHS.filter((w) => w < 1000) },
+  {
+    name: '1,000 to 1,399px',
+    widths: WIDTHS.filter((w) => w >= 1000 && w < 1400),
+  },
+  { name: '1,400 to 1,920px', widths: WIDTHS.filter((w) => w >= 1400) },
+]) {
+  test(`the document never scrolls sideways from ${range.name}, signed out`, async ({
+    page,
+  }) => {
+    await bootEditor(page);
+    await saveTitle(page);
+    expect(await overflowing(page, range.widths)).toEqual([]);
+  });
+
+  test(`the document never scrolls sideways from ${range.name}, signed in under a long login`, async ({
+    page,
+  }) => {
+    expect(LONG_LOGIN).toHaveLength(30);
+    await signIn(page, LONG_LOGIN);
+    await bootEditor(page);
+    await expect(page.locator('#userName')).toHaveText(LONG_LOGIN);
+    await saveTitle(page);
+    expect(await overflowing(page, range.widths)).toEqual([]);
+  });
+
+  test(`the document never scrolls sideways from ${range.name}, signed out, with a save warning`, async ({
+    page,
+  }) => {
+    await bootEditor(page);
+    await failSave(page);
+    expect(await overflowing(page, range.widths)).toEqual([]);
+  });
+
+  test(`the document never scrolls sideways from ${range.name}, signed in under a long login, with a save warning`, async ({
+    page,
+  }) => {
+    await signIn(page, LONG_LOGIN);
+    await bootEditor(page);
+    await expect(page.locator('#userName')).toHaveText(LONG_LOGIN);
+    await failSave(page);
+    expect(await overflowing(page, range.widths)).toEqual([]);
+    // The warning keeps its whole sentence as its name, whatever it shows.
+    await expect(page.locator('#saved')).toHaveAccessibleName(
+      '⚠ not saved — download JSON',
+    );
+  });
+}

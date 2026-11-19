@@ -107,13 +107,15 @@
 }
 
 /* The document title, with the save state after it. The one part of the bar
-   that grows and shrinks. */
+   that grows and shrinks, never below what it holds: the title's least width
+   and the save state beside it (which the shell shortens where the bar runs
+   short), so neither runs under Undo. */
 .doc-title {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
   gap: 8px;
-  min-width: 64px;
+  min-width: min-content;
 }
 /* The title keeps room for a short name (about 16 characters): the chips'
    names give way with an ellipsis before it does. */
@@ -150,6 +152,18 @@
   color: var(--fg-weak);
   font: 400 12px/1 var(--font-ui);
   white-space: nowrap;
+}
+/* Its shorter forms, chosen by the shell: the first words of a warning, or
+   the mark alone. The whole warning stays its name and its tooltip. */
+.saved[data-fit='short'] > .saved-full,
+.saved[data-fit='mark'] > .saved-full {
+  display: none;
+}
+.saved[data-fit='short']::after {
+  content: attr(data-short);
+}
+.saved[data-fit='mark']::after {
+  content: attr(data-mark);
 }
 .saved.save-failed {
   color: var(--status-error-fg);
@@ -202,10 +216,11 @@
 
 /* The workspace and account chips. When the bar runs short (a long login,
    a narrow window) their names give way with an ellipsis rather than push
-   the bar past the window. */
+   the bar past the window, once the title is down to its least width (their
+   small shrink factor leaves the shrinking to the title until then). */
 .workspace-chip,
 .user-chip {
-  flex: 0 1 auto;
+  flex: 0 0.01 auto;
   min-width: 0;
   max-width: 180px;
 }
@@ -912,6 +927,22 @@
     display: inline;
   }
 }
+/* Where the bar is still short, the shell steps these aside in turn: the
+   workspace chip's name, then the account's (as below 760px), then the logo, then the account chip's
+   caret, then the mark of a plain save (a warning always shows). The chips
+   keep their icons, names and tooltips. */
+.topbar[data-squeeze~='workspace'] #workspaceLabel,
+.topbar[data-squeeze~='names'] .user-chip:not(.signed-out) .uc-name,
+.topbar[data-squeeze~='brand'] .brand,
+.topbar[data-squeeze~='caret'] .user-chip:not(.signed-out) .uc-caret,
+.topbar[data-squeeze~='quiet'] .saved:not([role='button']) {
+  display: none;
+}
+.topbar[data-squeeze~='workspace'] .workspace-chip,
+.topbar[data-squeeze~='names'] .user-chip {
+  flex: none;
+  min-width: auto;
+}
 @media (max-width: 640px) {
   .topbar {
     gap: 2px;
@@ -923,9 +954,6 @@
   /* A phone's bar only fits with its icon buttons this tight. */
   .topbar .btn {
     padding: 0 6px;
-  }
-  .doc-title {
-    min-width: 40px;
   }
   .doc-title-input {
     min-width: 0;
