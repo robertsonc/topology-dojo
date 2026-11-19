@@ -981,9 +981,11 @@
     min-width: 160px;
     min-height: 200px;
   }
+  /* Only the sides: the two-row bar's own top and bottom padding (above)
+     keep the focus rings of its second row whole. */
   .pages-bar {
     gap: 2px;
-    padding: 0 6px;
+    padding-inline: 6px;
   }
   .frames-toggle {
     padding: 0 4px;

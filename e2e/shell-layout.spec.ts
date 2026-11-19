@@ -488,15 +488,21 @@ test('the status bar draws the focus ring of its button whole', async ({
 });
 
 // The pages bar clips what it has no room for: the focus ring of the Pages
-// toggle at its left end, and of the first page chip at the left of its
-// scroll box, is still drawn whole.
-for (const width of [1440, 720, 360]) {
+// toggle at its left end, of the first page chip at the left of its scroll
+// box, and of the canvas options at its right end (on a phone, its second
+// row) is still drawn whole.
+for (const width of [1440, 720, 480, 360]) {
   test(`the pages bar draws the focus rings at its ends whole at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 800 });
     await bootEditor(page);
-    for (const selector of ['#frames-toggle', '.frame-sel']) {
+    for (const selector of [
+      '#frames-toggle',
+      '.frame-sel',
+      '#tGrid',
+      '#minimap-toggle',
+    ]) {
       const control = page.locator(selector).first();
       await control.focus();
       await page.keyboard.press('Shift+Tab');
