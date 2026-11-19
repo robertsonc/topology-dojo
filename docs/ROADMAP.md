@@ -178,10 +178,12 @@ accepted it re-cuts _Now/Next_.
 
 [Proposal 0013](proposals/0013-ui-overhaul.md) (the UI overhaul of the editor
 chrome: placement first, then a flat skin) was **accepted 2026-11-19**. Its
-phase P0 (foundations) is merged except the command registry: PR #326 merged
-the same day as `e9d0d7f` (see "UI overhaul foundations" under "Completed
-historical milestones"). What remains of P0 is the command registry
-(`src/ui/commands.ts`), in progress and due in a later pull request. Its
+phase P0 (foundations) is complete with PR #327, a draft that is not merged:
+PR #326 merged the same day as `e9d0d7f` (see "UI overhaul foundations" under
+"Completed historical milestones"), and the rest of P0, the command registry
+(`src/ui/commands.ts`: one table of every command and its keys, read by the
+key handler, the context menu and the shortcut sheet), is PR #327. Until #327
+merges, `main` has none of it. Its
 phases P1–P4 (shell, properties panel, skin sweep, guardrails) have not
 changed a surface yet; the 12 px text ratchet, a first form of P4's budget
 test, and the P1 and P2 building blocks are already on `main`. P0–P4 are that proposal's own labels, unrelated to proposal 0003's
@@ -754,7 +756,11 @@ On `main` but used by no surface yet (building blocks for P1–P3, not
 capabilities): the shared control classes, the Inter typeface, the menu
 component, the command palette and the properties-panel tab rules.
 
-Not shipped: the command registry, and any change to a surface from P1–P4.
+Not shipped: any change to a surface from P1–P4. The command registry, the
+rest of P0, is PR #327, a draft and not merged: it adds `src/ui/commands.ts`,
+makes the key handler, the toolbar and canvas controls, the context menu and
+the shortcut sheet read one command table, and removes `src/ui/canvas-keys.ts`;
+it is not on `main`, and no key or command is meant to behave differently.
 
 ### Wiring-sheet conventions (proposal 0008, 2026-10-15)
 

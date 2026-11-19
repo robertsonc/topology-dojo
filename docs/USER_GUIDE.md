@@ -5,7 +5,10 @@
 [proposal 0013](proposals/0013-ui-overhaul.md), merged that day as `e9d0d7f`:
 passages that named a control by a symbol now name it by its text or tooltip,
 "View preferences" no longer lists a glass setting, and "Brand palette" says
-what a palette recolours in the app chrome. The rest of the guide was not
+what a palette recolours in the app chrome. Updated 2026-11-19 for PR #327
+(draft, not merged), the command registry: "Keyboard reference" now says where
+the shortcut sheet lists the keys. No key changed, and the table was checked
+against the sheet's rows in `src/ui/commands.ts`. The rest of the guide was not
 re-checked.
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
@@ -463,6 +466,16 @@ Context menus support Up/Down, Enter, and Escape. Dialogs and menus keep Tab
 focus inside the open overlay and restore focus when closed.
 
 ### Keyboard reference
+
+The editor itself lists its shortcuts. Press **?** or choose the toolbar
+button whose tooltip reads "Keyboard shortcuts (?)" to open the shortcut
+sheet. It has one row per command that has a key, in the groups File, Edit,
+Selection, Arrange, Tools, View, Frames and Help; each row says what the
+command does and shows each of its shortcuts as a key cap (a command with two
+shortcuts, such as redo, shows two). After those come four more groups: Mouse
+and touch, Dialogs and menus, Presentation, and Find and the node library.
+The table below is a summary; where the two differ, the sheet is right. A
+toolbar button's tooltip ends with the command's first shortcut.
 
 | Keys                               | Action                                                                        |
 | ---------------------------------- | ----------------------------------------------------------------------------- |
