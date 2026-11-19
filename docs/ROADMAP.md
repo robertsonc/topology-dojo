@@ -12,7 +12,7 @@ corrected). The active implementation plan is
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md); its predecessor is
 preserved at [`archive/IMPLEMENTATION_PLAN_2026-07-12.md`](archive/IMPLEMENTATION_PLAN_2026-07-12.md).
 The passages on proposal 0013 were updated 2026-11-19 for PR #327 (merged as
-`d224979`); nothing else was re-checked then._
+`d224979`) and for PR #328 (not merged); nothing else was re-checked then._
 
 ## Current production baseline
 
@@ -181,18 +181,23 @@ accepted it re-cuts _Now/Next_.
 [Proposal 0013](proposals/0013-ui-overhaul.md) (the UI overhaul of the editor
 chrome: placement first, then a flat skin) was **accepted 2026-11-19**. Its
 phase P0 (foundations), P1 (shell) and P2 (properties panel) are merged, and
-P3 (skin sweep) and P4 (guardrails) are partly done. PR #326 merged the same
+P3 (skin sweep) is partly merged; the rest of P3 and P4 (guardrails) are built
+in PR #328 (not merged). PR #326 merged the same
 day as `e9d0d7f` (see "UI overhaul foundations" under "Completed historical
 milestones"), and PR #327 merged as `d224979` with the command registry
 (`src/ui/commands.ts`: one table of every command and its keys), the top bar
 with its menus, the left rail, the docked library, the pages bar, the command
 palette on Ctrl/Cmd+K and the tabbed properties panel (see "UI overhaul:
-command registry, shell and properties panel"). What is left of the proposal:
-the Share dialog, the presentation controls, the shortcut sheet's close
-button and the path bar are still in the old skin, seven rules under 12 px
-remain, and P4's top-bar budget test and "what moved" note are not built.
-PR #328 (not merged) adds the compact layout (below 1,024 px the node library
-and the properties panel are drawers over the canvas). P0–P4 are that
+command registry, shell and properties panel"). In `main`, the Share dialog, the presentation controls, the shortcut sheet's
+close button and the path bar are still in the old skin, seven rules under
+12 px remain, and P4's top-bar budget test and "what moved" note are not
+built. PR #328 (not merged) finishes those (no `.tbtn`, no text under 12 px,
+accent text, motion tokens, a dark scope for present mode, "page" for "frame"
+in the shell's labels, the control and text-size budgets, the one-time "what
+moved" note) and adds the compact layout (below 1,024 px the node library and
+the properties panel are drawers over the canvas). What stays open after it:
+Find and quick-add are not folded into the palette, and two or more nodes have
+no shared fields in the panel (QA-2026-11-14-UI-04). P0–P4 are that
 proposal's own labels, unrelated to proposal 0003's packets P1–P5 and to the
 "Phase 0" and "Phase 1" milestones below.
 
@@ -782,17 +787,52 @@ PR #328 (not merged) carries the fixes. Merged:
   `e2e/command-surfaces.spec.ts`. The three canvas screenshot baselines were
   regenerated for the narrower canvas column.
 
-Not done: the Share dialog, the presentation controls, the shortcut sheet's
-close button and the path bar still use `.tbtn`; seven `font-size` rules under
-12 px remain (`NOT_YET` in `src/styles/styles.test.ts`); no test caps the top
-bar's controls and there is no "what moved" note; Find and quick-add were not
-folded into the palette; the Find box, the presentation controls and the shortcut sheet's
-Presentation rows, the path bar and the path analysis messages, the Page tab's
-Story hint, Caption placeholder and empty-list line, the Analyze path tooltip
-and the delete-page confirmation still say "frame"; and two or more nodes have
-no shared fields in the panel (QA-2026-11-14-UI-04). The proposal's section
-"What P1 and P2 changed from this text" lists each departure. The compact
-layout, below 1,024 px, is PR #328 and is not merged.
+Not done in `main`: the Share dialog, the presentation controls, the shortcut
+sheet's close button and the path bar still use `.tbtn`; seven `font-size`
+rules under 12 px remain (`NOT_YET` in `src/styles/styles.test.ts`); no test
+caps the top bar's controls and there is no "what moved" note; Find and
+quick-add were not folded into the palette; the Find box, the presentation
+controls and the shortcut sheet's Presentation rows, the path bar and the path
+analysis messages, the Page tab's Story hint, Caption placeholder and
+empty-list line, the Analyze path tooltip and the delete-page confirmation
+still say "frame"; and two or more nodes have no shared fields in the panel
+(QA-2026-11-14-UI-04). The proposal's section "What P1 to P4 changed from this
+text" lists each departure. The compact layout, below 1,024 px, and the items
+in the next entry are PR #328 and are not merged.
+
+### UI overhaul: finish the skin, guardrails and the "what moved" note (proposal 0013, rest of P3 and P4; PR #328, not merged, 2026-11-19)
+
+Not in `main`, not released. Built on the branch of PR #328:
+
+- **No `.tbtn`, no text under 12 px.** The library's tiles, the canvas overlays
+  (Find, the path bar, quick-add, the rename editor, the drag ghost, the
+  selection bar), Display settings, the Share dialog, present mode, the
+  shortcut sheet, the Problems dock and the annotation editors are on the
+  shared controls; `src/styles/toolbar.css` is deleted; `NOT_YET` is gone, so
+  `src/styles/styles.test.ts` says no stylesheet sets text under 12 px.
+- **Accent text and motion.** `--accent-fg` for every accent text or icon
+  colour, computed for a document's brand accent
+  (`readableAccentText`, `src/ui/contrast.ts`); a dark scope for present mode
+  (`.dark-scope`), which fixes the light theme's present bar; the tokens
+  `--dur-slow` and `--dur-flash`, and a test that no transition or animation
+  has a literal duration.
+- **"Page" for "frame"** in the Find box, the presentation bar, the shortcut
+  sheet's Presentation rows, the path bar and its messages, and the Page tab's
+  hints. A page's name ("Frame 1") is data and is unchanged.
+- **Fixes the reviews found,** each with a test: Zoom in and Zoom out
+  tooltips name their keys; the properties toggle has `aria-expanded`; a
+  Problems jump opens the section of the field at fault, or shows the Page or
+  Document tab; Display settings fits a window 450 px tall; opening a drawer
+  closes the other on a phone and where under 160 px of canvas would be left;
+  phone number fields keep every digit; a node's link-attachment override fits
+  1,440 x 900; the selection bar keeps clear of the quick-connect arrows.
+- **Guardrails** (`e2e/shell-budget.spec.ts`, `src/ui/shell-budget.test.ts`):
+  15 controls in the top bar signed in with every chip showing, 7 in the rail,
+  5 at the right end of the pages bar; no text under 12 px in the shell's
+  surfaces at 1,440 x 900 and 390 x 844 in both themes; no sideways scroll from
+  360 to 1,920 px.
+- **The one-time "what moved" note** (`src/ui/shell-note.ts`,
+  `e2e/shell-note.spec.ts`), with **Help → What moved** to show it again.
 
 ### UI overhaul foundations (proposal 0013, P0 except the command registry, 2026-11-19)
 

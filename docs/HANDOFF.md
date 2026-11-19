@@ -149,6 +149,31 @@ implementation program", the `docs/proposals/0005`-`0013` entry and the "Key
 files" rows for the editor chrome were written for it; nothing else in this
 file was re-checked._
 
+_2026-11-19 (the end of the day; `main` at `d224979`, and the branch of PR
+#328, not merged, at `61e4d7e` for the code): PR #328 now also holds the rest
+of proposal 0013's P3 and the guardrails of P4, so the statements above that
+say what is "not done" (the `.tbtn` buttons, the seven font-size rules, the
+missing top-bar budget, the missing "what moved" note, "frame" in the shell's
+labels) describe `main` and are out of date for the branch. None of this is in
+`main`, and nothing of PR #328 is released. On the branch: no `.tbtn` is left
+and `src/styles/toolbar.css` is deleted; `NOT_YET` is gone, so no stylesheet
+sets text under 12 px; accent text uses `--accent-fg`, which the editor works
+out from a document's brand accent so it reads (`readableAccentText` in
+`src/ui/contrast.ts`); present mode has a dark scope, so its bar reads in the
+light theme; motion takes the duration tokens; the shell says "page" where a
+person reads it; a Problems jump opens the section of the field at fault, or
+shows the Page or Document tab; opening a drawer closes the other on a phone
+and where under 160 px of canvas would be left; the budgets
+(`e2e/shell-budget.spec.ts`, `src/ui/shell-budget.test.ts`) count the top
+bar's, the rail's and the pages bar's controls, walk the shell's text for
+anything under 12 px, and check the document never scrolls sideways from 360
+to 1,920 px; and the one-time "what moved" note (`src/ui/shell-note.ts`) is
+shown to a browser that used the editor before, with **Help → What moved** to
+show it again. Only this note, the "Recently completed" entry for PR #328, the
+paragraph dated 2026-11-19 under "Active implementation program", and the "Key
+files" rows for the editor chrome were written for it; nothing else in this
+file was re-checked._
+
 ## What Topology Dojo is
 
 A production-hosted, collaborative, AI-agent-assisted network-topology
@@ -302,8 +327,8 @@ from `git log --first-parent`):
   (`src/ui/inspector/`, `src/styles/inspector.css`); the shared controls on
   the wizards, the workspace, preferences and admin panels and the node
   designer; "page" for "frame" in the menus, the pages bar and the command
-  titles (some labels still say "frame"; proposal 0013's section "What P1 and
-  P2 changed from this text" lists them).
+  titles (some labels still said "frame" in `main`; proposal 0013's section "What P1
+  to P4 changed from this text" lists them, and PR #328 changes them).
   Guards added: `src/ui/menus.test.ts`, `src/ui/palette-sources.test.ts`,
   `src/ui/selection-bar-place.test.ts`, `src/ui/inspector-tabs.test.ts`,
   `src/ui/inspector/sections.test.ts`, `src/ui/inspector/field-groups.test.ts`,
@@ -313,9 +338,30 @@ from `git log --first-parent`):
   `e2e/command-keys.spec.ts`, `e2e/command-surfaces.spec.ts`; the three canvas
   screenshot baselines were regenerated for the narrower canvas column
   (704 x 608). Departures from the proposal's text are in its section "What P1
-  and P2 changed from this text". Not done: see the dated note near the top of
+  to P4 changed from this text". Not done: see the dated note near the top of
   this file. PR #328 (not merged): the compact layout (below 1,024 px the
   panels are drawers), the user guide, the README image and these documents.
+- **UI overhaul: finish the skin, guardrails and the "what moved" note**
+  (proposal 0013, the rest of P3 and P4; PR #328, **not merged**, so not in
+  `main` and not released). On the branch: the surfaces still on the old
+  `.tbtn` skin (the library's tiles, the canvas overlays, Display settings,
+  Share, present mode, the shortcut sheet, the Problems dock and the annotation
+  editors) are on the shared controls and `toolbar.css` is deleted;
+  `--accent-fg` for accent text, computed for a brand accent; a dark scope for
+  present mode (`.dark-scope`); duration tokens (`--dur-slow`, `--dur-flash`)
+  and a test that no transition or animation has a literal time;
+  "page" for "frame" in the shell's labels; small fixes (Zoom in and Zoom out
+  tooltips name their keys, the properties toggle has `aria-expanded`, a
+  Problems jump opens the field at fault, Display settings fits a 450 px
+  window, drawers close each other when they crowd the canvas, phone number
+  fields keep every digit, a node's link-attachment override fits 1,440 x 900,
+  the selection bar keeps clear of the quick-connect arrows). Guards:
+  `e2e/shell-budget.spec.ts`, `src/ui/shell-budget.test.ts`,
+  `e2e/shell-note.spec.ts`, `src/ui/shell-note.test.ts`, the contrast cases in
+  `src/ui/contrast.test.ts`, the duration and 12 px tests in
+  `src/styles/styles.test.ts`. The user guide, the README image, the QA plan,
+  the traceability matrix, the capability matrix and the registers were
+  updated for it.
 
 ## Active implementation program
 
@@ -356,15 +402,17 @@ this date) is likewise driven from its own file, not from this table. Its P0
 (foundations) is merged: PR #326 as `e9d0d7f` and PR #327, with the command
 registry, as `d224979`. P1 (shell) and P2 (properties panel) are merged in
 PR #327, and so is part of P3 (the skin sweep: the wizards, the workspace,
-preferences and admin panels and the node designer are on the shared controls;
-the Share dialog, the presentation controls, the shortcut sheet's close
-button and the path bar are not). P4
-(guardrails) is partly there: the 12 px text ratchet and the properties
-panel's layout spec exist; a cap on the top bar's controls and a "what moved"
-note do not. PR #328 (not merged) adds the compact layout (drawers below
-1,024 px). The proposal's status header and its section "What P1 and P2
-changed from this text" are the record. Those phase labels are the
-proposal's own and are unrelated to proposal 0003's packets P1–P5.
+preferences and admin panels and the node designer are on the shared
+controls). PR #328 (not merged) holds the rest of P3 (the Share dialog, the
+presentation controls, the shortcut sheet, the path bar and the other
+surfaces on the shared controls, no `.tbtn`, no text under 12 px, accent
+text, motion) and P4 (the control and text-size budgets, the sideways-scroll
+test and the one-time "what moved" note), the compact layout (drawers below
+1,024 px) and the documentation. Until #328 merges, `main` has the old
+skin on those surfaces and none of P4. The proposal's status header and its
+section "What P1 to P4 changed from this text" are the record. Those phase
+labels are the proposal's own and are unrelated to proposal 0003's packets
+P1–P5.
 
 Before starting a July implementation packet, revalidate its premise against
 `ROADMAP.md`, `CAPABILITY_MATRIX.md`, and current code. O1/O2 remain explicitly
@@ -498,13 +546,14 @@ reviewed Darwin baselines are deliberately added. See `launch-readiness/QA_TEST_
 | Workspace client                                | `src/workspace/{model,client,offline,operations}.ts`, `src/ui/workspace-panel.ts`                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Adaptive authoring profiles                     | `src/profile/{features,learner,refinement,guidance}.ts`, `worker/profile.ts`, `worker/profile-api.ts`, `src/ui/profile-panel.ts`                                                                                                                                                                                                                                                                                                                                                                                |
 | Admin/analytics dashboard                       | `worker/analytics.ts`, `worker/admin-api.ts`, `src/admin/`, `src/ui/admin-dashboard.ts`, `src/agent-activity/`                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Editor chrome styles                            | `src/styles/index.css` (imports the other files in cascade order), `src/styles/tokens.css` (semantic tokens, both themes), `src/styles/controls.css` (the shared control classes), `src/styles/shell.css`, `src/styles/inspector.css`, `src/styles/styles.test.ts` (guards, and `NOT_YET`, the stylesheets that still carry text under 12 px); proposal 0013                                                                                                                                                    |
+| Editor chrome styles                            | `src/styles/index.css` (imports the other files in cascade order), `src/styles/tokens.css` (semantic tokens, both themes), `src/styles/controls.css` (the shared control classes), `src/styles/shell.css`, `src/styles/inspector.css`, `src/styles/styles.test.ts` (guards, among them no text under 12 px and no literal duration); proposal 0013                                                                                                                                                              |
 | Editor chrome icons                             | `scripts/build-icons.ts` (manifest + generator, `npm run build:icons`), `src/ui/icons.generated.ts` (generated from `lucide-static`), `src/ui/icons.ts`, `src/styles/icons.css`                                                                                                                                                                                                                                                                                                                                 |
-| Ink on the brand accent                         | `src/ui/contrast.ts` (`readableInkOn`), called by `setChromeAccent` in `src/main.ts`                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Ink on the brand accent                         | `src/ui/contrast.ts` (`readableInkOn` for the ink on an accent fill; on PR #328, not merged, also `readableAccentText` and `mixHex` for accent text), called by `setChromeAccent` in `src/main.ts`                                                                                                                                                                                                                                                                                                              |
 | Menus and command palette                       | `src/ui/menu.ts` + `src/styles/menu.css` (the menu component), `src/ui/menus.ts` (the File, Edit, View, Arrange, Help, folded, Export, Tidy, account and context menus, as data), `src/ui/former-toolbar.ts` (the old toolbar's controls, for the tests that check none was lost), `src/ui/command-palette.ts` + `src/styles/command-palette.css`, `src/ui/palette-sources.ts` (what the palette lists); specs `e2e/shell-menus.spec.ts`, `e2e/menu-component.spec.ts`, `e2e/command-palette-component.spec.ts` |
 | Command registry (PR #327, merged as `d224979`) | `src/ui/commands.ts` (the command table, `matchKey`, `createCommandRegistry`, `HELP_GESTURES`; pure, no DOM), `src/ui/commands.test.ts`, `src/ui/canvas-keys.test.ts` (tests `matchKey`), `e2e/command-keys.spec.ts`, `e2e/command-surfaces.spec.ts`; bound once in `src/main.ts`; proposal 0013 P0                                                                                                                                                                                                             |
 | Shell (PR #327, merged as `d224979`)            | The shell template and its wiring in `src/main.ts` (top bar, left rail, docked library, canvas column, pages bar, zoom control, status bar), `src/styles/shell.css`, `src/ui/selection-bar-place.ts` (where the selection bar goes), `src/ui/fit-insets.ts` (fit view clears what floats over the canvas); specs `e2e/shell-layout.spec.ts`, `e2e/selection-bar.spec.ts`, `e2e/shell-frames.spec.ts`; proposal 0013 P1                                                                                          |
 | Properties panel (PR #327, merged as `d224979`) | `src/ui/inspector/` (`tabs.ts`, `sections.ts`, `field-groups.ts`, `selection-header.ts`, `color-control.ts`, `page-tab.ts`, `document-tab.ts`, `link-attachment.ts`, `focus-keep.ts`, `panel-width.ts`), `src/ui/inspector-tabs.ts` (the tab rules), `src/styles/inspector.css`; specs `e2e/shell-inspector.spec.ts`, `e2e/shell-inspector-tabs.spec.ts`, `e2e/shell-inspector-layout.spec.ts`; proposal 0013 P2                                                                                                |
+| Guardrails and the note (PR #328, not merged)   | `e2e/shell-budget.spec.ts` and `src/ui/shell-budget.test.ts` (the control budgets, the text-size walk, the sideways-scroll test), `src/ui/shell-note.ts` + `src/ui/shell-note.test.ts` + `e2e/shell-note.spec.ts` (the one-time "what moved" note; `help.whatMoved` in `src/ui/commands.ts`), `src/ui/problems-dock.ts` (`problemField`, where a problem is fixed); proposal 0013 P3 and P4                                                                                                                     |
 | Compact layout (PR #328, not merged)            | `src/ui/compact-layout.ts` (the one breakpoint: at 1,023 px and below, that is below 1,024 px, the library and the properties panel are drawers), `src/ui/compact-layout.test.ts`; the drawer rules in `src/styles/shell.css` and `src/styles/inspector.css`; the compact cases of `e2e/shell-layout.spec.ts`                                                                                                                                                                                                   |
 | Auth + landing page + showcase                  | `worker/auth.ts`, `worker/landing.ts`, `public/landing/`, `public/showcase/*.webp`                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Deployment config                               | `wrangler.jsonc`, `.github/workflows/{release,deploy-worker,deploy-staging,ci,production-verify,nightly-staging-smoke}.yml`, `scripts/{check-wrangler-env,migration-guard}.mjs`                                                                                                                                                                                                                                                                                                                                 |
@@ -593,7 +642,7 @@ staging` with a generated ≥16-char value kept only in the operator's
   vendor-neutral diagramming-tool direction (**Proposed**, not accepted),
   the SD-WAN generator (slices 1–4 implemented), the icon gap review
   (tiers 1–2 shipped), SD-WAN vendor research (research only), and the UI
-  overhaul of the editor chrome (accepted 2026-11-19; P0, P1 and P2 are merged, P3 and P4 partly: #326 as `e9d0d7f` and #327 as `d224979`; the compact layout and these documents are PR #328, not merged). Each
+  overhaul of the editor chrome (accepted 2026-11-19; P0, P1 and P2 are merged, with part of P3: #326 as `e9d0d7f` and #327 as `d224979`; the rest of P3, P4, the compact layout and these documents are PR #328, not merged). Each
   file's status header is authoritative.
 - `docs/EXPORTS.md` — the export/import fidelity contract.
 - `docs/futures/hw-catalog.md` — hardware-catalog phase status;
