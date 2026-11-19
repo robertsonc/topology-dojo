@@ -173,7 +173,7 @@ shared, or public.
 
 | Data                                      | Storage location                                                               | Who can reach it                                                      | Retention and recovery                                                                                                                                                                                                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Normal browser draft                      | Browser localStorage on the current browser/profile                            | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **download** for a portable backup.                                                                                                |
+| Normal browser draft                      | Browser localStorage on the current browser/profile                            | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **File → Download JSON** for a portable backup.                                                                                    |
 | Shared-link working copy                  | A separate browser localStorage slot                                           | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **keep this copy** to adopt it or **back to my document** to discard it from the canvas.                                                                                                   |
 | Downloaded JSON                           | A file chosen by the browser                                                   | Anyone who receives the file                                          | Full portable document backup under the user's control.                                                                                                                                                                                                                          |
 | Local MCP private draft                   | Memory in the local MCP process                                                | The connected local MCP client                                        | Treat as temporary. Export or retrieve the JSON before stopping the process.                                                                                                                                                                                                     |
@@ -203,8 +203,8 @@ The editor is organized into seven areas.
    **Admin** (for the deployment's owner), **Theme** and **Sign out**. In a
    window 1,100px wide or less the five menus fold into one **Menu** button.
 2. **Left rail.** The tools (**select**, **hand**, **draw link**, **drop
-   anchor**), the Node library toggle and, at the bottom, the command
-   palette and the shortcut reference.
+   anchor**, also in **Edit → Tools**), the Node library toggle and, at the
+   bottom, the command palette and the shortcut reference.
 3. **Node library.** A searchable, categorized catalog docked beside the rail.
    It also holds document custom nodes and stencils. Hiding it gives its
    width to the canvas.
@@ -218,8 +218,8 @@ The editor is organized into seven areas.
    the complete surface. The zoom control floats in the canvas's bottom-right
    corner (zoom out, the zoom figure, which fits the view when clicked, zoom
    in and fit to content), and the minimap opens in a card above it.
-5. **Pages bar.** Docked under the canvas: the pages toggle, playback, the page
-   chips, duplicate and add page; at its right end the grid, snap and Calm
+5. **Pages bar.** Docked under the canvas: the pages toggle, **Play**, the page
+   chips, **Duplicate page** and **Add page**; at its right end the grid, snap and Calm
    Canvas toggles, **Display settings** and the minimap toggle.
 6. **Properties and Problems.** A resizable right column. Properties follow the
    selection; Problems shows validation and layout findings. Each finding names
@@ -253,7 +253,7 @@ label of a node, link or zone on any page, and **Go to page** followed by its
 number and name. The arrow keys move through the results, Enter runs the one
 highlighted, and Escape closes the palette and puts focus back where it was.
 
-Use **Ctrl/Cmd+F** to find a node, link or zone on any frame. Nodes are
+Use **Ctrl/Cmd+F** to find a node, link or zone on any page. Nodes are
 searched by label, identifier, type, sublabel, and metadata keys/values (find
 a node by the IP address, hostname, or model stored on it); links by label,
 port label, identifier, type and metadata; zones by label. Matches on the
@@ -274,7 +274,7 @@ The minimap provides an overview of content outside the current viewport.
 4. Move and label nodes, then connect them.
 5. Add zones, flows, markers, layers, and a legend if they help explain the
    topology.
-6. Run **tidy**, **balance**, or an **arrange…** algorithm.
+6. Run **Tidy**, **Balance**, or an **Arrange → Auto-arrange** algorithm.
 7. Review **Problems** and resolve errors or relevant warnings.
 8. Add pages, captions, emphasis, and playback timing if the diagram tells a
    sequence.
@@ -313,7 +313,7 @@ The minimap provides an overview of content outside the current viewport.
 - Use the arrow keys for a small nudge; hold Shift for a ten-times nudge.
 - Lock important items with **Ctrl/Cmd+L** or the context menu so an accidental
   drag does not move them. A locked node also stays put through **tidy**,
-  **balance** and **arrange…**: the other nodes make room around it.
+  **balance** and **Arrange → Auto-arrange**: the other nodes make room around it.
 - Use **[** and **]** for one-step stacking changes, or add Ctrl/Cmd to send an
   item fully back or front.
 
@@ -375,8 +375,8 @@ anchor box as a faint dashed outline.
 The anchor box is **on, with Distribute ends, for new work**: a **new**
 document, the starter templates, the SD-WAN generator, and anything an agent
 creates over MCP (`create_topology`, `add_page`, `build_flow_topology`,
-`create_workspace`). A frame added with the pages strip's **frame** button
-follows the frame you are on. Documents saved before this, the first-run
+`create_workspace`). A page added with the pages bar's **Add page** button
+follows the page you are on. Documents saved before this, the first-run
 sample scene, and imported files keep the classic attachment until you turn
 the switch on; nothing is re-routed behind your back.
 
@@ -458,7 +458,7 @@ editing does not leave avoidable dangling references.
 
 Undo and redo are available from the top bar, **Edit**, or with **Ctrl/Cmd+Z**
 and **Ctrl/Cmd+Shift+Z**. Each page keeps its own edit history when switching
-between pages. Page deletion has its own short-lived **undo delete** action in
+between pages. Page deletion has its own short-lived **Undo delete** action in
 the pages bar.
 
 ### Context menus
@@ -509,7 +509,7 @@ Tab closes a menu. Both restore focus when closed.
 | Ctrl/Cmd+Z                         | Undo                                                                          |
 | Ctrl/Cmd+Shift+Z or Ctrl+Y         | Redo                                                                          |
 | Ctrl/Cmd+C, X, V                   | Copy, cut, paste                                                              |
-| Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any frame)                               |
+| Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any page)                                |
 | F2 or Enter                        | Rename the selected node, link or zone                                        |
 | Ctrl/Cmd+Alt+C                     | Copy format                                                                   |
 | Ctrl/Cmd+Alt+V                     | Paste format onto the selection                                               |
@@ -533,7 +533,7 @@ Tab closes a menu. Both restore focus when closed.
 | Shift+2                            | Zoom to the selection (fit to content when nothing is selected)               |
 | Ctrl/Cmd+S                         | Download the document as JSON                                                 |
 | Ctrl/Cmd+O                         | Open a file                                                                   |
-| Ctrl/Cmd+F                         | Find a node, link or zone on any frame and jump to it                         |
+| Ctrl/Cmd+F                         | Find a node, link or zone on any page and jump to it                          |
 | Ctrl/Cmd+K                         | Open the command palette                                                      |
 | Double-click node/link/zone        | Rename in place (Enter commits, Escape cancels)                               |
 | Double-click empty canvas          | Quick-add: type to pick a node type, Enter places it                          |
@@ -792,7 +792,7 @@ Properties; nothing is drawn that the document does not say.
 3. **Tiers** (node Properties → _Wiring sheet_ → **Tier**). Declare the role
    rows top → bottom (gateways / distribution / core) and tag each node.
    The **tiered** layout (MCP `layout_topology` algorithm `tiered`; the
-   editor's **arrange…** menu does not offer it) rows nodes by tier, keeps nodes that share a zone together as a group, orders each
+   editor's **Arrange → Auto-arrange** menu does not offer it) rows nodes by tier, keeps nodes that share a zone together as a group, orders each
    row so the cable fan does not cross itself, places `-01` / `-02` pairs
    symmetric about the page centre (`mirror`), pins every tiered link end to
    the face that looks at the other tier, reserves the margins the port
@@ -882,22 +882,23 @@ Problems again.
 
 The pages bar under the canvas shows the current page number and total.
 
-- Choose **page** (the button with a plus icon; its tooltip reads "Add blank
-  page") to add a blank page.
-- Choose **duplicate** to deep-copy the current page.
-- Double-click a page name to rename it.
+- Choose **Add page** (the button with a plus icon; its tooltip reads "Add
+  blank page") to add a blank page.
+- Choose **Duplicate page** to deep-copy the current page.
+- Click a page chip, or Tab to it and press Enter, to go to that page.
+- Double-click a page name, or press F2 on its chip, to rename it.
 - Drag a page chip to reorder pages.
 - Use the x on a page chip (**Delete page**) to delete it. The only page
   cannot be deleted.
 - If a page contains nodes, links, annotations, a caption, or emphasis, deletion
   asks for confirmation.
-- After deletion, **undo delete** remains available for about eight seconds.
+- After deletion, **Undo delete** remains available for about eight seconds.
   Only the most recent deleted page is recoverable this way.
 
 ### Playback
 
-When a document has multiple pages, choose **play** in the pages bar (it
-reads **pause** while playing). Playback loops through the pages. For each
+When a document has multiple pages, choose **Play** in the pages bar (it
+reads **Pause** while playing). Playback loops through the pages. For each
 page, set:
 
 - **Hold (ms)** — how long the frame remains visible;
@@ -1270,7 +1271,7 @@ autosave separately. They can:
 - choose **keep this copy** to replace their normal browser-local draft after
   confirmation;
 - choose **back to my document** to return to their prior local draft;
-- choose **download** first to keep both as files.
+- choose **File → Download JSON** first to keep both as files.
 
 A recipient does not need an account. Without one, a **sign in** chip sits at
 the right end of the top bar, and starting a **new** document or choosing
@@ -1558,7 +1559,7 @@ workspace synchronization pauses:
   and attempts a fresh semantic sync;
 - **Reload server** discards unsynced browser edits after confirmation and loads
   the canonical workspace;
-- **download** the browser JSON before reloading if the local version might be
+- **File → Download JSON** before reloading if the local version might be
   needed.
 
 Ordinary disjoint changes can rebase automatically. Same-field edits and
@@ -1861,7 +1862,7 @@ There is no recovery from the public URL alone after expiry.
 
 The canvas changes, but the banner indicates that the shared copy is in a
 separate autosave slot. Choose **back to my document** to return. Choose
-**download** before **keep this copy** if both versions are needed.
+**File → Download JSON** before **keep this copy** if both versions are needed.
 
 ### The editor reports an invalid JSON file
 
@@ -1879,7 +1880,7 @@ visually review every page, annotation, label, link route, and export.
 ### Nodes overlap or content is off-page
 
 Open Problems, then try **tidy**. Use **balance** for a regular row/column finish
-or an **arrange…** algorithm when the whole layout can be rebuilt. Finish with
+or an **Arrange → Auto-arrange** algorithm when the whole layout can be rebuilt. Finish with
 **fit to content**, inspect important manual routes, and check Problems again.
 
 ### PNG export fails
