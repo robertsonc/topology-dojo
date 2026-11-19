@@ -415,7 +415,9 @@ describe('renderActiveWorkspaceHtml', () => {
         }),
       }),
     );
-    expect(html).toContain('Direct agent edits allowed only on page p1');
+    expect(html).toContain(
+      'Direct agent edits allowed only on page <span class="data">p1</span>',
+    );
     expect(html).toContain('id="wsRevoke"');
     expect(html).not.toContain('id="wsLease"');
   });
@@ -441,7 +443,7 @@ describe('renderActiveWorkspaceHtml', () => {
   it('renders the empty state when there are no proposals', () => {
     const html = renderActiveWorkspaceHtml(activeWorkspace({ proposals: [] }));
     expect(html).toContain('No pending agent proposals.');
-    expect(html).toContain('Proposals (0)');
+    expect(html).toContain('Proposals <span class="data">(0)</span>');
   });
 
   it('renders a pending proposal card with rationale, ops, and accept/reject actions', () => {
@@ -460,13 +462,45 @@ describe('renderActiveWorkspaceHtml', () => {
     expect(html).toContain('Add a load balancer');
     expect(html).toContain('Improves redundancy');
     expect(html).toContain('2 operations');
-    expect(html).toContain('base r7');
+    expect(html).toContain('base <span class="data">r7</span>');
     expect(html).toContain('· pending</div>');
     expect(html).toContain('add node lb-1');
     expect(html).toContain('data-pid="prop_pending"');
     expect(html).toContain('ws-accept');
     expect(html).toContain('ws-reject');
-    expect(html).toContain('Proposals (1)');
+    expect(html).toContain('Proposals <span class="data">(1)</span>');
+  });
+
+  it("fills only the first pending proposal's Accept all, and starts every preview toggle unpressed", () => {
+    const html = renderActiveWorkspaceHtml(
+      activeWorkspace({
+        proposals: [
+          proposal({ id: 'prop_conflicted', status: 'conflicted' }),
+          proposal({ id: 'prop_a', status: 'pending' }),
+          proposal({ id: 'prop_b', status: 'pending' }),
+        ],
+      }),
+    );
+    // One filled button per view: the Accept all of the first pending one.
+    expect(html.match(/btn-primary/g)).toHaveLength(1);
+    expect(html).toContain(
+      '<button class="btn btn-sm btn-primary ws-accept" data-pid="prop_a">Accept all</button>',
+    );
+    expect(html).toContain(
+      '<button class="btn btn-sm ws-accept" data-pid="prop_conflicted">Accept all</button>',
+    );
+    expect(html).toContain(
+      '<button class="btn btn-sm ws-accept" data-pid="prop_b">Accept all</button>',
+    );
+    // The preview toggle exposes its state; the panel flips it on click.
+    for (const id of ['prop_conflicted', 'prop_a', 'prop_b'])
+      expect(html).toContain(
+        `<button class="btn btn-sm ws-preview-toggle" data-pid="${id}" aria-pressed="false">Preview</button>`,
+      );
+    expect(html.match(/aria-pressed="false"/g)).toHaveLength(3);
+    expect(html).not.toContain('aria-pressed="true"');
+    // Reject (the destructive action) ends each row of actions.
+    expect(html.match(/>Reject<\/button><\/div>/g)).toHaveLength(3);
   });
 
   it('renders a conflicted proposal card without a rationale block', () => {
@@ -580,7 +614,7 @@ describe('renderCheckpointsHtml', () => {
 
   it('shows a create row and an empty state with no checkpoints', () => {
     const html = renderCheckpointsHtml(activeWorkspace({ checkpoints: [] }));
-    expect(html).toContain('Checkpoints (0/12)');
+    expect(html).toContain('Checkpoints <span class="data">(0/12)</span>');
     expect(html).toContain('id="wsCheckpointCreate"');
     expect(html).toContain('No checkpoints yet.');
   });
@@ -594,13 +628,13 @@ describe('renderCheckpointsHtml', () => {
         ],
       }),
     );
-    expect(html).toContain('Checkpoints (2/12)');
+    expect(html).toContain('Checkpoints <span class="data">(2/12)</span>');
     expect(html).toContain('data-cid="cp_1"');
     expect(html).toContain('data-cid="cp_2"');
     expect(html).toContain('ws-cp-restore');
     expect(html).toContain('ws-cp-fork');
     expect(html).toContain('ws-cp-delete');
-    expect(html).toContain('r5 · 2 pages · agent');
+    expect(html).toContain('<span class="data">r5</span> · 2 pages · agent');
     expect(html).toContain('1 page ·'); // singular
   });
 
@@ -609,7 +643,7 @@ describe('renderCheckpointsHtml', () => {
       checkpoint({ id: `cp_${i}` }),
     );
     const html = renderCheckpointsHtml(activeWorkspace({ checkpoints: many }));
-    expect(html).toContain('Checkpoints (12/12)');
+    expect(html).toContain('Checkpoints <span class="data">(12/12)</span>');
     expect(html).toContain('disabled');
     expect(html).toContain('Checkpoint limit reached');
   });
@@ -680,7 +714,7 @@ describe('renderTimelineHtml', () => {
         ]),
       }),
     );
-    expect(html).toContain('Timeline (r2)');
+    expect(html).toContain('Timeline <span class="data">(r2)</span>');
     // Newest (r2) appears before r1.
     expect(html.indexOf('r2')).toBeLessThan(html.indexOf('r1'));
     expect(html).toContain('Claude');
@@ -699,7 +733,7 @@ describe('renderTimelineHtml', () => {
     );
     // The note is the check icon and the words, on the proposal's revision.
     expect(html).toContain(
-      `<div class="ws-note">${icon('check')} accepted proposal</div>`,
+      `<div class="hint">${icon('check')} accepted proposal</div>`,
     );
     expect(html.match(/accepted proposal/g)).toHaveLength(1);
     expect(html).toContain('ws-src-restore');
@@ -723,7 +757,7 @@ describe('renderTimelineHtml', () => {
       }),
     );
     expect(html).toContain(
-      `<div class="ws-note">${icon('checkpoint')} checkpoint “Baseline”</div>`,
+      `<div class="hint">${icon('checkpoint')} checkpoint “Baseline”</div>`,
     );
     expect(html).toContain('Older revisions compacted (floor r5)');
   });
@@ -1144,7 +1178,7 @@ describe('renderPresenceHtml (Packet S1)', () => {
       { kind: 'user', label: 'alice', pageId: 'p1' },
       { kind: 'agent', label: 'assistant' },
     ]);
-    expect(html).toContain('Present (2)');
+    expect(html).toContain('Present <span class="data">(2)</span>');
     expect(html).toContain('ws-presence-user');
     expect(html).toContain('alice');
     expect(html).toContain('p1');
@@ -1178,7 +1212,7 @@ describe('renderPresenceHtml (Packet S1)', () => {
         presence: [{ kind: 'user', label: 'alice', pageId: 'p1' }],
       }),
     );
-    expect(html).toContain('Present (1)');
+    expect(html).toContain('Present <span class="data">(1)</span>');
     expect(html).toContain('alice');
   });
 });
@@ -1393,7 +1427,7 @@ describe('describeProposalConflicts (issue #269)', () => {
     );
     expect(html).toContain('ws-conflict-note');
     expect(html).toContain(
-      'class="tbtn ws-accept-supersede" data-pid="prop_1"',
+      'class="btn btn-sm ws-accept-supersede" data-pid="prop_1"',
     );
   });
 

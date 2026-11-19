@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import { bootEditor, menuCommand } from './helpers.js';
 
 /**
  * A visitor who arrives through a public share link has no session. Nothing
@@ -29,7 +29,7 @@ test('an anonymous visitor is offered sign-in, never forced', async ({
   await expect(prompt).toBeHidden();
 
   // Starting a new document opens the prompt, and the editor still works.
-  await page.locator('#fNew').click();
+  await menuCommand(page, 'file.new');
   await expect(prompt).toBeVisible();
   await expect(prompt).toContainText(
     'Sign in to save your copy to your workspace.',
@@ -48,10 +48,30 @@ test('an anonymous visitor is offered sign-in, never forced', async ({
   await expect(prompt).toBeVisible();
 });
 
+test('on a phone the sign-in chip still says sign in', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(
+    (url) => url.pathname === '/api/me',
+    (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: '{}',
+      }),
+  );
+  await bootEditor(page);
+  const chip = page.locator('#userChip');
+  await expect(chip).toBeVisible();
+  // The words are on screen, not only in the markup.
+  expect((await chip.innerText()).trim()).toBe('sign in');
+  const box = (await chip.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+});
+
 test('no sign-in chip without the hosted backend', async ({ page }) => {
   await bootEditor(page);
   await expect(page.locator('#userChip')).toBeHidden();
   page.on('dialog', (dialog) => void dialog.accept());
-  await page.locator('#fNew').click();
+  await menuCommand(page, 'file.new');
   await expect(page.locator('#signInPrompt')).toHaveCount(0);
 });

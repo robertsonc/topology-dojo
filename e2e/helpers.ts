@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -219,3 +219,115 @@ export async function readAutosave(
     ? (JSON.parse(raw) as { title: string; pages: { nodes: unknown[] }[] })
     : null;
 }
+
+/** Show one tab of the properties panel: 'selection', 'page' or 'document'. */
+export async function inspectorTab(
+  page: Page,
+  tab: 'selection' | 'page' | 'document',
+): Promise<void> {
+  const button = page.locator(`#insp-tab-${tab}`);
+  await button.click();
+  await expect(button).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Open a section of the properties panel by its title, unless it is open. */
+export async function inspectorSection(
+  page: Page,
+  title: string,
+): Promise<void> {
+  const section = page
+    .locator(`#inspector details.insp-group[data-group="${title}"]`)
+    .first();
+  if (!(await section.evaluate((d) => (d as HTMLDetailsElement).open)))
+    await section.locator('> summary').click();
+  await expect(section).toHaveAttribute('open', '');
+}
+
+/**
+ * Pick a swatch of a colour control in the properties panel: open the
+ * popover the swatch is in (from the control's button), then click it.
+ */
+export async function chooseSwatch(swatch: Locator): Promise<void> {
+  const control = swatch.locator(
+    'xpath=ancestor::*[contains(concat(" ", @class, " "), " colour-ctl ")][1]',
+  );
+  await control.locator('[data-colour-open]').click();
+  await swatch.click();
+}
+
+/** Close every open menu by pressing its trigger again, or with Escape. */
+async function closeMenus(page: Page, trigger: Locator): Promise<void> {
+  const layer = page.locator('.menu-layer');
+  if ((await layer.count()) > 0) await trigger.click();
+  await expect(layer).toHaveCount(0);
+}
+
+/** Open, one after another, the submenus of the menu at `level` (0: the
+ * menu a trigger opened) until `item` is on screen. False if it is in none. */
+async function revealMenuItem(
+  page: Page,
+  item: Locator,
+  level: number,
+): Promise<boolean> {
+  if (await item.isVisible()) return true;
+  const menus = page.locator('.menu-layer .menu');
+  const parents = menus.nth(level).locator('[aria-haspopup="menu"]');
+  const count = await parents.count();
+  for (let i = 0; i < count; i++) {
+    await parents.nth(i).click();
+    await expect(menus.nth(level + 1)).toBeVisible();
+    if (await revealMenuItem(page, item, level + 1)) return true;
+  }
+  return false;
+}
+
+/**
+ * Run a command from the menu bar the way a mouse user does: open the
+ * top-level menu that holds it (the one Menu button, in a window narrow
+ * enough to fold the menus), walk into submenus until the item is shown,
+ * and click it (`data-command` is the command id).
+ */
+export async function menuCommand(
+  page: Page,
+  commandId: string,
+): Promise<void> {
+  const item = page.locator(
+    `.menu-layer [data-command="${commandId.replace(/"/g, '\\"')}"]`,
+  );
+  const tops = page.locator('#menubar [data-menu]');
+  for (let i = 0; i < (await tops.count()); i++) {
+    const top = tops.nth(i);
+    if (!(await top.isVisible())) continue;
+    await top.click();
+    await expect(page.locator('.menu-layer .menu').first()).toBeVisible();
+    if (await revealMenuItem(page, item, 0)) {
+      await item.click();
+      return;
+    }
+    await closeMenus(page, top);
+  }
+  throw new Error(`no menu of the menu bar holds "${commandId}"`);
+}
+
+/**
+ * Export with the top bar's Export menu. `kind` is the export as the
+ * command names it after `file.export.`, in the words of the old menu's
+ * values: 'svg', 'png', 'pdf-page', 'svg-selection', ….
+ */
+export async function exportAs(page: Page, kind: string): Promise<void> {
+  const id = kind.replace(/-(\w)/g, (_, c: string) => c.toUpperCase());
+  await page.locator('#fExportBtn').click();
+  await page.locator(`.menu-layer [data-command="file.export.${id}"]`).click();
+}
+
+/** Start a new document from the starter template `id` (File ▸ New from
+ * template). */
+export async function newFromTemplate(page: Page, id: string): Promise<void> {
+  await menuCommand(page, `file.template.${id}`);
+}
+
+/** The canvas's right-click menu, opened with the shell's menu component. */
+export const CONTEXT_MENU = '.menu[aria-label="Canvas context menu"]';
+/** An item of the open context menu whose text has `text`. */
+export const contextItem = (page: Page, text: string): Locator =>
+  page.locator(`${CONTEXT_MENU} .menu-item`, { hasText: text });

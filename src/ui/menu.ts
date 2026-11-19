@@ -107,6 +107,8 @@ export interface MenuItem {
   label: string;
   /** Right-aligned secondary text, usually the shortcut. Text, never markup. */
   hint?: string;
+  /** A longer description, shown as the row's tooltip. Text, never markup. */
+  title?: string;
   /**
    * Markup for a 16px icon, inserted as-is. TRUSTED: pass only markup the
    * application itself produced.
@@ -561,6 +563,7 @@ function itemButton(
   btn.setAttribute('role', menuItemRole(entry));
   if (checkable) btn.setAttribute('aria-checked', String(!!entry.checked));
   if (entry.id !== undefined) btn.dataset.command = entry.id;
+  if (entry.title) btn.title = entry.title;
   if (entry.disabled) btn.setAttribute('aria-disabled', 'true');
   if (entry.submenu) {
     btn.setAttribute('aria-haspopup', 'menu');

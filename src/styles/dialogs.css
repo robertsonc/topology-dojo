@@ -1,126 +1,146 @@
-/* SD-WAN and template wizards, shared dialog shell, shortcut sheet. */
-/* Keyboard-shortcut help overlay. */
-.sdw-card {
-  width: min(980px, 94vw);
+/* The two "new from template" wizards and the keyboard-shortcut sheet. */
+
+/* ── Wizards ──────────────────────────────────────────────────────────────
+   The SD-WAN wizard (src/ui/sdwan-wizard.ts) and the template parameter
+   dialog (src/ui/template-wizard.ts). Each is a shared .dialog on its own
+   scrim: one question per row on the left (a label over a .seg, a slider or
+   a row of .field), a live preview with its counts on the right, Cancel and
+   Create in the foot. The controls come from controls.css; the rules here
+   are layout, the preview box and the slider. */
+.sdw-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--surface-scrim);
 }
+.sdw-card {
+  width: 980px;
+}
+/* The body scrolls between a fixed head and foot. Its scrollbar gutter
+   (.scroll-slim reserves 8px) comes out of the right padding, so the
+   preview's edge lines up with the buttons in the foot. */
 .sdw-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: 20px;
+  gap: 24px;
+  padding-right: 8px;
 }
-@media (max-width: 720px) {
-  .sdw-body {
-    grid-template-columns: 1fr;
-  }
-  .sdw-side {
-    order: -1;
-  }
+.sdw-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
+/* One question: its label, its control and (template dialog) a hint. */
 .sdw-q {
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
 }
 .sdw-label {
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: var(--fg);
+  /* Typography comes from .section-label; this class is the hook. */
+  margin: 0;
 }
+/* A long set of choices wraps inside its well when the dialog is narrow. */
 .sdw-seg {
-  display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  max-width: 100%;
 }
-.sdw-opt[aria-pressed='true'] {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
-}
+/* Per-region rows: a name field and a branch count, in two aligned columns. */
 .sdw-regions {
   display: grid;
-  gap: 6px;
+  align-self: stretch;
+  gap: 8px;
 }
 .sdw-region {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 8px;
 }
-.sdw-region-name {
-  min-width: 0;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-front);
-  color: var(--fg);
-  font: inherit;
-  font-size: 12px;
-}
+/* The preview stays in view while a long form scrolls beside it. `top`
+   equals the body's top padding, so it does not move as scrolling starts. */
 .sdw-side {
   position: sticky;
-  top: 0;
+  top: 4px;
   align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
+/* The frame takes the colour the page is drawn on (the dark canvas, or
+   white in the light theme): the rendered page is letterboxed inside it,
+   and the bars must not show as a second tone. */
 .sdw-preview {
   aspect-ratio: 16 / 10;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--surface-back);
+  background: var(--canvas-bg);
+}
+:root.light .sdw-preview {
+  background: var(--surface-front);
 }
 .sdw-preview svg {
   display: block;
   width: 100%;
   height: 100%;
 }
+/* The counts of what Create will build, or why it cannot be built. */
 .sdw-stats {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--fg);
-  text-align: center;
+  color: var(--fg-strong);
+  font: 500 13px/1.4 var(--font-ui);
+  font-variant-numeric: tabular-nums;
 }
-.sdw-note {
-  margin: 8px 0 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--fg-weak);
-  opacity: 0.8;
+.sdw-stats.sdw-error {
+  color: var(--status-error-fg);
 }
-.sdw-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.sdw-create:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
-/* Template parameter dialog: the SD-WAN wizard's styles, a narrower
-   card, and a slider row for a parameter with a long range. */
-.tpw-card {
-  width: min(780px, 94vw);
-}
-.tpw-card .sdw-q {
-  margin-bottom: 16px;
-}
+.sdw-note,
 .tpw-hint {
-  margin-top: 6px;
+  margin: 0;
+}
+@media (max-width: 720px) {
+  .sdw-scrim {
+    padding: 12px;
+  }
+  .sdw-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .sdw-side {
+    position: static;
+    order: -1;
+  }
+}
+/* A window too short to show the whole preview column: let it scroll. */
+@media (max-height: 560px) {
+  .sdw-side {
+    position: static;
+  }
+}
+
+/* Template parameter dialog: the SD-WAN wizard's layout in a narrower
+   card, with a hint under each question and a slider for a long range. */
+.tpw-card {
+  width: 780px;
+}
+.tpw-card .sdw-form {
+  gap: 16px;
 }
 .tpw-range {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-.tpw-range input {
-  flex: 1;
-  min-width: 0;
-  accent-color: var(--accent);
+  align-self: stretch;
+  gap: 12px;
 }
 .tpw-range output {
   min-width: 2ch;
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
   text-align: right;
   color: var(--fg);
 }
@@ -155,39 +175,46 @@
   font-size: 14px;
   color: var(--fg);
 }
+/* The shortcut sheet: groups flow down three columns, each row says what a
+   command does and then shows its shortcuts as key caps. */
+.help-sheet {
+  width: min(980px, 94vw);
+  font-family: var(--font-ui);
+}
 .help-cols {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px 22px;
+  columns: 3 250px;
+  column-gap: 28px;
+}
+.help-col {
+  margin-bottom: 16px;
+  break-inside: avoid;
 }
 .help-col h4 {
-  margin: 0 0 6px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--accent);
+  margin: 0 0 4px;
+  color: var(--fg-weak);
+  font: 600 12px/1.3 var(--font-ui);
 }
 .help-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  justify-content: space-between;
   gap: 12px;
   padding: 3px 0;
-  font-size: 12px;
   color: var(--fg);
+  font: 400 13px/1.35 var(--font-ui);
+}
+.help-keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 180px;
 }
 .help-row kbd {
-  flex: none;
   padding: 1px 6px;
-  background: var(--surface-front);
-  border: 1px solid var(--line);
   border-radius: var(--radius-xs);
-  font-family: var(--font);
-  font-size: 11px;
-  color: var(--fg-weak);
+  background: var(--surface-field);
+  color: var(--fg);
+  font: 400 12px/1.5 var(--font);
   white-space: nowrap;
-}
-.help-row span {
-  text-align: right;
-  color: var(--fg-weak);
 }

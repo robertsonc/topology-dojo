@@ -1,10 +1,11 @@
 /**
- * The canvas and the chrome floating over it: the canvas is exactly as big as
- * its stage, the on-canvas view controls are on screen and reachable, and a
- * fit leaves the content clear of the panels around it.
+ * The canvas and the chrome around it: the canvas is exactly as big as its
+ * stage, the rail's tools and the zoom control floating in the canvas's
+ * corner are on screen and reachable, and a fit leaves the content clear of
+ * the panels around it.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import { bootEditor, menuCommand } from './helpers.js';
 
 interface Box {
   left: number;
@@ -58,7 +59,35 @@ async function canvasScroll(page: Page): Promise<number[]> {
   );
 }
 
-const CONTROL_IDS = ['ccHand', 'ccZoomIn', 'ccZoom', 'ccZoomOut', 'ccFit'];
+/** The zoom control in the canvas's bottom-right corner, in tab order. */
+const CONTROL_IDS = ['ccZoomOut', 'ccZoom', 'ccZoomIn', 'ccFit'];
+/** The left rail, in tab order: the tools (the hand among them), the
+ * library, the command palette and the shortcut sheet. */
+const RAIL_IDS = [
+  'tSelect',
+  'ccHand',
+  'tLink',
+  'tAnchor',
+  'palette-toggle',
+  'tCommand',
+  'tHelp',
+];
+
+/** The id of what a click in the middle of each element would reach. */
+async function hits(page: Page, ids: string[]): Promise<(string | null)[]> {
+  return page.evaluate(
+    (all) =>
+      all.map((controlId) => {
+        const r = document.getElementById(controlId)!.getBoundingClientRect();
+        const el = document.elementFromPoint(
+          r.left + r.width / 2,
+          r.top + r.height / 2,
+        );
+        return el?.closest('[id]')?.id ?? null;
+      }),
+    ids,
+  );
+}
 
 for (const viewport of [
   { width: 1280, height: 720 },
@@ -83,29 +112,31 @@ for (const viewport of [
     // The canvas is as tall as the stage it sits in, not the whole window.
     expectInside(b.host!, b.stage!);
     // The controls are inside the window and the stage, clear of the node
-    // library and of the frames strip.
+    // library and of the pages bar's chips and toggle.
     expectInside(b.ctrls!, b.viewport!);
     expectInside(b.ctrls!, b.stage!);
     expect(overlaps(b.ctrls!, b.palette!)).toBe(false);
     expect(overlaps(b.ctrls!, b.frames!)).toBe(false);
     expect(overlaps(b.ctrls!, b.pill!)).toBe(false);
+    // The zoom control floats over the canvas itself.
+    expectInside(b.ctrls!, b.host!);
 
-    // Nothing is drawn over them: each button is what a click there hits.
-    for (const id of CONTROL_IDS) {
-      const hit = await page.evaluate((controlId) => {
-        const r = document.getElementById(controlId)!.getBoundingClientRect();
-        const el = document.elementFromPoint(
-          r.left + r.width / 2,
-          r.top + r.height / 2,
-        );
-        return el?.id ?? null;
-      }, id);
-      expect(hit, `a click on #${id} reaches it`).toBe(id);
-    }
+    // Nothing is drawn over them, or over the rail's buttons: each button
+    // is what a click there hits.
+    const ids = [...CONTROL_IDS, ...RAIL_IDS];
+    const reached = await hits(page, ids);
+    ids.forEach((id, i) =>
+      expect(reached[i], `a click on #${id} reaches it`).toBe(id),
+    );
     // They work: zooming in changes the zoom readout.
     const before = await page.locator('#ccZoom').innerText();
     await page.locator('#ccZoomIn').click();
     await expect(page.locator('#ccZoom')).not.toHaveText(before);
+    // Its accessible name holds the figure it shows (label in name).
+    const shown = await page.locator('#ccZoom').innerText();
+    await expect(page.locator('#ccZoom')).toHaveAccessibleName(
+      `Zoom ${shown} — fit view`,
+    );
   });
 
   test(`tabbing through the view controls never scrolls the canvas at ${size}`, async ({
@@ -126,7 +157,14 @@ for (const viewport of [
       await expect(page.locator(`#${id}`)).toBeFocused();
       expect(await canvasScroll(page)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
     }
-    // The floating panels did not move with a scrolled canvas area.
+    // The same along the rail.
+    await page.locator(`#${RAIL_IDS[0]}`).focus();
+    for (const id of RAIL_IDS) {
+      await expect(page.locator(`#${id}`)).toBeFocused();
+      expect(await canvasScroll(page)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+      await page.keyboard.press('Tab');
+    }
+    // The panels did not move with a scrolled canvas area.
     expect((await boxes(page, { p: '#palette' })).p!.top).toBe(paletteTop);
   });
 }
@@ -137,7 +175,9 @@ test('the quick-add picker opens fully inside the visible canvas', async ({
   await page.setViewportSize({ width: 1280, height: 720 });
   await bootEditor(page);
   const b = await boxes(page, { stage: '.stage', host: '.canvas-host' });
-  // Double-click empty canvas low on the stage, right of the sample scene.
+  // Double-click empty canvas low on the stage, right of the sample scene
+  // (above the zoom control in the corner and the pages bar under the
+  // canvas, which take the stage's bottom 44px).
   await page.mouse.dblclick(b.host!.right - 80, b.stage!.bottom - 110);
   await expect(page.locator('.quick-add')).toBeVisible();
   const pop = (await boxes(page, { pop: '.quick-add' })).pop!;
@@ -156,7 +196,8 @@ async function nodeBoxes(page: Page): Promise<Box[]> {
 }
 
 /** Every node is on the visible canvas: right of the node library (when it
- * is open), above the bottom band and inside the canvas box. */
+ * is open), clear of the zoom control and the minimap card floating in the
+ * canvas's corner, and inside the canvas box. */
 async function expectContentVisible(
   page: Page,
   paletteOpen: boolean,
@@ -164,13 +205,18 @@ async function expectContentVisible(
   const b = await boxes(page, {
     host: '.canvas-host',
     palette: '#palette',
-    dock: '#canvas-dock',
+    ctrls: '#canvasCtrls',
+    minimap: '#minimap-dock',
   });
+  const minimapOpen = await page
+    .locator('#minimap-dock')
+    .evaluate((el) => !el.classList.contains('collapsed'));
   const nodes = await nodeBoxes(page);
   expect(nodes.length).toBeGreaterThan(0);
   for (const n of nodes) {
     expectInside(n, b.host!);
-    expect(n.bottom).toBeLessThanOrEqual(b.dock!.top);
+    expect(overlaps(n, b.ctrls!)).toBe(false);
+    if (minimapOpen) expect(overlaps(n, b.minimap!)).toBe(false);
     if (paletteOpen) expect(n.left).toBeGreaterThanOrEqual(b.palette!.right);
   }
   return Math.min(...nodes.map((n) => n.left));
@@ -186,16 +232,19 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await bootEditor(page);
 
-    // The first fit, made as the editor boots.
+    // The first fit, made as the editor boots: past the library, which is
+    // docked beside the 44px rail and ends where the canvas starts.
+    const libraryRight = (await boxes(page, { p: '#palette' })).p!.right;
+    expect(libraryRight).toBe(44 + 208);
     await expect
       .poll(async () => Math.min(...(await nodeBoxes(page)).map((n) => n.left)))
-      .toBeGreaterThan(174);
+      .toBeGreaterThan(libraryRight);
     await expectContentVisible(page, true);
 
-    // Each way of asking for a fit: the shortcut, the toolbar, the canvas.
+    // Each way of asking for a fit: the shortcut, the View menu, the canvas.
     for (const fit of [
       () => page.keyboard.press('0'),
-      () => page.locator('#tFit').click(),
+      () => menuCommand(page, 'view.fit'),
       () => page.locator('#ccFit').click(),
       () => page.locator('#ccZoom').click(),
     ]) {
@@ -204,6 +253,14 @@ for (const viewport of [
       await expectContentVisible(page, true);
     }
     const leftWithPalette = await expectContentVisible(page, true);
+
+    // With the minimap card open above the zoom control (it starts
+    // closed), a fit keeps clear of both.
+    await page.locator('#minimap-toggle').click();
+    await expect(page.locator('#minimap')).toBeVisible();
+    await page.keyboard.press('0');
+    await expectContentVisible(page, true);
+    await page.locator('#minimap-toggle').click();
 
     // A frame switch fits the new frame the same way.
     await page.locator('#dupPage').click();
@@ -218,3 +275,160 @@ for (const viewport of [
     expect(leftWithout).toBeLessThan(leftWithPalette);
   });
 }
+
+// The pages bar in a canvas column of every size: 720px is a 1,440px window
+// at 200% zoom (both panels still docked), 1,024px the narrowest desktop,
+// 390px a phone. Its page controls are on screen, nothing in it is drawn
+// over, and the canvas options keep the right end.
+for (const viewport of [
+  { width: 720, height: 450 },
+  { width: 1024, height: 900 },
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  const size = `${viewport.width}×${viewport.height}`;
+  test(`the pages bar keeps its controls on screen at ${size}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await bootEditor(page);
+    // Enough pages that the chips must scroll.
+    for (let i = 0; i < 12; i++) await page.locator('#addPage').click();
+    await expect(page.locator('#frames-ind')).toHaveText('13/13');
+
+    const b = await boxes(page, {
+      bar: '#pagesBar',
+      dock: '#frames-dock',
+      toggle: '#frames-toggle',
+      strip: '#filmstrip',
+      play: '#playFlip',
+      add: '#addPage',
+      opts: '.view-opts',
+      minimap: '#minimap-toggle',
+    });
+    // Play and Add page sit either side of the chips, not in their scroller:
+    // with the chips scrolled to the last page, both are still in view.
+    for (const name of ['toggle', 'play', 'add'] as const) {
+      expectInside(b[name]!, b.dock!);
+      expect(overlaps(b[name]!, b.strip!), name).toBe(false);
+    }
+    expect(b.play!.right).toBeLessThanOrEqual(b.strip!.left + 0.5);
+    expect(b.add!.left).toBeGreaterThanOrEqual(b.strip!.right - 0.5);
+    // The canvas options are inside the bar and clear of the pages.
+    expectInside(b.opts!, b.bar!);
+    expectInside(b.minimap!, b.viewport!);
+    expect(overlaps(b.opts!, b.dock!)).toBe(false);
+    const dock = await page
+      .locator('#frames-dock')
+      .evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(dock).toBeLessThanOrEqual(0);
+  });
+}
+
+test('on a phone the status bar keeps the problems indicator on screen', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  const problems = page.locator('#sb-problems');
+  await expect(problems).toBeVisible();
+  const box = (await problems.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  // Nothing in the bar is cut off: what does not fit has stepped aside.
+  const bar = await page
+    .locator('#statusbar')
+    .evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(bar).toBeLessThanOrEqual(0);
+  await expect(
+    page.locator('#statusbar span', { hasText: 'nodes' }).first(),
+  ).toBeVisible();
+});
+
+test('with the properties panel closed the canvas column runs to the window edge', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await bootEditor(page);
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  const b = await boxes(page, {
+    bar: '#pagesBar',
+    area: '#canvas-area',
+    toggle: '#inspector-toggle',
+  });
+  // No empty column is left where the panel was: the canvas and the pages
+  // bar under it reach the right edge of the window.
+  expect(b.bar!.right).toBeGreaterThanOrEqual(b.viewport!.right - 0.5);
+  expect(b.area!.right).toBeGreaterThanOrEqual(b.viewport!.right - 0.5);
+  // The toggle floats over the canvas's top-right corner, on one line, and
+  // a click there reaches it.
+  expectInside(b.toggle!, b.area!);
+  expect(b.toggle!.bottom - b.toggle!.top).toBeLessThan(28);
+  expect(await hits(page, ['inspector-toggle'])).toEqual(['inspector-toggle']);
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+});
+
+test('on a phone the open library ends above the pages bar', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  await page.locator('#palette-toggle').click();
+  await expect(page.locator('#palette')).not.toHaveClass(/collapsed/);
+  const b = await boxes(page, { palette: '#palette', bar: '#pagesBar' });
+  // The bar takes two rows here; the drawer stops at its top, so the page
+  // toggle under it can still be reached.
+  expect(b.palette!.bottom).toBeLessThanOrEqual(b.bar!.top + 0.5);
+  // A click in the middle of the toggle reaches it (or its count inside).
+  const reached = await page.evaluate(() => {
+    const r = document.getElementById('frames-toggle')!.getBoundingClientRect();
+    const el = document.elementFromPoint(
+      r.left + r.width / 2,
+      r.top + r.height / 2,
+    );
+    return !!el?.closest('#frames-toggle');
+  });
+  expect(reached).toBe(true);
+});
+
+test('on a phone the document title keeps room to be read', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  // Present steps aside (it is in File and on its key) so the title is more
+  // than a letter wide.
+  await expect(page.locator('#tPresent')).toBeHidden();
+  const title = (await page.locator('#docTitle').boundingBox())!;
+  expect(title.width).toBeGreaterThanOrEqual(60);
+});
+
+test('the status bar draws the focus ring of its button whole', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // Tab onto the problems indicator, so its ring shows.
+  await page.locator('#sb-problems').focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#sb-problems')).toBeFocused();
+  const fits = await page.evaluate(() => {
+    const b = document.querySelector('#sb-problems')!;
+    const bar = document.querySelector('#statusbar')!;
+    const cs = getComputedStyle(b);
+    const reach =
+      parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset || '0');
+    const r = b.getBoundingClientRect();
+    const box = bar.getBoundingClientRect();
+    // The bar clips at its padding box: inside its top border.
+    const top = box.top + parseFloat(getComputedStyle(bar).borderTopWidth);
+    return {
+      above: r.top - reach - top,
+      below: box.bottom - (r.bottom + reach),
+    };
+  });
+  expect(fits.above).toBeGreaterThanOrEqual(0);
+  expect(fits.below).toBeGreaterThanOrEqual(0);
+});

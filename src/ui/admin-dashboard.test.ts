@@ -73,9 +73,9 @@ describe('renderRosterHtml', () => {
     const html = renderRosterHtml(summary(), null, {});
     expect(html).toContain('1 user · 3 logins recorded');
     expect(html).toContain('Metadata only — no diagram contents.');
-    expect(html).toContain('alice (Alice)');
+    expect(html).toContain('<span class="data">alice</span> (Alice)');
     expect(html).toContain('3 logins');
-    expect(html).toContain('Last 2026-07-17 12:30');
+    expect(html).toContain('Last <span class="data">2026-07-17 12:30</span>');
     expect(html).toContain('admin-ws-toggle');
     expect(html).toContain('>Workspaces</button>');
   });
@@ -209,7 +209,7 @@ describe('renderSessionsHtml', () => {
     expect(html).toContain('Agent Sessions');
     expect(html).toContain('alice');
     expect(html).toContain('3 calls');
-    expect(html).toContain('session abc123');
+    expect(html).toContain('session <span class="data">abc123</span>');
     expect(html).toContain('>Trail</button>');
     expect(html).toContain('no prompts, arguments, or diagram contents');
   });
@@ -295,6 +295,11 @@ describe('renderSessionTrailHtml', () => {
     expect(html).toContain('list_templates');
     expect(html).toContain('success');
     expect(html).toContain('error');
+    // The tool name and the time are separate data, so the time never
+    // breaks across lines.
+    expect(html).toContain(
+      '<span class="admin-trail-what"><span class="data">list_templates</span> · <span class="data admin-trail-when">2026-08-19 09:00</span></span>',
+    );
   });
 });
 

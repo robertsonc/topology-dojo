@@ -47,10 +47,20 @@ test('EdgeHA fixture in light theme', async ({ page }) => {
 test('narrow viewport keeps core controls reachable', async ({ page }) => {
   await page.setViewportSize({ width: 480, height: 800 });
   await bootEditor(page);
-  // Icon-only toolbar controls stay present (labels hide responsively).
+  // Icon-only toolbar controls stay present (labels hide responsively), and
+  // the folded menu that holds Download JSON.
   await expect(page.locator('#tUndo')).toBeVisible();
-  await expect(page.locator('#fSave')).toBeVisible();
+  await expect(page.locator('#menuMore')).toBeVisible();
   await expect(page.locator('#tSelect')).toBeVisible();
+  // Download JSON is reachable from it: Menu ▸ File ▸ Download JSON.
+  await page.locator('#menuMore').click();
+  await page
+    .locator('.menu-layer')
+    .getByRole('menuitem', { name: 'File', exact: true })
+    .click();
+  await expect(
+    page.locator('.menu-layer [data-command="file.download"]'),
+  ).toBeVisible();
 });
 
 test('phone viewport keeps the canvas visible and usable (#221)', async ({

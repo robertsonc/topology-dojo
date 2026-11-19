@@ -2,7 +2,7 @@
  * The frames strip: renaming a frame, and the flipbook player's way out.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor } from './helpers.js';
+import { bootEditor, inspectorSection, inspectorTab } from './helpers.js';
 
 const frameName = (page: Page, index: number) =>
   page.locator(`#filmstrip [data-name="${index}"]`);
@@ -30,6 +30,7 @@ test('Escape cancels a frame rename; Enter and clicking away keep it', async ({
   await page.keyboard.press('Enter');
   await expect(frameName(page, 0)).toHaveText('Core');
 
+  await inspectorTab(page, 'document');
   await frameName(page, 1).dblclick();
   await page.keyboard.press('Control+a');
   await page.keyboard.type('Edge');
@@ -43,7 +44,8 @@ async function expectPlayButton(
   action: 'play' | 'pause',
 ): Promise<void> {
   const button = page.locator('#playFlip');
-  await expect(button).toHaveText(action);
+  await expect(button).toHaveText(action, { ignoreCase: true });
+  await expect(button).toHaveAccessibleName(action, { ignoreCase: true });
   await expect(button.locator('.icon use')).toHaveAttribute(
     'href',
     `#i-${action}`,
@@ -56,6 +58,7 @@ async function startFastPlayback(page: Page): Promise<void> {
   await expect(page.locator('#frames-ind')).toHaveText('2/2');
   for (const index of [1, 0]) {
     await page.locator(`#filmstrip [data-page="${index}"]`).click();
+    await inspectorSection(page, 'Playback');
     await page.locator('#p-dur').fill('150');
     await page.locator('#p-dur').press('Tab');
   }
@@ -98,4 +101,49 @@ test('choosing a frame with the arrow keys stops the flipbook player', async ({
   // on the canvas, so the arrows flip frames.
   await page.keyboard.press('ArrowRight');
   await expectStopped(page);
+});
+
+test('the page chips work from the keyboard', async ({ page }) => {
+  await bootEditor(page);
+  await page.locator('#addPage').click();
+  await page.locator('#addPage').click();
+  await expect(page.locator('#frames-ind')).toHaveText('3/3');
+  const chip = (index: number) =>
+    page.locator(`#filmstrip [data-page="${index}"] .frame-sel`);
+  // Each chip is a button named for its page; the current one says so.
+  await expect(chip(0)).toHaveAccessibleName('Page 1 Frame 1');
+  await expect(chip(2)).toHaveAttribute('aria-current', 'page');
+  await expect(chip(0)).not.toHaveAttribute('aria-current', /.*/);
+
+  // Tab reaches the first chip from the play button, then its delete
+  // button, then the next chip.
+  await page.locator('#playFlip').focus();
+  await page.keyboard.press('Tab');
+  await expect(chip(0)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('[data-del="0"]')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(chip(1)).toBeFocused();
+
+  // Enter goes to that page and leaves focus on its chip.
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('2/3');
+  await expect(chip(1)).toHaveAttribute('aria-current', 'page');
+  await expect(chip(2)).not.toHaveAttribute('aria-current', /.*/);
+  await expect(chip(1)).toBeFocused();
+
+  // F2 renames it; Enter keeps the name and gives focus back to the chip.
+  await page.keyboard.press('F2');
+  await expect(page.locator('#filmstrip .frame-rename')).toBeFocused();
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type('Core');
+  await page.keyboard.press('Enter');
+  await expect(frameName(page, 1)).toHaveText('Core');
+  await expect(chip(1)).toBeFocused();
+  // Escape cancels a rename the same way.
+  await page.keyboard.press('F2');
+  await page.keyboard.type('CANCELLED');
+  await page.keyboard.press('Escape');
+  await expect(frameName(page, 1)).toHaveText('Core');
+  await expect(chip(1)).toBeFocused();
 });

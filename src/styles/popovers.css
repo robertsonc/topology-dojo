@@ -92,10 +92,6 @@
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
-.user-menu .um-head b {
-  color: var(--fg);
-  font-weight: 700;
-}
 .user-menu .um-item {
   display: block;
   padding: 7px 8px;
@@ -107,27 +103,6 @@
 .user-menu .um-item:hover {
   background: var(--surface-hover);
   color: var(--fg-strong);
-}
-/* Anonymous visitor: the account chip becomes a sign-in prompt. */
-.user-chip.signed-out .uc-dot,
-.user-chip.signed-out .uc-caret {
-  display: none;
-}
-.user-chip.signed-out {
-  border-color: var(--accent);
-  color: var(--accent);
-  /* The toolbar scrolls sideways when it is wider than the window, and
-     the account area is at its far end. Pin the sign-in chip to the
-     visible right edge so the offer is on screen without scrolling. */
-  position: sticky;
-  right: 0;
-  z-index: 2;
-  background: var(--surface-front);
-  box-shadow: -10px 0 12px -6px var(--surface-scrim);
-}
-/* Narrow toolbars drop chip labels; this chip is only its label. */
-.user-chip.signed-out .tlabel {
-  display: inline;
 }
 .sign-in-prompt {
   max-width: 250px;

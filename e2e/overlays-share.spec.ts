@@ -49,6 +49,13 @@ test('a share link opens as a shared copy without touching local work (#202)', a
     'This link is public',
   );
   await expect(page.locator('#sharedUnpublish')).toBeVisible();
+  // The banner's actions are the shell's shared buttons, in sentence case.
+  await expect(page.locator('#sharedBanner .tbtn')).toHaveCount(0);
+  await expect(page.locator('#sharedBanner button')).toHaveText([
+    'Keep this copy',
+    'Back to my document',
+    'Unpublish link',
+  ]);
 
   // The local autosave still holds the user's own document; the shared copy
   // lives in its own slot.

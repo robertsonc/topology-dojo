@@ -1,11 +1,18 @@
 # Topology Dojo User Guide
 
 **Last reviewed:** 2026-11-13 (against `main` at `e99b012`). Updated
-2026-11-19 on the branch of draft PR #326 (the first part of
-[proposal 0013](proposals/0013-ui-overhaul.md), not merged): passages that
-named a control by a symbol now name it by its text or tooltip, "View
-preferences" no longer lists a glass setting, and "Brand palette" says what
-a palette recolours in the app chrome. The rest of the guide was not
+2026-11-19 for PR #326, the first part of
+[proposal 0013](proposals/0013-ui-overhaul.md), merged that day as `e9d0d7f`:
+passages that named a control by a symbol now name it by its text or tooltip,
+"View preferences" no longer lists a glass setting, and "Brand palette" says
+what a palette recolours in the app chrome. Updated 2026-11-19 for PR #327
+(draft, not merged), the command registry: "Keyboard reference" now says where
+the shortcut sheet lists the keys. No key changed, and the table was checked
+against the sheet's rows in `src/ui/commands.ts`. Updated again for the rebuilt
+shell and properties panel of the same proposal: the passages on the toolbar,
+the Node library, the pages strip and the canvas controls now describe the top
+bar and its menus, the left rail, the docked library, the pages bar, the zoom
+control, the selection bar and the command palette. The rest of the guide was not
 re-checked.
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
@@ -64,7 +71,8 @@ the page so it can be edited independently.
 3. Complete GitHub authorization. Topology Dojo requests the **read:user**
    scope to identify the owner of drafts and workspaces.
 4. After the editor opens, the account chip shows the GitHub login. Open it to
-   see **Signed in as** and **Sign out**.
+   see **Signed in as**, **API keys**, **Authoring preferences**, **Theme**
+   and **Sign out**.
 
 Signing out clears the hosted browser session but does not intentionally erase
 the document autosaved in that browser.
@@ -168,7 +176,7 @@ shared, or public.
 
 | Data                                      | Storage location                                                               | Who can reach it                                                      | Retention and recovery                                                                                                                                                                                                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Normal browser draft                      | Browser localStorage on the current browser/profile                            | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **download** for a portable backup.                                                                                                |
+| Normal browser draft                      | Browser localStorage on the current browser/profile                            | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **File → Download JSON** for a portable backup.                                                                                    |
 | Shared-link working copy                  | A separate browser localStorage slot                                           | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **keep this copy** to adopt it or **back to my document** to discard it from the canvas.                                                                                                   |
 | Downloaded JSON                           | A file chosen by the browser                                                   | Anyone who receives the file                                          | Full portable document backup under the user's control.                                                                                                                                                                                                                          |
 | Local MCP private draft                   | Memory in the local MCP process                                                | The connected local MCP client                                        | Treat as temporary. Export or retrieve the JSON before stopping the process.                                                                                                                                                                                                     |
@@ -186,24 +194,36 @@ reloaded document normally opens on its first page.
 
 ## 4. Editor anatomy
 
-The editor is organized into six areas.
+The editor is organized into seven areas.
 
-1. **Top toolbar.** File actions (including **share** on hosted
-   deployments), undo and redo, **svg**, **png**, the **export…** menu
-   (PDF, flipbook HTML, draw.io, Visio, PowerPoint, Mermaid, clipboard PNG,
-   selection-only exports), templates,
-   drawing tools, view controls (including **Present**), layout actions,
-   selection actions, and the optional workspace/profile/admin/account chips.
-2. **Node library.** A searchable, categorized catalog on the left. It also
-   holds document custom nodes and stencils.
-3. **Canvas.** The current page, selection overlay, smart guides, link handles,
-   problem badges, zoom/pan controls, and a **mini style bar** floating above
-   the selection — color swatches and frame emphasis for nodes (applied to
-   every selected node), plus link type and routing for a selected link. It
-   hides during gestures; the Properties panel remains the complete surface.
-4. **Minimap.** A small overview inside the Node library.
-5. **Pages strip.** The filmstrip along the bottom, including playback and page
-   management.
+1. **Top bar.** The document: the **File**, **Edit**, **View**, **Arrange**
+   and **Help** menus, the document title (the same title as in Properties)
+   with the save state beside it, **Undo** and **Redo**, **Tidy** with the
+   layout menu beside it, then **Present**, **Export** (every export format,
+   see [Save, import, export, and share](#11-save-import-export-and-share)),
+   **Share** on hosted deployments, and the optional workspace and account
+   chips. The account menu holds **API keys**, **Authoring preferences**,
+   **Admin** (for the deployment's owner), **Theme** and **Sign out**. In a
+   window 1,100px wide or less the five menus fold into one **Menu** button.
+2. **Left rail.** The tools (**select**, **hand**, **draw link**, **drop
+   anchor**, also in **Edit → Tools**), the Node library toggle and, at the
+   bottom, the command palette and the shortcut reference.
+3. **Node library.** A searchable, categorized catalog docked beside the rail.
+   It also holds document custom nodes and stencils. Hiding it gives its
+   width to the canvas.
+4. **Canvas.** The current page, selection overlay, smart guides, link handles,
+   problem badges, and a **selection bar** floating above the selection:
+   color swatches and page emphasis for nodes (applied to every selected
+   node), link type and routing for a selected link, then **Bring to front**,
+   **Send to back** and **Lock**. With two or more nodes selected it also
+   offers the six align buttons and the two distribute buttons (distribute
+   needs three nodes). It hides during gestures; the Properties panel remains
+   the complete surface. The zoom control floats in the canvas's bottom-right
+   corner (zoom out, the zoom figure, which fits the view when clicked, zoom
+   in and fit to content), and the minimap opens in a card above it.
+5. **Pages bar.** Docked under the canvas: the pages toggle, **Play**, the page
+   chips, **Duplicate page** and **Add page**; at its right end the grid, snap and Calm
+   Canvas toggles, **Display settings** and the minimap toggle.
 6. **Properties and Problems.** A resizable right column. Properties follow the
    selection; Problems shows validation and layout findings. Each finding names
    elements by their label. Click one to ring every element it refers to and
@@ -216,17 +236,27 @@ The status bar reports the active tool, cursor location, element counts, zoom,
 history availability, and current error/warning counts.
 
 Many buttons show an icon and no text. This guide names such a button by its
-tooltip, which appears when the pointer rests on it: **Undo** is the toolbar
-button whose tooltip reads "Undo (Ctrl/Cmd+Z)".
+tooltip, which appears when the pointer rests on it: **Undo** is the top bar
+button whose tooltip reads "Undo (Ctrl/Cmd+Z)". A menu item is named by its
+path, as **File → New**.
 
 Use **B**, **M**, **P**, and **F** to toggle the Node library, minimap,
-Properties, and pages strip. The palette, filmstrip, minimap, Problems panel,
-and Properties panel remember their local display state when browser storage is
-available. On a phone-width viewport (640px and below) the Node library and
-Properties panel start collapsed, and Properties opens as a drawer over the
-canvas so the drawing surface stays visible and reachable.
+Properties, and pages bar; **View** lists the same toggles with a check mark
+for each one that is showing. The Node library, pages bar, minimap, Problems
+panel, and Properties panel remember their local display state when browser
+storage is available. On a phone-width viewport (640px and below) the Node
+library and Properties panel start collapsed and open as drawers over the
+canvas, so the drawing surface stays visible and reachable.
 
-Use **Ctrl/Cmd+F** to find a node, link or zone on any frame. Nodes are
+Press **Ctrl/Cmd+K**, or choose the rail's **Command palette** button or
+**Help → Command palette**, to search everything the editor can do from one
+field: every command that can run now (with its shortcut), **Add** followed by
+a node type (placed at the centre of the view), **Go to** followed by the
+label of a node, link or zone on any page, and **Go to page** followed by its
+number and name. The arrow keys move through the results, Enter runs the one
+highlighted, and Escape closes the palette and puts focus back where it was.
+
+Use **Ctrl/Cmd+F** to find a node, link or zone on any page. Nodes are
 searched by label, identifier, type, sublabel, and metadata keys/values (find
 a node by the IP address, hostname, or model stored on it); links by label,
 port label, identifier, type and metadata; zones by label. Matches on the
@@ -235,26 +265,30 @@ choosing one goes to that frame, selects the element and centres it. With the
 box empty it lists the current frame's nodes.
 
 The minimap provides an overview of content outside the current viewport.
+It starts closed; open it with **M**, the minimap button at the right end of
+the pages bar, or **View → Minimap**, and it stays the way you leave it.
 
 ## 5. Build and edit a topology
 
 ### A practical first-diagram workflow
 
-1. Choose **new** or select an item from **template…**.
+1. Choose **File → New**, or a template from **File → New from template**.
 2. Set the document title and page name in Properties while nothing is
    selected.
 3. Search the Node library and click node types to add them.
 4. Move and label nodes, then connect them.
 5. Add zones, flows, markers, layers, and a legend if they help explain the
    topology.
-6. Run **tidy**, **balance**, or an **arrange…** algorithm.
+6. Run **Tidy**, **Balance**, or an **Arrange → Auto-arrange** algorithm.
 7. Review **Problems** and resolve errors or relevant warnings.
 8. Add pages, captions, emphasis, and playback timing if the diagram tells a
    sequence.
-9. Wait for **✓ saved**, then choose **download** for a portable JSON backup.
-10. Export the current frame as **svg** or **png**, pick another format from
-    **export…** (see [Save, import, export, and share](#11-save-import-export-and-share)),
-    or publish a public share link.
+9. Wait for **✓ saved**, then choose **File → Download JSON** for a portable
+   JSON backup.
+10. Export the current page from the top bar's **Export** menu (SVG, PNG and
+    the other formats; see
+    [Save, import, export, and share](#11-save-import-export-and-share)), or
+    publish a public share link.
 
 ### Add and move nodes
 
@@ -284,16 +318,19 @@ The minimap provides an overview of content outside the current viewport.
 - Use the arrow keys for a small nudge; hold Shift for a ten-times nudge.
 - Lock important items with **Ctrl/Cmd+L** or the context menu so an accidental
   drag does not move them. A locked node also stays put through **tidy**,
-  **balance** and **arrange…**: the other nodes make room around it.
+  **balance** and **Arrange → Auto-arrange**: the other nodes make room around it.
 - Use **[** and **]** for one-step stacking changes, or add Ctrl/Cmd to send an
   item fully back or front.
 
-When multiple nodes are selected, the toolbar exposes:
+When multiple nodes are selected, the selection bar and **Arrange → Align**
+and **Arrange → Distribute** offer:
 
 - Align left, horizontal centers, right, top, vertical middles, or bottom.
-- Distribute horizontally or vertically.
-- **select…** actions for **same type**, **same color**, **connected (grow)**,
-  **invert**, and **all**.
+- Distribute horizontally or vertically (three or more nodes).
+
+**Edit → Select** grows or changes the selection: **Same type**, **Same
+color**, **Connected nodes** and **Invert**; **Edit → Select all** takes
+everything on the page.
 
 ### Create links
 
@@ -343,8 +380,8 @@ anchor box as a faint dashed outline.
 The anchor box is **on, with Distribute ends, for new work**: a **new**
 document, the starter templates, the SD-WAN generator, and anything an agent
 creates over MCP (`create_topology`, `add_page`, `build_flow_topology`,
-`create_workspace`). A frame added with the pages strip's **frame** button
-follows the frame you are on. Documents saved before this, the first-run
+`create_workspace`). A page added with the pages bar's **Add page** button
+follows the page you are on. Documents saved before this, the first-run
 sample scene, and imported files keep the classic attachment until you turn
 the switch on; nothing is re-routed behind your back.
 
@@ -417,17 +454,17 @@ positions around its auto position; the center cell restores auto placement.
 - Copy only appearance with **Ctrl/Cmd+Alt+C**, then select compatible targets
   and use **Ctrl/Cmd+Alt+V**. The Properties panel also shows **copy** and
   **paste** buttons in its **Format** row.
-- Delete with Delete/Backspace or the toolbar **delete** action.
+- Delete with Delete/Backspace or **Edit → Delete**.
 
 Format painting copies visual fields, not element identity, endpoints,
 waypoints, or labels. Deleting a node or anchor also removes or repairs
 dependent links, marker targets, zone memberships, and flow routes so normal
 editing does not leave avoidable dangling references.
 
-Undo and redo are available from the toolbar or with **Ctrl/Cmd+Z** and
-**Ctrl/Cmd+Shift+Z**. Each page keeps its own edit history when switching
-between pages. Page deletion has its own short-lived **undo delete** action in
-the filmstrip.
+Undo and redo are available from the top bar, **Edit**, or with **Ctrl/Cmd+Z**
+and **Ctrl/Cmd+Shift+Z**. Each page keeps its own edit history when switching
+between pages. Page deletion has its own short-lived **Undo delete** action in
+the pages bar.
 
 ### Context menus
 
@@ -435,7 +472,7 @@ Right-click a node selection for:
 
 - **Rename** (one node), **Duplicate**, **Cut**, **Copy**, **Copy format**,
   and **Paste format**;
-- **Emphasize on this frame**;
+- **Emphasize on this page**;
 - **Analyze path**, when exactly two nodes are selected (see
   [Analyze a path between two nodes](#analyze-a-path-between-two-nodes));
 - **Group into zone**, **Save as stencil…**, and **Add policy marker**;
@@ -444,12 +481,17 @@ Right-click a node selection for:
 Right-click a link for:
 
 - **Swap endpoints** and **Straighten (clear bends)**;
-- format painting and frame emphasis;
+- format painting and page emphasis;
 - stacking, lock, and delete actions.
 
 Right-click empty canvas for **Paste here**, **Paste in place**,
-**Select all**, **Tidy layout**, **Balance layout**, **Auto-place labels**, and
-**Fit page to content**.
+**Select all**, **Copy page as image**, **Tidy layout**, **Balance layout**,
+**Auto-place labels**, and **Fit page to content**.
+
+Without a pointer, press **Shift+F10** or the menu key while the keyboard is
+on the canvas (press Escape first if a control has focus): the menu opens on
+its first item for the current selection, or for the empty canvas when nothing
+is selected.
 
 **Auto-place labels** moves each node's label (its **Placement**) to the side
 crossed by the fewest links, so a hub whose links fan downward gets its name
@@ -459,10 +501,26 @@ by hand (Label X / Label Y) are left alone, and the whole pass is one undo
 step. Agents use **auto_place_labels**; generated SD-WAN fabrics are placed this
 way automatically.
 
-Context menus support Up/Down, Enter, and Escape. Dialogs and menus keep Tab
-focus inside the open overlay and restore focus when closed.
+The context menu and the top bar's menus show each item's shortcut beside it
+and grey out what cannot run on the current selection. They support Up/Down,
+Home/End, typing an item's first letters, Enter, and Escape; in a menu,
+Right opens a submenu and Left closes it, and on the menu bar Left and Right
+move to the neighbouring menu. Dialogs keep Tab focus inside the open overlay;
+Tab closes a menu. Both restore focus when closed.
 
 ### Keyboard reference
+
+The editor itself lists its shortcuts. Press **?** or choose the toolbar
+button whose tooltip reads "Keyboard shortcuts (?)" to open the shortcut
+sheet. It has one row per command that has a key, in the groups File, Edit,
+Selection, Arrange, Tools, View, Frames and Help; each row says what the
+command does and shows each of its shortcuts as a key cap (a command with two
+shortcuts, such as redo, shows two). After those come four more groups: Mouse
+and touch, Dialogs and menus, Presentation, and Find and the node library.
+The table below is a summary; where the two differ, the sheet is right. A
+toolbar button whose command has a key names its first shortcut in brackets in
+its tooltip. (This describes the sheet as of PR #327, not yet merged; until it
+merges, the sheet's groups are Tools, Edit, Select, Canvas, and Dialogs & menus.)
 
 | Keys                               | Action                                                                        |
 | ---------------------------------- | ----------------------------------------------------------------------------- |
@@ -471,9 +529,9 @@ focus inside the open overlay and restore focus when closed.
 | A                                  | Drop anchor                                                                   |
 | Space or H                         | Hand tool; drag to pan                                                        |
 | Ctrl/Cmd+Z                         | Undo                                                                          |
-| Ctrl/Cmd+Shift+Z or Ctrl+Y         | Redo                                                                          |
+| Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y     | Redo                                                                          |
 | Ctrl/Cmd+C, X, V                   | Copy, cut, paste                                                              |
-| Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any frame)                               |
+| Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any page)                                |
 | F2 or Enter                        | Rename the selected node, link or zone                                        |
 | Ctrl/Cmd+Alt+C                     | Copy format                                                                   |
 | Ctrl/Cmd+Alt+V                     | Paste format onto the selection                                               |
@@ -485,7 +543,7 @@ focus inside the open overlay and restore focus when closed.
 | Ctrl/Cmd+A                         | Select all                                                                    |
 | Shift-click or Ctrl/Cmd-click      | Add to or remove from the selection (nodes, anchors, links)                   |
 | Arrow keys                         | Nudge; Shift makes the step ten times larger                                  |
-| Left/Right Arrow with no selection | Move to the previous or next page                                             |
+| Left/Right Arrow with no selection | Move to the previous or next frame (page)                                     |
 | Mouse wheel                        | Zoom toward the cursor                                                        |
 | Two-finger slide (trackpad)        | Pan                                                                           |
 | Pinch (trackpad), Ctrl/Cmd+wheel   | Zoom toward the cursor                                                        |
@@ -497,7 +555,8 @@ focus inside the open overlay and restore focus when closed.
 | Shift+2                            | Zoom to the selection (fit to content when nothing is selected)               |
 | Ctrl/Cmd+S                         | Download the document as JSON                                                 |
 | Ctrl/Cmd+O                         | Open a file                                                                   |
-| Ctrl/Cmd+F                         | Find a node, link or zone on any frame and jump to it                         |
+| Ctrl/Cmd+F                         | Find a node, link or zone on any page and jump to it                          |
+| Ctrl/Cmd+K                         | Open the command palette                                                      |
 | Double-click node/link/zone        | Rename in place (Enter commits, Escape cancels)                               |
 | Double-click empty canvas          | Quick-add: type to pick a node type, Enter places it                          |
 | Ctrl/Cmd+click                     | Follow an element's hyperlink (when `href` is set)                            |
@@ -506,7 +565,7 @@ focus inside the open overlay and restore focus when closed.
 | G                                  | Toggle snap                                                                   |
 | M or P                             | Toggle minimap or Properties                                                  |
 | B                                  | Toggle Node library                                                           |
-| F                                  | Toggle pages strip                                                            |
+| F                                  | Toggle pages bar                                                              |
 | C                                  | Calm Canvas                                                                   |
 | T                                  | Tidy layout                                                                   |
 | Shift+T                            | Balance layout                                                                |
@@ -755,7 +814,7 @@ Properties; nothing is drawn that the document does not say.
 3. **Tiers** (node Properties → _Wiring sheet_ → **Tier**). Declare the role
    rows top → bottom (gateways / distribution / core) and tag each node.
    The **tiered** layout (MCP `layout_topology` algorithm `tiered`; the
-   editor's **arrange…** menu does not offer it) rows nodes by tier, keeps nodes that share a zone together as a group, orders each
+   editor's **Arrange → Auto-arrange** menu does not offer it) rows nodes by tier, keeps nodes that share a zone together as a group, orders each
    row so the cable fan does not cross itself, places `-01` / `-02` pairs
    symmetric about the page centre (`mirror`), pins every tiered link end to
    the face that looks at the other tier, reserves the margins the port
@@ -807,8 +866,7 @@ values, overlap, crowding, and off-page content.
 - Expand **Problems** to see details.
 - Select a problem to switch to its page and focus the related element when one
   is available.
-- Turn on-canvas problem badges on or off with the toolbar button whose
-  tooltip reads **Toggle on-canvas problem badges**.
+- Turn on-canvas problem badges on or off with **View → Problem badges**.
 - Click a badge to open the related problem.
 
 Rendering is intentionally tolerant of many warnings so a diagram can remain
@@ -817,22 +875,26 @@ warnings for visual quality.
 
 ### Layout actions
 
-- **tidy** or **T**: snap to grid, reduce overlaps, and keep the current page in
-  bounds.
-- **balance** or **Shift+T**: tidy, align rows/columns, and center the result.
-- **arrange…**: rebuild the current page using **hierarchical**, **grid**,
-  **circular**, or **force-directed** layout. (The **tiered** wiring-sheet
+The top bar's **Tidy** button runs tidy; the menu beside it, and
+**Arrange**, hold the rest.
+
+- **Tidy** or **T**: snap to grid, reduce overlaps, and keep the current page
+  in bounds.
+- **Balance** or **Shift+T**: tidy, align rows/columns, and center the result.
+- **Arrange → Auto-arrange**: rebuild the current page using **hierarchical**,
+  **grid**, **circular**, or **force-directed** layout. (The **tiered** wiring-sheet
   layout is available through MCP `layout_topology` only.) On a page with
   zones, each zone's members stay together: the algorithm arranges the nodes
   inside each zone, and the zones are then packed side by side.
 - Locked nodes are never moved by tidy, balance or arrange. Balance lines a
   row or column up on its locked member, and skips re-centring the page.
-- **fit to content**: resize the page around its current content, including
+- **Fit page to content**: resize the page around its current content, including
   zone boxes and labels placed outside their nodes. SVG, PNG, and PDF exports
   render the page frame; if drawn content still extends past it, the export is
   widened to include it. A document with a **Sheet frame** always exports
   exactly its frame.
-- **Fit view** or **0**: change only the viewport so content is visible.
+- **View → Fit to content**, the zoom control's fit button, or **0**: change
+  only the viewport so content is visible.
 
 Tidy/Balance can grow the page when needed. Layout operations are undoable.
 After any automatic arrangement, review meaningful manual routing and run
@@ -840,24 +902,25 @@ Problems again.
 
 ## 9. Pages, playback, captions, and emphasis
 
-The pages strip shows the current page number and total.
+The pages bar under the canvas shows the current page number and total.
 
-- Choose **frame** (the button with a plus icon; its tooltip reads "Add blank
-  frame") to add a blank page.
-- Choose **duplicate** to deep-copy the current page.
-- Double-click a page name to rename it.
+- Choose **Add page** (the button with a plus icon; its tooltip reads "Add
+  blank page") to add a blank page.
+- Choose **Duplicate page** to deep-copy the current page.
+- Click a page chip, or Tab to it and press Enter, to go to that page.
+- Double-click a page name, or press F2 on its chip, to rename it.
 - Drag a page chip to reorder pages.
-- Use the x on a page chip (**Delete frame**) to delete it. The only page
+- Use the x on a page chip (**Delete page**) to delete it. The only page
   cannot be deleted.
 - If a page contains nodes, links, annotations, a caption, or emphasis, deletion
   asks for confirmation.
-- After deletion, **undo delete** remains available for about eight seconds.
+- After deletion, **Undo delete** remains available for about eight seconds.
   Only the most recent deleted page is recoverable this way.
 
 ### Playback
 
-When a document has multiple pages, choose **play** in the pages strip (it
-reads **pause** while playing). Playback loops through the pages. For each
+When a document has multiple pages, choose **Play** in the pages bar (it
+reads **Pause** while playing). Playback loops through the pages. For each
 page, set:
 
 - **Hold (ms)** — how long the frame remains visible;
@@ -868,8 +931,7 @@ visual transition; page hold duration controls when the next frame starts.
 
 ### Present mode
 
-Choose **Present** in the toolbar (the presentation-screen icon; its tooltip
-begins "Present") to play the document full-screen: every frame
+Choose **Present** in the top bar (or **File → Present**) to play the document full-screen: every frame
 renders exactly as exports do (caption, legend, emphasis, fade transitions),
 looping on each page's hold time. Use **←/→** to step manually, **Space** to
 pause/resume autoplay, and **Escape** to exit.
@@ -885,7 +947,7 @@ With nothing selected, use the **Frame** section:
 - Use **Clear emphasis** to restore equal prominence.
 
 You can also select elements, right-click, and choose
-**Emphasize on this frame**.
+**Emphasize on this page**.
 
 ### Analyze a path between two nodes
 
@@ -896,7 +958,7 @@ the links the frame draws and spotlights the shortest: its nodes and links at
 full strength, everything else dimmed. The first node you selected is the
 start.
 
-A bar under the toolbar says what was found, for example
+A bar under the top bar says what was found, for example
 `Path: User -> App · 3 hops via EC-Branch, EC-Hub`, and offers the controls
 below. Those that show only an icon are named by their tooltip:
 
@@ -932,7 +994,7 @@ Agents use **analyze_path** for the same answer; its `show` option
 
 ## 10. Starter templates
 
-The **template…** menu creates a new document from one of six built-in
+**File → New from template** creates a new document from one of six built-in
 templates:
 
 - **Three-tier web app**;
@@ -990,7 +1052,7 @@ document.
 
 ### Generate an SD-WAN fabric
 
-**template… → Generate SD-WAN…** opens a wizard that builds a hub-and-spoke
+**File → New from template → Generate SD-WAN…** opens a wizard that builds a hub-and-spoke
 SD-WAN fabric from a few choices. A live preview shows the device, tunnel and
 cable counts that will land on the canvas.
 
@@ -1060,11 +1122,11 @@ Browser edits save after a short debounce. The status area reports:
 If storage fails, click the warning or focus it and press Enter/Space to download
 the full JSON immediately.
 
-Use the file controls:
+Use the **File** menu:
 
-- **new** creates a blank one-page document after confirmation;
-- **download** saves the full document as JSON;
-- **open** loads a Topology Dojo JSON file, a recognized legacy Topology
+- **New** creates a blank one-page document after confirmation;
+- **Download JSON** saves the full document as JSON;
+- **Open…** loads a Topology Dojo JSON file, a recognized legacy Topology
   Studio save, a draw.io file, a Mermaid flowchart, or CSV data (see
   [draw.io, Mermaid, and CSV import](#drawio-mermaid-and-csv-import)).
 
@@ -1088,21 +1150,21 @@ they can be repaired.
 
 ### SVG
 
-Choose **svg** to download the current frame as standalone vector SVG. The
+Choose **Export → SVG** in the top bar to download the current page as
+standalone vector SVG. The
 export includes the current layer presentation, frame emphasis, legend, and
 caption. Calm Canvas affects animated presentation in the SVG.
 
 ### Light and dark exports
 
 Every image export (SVG, PNG, PDF, clipboard, selection crops, flipbook HTML)
-follows the editor's theme toggle, the toolbar button that shows a sun in the
-dark theme (**Switch to light theme**) and a moon in the light theme
-(**Switch to dark theme**): a light canvas exports light, a dark canvas
-exports dark. The light export is not just a light backdrop — the engine's
+follows the editor's theme, chosen under **View → Theme** or the account
+menu's **Theme** (**Dark** or **Light**): a light canvas exports light, a dark
+canvas exports dark. The light export is not just a light backdrop — the engine's
 dark-tuned constants are remapped so the page reads on white: dark label
 text, white cards and label chips, and accents darkened for contrast. Colours
 set on your own nodes, links, zones and brand palette are left as they are.
-To get the other theme, flip the toggle and export again.
+To get the other theme, switch the theme and export again.
 
 Over MCP, pass `theme: "light"` to **render_svg**, **export_flipbook**, or
 **export_topology** (PNG, PDF, and PowerPoint image mode); the default is
@@ -1114,40 +1176,42 @@ Over MCP, pass `theme: "light"` to **render_svg**, **export_flipbook**, or
 
 ### PNG
 
-Choose **png** to download the current frame as a two-times static raster,
+Choose **Export → PNG** to download the current page as a two-times static
+raster,
 rasterized in the browser. Agents get a server-rendered PNG from the MCP
 **export_topology** tool (`format: "png"`), which also stamps the print DPI.
 
 ### PDF, clipboard, and selection exports
 
-The **export…** toolbar menu adds:
+The top bar's **Export** menu also offers:
 
-- **PDF — current frame** and **PDF — all frames** (one multi-page PDF, each
+- **PDF (this page)** and **PDF (all pages)** (one multi-page PDF, each
   page sized to its frame, or to the sheet's paper size when a standard
   **Sheet frame** size is set). PDF export rasterizes at 2× through the same
   pipeline as PNG, so it always matches the canvas. Over MCP,
   **export_topology** `format: "pdf"` renders the same pages server-side.
 - **Copy PNG to clipboard** (also on the right-click menu as **Copy as
-  image** for a selection and **Copy frame as image** on empty canvas).
-- **SVG — selection only** and **PNG — selection only**: a cropped export of
+  image** for a selection and **Copy page as image** on empty canvas).
+- **Selection only → SVG** and **PNG**: a cropped export of
   just the selected nodes and the links between them.
 
 ### draw.io, Visio, PowerPoint, and Mermaid
 
-The **export…** menu also writes the formats other teams edit in. The
+Under **Editable, lossy** (and **Document**, for PowerPoint) the **Export**
+menu also writes the formats other teams edit in. The
 three office formats are editable and deliberately lossy; what each keeps and
 drops is specified in the [export fidelity contract](EXPORTS.md).
 
-- **draw.io — all frames** downloads a `.drawio` file (one draw.io page per
+- **draw.io** downloads a `.drawio` file (one draw.io page per
   frame) for draw.io / diagrams.net / Confluence users. Geometry, labels,
   waypoints, colors, declared layers (as draw.io layers), zones (as
   containers), and node metadata survive; a `.drawio` file can be opened
-  again with **open**.
-- **Visio .vsdx — all frames** downloads an editable Visio drawing: shapes,
+  again with **File → Open…**.
+- **Visio .vsdx** downloads an editable Visio drawing: shapes,
   glued connectors, page layers, and metadata as Shape Data.
-- **PowerPoint .pptx — slide per frame** or **slide per layer** downloads a
+- **PowerPoint (slide per page)** or **PowerPoint (slide per layer)** downloads a
   deck of editable shapes.
-- **Mermaid — current frame** downloads a `.mmd` flowchart (graph only, no
+- **Mermaid** downloads the current page as a `.mmd` flowchart (graph only, no
   coordinates).
 
 Device glyph art, flow paths, policy markers, port pills and port tables, the
@@ -1158,14 +1222,14 @@ schedule (CSV / XLSX), from the MCP **export_topology** tool — see
 
 ### Flipbook HTML
 
-The **export… → Flipbook HTML** toolbar action (and the MCP
+The **Export → Flipbook HTML** action (and the MCP
 **export_flipbook** tool — both use the same generator) returns a
 self-contained HTML presentation of all pages. It includes page timing,
 cut/fade behavior, looped play/pause, and page navigation.
 
 ### draw.io, Mermaid, and CSV import
 
-The **open** dialog also accepts:
+The **File → Open…** dialog also accepts:
 
 - **draw.io files** (`.drawio` / `.xml`, plain or compressed): pages, layers,
   containers as zones, shapes as typed nodes, edges with waypoints, and shape
@@ -1187,7 +1251,8 @@ The MCP **import_topology** tool accepts the same text formats via
 
 ### Public share links
 
-On a hosted deployment, the **share** toolbar button (shown after sign-in)
+On a hosted deployment, the top bar's **Share** button (shown after sign-in,
+and also **File → Share…**)
 opens the Share dialog: publish the current document, copy the fresh link,
 and see every live link you have published — each with **copy** and
 **revoke**. Revoking deletes the public snapshot; edge caches can serve it
@@ -1228,10 +1293,10 @@ autosave separately. They can:
 - choose **keep this copy** to replace their normal browser-local draft after
   confirmation;
 - choose **back to my document** to return to their prior local draft;
-- choose **download** first to keep both as files.
+- choose **File → Download JSON** first to keep both as files.
 
 A recipient does not need an account. Without one, a **sign in** chip sits at
-the right end of the toolbar, and starting a **new** document or choosing
+the right end of the top bar, and starting a **new** document or choosing
 **keep this copy** opens a prompt: _Sign in to save your copy to your
 workspace._ It can be dismissed; the editor keeps working and saving to the
 browser. Signing in returns to the same document.
@@ -1335,7 +1400,8 @@ colour.
 
 ### Keyboard and focus behavior
 
-All principal toolbar actions have accessible names. Dialogs, panels, menus,
+All principal top bar, rail and pages bar actions have accessible names, and
+every command they hold is also in a menu. Dialogs, panels, menus,
 and popovers:
 
 - move focus into the opened surface;
@@ -1361,7 +1427,7 @@ for the underlying operation and conflict model.
 ### Hand off or open a workspace
 
 1. Sign in to the hosted browser editor.
-2. Open **Agent Workspace** from the toolbar.
+2. Open **Agent Workspace** from its chip in the top bar.
 3. To promote the open browser document, choose
    **Hand off current document**.
 4. To open an existing workspace, choose **open** beside it. The list shows up
@@ -1396,7 +1462,7 @@ snapshot to the canvas. That includes direct leased agent edits from
 **apply_workspace_changes**. **Reload server** is the explicit discard-local
 path: after confirmation it replaces the canvas with the canonical workspace.
 
-The toolbar chip changes to call attention to a conflict, proposal count, or
+The workspace chip changes to call attention to a conflict, proposal count, or
 offline pending work. Opening it prioritizes the state that needs attention.
 
 ### Review agent proposals
@@ -1515,7 +1581,7 @@ workspace synchronization pauses:
   and attempts a fresh semantic sync;
 - **Reload server** discards unsynced browser edits after confirmation and loads
   the canonical workspace;
-- **download** the browser JSON before reloading if the local version might be
+- **File → Download JSON** before reloading if the local version might be
   needed.
 
 Ordinary disjoint changes can rebase automatically. Same-field edits and
@@ -1528,8 +1594,8 @@ conflict.
 
 ### Authoring Preferences
 
-When profiles are enabled, the **prefs** toolbar chip opens
-**Authoring Preferences**. It contains patterns observed from corrections to
+When profiles are enabled, **Authoring preferences** in the account menu
+opens **Authoring Preferences**. It contains patterns observed from corrections to
 agent-authored diagrams.
 
 Candidates do not change agent behavior on their own. The panel begins to ask
@@ -1558,8 +1624,8 @@ for the evidence and authority model.
 
 ### Admin dashboard
 
-The **admin** chip appears only to the configured deployment owner when
-analytics is enabled. The server independently enforces the permission.
+**Admin** in the account menu appears only to the configured deployment owner
+when analytics is enabled. The server independently enforces the permission.
 
 The dashboard shows:
 
@@ -1818,7 +1884,7 @@ There is no recovery from the public URL alone after expiry.
 
 The canvas changes, but the banner indicates that the shared copy is in a
 separate autosave slot. Choose **back to my document** to return. Choose
-**download** before **keep this copy** if both versions are needed.
+**File → Download JSON** before **keep this copy** if both versions are needed.
 
 ### The editor reports an invalid JSON file
 
@@ -1836,12 +1902,12 @@ visually review every page, annotation, label, link route, and export.
 ### Nodes overlap or content is off-page
 
 Open Problems, then try **tidy**. Use **balance** for a regular row/column finish
-or an **arrange…** algorithm when the whole layout can be rebuilt. Finish with
+or an **Arrange → Auto-arrange** algorithm when the whole layout can be rebuilt. Finish with
 **fit to content**, inspect important manual routes, and check Problems again.
 
 ### PNG export fails
 
-The toolbar **png** action rasterizes in the browser. Try **svg** as a
+**Export → PNG** rasterizes in the browser. Try **Export → SVG** as a
 lossless fallback and verify the current page renders. If the browser still
 cannot create the raster, an MCP agent can render the same page server-side
 with **export_topology** `format: "png"`.

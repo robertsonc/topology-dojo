@@ -3,7 +3,12 @@
  * with, and every export says how it went.
  */
 import { expect, test, type Download, type Page } from '@playwright/test';
-import { bootEditor, expectExported } from './helpers.js';
+import {
+  bootEditor,
+  exportAs,
+  expectExported,
+  inspectorTab,
+} from './helpers.js';
 
 async function downloadText(download: Download): Promise<string> {
   const stream = await download.createReadStream();
@@ -34,6 +39,7 @@ test('the brand palette carries into SVG, flipbook and Present', async ({
 }) => {
   await bootEditor(page);
   // The key (legend) is drawn over the page from the same colours.
+  await inspectorTab(page, 'document');
   await page.locator('#p-legend').click();
   await page.locator('#tDisplay').click();
   await page.locator('.dp-swatch[data-id="azure"]').click();
@@ -48,15 +54,13 @@ test('the brand palette carries into SVG, flipbook and Present', async ({
   expect(count(overlay, GREEN)).toBe(0);
 
   const svg = await downloadText(
-    await download(page, () => page.locator('#fSvg').click()),
+    await download(page, () => exportAs(page, 'svg')),
   );
   expect(count(svg, AZURE)).toBeGreaterThan(0);
   expect(count(svg, GREEN)).toBe(0);
 
   const flipbook = await downloadText(
-    await download(page, () =>
-      page.locator('#fExport').selectOption('flipbook'),
-    ),
+    await download(page, () => exportAs(page, 'flipbook')),
   );
   const frames = flipbook.slice(flipbook.indexOf('<div class="frame'));
   expect(count(frames, AZURE)).toBeGreaterThan(0);
@@ -65,7 +69,7 @@ test('the brand palette carries into SVG, flipbook and Present', async ({
   const selection = await downloadText(
     await download(page, async () => {
       await page.keyboard.press('Control+a');
-      await page.locator('#fExport').selectOption('svg-selection');
+      await exportAs(page, 'svg-selection');
     }),
   );
   expect(count(selection, AZURE)).toBeGreaterThan(0);
@@ -82,24 +86,24 @@ test('the brand palette carries into SVG, flipbook and Present', async ({
 test('every export in the menu reports how it went', async ({ page }) => {
   await bootEditor(page);
   const status = page.locator('#exportStatus');
-  const menu = page.locator('#fExport');
+  const exportTo = (kind: string): Promise<void> => exportAs(page, kind);
 
   // A file export: the chip names it, and its tooltip is the file.
-  const mermaid = await download(page, () => menu.selectOption('mermaid'));
+  const mermaid = await download(page, () => exportTo('mermaid'));
   await expectExported(page, 'mermaid');
   await expect(status).toHaveAttribute('title', mermaid.suggestedFilename());
 
-  await download(page, () => menu.selectOption('drawio'));
+  await download(page, () => exportTo('drawio'));
   await expectExported(page, 'draw.io');
-  await download(page, () => menu.selectOption('vsdx'));
+  await download(page, () => exportTo('vsdx'));
   await expectExported(page, 'visio');
-  await download(page, () => menu.selectOption('pptx'));
+  await download(page, () => exportTo('pptx'));
   await expectExported(page, 'pptx');
-  await download(page, () => menu.selectOption('flipbook'));
+  await download(page, () => exportTo('flipbook'));
   await expectExported(page, 'flipbook');
 
   // A slow one shows that it is working, then that it is done.
-  const pdf = download(page, () => menu.selectOption('pdf-page'));
+  const pdf = download(page, () => exportTo('pdf-page'));
   await expect(status).toHaveText(/^\s*(exporting|exported) pdf$/);
   await pdf;
   await expectExported(page, 'pdf');
@@ -110,7 +114,7 @@ test('every export in the menu reports how it went', async ({ page }) => {
     alerts.push(d.message());
     void d.accept();
   });
-  await menu.selectOption('svg-selection'); // nothing is selected
+  await exportTo('svg-selection'); // nothing is selected
   await expect(status).toHaveText('selection export failed');
   await expect(status.locator('.icon use')).toHaveAttribute(
     'href',

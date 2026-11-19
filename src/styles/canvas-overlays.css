@@ -1,48 +1,4 @@
-/* Minimap, find, drag ghost, path bar, inline label edit, quick-add, mini style bar. */
-/* Minimap overview (bottom-right of the canvas), with a collapse toggle. */
-/* Minimap docked at the bottom of the left rail, separated by a border.
-   Fixed aspect (matches the MM_W:MM_H viewBox so pointer→pan mapping stays
-   exact with no letterboxing); its height is content-driven, so it never
-   shifts when the node list above is scrolled or filtered. */
-.minimap-dock {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-.minimap {
-  width: 100%;
-  aspect-ratio: 170 / 120;
-  background: var(--surface-float);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.minimap-dock.collapsed .minimap {
-  display: none;
-}
-.minimap-toggle {
-  width: 100%;
-  font-family: var(--font);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--fg-weak);
-  background: var(--surface-front);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 4px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.minimap-toggle:hover {
-  color: var(--fg);
-  border-color: var(--line-strong);
-}
-
+/* Find, drag ghost, path bar, inline label edit, quick-add, mini style bar. */
 /* Find / jump-to-element overlay (Ctrl+F). */
 .find {
   position: fixed;
@@ -296,9 +252,14 @@ html.palette-dragging * {
   position: absolute;
   z-index: var(--z-selection-ui);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  padding: 5px 7px;
+  /* Never wider than the canvas: in a narrow one the buttons take a second
+     row instead of running off its edge. */
+  max-width: calc(100% - 8px);
+  box-sizing: border-box;
+  padding: 3px 5px;
   background: var(--surface-float);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -333,6 +294,12 @@ html.palette-dragging * {
 .mb-btn:hover,
 .mb-btn.on {
   color: var(--accent);
+}
+/* The bar's command buttons (align, distribute, z-order, lock): the shared
+   icon button, a little smaller to sit with the swatches. */
+.mini-bar .mb-cmd {
+  width: 26px;
+  height: 26px;
 }
 .mb-sel {
   background: var(--surface-field);

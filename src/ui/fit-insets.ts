@@ -2,10 +2,12 @@
  * How much of the canvas the floating panels cover, so "fit view" frames the
  * part of the canvas a person can actually see.
  *
- * The canvas runs edge to edge under the chrome: the node library floats over
- * its left edge, the bottom band (frames strip + view controls) over its
- * bottom edge, and on a phone the properties drawer over its right edge.
- * Content fitted to the whole canvas box would land under those panels.
+ * Most of the chrome is docked around the canvas: the rail and the node
+ * library on its left, the pages bar under it, the properties panel on its
+ * right. What still floats over it is the zoom control in its bottom-right
+ * corner, with the minimap card above it when that is open, and on a phone
+ * the library and properties drawers over its edges. Content fitted to the
+ * whole canvas box would land under those.
  */
 
 /** A box in viewport pixels (the part of a DOMRect this module reads). */
@@ -40,10 +42,11 @@ export function fitInsets(panels: {
   palette?: PanelBox | null;
   /** The open properties panel, on the right edge. */
   inspector?: PanelBox | null;
-  /** The bottom band: frames strip and view controls. */
-  dock?: PanelBox | null;
+  /** What floats in the canvas's bottom-right corner: the zoom control, or
+   * the zoom control and the minimap card above it (their joint box). */
+  corner?: PanelBox | null;
 }): FitInsets {
-  const { canvas, palette, inspector, dock } = panels;
+  const { canvas, palette, inspector, corner } = panels;
   const width = Math.max(0, canvas.right - canvas.left);
   const height = Math.max(0, canvas.bottom - canvas.top);
   // How far a panel reaches into the canvas from its edge, plus the gap. A
@@ -53,7 +56,17 @@ export function fitInsets(panels: {
 
   let left = palette ? reach(palette.right - canvas.left) : 0;
   let right = inspector ? reach(canvas.right - inspector.left) : 0;
-  let bottom = dock ? reach(canvas.bottom - dock.top) : 0;
+  let bottom = 0;
+  // A corner card can be cleared by giving up a strip on the right or a band
+  // at the bottom. It takes whichever costs the smaller share of its axis:
+  // the low, wide zoom control takes a band at the bottom, the tall minimap
+  // card above it a strip on the right.
+  if (corner && width > 0 && height > 0) {
+    const toRight = reach(canvas.right - corner.left);
+    const toBottom = reach(canvas.bottom - corner.top);
+    if (toRight / width < toBottom / height) right = Math.max(right, toRight);
+    else bottom = toBottom;
+  }
 
   // Keep most of the canvas for the content. When the side panels together
   // ask for more than their share, both give way in proportion.

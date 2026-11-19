@@ -5,10 +5,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   bootEditor,
+  chooseSwatch,
   clickLink,
   clickNode,
+  inspectorSection,
+  inspectorTab,
   linkPoint,
   nodeBox,
+  openFixture,
   savedDocument,
   savedElement,
 } from './helpers.js';
@@ -51,6 +55,8 @@ test('clearing a number field removes the property instead of storing 0', async 
 
   // A zone's padding, in the annotations list.
   await page.keyboard.press('Escape');
+  await inspectorTab(page, 'page');
+  await inspectorSection(page, 'Annotations');
   const zone = page.locator('#inspector details.anno[data-acol="zones"]');
   await zone.locator('summary').click();
   const zoneId = (await zone.getAttribute('data-aid'))!;
@@ -80,7 +86,8 @@ test('a number outside what the field allows is clamped or refused', async ({
   await field(page, 'opacity').press('Tab');
   await expect(field(page, 'opacity')).toHaveValue('0');
 
-  // Label width is 40…600.
+  // Label width is 40…600 (it is under the label's Fine tune).
+  await inspectorSection(page, 'Fine tune');
   await field(page, 'labelWidth').fill('99999');
   expect((await savedElement(page, 'nodes', 'fw')).labelWidth).toBe(600);
   await field(page, 'labelWidth').fill('-50');
@@ -89,6 +96,7 @@ test('a number outside what the field allows is clamped or refused', async ({
   // A shape's size must be positive: zero and negatives are not stored.
   await page.keyboard.press('Escape');
   await page.locator('.pitem[data-type="shape:rectangle"]').first().click();
+  await inspectorSection(page, 'Rectangle options');
   await field(page, 'shapeWidth').fill('80');
   const shapeId = (await savedDocument(page)).pages[0]!.nodes.at(-1)!.id;
   expect((await savedElement(page, 'nodes', shapeId)).shapeWidth).toBe(80);
@@ -109,6 +117,7 @@ test('a number outside what the field allows is clamped or refused', async ({
   // A text node's font size likewise.
   await page.keyboard.press('Escape');
   await page.locator('.pitem[data-type="text"]').first().click();
+  await inspectorSection(page, 'Text options');
   await field(page, 'fontSize').fill('0');
   await field(page, 'fontSize').fill('-5');
   await field(page, 'padding').fill('4');
@@ -123,7 +132,7 @@ test('a required position keeps its value when its field is cleared', async ({
   await bootEditor(page);
   await clickNode(page, 'fw');
   await page
-    .locator('#inspector details[data-group="Position"] > summary')
+    .locator('#inspector details[data-group="Position and order"] > summary')
     .click();
   await field(page, 'y').fill('310');
   const before = await savedElement(page, 'nodes', 'fw');
@@ -164,6 +173,7 @@ test('a blank or non-positive canvas size is ignored', async ({ page }) => {
 
 /** The editor for the first annotation of a kind, opened. */
 async function openAnnotation(page: Page, collection: string) {
+  await inspectorSection(page, 'Annotations');
   const editor = page
     .locator(`#inspector details.anno[data-acol="${collection}"]`)
     .first();
@@ -215,9 +225,9 @@ test('an annotation editor stays open through its own swatch, compass and chip c
       .evaluate((d) => (d as HTMLDetailsElement).open);
 
   const flow = await openAnnotation(page, 'flowPaths');
-  await flow.editor
-    .locator('[data-aswatch="color"] [data-color="#7764fc"]')
-    .click();
+  await chooseSwatch(
+    flow.editor.locator('[data-aswatch="color"] [data-color="#7764fc"]'),
+  );
   expect((await savedElement(page, 'flowPaths', flow.id)).color).toBe(
     '#7764fc',
   );
@@ -239,9 +249,9 @@ test('an annotation editor stays open through its own swatch, compass and chip c
   expect(await isOpen('flowPaths')).toBe(true);
 
   const marker = await openAnnotation(page, 'policyMarkers');
-  await marker.editor
-    .locator('[data-aswatch="color"] [data-color="#01a982"]')
-    .click();
+  await chooseSwatch(
+    marker.editor.locator('[data-aswatch="color"] [data-color="#01a982"]'),
+  );
   expect(await isOpen('policyMarkers')).toBe(true);
   // The flow path's editor, opened earlier, was not shut by that either.
   expect(await isOpen('flowPaths')).toBe(true);
@@ -251,11 +261,12 @@ test('an annotation editor stays open through its own swatch, compass and chip c
     '#inspector details.anno-group[data-agroup="zones"]',
   );
   await group.locator('> summary').click();
-  await page
-    .locator('#inspector details.anno[data-acol="policyMarkers"]')
-    .first()
-    .locator('[data-aswatch="color"] [data-color="#65aef9"]')
-    .click();
+  await chooseSwatch(
+    page
+      .locator('#inspector details.anno[data-acol="policyMarkers"]')
+      .first()
+      .locator('[data-aswatch="color"] [data-color="#65aef9"]'),
+  );
   expect(await group.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(
     false,
   );
@@ -294,7 +305,7 @@ test('dragging a node updates its position in Properties', async ({ page }) => {
   await bootEditor(page);
   await clickNode(page, 'fw');
   await page
-    .locator('#inspector details[data-group="Position"] > summary')
+    .locator('#inspector details[data-group="Position and order"] > summary')
     .click();
   const x = Number(await field(page, 'x').inputValue());
 
@@ -316,6 +327,7 @@ test('dragging a node updates its position in Properties', async ({ page }) => {
 
 test('ticking "Show key" reveals the key options at once', async ({ page }) => {
   await bootEditor(page);
+  await inspectorTab(page, 'document');
   await expect(page.locator('#p-legend-cols')).toHaveCount(0);
   await page.locator('#p-legend').click();
   await expect(page.locator('#p-legend')).toBeChecked();
@@ -398,9 +410,9 @@ test('an annotation source reference is shown, never edited as text', async ({
     await expect(editor.locator('[data-akey="source"]')).toHaveCount(0);
 
     // Editing something else in the editor leaves the reference whole.
-    await editor
-      .locator('[data-aswatch="color"] [data-color="#7764fc"]')
-      .click();
+    await chooseSwatch(
+      editor.locator('[data-aswatch="color"] [data-color="#7764fc"]'),
+    );
     const saved = await savedElement(page, collection, id);
     expect(saved.color).toBe('#7764fc');
     expect(saved.source).toEqual(
@@ -556,4 +568,331 @@ test('the Type dropdown lists types by label, grouped like the node library', as
   const shown = await page.locator('#i-type option:checked').innerText();
   expect(shown.toLowerCase().replace(/\s+/g, '')).toBe(linkType.toLowerCase());
   expect(shown[0]).toBe(shown[0]!.toUpperCase());
+});
+
+/* ── The colour popover and keyboard focus ───────────────────────────────── */
+
+test('a colour popover at the foot of a scrolled panel stays open', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // The flow path's colour button, at the panel's lower edge: moving focus
+  // into its popover used to scroll the panel, and that scroll shut it (or
+  // left it beside nothing).
+  const flow = await openAnnotation(page, 'flowPaths');
+  const button = flow.editor
+    .locator('.colour-ctl')
+    .first()
+    .locator('[data-colour-open]');
+  const panel = page.locator('#inspector');
+  const before = await button.evaluate((el) => {
+    const panel = el.closest('.inspector')!;
+    const gap =
+      el.getBoundingClientRect().bottom - panel.getBoundingClientRect().bottom;
+    panel.scrollTop += gap - 4;
+    (el as HTMLElement).focus({ preventScroll: true });
+    return panel.scrollTop;
+  });
+  await page.keyboard.press('Enter');
+  const pop = flow.editor.locator('.colour-pop').first();
+  await expect(pop).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(pop).toBeVisible();
+  await expect(button).toHaveAttribute('aria-expanded', 'true');
+  expect(await panel.evaluate((el) => el.scrollTop)).toBe(before);
+  // The panel scrolled by hand still closes it.
+  await panel.evaluate((el) => el.scrollBy({ top: -40, behavior: 'instant' }));
+  await expect(pop).toBeHidden();
+});
+
+test('the selected swatch and the focused one look different', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const flow = await openAnnotation(page, 'flowPaths');
+  const control = flow.editor.locator('.colour-ctl').first();
+  await control.locator('[data-colour-open]').focus();
+  await page.keyboard.press('Enter');
+  const selected = control.locator('.sw.on');
+  await expect(selected).toBeFocused();
+  const ring = (el: Element): string => {
+    const s = getComputedStyle(el);
+    return `${s.outlineStyle} ${s.outlineColor} ${s.boxShadow}`;
+  };
+  const focus = await page.evaluate(() =>
+    getComputedStyle(document.documentElement)
+      .getPropertyValue('--focus')
+      .trim(),
+  );
+  // Focused and selected: the focus ring, and the selected marker inside.
+  const both = await selected.evaluate(ring);
+  expect(both).toContain('solid');
+  expect(both).toContain('inset');
+  // Tab on: the next swatch has the focus ring only, and the selected one
+  // keeps its marker and loses the ring.
+  await page.keyboard.press('Tab');
+  const next = control.locator('.sw:focus');
+  await expect(next).not.toHaveClass(/\bon\b/);
+  const nextRing = await next.evaluate(ring);
+  expect(nextRing).toContain('solid');
+  expect(nextRing).not.toContain('inset');
+  expect(await selected.evaluate(ring)).toMatch(/^none .*inset/);
+  expect(
+    await next.evaluate((el, colour) => {
+      const probe = document.createElement('i');
+      probe.style.color = colour;
+      document.body.append(probe);
+      const want = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(el).outlineColor === want;
+    }, focus),
+  ).toBe(true);
+});
+
+test('keyboard focus stays on the control after the panel redraws', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await clickNode(page, 'fw');
+  const lock = page.locator('#inspector [data-head="lock"]');
+  const more = page.locator('#inspector [data-head="more"]');
+
+  // The lock toggle, twice: focus stays on it, so the second press reaches it.
+  await page.locator('#i-type').focus();
+  await page.keyboard.press('Tab');
+  await expect(lock).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  await expect(lock).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await expect(lock).toBeFocused();
+
+  // A command from the "more" menu: back on the menu's button.
+  await page.keyboard.press('Tab');
+  await expect(more).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page
+    .locator('.menu-item', { hasText: 'Bring to front' })
+    .first()
+    .focus();
+  await page.keyboard.press('Enter');
+  await expect(more).toBeFocused();
+
+  // A swatch: back on the colour button, which shows the new colour.
+  const colour = page.locator('#inspector .colour-btn').first();
+  await colour.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('#inspector .colour-pop .sw:focus')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#inspector .colour-btn').first()).toBeFocused();
+  await expect(page.locator('#inspector .colour-pop:visible')).toHaveCount(0);
+
+  // Delete from the menu: the element is gone, focus goes to the tab shown.
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#page-canvas [data-tds-node="fw"]')).toHaveCount(
+    0,
+  );
+  await expect(page.locator('#insp-tab-page')).toBeFocused();
+});
+
+test('a zone picked on the canvas is edited on the panel grid, without a card', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await openFixture(page, 'zone-orthogonal.json');
+  const z = await page.evaluate(() => {
+    const svg = document.querySelector('#overlay') as SVGSVGElement;
+    const p = new DOMPoint(400, 280).matrixTransform(svg.getScreenCTM()!);
+    return { x: p.x, y: p.y };
+  });
+  await page.mouse.click(z.x, z.y);
+  await expect(page.locator('#insp-tab-selection')).toHaveText('Zone');
+  await expect(page.locator('#inspector details.anno')).toHaveCount(0);
+  const editor = page.locator('#inspector .anno-solo[data-acol="zones"]');
+  await expect(editor).toHaveCount(1);
+  // Its fields still write the zone.
+  const label = editor.locator('input[data-akey="label"]');
+  await label.fill('Core');
+  expect((await savedElement(page, 'zones', 'z1')).label).toBe('Core');
+  // Its controls start where the panel's do: after the 96px label column
+  // and its 8px gap.
+  const offset = await editor
+    .locator('label.insp-row > :nth-child(2)')
+    .first()
+    .evaluate(
+      (el) =>
+        el.getBoundingClientRect().left -
+        document.querySelector('#inspector')!.getBoundingClientRect().left,
+    );
+  expect(Math.round(offset)).toBe(104);
+});
+
+test('a link’s “more” menu steps it backward and forward', async ({ page }) => {
+  await bootEditor(page);
+  await clickLink(page, 'ec-fw');
+  await page.locator('#inspector [data-head="more"]').click();
+  await expect(page.locator('.menu-item')).toContainText([
+    'Bring to front',
+    'Bring forward',
+    'Send backward',
+    'Send to back',
+  ]);
+  // The canvas draws links in the document's order.
+  const order = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('#page-canvas g[data-tds-link]')].map(
+        (g) => (g as SVGGElement).dataset.tdsLink,
+      ),
+    );
+  const before = await order();
+  expect(before.indexOf('ec-fw')).toBeGreaterThan(0);
+  await page.locator('.menu-item', { hasText: 'Send backward' }).click();
+  await expect
+    .poll(async () => (await order()).indexOf('ec-fw'))
+    .toBe(before.indexOf('ec-fw') - 1);
+  await expect
+    .poll(async () =>
+      (await savedDocument(page)).pages[0]!.links.map((l) => l.id),
+    )
+    .toEqual(await order());
+});
+
+test('controls the panel shows more than once have names of their own', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // The Story buttons say what they act on; the count describes Choose….
+  const choose = page.locator('#p-emph-choose');
+  await expect(choose).toHaveAccessibleName('Choose emphasized elements');
+  await expect(choose).toHaveText('Choose…');
+  await expect(choose).toHaveAccessibleDescription(/^\d+ of \d+$/);
+  await expect(page.locator('#p-emph-clear')).toHaveAccessibleName(
+    'Clear emphasis',
+  );
+  // Each annotation editor is a group named for its annotation.
+  await inspectorSection(page, 'Annotations');
+  for (const editor of await page.locator('#inspector details.anno').all())
+    await expect(editor).toHaveAccessibleName(
+      /^(Zone|Flow path|Policy marker) /,
+    );
+
+  // Two nodes: the format buttons, across their section with no row label.
+  await clickNode(page, 'fw');
+  await page.keyboard.down('Shift');
+  await clickNode(page, 'ec');
+  await page.keyboard.up('Shift');
+  await expect(page.locator('#i-copyfmt')).toHaveAccessibleName('Copy format');
+  await expect(page.locator('#i-pastefmt')).toHaveAccessibleName(
+    'Paste format',
+  );
+  await expect(
+    page.locator('#inspector details[data-group="Format"] .insp-row'),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('#inspector details[data-group="Arrange"]'),
+  ).toContainText('Select three or more nodes to distribute.');
+
+  // A node's metadata fields are named for what they hold.
+  await page.keyboard.press('Escape');
+  await clickNode(page, 'fw');
+  await inspectorSection(page, 'Data');
+  await expect(page.locator('#inspector .meta-nk')).toHaveAccessibleName(
+    'New metadata key',
+  );
+  await expect(page.locator('#inspector .meta-nv')).toHaveAccessibleName(
+    'New metadata value',
+  );
+});
+
+test('the Data count shows only once a value is set', async ({ page }) => {
+  await bootEditor(page);
+  // A new node from the library: nothing in its Data section is set.
+  await page.locator('.pitem').first().click();
+  const data = page.locator('#inspector details[data-group="Data"]');
+  await expect(data).toHaveCount(1);
+  await expect(data.locator('.insp-count')).toHaveCount(0);
+  await inspectorSection(page, 'Data');
+  const tooltip = data.locator('input[data-key="tooltip"]');
+  await tooltip.fill('core firewall');
+  await tooltip.press('Tab');
+  // Drawn again for the node, the section counts the value.
+  const id = (await page
+    .locator('#page-canvas [data-tds-node]')
+    .last()
+    .getAttribute('data-tds-node'))!;
+  await page.keyboard.press('Escape');
+  await clickNode(page, id);
+  await expect(data.locator('.insp-count')).toHaveText('1');
+});
+
+test('a link’s two sides take the row under their label', async ({ page }) => {
+  await bootEditor(page);
+  await clickLink(page, 'ec-fw');
+  const from = page.locator('#inspector select[data-key="fromPort"]');
+  const row = page.locator('#inspector .insp-row.col', {
+    has: page.locator('select[data-key="fromPort"]'),
+  });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator('select[data-key="toPort"]')).toHaveCount(1);
+  await expect(from).toHaveAccessibleName('From side');
+  // The automatic choice in short; its value, and so what it writes, is the
+  // same.
+  const auto = from.locator('option[value=""]');
+  await expect(auto).toHaveText('Auto (facing)');
+  await expect(auto).toHaveAttribute('title', 'Auto (facing other end)');
+  // Nothing of the shown choice is cut off.
+  expect(
+    await from.evaluate((el) => {
+      const s = el as HTMLSelectElement;
+      const probe = document.createElement('span');
+      probe.style.font = getComputedStyle(s).font;
+      probe.textContent = s.selectedOptions[0]!.text;
+      document.body.append(probe);
+      const width = probe.getBoundingClientRect().width;
+      probe.remove();
+      const cs = getComputedStyle(s);
+      const room =
+        s.clientWidth -
+        parseFloat(cs.paddingLeft) -
+        parseFloat(cs.paddingRight);
+      return width <= room;
+    }),
+  ).toBe(true);
+  await from.selectOption('n');
+  await expect
+    .poll(async () => (await savedElement(page, 'links', 'ec-fw')).fromPort)
+    .toBe('n');
+});
+
+test('a Problems label with warnings is readable in the light theme', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('topology-dojo:theme', 'light'),
+  );
+  await bootEditor(page);
+  await expect(page.locator('html')).toHaveClass(/light/);
+  await page.locator('.pitem').first().click();
+  await page.keyboard.press('Control+d');
+  await expect(page.locator('#problems-dock')).toHaveClass(/has-warn/);
+  // The label is in the warning colour for text, not the fill colour.
+  const [label, token] = await page.evaluate(() => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--status-warn-fg)';
+    document.body.append(probe);
+    const want = getComputedStyle(probe).color;
+    probe.remove();
+    return [
+      getComputedStyle(document.querySelector('#problems-toggle .pt-label')!)
+        .color,
+      want,
+    ];
+  });
+  expect(label).toBe(token);
 });

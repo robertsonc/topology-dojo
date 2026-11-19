@@ -6,16 +6,27 @@ import {
   leftInsetShift,
 } from './fit-insets.js';
 
-/** The canvas area at 1280×720: edge to edge under the floating panels. */
-const canvas = { left: 0, top: 68, right: 1005, bottom: 668 };
-const palette = { left: 12, top: 80, right: 174, bottom: 656 };
-const inspector = { left: 1005, top: 80, right: 1268, bottom: 656 };
-const dock = { left: 186, top: 596, right: 993, bottom: 656 };
+/** The canvas area at 1280×720, between the docked library (the rail is
+ * 44px, the library 208px), the docked properties panel and the pages bar. */
+const canvas = { left: 252, top: 44, right: 1005, bottom: 652 };
+/** The library docked just left of the canvas. */
+const docked = { left: 44, top: 44, right: 252, bottom: 652 };
+/** A library floating over the canvas's left edge (the phone drawer). */
+const palette = { left: 252, top: 44, right: 426, bottom: 652 };
+const inspector = { left: 1005, top: 44, right: 1268, bottom: 652 };
+/** The zoom control alone in the bottom-right corner: low and wide. */
+const zoom = { left: 846, top: 606, right: 995, bottom: 642 };
+/** The zoom control with the minimap card above it: tall. */
+const zoomAndMap = { left: 813, top: 450, right: 995, bottom: 642 };
 
 describe('fitInsets', () => {
-  it('reserves the left edge for the open node library', () => {
+  it('reserves the left edge for a node library over the canvas', () => {
     const insets = fitInsets({ canvas, palette });
     expect(insets.left).toBe(174 + FIT_GAP);
+  });
+
+  it('keeps a gap to a node library docked beside the canvas', () => {
+    expect(fitInsets({ canvas, palette: docked }).left).toBe(FIT_GAP);
   });
 
   it('reserves nothing on the left when the node library is collapsed', () => {
@@ -24,8 +35,8 @@ describe('fitInsets', () => {
   });
 
   it('measures the left inset from the canvas edge, not the window edge', () => {
-    const shifted = { ...canvas, left: 40, right: 1045 };
-    const rail = { ...palette, left: 52, right: 214 };
+    const shifted = { ...canvas, left: 292, right: 1045 };
+    const rail = { ...palette, left: 292, right: 466 };
     expect(fitInsets({ canvas: shifted, palette: rail }).left).toBe(
       174 + FIT_GAP,
     );
@@ -45,9 +56,29 @@ describe('fitInsets', () => {
     );
   });
 
-  it('reserves the bottom band', () => {
-    expect(fitInsets({ canvas, dock }).bottom).toBe(668 - 596 + FIT_GAP);
-    expect(fitInsets({ canvas, dock: null }).bottom).toBe(0);
+  it('clears the zoom control with a band at the bottom', () => {
+    // 46px of a 608px-tall canvas costs less than 171px of a 753px width.
+    const insets = fitInsets({ canvas, corner: zoom });
+    expect(insets.bottom).toBe(652 - 606 + FIT_GAP);
+    expect(insets.right).toBe(0);
+    expect(fitInsets({ canvas, corner: null })).toEqual({
+      left: 0,
+      right: 0,
+      bottom: 0,
+    });
+  });
+
+  it('clears the minimap card above the zoom control with a strip on the right', () => {
+    // 204px of 753px wide costs less than 214px of 608px tall.
+    const insets = fitInsets({ canvas, corner: zoomAndMap });
+    expect(insets.right).toBe(1005 - 813 + FIT_GAP);
+    expect(insets.bottom).toBe(0);
+  });
+
+  it('keeps the wider of the two right insets when the corner and a drawer share the edge', () => {
+    const drawer = { left: 900, top: 44, right: 1005, bottom: 652 };
+    const insets = fitInsets({ canvas, inspector: drawer, corner: zoomAndMap });
+    expect(insets.right).toBe(1005 - 813 + FIT_GAP);
   });
 
   it('never gives the side panels more than 60% of the width between them', () => {
@@ -66,12 +97,12 @@ describe('fitInsets', () => {
 
   it('never gives the bottom band more than 60% of the height', () => {
     const short = { left: 0, top: 0, right: 800, bottom: 100 };
-    const band = { left: 0, top: 10, right: 800, bottom: 90 };
-    expect(fitInsets({ canvas: short, dock: band }).bottom).toBe(60);
+    const card = { left: 0, top: 30, right: 800, bottom: 90 };
+    expect(fitInsets({ canvas: short, corner: card }).bottom).toBe(60);
   });
 
   it('ignores a panel that lies wholly outside the canvas', () => {
-    const farLeft = { left: -400, top: 0, right: -300, bottom: 600 };
+    const farLeft = { left: -400, top: 44, right: -300, bottom: 600 };
     expect(fitInsets({ canvas, palette: farLeft }).left).toBe(0);
   });
 });

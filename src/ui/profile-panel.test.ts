@@ -102,9 +102,11 @@ describe('renderPreferencesHtml', () => {
     expect(html).toContain('Spokes were repeatedly moved below their hub.');
     expect(html).toContain('Scope: all my diagrams');
     expect(html).toContain(
-      '<span class="ws-badge pref-status-candidate">candidate</span>',
+      '<span class="badge pref-status-candidate">candidate</span>',
     );
-    expect(html).toContain('1 outcome · 1 document · last observed 2026-07-02');
+    expect(html).toContain(
+      '1 outcome · 1 document · last observed <span class="data">2026-07-02</span>',
+    );
     expect(html).toContain('data-pref="pref_abc123"');
   });
 
@@ -132,16 +134,16 @@ describe('renderPreferencesHtml', () => {
   it('offers Pause + Forget on an active candidate, Resume on a paused one', () => {
     const active = renderPreferencesHtml([preference()]);
     expect(active).toContain(
-      '<button class="tbtn pref-pause" data-pref-id="pref_abc123">Pause</button>',
+      '<button class="btn btn-sm pref-pause" data-pref-id="pref_abc123">Pause</button>',
     );
     expect(active).toContain(
-      '<button class="tbtn pref-forget" data-pref-id="pref_abc123">Forget</button>',
+      '<button class="btn btn-sm btn-danger pref-forget" data-pref-id="pref_abc123">Forget</button>',
     );
     expect(active).not.toContain('pref-resume');
 
     const paused = renderPreferencesHtml([preference({ status: 'paused' })]);
     expect(paused).toContain(
-      '<button class="tbtn pref-resume" data-pref-id="pref_abc123">Resume</button>',
+      '<button class="btn btn-sm pref-resume" data-pref-id="pref_abc123">Resume</button>',
     );
     expect(paused).toContain('pref-status-paused');
     expect(paused).not.toContain('pref-pause"');
@@ -151,7 +153,7 @@ describe('renderPreferencesHtml', () => {
     const html = renderPreferencesHtml([
       preference({ scope: { kind: 'workspace', workspaceId: 'w_9' } }),
     ]);
-    expect(html).toContain('Scope: workspace w_9');
+    expect(html).toContain('Scope: workspace <span class="data">w_9</span>');
   });
 
   it('asks the causal confirm question at 3 outcomes across 2 documents', () => {
@@ -222,7 +224,7 @@ describe('renderPreferencesHtml', () => {
       }),
     ]);
     expect(html).toContain('pref-status-confirmed');
-    expect(html).toContain('Confirmed 2026-07-15');
+    expect(html).toContain('Confirmed <span class="data">2026-07-15</span>');
     expect(html).toContain('supplied to agents when it applies');
     expect(html).not.toContain('pref-ask');
     expect(html).toContain('pref-pause');
@@ -264,7 +266,7 @@ describe('renderPreferencesHtml', () => {
   it('leads each callout with the icon of its state, and names the state in words', () => {
     // The icon is decorative (aria-hidden), so the words must stand alone.
     const note = (cls: string, name: Parameters<typeof icon>[0]): string =>
-      `<div class="ws-note ${cls}">${icon(name)} `;
+      `<div class="hint ${cls}">${icon(name)} `;
     const seen = { supportingOutcomes: 3, evidenceDocuments: 2 };
     expect(
       renderPreferencesHtml([
@@ -283,7 +285,7 @@ describe('renderPreferencesHtml', () => {
         }),
       ]),
     ).toContain(
-      `${note('pref-confirmed-note', 'confirmed')}Confirmed 2026-07-15`,
+      `${note('pref-confirmed-note', 'confirmed')}Confirmed <span class="data">2026-07-15</span>`,
     );
     expect(
       renderPreferencesHtml([preference({ status: 'rejected' })]),
@@ -309,7 +311,9 @@ describe('renderPreferencesHtml', () => {
         null,
         '2026-07-17T12:00:00.000Z',
       ),
-    ).toContain(`${note('pref-stale', 'stale')}Not observed since 2026-05-01`);
+    ).toContain(
+      `${note('pref-stale', 'stale')}Not observed since <span class="data">2026-05-01</span>`,
+    );
   });
 
   it('lists exception workspaces, escaped', () => {
@@ -319,7 +323,9 @@ describe('renderPreferencesHtml', () => {
         exceptionWorkspaceIds: ['w9', '<b>ws</b>'],
       }),
     ]);
-    expect(html).toContain('Except in: w9, &lt;b&gt;ws&lt;/b&gt;');
+    expect(html).toContain(
+      'Except in: <span class="data">w9</span>, <span class="data">&lt;b&gt;ws&lt;/b&gt;</span>',
+    );
     expect(html).not.toContain('<b>ws</b>');
   });
 
@@ -330,7 +336,9 @@ describe('renderPreferencesHtml', () => {
     );
     const html = renderPreferencesHtml([old], null, '2026-07-17T12:00:00.000Z');
     expect(html).toContain('pref-stale');
-    expect(html).toContain('Not observed since 2026-05-01');
+    expect(html).toContain(
+      'Not observed since <span class="data">2026-05-01</span>',
+    );
     expect(
       renderPreferencesHtml([old], null, '2026-05-02T00:00:00.000Z'),
     ).not.toContain('pref-stale');

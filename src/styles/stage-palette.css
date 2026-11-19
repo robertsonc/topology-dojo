@@ -1,91 +1,7 @@
-/* Stage, canvas area and the node library. */
-.stage {
-  position: relative;
-  overflow: hidden;
-  min-height: 0;
-  display: flex;
-  flex-direction: row;
-}
-/* The canvas region (canvas + floating palette/minimap/frames strip).
-   The properties panel is a docked column beside it, not a floating
-   overlay, so it can never overlap the canvas or the floating panels. */
-.canvas-area {
-  position: relative;
-  flex: 1 1 auto;
-  min-width: 0;
-  /* `clip`, not just `hidden`: a hidden box can still be scrolled by
-     focus moving to something outside it, which would slide the canvas
-     and its floating panels away with no way to scroll back. */
-  overflow: hidden;
-  overflow: clip;
-}
-/* Full-height left rail: header + search at the top, scrollable node list
-   filling the middle, minimap docked at the bottom. */
-.palette {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  bottom: 12px;
-  z-index: var(--z-canvas-ui);
-  width: 162px;
-  overflow: hidden;
-  background: var(--surface-float);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  box-shadow: var(--shadow-raised);
-}
-/* Collapsed drawer: only the toggle shows; the rail shrinks to fit it and
-   the canvas reclaims the space. The docked minimap collapses with it. */
-.palette.collapsed {
-  width: auto;
-  bottom: auto;
-}
-.palette.collapsed .palette-search,
-.palette.collapsed .palette-list,
-.palette.collapsed .minimap-dock {
-  display: none;
-}
-.palette-toggle {
-  flex: none;
-  width: 100%;
-  font-family: var(--font);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--fg-weak);
-  background: var(--surface-front);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 4px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.palette-toggle:hover {
-  color: var(--fg);
-  border-color: var(--line-strong);
-}
-.palette-search {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--surface-field);
-  border: 1px solid transparent;
-  color: var(--fg);
-  border-radius: var(--radius-md);
-  padding: 5px 8px;
-  font-size: 12px;
-  font-family: var(--font);
-  margin-bottom: 4px;
-}
-.palette-search:focus {
-  border-color: var(--accent);
-}
-.palette-search::placeholder {
-  color: var(--fg-weak);
-}
+/* The node library's contents: the list and its tiles (the search field is
+   the shared .field).
+   Where the library sits (docked beside the rail, a drawer on a phone) is
+   in shell.css. */
 .palette-list {
   display: grid;
   /* minmax(0,1fr) lets tracks shrink below their content so the two
@@ -109,24 +25,23 @@
   font-size: 11px;
   padding: 6px 4px;
 }
+/* A category's heading: a shell label, in sentence case. */
 .palette-h {
   color: var(--fg-weak);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 2px 4px 4px;
+  font: 600 12px/1.25 var(--font-ui);
+  padding: 6px 4px 4px;
 }
 .pitem {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
   background: var(--surface-field);
   border: 1px solid transparent;
   color: var(--fg);
   border-radius: var(--radius-md);
-  padding: 6px 4px;
+  padding: 9px 4px 7px;
   cursor: pointer;
   font-size: 11px;
   font-family: var(--font);
@@ -148,7 +63,15 @@
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  word-break: break-word;
+  /* Break between words, hyphenate a long one, and split a word only when it
+     is wider than the whole tile. */
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+/* A tile's name is a shell label, in the UI face. The preview art beside it
+   keeps the tile's own font. */
+.pitem > .plabel {
+  font: 12px/1.25 var(--font-ui);
 }
 /* Custom/stencil rows keep the icon-left layout (they span the full width
    and pair with an edit/delete button). */

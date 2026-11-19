@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   escapeReleasesFocus,
   focusKind,
+  isContextMenuKey,
   releasesFocusAfterChange,
   routeKey,
   type FocusKind,
@@ -194,5 +195,26 @@ describe('escapeReleasesFocus', () => {
   it('leaves a text field focused, and has nothing to release on the canvas', () => {
     expect(escapeReleasesFocus('text')).toBe(false);
     expect(escapeReleasesFocus('canvas')).toBe(false);
+  });
+});
+
+describe('isContextMenuKey', () => {
+  it('is the menu key, or Shift+F10', () => {
+    expect(isContextMenuKey({ key: 'ContextMenu' })).toBe(true);
+    expect(isContextMenuKey({ key: 'F10', shiftKey: true })).toBe(true);
+  });
+
+  it('is not F10 alone, F10 with another modifier, or any other key', () => {
+    expect(isContextMenuKey({ key: 'F10' })).toBe(false);
+    expect(
+      isContextMenuKey({ key: 'F10', shiftKey: true, ctrlKey: true }),
+    ).toBe(false);
+    expect(
+      isContextMenuKey({ key: 'F10', shiftKey: true, metaKey: true }),
+    ).toBe(false);
+    expect(isContextMenuKey({ key: 'F10', shiftKey: true, altKey: true })).toBe(
+      false,
+    );
+    expect(isContextMenuKey({ key: 'F9', shiftKey: true })).toBe(false);
   });
 });

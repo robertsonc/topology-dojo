@@ -7,6 +7,10 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   bootEditor,
   clickNode,
+  exportAs,
+  inspectorSection,
+  inspectorTab,
+  menuCommand,
   nodeBox,
   statusCount,
   statusText,
@@ -74,7 +78,7 @@ test('a palette tile and a section header answer Space when focused by keyboard'
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes + 1);
 
   // The new node is selected, so the inspector shows its sections.
-  const section = '#inspector details[data-group="Position"]';
+  const section = '#inspector details[data-group="Position and order"]';
   const open = (): Promise<boolean> =>
     page.locator(section).evaluate((el) => (el as HTMLDetailsElement).open);
   await tabTo(page, `${section} > summary`);
@@ -93,12 +97,13 @@ test('undo and redo work while a toolbar control has keyboard focus', async ({
   await page.locator('.pitem[data-type="router"]').first().click();
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes + 1);
 
-  await tabTo(page, '#tSelectBy');
+  const edit = '#menubar [data-menu="edit"]';
+  await tabTo(page, edit);
   await page.keyboard.press('Control+z');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes);
   await page.keyboard.press('Control+Shift+z');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes + 1);
-  await expect(page.locator('#tSelectBy')).toBeFocused();
+  await expect(page.locator(edit)).toBeFocused();
 });
 
 test('after a mouse pick in a toolbar menu the canvas shortcuts work again', async ({
@@ -109,9 +114,9 @@ test('after a mouse pick in a toolbar menu the canvas shortcuts work again', asy
   await clickNode(page, 'fw');
   await expect.poll(() => statusCount(page, 'selected')).toBe(1);
 
-  // select… → same type: the firewall is the only one of its type.
-  await pickWithMouse(page, '#tSelectBy', 1);
-  await expect(page.locator('#tSelectBy')).not.toBeFocused();
+  // Edit ▸ Select ▸ Same type: the firewall is the only one of its type.
+  await menuCommand(page, 'selection.sameType');
+  await expect(page.locator('.menu')).toHaveCount(0);
   expect(await statusCount(page, 'selected')).toBe(1);
 
   // "a" is the anchor tool, not type-ahead for the menu's "all".
@@ -126,9 +131,10 @@ test('after a mouse pick in a toolbar menu the canvas shortcuts work again', asy
   await page.keyboard.press('Control+z');
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes);
 
-  // arrange… → hierarchical, then H is the hand tool, not another layout.
-  await pickWithMouse(page, '#tLayout', 1);
-  await expect(page.locator('#tLayout')).not.toBeFocused();
+  // Arrange ▸ Auto-arrange ▸ Hierarchical, then H is the hand tool, not
+  // another layout.
+  await menuCommand(page, 'arrange.layout.hierarchical');
+  await expect(page.locator('.menu')).toHaveCount(0);
   const history = await statusCount(page, 'history');
   await page.keyboard.press('h');
   expect(await isOn(page, '#ccHand')).toBe(true);
@@ -142,8 +148,9 @@ test('a key pressed after an export does not start another export', async ({
   const downloads: string[] = [];
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
 
-  // export… → Mermaid (the eighth option).
-  await pickWithMouse(page, '#fExport', 8);
+  // Export ▸ Mermaid.
+  await exportAs(page, 'mermaid');
+  await expect(page.locator('.menu')).toHaveCount(0);
   await expect.poll(() => downloads).toHaveLength(1);
   expect(downloads[0]).toMatch(/\.mmd$/);
 
@@ -164,9 +171,12 @@ test('dismissing a menu with Escape hands the keyboard back to the canvas', asyn
   const downloads: string[] = [];
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
 
-  await page.locator('#fExport').click(); // opens the menu
+  await page.locator('#fExportBtn').click(); // opens the menu
   await page.keyboard.press('Escape'); // closes it without choosing
-  await expect(page.locator('#fExport')).not.toBeFocused();
+  await expect(page.locator('.menu')).toHaveCount(0);
+  // Focus is back on the menu's trigger, and the canvas keys still work
+  // from there (below).
+  await expect(page.locator('#fExportBtn')).toBeFocused();
   await page.keyboard.press('l');
   expect(await statusText(page, 'tool')).toBe('link');
   await page.keyboard.press('v');
@@ -187,12 +197,16 @@ test('a mouse click on a Properties checkbox or select leaves the shortcuts with
   expect(await isOn(page, '#tSnap')).toBe(false);
 
   // A sheet checkbox does not re-render the panel, so focus would stay put.
+  await inspectorTab(page, 'document');
+  await inspectorSection(page, 'Sheet');
   await page.locator('#p-sheet').click();
   await page.locator('#p-sheet-border').click();
   await expect(page.locator('#p-sheet-border')).not.toBeChecked();
   await page.keyboard.press('g');
   expect(await isOn(page, '#tSnap')).toBe(true);
 
+  await inspectorTab(page, 'page');
+  await inspectorSection(page, 'Playback');
   await pickWithMouse(page, '#p-tr', 1);
   await expect(page.locator('#p-tr')).toHaveValue('fade');
   await expect(page.locator('#p-tr')).not.toBeFocused();
@@ -205,11 +219,14 @@ test('a value changed by keyboard keeps focus on its control', async ({
   page,
 }) => {
   await bootEditor(page);
+  await inspectorSection(page, 'Playback');
   await tabTo(page, '#p-tr');
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('#p-tr')).toHaveValue('fade');
   await expect(page.locator('#p-tr')).toBeFocused();
 
+  await inspectorTab(page, 'document');
+  await inspectorSection(page, 'Sheet');
   await tabTo(page, '#p-sheet');
   await page.keyboard.press('Space');
   await expect(page.locator('#p-sheet')).toBeChecked();
@@ -304,6 +321,7 @@ test('Enter that confirms an IME candidate does not act in quick-add, Find, a fr
 
   // Metadata: the half-typed key is not added as an entry.
   await clickNode(page, 'fw');
+  await inspectorSection(page, 'Data');
   const key = page.locator('#inspector .meta-add .meta-nk');
   await key.click();
   await composeThenEnter(page, 'サイト');

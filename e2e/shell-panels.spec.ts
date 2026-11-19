@@ -3,7 +3,7 @@
  * the Problems dock, the save chip.
  */
 import { expect, test } from '@playwright/test';
-import { bootEditor, clickNode, statusCount } from './helpers.js';
+import { bootEditor, clickNode, nodeBox, statusCount } from './helpers.js';
 
 test('pressing the canvas closes Display settings and the shortcuts work again', async ({
   page,
@@ -19,8 +19,15 @@ test('pressing the canvas closes Display settings and the shortcuts work again',
   await expect(pop).toBeVisible();
 
   // Pressing a node on the canvas is working on the canvas: the popover
-  // closes, the node is selected, and Delete reaches it.
-  await clickNode(page, 'fw');
+  // closes, the node is selected, and Delete reaches it. The popover opens
+  // over the canvas's right-hand side, so the node pressed is one it leaves
+  // in view.
+  const popBox = (await pop.boundingBox())!;
+  const node = await nodeBox(page, 'user');
+  expect(node.x + node.width, 'the popover covers the node').toBeLessThan(
+    popBox.x,
+  );
+  await clickNode(page, 'user');
   await expect(pop).toBeHidden();
   await expect(page.locator('#tDisplay')).toHaveAttribute(
     'aria-expanded',
@@ -254,7 +261,7 @@ test('a failed autosave is one readable line, is announced, and downloads the do
   await expect(chip).toHaveText('⚠ not saved — download JSON');
   // One line, not a narrow column of wrapped words.
   const box = (await chip.boundingBox())!;
-  const button = (await page.locator('#fSvg').boundingBox())!;
+  const button = (await page.locator('#fExportBtn').boundingBox())!;
   expect(box.height).toBeLessThanOrEqual(button.height);
   expect(box.width).toBeGreaterThan(120);
   // Announced to assistive technology, not just coloured red.
@@ -296,7 +303,7 @@ test('a newer version saved by another tab is announced, on one line', async ({
   const chip = idle.locator('#saved');
   await expect(chip).toHaveText('⚠ changed in another tab — load it');
   const box = (await chip.boundingBox())!;
-  const button = (await idle.locator('#fSvg').boundingBox())!;
+  const button = (await idle.locator('#fExportBtn').boundingBox())!;
   expect(box.height).toBeLessThanOrEqual(button.height);
   await expect(
     idle.locator('[role="alert"]', { hasText: 'Another tab saved' }),

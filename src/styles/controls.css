@@ -45,19 +45,33 @@
   background: var(--accent);
   color: var(--on-accent);
 }
+/* Hover keeps the fill, so the label keeps its contrast on any brand accent,
+   and shows a halo instead. */
 .btn-primary:hover,
 .btn-primary:active {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 86%, var(--on-accent));
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft-strong);
   color: var(--on-accent);
+}
+.btn-primary:active {
+  box-shadow: 0 0 0 2px var(--accent-soft-strong);
+}
+/* A button that stays down while something it opened is showing. */
+.btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg-strong);
 }
 /* No outline until hovered: for secondary actions in a row of buttons. */
 .btn-ghost {
   border-color: transparent;
 }
 /* A destructive action (delete, revoke). */
+/* The outline takes the text tone: --status-error is tuned for a fill and is
+   under 3:1 as a line on a light surface. */
 .btn-danger {
-  border-color: var(--status-error);
+  border-color: var(--status-error-fg);
   color: var(--status-error-fg);
 }
 .btn-danger:hover {
@@ -159,14 +173,17 @@
 }
 
 /* ── Fields ───────────────────────────────────────────────────────────── */
-/* Text inputs, number inputs, selects and textareas: a filled well with no
-   outline at rest, an outline on hover, the shared focus ring on focus. */
+/* Text inputs, number inputs, selects and textareas: a filled well. The fill
+   is too close to the panel to mark a field by itself, so a line under the
+   well does (3:1 against every surface); the whole outline shows on hover,
+   the shared focus ring on focus. */
 .field {
   width: 100%;
   min-width: 0;
   height: 28px;
   padding: 0 8px;
   border: 1px solid transparent;
+  border-bottom-color: var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-field);
   color: var(--fg);
@@ -197,6 +214,80 @@ textarea.field {
 .data {
   font-family: var(--font);
   font-variant-numeric: tabular-nums;
+}
+/* The classes that set a whole `font` would take the face back. */
+.btn.data,
+.chip.data,
+.badge.data,
+.hint.data,
+.section-label.data {
+  font-family: var(--font);
+}
+
+/* ── Slider ───────────────────────────────────────────────────────────── */
+/* <input type="range" class="range">: a 4px track in a 28px hit area and a
+   round accent thumb. The part before the thumb is filled up to --range-fill,
+   which src/ui/range.ts keeps in step with the value (Firefox draws its own
+   progress part). */
+.range {
+  --range-fill: 0%;
+  appearance: none;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+.range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--range-fill),
+    var(--line-strong) var(--range-fill)
+  );
+}
+.range::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: box-shadow var(--dur-fast) var(--ease);
+}
+.range:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--accent-soft-strong);
+}
+.range::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--line-strong);
+}
+.range::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+.range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: box-shadow var(--dur-fast) var(--ease);
+}
+.range:hover::-moz-range-thumb {
+  box-shadow: 0 0 0 4px var(--accent-soft-strong);
+}
+.range:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ── Switch ───────────────────────────────────────────────────────────── */
@@ -274,7 +365,8 @@ textarea.field {
 .seg > button[aria-pressed='true'],
 .seg > button[aria-checked='true'] {
   background: var(--surface-front);
-  box-shadow: 0 0 0 1px var(--line);
+  /* The chosen segment's outline is what marks it: 3:1 against the well. */
+  box-shadow: 0 0 0 1px var(--line-strong);
   color: var(--fg-strong);
 }
 
@@ -374,6 +466,11 @@ textarea.field {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-front);
+}
+/* A card inside a card is a recessed well, so the two do not read as one. */
+.card .card {
+  border-color: transparent;
+  background: var(--surface-field);
 }
 
 /* ── Dialog ───────────────────────────────────────────────────────────── */

@@ -10,8 +10,8 @@
  *
  * Follows `profile-panel.ts`: pure `render*Html` string builders
  * (characterization-testable without a DOM — see `admin-dashboard.test.ts`)
- * plus one `mountAdminDashboard(host)` controller that owns the panel DOM,
- * fetching, and wiring behind a narrow host seam.
+ * plus one `mountAdminDashboard()` controller that owns the panel DOM,
+ * fetching, and wiring, and that the shell opens through `toggle()`.
  */
 import {
   AdminDisabledError,
@@ -43,9 +43,9 @@ export function formatWhen(iso: string): string {
 /** Pure: the disabled-deployment body (`ANALYTICS_ENABLED` off). */
 export function renderAdminDisabledHtml(): string {
   return (
-    `<div class="ws-note">The admin dashboard is not enabled on this deployment.</div>` +
-    `<div class="ws-card"><div class="ws-note">Analytics are turned off here. Editing and workspaces work as usual.</div>` +
-    `<div class="ws-actions"><button class="tbtn" id="adminRefresh">Check again</button></div></div>`
+    `<div class="hint">The admin dashboard is not enabled on this deployment.</div>` +
+    `<div class="card"><div class="hint">Analytics are turned off here. Editing and workspaces work as usual.</div>` +
+    `<div class="ws-actions"><button class="btn btn-sm" id="adminRefresh">Check again</button></div></div>`
   );
 }
 
@@ -63,18 +63,18 @@ export interface WorkspacesState {
 
 /** Pure: one user's workspace list (metadata only), shown when expanded. */
 export function renderUserWorkspacesHtml(state: WorkspacesState): string {
-  if (state.loading) return `<div class="ws-note">Loading workspaces…</div>`;
+  if (state.loading) return `<div class="hint">Loading workspaces…</div>`;
   if (state.error) return `<div class="ws-error">${esc(state.error)}</div>`;
   const items = state.items ?? [];
-  if (!items.length) return `<div class="ws-empty">No workspaces.</div>`;
+  if (!items.length) return `<div class="hint">No workspaces.</div>`;
   return items
     .map(
       (w) =>
-        `<div class="ws-note admin-ws-row">${esc(w.title || 'Untitled')} ` +
-        `<span class="ws-badge">${w.pages} page${w.pages === 1 ? '' : 's'}</span>` +
+        `<div class="hint admin-ws-row">${esc(w.title || 'Untitled')} ` +
+        `<span class="badge">${w.pages} page${w.pages === 1 ? '' : 's'}</span>` +
         (w.revision != null
-          ? ` <span class="ws-badge">rev ${w.revision}</span>`
-          : ` <span class="ws-badge">legacy</span>`) +
+          ? ` <span class="badge">rev ${w.revision}</span>`
+          : ` <span class="badge">legacy</span>`) +
         `</div>`,
     )
     .join('');
@@ -90,13 +90,13 @@ function renderRosterRowHtml(
   const name =
     entry.name && entry.name !== entry.login ? ` (${entry.name})` : '';
   return (
-    `<div class="ws-card admin-user" data-uid="${esc(entry.uid)}">` +
-    `<div class="ws-row"><span class="ws-v admin-login">${esc(entry.login)}${esc(name)}</span>` +
-    `<span class="ws-badge">${entry.loginCount} login${entry.loginCount === 1 ? '' : 's'}</span></div>` +
-    `<div class="ws-note">Last ${esc(formatWhen(entry.lastLoginAt))} · first ${esc(formatWhen(entry.firstSeenAt))} · id ${esc(entry.uid)}</div>` +
-    `<div class="ws-actions"><button class="tbtn admin-ws-toggle" data-uid="${esc(entry.uid)}">${expanded ? 'Hide workspaces' : 'Workspaces'}</button></div>` +
+    `<div class="card admin-user" data-uid="${esc(entry.uid)}">` +
+    `<div class="ws-row"><span class="ws-v admin-login"><span class="data">${esc(entry.login)}</span>${esc(name)}</span>` +
+    `<span class="badge">${entry.loginCount} login${entry.loginCount === 1 ? '' : 's'}</span></div>` +
+    `<div class="hint">Last <span class="data">${esc(formatWhen(entry.lastLoginAt))}</span> · first <span class="data">${esc(formatWhen(entry.firstSeenAt))}</span> · id <span class="data">${esc(entry.uid)}</span></div>` +
+    `<div class="ws-actions"><button class="btn btn-sm admin-ws-toggle" data-uid="${esc(entry.uid)}">${expanded ? 'Hide workspaces' : 'Workspaces'}</button></div>` +
     (expanded && workspaces
-      ? `<div class="ws-card admin-ws-list">${renderUserWorkspacesHtml(workspaces)}</div>`
+      ? `<div class="card admin-ws-list">${renderUserWorkspacesHtml(workspaces)}</div>`
       : '') +
     `</div>`
   );
@@ -109,12 +109,12 @@ export function renderRosterHtml(
   workspaces: Record<string, WorkspacesState>,
 ): string {
   const header =
-    `<div class="ws-note">${summary.totals.users} user${summary.totals.users === 1 ? '' : 's'} · ` +
+    `<div class="hint">${summary.totals.users} user${summary.totals.users === 1 ? '' : 's'} · ` +
     `${summary.totals.logins} login${summary.totals.logins === 1 ? '' : 's'} recorded. Metadata only — no diagram contents.</div>`;
   if (!summary.users.length)
     return (
       header +
-      `<div class="ws-card"><div class="ws-empty">No logins recorded yet.</div></div>`
+      `<div class="card"><div class="hint">No logins recorded yet.</div></div>`
     );
   return (
     header +
@@ -135,17 +135,17 @@ export interface SessionTrailState {
 
 /** Pure: one session's tool-call trail, shown when expanded. */
 export function renderSessionTrailHtml(state: SessionTrailState): string {
-  if (state.loading) return `<div class="ws-note">Loading trail…</div>`;
+  if (state.loading) return `<div class="hint">Loading trail…</div>`;
   if (state.error) return `<div class="ws-error">${esc(state.error)}</div>`;
   const events = state.events ?? [];
-  if (!events.length)
-    return `<div class="ws-empty">No tool calls recorded.</div>`;
+  if (!events.length) return `<div class="hint">No tool calls recorded.</div>`;
   return events
     .map(
       (event) =>
-        `<div class="ws-note admin-trail-row">` +
-        `<span class="ws-badge">${esc(event.outcome)}</span> ` +
-        `${esc(event.toolName)} · ${esc(formatWhen(event.at))}` +
+        `<div class="hint admin-trail-row">` +
+        `<span class="badge">${esc(event.outcome)}</span> ` +
+        `<span class="admin-trail-what"><span class="data">${esc(event.toolName)}</span> · ` +
+        `<span class="data admin-trail-when">${esc(formatWhen(event.at))}</span></span>` +
         `</div>`,
     )
     .join('');
@@ -158,18 +158,18 @@ export function renderSessionRowHtml(
   trail: SessionTrailState | undefined,
 ): string {
   const who = session.ownerLogin
-    ? `${session.ownerLogin}`
-    : `id ${session.ownerId}`;
+    ? `<span class="data">${esc(session.ownerLogin)}</span>`
+    : `id <span class="data">${esc(session.ownerId)}</span>`;
   const when = session.lastToolAt ?? session.startedAt;
   return (
-    `<div class="ws-card admin-session" data-sid="${esc(session.sessionId)}">` +
-    `<div class="ws-row"><span class="ws-v admin-login">${esc(who)}</span>` +
-    `<span class="ws-badge">${session.toolCallCount} call${session.toolCallCount === 1 ? '' : 's'}</span></div>` +
-    `<div class="ws-note">Last ${esc(formatWhen(when))} · started ${esc(formatWhen(session.startedAt))}</div>` +
-    `<div class="ws-note">session ${esc(session.sessionId)}</div>` +
-    `<div class="ws-actions"><button class="tbtn admin-session-toggle" data-sid="${esc(session.sessionId)}">${expanded ? 'Hide trail' : 'Trail'}</button></div>` +
+    `<div class="card admin-session" data-sid="${esc(session.sessionId)}">` +
+    `<div class="ws-row"><span class="ws-v admin-login">${who}</span>` +
+    `<span class="badge">${session.toolCallCount} call${session.toolCallCount === 1 ? '' : 's'}</span></div>` +
+    `<div class="hint">Last <span class="data">${esc(formatWhen(when))}</span> · started <span class="data">${esc(formatWhen(session.startedAt))}</span></div>` +
+    `<div class="hint">session <span class="data">${esc(session.sessionId)}</span></div>` +
+    `<div class="ws-actions"><button class="btn btn-sm admin-session-toggle" data-sid="${esc(session.sessionId)}">${expanded ? 'Hide trail' : 'Trail'}</button></div>` +
     (expanded && trail
-      ? `<div class="ws-card admin-session-trail">${renderSessionTrailHtml(trail)}</div>`
+      ? `<div class="card admin-session-trail">${renderSessionTrailHtml(trail)}</div>`
       : '') +
     `</div>`
   );
@@ -182,18 +182,18 @@ export function renderSessionsHtml(
   trails: Record<string, SessionTrailState>,
   sessionsError: string | null,
 ): string {
-  const header = `<div class="ws-section">Agent Sessions</div>`;
+  const header = `<h4 class="section-label">Agent Sessions</h4>`;
   if (sessionsError)
     return header + `<div class="ws-error">${esc(sessionsError)}</div>`;
-  if (!sessions) return header + `<div class="ws-note">Loading sessions…</div>`;
+  if (!sessions) return header + `<div class="hint">Loading sessions…</div>`;
   const note =
-    `<div class="ws-note">Recent MCP sessions. Tool names and coarse success/error only — ` +
+    `<div class="hint">Recent MCP sessions. Tool names and coarse success/error only — ` +
     `no prompts, arguments, or diagram contents.</div>`;
   if (!sessions.length)
     return (
       header +
       note +
-      `<div class="ws-card"><div class="ws-empty">No agent sessions recorded yet.</div></div>`
+      `<div class="card"><div class="hint">No agent sessions recorded yet.</div></div>`
     );
   return (
     header +
@@ -228,7 +228,7 @@ export interface AdminPanelState {
 export function renderAdminBodyHtml(state: AdminPanelState): string {
   if (state.disabled) return renderAdminDisabledHtml();
   if (state.forbidden) return renderAdminForbiddenHtml();
-  if (state.loading) return `<div class="ws-note">Loading…</div>`;
+  if (state.loading) return `<div class="hint">Loading…</div>`;
   const err = state.error
     ? `<div class="ws-error">${esc(state.error)}</div>`
     : '';
@@ -245,21 +245,14 @@ export function renderAdminBodyHtml(state: AdminPanelState): string {
   );
 }
 
-/** Everything the dashboard needs from `main.ts` — the narrow seam. */
-export interface AdminDashboardHost {
-  /** The `#adminChip` toolbar button (hidden until the admin signs in). */
-  chip: HTMLButtonElement;
-}
-
-/** The call sites `main.ts` needs. */
+/** The call sites `main.ts` needs. The shell opens the dashboard from the
+ * account menu (Admin, the owner only). */
 export interface AdminDashboardHandle {
-  /** Reveals the toolbar chip once the signed-in user is confirmed admin. */
-  enable(): void;
+  /** Opens the dashboard, or closes it when it is open. */
+  toggle(): void;
 }
 
-export function mountAdminDashboard(
-  host: AdminDashboardHost,
-): AdminDashboardHandle {
+export function mountAdminDashboard(): AdminDashboardHandle {
   let panel: HTMLElement | null = null;
   let releaseOverlay: (() => void) | null = null;
   const state: AdminPanelState = {
@@ -283,7 +276,6 @@ export function mountAdminDashboard(
   function closePanel(): void {
     panel?.remove();
     panel = null;
-    host.chip.setAttribute('aria-expanded', 'false');
     releaseOverlay?.();
     releaseOverlay = null;
   }
@@ -410,29 +402,20 @@ export function mountAdminDashboard(
       return;
     }
     panel = document.createElement('div');
-    panel.className = 'workspace-panel admin-panel scroll-slim';
+    panel.className = 'workspace-panel admin-panel';
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Admin dashboard');
     panel.innerHTML =
-      `<div class="ws-head"><h3>Admin dashboard</h3><button class="tbtn ticon" id="adminClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
-      `<div id="adminBody"></div>`;
+      `<div class="panel-head"><h3 class="panel-title">Admin dashboard</h3><button class="icon-btn" id="adminClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
+      `<div id="adminBody" class="ws-body scroll-slim"></div>`;
     document.body.appendChild(panel);
     panel
       .querySelector('#adminClose')
       ?.addEventListener('click', () => closePanel());
-    host.chip.setAttribute('aria-expanded', 'true');
     // Focus trap + Escape + focus restore (issue #209).
     releaseOverlay = registerOverlay(panel, { close: closePanel });
     void refresh();
   }
 
-  function enable(): void {
-    host.chip.hidden = false;
-    host.chip.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openPanel();
-    });
-  }
-
-  return { enable };
+  return { toggle: openPanel };
 }

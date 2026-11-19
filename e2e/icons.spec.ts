@@ -4,7 +4,15 @@
  * it sits in, and leaves the control's accessible name where it was.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor, clickLink, clickNode, nodeBox } from './helpers.js';
+import {
+  bootEditor,
+  clickLink,
+  clickNode,
+  inspectorSection,
+  inspectorTab,
+  menuCommand,
+  nodeBox,
+} from './helpers.js';
 
 /**
  * What is wrong with the icons and labels on the page right now (empty =
@@ -168,9 +176,24 @@ test('every chrome icon is a symbol of the one sprite', async ({ page }) => {
     'the sprite has its symbols',
   ).toBeGreaterThan(50);
 
-  // The shell as it boots: toolbar, canvas controls, panel toggles, frames,
-  // the page inspector and the status bar.
-  expect(await shownIcons(page), 'icons on screen at boot').toBeGreaterThan(40);
+  // The shell as it boots: top bar, rail, canvas controls, panel toggles,
+  // pages bar, the page inspector and the status bar, with the Arrange menu
+  // open, which holds the arrange buttons the toolbar had. The Page tab
+  // starts with its annotations list closed (the list's eight icons drew at
+  // boot before the panel had tabs), so the boot count is the shell's icons
+  // without them.
+  const arrange = page.locator('#menubar [data-menu="arrange"]');
+  await arrange.click();
+  expect(await shownIcons(page), 'icons on screen at boot').toBeGreaterThan(32);
+  expect(await iconProblems(page)).toEqual([]);
+  await arrange.click();
+  await expect(page.locator('.menu-layer')).toHaveCount(0);
+  // With the annotations list opened, the screen holds as many as it did.
+  await inspectorSection(page, 'Annotations');
+  expect(
+    await shownIcons(page),
+    'icons on screen with the annotations list open',
+  ).toBeGreaterThan(40);
   expect(await iconProblems(page)).toEqual([]);
 
   // A selected node: the mini style bar, arrange and format rows, metadata.
@@ -189,11 +212,11 @@ test('every chrome icon is a symbol of the one sprite', async ({ page }) => {
   await expect(page.locator('.display-pop')).toBeVisible();
   expect(await iconProblems(page)).toEqual([]);
   await page.keyboard.press('Escape');
-  for (const [template, card] of [
-    ['spine-leaf', '.tpw-card'],
-    ['__sdwan', '.sdw-card'],
+  for (const [command, card] of [
+    ['file.template.spine-leaf', '.tpw-card'],
+    ['file.generateSdwan', '.sdw-card'],
   ] as const) {
-    await page.selectOption('#fTemplate', template);
+    await menuCommand(page, command);
     await expect(
       page.locator(`${card} [data-act="close"] .icon`),
     ).toBeVisible();
@@ -201,7 +224,7 @@ test('every chrome icon is a symbol of the one sprite', async ({ page }) => {
     await page.keyboard.press('Escape');
     await expect(page.locator(card)).toBeHidden();
   }
-  await page.locator('#tTheme').click();
+  await menuCommand(page, 'view.theme.light');
   await expect(page.locator('html')).toHaveClass(/light/);
   expect(await iconProblems(page)).toEqual([]);
 });
@@ -211,13 +234,16 @@ test('an icon that is on the page but not drawn is reported', async ({
 }) => {
   // The checks above are only worth something if they can fail: collapse
   // the icons of the visible chrome to nothing, as a stylesheet slip would.
+  // (The bar's icons are the top bar, the left rail, the pages bar and the
+  // zoom control.)
   await bootEditor(page);
   const shown = await shownIcons(page);
+  const chrome = ['header.bar', '#rail', '#pagesBar', '#canvasCtrls'];
   await page.addStyleTag({
-    content: 'header.bar .icon, #canvasCtrls .icon { width: 0; height: 0; }',
+    content: `${chrome.map((c) => `${c} .icon`).join(', ')} { width: 0; height: 0; }`,
   });
   const collapsed = await page
-    .locator('header.bar svg.icon, #canvasCtrls svg.icon')
+    .locator(chrome.map((c) => `${c} svg.icon`).join(', '))
     .evaluateAll(
       (icons) => icons.filter((icon) => icon.checkVisibility()).length,
     );
@@ -273,6 +299,8 @@ async function openAnnotatedDocument(page: Page): Promise<void> {
     buffer: Buffer.from(JSON.stringify(ANNOTATED_DOCUMENT)),
   });
   await expect(page.locator('#page-canvas [data-tds-node]')).toHaveCount(3);
+  await inspectorTab(page, 'document');
+  await inspectorSection(page, 'Layers');
   await expect(page.locator('.layer-eye')).toHaveCount(2);
 }
 
@@ -305,6 +333,8 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
   // Every annotation editor open: delete buttons, the compass, and a flow's
   // waypoint chips, one of them an anchor (its icon sits in a label that
   // clips, so it is drawn at the height of that label's line).
+  await inspectorTab(page, 'page');
+  await inspectorSection(page, 'Annotations');
   for (const summary of await page
     .locator('#inspector details.anno > summary')
     .all())
@@ -324,7 +354,8 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
   ).toHaveCount(10);
   expect(await iconProblems(page)).toEqual([]);
 
-  // Two nodes selected: the toolbar's align group and the path button.
+  // Two nodes selected: Arrange ▸ Align and Distribute, and the path
+  // button.
   await clickNode(page, 's1');
   const second = await nodeBox(page, 'l1');
   await page.keyboard.down('Shift');
@@ -333,7 +364,25 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
     second.y + second.height / 2,
   );
   await page.keyboard.up('Shift');
-  await expect(page.locator('#alignGroup .icon:visible')).toHaveCount(8);
+  const arrange = page.locator('#menubar [data-menu="arrange"]');
+  await arrange.click();
+  const submenu = page.locator('.menu-layer .menu').nth(1);
+  for (const [name, icons] of [
+    ['Align', 6],
+    ['Distribute', 2],
+  ] as const) {
+    await page
+      .locator('.menu-layer .menu')
+      .first()
+      .getByRole('menuitem', { name, exact: true })
+      .click();
+    await expect(submenu.locator('.menu-icon .icon:visible')).toHaveCount(
+      icons,
+    );
+    expect(await iconProblems(page)).toEqual([]);
+  }
+  await arrange.click();
+  await expect(page.locator('.menu-layer')).toHaveCount(0);
   await expect(page.locator('#i-path .icon')).toBeVisible();
   expect(await iconProblems(page)).toEqual([]);
 
@@ -406,7 +455,9 @@ test('the account chip of a signed-in session', async ({ page }) => {
   const chip = page.locator('#userChip');
   await expect(chip).toBeVisible();
   await expect(chip).toHaveText('e2e');
-  await expect(chip).toHaveAccessibleName('Account menu');
+  // Its name starts with the login it shows (label in name), then says what
+  // it opens.
+  await expect(chip).toHaveAccessibleName('e2e, account menu');
   await expect(chip.locator('.uc-dot .icon use')).toHaveAttribute(
     'href',
     '#i-account',
@@ -431,13 +482,29 @@ test('a button whose plus is an icon still says "add"', async ({ page }) => {
   // icon is hidden from assistive technology, so the name is spelled out.
   // It keeps the visible word, for anyone who speaks the label they see.
   await openAnnotatedDocument(page);
-  for (const [selector, name, word] of [
-    ['#p-layer-add', 'Add layer', 'Layer'],
-    ['.anno-add [data-add="zone"]', 'Add zone', 'zone'],
-    ['.anno-add [data-add="flowPath"]', 'Add flow path', 'flow'],
-    ['.anno-add [data-add="policyMarker"]', 'Add marker', 'marker'],
-    ['#addPage', 'Add frame', 'frame'],
+  // The Layers button is on the Document tab, the annotation buttons on the
+  // Page tab.
+  for (const [selector, name, word, tab, section] of [
+    ['#p-layer-add', 'Add layer', 'Layer', 'document', 'Layers'],
+    ['.anno-add [data-add="zone"]', 'Add zone', 'zone', 'page', 'Annotations'],
+    [
+      '.anno-add [data-add="flowPath"]',
+      'Add flow path',
+      'flow',
+      'page',
+      'Annotations',
+    ],
+    [
+      '.anno-add [data-add="policyMarker"]',
+      'Add marker',
+      'marker',
+      'page',
+      'Annotations',
+    ],
+    ['#addPage', 'Add page', 'Add page', null, null],
   ] as const) {
+    if (tab) await inspectorTab(page, tab);
+    if (section) await inspectorSection(page, section);
     const button = page.locator(selector);
     await expect(button).toHaveAccessibleName(name);
     await expect(button).toHaveText(word);
@@ -449,7 +516,7 @@ test('a button whose plus is an icon still says "add"', async ({ page }) => {
   // The titles say what each does, as before.
   await expect(page.locator('#addPage')).toHaveAttribute(
     'title',
-    'Add blank frame',
+    'Add blank page',
   );
   await expect(page.locator('.anno-add [data-add="zone"]')).toHaveAttribute(
     'title',
@@ -464,29 +531,43 @@ test('an icon swap keeps the words and the accessible name', async ({
   const iconOf = (selector: string): Promise<string | null> =>
     page.locator(`${selector} .icon use`).first().getAttribute('href');
 
-  // The theme button shows what a click switches to; its name stays put.
-  const theme = page.locator('#tTheme');
-  await expect(theme).toHaveAttribute(
-    'aria-label',
-    'Toggle light / dark theme',
-  );
-  expect(await iconOf('#tTheme')).toBe('#i-sun');
-  await theme.click();
-  expect(await iconOf('#tTheme')).toBe('#i-moon');
-  await expect(theme).toHaveText('');
-  await expect(theme).toHaveAttribute('title', 'Switch to dark theme');
-  await expect(theme).toHaveAttribute(
-    'aria-label',
-    'Toggle light / dark theme',
-  );
+  // The theme is a choice in View ▸ Theme: the item that is on follows the
+  // theme, and the two keep their names.
+  const themeItems = async (): Promise<[string, string | null][]> => {
+    await page.locator('#menubar [data-menu="view"]').click();
+    await page.getByRole('menuitem', { name: 'Theme', exact: true }).click();
+    const items = page.locator('.menu-layer .menu').nth(1).locator('button');
+    const out: [string, string | null][] = [];
+    for (let i = 0; i < (await items.count()); i++)
+      out.push([
+        await items.nth(i).innerText(),
+        await items.nth(i).getAttribute('aria-checked'),
+      ]);
+    await page.locator('#menubar [data-menu="view"]').click();
+    await expect(page.locator('.menu-layer')).toHaveCount(0);
+    return out;
+  };
+  expect(await themeItems()).toEqual([
+    ['Dark', 'true'],
+    ['Light', 'false'],
+  ]);
+  await menuCommand(page, 'view.theme.light');
+  await expect(page.locator('html')).toHaveClass(/light/);
+  expect(await themeItems()).toEqual([
+    ['Dark', 'false'],
+    ['Light', 'true'],
+  ]);
 
-  // Panel toggles keep their word and change the icon beside it.
+  // Panel toggles keep their name and change the icon. The library's is an
+  // icon-only button on the rail now, so its name is its label.
   const palette = page.locator('#palette-toggle');
-  await expect(palette).toHaveText('nodes');
+  await expect(palette).toHaveAccessibleName('Node library');
   expect(await iconOf('#palette-toggle')).toBe('#i-panel-left-close');
+  await expect(palette).toHaveAttribute('aria-pressed', 'true');
   await palette.click();
-  await expect(palette).toHaveText('nodes');
+  await expect(palette).toHaveAccessibleName('Node library');
   expect(await iconOf('#palette-toggle')).toBe('#i-panel-left-open');
+  await expect(palette).toHaveAttribute('aria-pressed', 'false');
   await palette.click();
 
   const inspector = page.locator('#inspector-toggle');
@@ -497,11 +578,18 @@ test('an icon swap keeps the words and the accessible name', async ({
   expect(await iconOf('#inspector-toggle')).toBe('#i-panel-right-open');
   await inspector.click();
 
+  // The minimap's toggle at the end of the pages bar is icon-only: it keeps
+  // its name and its map, and says whether the card is open by being pressed
+  // (it starts closed).
   const minimap = page.locator('#minimap-toggle');
-  await expect(minimap).toHaveText('map');
-  expect(await iconOf('#minimap-toggle')).toBe('#i-chevron-down');
+  await expect(minimap).toHaveAccessibleName('Minimap');
+  expect(await iconOf('#minimap-toggle')).toBe('#i-minimap');
+  await expect(minimap).toHaveAttribute('aria-pressed', 'false');
   await minimap.click();
-  expect(await iconOf('#minimap-toggle')).toBe('#i-chevron-right');
+  await expect(page.locator('#minimap')).toBeVisible();
+  await expect(minimap).toHaveAccessibleName('Minimap');
+  expect(await iconOf('#minimap-toggle')).toBe('#i-minimap');
+  await expect(minimap).toHaveAttribute('aria-pressed', 'true');
 
   // The frames pill and the Problems header carry a caret of their own.
   const frames = page.locator('#frames-toggle');
@@ -514,12 +602,17 @@ test('an icon swap keeps the words and the accessible name', async ({
   await page.locator('#problems-toggle').click();
   expect(await iconOf('#problems-toggle')).toBe('#i-chevron-down');
 
-  // Menus cannot hold an icon: their placeholders are the words alone.
-  for (const [menu, words] of [
-    ['#fExport', 'export…'],
-    ['#tLayout', 'arrange…'],
-    ['#tSelectBy', 'select…'],
-    ['#fTemplate', 'template…'],
-  ] as const)
-    await expect(page.locator(`${menu} option[value=""]`)).toHaveText(words);
+  // The buttons that open a menu keep their words beside the icon, and the
+  // one without words is named.
+  for (const [button, words, glyph] of [
+    ['#fExportBtn', 'Export', '#i-export'],
+    ['#tTidy', 'Tidy', '#i-tidy'],
+    ['#tTidyMenu', '', '#i-chevron-down'],
+  ] as const) {
+    await expect(page.locator(button)).toHaveText(words);
+    expect(await iconOf(button)).toBe(glyph);
+  }
+  await expect(page.locator('#tTidyMenu')).toHaveAccessibleName(
+    'Tidy, balance and auto-arrange',
+  );
 });

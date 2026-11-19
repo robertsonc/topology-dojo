@@ -177,15 +177,17 @@ vendor-neutral diagramming-tool direction) is **Proposed, not accepted**; if
 accepted it re-cuts _Now/Next_.
 
 [Proposal 0013](proposals/0013-ui-overhaul.md) (the UI overhaul of the editor
-chrome: placement first, then a flat skin) was **accepted 2026-11-19**. At
-that date nothing of it is on `main`. Its phase P0 (foundations) is in
-progress on draft PR #326: at `3765dc3` that branch holds the stylesheet
-moved to `src/styles/`, the token layer, the flat docked chrome, hover-reveal
-scrollbars and one SVG icon set; the command registry P0 also lists is not
-on it, and neither is anything of its phases P1–P4 (shell, properties panel,
-skin sweep, guardrails). P0–P4 are that proposal's own labels, unrelated to
-proposal 0003's packets P1–P5 and to the "Phase 0" and "Phase 1" milestones
-below.
+chrome: placement first, then a flat skin) was **accepted 2026-11-19**. Its
+phase P0 (foundations) is merged except the command registry: PR #326 merged
+the same day as `e9d0d7f` (see "UI overhaul foundations" under
+"Completed historical milestones"), and the rest of P0, the command registry
+(`src/ui/commands.ts`: one table of every command and its keys, read by the
+key handler, the context menu and the shortcut sheet), is draft PR #327 (not merged). Until #327
+merges, `main` has none of it. Its
+phases P1–P4 (shell, properties panel, skin sweep, guardrails) have not
+changed a surface yet; the 12 px text ratchet, a first form of P4's budget
+test, and the P1 and P2 building blocks are already on `main`. P0–P4 are that proposal's own labels, unrelated to proposal 0003's
+packets P1–P5 and to the "Phase 0" and "Phase 1" milestones below.
 
 ## Next
 
@@ -728,6 +730,37 @@ Plan and per-phase status: [`futures/hw-catalog.md`](futures/hw-catalog.md).
   (PR #296).
 - Not done: branch-to-branch mesh (deferred) and more vendors (slice 5 —
   research only, [proposal 0012](proposals/0012-sdwan-vendor-research.md)).
+
+### UI overhaul foundations (proposal 0013, P0 except the command registry, 2026-11-19)
+
+PR #326, merged 2026-11-19 as `e9d0d7f` (its Release run, 44491161125,
+completed with success at 09:12 UTC the same day). Shipped:
+
+- The editor stylesheet moved out of `index.html` into `src/styles/`;
+  `index.css` imports the files in cascade order.
+- A token layer (`src/styles/tokens.css`) for both themes and a flat skin:
+  three elevation levels, no backdrop blur. The toolbar, properties panel and
+  status bar are docked; the node library and the pages dock still float over
+  the canvas.
+- Neutral scrollbars, shown on hover or keyboard focus.
+- `color-scheme` and `theme-color` follow the theme; the "Panel blur (glass)"
+  display setting is removed.
+- One SVG icon set (Lucide, generated into an inline sprite) instead of symbol
+  characters; ink on the brand accent chosen for contrast.
+- Guards: `src/styles/styles.test.ts`, `src/ui/icons.test.ts`,
+  `src/ui/contrast.test.ts`, `e2e/icons.spec.ts`. The three canvas screenshot
+  baselines were regenerated; CI's e2e job passed on the pull request's last
+  commit (`8881941`) before it merged.
+
+On `main` but used by no surface yet (building blocks for P1–P3, not
+capabilities): the shared control classes, the Inter typeface, the menu
+component, the command palette and the properties-panel tab rules.
+
+Not shipped: any change to a surface from P1–P4. The command registry, the
+rest of P0, is PR #327, a draft and not merged: it adds `src/ui/commands.ts`,
+makes the key handler, the toolbar and canvas controls, the context menu and
+the shortcut sheet read one command table, and removes `src/ui/canvas-keys.ts`;
+it is not on `main`, and no key or command is meant to behave differently.
 
 ### Wiring-sheet conventions (proposal 0008, 2026-10-15)
 

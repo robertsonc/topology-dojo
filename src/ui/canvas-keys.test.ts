@@ -1,44 +1,77 @@
+/**
+ * The canvas shortcuts for the view, renaming and files: the first nine
+ * shortcuts decided by a pure function (once `canvasKeyCommand` of a module
+ * of their own). They are rows of the key table in commands.ts now, and
+ * these are the cases that pinned the reasons for them: zoom on plain keys
+ * so the browser keeps its own page zoom, Shift + digit by physical key
+ * because what a shifted digit types depends on the layout.
+ */
 import { describe, expect, it } from 'vitest';
-import { canvasKeyCommand } from './canvas-keys.js';
+import { matchKey, type CommandId, type KeyPress } from './commands.js';
 
-describe('canvasKeyCommand', () => {
+/** The nine; each takes its key from the browser. */
+const CANVAS_KEY_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
+  'view.zoomIn',
+  'view.zoomOut',
+  'view.zoom100',
+  'view.fit',
+  'view.zoomToSelection',
+  'edit.rename',
+  'edit.pasteInPlace',
+  'file.download',
+  'file.open',
+]);
+
+/**
+ * Which of the nine a key press is, or null. `focusOnCanvas` is whether
+ * nothing interactive has focus (the page body or the canvas). The plain "0"
+ * fits the view too, but leaves the key alone: it never was one of them.
+ */
+function canvasKeyCommand(e: KeyPress, focusOnCanvas = true): CommandId | null {
+  const hit = matchKey(e, { focusOnCanvas, selectionCount: 0 });
+  return hit?.preventDefault && CANVAS_KEY_COMMANDS.has(hit.id) ? hit.id : null;
+}
+
+describe('the canvas shortcuts in the key table', () => {
   it('zooms with plus and minus, shifted or not, main keys or numpad', () => {
-    expect(canvasKeyCommand({ key: '=', code: 'Equal' })).toBe('zoom-in');
+    expect(canvasKeyCommand({ key: '=', code: 'Equal' })).toBe('view.zoomIn');
     expect(canvasKeyCommand({ key: '+', code: 'Equal', shiftKey: true })).toBe(
-      'zoom-in',
+      'view.zoomIn',
     );
-    expect(canvasKeyCommand({ key: '+', code: 'NumpadAdd' })).toBe('zoom-in');
+    expect(canvasKeyCommand({ key: '+', code: 'NumpadAdd' })).toBe(
+      'view.zoomIn',
+    );
     // A keyboard where "+" is a key of its own.
     expect(canvasKeyCommand({ key: '+', code: 'BracketRight' })).toBe(
-      'zoom-in',
+      'view.zoomIn',
     );
-    expect(canvasKeyCommand({ key: '-', code: 'Minus' })).toBe('zoom-out');
+    expect(canvasKeyCommand({ key: '-', code: 'Minus' })).toBe('view.zoomOut');
     expect(canvasKeyCommand({ key: '-', code: 'NumpadSubtract' })).toBe(
-      'zoom-out',
+      'view.zoomOut',
     );
     expect(canvasKeyCommand({ key: '_', code: 'Minus', shiftKey: true })).toBe(
-      'zoom-out',
+      'view.zoomOut',
     );
   });
 
   it('reads Shift + digit by the physical key, whatever it types', () => {
     // US: Shift+0 types ")", Shift+1 "!", Shift+2 "@".
     expect(canvasKeyCommand({ key: ')', code: 'Digit0', shiftKey: true })).toBe(
-      'zoom-100',
+      'view.zoom100',
     );
     expect(canvasKeyCommand({ key: '!', code: 'Digit1', shiftKey: true })).toBe(
-      'zoom-fit',
+      'view.fit',
     );
     expect(canvasKeyCommand({ key: '@', code: 'Digit2', shiftKey: true })).toBe(
-      'zoom-selection',
+      'view.zoomToSelection',
     );
     // German: Shift+0 types "=", which must not be read as zoom in.
     expect(canvasKeyCommand({ key: '=', code: 'Digit0', shiftKey: true })).toBe(
-      'zoom-100',
+      'view.zoom100',
     );
     // …and Shift+2 types a double quote.
     expect(canvasKeyCommand({ key: '"', code: 'Digit2', shiftKey: true })).toBe(
-      'zoom-selection',
+      'view.zoomToSelection',
     );
   });
 
@@ -54,10 +87,15 @@ describe('canvasKeyCommand', () => {
   });
 
   it('F2 and Enter rename; Shift+Enter does not', () => {
-    expect(canvasKeyCommand({ key: 'F2', code: 'F2' })).toBe('rename');
-    expect(canvasKeyCommand({ key: 'Enter', code: 'Enter' })).toBe('rename');
+    expect(canvasKeyCommand({ key: 'F2', code: 'F2' })).toBe('edit.rename');
+    expect(canvasKeyCommand({ key: 'Enter', code: 'Enter' })).toBe(
+      'edit.rename',
+    );
     expect(
       canvasKeyCommand({ key: 'Enter', code: 'Enter', shiftKey: true }),
+    ).toBeNull();
+    expect(
+      canvasKeyCommand({ key: 'F2', code: 'F2', shiftKey: true }),
     ).toBeNull();
   });
 
@@ -66,16 +104,20 @@ describe('canvasKeyCommand', () => {
     // Enter presses it.
     expect(canvasKeyCommand({ key: 'Enter', code: 'Enter' }, false)).toBeNull();
     // F2 presses nothing, so it renames from anywhere.
-    expect(canvasKeyCommand({ key: 'F2', code: 'F2' }, false)).toBe('rename');
+    expect(canvasKeyCommand({ key: 'F2', code: 'F2' }, false)).toBe(
+      'edit.rename',
+    );
     // The other commands do not depend on where focus is.
-    expect(canvasKeyCommand({ key: '+' }, false)).toBe('zoom-in');
-    expect(canvasKeyCommand({ key: 's', ctrlKey: true }, false)).toBe('save');
+    expect(canvasKeyCommand({ key: '+' }, false)).toBe('view.zoomIn');
+    expect(canvasKeyCommand({ key: 's', ctrlKey: true }, false)).toBe(
+      'file.download',
+    );
   });
 
   it('Ctrl / Cmd + Shift + V pastes in place; plain paste is not its business', () => {
     for (const mod of ['ctrlKey', 'metaKey'] as const) {
       expect(canvasKeyCommand({ key: 'V', [mod]: true, shiftKey: true })).toBe(
-        'paste-in-place',
+        'edit.pasteInPlace',
       );
       expect(canvasKeyCommand({ key: 'v', [mod]: true })).toBeNull();
     }
@@ -83,8 +125,8 @@ describe('canvasKeyCommand', () => {
 
   it('Ctrl / Cmd + S saves and + O opens, without Shift', () => {
     for (const mod of ['ctrlKey', 'metaKey'] as const) {
-      expect(canvasKeyCommand({ key: 's', [mod]: true })).toBe('save');
-      expect(canvasKeyCommand({ key: 'O', [mod]: true })).toBe('open');
+      expect(canvasKeyCommand({ key: 's', [mod]: true })).toBe('file.download');
+      expect(canvasKeyCommand({ key: 'O', [mod]: true })).toBe('file.open');
       expect(
         canvasKeyCommand({ key: 's', [mod]: true, shiftKey: true }),
       ).toBeNull();
@@ -118,5 +160,8 @@ describe('canvasKeyCommand', () => {
       '?',
     ])
       expect(canvasKeyCommand({ key })).toBeNull();
+    // …and for the ones other shortcuts take from the browser.
+    for (const key of ['z', 'c', 'a', 'd'])
+      expect(canvasKeyCommand({ key, ctrlKey: true })).toBeNull();
   });
 });
