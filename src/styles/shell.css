@@ -84,7 +84,7 @@
   align-items: center;
   gap: 6px;
   height: 28px;
-  padding: 0 8px;
+  padding: 0 9px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -235,6 +235,9 @@
    removes its column; the rail stays. Nothing here scrolls but the page
    chips (and the panels' own lists). */
 .stage {
+  /* The pages bar's height: the shell keeps it current (it takes two rows in
+     a narrow column); the phone's library drawer ends above the bar. */
+  --pages-bar-h: 44px;
   position: relative;
   display: grid;
   grid-template-columns: 44px auto minmax(0, 1fr) auto;
@@ -257,6 +260,21 @@
 }
 .stage > .inspector-wrap {
   grid-column: 4;
+}
+/* Closed, the properties panel is only its toggle: it leaves the grid and
+   floats in the canvas's top-right corner, so the canvas column (and the
+   pages bar under it) runs to the window's edge. On a phone it is a drawer
+   placed by inspector.css. */
+@media (min-width: 641px) {
+  .stage > .inspector-wrap.collapsed {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+  /* Sized to its toggle, which keeps its word and icon on one line. */
+  .stage > .inspector-wrap.collapsed .inspector-toggle {
+    white-space: nowrap;
+  }
 }
 
 /* ── Left rail: making ────────────────────────────────────────────────
@@ -364,7 +382,7 @@
   box-shadow: var(--shadow-raised);
 }
 .cc-zoom {
-  min-width: 48px;
+  min-width: 44px;
   height: 28px;
   padding: 0 4px;
   border: 0;
@@ -385,9 +403,9 @@
 .minimap-dock {
   position: absolute;
   right: 10px;
-  bottom: 54px;
+  bottom: 56px;
   z-index: var(--z-canvas-ui);
-  width: 170px;
+  width: 150px;
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -708,6 +726,11 @@
   font: 400 12px/1 var(--font);
   cursor: pointer;
 }
+/* The bar clips what overflows its 24px, so the shared ring is drawn just
+   inside the button's edge instead of 2px outside it, as in the menus. */
+.statusbar button:focus-visible {
+  outline-offset: -2px;
+}
 .statusbar .sb-problems:hover {
   border-color: var(--line-strong);
   color: var(--fg);
@@ -778,6 +801,11 @@
   .doc-title {
     min-width: 40px;
   }
+  /* Present is in File (and runs on its key): on a phone its room goes to
+     the document's title. */
+  #tPresent {
+    display: none;
+  }
   /* Room for the document's own controls: the logo gives way too. */
   .brand {
     display: none;
@@ -792,7 +820,9 @@
   .palette {
     position: absolute;
     top: 0;
-    bottom: 0;
+    /* It ends at the top of the pages bar, so the bar's page toggle stays
+       in reach. */
+    bottom: var(--pages-bar-h);
     left: 44px;
     z-index: var(--z-panel);
     width: min(208px, calc(100% - 44px - 72px));

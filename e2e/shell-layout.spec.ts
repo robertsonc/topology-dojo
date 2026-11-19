@@ -132,6 +132,11 @@ for (const viewport of [
     const before = await page.locator('#ccZoom').innerText();
     await page.locator('#ccZoomIn').click();
     await expect(page.locator('#ccZoom')).not.toHaveText(before);
+    // Its accessible name holds the figure it shows (label in name).
+    const shown = await page.locator('#ccZoom').innerText();
+    await expect(page.locator('#ccZoom')).toHaveAccessibleName(
+      `Zoom ${shown} — fit view`,
+    );
   });
 
   test(`tabbing through the view controls never scrolls the canvas at ${size}`, async ({
@@ -338,4 +343,92 @@ test('on a phone the status bar keeps the problems indicator on screen', async (
   await expect(
     page.locator('#statusbar span', { hasText: 'nodes' }).first(),
   ).toBeVisible();
+});
+
+test('with the properties panel closed the canvas column runs to the window edge', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await bootEditor(page);
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  const b = await boxes(page, {
+    bar: '#pagesBar',
+    area: '#canvas-area',
+    toggle: '#inspector-toggle',
+  });
+  // No empty column is left where the panel was: the canvas and the pages
+  // bar under it reach the right edge of the window.
+  expect(b.bar!.right).toBeGreaterThanOrEqual(b.viewport!.right - 0.5);
+  expect(b.area!.right).toBeGreaterThanOrEqual(b.viewport!.right - 0.5);
+  // The toggle floats over the canvas's top-right corner, on one line, and
+  // a click there reaches it.
+  expectInside(b.toggle!, b.area!);
+  expect(b.toggle!.bottom - b.toggle!.top).toBeLessThan(28);
+  expect(await hits(page, ['inspector-toggle'])).toEqual(['inspector-toggle']);
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+});
+
+test('on a phone the open library ends above the pages bar', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  await page.locator('#palette-toggle').click();
+  await expect(page.locator('#palette')).not.toHaveClass(/collapsed/);
+  const b = await boxes(page, { palette: '#palette', bar: '#pagesBar' });
+  // The bar takes two rows here; the drawer stops at its top, so the page
+  // toggle under it can still be reached.
+  expect(b.palette!.bottom).toBeLessThanOrEqual(b.bar!.top + 0.5);
+  // A click in the middle of the toggle reaches it (or its count inside).
+  const reached = await page.evaluate(() => {
+    const r = document.getElementById('frames-toggle')!.getBoundingClientRect();
+    const el = document.elementFromPoint(
+      r.left + r.width / 2,
+      r.top + r.height / 2,
+    );
+    return !!el?.closest('#frames-toggle');
+  });
+  expect(reached).toBe(true);
+});
+
+test('on a phone the document title keeps room to be read', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  // Present steps aside (it is in File and on its key) so the title is more
+  // than a letter wide.
+  await expect(page.locator('#tPresent')).toBeHidden();
+  const title = (await page.locator('#docTitle').boundingBox())!;
+  expect(title.width).toBeGreaterThanOrEqual(60);
+});
+
+test('the status bar draws the focus ring of its button whole', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // Tab onto the problems indicator, so its ring shows.
+  await page.locator('#sb-problems').focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#sb-problems')).toBeFocused();
+  const fits = await page.evaluate(() => {
+    const b = document.querySelector('#sb-problems')!;
+    const bar = document.querySelector('#statusbar')!;
+    const cs = getComputedStyle(b);
+    const reach =
+      parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset || '0');
+    const r = b.getBoundingClientRect();
+    const box = bar.getBoundingClientRect();
+    // The bar clips at its padding box: inside its top border.
+    const top = box.top + parseFloat(getComputedStyle(bar).borderTopWidth);
+    return {
+      above: r.top - reach - top,
+      below: box.bottom - (r.bottom + reach),
+    };
+  });
+  expect(fits.above).toBeGreaterThanOrEqual(0);
+  expect(fits.below).toBeGreaterThanOrEqual(0);
 });

@@ -821,11 +821,6 @@ function legacyHandler(e: KeyPress, ctx: KeyContext): KeyMatch[] {
       } else if (e.key === '[') {
         preventDefault();
         run('arrange.sendToBack');
-      } else if (k === 'k' && !e.shiftKey && !e.altKey) {
-        // Added since: Ctrl/Cmd+K opens the command palette. Before, the
-        // browser had it.
-        preventDefault();
-        run('help.commandPalette');
       }
       return; // other mod combos: leave to the browser
     }
@@ -945,6 +940,27 @@ const describePress = (e: KeyPress, ctx: KeyContext): string =>
 const dispatch = (e: KeyPress, ctx: KeyContext): KeyMatch | null =>
   e.key === ' ' ? null : matchKey(e, ctx);
 
+/**
+ * The keys that behave differently from the handler above on purpose, each
+ * named. Each is a press the old handler left to the browser; anything else
+ * that differs is a regression.
+ */
+const INTENDED_CHANGES: {
+  readonly name: string;
+  readonly applies: (e: KeyPress) => boolean;
+  readonly now: KeyMatch;
+}[] = [
+  {
+    name: 'Ctrl/Cmd+K (without Shift or Alt) opens the command palette',
+    applies: (e) =>
+      !!(e.ctrlKey || e.metaKey) &&
+      e.key.toLowerCase() === 'k' &&
+      !e.shiftKey &&
+      !e.altKey,
+    now: hit('help.commandPalette', true),
+  },
+];
+
 describe('matchKey and the handler it replaced', () => {
   it('covers every key and physical key the table names', () => {
     for (const key of ['?', 'Delete', 'ArrowUp', 'F2', 'T', 't', '[', '_'])
@@ -957,6 +973,7 @@ describe('matchKey and the handler it replaced', () => {
   it('agree on every combination of key, physical key, modifiers and context', () => {
     let compared = 0;
     const differences: string[] = [];
+    const changed = new Map(INTENDED_CHANGES.map((c) => [c.name, 0]));
     for (const press of presses())
       for (const ctx of CONTEXTS) {
         compared++;
@@ -965,7 +982,17 @@ describe('matchKey and the handler it replaced', () => {
         // The old handler never ran two commands for one press.
         if (before.length > 1)
           differences.push(`${describePress(press, ctx)}: old ran two`);
-        const was = before[0] ?? null;
+        let was = before[0] ?? null;
+        const change = INTENDED_CHANGES.find((c) => c.applies(press));
+        if (change) {
+          // A named change only ever takes a press from the browser.
+          if (was !== null)
+            differences.push(
+              `${describePress(press, ctx)}: "${change.name}" replaced ${JSON.stringify(was)}`,
+            );
+          changed.set(change.name, changed.get(change.name)! + 1);
+          was = change.now;
+        }
         if (JSON.stringify(was) !== JSON.stringify(now))
           differences.push(
             `${describePress(press, ctx)}: was ${JSON.stringify(was)}, is ${JSON.stringify(now)}`,
@@ -973,6 +1000,8 @@ describe('matchKey and the handler it replaced', () => {
       }
     expect(compared).toBeGreaterThan(50_000);
     expect(differences.slice(0, 20)).toEqual([]);
+    // Every named change is one the comparison actually met.
+    for (const [name, count] of changed) expect(count, name).toBeGreaterThan(0);
   });
 });
 

@@ -122,6 +122,7 @@ import {
 import {
   escapeReleasesFocus,
   focusKind,
+  isContextMenuKey,
   releasesFocusAfterChange,
   routeKey,
   type FocusFacts,
@@ -367,9 +368,9 @@ app.innerHTML = `
        until they explicitly adopt the copy (#202). -->
   <div class="shared-banner" id="sharedBanner" role="status" hidden>
     <span class="shared-banner-text">${SHARE_PUBLIC_WARNING} Viewing a shared copy — your own document is untouched.</span>
-    <button class="tbtn" id="sharedKeep" title="Replace your locally saved document with this shared copy">keep this copy</button>
-    <button class="tbtn" id="sharedBack" title="Return to your own locally saved document">back to my document</button>
-    <button class="tbtn" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>unpublish link</button>
+    <button type="button" class="btn btn-sm" id="sharedKeep" title="Replace your locally saved document with this shared copy">Keep this copy</button>
+    <button type="button" class="btn btn-sm btn-ghost" id="sharedBack" title="Return to your own locally saved document">Back to my document</button>
+    <button type="button" class="btn btn-sm btn-ghost" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>Unpublish link</button>
   </div>
 
   <!-- The stage, by scope: the rail (making: the tools, the library), the
@@ -411,7 +412,7 @@ app.innerHTML = `
         </div>
         <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Zoom">
           <button type="button" class="icon-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
-          <button type="button" class="cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom level — fit view">100%</button>
+          <button type="button" class="cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom 100% — fit view">100%</button>
           <button type="button" class="icon-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
           <button type="button" class="icon-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
         </div>
@@ -478,6 +479,16 @@ const pagesTail = app.querySelector<HTMLElement>('#pagesTail')!;
 const framesDock = app.querySelector<HTMLDivElement>('#frames-dock')!;
 const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
+// The pages bar's height, kept on the stage as --pages-bar-h: on a phone the
+// library drawer ends above the bar (which takes two rows there) instead of
+// covering its page toggle.
+{
+  const pagesBar = app.querySelector<HTMLElement>('#pagesBar')!;
+  const stageEl = app.querySelector<HTMLElement>('.stage')!;
+  new ResizeObserver(() =>
+    stageEl.style.setProperty('--pages-bar-h', `${pagesBar.offsetHeight}px`),
+  ).observe(pagesBar);
+}
 const savedEl = app.querySelector<HTMLElement>('#saved')!;
 const saveAlertEl = app.querySelector<HTMLElement>('#saveAlert')!;
 /* The document title in the top bar. It writes what the Title field of the
@@ -1281,8 +1292,8 @@ const workspacePanelHandle = mountWorkspacePanel({
  * signed-in user, and for the dashboard the owner flag from `/api/me`. The
  * panels (fetching, pause/forget wiring, panel DOM) live in
  * `src/ui/profile-panel.ts` and `src/ui/admin-dashboard.ts`. */
-const profilePanelHandle = mountProfilePanel({});
-const adminDashboardHandle = mountAdminDashboard({});
+const profilePanelHandle = mountProfilePanel();
+const adminDashboardHandle = mountAdminDashboard();
 function closeWorkspaceForDocumentReplacement(): boolean {
   return workspacePanelHandle.closeForDocumentReplacement();
 }
@@ -1829,7 +1840,10 @@ app
 function refreshChrome(): void {
   undoBtn.disabled = !editor.canUndo();
   redoBtn.disabled = !editor.canRedo();
-  ccZoom.textContent = `${Math.round(editor.zoom() * 100)}%`;
+  const pct = Math.round(editor.zoom() * 100);
+  ccZoom.textContent = `${pct}%`;
+  // Its name holds the figure it shows, then what a press does.
+  ccZoom.setAttribute('aria-label', `Zoom ${pct}% — fit view`);
 }
 
 /* Status bar — live tool / cursor / element counts / zoom. */
@@ -5442,6 +5456,8 @@ function wireAccountMenu(login: string): void {
   if (!chip || !name || !div) return;
   name.textContent = login;
   chip.title = `Signed in as @${login}`;
+  // Its name starts with the login it shows, then says what it opens.
+  chip.setAttribute('aria-label', `${login}, account menu`);
   chip.hidden = false;
   div.hidden = false;
 
@@ -6086,6 +6102,13 @@ window.addEventListener('keydown', (e) => {
   if (routeKey(e, focus, keyboardNav) === 'focus') return;
   if (e.key === 'Escape' && escapeReleasesFocus(focus)) releaseFocus(target);
 
+  // The keyboard's right-click: the context menu for the selection.
+  if (focus === 'canvas' && isContextMenuKey(e)) {
+    e.preventDefault();
+    openCtxMenuFromKeyboard();
+    return;
+  }
+
   // Hold Space: hand mode while it is down (a gesture, not a command; the
   // keyup handler below releases it). Prevent page scroll.
   if (e.key === ' ') {
@@ -6325,9 +6348,16 @@ function renderPathBar(): void {
  * labelled with the command's title (Lock / Unlock says what a press would
  * do), greyed out when the command is not enabled, and run through it. The
  * component closes it on Escape, a press outside, a blur and a resize. */
-function openCtxMenu(clientX: number, clientY: number): void {
+function openCtxMenu(
+  clientX: number,
+  clientY: number,
+  kind?: 'node' | 'link' | 'empty',
+): void {
   closeAllMenus();
-  const hit = editor.pickAt(clientX, clientY);
+  const fromKeyboard = kind !== undefined;
+  // From the pointer, the menu is for what is under it (which it selects);
+  // from the keyboard, for the selection as it is.
+  const hit = kind ? { kind } : editor.pickAt(clientX, clientY);
   renderInspector();
   const ctx = menuContext();
   // What a command does to the selection shows in the properties at once.
@@ -6354,7 +6384,54 @@ function openCtxMenu(clientX: number, clientY: number): void {
   openMenu(entries, {
     anchor: { x: clientX, y: clientY },
     label: 'Canvas context menu',
+    // Opened from the keyboard, it starts on its first item.
+    ...(fromKeyboard ? { focus: 'first' as const } : {}),
   });
+}
+
+/**
+ * Shift+F10 or the menu key: the context menu of the selection, opened at the
+ * middle of its box (kept inside the canvas), or of the empty canvas at the
+ * canvas's middle when nothing is selected. Escape closes it and gives the
+ * keyboard back to the canvas, where it was.
+ */
+function openCtxMenuFromKeyboard(): void {
+  const box = overlaySvg.getBoundingClientRect();
+  const nodes = editor.selectedNodeIds();
+  const link = nodes.length === 0 ? editor.getSelectedLink() : null;
+  const kind = nodes.length > 0 ? 'node' : link ? 'link' : 'empty';
+  // The points the selection is drawn through, in page units.
+  const pts: { x: number; y: number }[] = [];
+  if (nodes.length > 0) {
+    for (const n of editor.page.nodes) {
+      if (!nodes.includes(n.id)) continue;
+      const b = nodeBounds(n);
+      pts.push({ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y + b.h });
+    }
+  } else if (link) {
+    for (const id of [link.from, link.to]) {
+      const end =
+        editor.page.nodes.find((m) => m.id === id) ??
+        editor.page.anchors.find((m) => m.id === id);
+      if (end) pts.push({ x: end.x, y: end.y });
+    }
+    pts.push(...(link.waypoints ?? []));
+  }
+  let x = box.left + box.width / 2;
+  let y = box.top + box.height / 2;
+  if (pts.length > 0) {
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const mid = userToClient(
+      overlaySvg,
+      (Math.min(...xs) + Math.max(...xs)) / 2,
+      (Math.min(...ys) + Math.max(...ys)) / 2,
+    );
+    const pad = 8;
+    x = Math.min(Math.max(mid.x, box.left + pad), box.right - pad);
+    y = Math.min(Math.max(mid.y, box.top + pad), box.bottom - pad);
+  }
+  openCtxMenu(x, y, kind);
 }
 
 // Attached to the canvas host (an HTML box) rather than the overlay <svg>,

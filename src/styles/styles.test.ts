@@ -167,7 +167,7 @@ describe('editor stylesheet', () => {
       'canvas-overlays.css': 2,
       'popovers.css': 2,
       'present-share.css': 1,
-      'stage-palette.css': 3,
+      'stage-palette.css': 2,
     };
     const small: Record<string, number> = {};
     for (const d of all) {

@@ -137,3 +137,24 @@ export function releasesFocusAfterChange(change: {
 export function escapeReleasesFocus(focus: FocusKind): boolean {
   return focus === 'value' || focus === 'action';
 }
+
+/**
+ * Whether a key press is the keyboard's right-click: the menu key, or
+ * Shift+F10 with no other modifier. On the canvas it opens the context menu
+ * for the selection. It is a key of the context menu, not a command.
+ */
+export function isContextMenuKey(
+  key: KeyFacts & {
+    shiftKey?: boolean;
+    altKey?: boolean;
+  },
+): boolean {
+  if (key.key === 'ContextMenu') return true;
+  return (
+    key.key === 'F10' &&
+    !!key.shiftKey &&
+    !key.ctrlKey &&
+    !key.metaKey &&
+    !key.altKey
+  );
+}

@@ -455,7 +455,9 @@ test('the account chip of a signed-in session', async ({ page }) => {
   const chip = page.locator('#userChip');
   await expect(chip).toBeVisible();
   await expect(chip).toHaveText('e2e');
-  await expect(chip).toHaveAccessibleName('Account menu');
+  // Its name starts with the login it shows (label in name), then says what
+  // it opens.
+  await expect(chip).toHaveAccessibleName('e2e, account menu');
   await expect(chip.locator('.uc-dot .icon use')).toHaveAttribute(
     'href',
     '#i-account',

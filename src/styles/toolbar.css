@@ -17,9 +17,6 @@
   background: color-mix(in srgb, var(--accent) 14%, var(--surface-back));
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
-.shared-banner .tbtn {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
 /* Cohesive, low-chrome buttons: borderless until hover/active. */
 .tbtn {
   background: transparent;

@@ -110,7 +110,7 @@
   /* ── Layers ────────────────────────────────────────────────────────────
      One named scale instead of ad-hoc numbers. The list is the stacking
      order, lowest first; within a layer, DOM order decides. */
-  --z-canvas-ui: 6; /* library and pages dock floating over the canvas */
+  --z-canvas-ui: 6; /* zoom control and minimap card over the canvas */
   --z-panel: 8; /* the docked properties column (a drawer on phones) */
   --z-selection-ui: 18; /* the mini style bar beside the selection */
   --z-canvas-pop: 20; /* inline rename, quick-add: anchored in the canvas */
