@@ -125,6 +125,13 @@ export const ICON_MANIFEST = {
   'paste-format': 'paintbrush',
   'select-members': 'lasso-select',
   duplicate: 'copy-plus',
+  // The properties panel's selection header: what is selected, and its actions
+  node: 'server',
+  zone: 'square-dashed',
+  nodes: 'boxes',
+  lock: 'lock',
+  unlock: 'lock-open',
+  more: 'ellipsis',
   // Frames, presentation, sharing
   restore: 'archive-restore',
   'frame-prev': 'skip-back',

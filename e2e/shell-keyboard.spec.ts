@@ -7,6 +7,8 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   bootEditor,
   clickNode,
+  inspectorSection,
+  inspectorTab,
   nodeBox,
   statusCount,
   statusText,
@@ -74,7 +76,7 @@ test('a palette tile and a section header answer Space when focused by keyboard'
   await expect.poll(() => statusCount(page, 'nodes')).toBe(nodes + 1);
 
   // The new node is selected, so the inspector shows its sections.
-  const section = '#inspector details[data-group="Position"]';
+  const section = '#inspector details[data-group="Position and order"]';
   const open = (): Promise<boolean> =>
     page.locator(section).evaluate((el) => (el as HTMLDetailsElement).open);
   await tabTo(page, `${section} > summary`);
@@ -187,12 +189,16 @@ test('a mouse click on a Properties checkbox or select leaves the shortcuts with
   expect(await isOn(page, '#tSnap')).toBe(false);
 
   // A sheet checkbox does not re-render the panel, so focus would stay put.
+  await inspectorTab(page, 'document');
+  await inspectorSection(page, 'Sheet');
   await page.locator('#p-sheet').click();
   await page.locator('#p-sheet-border').click();
   await expect(page.locator('#p-sheet-border')).not.toBeChecked();
   await page.keyboard.press('g');
   expect(await isOn(page, '#tSnap')).toBe(true);
 
+  await inspectorTab(page, 'page');
+  await inspectorSection(page, 'Playback');
   await pickWithMouse(page, '#p-tr', 1);
   await expect(page.locator('#p-tr')).toHaveValue('fade');
   await expect(page.locator('#p-tr')).not.toBeFocused();
@@ -205,11 +211,14 @@ test('a value changed by keyboard keeps focus on its control', async ({
   page,
 }) => {
   await bootEditor(page);
+  await inspectorSection(page, 'Playback');
   await tabTo(page, '#p-tr');
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('#p-tr')).toHaveValue('fade');
   await expect(page.locator('#p-tr')).toBeFocused();
 
+  await inspectorTab(page, 'document');
+  await inspectorSection(page, 'Sheet');
   await tabTo(page, '#p-sheet');
   await page.keyboard.press('Space');
   await expect(page.locator('#p-sheet')).toBeChecked();
@@ -304,6 +313,7 @@ test('Enter that confirms an IME candidate does not act in quick-add, Find, a fr
 
   // Metadata: the half-typed key is not added as an entry.
   await clickNode(page, 'fw');
+  await inspectorSection(page, 'Data');
   const key = page.locator('#inspector .meta-add .meta-nk');
   await key.click();
   await composeThenEnter(page, 'サイト');

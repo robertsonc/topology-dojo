@@ -25,7 +25,7 @@
   gap: 8px;
   width: 100%;
   font-family: var(--font);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg-weak);
   background: var(--surface-front);
   border: 1px solid var(--line);
@@ -51,14 +51,14 @@
   border-radius: var(--radius-full);
   background: var(--surface-front);
   border: 1px solid var(--line);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 16px;
   text-align: center;
   color: var(--fg-weak);
 }
 /* "2 hidden" beside the count: problems the user hid are still there. */
 .prob-hidden-note {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--fg-weak);
   white-space: nowrap;
 }
@@ -66,7 +66,9 @@
   display: none;
 }
 .problems-dock.has-warn .problems-toggle {
-  color: var(--status-warn);
+  /* The text in the warning colour for text; the fill colour stays the
+     border's and the badge's. */
+  color: var(--status-warn-fg);
   border-color: var(--status-warn);
 }
 .problems-dock.has-warn .prob-count {
@@ -102,7 +104,7 @@
   display: none;
 }
 .prob-empty {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg-weak);
   padding: 4px 6px;
 }
@@ -117,7 +119,7 @@
   padding: 4px 6px;
   cursor: default;
   font-family: var(--font);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg);
 }
 .prob {
@@ -173,7 +175,7 @@
   gap: 10px;
   align-items: center;
   padding: 4px 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--fg-weak);
 }
 .prob-link {
@@ -210,5 +212,5 @@
 }
 .prob-where {
   color: var(--fg-weak);
-  font-size: 10px;
+  font-size: 12px;
 }

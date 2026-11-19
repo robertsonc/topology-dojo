@@ -364,14 +364,14 @@ test('Find reaches links, zones and other frames, and jumps to the match', async
   await expect(items.first()).toContainText('tunnel link');
   await page.keyboard.press('Enter');
   await expect(find).toHaveCount(0);
-  await expect(page.locator('#inspector > .insp-h').first()).toHaveText('Link');
+  await expect(page.locator('#inspector .insp-kind')).toHaveText('Link');
 
   // A zone, by its label.
   await page.keyboard.press('Control+f');
   await find.locator('input').fill('branch');
   await expect(items.filter({ hasText: 'zone' })).toHaveCount(1);
   await items.filter({ hasText: 'zone' }).click();
-  await expect(page.locator('#inspector > .insp-h').first()).toHaveText('Zone');
+  await expect(page.locator('#inspector .insp-kind')).toHaveText('Zone');
 
   // A node on the other frame: the row names the frame, and choosing it
   // goes there with the node selected.
@@ -381,6 +381,6 @@ test('Find reaches links, zones and other frames, and jumps to the match', async
   await expect(items.first()).toContainText('Frame 2');
   await page.keyboard.press('Enter');
   await expect(page.locator('#page-canvas [data-tds-node]')).toHaveCount(1);
-  await expect(page.locator('#inspector > .insp-h').first()).toHaveText('Node');
+  await expect(page.locator('#inspector .insp-kind')).toHaveText('Node');
   expect(await statusText(page, 'selected')).toBe('1');
 });

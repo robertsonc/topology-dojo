@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -218,4 +218,39 @@ export async function readAutosave(
   return raw
     ? (JSON.parse(raw) as { title: string; pages: { nodes: unknown[] }[] })
     : null;
+}
+
+/** Show one tab of the properties panel: 'selection', 'page' or 'document'. */
+export async function inspectorTab(
+  page: Page,
+  tab: 'selection' | 'page' | 'document',
+): Promise<void> {
+  const button = page.locator(`#insp-tab-${tab}`);
+  await button.click();
+  await expect(button).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Open a section of the properties panel by its title, unless it is open. */
+export async function inspectorSection(
+  page: Page,
+  title: string,
+): Promise<void> {
+  const section = page
+    .locator(`#inspector details.insp-group[data-group="${title}"]`)
+    .first();
+  if (!(await section.evaluate((d) => (d as HTMLDetailsElement).open)))
+    await section.locator('> summary').click();
+  await expect(section).toHaveAttribute('open', '');
+}
+
+/**
+ * Pick a swatch of a colour control in the properties panel: open the
+ * popover the swatch is in (from the control's button), then click it.
+ */
+export async function chooseSwatch(swatch: Locator): Promise<void> {
+  const control = swatch.locator(
+    'xpath=ancestor::*[contains(concat(" ", @class, " "), " colour-ctl ")][1]',
+  );
+  await control.locator('[data-colour-open]').click();
+  await swatch.click();
 }

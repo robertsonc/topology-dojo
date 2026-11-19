@@ -4,7 +4,14 @@
  * it sits in, and leaves the control's accessible name where it was.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor, clickLink, clickNode, nodeBox } from './helpers.js';
+import {
+  bootEditor,
+  clickLink,
+  clickNode,
+  inspectorSection,
+  inspectorTab,
+  nodeBox,
+} from './helpers.js';
 
 /**
  * What is wrong with the icons and labels on the page right now (empty =
@@ -169,8 +176,17 @@ test('every chrome icon is a symbol of the one sprite', async ({ page }) => {
   ).toBeGreaterThan(50);
 
   // The shell as it boots: toolbar, canvas controls, panel toggles, frames,
-  // the page inspector and the status bar.
-  expect(await shownIcons(page), 'icons on screen at boot').toBeGreaterThan(40);
+  // the page inspector and the status bar. The Page tab starts with its
+  // annotations list closed (the list's eight icons drew at boot before the
+  // panel had tabs), so the boot count is the shell's icons without them.
+  expect(await shownIcons(page), 'icons on screen at boot').toBeGreaterThan(32);
+  expect(await iconProblems(page)).toEqual([]);
+  // With the annotations list opened, the screen holds as many as it did.
+  await inspectorSection(page, 'Annotations');
+  expect(
+    await shownIcons(page),
+    'icons on screen with the annotations list open',
+  ).toBeGreaterThan(40);
   expect(await iconProblems(page)).toEqual([]);
 
   // A selected node: the mini style bar, arrange and format rows, metadata.
@@ -273,6 +289,8 @@ async function openAnnotatedDocument(page: Page): Promise<void> {
     buffer: Buffer.from(JSON.stringify(ANNOTATED_DOCUMENT)),
   });
   await expect(page.locator('#page-canvas [data-tds-node]')).toHaveCount(3);
+  await inspectorTab(page, 'document');
+  await inspectorSection(page, 'Layers');
   await expect(page.locator('.layer-eye')).toHaveCount(2);
 }
 
@@ -305,6 +323,8 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
   // Every annotation editor open: delete buttons, the compass, and a flow's
   // waypoint chips, one of them an anchor (its icon sits in a label that
   // clips, so it is drawn at the height of that label's line).
+  await inspectorTab(page, 'page');
+  await inspectorSection(page, 'Annotations');
   for (const summary of await page
     .locator('#inspector details.anno > summary')
     .all())
@@ -431,13 +451,29 @@ test('a button whose plus is an icon still says "add"', async ({ page }) => {
   // icon is hidden from assistive technology, so the name is spelled out.
   // It keeps the visible word, for anyone who speaks the label they see.
   await openAnnotatedDocument(page);
-  for (const [selector, name, word] of [
-    ['#p-layer-add', 'Add layer', 'Layer'],
-    ['.anno-add [data-add="zone"]', 'Add zone', 'zone'],
-    ['.anno-add [data-add="flowPath"]', 'Add flow path', 'flow'],
-    ['.anno-add [data-add="policyMarker"]', 'Add marker', 'marker'],
-    ['#addPage', 'Add frame', 'frame'],
+  // The Layers button is on the Document tab, the annotation buttons on the
+  // Page tab.
+  for (const [selector, name, word, tab, section] of [
+    ['#p-layer-add', 'Add layer', 'Layer', 'document', 'Layers'],
+    ['.anno-add [data-add="zone"]', 'Add zone', 'zone', 'page', 'Annotations'],
+    [
+      '.anno-add [data-add="flowPath"]',
+      'Add flow path',
+      'flow',
+      'page',
+      'Annotations',
+    ],
+    [
+      '.anno-add [data-add="policyMarker"]',
+      'Add marker',
+      'marker',
+      'page',
+      'Annotations',
+    ],
+    ['#addPage', 'Add frame', 'frame', null, null],
   ] as const) {
+    if (tab) await inspectorTab(page, tab);
+    if (section) await inspectorSection(page, section);
     const button = page.locator(selector);
     await expect(button).toHaveAccessibleName(name);
     await expect(button).toHaveText(word);

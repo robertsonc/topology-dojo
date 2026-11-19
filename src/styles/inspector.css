@@ -1,5 +1,14 @@
-/* Properties panel: column shell, sections, rows, controls, colour, compass, layers, emphasis, refs. */
-/* Properties / inspector panel (top-right), with a collapse toggle. */
+/* Properties panel: column shell, tabs, selection header, sections, rows,
+   and the controls only the panel has (colour, compass, emphasis, layers,
+   refs). Inputs, selects, switches and buttons are the shared controls of
+   controls.css; this file lays them out and does not restyle them.
+
+   Density: rows are 28px on a 4px gap (a 32px pitch), the label column is
+   96px, a section's title row is 32px. Labels are 12px in the UI face in
+   --fg-weak; values that are data (ids, numbers, hex) are in the mono face
+   (`.data`). No text in the panel is under 12px. */
+
+/* ── Column ────────────────────────────────────────────────────────────── */
 /* Docked properties column on the right of the stage: [resize grip][panel].
    It spans the full stage height, so it never floats over — or collides
    with — the canvas, minimap, or frames strip. */
@@ -22,7 +31,7 @@
   width: 7px;
   cursor: ew-resize;
   background: transparent;
-  transition: background 0.12s;
+  transition: background var(--dur-fast);
 }
 .inspector-resizer:hover,
 .inspector-resizer.active {
@@ -32,36 +41,35 @@
   display: none;
 }
 .inspector-col {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 10px 10px 10px 4px;
-  gap: 6px;
+  padding: 8px 12px 8px 4px;
+  gap: 8px;
 }
+/* The tab row (Selection / Page / Document), then the panel it shows. */
 .inspector-body {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: stretch;
 }
 .inspector {
-  --insp-label: 88px; /* label column; controls fill the rest */
-  --insp-ctl-h: 26px; /* one height for every input/select/button */
-  width: 240px;
-  min-width: 200px;
-  flex: none;
+  /* The default width; the resizer and a stored width set it inline. */
+  width: 300px;
+  min-width: 0;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 0 2px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  color: var(--fg);
+  font: 400 12px/1.3 var(--font-ui);
 }
-/* The column scrolls; its sections must never flex-shrink to fit (an
-   overflow:auto child like the emphasis list would collapse to a sliver). */
+/* The column scrolls; its parts never shrink to fit. */
 .inspector > * {
   flex: none;
 }
@@ -69,20 +77,55 @@
 .inspector-wrap.collapsed .inspector-body {
   display: none;
 }
+/* The collapse toggle is the shared small button (.btn .btn-sm). */
 .inspector-toggle {
-  font-family: var(--font);
-  font-size: 11px;
-  color: var(--fg-weak);
-  background: var(--surface-float);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  cursor: pointer;
-  box-shadow: var(--shadow-raised);
+  align-self: flex-end;
 }
-.inspector-toggle:hover {
-  color: var(--fg);
-  border-color: var(--line-strong);
+/* While the panel is open the toggle sits at the end of the tab row, which
+   leaves it room; collapsed, it is all the column shows. It comes after the
+   tab list in the markup too, so focus meets the tabs first. */
+.inspector-wrap:not(.collapsed) .inspector-toggle {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+}
+.inspector-wrap:not(.collapsed) .insp-tabs {
+  padding-right: 66px;
+}
+.inspector-wrap.collapsed .insp-tabs {
+  display: none;
+}
+/* Collapsed, the toggle is over the canvas: it takes a surface of its own. */
+.inspector-wrap.collapsed .inspector-toggle {
+  border-color: var(--line);
+  background: var(--surface-float);
+}
+/* Under the default width the toggle is its icon alone, a 28px square level
+   with the tabs, and the tabs share what is left by the length of their
+   labels; the word stays as the button's name. */
+.inspector-wrap.narrow:not(.collapsed) .inspector-toggle {
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+.inspector-wrap.narrow:not(.collapsed) .toggle-word {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.inspector-wrap.narrow:not(.collapsed) .insp-tabs {
+  padding-right: 32px;
+}
+.inspector-wrap.narrow .insp-tabs > .tab {
+  flex: 1 1 auto;
+  padding: 0 2px;
 }
 /* Phone / narrow tablet (#221): the docked properties column plus the
    floating node library can consume a 390px stage, and overflow:hidden
@@ -130,267 +173,325 @@
     max-height: calc(100% - 24px);
   }
 }
-.insp-h {
-  color: var(--fg-weak);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  line-height: 1.4;
+
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+/* The shared .tabs row, spanning the panel's own width. */
+.insp-tabs {
+  padding: 0;
+  /* 6px under the row: the column's 8px gap, less 2px. */
+  margin-bottom: -2px;
 }
-/* Top-level section headers (Document / Page / Playback / Metadata…)
-   rule off from the section above them; the first one sits flush. */
-.inspector > .insp-h:not(:first-child) {
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
+.insp-tabs > .tab {
+  padding: 0 4px;
 }
-/* Collapsible field section (Appearance / Routing / Animation / …) */
-.insp-group {
+
+/* ── Selection header ──────────────────────────────────────────────────── */
+/* [kind icon] [title / kind · id] [lock] [more], then the type picker. */
+.insp-head {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  padding: 8px 0;
+}
+.insp-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  color: var(--fg);
+}
+.insp-name {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-  margin-top: 2px;
+  gap: 2px;
+  min-width: 0;
 }
-/* Rows inside a section: a <details> does not lay its children out as flex
-   items, so the gap above never applies there. Filled fields need the air,
-   or adjacent fields read as one block. */
-.insp-group > :not(summary) + :not(summary) {
-  margin-top: 4px;
+.insp-title {
+  overflow: hidden;
+  color: var(--fg-strong);
+  font: 600 14px/1.3 var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.insp-group > summary {
-  min-height: 20px;
-}
-.insp-group > summary {
-  list-style: none;
-  cursor: pointer;
+.insp-sub {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-weak);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.insp-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.insp-actions {
+  display: flex;
+  gap: 2px;
+}
+/* The type picker under the title: the shared field, at its full height. */
+.insp-sub > select {
+  flex: 1;
+  width: auto;
+}
+/* Rows under the header that belong to no section (a link's ends). */
+.insp-top {
+  padding-top: 0;
+}
+/* A node's last rows: annotate and format, across the panel. */
+.insp-foot {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Sections ──────────────────────────────────────────────────────────── */
+.insp-group {
+  border-top: 1px solid var(--line);
+}
+.insp-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  list-style: none;
+  color: var(--fg-strong);
+  font: 600 13px/1 var(--font-ui);
+  cursor: pointer;
   user-select: none;
 }
 .insp-group > summary::-webkit-details-marker {
   display: none;
 }
-/* Disclosure caret, rotates when the section is open. */
-.insp-group > summary::before {
-  content: '▸';
-  font-size: 9px;
-  color: var(--fg-weak);
-  transition: transform 0.12s ease;
+.insp-group > summary:hover .insp-caret {
+  color: var(--fg-strong);
 }
-.insp-group[open] > summary::before {
+/* Disclosure caret, turned while the section is open. */
+/* No transition: a turning icon would not be the size it says it is. */
+.insp-caret {
+  display: inline-flex;
+  color: var(--fg-weak);
+}
+.insp-group[open] > summary > .insp-caret {
   transform: rotate(90deg);
 }
-.insp-group > summary:hover {
-  color: var(--fg);
+/* A section's title is flush with the panel's scroll box, which would cut
+   off the left of a ring drawn outside it: the ring is drawn inside. */
+.insp-group > summary:focus-visible {
+  outline-offset: -2px;
 }
+/* How many things a section holds (annotations, layers, set values). */
+.insp-count {
+  margin-left: auto;
+}
+/* A section inside a section (a node's "Fine tune"). */
 .insp-group .insp-group {
   border-top: 0;
-  padding-top: 0;
-  margin-top: 0;
 }
 .insp-group .insp-group > summary {
-  text-transform: none;
-  letter-spacing: 0;
+  height: 28px;
+  color: var(--fg);
+  font: 500 12px/1 var(--font-ui);
 }
-/* ── Property rows: a two-column grid, [label | control] ──────────
-   Every row shares the label column width, so the controls' left edges
-   line up down the whole panel; every control is --insp-ctl-h tall. */
+/* A section's rows, and the rows under the header. */
+.insp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 8px;
+}
+.insp-rows > * {
+  flex: none;
+}
+
+/* ── Rows: a two-column grid, [label | control] ────────────────────────── */
+/* Every row shares the label column, so the controls' left edges line up
+   down the whole panel. */
 .insp-row {
   display: grid;
-  grid-template-columns: var(--insp-label) minmax(0, 1fr);
+  grid-template-columns: 96px minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
-  min-height: var(--insp-ctl-h);
-  font-size: 11px;
+  min-height: 28px;
   color: var(--fg-weak);
+  font: 400 12px/1.25 var(--font-ui);
 }
 .insp-row > :first-child {
   min-width: 0;
-  line-height: 1.25;
   overflow-wrap: anywhere;
 }
-/* Stacked variant for wide editors (ref chips, captions). */
+.insp-row > .switch {
+  justify-self: start;
+}
+/* An on/off field with a long label: the label, then the switch at the end. */
+.insp-row.wide {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+/* A link's two ends across the panel, Swap between them. */
+.insp-ends {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+/* A label too long for the column stacks above its control. */
 .insp-row.col {
   grid-template-columns: minmax(0, 1fr);
   row-gap: 4px;
 }
 /* Read-only value in the control column. */
 .insp-val {
-  color: var(--fg);
-  font-size: 11px;
   overflow: hidden;
+  color: var(--fg);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Two inputs sharing the control column (W × H, X / Y). */
+/* Two fields sharing the control column (W × H, X / Y). */
 .insp-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   min-width: 0;
 }
-/* Button group in the control column. */
+/* Buttons in the control column. */
 .insp-btns,
 .arrange {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   min-width: 0;
 }
-.inspector .tbtn.ab {
-  height: 24px;
-  padding: 0 8px;
-  font-size: 11px;
-  line-height: 22px;
-  border-color: transparent;
-  background: var(--surface-field);
-  color: var(--fg);
-}
-.inspector .tbtn.ab:hover {
-  border-color: var(--line-strong);
-  color: var(--fg-strong);
-}
-.inspector .tbtn.ab:disabled:hover {
-  border-color: transparent;
-  color: var(--fg);
-}
-/* One look for every text / number / select control in the panel. */
-.inspector input:not([type='checkbox']):not([type='range']),
-.inspector select {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  height: var(--insp-ctl-h);
-  padding: 0 8px;
-  margin: 0;
-  background: var(--surface-field);
-  border: 1px solid transparent;
-  color: var(--fg);
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-family: var(--font);
-  line-height: 1;
-}
-/* Fields are filled, not outlined: the edge shows on hover and focus. */
-.inspector input:not([type='checkbox']):not([type='range']):hover,
-.inspector select:hover,
-.inspector textarea[data-key]:hover {
-  border-color: var(--line-strong);
-}
-.inspector input[type='number'] {
-  padding-right: 2px;
-  font-variant-numeric: tabular-nums;
-}
-/* Multi-line catalog strings (callout / text body) — same look, taller. */
-.inspector textarea[data-key] {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: calc(var(--insp-ctl-h) * 2.5);
-  padding: 6px 8px;
-  margin: 0;
-  background: var(--surface-field);
-  border: 1px solid transparent;
-  color: var(--fg);
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-family: var(--font);
-  line-height: 1.35;
-  resize: vertical;
-}
-.inspector textarea[data-key]:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-.inspector input::placeholder {
+.insp-hint {
   color: var(--fg-weak);
-  opacity: 0.7;
+  font: 400 12px/1.4 var(--font-ui);
 }
-.inspector input:not([type='checkbox']):focus,
-.inspector select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+/* A small heading inside a section (Metadata). */
+.insp-sublabel {
+  margin-top: 4px;
+  color: var(--fg-weak);
+  font: 600 12px/1.3 var(--font-ui);
 }
-/* Booleans render as a small switch, aligned with the other controls. */
-.insp-row input[type='checkbox'] {
-  appearance: none;
-  -webkit-appearance: none;
-  justify-self: start;
-  position: relative;
-  width: 30px;
-  height: 16px;
-  margin: 0;
-  border-radius: var(--radius-full);
-  background: transparent;
-  border: 1px solid var(--line-strong);
+
+/* ── Colour ────────────────────────────────────────────────────────────── */
+/* One button showing the swatch and its value; it opens the palette. */
+.colour-ctl {
+  display: flex;
+  min-width: 0;
+}
+.colour-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 8px 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-field);
+  color: var(--fg);
+  font-size: 12px;
   cursor: pointer;
-  transition:
-    background 0.12s,
-    border-color 0.12s;
 }
-.insp-row input[type='checkbox']::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--fg-weak);
-  transition:
-    transform 0.12s,
-    background 0.12s;
+.colour-btn:hover,
+.colour-btn[aria-expanded='true'] {
+  border-color: var(--line-strong);
 }
-.insp-row input[type='checkbox']:checked {
-  background: var(--accent);
-  border-color: var(--accent);
+.colour-val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.insp-row input[type='checkbox']:checked::after {
-  transform: translateX(14px);
-  background: var(--on-accent);
+.colour-dot,
+.hexdot {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--swatch-edge);
+  border-radius: var(--radius-xs);
 }
-.insp-row input[type='checkbox']:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+.colour-pop {
+  position: fixed;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-float);
+  box-shadow: var(--shadow-float);
 }
-/* Colour rows: label + hex (with a preview dot), swatch grid beneath. */
-.insp-row.color {
-  row-gap: 6px;
+.colour-pop[hidden] {
+  display: none;
 }
-.insp-row.color .swatches {
-  grid-column: 1 / -1;
+.colour-pop-row {
+  display: flex;
+  gap: 6px;
 }
 .hexwrap {
   position: relative;
   display: block;
+  flex: 1;
   min-width: 0;
 }
 .hexwrap .hexdot {
   position: absolute;
-  left: 8px;
   top: 50%;
-  width: 10px;
-  height: 10px;
-  margin-top: -5px;
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--swatch-edge);
+  left: 6px;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
   pointer-events: none;
 }
-.inspector .hexwrap input.hex {
-  padding-left: 24px;
+.hexwrap > .hex {
+  padding-left: 26px;
 }
-/* Compass placement picker (3×3): centre = auto, cells = compass codes. */
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(9, 20px);
+  gap: 4px;
+}
+.sw {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--swatch-edge);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.sw.on {
+  /* Selected marker: a ring inside the swatch (--fg, then a gap of the
+     popover's own surface), so it never looks like the focus ring, which is
+     drawn outside. */
+  box-shadow:
+    inset 0 0 0 2px var(--fg),
+    inset 0 0 0 4px var(--surface-float);
+}
+.sw:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ── Compass placement picker (3×3) ───────────────────────────────────── */
+/* Centre = auto, cells = compass codes; its hint sits beside it. */
+.compass-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .compass {
   display: grid;
+  flex: none;
   grid-template-columns: repeat(3, 20px);
   gap: 2px;
-  justify-self: start;
 }
 .compass .cc {
   width: 20px;
@@ -400,8 +501,6 @@
   border-radius: var(--radius-xs);
   background: var(--surface-field);
   color: var(--fg-weak);
-  font-size: 11px;
-  line-height: 1;
   cursor: pointer;
 }
 .compass .cc:hover {
@@ -409,32 +508,48 @@
   color: var(--fg);
 }
 .compass .cc.on {
-  background: var(--accent-soft-strong);
   border-color: var(--accent);
-  color: var(--accent);
+  background: var(--accent-soft-strong);
+  color: var(--accent-fg);
 }
-/* Layers section (B.3) */
+
+/* Under the default width the hint beside the picker would run to five
+   lines: it is kept for screen readers (the picker names it) and each
+   cell's tooltip says the same. */
+.inspector-wrap.narrow .compass-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Layers ────────────────────────────────────────────────────────────── */
 .layer-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 0;
+  min-height: 28px;
 }
 .layer-eye {
   flex: none;
-  width: 24px;
-  background: transparent;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   cursor: pointer;
-  font-size: 13px;
-  padding: 2px;
+}
+.layer-eye:hover {
+  background: var(--surface-hover);
 }
 .layer-name {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
-  color: var(--fg);
   overflow: hidden;
+  color: var(--fg);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -442,31 +557,40 @@
   flex: 0 0 84px;
   accent-color: var(--accent);
 }
-.insp-hint {
-  font-size: 11px;
-  color: var(--fg-weak);
-  padding: 2px 0 4px;
+
+/* Under the default width the count and its two buttons do not fit beside
+   the label column: the label goes above them, so they stay on one line. */
+.inspector-wrap.narrow .emph-ctl {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 4px;
 }
-/* Frame emphasis picker (2.4) */
-.emph-actions {
+
+/* ── Emphasis picker ──────────────────────────────────────────────────── */
+/* It opens in place as a plain list: no height of its own, no scrollbar;
+   the panel scrolls. */
+.emph-picker {
   display: flex;
-  gap: 6px;
-  margin: 0 0 2px;
+  flex-direction: column;
+  gap: 4px;
+}
+.emph-picker[hidden],
+.emph-row[hidden] {
+  display: none;
 }
 .emph-list {
-  max-height: 168px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 2px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 3px;
 }
 .emph-row {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 3px 5px;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 6px;
   border-radius: var(--radius-xs);
-  font-size: 12px;
   color: var(--fg);
   cursor: pointer;
 }
@@ -482,98 +606,55 @@
 }
 .emph-type {
   flex: none;
-  font-size: 10px;
   color: var(--fg-weak);
 }
-.insp-btn {
-  margin-top: 2px;
-  height: var(--insp-ctl-h);
-  background: var(--surface-field);
-  border: 1px solid transparent;
-  color: var(--fg);
-  border-radius: var(--radius-sm);
-  padding: 0 10px;
-  font-size: 11px;
-  font-family: var(--font);
-  cursor: pointer;
-}
-.insp-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.insp-btn:hover {
-  border-color: var(--line-strong);
-  color: var(--fg-strong);
-}
-/* Refs editor — flow waypoints / zone members as labelled chips. */
+
+/* ── Refs editor: flow waypoints / zone members as labelled chips ─────── */
 .refchips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
   align-items: center;
+  gap: 4px;
 }
 .refchip {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  background: var(--surface-front);
+  max-width: 100%;
+  padding: 1px 2px 1px 6px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 1px 2px 1px 6px;
-  font-size: 11px;
+  background: var(--surface-front);
   color: var(--fg);
-  max-width: 100%;
 }
 .refchip .reflbl {
+  max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 110px;
 }
 .refchip .refmv,
 .refchip .refx {
-  background: none;
-  border: none;
-  color: var(--fg-weak);
-  cursor: pointer;
   padding: 0 3px;
-  font-size: 11px;
+  border: none;
+  background: none;
+  color: var(--fg-weak);
   line-height: 1;
+  cursor: pointer;
 }
 .refchip .refmv:hover {
   color: var(--fg-strong);
 }
 .refchip .refx:hover {
-  color: var(--status-error);
+  color: var(--status-error-fg);
 }
-.inspector .refchips .refadd {
-  flex: 0 0 auto;
+.refchips > .refadd {
+  flex: 0 1 auto;
   width: auto;
-  min-width: 84px;
-  height: 22px;
-  padding: 0 6px;
-  font-size: 11px;
+  min-width: 0;
+  max-width: 100%;
 }
 .refhint {
-  font-size: 10px;
   color: var(--fg-weak);
-  line-height: 1.4;
-}
-.swatches {
-  display: grid;
-  grid-template-columns: repeat(9, 20px);
-  gap: 4px;
-}
-.sw {
-  width: 20px;
-  border: 1px solid var(--swatch-edge);
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  padding: 0;
-  height: 20px;
-}
-.sw.on {
-  /* Selected marker — --text so it stays visible in the light theme. */
-  outline: 2px solid var(--fg);
-  outline-offset: 1px;
+  font: 400 12px/1.4 var(--font-ui);
 }

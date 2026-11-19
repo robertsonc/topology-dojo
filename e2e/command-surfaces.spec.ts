@@ -5,7 +5,7 @@
  * written by hand; the sheet lists the table's commands and the gestures.
  */
 import { expect, test } from '@playwright/test';
-import { bootEditor, clickNode } from './helpers.js';
+import { bootEditor, clickNode, nodeBox } from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await bootEditor(page);
@@ -71,6 +71,15 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
     'title',
     'Bring to front (Ctrl/Cmd+])',
   );
+  // Copy and paste format: in the rows for two or more nodes (one node has
+  // them in its header's "more" menu).
+  const second = await nodeBox(page, 'ec');
+  await page.keyboard.down('Shift');
+  await page.mouse.click(
+    second.x + second.width / 2,
+    second.y + second.height / 2,
+  );
+  await page.keyboard.up('Shift');
   await expect(page.locator('#i-copyfmt')).toHaveAttribute(
     'title',
     'Copy format (Ctrl/Cmd+Alt+C)',

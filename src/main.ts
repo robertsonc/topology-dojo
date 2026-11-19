@@ -24,6 +24,8 @@ import {
   applyPalette,
   engineDefs,
   renderPageSVG,
+  type LinkConfig,
+  type NodeConfig,
   type RenderOptions,
 } from './vendor/topology-ds.js';
 import {
@@ -47,7 +49,7 @@ import {
   type DocSlot,
 } from './pages/persist.js';
 import { AutosaveLedger } from './pages/autosave-ledger.js';
-import { DEFAULT_PAGE_DURATION, pageDuration } from './pages/playback.js';
+import { pageDuration } from './pages/playback.js';
 import {
   copyPagePNG,
   downloadBlob,
@@ -65,13 +67,7 @@ import { documentToMermaid } from './export/mermaid.js';
 import { userToClient } from './editor/coords.js';
 import { nodeBounds } from './api/geometry.js';
 import { documentOverlaySVG } from './render/overlays.js';
-import {
-  SHEET_SIZE_IDS,
-  SHEET_SIZE_LABELS,
-  sheetPaperPt,
-  sheetViewBox,
-  type SheetConfig,
-} from './api/sheet.js';
+import { sheetPaperPt } from './api/sheet.js';
 import { captionSVG } from './editor/caption.js';
 import { applyRenderTheme, type RenderTheme } from './render/theme.js';
 import { buildTemplate, listTemplates } from './api/templates.js';
@@ -115,14 +111,49 @@ import {
   routeKey,
   type FocusFacts,
 } from './ui/key-routing.js';
-import {
-  boundsAttrs,
-  findField,
-  numberBounds,
-  numberFieldText,
-  parseNumberField,
-} from './ui/number-field.js';
+import { boundsAttrs, findField, numberBounds } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
+import type { SelectionCounts } from './ui/inspector-tabs.js';
+import {
+  SWATCHES,
+  closeColourPopover,
+  colourRowHtml,
+  wireColourControls,
+} from './ui/inspector/color-control.js';
+import type { InspectorContext } from './ui/inspector/context.js';
+import { adoptSharedControls } from './ui/inspector/controls.js';
+import { markFocus, restoreFocus } from './ui/inspector/focus-keep.js';
+import {
+  documentTabHtml,
+  wireDocumentTab,
+} from './ui/inspector/document-tab.js';
+import {
+  LINK_GROUPS,
+  NODE_GROUPS,
+  planSections,
+  type FieldGroup,
+  type PlannedItem,
+} from './ui/inspector/field-groups.js';
+import { linkAttachSummary } from './ui/inspector/link-attachment.js';
+import { wireNumberInput } from './ui/inspector/number-input.js';
+import {
+  leavePageTab,
+  pageTabHtml,
+  wirePageTab,
+} from './ui/inspector/page-tab.js';
+import { watchPanelWidth } from './ui/inspector/panel-width.js';
+import {
+  SectionMemory,
+  sectionHtml,
+  wireSections,
+} from './ui/inspector/sections.js';
+import {
+  selectionHeaderHtml,
+  wireSelectionHeader,
+  type SelectionHeader,
+} from './ui/inspector/selection-header.js';
+import { browserStorage } from './ui/inspector/storage.js';
+import { mountInspectorTabs } from './ui/inspector/tabs.js';
 import {
   commandArg,
   COMMAND_SPECS,
@@ -174,7 +205,6 @@ import { TEXT_LIMITS } from './api/text.js';
 import { pathPanelView } from './ui/path-panel.js';
 import { computeBadgePlacements } from './editor/problem-badges.js';
 import {
-  LINK_ATTACH_FIELDS,
   filterNodeCatalog,
   getAnnotationType,
   getLinkType,
@@ -445,7 +475,7 @@ app.innerHTML = `
     <div class="inspector-wrap" id="inspector-wrap">
       <div class="inspector-resizer" id="inspector-resizer" title="Drag to resize"></div>
       <div class="inspector-col">
-        <button class="inspector-toggle" id="inspector-toggle" title="${tip('view.toggleProperties', 'Hide properties')}">hide ${icon('panel-right-close')}</button>
+        <button type="button" class="btn btn-sm btn-ghost inspector-toggle" id="inspector-toggle" title="${tip('view.toggleProperties', 'Hide properties')}" aria-label="Hide properties"><span class="toggle-word">hide</span> ${icon('panel-right-close')}</button>
         <div class="inspector-body" id="inspector-body">
           <aside class="inspector scroll-slim" id="inspector"></aside>
         </div>
@@ -2031,6 +2061,9 @@ function selectProblemTarget(loc: {
   if (loc.kind === 'link') editor.focusLink(loc.id);
   else if (loc.kind === 'zone') editor.focusZone(loc.id);
   else editor.focusNode(loc.id);
+  // A jump shows the element, even when it was selected already and the
+  // Page or Document tab had been picked since.
+  inspectorTabs.showSelection();
 }
 
 /** Every element a problem names on its page, in the order it names them. */
@@ -2367,20 +2400,54 @@ function openFind(): void {
   runFindQuery('');
 }
 
-/* Inspector — properties of the single selected node, link, or anchor. */
+/* Inspector — properties of the selection, the page and the document, on
+ * three tabs (src/ui/inspector/). */
 const inspector = app.querySelector<HTMLElement>('#inspector')!;
+/** Which sections of the panel are open, remembered per title. */
+const inspectorSections = new SectionMemory(browserStorage());
+const inspectorTabs = mountInspectorTabs(
+  inspector,
+  browserStorage(),
+  renderInspector,
+  // The tab row heads the column, above the panel's body (which is hidden
+  // while the column is collapsed).
+  app.querySelector<HTMLElement>('#inspector-body')!,
+);
+const inspectorContext: InspectorContext = {
+  root: inspector,
+  editor,
+  doc,
+  sections: inspectorSections,
+  run: (id) => commands.run(id),
+  rerender: renderInspector,
+  markDirty,
+  firstEdit: () => {
+    const first = !editing;
+    editing = true;
+    return first;
+  },
+  showCurrentPage: () => showPage(doc.pages[current]!),
+};
 
 /* Collapse / restore the properties panel (mirrors the minimap toggle). */
 const inspectorWrap = app.querySelector<HTMLDivElement>('#inspector-wrap')!;
 const inspectorToggle =
   app.querySelector<HTMLButtonElement>('#inspector-toggle')!;
+// The toggle is drawn at the end of the tab row: it follows the tab list in
+// the markup as well, so keyboard focus meets the tabs first.
+inspectorTabs.tabList.after(inspectorToggle);
 function setInspectorCollapsed(collapsed: boolean, persist = true): void {
   inspectorWrap.classList.toggle('collapsed', collapsed);
   inspectorToggle.innerHTML = collapsed
-    ? `props ${icon('panel-right-open')}`
-    : `hide ${icon('panel-right-close')}`;
+    ? `<span class="toggle-word">props</span> ${icon('panel-right-open')}`
+    : `<span class="toggle-word">hide</span> ${icon('panel-right-close')}`;
   inspectorToggle.title = commands.titleWithShortcut(
     'view.toggleProperties',
+    collapsed ? 'Show properties' : 'Hide properties',
+  );
+  // Its name says what it does; the word it shows is the start of it.
+  inspectorToggle.setAttribute(
+    'aria-label',
     collapsed ? 'Show properties' : 'Hide properties',
   );
   if (!persist) return;
@@ -2432,16 +2499,20 @@ window
  * A left-edge grip resizes its width (persisted). */
 const inspectorResizer = app.querySelector<HTMLElement>('#inspector-resizer')!;
 const INSPECTOR_W_KEY = 'tds-inspector-width';
-const INSPECTOR_W_MIN = 200;
-const INSPECTOR_W_MAX = 560;
+// The default width (300px) is the stylesheet's; a stored width wins.
+const INSPECTOR_W_MIN = 240;
+const INSPECTOR_W_MAX = 480;
 
 try {
   const w = Number(localStorage.getItem(INSPECTOR_W_KEY));
-  if (w >= INSPECTOR_W_MIN && w <= INSPECTOR_W_MAX)
-    inspector.style.width = `${w}px`;
+  // A width stored under the old limits is brought inside the new ones.
+  if (w > 0)
+    inspector.style.width = `${Math.min(INSPECTOR_W_MAX, Math.max(INSPECTOR_W_MIN, w))}px`;
 } catch {
   /* storage unavailable — use the default width */
 }
+
+watchPanelWidth(inspector, inspectorWrap);
 
 // Left-edge drag-to-resize (dragging left widens the docked panel).
 inspectorResizer.addEventListener('pointerdown', (e) => {
@@ -2522,49 +2593,9 @@ alignGroup
   );
 
 /* ── Inspector ──────────────────────────────────────────────────── */
-const SWATCHES = [
-  '#01a982',
-  '#05cc93',
-  '#65aef9',
-  '#7764fc',
-  '#deb146',
-  '#fc6161',
-  '#00a4b3',
-  '#d25f4b',
-  '#b1b9be',
-];
-
 // One snapshot per edit "session": reset on each focus into the inspector.
 let editing = false;
 inspector.addEventListener('focusin', () => (editing = false));
-
-function swatchRow(key: string, current: string | undefined): string {
-  return (
-    `<div class="swatches" data-swatch="${key}">` +
-    SWATCHES.map(
-      (c) =>
-        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === current}"></button>`,
-    ).join('') +
-    `</div>`
-  );
-}
-
-/**
- * The hex field of a colour row, with a live preview dot. `attrs` carries the
- * data-* binding (node/link fields vs annotation fields use different keys).
- */
-function hexInput(attrs: string, current: string | undefined): string {
-  const c = current ?? '';
-  return (
-    `<span class="hexwrap"><i class="hexdot" style="background:${esc(c) || 'transparent'}"></i>` +
-    `<input class="hex" ${attrs} value="${esc(c)}" placeholder="auto"/></span>`
-  );
-}
-
-/** Colour row: label + hex on one line, the swatch grid beneath. */
-function colorRow(label: string, hex: string, swatches: string): string {
-  return `<div class="insp-row color"><span>${label}</span>${hex}${swatches}</div>`;
-}
 
 /* ── Compass placement picker ───────────────────────────────────────
  * The 3×3 grid classic Topology Studio had for label placement. Cells are
@@ -2634,9 +2665,9 @@ function compassControl(
       `<button type="button" class="cc${code === cur ? ' on' : ''}" data-cval="${code}" title="${COMPASS_TITLES[code]}${code ? ' — click to place; double-click to nudge 1 unit' : ' — reset placement and fine tuning'}" aria-label="${COMPASS_TITLES[code]}" aria-pressed="${code === cur}">${icon(cellIcon)}</button>`,
   ).join('');
   return (
-    `<div class="insp-row"><span>${f.label}</span>` +
-    `<div class="compass" ${attr}="${f.key}" data-ckind="${f.kind}" role="group" aria-label="${f.label}" aria-describedby="label-placement-hint">${cells}</div></div>` +
-    `<div class="insp-hint" id="label-placement-hint">Click to place · double-click to nudge 1 unit.</div>`
+    `<div class="insp-row"><span>${f.label}</span><span class="compass-ctl">` +
+    `<div class="compass" ${attr}="${f.key}" data-ckind="${f.kind}" role="group" aria-label="${f.label}" aria-describedby="label-placement-hint">${cells}</div>` +
+    `<span class="insp-hint compass-hint" id="label-placement-hint">Click to place · double-click to nudge 1 unit.</span></span></div>`
   );
 }
 
@@ -2659,6 +2690,15 @@ function rowClass(f: FieldSpec, nested = false): string {
 }
 
 /**
+ * Row class for an on/off field: a long label takes the row's width with the
+ * switch at its end, rather than stacking above a switch.
+ */
+function switchRowClass(f: FieldSpec, nested = false): string {
+  const length = f.label.length + (nested ? 2 : 0);
+  return length > 16 ? 'insp-row wide' : 'insp-row';
+}
+
+/**
  * A control for one catalog field, bound to the element's current value.
  * `nested` marks a sub-field of an object field, shown under its parent.
  */
@@ -2673,7 +2713,7 @@ function fieldControl(
   const label = nested ? `${labelMark('nested')} ${f.label}` : f.label;
   switch (f.kind) {
     case 'boolean':
-      return `<label class="insp-row"><span>${label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}/></label>`;
+      return `<label class="${switchRowClass(f, nested)}"><span>${label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}/></label>`;
     case 'enum':
       return `<label class="${row}"><span>${label}</span><select data-key="${f.key}">${(
         f.options ?? []
@@ -2684,13 +2724,10 @@ function fieldControl(
         )
         .join('')}</select></label>`;
     case 'color':
-      return colorRow(
+      return colourRowHtml(
+        { attr: 'data-key', key: f.key, label: f.label },
+        v as string | undefined,
         label,
-        hexInput(
-          `data-key="${f.key}" data-kind="color"`,
-          v as string | undefined,
-        ),
-        swatchRow(f.key, v as string | undefined),
       );
     case 'number':
       return `<label class="${row}"><span>${label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
@@ -2700,7 +2737,7 @@ function fieldControl(
       // ("linkAttach.pad") that fieldPatch merges back into the object.
       const on = typeof v === 'object' && v !== null;
       const sub = on ? (v as Record<string, unknown>) : {};
-      let html = `<label class="${row}"><span>${label}</span><input type="checkbox" data-key="${f.key}" data-kind="object" ${on ? 'checked' : ''}/></label>`;
+      let html = `<label class="${switchRowClass(f, nested)}"><span>${label}</span><input type="checkbox" data-key="${f.key}" data-kind="object" ${on ? 'checked' : ''}/></label>`;
       if (on)
         for (const s of f.fields ?? []) {
           const key = `${f.key}.${s.key}`;
@@ -2764,18 +2801,18 @@ function metaHtml(meta?: Record<string, string | number | boolean>): string {
     .map(
       ([k, v]) =>
         `<div class="meta-row" data-mk="${esc(k)}">` +
-        `<input class="meta-k" value="${esc(k)}" readonly />` +
-        `<input class="meta-v" value="${esc(String(v))}" />` +
-        `<button class="meta-x" title="Remove" aria-label="Remove metadata ${esc(k)}">${icon('x')}</button></div>`,
+        `<input class="meta-k" value="${esc(k)}" readonly aria-label="Metadata key ${esc(k)}" />` +
+        `<input class="meta-v" value="${esc(String(v))}" aria-label="Metadata value of ${esc(k)}" />` +
+        `<button type="button" class="icon-btn meta-x" title="Remove" aria-label="Remove metadata ${esc(k)}">${icon('x')}</button></div>`,
     )
     .join('');
   return (
-    `<div class="insp-h meta-top">Metadata</div>` +
+    `<div class="insp-sublabel">Metadata</div>` +
     rows +
     `<div class="meta-row meta-add">` +
-    `<input class="meta-nk" placeholder="key" />` +
-    `<input class="meta-nv" placeholder="value" />` +
-    `<button class="meta-addbtn" title="Add" aria-label="Add metadata entry">${icon('plus')}</button></div>`
+    `<input class="meta-nk" placeholder="key" aria-label="New metadata key" />` +
+    `<input class="meta-nv" placeholder="value" aria-label="New metadata value" />` +
+    `<button type="button" class="icon-btn meta-addbtn" title="Add" aria-label="Add metadata entry">${icon('plus')}</button></div>`
   );
 }
 
@@ -2826,9 +2863,9 @@ function wireMeta(_meta?: Record<string, string | number | boolean>): void {
   );
 }
 
-/** The Type dropdown: types by their library label, under the library's
- * category headings (see typeOptionGroups). */
-function typeRow(current: string, choices: readonly TypeChoice[]): string {
+/** The Type dropdown of the selection header: types by their library label,
+ * under the library's category headings (see typeOptionGroups). */
+function typeSelect(current: string, choices: readonly TypeChoice[]): string {
   const option = (o: TypeOption): string =>
     `<option value="${esc(o.value)}"${o.selected ? ' selected' : ''}>${esc(o.label)}</option>`;
   const body = typeOptionGroups(current, choices)
@@ -2838,615 +2875,274 @@ function typeRow(current: string, choices: readonly TypeChoice[]): string {
         : `<optgroup label="${esc(g.group)}">${g.options.map(option).join('')}</optgroup>`,
     )
     .join('');
-  return `<label class="insp-row"><span>Type</span><select id="i-type">${body}</select></label>`;
+  return `<select id="i-type" aria-label="Type" title="Type">${body}</select>`;
 }
 
-/** A named, ordered bucket of catalog field keys for the inspector. */
-interface FieldGroup {
-  title: string;
-  keys: string[];
-  fineTune?: string[];
-  /** Whether the section starts expanded (defaults to collapsed). */
-  open?: boolean;
-}
-
-/** Link fields, organised so the common edits surface first. */
-const LINK_GROUPS: FieldGroup[] = [
-  {
-    title: 'Appearance',
-    keys: ['color', 'strokeWidth', 'opacity', 'dashed'],
-    open: true,
-  },
-  {
-    title: 'Label',
-    keys: ['label', 'labelOffset', 'fromLabel', 'toLabel', 'labelScale'],
-    open: true,
-  },
-  {
-    title: 'Wiring sheet',
-    keys: [
-      'style',
-      'fromInterface',
-      'toInterface',
-      'fromOptic',
-      'toOptic',
-      'fromBundle',
-      'toBundle',
-      'bandwidth',
-      'transport',
-    ],
-  },
-  {
-    title: 'Routing',
-    keys: [
-      'lineStyle',
-      'fromPort',
-      'toPort',
-      'fromPortOffset',
-      'toPortOffset',
-      'cornerRadius',
-      'waypoints',
-    ],
-    fineTune: ['fromPortOffset', 'toPortOffset'],
-    open: true,
-  },
-  {
-    title: 'Animation',
-    keys: ['dots', 'flowSpeed', 'flowParticles', 'reverseFlow'],
-  },
-  { title: 'Advanced', keys: ['href', 'tooltip', 'locked', 'layer', 'source'] },
-];
-
-/** Node fields, grouped the same way. */
-const NODE_GROUPS: FieldGroup[] = [
-  {
-    title: 'Label',
-    keys: [
-      'label',
-      'sublabel',
-      'labelPlacement',
-      'labelOffsetX',
-      'labelOffset',
-      'labelColor',
-    ],
-    fineTune: ['labelOffsetX', 'labelOffset'],
-    open: true,
-  },
-  { title: 'Appearance', keys: ['color', 'opacity', 'status'], open: true },
-  { title: 'Position', keys: ['x', 'y'] },
-  {
-    title: 'Wiring sheet',
-    keys: ['tier', 'portLabels', 'portTable'],
-  },
-  {
-    title: 'Advanced',
-    keys: ['href', 'tooltip', 'locked', 'linkAttach', 'layer', 'source'],
-  },
-];
-
 /**
- * Per-group expanded/collapsed state, remembered across inspector re-renders so
- * toggling a section doesn't get reset by the next live edit. Keyed by title.
- */
-const groupOpen = new Map<string, boolean>();
-
-/**
- * Render an element's catalog fields as collapsible sections. Fields that don't
- * fall into a declared group (e.g. per-type extras like a host's "Managed"
- * flag) are gathered into a trailing "Type options" section so nothing is lost.
+ * Render an element's catalog fields in the sections NODE_GROUPS /
+ * LINK_GROUPS lay out (src/ui/inspector/field-groups.ts). `control` draws one
+ * field (by default its catalog control); `extras` adds rows at the end of a
+ * section, by title.
  */
 function groupedFieldsHtml(
   info: NodeTypeInfo | LinkTypeInfo | undefined,
   cfg: Record<string, unknown>,
-  groups: FieldGroup[],
+  groups: readonly FieldGroup[],
+  control: (f: FieldSpec) => string = (f) => fieldControl(f, cfg),
+  extras: Readonly<Record<string, string>> = {},
 ): string {
-  // `record` fields (metadata / source) are rendered by dedicated editors.
-  const fields = (info?.fields ?? []).filter((f) => f.kind !== 'record');
-  const byKey = new Map(fields.map((f) => [f.key, f] as const));
-  const used = new Set<string>();
-
-  const section = (
-    title: string,
-    specs: FieldSpec[],
-    fallbackOpen: boolean,
-    fineTuneKeys: string[] = [],
-  ): string => {
-    if (!specs.length) return '';
-    const open = groupOpen.get(title) ?? fallbackOpen;
-    const fineTune = specs.filter((f) => fineTuneKeys.includes(f.key));
-    const controls = specs
-      .map((f) => {
-        if (!fineTuneKeys.includes(f.key)) return fieldControl(f, cfg);
-        return f === fineTune[0] ? section('Fine Tune', fineTune, false) : '';
-      })
-      .join('');
-    return (
-      `<details class="insp-group" data-group="${esc(title)}"${open ? ' open' : ''}>` +
-      `<summary class="insp-h">${title}</summary>` +
-      controls +
-      `</details>`
+  const item = (it: PlannedItem): string => {
+    if (it.kind === 'field') return control(it.field);
+    if (it.kind === 'pair')
+      return pairControl(it.label, it.fields, cfg, it.placeholders, it);
+    return sectionHtml(
+      inspectorSections,
+      it.title,
+      it.items.map(item).join(''),
+      {
+        open: false,
+      },
     );
   };
-
-  let html = '';
-  for (const g of groups) {
-    const specs = g.keys
-      .map((k) => byKey.get(k))
-      .filter((f): f is FieldSpec => Boolean(f));
-    specs.forEach((f) => used.add(f.key));
-    html += section(g.title, specs, g.open ?? false, g.fineTune);
-  }
-  const rest = fields.filter((f) => !used.has(f.key));
-  return html + section('Type options', rest, true);
+  return planSections(info?.fields ?? [], groups, info?.label ?? 'Type')
+    .map((s) =>
+      sectionHtml(
+        inspectorSections,
+        s.title,
+        s.items.map(item).join('') + (extras[s.title] ?? ''),
+        {
+          open: s.open,
+          // How many values are set; no count while none is.
+          count:
+            s.title === 'Data'
+              ? setValueCount(s.fields, cfg) || undefined
+              : undefined,
+        },
+      ),
+    )
+    .join('');
 }
 
-/** Persist each section's open/closed state as the user toggles it. */
-function wireGroups(): void {
-  inspector
-    .querySelectorAll<HTMLDetailsElement>('details.insp-group[data-group]')
-    .forEach((d) => {
-      d.addEventListener('toggle', () => {
-        groupOpen.set(d.dataset.group!, d.open);
-      });
-    });
-}
-
-/* Document + page properties — shown when nothing is selected. These edit the
- * document contract directly (title, page name, canvas size); the same fields
- * are settable headlessly via the MCP set_document_title / set_page_properties
- * tools, so this surface is not GUI-only. */
-function propertiesHtml(): string {
-  const page = editor.page;
-  const [, , w, h] = page.viewBox.split(/\s+/).map(Number);
+/**
+ * Two fields in one row ("Position: X Y", "Sides: from to"), each its own
+ * control, named by its own label.
+ */
+function pairControl(
+  label: string,
+  fields: readonly [FieldSpec, FieldSpec],
+  cfg: Record<string, unknown>,
+  placeholders?: readonly [string, string],
+  look: {
+    stack?: boolean;
+    shortOptions?: Readonly<Record<string, string>>;
+  } = {},
+): string {
+  const input = (f: FieldSpec, i: number): string => {
+    const v = cfg[f.key];
+    const hint = esc(
+      placeholders?.[i] || (f.kind === 'number' ? 'auto' : f.label),
+    );
+    const name = `aria-label="${esc(f.label)}" title="${esc(f.label)}"`;
+    if (f.kind === 'enum')
+      return `<select data-key="${f.key}" ${name}>${(f.options ?? [])
+        .map((o) =>
+          look.shortOptions?.[o] !== undefined
+            ? `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''} title="${esc(f.optionLabels?.[o] ?? o)}">${esc(look.shortOptions[o])}</option>`
+            : `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${esc(f.optionLabels?.[o] ?? o)}</option>`,
+        )
+        .join('')}</select>`;
+    if (f.kind === 'number')
+      return `<input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="${hint}" ${name}${boundsAttrs(numberBounds(f))}/>`;
+    return `<input data-key="${f.key}" value="${esc(String(v ?? ''))}" placeholder="${hint}" ${name}/>`;
+  };
   return (
-    `<div class="insp-h">Document</div>` +
-    `<label class="insp-row"><span>Title</span><input id="p-title" value="${esc(doc.title)}"/></label>` +
-    `<div class="insp-h">Page</div>` +
-    `<label class="insp-row"><span>Name</span><input id="p-name" value="${esc(page.name)}"/></label>` +
-    `<div class="insp-row"><span>Canvas</span><span class="insp-pair">` +
-    `<input type="number" id="p-w" min="1" value="${w || 0}" aria-label="Canvas width" title="Width"/>` +
-    `<input type="number" id="p-h" min="1" value="${h || 0}" aria-label="Canvas height" title="Height"/></span></div>` +
-    `<div class="insp-row"><span>Size</span><span class="insp-btns"><button class="tbtn ab" id="p-fit" title="Resize the page to wrap all content (Tidy/Balance grow it automatically)">${icon('fit-page')} fit to content</button></span></div>` +
-    `<div class="insp-h">Playback</div>` +
-    `<label class="insp-row"><span>Hold (ms)</span><input type="number" id="p-dur" min="100" step="100" placeholder="${DEFAULT_PAGE_DURATION}" value="${page.duration ?? ''}"/></label>` +
-    `<label class="insp-row"><span>Transition</span><select id="p-tr">` +
-    `<option value="cut"${page.transition !== 'fade' ? ' selected' : ''}>cut</option>` +
-    `<option value="fade"${page.transition === 'fade' ? ' selected' : ''}>fade</option>` +
-    `</select></label>` +
-    `<label class="insp-row" title="Draw a hop where standard line links cross others — the classic 'these wires aren't joined' notation"><span>Crossings</span><select id="p-jumps">` +
-    `<option value=""${!page.lineJumps ? ' selected' : ''}>overlap (none)</option>` +
-    `<option value="arc"${page.lineJumps === 'arc' ? ' selected' : ''}>jump — arc</option>` +
-    `<option value="gap"${page.lineJumps === 'gap' ? ' selected' : ''}>jump — gap</option>` +
-    `</select></label>` +
-    `<label class="insp-row" title="How endpoint (port) labels draw: a glass chip beside the wire, or a dark pill on the node edge at the attach point (wiring-sheet style — pair with the anchor box's Distribute ends)"><span>Port labels</span><select id="p-portlabels">` +
-    `<option value="chip"${page.portLabels !== 'pill' ? ' selected' : ''}>chip beside the wire</option>` +
-    `<option value="pill"${page.portLabels === 'pill' ? ' selected' : ''}>pill on the node edge</option>` +
-    `</select></label>` +
-    // Link anchor box — page-level; nodes may override it.
-    `<label class="insp-row" title="Links attach to a padded box that clears the node label instead of the icon edge. On for new documents; nodes can override it in their Properties."><span>Link anchor box</span><input type="checkbox" id="p-attach"${page.linkAttach ? ' checked' : ''}/></label>` +
-    (page.linkAttach
-      ? `<label class="insp-row"><span>Box padding</span><input type="number" id="p-attach-pad" min="0" max="200" step="any" placeholder="6" value="${page.linkAttach.pad ?? ''}"/></label>` +
-        `<label class="insp-row" title="Spread every link endpoint on a node side into evenly spaced slots"><span>Distribute ends</span><input type="checkbox" id="p-attach-dist"${page.linkAttach.distribute ? ' checked' : ''}/></label>`
-      : '') +
-    frameStoryHtml() +
-    `<div class="insp-h">Legend</div>` +
-    `<label class="insp-row"><span>Show key</span><input type="checkbox" id="p-legend"${doc.legend?.show ? ' checked' : ''}/></label>` +
-    `<label class="insp-row"><span>Position</span><select id="p-legend-pos">` +
-    (['tl', 'tr', 'bl', 'br'] as const)
-      .map(
-        (p) =>
-          `<option value="${p}"${(doc.legend?.position ?? 'tl') === p ? ' selected' : ''}>${
-            {
-              tl: 'top-left',
-              tr: 'top-right',
-              bl: 'bottom-left',
-              br: 'bottom-right',
-            }[p]
-          }</option>`,
-      )
-      .join('') +
-    `</select></label>` +
-    (doc.legend?.show
-      ? `<label class="insp-row" title="Lay the key out across columns, like a drawing sheet's Key strip"><span>Columns</span><input type="number" id="p-legend-cols" min="1" max="8" value="${doc.legend.columns ?? 1}"/></label>` +
-        `<label class="insp-row"><span>Key title</span><input id="p-legend-title" value="${esc(doc.legend.title ?? '')}" placeholder="Key"/></label>`
-      : '') +
-    sheetHtml() +
-    layersHtml()
+    `<div class="insp-row${look.stack ? ' col' : ''}"><span>${esc(label)}</span>` +
+    `<span class="insp-pair">${input(fields[0], 0)}${input(fields[1], 1)}</span></div>`
   );
 }
 
-/** The Sheet section of the Document panel (W6): paper size, border, title block. */
-function sheetHtml(): string {
-  const sh = doc.sheet;
-  const tb = sh?.titleBlock;
-  const field = (label: string): string =>
-    tb?.fields?.find((f) => f.label.toLowerCase() === label.toLowerCase())
-      ?.value ?? '';
+/** How many of these fields hold a value (metadata counts each entry). */
+function setValueCount(
+  fields: readonly FieldSpec[],
+  cfg: Record<string, unknown>,
+): number {
+  let n = 0;
+  for (const f of fields) {
+    const v = cfg[f.key];
+    if (f.key === 'meta' && v && typeof v === 'object')
+      n += Object.keys(v).length;
+    else if (v !== undefined && v !== null && v !== '' && v !== false) n += 1;
+  }
+  return n;
+}
+
+/**
+ * A node's catalog field in the Selection tab: the metadata editor, the
+ * read-only source reference, and the Link attachment override have their
+ * own controls; every other field its catalog control.
+ */
+function nodeFieldControl(node: NodeConfig): (f: FieldSpec) => string {
+  const cfg = node as Record<string, unknown>;
+  return (f) => {
+    if (f.key === 'meta') return metaHtml(node.meta);
+    if (f.key === 'source') return readOnlyFieldRow(f, cfg.source);
+    if (f.key === 'linkAttach') return linkAttachControl(f, node);
+    return fieldControl(f, cfg);
+  };
+}
+
+/**
+ * A link's catalog field: the source reference is shown, not edited, and the
+ * bends count carries the Straighten button while there are bends.
+ */
+function linkFieldControl(link: LinkConfig): (f: FieldSpec) => string {
+  const cfg = link as Record<string, unknown>;
+  return (f) => {
+    if (f.key === 'source') return readOnlyFieldRow(f, cfg.source);
+    if (f.key === 'waypoints') {
+      const n = Array.isArray(cfg.waypoints) ? cfg.waypoints.length : 0;
+      const straighten = editor.selectedLinkHasBends()
+        ? `<button type="button" class="btn btn-sm" id="i-straighten" title="Clear bends — straight line">${icon('slash')} Straighten</button>`
+        : '';
+      return `<div class="insp-row"><span>${esc(f.label)}</span><span class="insp-btns"><span class="insp-val data">${n} pt</span>${straighten}</span></div>`;
+    }
+    return fieldControl(f, cfg);
+  };
+}
+
+/**
+ * Link attachment of one node: what applies now, then the override switch
+ * (the node carries its own `linkAttach`) and, while on, its two fields.
+ * The switch and the fields are the catalog's `linkAttach` object field, so
+ * they write the document exactly as that field always did.
+ */
+function linkAttachControl(f: FieldSpec, node: NodeConfig): string {
+  const override: FieldSpec = {
+    ...f,
+    label: 'Override for this node',
+    fields: f.fields?.map((s) =>
+      s.key === 'distribute' ? { ...s, label: 'Distribute ends' } : s,
+    ),
+  };
   return (
-    `<div class="insp-h">Sheet</div>` +
-    `<label class="insp-row" title="Draw the document as a drawing sheet: border, top title, bottom-right title block"><span>Sheet frame</span><input type="checkbox" id="p-sheet"${sh ? ' checked' : ''}/></label>` +
-    (sh
-      ? `<label class="insp-row"><span>Size</span><select id="p-sheet-size">` +
-        `<option value="custom"${!sh.size || sh.size === 'custom' ? ' selected' : ''}>custom (keep canvas)</option>` +
-        SHEET_SIZE_IDS.map(
-          (id) =>
-            `<option value="${id}"${sh.size === id ? ' selected' : ''}>${esc(SHEET_SIZE_LABELS[id])}</option>`,
-        ).join('') +
-        `</select></label>` +
-        `<label class="insp-row"><span>Orientation</span><select id="p-sheet-orient">` +
-        `<option value="landscape"${sh.orientation !== 'portrait' ? ' selected' : ''}>landscape</option>` +
-        `<option value="portrait"${sh.orientation === 'portrait' ? ' selected' : ''}>portrait</option>` +
-        `</select></label>` +
-        `<label class="insp-row"><span>Border</span><input type="checkbox" id="p-sheet-border"${sh.border !== false ? ' checked' : ''}/></label>` +
-        `<label class="insp-row"><span>Top title</span><input type="checkbox" id="p-sheet-title"${sh.title !== false ? ' checked' : ''}/></label>` +
-        `<label class="insp-row"><span>Title block</span><input type="checkbox" id="p-sheet-tb"${tb && tb.show !== false ? ' checked' : ''}/></label>` +
-        (tb && tb.show !== false
-          ? `<label class="insp-row"><span>Subtitle</span><input id="p-sheet-sub" value="${esc(tb.subtitle ?? '')}" placeholder="sheet name"/></label>` +
-            `<label class="insp-row"><span>Drawn by</span><input class="p-sheet-field" data-label="Drawn by" value="${esc(field('Drawn by'))}"/></label>` +
-            `<label class="insp-row"><span>Revision</span><input class="p-sheet-field" data-label="Revision" value="${esc(field('Revision'))}"/></label>` +
-            `<label class="insp-row"><span>Date</span><input class="p-sheet-field" data-label="Date" value="${esc(field('Date'))}"/></label>` +
-            `<label class="insp-row"><span>Logo URL</span><input id="p-sheet-logo" value="${esc(tb.logoHref ?? '')}" placeholder="https://…"/></label>`
-          : '')
+    `<div class="insp-hint" data-link-attach-summary>${esc(linkAttachSummary(editor.page.linkAttach, node))}</div>` +
+    fieldControl(override, node as Record<string, unknown>)
+  );
+}
+
+/** Keep the Link attachment line in step while its fields are typed in. */
+function refreshLinkAttachSummary(): void {
+  const line = inspector.querySelector<HTMLElement>(
+    '[data-link-attach-summary]',
+  );
+  const node = editor.getSelectedNode();
+  if (line && node)
+    line.textContent = linkAttachSummary(editor.page.linkAttach, node);
+}
+
+/** The command behind each "Annotate" button of the Selection tab. */
+const ANNOTATE_COMMANDS: Readonly<Record<string, CommandId>> = {
+  zone: 'selection.groupIntoZone',
+  flowPath: 'selection.addFlow',
+  policyMarker: 'selection.addPolicyMarker',
+};
+
+/**
+ * Annotate: make a zone, flow path or marker from what is selected. `bare`
+ * draws the buttons as a group of their own across the panel's width (a
+ * node's last row), without the plus marks (`plus` puts them back), so the
+ * two fit on one line.
+ */
+function annotateRow(
+  kinds: readonly AnnotationKind[],
+  bare = false,
+  plus = !bare,
+): string {
+  const buttons = kinds
+    .map((kind) => {
+      const id = ANNOTATE_COMMANDS[kind]!;
+      return `<button type="button" class="btn btn-sm" data-annotate="${kind}" title="${tip(id)}">${plus ? `${icon('plus')} ` : ''}${esc(commands.get(id)!.title)}</button>`;
+    })
+    .join('');
+  return bare
+    ? `<div class="insp-btns" role="group" aria-label="Annotate">${buttons}</div>`
+    : `<div class="insp-row"><span>Annotate</span><span class="insp-btns">${buttons}</span></div>`;
+}
+
+/** Align and distribute, for two or more nodes (distribute needs three). */
+function alignRows(count: number): string {
+  const button = (prefix: string, attr: string, arg: string): string => {
+    const spec = commandVariant(prefix, arg, ALL_COMMAND_SPECS)!;
+    const off = attr === 'dist' && count < 3 ? ' disabled' : '';
+    return `<button type="button" class="icon-btn" data-${attr}="${arg}" title="${tip(spec.id)}" aria-label="${esc(spec.title)}"${off}>${spec.icon ? icon(spec.icon) : ''}</button>`;
+  };
+  const row = (label: string, prefix: string, attr: string): string =>
+    `<div class="insp-row"><span>${label}</span><span class="arrange">` +
+    variantArgs(prefix, ALL_COMMAND_SPECS)
+      .map((arg) => button(prefix, attr, arg))
+      .join('') +
+    `</span></div>`;
+  return (
+    row('Align', 'arrange.align', 'align') +
+    row('Distribute', 'arrange.distribute', 'dist') +
+    (count < 3
+      ? `<div class="insp-hint">Select three or more nodes to distribute.</div>`
       : '')
   );
 }
 
-/** The Layers section of the Document panel (B.3): per-layer eye + opacity. */
-function layersHtml(): string {
-  const layers = doc.layers ?? [];
-  const rows = layers
-    .map((l, i) => {
-      const vis = l.defaultVisible !== false;
-      const op = Math.round((l.opacity ?? 1) * 100);
-      return (
-        `<div class="layer-row" data-li="${i}">` +
-        `<button class="layer-eye" data-li="${i}" title="Show / hide layer" aria-label="${vis ? 'Hide' : 'Show'} layer ${esc(l.name ?? l.id)}" aria-pressed="${vis}">${icon(vis ? 'eye' : 'eye-off')}</button>` +
-        `<span class="layer-name">${esc(l.name ?? l.id)}</span>` +
-        `<input class="layer-op" data-li="${i}" type="range" min="0" max="100" step="5" value="${op}" title="Layer opacity (${op}%)" aria-label="Opacity of layer ${esc(l.name ?? l.id)}"/>` +
-        `</div>`
-      );
-    })
-    .join('');
-  // The plus is an icon, which a screen reader skips: the name says "Add".
-  return (
-    `<div class="insp-h">Layers</div>` +
-    (rows || `<div class="insp-hint">No layers declared.</div>`) +
-    `<button class="insp-btn" id="p-layer-add" aria-label="Add layer">${icon('plus')} Layer</button>`
-  );
-}
-
-/** Frame storytelling section (2.1 caption + 2.2/2.4 emphasis picker). */
-function frameStoryHtml(): string {
-  const page = editor.page;
-  const emph = new Set(page.emphasis ?? []);
-  const item = (id: string, label: string, type: string): string =>
-    `<label class="emph-row"><input type="checkbox" class="emph-cb" data-eid="${esc(id)}"${emph.has(id) ? ' checked' : ''}/>` +
-    `<span class="emph-label">${esc(label || id)}</span><span class="emph-type">${esc(type)}</span></label>`;
-  const nodeRows = page.nodes
-    .map((n) => item(n.id, n.label ?? n.type, n.type))
-    .join('');
-  const linkRows = page.links
-    .map((l) => item(l.id, l.label ?? `${l.from}→${l.to}`, l.type))
-    .join('');
-  const picker =
-    page.nodes.length + page.links.length === 0
-      ? `<div class="insp-hint">No elements on this frame.</div>`
-      : `<div class="emph-list scroll-slim">${nodeRows}${linkRows}</div>`;
-  return (
-    `<div class="insp-h">Frame</div>` +
-    `<label class="insp-row"><span>Caption</span>` +
-    `<input id="p-caption" value="${esc(page.caption ?? '')}" placeholder="what this frame shows"/></label>` +
-    `<div class="insp-h">Emphasis (${emph.size})</div>` +
-    `<div class="insp-hint">Tick elements to spotlight; the rest dim. Or right-click a selection → “Emphasize on this frame”.</div>` +
-    `<div class="emph-actions">` +
-    `<button class="insp-btn" id="p-emph-clear"${emph.size ? '' : ' disabled'}>Clear emphasis</button></div>` +
-    picker
-  );
-}
-
-function wireProperties(): void {
-  const title = inspector.querySelector<HTMLInputElement>('#p-title');
-  title?.addEventListener('input', () => {
-    doc.title = title.value;
-    markDirty();
-  });
-  const name = inspector.querySelector<HTMLInputElement>('#p-name');
-  name?.addEventListener('input', () => editor.renamePage(name.value));
-  // Canvas size reframes the page, so commit on change (blur/Enter), not keystroke.
-  const wIn = inspector.querySelector<HTMLInputElement>('#p-w');
-  const hIn = inspector.querySelector<HTMLInputElement>('#p-h');
-  const applySize = (): void => {
-    if (!wIn || !hIn) return;
-    const [vx, vy, vw, vh] = editor.page.viewBox.split(/\s+/).map(Number);
-    // A canvas always has a size: a blank, zero or negative entry is not one,
-    // so the field goes back to the size the page has.
-    const size = (input: HTMLInputElement, now: number | undefined): number => {
-      const parsed = parseNumberField(
-        input.value,
-        { min: 0, exclusiveMin: true },
-        { required: true, badInput: input.validity.badInput },
-      );
-      const px = parsed.kind === 'value' ? Math.round(parsed.value) : 0;
-      return px >= 1 ? px : now || 0;
-    };
-    const w = size(wIn, vw);
-    const h = size(hIn, vh);
-    wIn.value = String(w);
-    hIn.value = String(h);
-    if (w === vw && h === vh) return;
-    editor.setViewBox(`${vx || 0} ${vy || 0} ${w} ${h}`);
-  };
-  wIn?.addEventListener('change', applySize);
-  hIn?.addEventListener('change', applySize);
+function wireSelectionActions(): void {
   inspector
-    .querySelector('#p-fit')
-    ?.addEventListener('click', () => commands.run('page.fitToContent'));
-  // Playback timing — same fields the MCP set_page_properties tool sets.
-  // Routed through updatePageProps so the edits land on the undo stack (#205).
-  const dur = inspector.querySelector<HTMLInputElement>('#p-dur');
-  dur?.addEventListener('change', () => {
-    const v = Number(dur.value);
-    editor.updatePageProps({
-      duration: Number.isFinite(v) && v > 0 ? v : undefined,
-    });
-  });
-  const tr = inspector.querySelector<HTMLSelectElement>('#p-tr');
-  tr?.addEventListener('change', () => {
-    editor.updatePageProps({
-      transition: tr.value === 'fade' ? 'fade' : undefined,
-    });
-  });
-  const jumps = inspector.querySelector<HTMLSelectElement>('#p-jumps');
-  jumps?.addEventListener('change', () => {
-    editor.updatePageProps({
-      lineJumps:
-        jumps.value === 'arc' || jumps.value === 'gap'
-          ? jumps.value
-          : undefined,
-    });
-  });
-  const portLabels =
-    inspector.querySelector<HTMLSelectElement>('#p-portlabels');
-  portLabels?.addEventListener('change', () => {
-    editor.updatePageProps({
-      portLabels: portLabels.value === 'pill' ? 'pill' : undefined,
-    });
-  });
-  // Link anchor box — page-level; the art redraws on change.
-  const attachOn = inspector.querySelector<HTMLInputElement>('#p-attach');
-  attachOn?.addEventListener('change', () => {
-    editor.updatePageProps({
-      linkAttach: attachOn.checked ? { ...editor.page.linkAttach } : undefined,
-    });
-    renderInspector();
-  });
-  const attachPad = inspector.querySelector<HTMLInputElement>('#p-attach-pad');
-  if (attachPad)
-    wireNumberInput(
-      attachPad,
-      LINK_ATTACH_FIELDS.find((f) => f.key === 'pad'),
-      (val) => {
-        const next = { ...editor.page.linkAttach };
-        if (val === undefined) delete next.pad;
-        else next.pad = val;
-        editor.updatePageProps({ linkAttach: next }, !editing);
-        editing = true;
-      },
-      () => editor.page.linkAttach?.pad,
-    );
-  const attachDist =
-    inspector.querySelector<HTMLInputElement>('#p-attach-dist');
-  attachDist?.addEventListener('change', () => {
-    const next = { ...editor.page.linkAttach };
-    if (attachDist.checked) next.distribute = true;
-    else delete next.distribute;
-    editor.updatePageProps({ linkAttach: next });
-  });
-  // Legend (B.1) — a per-document setting; redraw the overlay so it shows live.
-  const legendOn = inspector.querySelector<HTMLInputElement>('#p-legend');
-  legendOn?.addEventListener('change', () => {
-    doc.legend = { ...doc.legend, show: legendOn.checked };
-    editor.redrawOverlay();
-    markDirty();
-    renderInspector(); // the key's own options appear / go with it
-  });
-  const legendPos = inspector.querySelector<HTMLSelectElement>('#p-legend-pos');
-  legendPos?.addEventListener('change', () => {
-    doc.legend = {
-      ...doc.legend,
-      position: legendPos.value as 'tl' | 'tr' | 'bl' | 'br',
-    };
-    editor.redrawOverlay();
-    markDirty();
-  });
-  const legendCols =
-    inspector.querySelector<HTMLInputElement>('#p-legend-cols');
-  legendCols?.addEventListener('change', () => {
-    const n = Math.max(1, Math.min(8, Math.round(Number(legendCols.value))));
-    const next = { ...doc.legend };
-    if (n > 1) next.columns = n;
-    else delete next.columns;
-    doc.legend = next;
-    editor.redrawOverlay();
-    markDirty();
-  });
-  const legendTitle =
-    inspector.querySelector<HTMLInputElement>('#p-legend-title');
-  legendTitle?.addEventListener('input', () => {
-    const next = { ...doc.legend };
-    if (legendTitle.value.trim()) next.title = legendTitle.value;
-    else delete next.title;
-    doc.legend = next;
-    editor.redrawOverlay();
-    markDirty();
-  });
-  wireSheet();
-  wireLayers();
-  wireFrameStory();
-}
-
-/** Wire the Sheet section (W6): every control writes `doc.sheet` and redraws. */
-function wireSheet(): void {
-  const on = inspector.querySelector<HTMLInputElement>('#p-sheet');
-  const commit = (rerender = false): void => {
-    editor.redrawOverlay();
-    markDirty();
-    if (rerender) renderInspector();
-  };
-  on?.addEventListener('change', () => {
-    if (on.checked) doc.sheet = doc.sheet ?? {};
-    else delete doc.sheet;
-    commit(true);
-  });
-  const sh = (): SheetConfig => (doc.sheet ??= {});
-  const applySize = (): void => {
-    const vb = sheetViewBox(sh().size, sh().orientation);
-    if (!vb) return;
-    for (const p of doc.pages) p.viewBox = vb;
-    showPage(doc.pages[current]!);
-  };
-  inspector
-    .querySelector<HTMLSelectElement>('#p-sheet-size')
-    ?.addEventListener('change', (e) => {
-      const v = (e.target as HTMLSelectElement).value;
-      if (v === 'custom') delete sh().size;
-      else sh().size = v as SheetConfig['size'];
-      applySize();
-      commit();
-    });
-  inspector
-    .querySelector<HTMLSelectElement>('#p-sheet-orient')
-    ?.addEventListener('change', (e) => {
-      const v = (e.target as HTMLSelectElement).value;
-      if (v === 'portrait') sh().orientation = 'portrait';
-      else delete sh().orientation;
-      applySize();
-      commit();
-    });
-  const bool = (id: string, key: 'border' | 'title'): void => {
-    inspector
-      .querySelector<HTMLInputElement>(id)
-      ?.addEventListener('change', (e) => {
-        if ((e.target as HTMLInputElement).checked) delete sh()[key];
-        else sh()[key] = false;
-        commit();
-      });
-  };
-  bool('#p-sheet-border', 'border');
-  bool('#p-sheet-title', 'title');
-  inspector
-    .querySelector<HTMLInputElement>('#p-sheet-tb')
-    ?.addEventListener('change', (e) => {
-      const tb = { ...(sh().titleBlock ?? {}) };
-      if ((e.target as HTMLInputElement).checked) delete tb.show;
-      else tb.show = false;
-      sh().titleBlock = tb;
-      commit(true);
-    });
-  inspector
-    .querySelector<HTMLInputElement>('#p-sheet-sub')
-    ?.addEventListener('input', (e) => {
-      const tb = { ...(sh().titleBlock ?? {}) };
-      const v = (e.target as HTMLInputElement).value;
-      if (v.trim()) tb.subtitle = v;
-      else delete tb.subtitle;
-      sh().titleBlock = tb;
-      commit();
-    });
-  inspector
-    .querySelectorAll<HTMLInputElement>('.p-sheet-field')
-    .forEach((inp) =>
-      inp.addEventListener('input', () => {
-        const tb = { ...(sh().titleBlock ?? {}) };
-        const label = inp.dataset.label!;
-        const fields = (tb.fields ?? []).filter(
-          (f) => f.label.toLowerCase() !== label.toLowerCase(),
-        );
-        if (inp.value.trim()) fields.push({ label, value: inp.value });
-        // Keep the canonical order so the block reads Drawn by / Revision / Date.
-        const order = ['drawn by', 'revision', 'date'];
-        fields.sort(
-          (a, b) =>
-            (order.indexOf(a.label.toLowerCase()) + 1 || 99) -
-            (order.indexOf(b.label.toLowerCase()) + 1 || 99),
-        );
-        if (fields.length) tb.fields = fields;
-        else delete tb.fields;
-        sh().titleBlock = tb;
-        commit();
+    .querySelectorAll<HTMLButtonElement>('[data-annotate]')
+    .forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = ANNOTATE_COMMANDS[b.dataset.annotate ?? ''];
+        if (!id) throw new Error(`no command for "${b.dataset.annotate}"`);
+        commands.run(id);
       }),
     );
   inspector
-    .querySelector<HTMLInputElement>('#p-sheet-logo')
-    ?.addEventListener('change', (e) => {
-      const tb = { ...(sh().titleBlock ?? {}) };
-      const v = (e.target as HTMLInputElement).value.trim();
-      if (/^https:\/\//i.test(v)) tb.logoHref = v;
-      else delete tb.logoHref;
-      sh().titleBlock = tb;
-      commit();
-    });
+    .querySelectorAll<HTMLButtonElement>('[data-align]')
+    .forEach((b) =>
+      b.addEventListener('click', () =>
+        runVariant('arrange.align', b.dataset.align),
+      ),
+    );
+  inspector
+    .querySelectorAll<HTMLButtonElement>('[data-dist]')
+    .forEach((b) =>
+      b.addEventListener('click', () =>
+        runVariant('arrange.distribute', b.dataset.dist),
+      ),
+    );
 }
 
-/** Wire the Frame section: caption + emphasis picker/actions (Phase 2). */
-function wireFrameStory(): void {
-  const cap = inspector.querySelector<HTMLInputElement>('#p-caption');
-  cap?.addEventListener('input', () => {
-    // Undoable via updatePageProps; a typing run snapshots once (`editing`).
-    editor.updatePageProps({ caption: cap.value || undefined }, !editing);
-    editing = true;
-  });
-  inspector
-    .querySelector('#p-emph-clear')
-    ?.addEventListener('click', () => commands.run('page.emphasis.clear'));
-  inspector.querySelectorAll<HTMLInputElement>('.emph-cb').forEach((cb) => {
-    cb.addEventListener('change', () => {
-      editor.toggleEmphasis(cb.dataset.eid!);
-      renderInspector();
-    });
-  });
-}
-
-/** Wire the Document panel's Layers controls (B.3): eye, opacity, + Layer. */
-function wireLayers(): void {
-  const layers = doc.layers ?? [];
-  inspector.querySelectorAll<HTMLButtonElement>('.layer-eye').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const l = layers[Number(btn.dataset.li)];
-      if (!l) return;
-      l.defaultVisible = l.defaultVisible === false; // toggle (default = visible)
-      editor.rerender();
-      renderInspector(); // refresh the eye glyph
-      markDirty();
-    });
-  });
-  inspector
-    .querySelectorAll<HTMLInputElement>('.layer-op')
-    .forEach((slider) => {
-      slider.addEventListener('input', () => {
-        const l = layers[Number(slider.dataset.li)];
-        if (!l) return;
-        l.opacity = Math.max(0, Math.min(1, Number(slider.value) / 100));
-        editor.rerender();
-        markDirty();
-      });
-    });
-  inspector.querySelector('#p-layer-add')?.addEventListener('click', () => {
-    const n = (doc.layers ?? []).length + 1;
-    const KINDS = ['underlay', 'overlay', 'policy', 'service'] as const;
-    doc.layers = [
-      ...(doc.layers ?? []),
-      {
-        id: `layer${n}`,
-        name: `Layer ${n}`,
-        kind: KINDS[(n - 1) % KINDS.length],
-        defaultVisible: true,
-      },
-    ];
-    editor.rerender();
-    renderInspector();
-    markDirty();
-  });
+/**
+ * What is selected, as one string that changes when the selection does (the
+ * Selection tab comes forward then), or null when nothing is.
+ */
+function inspectorSelection(): {
+  key: string | null;
+  counts: SelectionCounts;
+} {
+  const nodes = editor.selectedNodeIds();
+  const links = editor.selectedLinkIds();
+  const anchor = editor.getSelectedAnchor()?.id ?? '';
+  const zone = editor.getSelectedZone()?.id ?? '';
+  const count = editor.selectionCount();
+  const counts: SelectionCounts = {
+    nodes: nodes.length,
+    links: links.length,
+    anchors: Math.max(anchor ? 1 : 0, count - nodes.length - links.length),
+    zones: zone ? 1 : 0,
+  };
+  const none = !nodes.length && !links.length && !anchor && !zone && !count;
+  return {
+    key: none
+      ? null
+      : JSON.stringify([editor.page.id, nodes, links, anchor, zone, count]),
+    counts,
+  };
 }
 
 /** Render the inspector for the current selection, driven entirely by the catalog. */
@@ -3456,68 +3152,129 @@ function renderInspector(): void {
   const anchor = link || node ? null : editor.getSelectedAnchor();
   const zone = link || node || anchor ? null : editor.getSelectedZone();
   inspector.hidden = false;
+  const selection = inspectorSelection();
+  const tab = inspectorTabs.sync(selection.key, selection.counts);
 
   let html = '';
-  if (node) {
+  if (tab === 'page') {
+    const page = editor.page;
+    html = pageTabHtml(inspectorContext, {
+      html: annotationsHtml(),
+      count:
+        page.zones.length + page.flowPaths.length + page.policyMarkers.length,
+    });
+  } else if (tab === 'document') {
+    html = documentTabHtml(inspectorContext);
+  } else if (node) {
     const info = getNodeType(node.type, doc.customNodes);
     html +=
-      `<div class="insp-h">Node</div>` +
-      typeRow(node.type, nodeCatalog(doc.customNodes)) +
-      groupedFieldsHtml(info, node as Record<string, unknown>, NODE_GROUPS) +
-      metaHtml(node.meta) +
-      arrangeRow() +
-      formatRow();
+      headerHtml({
+        kind: 'node',
+        kindLabel: 'Node',
+        title: String(node.label ?? '').trim() || node.id,
+        id: node.id,
+        typeSelect: typeSelect(node.type, nodeCatalog(doc.customNodes)),
+        locked: editor.selectionLocked(),
+      }) +
+      groupedFieldsHtml(
+        info,
+        node as Record<string, unknown>,
+        NODE_GROUPS,
+        nodeFieldControl(node),
+        { 'Position and order': arrangeRow() },
+      ) +
+      // Copy and paste format are in the header's "more" menu.
+      `<div class="insp-rows insp-foot">` +
+      annotateRow(['zone', 'policyMarker'], true) +
+      `</div>`;
   } else if (link) {
     const info = getLinkType(link.type);
     const linkCount = editor.selectedLinkIds().length;
     html +=
-      `<div class="insp-h">Link</div>` +
+      headerHtml({
+        kind: 'link',
+        kindLabel: 'Link',
+        title: `${endpointLabel(link.from)} → ${endpointLabel(link.to)}`,
+        id: link.id,
+        typeSelect: typeSelect(link.type, linkCatalog()),
+        locked: editor.selectionLocked(),
+      }) +
+      `<div class="insp-rows insp-top">` +
       (linkCount > 1
         ? `<div class="insp-hint">${linkCount} links selected. Type, colour, style and layer changes apply to all; everything else edits this one.</div>`
         : '') +
-      typeRow(link.type, linkCatalog()) +
-      endpointRow('from', link.from, link.to) +
-      endpointRow('to', link.to, link.from) +
-      `<div class="insp-row"><span>Endpoints</span><span class="insp-btns"><button class="tbtn ab" id="i-swap" title="Swap from/to">${icon('reverse')} swap</button>${
-        editor.selectedLinkHasBends()
-          ? `<button class="tbtn ab" id="i-straighten" title="Clear bends — straight line">${icon('slash')} straighten</button>`
-          : ''
-      }</span></div>` +
-      groupedFieldsHtml(info, link as Record<string, unknown>, LINK_GROUPS) +
-      arrangeRow() +
-      formatRow();
+      `<div class="insp-ends">` +
+      endpointSelect('from', link.from, link.to) +
+      `<button type="button" class="icon-btn" id="i-swap" title="Swap from/to" aria-label="Swap from and to">${icon('reverse')}</button>` +
+      endpointSelect('to', link.to, link.from) +
+      `</div></div>` +
+      groupedFieldsHtml(
+        info,
+        link as Record<string, unknown>,
+        LINK_GROUPS,
+        linkFieldControl(link),
+      );
   } else if (anchor) {
     html +=
-      `<div class="insp-h">Anchor</div>` +
-      `<div class="insp-row"><span>Id</span><span class="insp-val">${esc(anchor.id)}</span></div>` +
+      headerHtml({ kind: 'anchor', kindLabel: 'Anchor', title: anchor.id }) +
+      `<div class="insp-rows insp-top">` +
       `<div class="insp-row"><span>Position</span><span class="insp-pair">` +
       `<input type="number" id="a-x" value="${anchor.x}" aria-label="Anchor x" title="X"/>` +
       `<input type="number" id="a-y" value="${anchor.y}" aria-label="Anchor y" title="Y"/></span></div>` +
-      `<div class="insp-row"><span>Links</span><span class="insp-val">${editor.anchorLinkCount(anchor.id)}</span></div>` +
-      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button class="tbtn ab" id="a-del" title="Delete anchor">${icon('delete')} delete</button></span></div>`;
+      `<div class="insp-row"><span>Links</span><span class="insp-val data">${editor.anchorLinkCount(anchor.id)}</span></div>` +
+      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button type="button" class="btn btn-sm btn-danger" id="a-del" title="Delete anchor" aria-label="Delete anchor">${icon('delete')} Delete</button></span></div></div>`;
   } else if (zone) {
     // A zone region was clicked on canvas — edit it directly (the same control
     // surface as the annotations list, wired by wireAnnotations()).
-    html += `<div class="insp-h">Zone</div>` + zoneEditorHtml(zone);
+    const label = String((zone as { label?: unknown }).label ?? '').trim();
+    html +=
+      headerHtml({
+        kind: 'zone',
+        kindLabel: 'Zone',
+        title: label || zone.id,
+        id: zone.id,
+      }) + zoneEditorHtml(zone);
   } else {
-    // Multi-node selection: no single-element editor, but the format painter
-    // still applies (pasteFormat brushes every selected node — #211).
-    if (editor.selectionCount() > 1)
-      html +=
-        `<div class="insp-h">Selection (${editor.selectionCount()} nodes)</div>` +
-        (canAnalyzePath()
-          ? `<div class="insp-row"><span>Path</span><span class="insp-btns"><button class="tbtn ab" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">${icon('route')} analyze path</button></span></div>`
-          : '') +
-        formatRow();
-    // Nothing (singly) selected — show document + page properties.
-    html += propertiesHtml();
+    // Several nodes: no single-element editor, but arranging, annotating and
+    // the format painter apply to all of them (pasteFormat brushes every
+    // selected node — #211).
+    const count = editor.selectionCount();
+    const names = editor.selectedNodeIds().map(endpointLabel);
+    html +=
+      headerHtml({
+        kind: 'nodes',
+        kindLabel: `Selection (${count} nodes)`,
+        title:
+          names.slice(0, 3).join(', ') +
+          (names.length > 3 ? ` and ${names.length - 3} more` : ''),
+        locked: editor.selectionLocked(),
+      }) +
+      sectionHtml(inspectorSections, 'Arrange', alignRows(count), {
+        open: true,
+      }) +
+      sectionHtml(
+        inspectorSections,
+        'Annotate',
+        // Across the panel: the section's title is the row's label.
+        annotateRow(['zone', 'flowPath'], true, true),
+        { open: true },
+      ) +
+      sectionHtml(inspectorSections, 'Format', formatRow(), { open: true }) +
+      (canAnalyzePath()
+        ? `<div class="insp-rows insp-top"><div class="insp-row"><span>Path</span><span class="insp-btns"><button type="button" class="btn btn-sm" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">${icon('route')} Analyze path</button></span></div></div>`
+        : '');
   }
-  // The annotations list shows every zone/flow/marker; skip the one already
-  // shown focused above to avoid a duplicate editor for the same id.
-  html += annotationsHtml(zone?.id);
+  closeColourPopover();
+  const focusMark = markFocus(inspector);
+  if (tab !== 'page') leavePageTab();
   inspector.innerHTML = html;
+  adoptSharedControls(inspector);
 
-  if (node) {
+  if (tab === 'page') {
+    wirePageTab(inspectorContext);
+  } else if (tab === 'document') {
+    wireDocumentTab(inspectorContext);
+  } else if (node) {
     wireType((t) => {
       editor.updateNode({ type: t });
       renderInspector();
@@ -3537,6 +3294,7 @@ function renderInspector(): void {
         // An `object` field's enable switch shows/hides its nested rows.
         if (info?.fields.find((f) => f.key === key)?.kind === 'object')
           renderInspector();
+        else if (key.startsWith('linkAttach.')) refreshLinkAttachSummary();
       },
       {
         fields: () => getNodeType(node.type, doc.customNodes)?.fields,
@@ -3606,8 +3364,6 @@ function renderInspector(): void {
       commands.run('edit.delete');
       renderInspector();
     });
-  } else {
-    wireProperties();
   }
   for (const [z, command] of Z_ORDER_COMMANDS)
     inspector
@@ -3617,17 +3373,30 @@ function renderInspector(): void {
         renderInspector();
       });
   wireFormatRow();
-  wireGroups();
+  wireSelectionActions();
+  wireSelectionHeader(inspector, commands, renderInspector);
+  wireSections(inspector, inspectorSections);
   wireAnnotations();
-  wireHexDots();
+  wireColourControls(inspector);
+  restoreFocus(inspector, focusMark, () =>
+    document.querySelector<HTMLElement>(
+      '#inspector-wrap [role="tab"][aria-selected="true"]',
+    ),
+  );
+}
+
+/** The Selection tab's header, with the shell's command registry. */
+function headerHtml(h: SelectionHeader): string {
+  return selectionHeaderHtml(h, commands);
 }
 
 /**
- * A link endpoint picker: every node (by label) and anchor on the page, except
+ * A link endpoint picker (the two sit side by side under the header, with
+ * Swap between them): every node (by label) and anchor on the page, except
  * the link's other end (a link can't loop back onto one element). Changing it
  * re-attaches that end — the inspector twin of dragging the end handle.
  */
-function endpointRow(
+function endpointSelect(
   end: 'from' | 'to',
   current: string,
   other: string,
@@ -3655,11 +3424,7 @@ function endpointRow(
     !p.anchors.some((a) => a.id === current)
   )
     opts = opt(current, `${current} (missing)`) + opts;
-  const title = end === 'from' ? 'From' : 'To';
-  return (
-    `<label class="insp-row"><span>${title}</span>` +
-    `<select id="i-${end}" aria-label="Link ${end} endpoint" title="Re-attach the ${end} end (or drag its handle on the canvas)">${opts}</select></label>`
-  );
+  return `<select id="i-${end}" aria-label="Link ${end} endpoint" title="Re-attach the ${end} end (or drag its handle on the canvas)">${opts}</select>`;
 }
 
 /** The z-order command behind each button of the Arrange row. */
@@ -3674,10 +3439,10 @@ const Z_ORDER_COMMANDS = [
 function arrangeRow(): string {
   return (
     `<div class="insp-row"><span>Arrange</span><span class="arrange">` +
-    `<button class="tbtn ab" data-z="back" title="${tip('arrange.sendToBack')}" aria-label="Send to back">${icon('send-to-back')}</button>` +
-    `<button class="tbtn ab" data-z="backward" title="${tip('arrange.sendBackward')}" aria-label="Send backward">${icon('arrow-down')}</button>` +
-    `<button class="tbtn ab" data-z="forward" title="${tip('arrange.bringForward')}" aria-label="Bring forward">${icon('arrow-up')}</button>` +
-    `<button class="tbtn ab" data-z="front" title="${tip('arrange.bringToFront')}" aria-label="Bring to front">${icon('bring-to-front')}</button>` +
+    `<button type="button" class="icon-btn" data-z="back" title="${tip('arrange.sendToBack')}" aria-label="Send to back">${icon('send-to-back')}</button>` +
+    `<button type="button" class="icon-btn" data-z="backward" title="${tip('arrange.sendBackward')}" aria-label="Send backward">${icon('arrow-down')}</button>` +
+    `<button type="button" class="icon-btn" data-z="forward" title="${tip('arrange.bringForward')}" aria-label="Bring forward">${icon('arrow-up')}</button>` +
+    `<button type="button" class="icon-btn" data-z="front" title="${tip('arrange.bringToFront')}" aria-label="Bring to front">${icon('bring-to-front')}</button>` +
     `</span></div>`
   );
 }
@@ -3685,12 +3450,11 @@ function arrangeRow(): string {
 /** Format painter (issue #211): a touch/keyboard surface onto the same
  * `copyFormat`/`pasteFormat` commands as the context menu + shortcuts. */
 function formatRow(): string {
-  return (
-    `<div class="insp-row"><span>Format</span><span class="insp-btns">` +
-    `<button class="tbtn ab" id="i-copyfmt" title="${tip('edit.copyFormat')}"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} copy</button>` +
-    `<button class="tbtn ab" id="i-pastefmt" title="${tip('edit.pasteFormat')}"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} paste</button>` +
-    `</span></div>`
-  );
+  const buttons =
+    `<button type="button" class="btn btn-sm" id="i-copyfmt" title="${tip('edit.copyFormat')}" aria-label="Copy format"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} Copy</button>` +
+    `<button type="button" class="btn btn-sm" id="i-pastefmt" title="${tip('edit.pasteFormat')}" aria-label="Paste format"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} Paste</button>`;
+  // Across the panel: the Format section's title is the row's label.
+  return `<div class="insp-btns" role="group" aria-label="Format">${buttons}</div>`;
 }
 
 function wireFormatRow(): void {
@@ -3726,33 +3490,6 @@ function storedValue(
         ? (cur as Record<string, unknown>)[part]
         : undefined;
   return cur;
-}
-
-/**
- * Wire one number input. Each keystroke is read by `parseNumberField`: a
- * cleared field unsets the property (`undefined`), an out-of-range number is
- * clamped, and text that is no usable number stores nothing. Leaving the
- * field then shows what is stored, so a clamped or refused entry does not
- * linger looking as if it had been accepted.
- */
-function wireNumberInput(
-  el: HTMLInputElement,
-  spec: FieldSpec | undefined,
-  set: (val: number | undefined) => void,
-  stored: () => unknown,
-): void {
-  const bounds = spec ? numberBounds(spec) : {};
-  el.addEventListener('input', () => {
-    const parsed = parseNumberField(el.value, bounds, {
-      required: spec?.required,
-      badInput: el.validity.badInput,
-    });
-    if (parsed.kind === 'invalid') return;
-    set(parsed.kind === 'value' ? parsed.value : undefined);
-  });
-  el.addEventListener('change', () => {
-    el.value = numberFieldText(stored());
-  });
 }
 
 /**
@@ -3882,19 +3619,6 @@ function wireCompass(
   });
 }
 
-/** Keep each colour row's preview dot in step with its hex field as typed. */
-function wireHexDots(): void {
-  inspector.querySelectorAll<HTMLInputElement>('.hexwrap .hex').forEach((i) => {
-    const dot = i.parentElement?.querySelector<HTMLElement>('.hexdot');
-    if (!dot) return;
-    i.addEventListener('input', () => {
-      dot.style.background = /^#[0-9a-f]{3,8}$/i.test(i.value.trim())
-        ? i.value.trim()
-        : 'transparent';
-    });
-  });
-}
-
 /* ── Annotations (zones / flow paths / policy markers) ──────────────
  * A page-level layer, edited from the same inspector. "Add" seeds the new
  * element from the current node selection (members / waypoints / target). */
@@ -3904,17 +3628,6 @@ const ANNO_GROUPS: { kind: AnnotationKind; col: AnnoCol }[] = [
   { kind: 'policyMarker', col: 'policyMarkers' },
 ];
 type AnnoCol = 'zones' | 'flowPaths' | 'policyMarkers';
-
-function aswatchRow(key: string, current: string | undefined): string {
-  return (
-    `<div class="swatches" data-aswatch="${key}">` +
-    SWATCHES.map(
-      (c) =>
-        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === current}"></button>`,
-    ).join('') +
-    `</div>`
-  );
-}
 
 /** Whether a waypoint/member ref points at a free-floating anchor. */
 function isAnchorRef(id: string): boolean {
@@ -3982,7 +3695,7 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
     case 'boolean':
       // A real checkbox: typed into a text box, "false" is stored as a string,
       // which the renderer reads as on.
-      return `<label class="${rowClass(f)}"><span>${f.label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-akey="${f.key}" ${booleanFieldChecked(f.key, v) ? 'checked' : ''}/></label>`;
+      return `<label class="${switchRowClass(f)}"><span>${f.label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-akey="${f.key}" ${booleanFieldChecked(f.key, v) ? 'checked' : ''}/></label>`;
     case 'enum':
       return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${enumFieldOptions(
         f,
@@ -3994,13 +3707,9 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         )
         .join('')}</select></label>`;
     case 'color':
-      return colorRow(
-        f.label,
-        hexInput(
-          `data-akey="${f.key}" data-akind="color"`,
-          v as string | undefined,
-        ),
-        aswatchRow(f.key, v as string | undefined),
+      return colourRowHtml(
+        { attr: 'data-akey', key: f.key, label: f.label },
+        v as string | undefined,
       );
     case 'number':
       return `<label class="insp-row"><span>${f.label}</span><input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
@@ -4044,19 +3753,23 @@ function readOnlyFieldRow(f: FieldSpec, v: unknown): string {
   );
 }
 
-/** The focused editor for a single selected zone (reuses annotation wiring). */
+/**
+ * The editor for a single selected zone (reuses annotation wiring). The
+ * Selection tab's header already names the zone, so its rows sit straight
+ * on the panel's grid, without the list's card and title row; the card's
+ * actions come first.
+ */
 function zoneEditorHtml(zone: { id: string }): string {
   const info = getAnnotationType('zone')!;
   const cfg = zone as Record<string, unknown>;
-  const title = String(cfg.label ?? zone.id);
   return (
-    `<details class="anno selected" data-acol="zones" data-aid="${esc(zone.id)}" open>` +
-    `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>` +
-    `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
-    `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>` +
-    `<button class="anno-x" data-adel title="Delete" aria-label="Delete zone">${icon('delete')}</button></summary>` +
+    `<div class="insp-rows insp-top anno-solo" data-acol="zones" data-aid="${esc(zone.id)}">` +
+    `<div class="insp-row"><span>Zone</span><span class="arrange">` +
+    `<button type="button" class="icon-btn" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
+    `<button type="button" class="icon-btn" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>` +
+    `<button type="button" class="icon-btn" data-adel title="Delete" aria-label="Delete zone">${icon('delete')}</button></span></div>` +
     info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
-    `</details>`
+    `</div>`
   );
 }
 
@@ -4070,28 +3783,24 @@ const annoOpen = new Set<string>();
 const annoGroupClosed = new Set<string>();
 const annoKey = (col: string, id: string): string => `${col}:${id}`;
 
-function annotationsHtml(skipId?: string): string {
+function annotationsHtml(): string {
   const page = editor.page;
   const counts =
     page.zones.length + page.flowPaths.length + page.policyMarkers.length;
   // Each plus is an icon, which a screen reader skips: the names say "Add".
   let html =
-    `<div class="insp-h anno-top">Annotations</div>` +
     `<div class="anno-add">` +
-    `<button class="tbtn" data-add="zone" title="Group selected nodes into a zone" aria-label="Add zone">${icon('plus')} zone</button>` +
-    `<button class="tbtn" data-add="flowPath" title="Route a flow path through selected nodes" aria-label="Add flow path">${icon('plus')} flow</button>` +
-    `<button class="tbtn" data-add="policyMarker" title="Badge the selected node" aria-label="Add marker">${icon('plus')} marker</button>` +
+    `<button type="button" class="btn btn-sm" data-add="zone" title="Group selected nodes into a zone" aria-label="Add zone">${icon('plus')} zone</button>` +
+    `<button type="button" class="btn btn-sm" data-add="flowPath" title="Route a flow path through selected nodes" aria-label="Add flow path">${icon('plus')} flow</button>` +
+    `<button type="button" class="btn btn-sm" data-add="policyMarker" title="Badge the selected node" aria-label="Add marker">${icon('plus')} marker</button>` +
     `</div>`;
   if (counts === 0)
-    html += `<div class="muted anno-empty">Select node(s), then add a zone, flow path, or marker.</div>`;
+    html += `<div class="insp-hint anno-empty">Select node(s), then add a zone, flow path, or marker.</div>`;
   // Group by type into collapsible sections with counts, so a frame with many
   // zones/flows/markers stays scannable instead of one long flat list.
   for (const g of ANNO_GROUPS) {
     const info = getAnnotationType(g.kind)!;
-    // Skip the focused (canvas-selected) zone — it's shown in its own editor above.
-    const items = (page[g.col] as { id: string }[]).filter(
-      (it) => it.id !== skipId,
-    );
+    const items = page[g.col] as { id: string }[];
     if (!items.length) continue;
     html +=
       `<details class="anno-group"${annoGroupClosed.has(g.col) ? '' : ' open'} data-agroup="${g.col}">` +
@@ -4102,14 +3811,19 @@ function annotationsHtml(skipId?: string): string {
       // Zones are containers (C.2): offer move-members + duplicate-with-contents.
       const zoneBtns =
         g.col === 'zones'
-          ? `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
-            `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>`
+          ? `<button type="button" class="icon-btn anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
+            `<button type="button" class="icon-btn anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>`
           : '';
       html +=
-        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
-        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
+        // Named for its annotation, so its controls (several "Label" fields
+        // on one tab) are told apart by the group they are in.
+        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}" aria-label="${esc(info.label)} ${esc(title)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
+        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button type="button" class="icon-btn anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
+        // The rows in their own column, so they keep the panel's row gap
+        // (a gap set on a <details> does not reach its content).
+        `<div class="insp-rows anno-rows">` +
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
-        `</details>`;
+        `</div></details>`;
     }
     html += `</details>`;
   }
@@ -4201,13 +3915,13 @@ function wireAnnotations(): void {
       }),
     );
   inspector
-    .querySelectorAll<HTMLDetailsElement>('details.anno')
+    .querySelectorAll<HTMLElement>('details.anno, .anno-solo')
     .forEach((host) => {
       const col = host.dataset.acol as AnnoCol;
       const id = host.dataset.aid!;
-      // The focused zone editor (a zone clicked on the canvas) is always open
-      // and is not part of the list; only the list's editors are remembered.
-      if (!host.classList.contains('selected'))
+      // The editor of a zone clicked on the canvas has no card to open and
+      // is not part of the list; only the list's editors are remembered.
+      if (host instanceof HTMLDetailsElement)
         host.addEventListener('toggle', () => {
           if (host.open) annoOpen.add(annoKey(col, id));
           else annoOpen.delete(annoKey(col, id));

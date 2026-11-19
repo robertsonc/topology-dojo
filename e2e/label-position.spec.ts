@@ -42,7 +42,7 @@ async function savedPage(page: Page) {
 }
 
 const fineTune = (page: Page) =>
-  page.locator('details[data-group="Fine Tune"]');
+  page.locator('details[data-group="Fine tune"]');
 const offsetX = (page: Page) => page.locator('input[data-key="labelOffsetX"]');
 const offsetY = (page: Page) => page.locator('input[data-key="labelOffset"]');
 const cell = (page: Page, code: string) =>
@@ -59,7 +59,7 @@ test.beforeEach(async ({ page }) => {
   });
   await expect(page.locator('#page-canvas [data-tds-node="a"]')).toHaveCount(1);
   await selectAt(page, 200, 200);
-  await expect(page.locator('#inspector > .insp-h').first()).toHaveText('Node');
+  await expect(page.locator('#inspector .insp-kind')).toHaveText('Node');
 });
 
 test('Fine Tune hides offsets and remembers its expanded state', async ({
@@ -149,7 +149,7 @@ test('diagonal nudges, keyboard placement, and Auto reset', async ({
 
 test('link nudges accumulate, undo, and reset to Auto', async ({ page }) => {
   await selectAt(page, 400, 200);
-  await expect(page.locator('#inspector > .insp-h').first()).toHaveText('Link');
+  await expect(page.locator('#inspector .insp-kind')).toHaveText('Link');
   await cell(page, 'se').dblclick();
   expect((await savedPage(page)).links[0]?.labelOffset).toEqual({
     x: 1,
