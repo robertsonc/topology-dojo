@@ -1,20 +1,26 @@
 # Proposal 0013 — UI overhaul: placement first, then a flat skin
 
-**Status:** Accepted (2026-11-19). P0 (foundations) is merged except its
-command registry: PR #326 merged into `main` on 2026-11-19 as `e9d0d7f`, and
-the stylesheet move, the token layer, the flat skin, the docked chrome, the
-neutral scrollbars and the icon sprite are merged. `src/ui/commands.ts` is not
-on `main` yet; it is the rest of P0 and is in progress. P1 (shell), P2
-(properties panel), P3 (skin sweep) and P4 (guardrails) have not changed a
-surface: none has been relocated as P1 and P2 describe, or converted to the
-shared control classes. The 12 px text ratchet in `src/styles/styles.test.ts`,
-a first form of P4's budget test, is already on `main`. Some building blocks
-of the other phases are on `main` but used by no surface yet: the shared control classes
-(`src/styles/controls.css`), the menu component and the command palette
-(both listed under P1) and the rules for properties-panel tabs
-(`src/ui/inspector-tabs.ts`, under P2). The section
-"What P0 changed from this text" records where the implementation departed
-from the proposal as first written. Checked against `main` at `e9d0d7f`.
+**Status:** Accepted (2026-11-19). P0 (foundations) is complete with PR #327,
+which is a draft and not merged. PR #326 merged into `main` on 2026-11-19 as
+`e9d0d7f` (its Release run completed with success the same day): the
+stylesheet move, the token layer, the flat skin, the docked chrome, the
+neutral scrollbars and the icon sprite are on `main`. PR #327, "Command
+registry: one table for keys, context menu and shortcut sheet", adds the rest
+of P0 on its own branch: `src/ui/commands.ts`, which holds every command with
+its key bindings as data, and the window key handler, the toolbar and canvas
+controls, the context menu and the shortcut sheet read it. Until #327 merges,
+`src/ui/commands.ts` is not on `main`. P1 (shell), P2 (properties panel), P3
+(skin sweep) and P4 (guardrails) have not changed a surface: none has been
+relocated as P1 and P2 describe, or converted to the shared control classes.
+The 12 px text ratchet in `src/styles/styles.test.ts`, a first form of P4's
+budget test, is already on `main`. Some building blocks of the other phases
+are on `main` but used by no surface yet: the shared control classes
+(`src/styles/controls.css`), the menu component and the command palette (both
+listed under P1) and the rules for properties-panel tabs
+(`src/ui/inspector-tabs.ts`, under P2). The section "What P0 changed from this
+text" records where the implementation departed from the proposal as first
+written. Checked against `main` at `e9d0d7f`, and, for the registry, against
+the branch of PR #327 at `1ebbccb`.
 
 **Captured:** 2026-11-18
 
@@ -352,3 +358,20 @@ the undo stack. Gaps this proposal closes: no `color-scheme` or `theme-color`;
 content wider than the viewport; Unicode and emoji as icons; label contrast
 under 4.5 : 1; eight font sizes and thirteen z-index values; clipped labels;
 hover transforms that ignore reduced motion.
+
+- **The command registry splits the table from the handlers (PR #327, draft,
+  not merged).** The proposal listed "id, title, group, shortcut, icon,
+  enabled, checked, run" as one record. In `src/ui/commands.ts` the table
+  (`COMMAND_SPECS`) is pure data: id, title, group, icon and the key bindings;
+  `enabled`, `checked` and `run` are bound once in `src/main.ts` through
+  `createCommandRegistry`, because they need the editor. "Every shortcut is
+  unique" holds in this form, checked by `src/ui/commands.test.ts`: no two
+  commands share a key, modifiers and context; two bindings may fit one press
+  only where one names a physical key (`code`), and then a fixed order decides
+  (the browser's layout decides what such a key types). The change claims no
+  new behaviour: the table is checked against a transcription of the key
+  handler it replaced, and `e2e/command-keys.spec.ts` and
+  `e2e/command-surfaces.spec.ts` pin the keys, the context menus, the tooltips
+  and the sheet. Two inspector tooltips were wrong and are corrected: "Send to
+  back ([Ctrl+[)" is now "Send to back (Ctrl/Cmd+[)", and "Bring to front
+  (Ctrl+])" is now "Bring to front (Ctrl/Cmd+])".
