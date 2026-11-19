@@ -370,7 +370,8 @@ designer were on the shared controls (`src/styles/controls.css`); the Share
 dialog, the presentation controls, the shortcut sheet's close button and the
 path bar used `.tbtn`, seven `font-size` rules under 12 px were left
 (`NOT_YET` in `src/styles/styles.test.ts`), and several surfaces set
-`color: var(--accent)` as a text colour. PR #328 changes this: `grep -rn tbtn
+`color: var(--accent)` as a text colour. The integration branch for PR #328
+changes this: `grep -rn tbtn
 src e2e` finds nothing and `src/styles/toolbar.css` is deleted (the shared-copy
 banner and the sign-in prompt moved into `shell.css`); the library's tiles, the
 canvas overlays (Find, the path bar, quick-add, the rename editor, the drag
@@ -405,10 +406,10 @@ the rendered output (PR #289), not the chrome: it does not cover this pass.
 
 _Done when:_ the toolbar cannot grow past its budget without a failing test.
 
-_Status (2026-11-19): built in PR #328 (not merged); in `main`, mostly not
-done._ In `main` there is the 12 px ratchet, the panel's layout spec
+_Status (2026-11-19): built for PR #328 (not merged) on the integration
+branch `wip/int2`, not yet pushed; in `main`, mostly not done._ In `main` there is the 12 px ratchet, the panel's layout spec
 (`e2e/shell-inspector-layout.spec.ts`), the top bar's width test and the list
-of former toolbar controls. PR #328 adds:
+of former toolbar controls. The branch adds:
 
 - the control budgets (`e2e/shell-budget.spec.ts`, "the top bar, the rail and
   the pages bar hold no more controls than their budgets", and

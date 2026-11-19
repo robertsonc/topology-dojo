@@ -182,7 +182,7 @@ accepted it re-cuts _Now/Next_.
 chrome: placement first, then a flat skin) was **accepted 2026-11-19**. Its
 phase P0 (foundations), P1 (shell) and P2 (properties panel) are merged, and
 P3 (skin sweep) is partly merged; the rest of P3 and P4 (guardrails) are built
-in PR #328 (not merged). PR #326 merged the same
+for PR #328 (not merged) on the integration branch `wip/int2`, not yet pushed. PR #326 merged the same
 day as `e9d0d7f` (see "UI overhaul foundations" under "Completed historical
 milestones"), and PR #327 merged as `d224979` with the command registry
 (`src/ui/commands.ts`: one table of every command and its keys), the top bar
@@ -191,11 +191,12 @@ palette on Ctrl/Cmd+K and the tabbed properties panel (see "UI overhaul:
 command registry, shell and properties panel"). In `main`, the Share dialog, the presentation controls, the shortcut sheet's
 close button and the path bar are still in the old skin, seven rules under
 12 px remain, and P4's top-bar budget test and "what moved" note are not
-built. PR #328 (not merged) finishes those (no `.tbtn`, no text under 12 px,
+built. The integration branch for PR #328 (not merged, not yet pushed)
+finishes those (no `.tbtn`, no text under 12 px,
 accent text, motion tokens, a dark scope for present mode, "page" for "frame"
 in the shell's labels, the control and text-size budgets, the one-time "what
-moved" note) and adds the compact layout (below 1,024 px the node library and
-the properties panel are drawers over the canvas). What stays open after it:
+moved" note); the pull request itself adds the compact layout (below 1,024 px
+the node library and the properties panel are drawers over the canvas). What stays open after it:
 Find and quick-add are not folded into the palette, and two or more nodes have
 no shared fields in the panel (QA-2026-11-14-UI-04). P0–P4 are that
 proposal's own labels, unrelated to proposal 0003's packets P1–P5 and to the

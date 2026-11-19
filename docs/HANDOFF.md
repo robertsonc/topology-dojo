@@ -409,12 +409,14 @@ this date) is likewise driven from its own file, not from this table. Its P0
 registry, as `d224979`. P1 (shell) and P2 (properties panel) are merged in
 PR #327, and so is part of P3 (the skin sweep: the wizards, the workspace,
 preferences and admin panels and the node designer are on the shared
-controls). PR #328 (not merged) holds the rest of P3 (the Share dialog, the
-presentation controls, the shortcut sheet, the path bar and the other
-surfaces on the shared controls, no `.tbtn`, no text under 12 px, accent
-text, motion) and P4 (the control and text-size budgets, the sideways-scroll
-test and the one-time "what moved" note), the compact layout (drawers below
-1,024 px) and the documentation. Until #328 merges, `main` has the old
+controls). PR #328 (not merged) holds the compact layout (drawers below
+1,024 px) and the documentation of the shell. The rest of P3 (the Share
+dialog, the presentation controls, the shortcut sheet, the path bar and the
+other surfaces on the shared controls, no `.tbtn`, no text under 12 px,
+accent text, motion) and P4 (the control and text-size budgets, the
+sideways-scroll test and the one-time "what moved" note) are built for it on
+the integration branch `wip/int2`, which is not yet pushed, so the pull
+request does not hold them yet. Until #328 merges, `main` has the old
 skin on those surfaces and none of P4. The proposal's status header and its
 section "What P1 to P4 changed from this text" are the record. Those phase
 labels are the proposal's own and are unrelated to proposal 0003's packets
