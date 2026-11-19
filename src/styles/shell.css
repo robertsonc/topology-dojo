@@ -664,24 +664,44 @@
     display: none;
   }
 }
-/* Too narrow for the pages and the canvas options side by side (a window
-   of 1,024px or a little more with both panels docked, or a phone): the bar
-   takes two rows, the pages over the options, so that nothing is clipped or
-   drawn over. At 1,024px the column is 448px, and one page chip would be cut
-   short between the buttons on either side of it. */
-@container canvas-col (max-width: 460px) {
-  .pages-bar {
-    flex-wrap: wrap;
-    row-gap: 4px;
-    height: auto;
-    padding-top: 6px;
-    padding-bottom: 6px;
+/* A window of 1,024px or a little more with both panels docked leaves the
+   bar a 448-470px column, where one page chip would be cut short between
+   the buttons on either side of it. The toggle gives up its chevron (its
+   word and count say what it does) and the bar's gaps and ends tighten, so
+   the chip shows whole and the bar keeps its one row and its height. */
+@media (min-width: 1024px) {
+  @container canvas-col (max-width: 470px) {
+    .frames-chev {
+      display: none;
+    }
+    .pages-bar,
+    .frames-dock {
+      gap: 4px;
+    }
+    .pages-bar {
+      padding: 0 8px;
+    }
   }
-  .frames-dock {
-    flex: 1 1 100%;
-  }
-  .view-opts {
-    margin-left: auto;
+}
+/* A phone's column is too narrow for the pages and the canvas options side
+   by side: the bar takes two rows, the pages over the options, so that
+   nothing is clipped or drawn over. (Wider windows always leave the column
+   more than 460px: the panels are drawers below 1,024px.) */
+@media (max-width: 640px) {
+  @container canvas-col (max-width: 460px) {
+    .pages-bar {
+      flex-wrap: wrap;
+      row-gap: 4px;
+      height: auto;
+      padding-top: 6px;
+      padding-bottom: 6px;
+    }
+    .frames-dock {
+      flex: 1 1 100%;
+    }
+    .view-opts {
+      margin-left: auto;
+    }
   }
 }
 @container canvas-col (max-width: 360px) {
