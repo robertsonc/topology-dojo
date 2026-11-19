@@ -8,7 +8,7 @@
  * drawer so an open panel still leaves a usable canvas.
  */
 
-/** Matches the `@media (max-width: …)` block in `index.html`. */
+/** Matches the `@media (max-width: …)` block in `src/styles/inspector.css`. */
 export const MOBILE_LAYOUT_MAX_PX = 640;
 
 export const MOBILE_LAYOUT_MQ = `(max-width: ${MOBILE_LAYOUT_MAX_PX}px)`;

@@ -1,0 +1,53 @@
+/* Align group, .ab buttons, arrange row, metadata rows. */
+.align-group {
+  display: inline-flex;
+  gap: 3px;
+  padding-left: 8px;
+  margin-left: 4px;
+  border-left: 1px solid var(--border);
+}
+.align-group[hidden] {
+  display: none;
+}
+.ab {
+  padding: 5px 8px;
+}
+.arrange {
+  display: inline-flex;
+  gap: 3px;
+}
+.meta-top {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.meta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 26px;
+  gap: 4px;
+  align-items: center;
+}
+.inspector .meta-row input {
+  padding: 0 6px;
+}
+.meta-row .meta-k {
+  color: var(--muted);
+}
+.meta-x,
+.meta-addbtn {
+  height: var(--insp-ctl-h, 26px);
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+.meta-addbtn:hover {
+  color: var(--accent);
+}
+.meta-x:hover {
+  color: #fc6161;
+}

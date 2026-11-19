@@ -1,0 +1,44 @@
+/* Reset, the shared focus ring, .visually-hidden and the SVG defs sprite. */
+* {
+  box-sizing: border-box;
+}
+
+/* Shared keyboard-focus treatment (#210): one high-contrast ring for
+   every interactive control — toolbar/canvas/frame buttons, swatches,
+   menu items, inputs. :focus-visible keeps mouse clicks quiet. --accent
+   reads on both themes' panel + canvas surfaces. Never reintroduce a
+   bare `outline: none` without a visible replacement. */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Visually hidden but exposed to assistive tech (aria-live region). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Root SVG defs sprite: present in the render tree but visually absent.
+   Never use display:none here — it disables the paint servers that canvas
+   nodes and palette previews reference by url(#…). */
+.svg-defs-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

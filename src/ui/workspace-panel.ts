@@ -609,7 +609,7 @@ export interface RenderedPreviewFrame {
 
 /** CSS class per change type. Colors AND dash patterns differ (solid = add,
  * dotted = remove, dashed = modify) so the distinction never rides on color
- * alone — see the `.ws-hl-*` rules in index.html. */
+ * alone — see the `.ws-hl-*` rules in src/styles/workspace.css. */
 const HL_CHANGE_CLASS: Record<ElementChange['change'], string> = {
   added: 'ws-hl-add',
   removed: 'ws-hl-remove',

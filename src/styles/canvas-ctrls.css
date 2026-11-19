@@ -1,0 +1,43 @@
+/* On-canvas zoom and pan controls. */
+/* On-canvas zoom / pan controls: the right-hand end of the canvas's
+   bottom band (.canvas-dock, above), so they stay clear of the node
+   library on the left and of the frames strip. */
+.canvas-ctrls {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(6px);
+}
+.cc-btn {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cc-btn:hover {
+  background: var(--panel2);
+  color: var(--text);
+}
+.cc-btn.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.cc-btn.cc-zoom {
+  min-width: 48px;
+  font-size: 12px;
+  color: var(--text);
+}

@@ -1,0 +1,225 @@
+/* Canvas host, vendored-engine resets, canvas dock, frames strip and frame chips. */
+.stage .tds-root,
+.stage .tds-canvas-row,
+.stage .canvas-host {
+  height: 100%;
+  width: 100%;
+}
+/* The vendored theme styles .tds-root as a whole page: at least one
+   viewport tall, with page gutters. Here it is only the canvas's box
+   inside the stage, so both are reset — otherwise the canvas is taller
+   than the stage and its bottom edge (and anything docked there) is
+   drawn below the window. */
+.stage .tds-root {
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  overflow: clip;
+}
+/* The legacy .tds-canvas-row is a flexbox (it expected a sidebar); make it
+   a plain block so the canvas fills the stage instead of collapsing. */
+.stage .tds-canvas-row {
+  display: block;
+}
+.canvas-host {
+  position: relative;
+  /* Flatten the legacy canvas's 3D tilt so SVG getScreenCTM() maps
+     cursor → user-space exactly (drag/hit-testing depend on it). */
+  transform: none !important;
+  perspective: none !important;
+}
+#page-canvas,
+#overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#overlay {
+  cursor: default;
+  touch-action: none;
+}
+
+/* The canvas's bottom band — a floating overlay anchored at the canvas's
+   bottom edge (same model as the palette rail), not a docked row:
+   toggling the strip never resizes or reflows the canvas. Structure:
+     .canvas-dock > [.frames-dock][.canvas-ctrls]
+     .frames-dock > [.frames-toggle pill][.frames-reveal > .filmstrip]
+   It sits just right of the nodes rail (12 + 162 + 12) so nothing in it
+   ever overlaps the palette; when the palette collapses (its bottom edge
+   freed) the dock slides home to the shared 12px edge margin.
+   `right: 12px` caps the band at the canvas width minus margins; extra
+   frames scroll horizontally inside the strip.
+   The strip and the view controls share one row while both fit. When
+   they do not (a narrow canvas, many frames), the controls wrap onto a
+   row of their own above the strip — `wrap-reverse` stacks rows upward
+   from the bottom edge — so neither ever covers the other. */
+.canvas-dock {
+  position: absolute;
+  left: 186px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 6; /* palette tier — floating panels over the canvas */
+  display: flex;
+  flex-wrap: wrap-reverse;
+  align-items: center;
+  gap: 8px;
+  /* The dock spans the canvas width; only its controls take events, so
+     canvas clicks/wheel in the empty span behave as bare canvas. */
+  pointer-events: none;
+}
+.frames-dock {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.frames-dock > *,
+.canvas-ctrls {
+  pointer-events: auto;
+}
+/* Note: the palette rail renders 162px wide at every viewport size (the
+   max-width:700px shrink rule above predates the rail's base rule in
+   source order, so the base width wins), so a single 186px offset keeps
+   the dock clear of it at any window size. */
+.palette.collapsed ~ .canvas-dock {
+  left: 12px;
+}
+.frames-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.frames-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.frames-ind {
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+/* Clips the strip while it slides; the strip carries no outer shadow
+   (inset highlight only), so overflow clipping costs nothing visually. */
+.frames-reveal {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.filmstrip {
+  position: relative; /* chips' offsetParent → strip-local scroll math */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  overflow-x: auto;
+  /* Expand reveals left→right: a transform slide (never an animated
+     width, so chip layout can't thrash mid-animation). */
+  transform: translateX(0);
+  transition: transform 0.18s ease-out;
+}
+.frames-dock.collapsed .filmstrip {
+  /* Fully clear the reveal box so nothing peeks while hidden. */
+  transform: translateX(calc(-100% - 24px));
+}
+/* Hidden (and hit-transparent) once the slide finishes; visibility flips
+   back instantly on expand so the slide-in is visible. The hidden strip
+   also gives up its width then, so the view controls can share the
+   pill's row instead of staying wrapped above a strip nobody can see. */
+.frames-dock.collapsed .frames-reveal {
+  visibility: hidden;
+  max-width: 0;
+  transition:
+    visibility 0s 0.18s,
+    max-width 0s 0.18s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .filmstrip,
+  .frames-dock.collapsed .frames-reveal {
+    transition: none;
+  }
+}
+.frame {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12px;
+  font-family: var(--font);
+}
+.frame.on {
+  border-color: var(--accent);
+  background: rgba(1, 169, 130, 0.14);
+  box-shadow: 0 0 0 1px rgba(1, 169, 130, 0.3);
+}
+.frame-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--border);
+  font-size: 11px;
+  font-weight: 700;
+}
+.frame.on .frame-n {
+  background: var(--accent);
+  color: var(--bg);
+}
+.frame.add {
+  color: var(--muted);
+  border-style: dashed;
+}
+.frame[draggable='true'] {
+  cursor: grab;
+}
+.frame-x {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  margin-left: 2px;
+  border-radius: 4px;
+}
+.frame-x:hover {
+  color: var(--red, #fc6161);
+  background: rgba(252, 97, 97, 0.12);
+}
+.frame-rename {
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: var(--font);
+  width: 120px;
+}

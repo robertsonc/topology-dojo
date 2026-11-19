@@ -80,7 +80,8 @@ function escXmlAttr(s: string): string {
 }
 const MUTED = '#7d8a92';
 // Match the problems panel's `.prob-error` / `.prob-warning` dot colours
-// (index.html) so a badge and its panel row read as the same severity.
+// (src/styles/problems.css) so a badge and its panel row read as the same
+// severity.
 const PROB_ERROR = '#fc6161';
 const PROB_WARN = '#e0a44a';
 const LINK_TYPES = [

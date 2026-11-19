@@ -1,0 +1,39 @@
+/* Design tokens: dark :root and :root.light. */
+:root {
+  --bg: #1d1f27;
+  --panel: #22252e;
+  --panel2: #292d3a;
+  --border: #3e4550;
+  --text: #e6e8e9;
+  --muted: #7d8a92;
+  --accent: #01a982;
+  --font: 'JetBrains Mono', ui-monospace, monospace;
+  /* Flat canvas fill — a single tone, no radial sheen/vignette. Shared by
+     the live canvas and (as a matching literal) the exported SVG/PNG
+     backdrop so live and exports read identically. */
+  --canvas-bg: #0e1613;
+  /* Glow budget: flat everywhere; the ONLY glow is the emphasis spotlight. */
+  --glow-none: none;
+  --glow-emphasis: drop-shadow(
+    0 0 6px color-mix(in srgb, var(--accent) 50%, transparent)
+  );
+  /* Slim scrollbar thumb tints, derived from --accent (#01a982 = rgb 1 169 130).
+     Kept as tokens so the scroll-slim rules never hardcode the color twice. */
+  --sb-thumb: rgba(1, 169, 130, 0.25);
+  --sb-thumb-hover: rgba(1, 169, 130, 0.55);
+}
+/* Light theme — overrides the chrome + canvas backdrop (engine node art
+   keeps its own colors, which read fine on a light canvas). */
+:root.light {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --panel2: #eaeef2;
+  --border: #cdd5dd;
+  --text: #1d1f27;
+  --muted: #5c6b76;
+  /* Flat light canvas (no sheen/vignette). */
+  --canvas-bg: #eef1f4;
+  /* Slightly stronger tints so the green thumb stays legible on light panels. */
+  --sb-thumb: rgba(1, 169, 130, 0.4);
+  --sb-thumb-hover: rgba(1, 169, 130, 0.7);
+}

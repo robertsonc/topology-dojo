@@ -1,0 +1,67 @@
+/* Page shell (html, body, #app grid) and the status bar. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  overflow: hidden;
+}
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  /* Constrain the single column so the wide legacy canvas can't blow out
+     the grid past the viewport (keeps absolute UI like the minimap in view). */
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* Status bar — live tool / cursor / counts / zoom readout. */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.statusbar .sb-k {
+  color: var(--text);
+}
+.statusbar .sb-hint {
+  margin-left: auto;
+  color: var(--muted);
+  opacity: 0.85;
+}
+/* Always-visible problems indicator; click opens the right-rail section. */
+.statusbar .sb-problems {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 8px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.statusbar .sb-problems:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.statusbar .sb-problems.has-warn {
+  color: #e0a44a;
+  border-color: #e0a44a;
+}
+.statusbar .sb-problems.has-error {
+  color: #fc6161;
+  border-color: #fc6161;
+}
