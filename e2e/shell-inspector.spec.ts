@@ -5,6 +5,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   bootEditor,
+  chooseSwatch,
   clickLink,
   clickNode,
   inspectorSection,
@@ -84,7 +85,8 @@ test('a number outside what the field allows is clamped or refused', async ({
   await field(page, 'opacity').press('Tab');
   await expect(field(page, 'opacity')).toHaveValue('0');
 
-  // Label width is 40…600.
+  // Label width is 40…600 (it is under the label's Fine tune).
+  await inspectorSection(page, 'Fine tune');
   await field(page, 'labelWidth').fill('99999');
   expect((await savedElement(page, 'nodes', 'fw')).labelWidth).toBe(600);
   await field(page, 'labelWidth').fill('-50');
@@ -222,9 +224,9 @@ test('an annotation editor stays open through its own swatch, compass and chip c
       .evaluate((d) => (d as HTMLDetailsElement).open);
 
   const flow = await openAnnotation(page, 'flowPaths');
-  await flow.editor
-    .locator('[data-aswatch="color"] [data-color="#7764fc"]')
-    .click();
+  await chooseSwatch(
+    flow.editor.locator('[data-aswatch="color"] [data-color="#7764fc"]'),
+  );
   expect((await savedElement(page, 'flowPaths', flow.id)).color).toBe(
     '#7764fc',
   );
@@ -246,9 +248,9 @@ test('an annotation editor stays open through its own swatch, compass and chip c
   expect(await isOpen('flowPaths')).toBe(true);
 
   const marker = await openAnnotation(page, 'policyMarkers');
-  await marker.editor
-    .locator('[data-aswatch="color"] [data-color="#01a982"]')
-    .click();
+  await chooseSwatch(
+    marker.editor.locator('[data-aswatch="color"] [data-color="#01a982"]'),
+  );
   expect(await isOpen('policyMarkers')).toBe(true);
   // The flow path's editor, opened earlier, was not shut by that either.
   expect(await isOpen('flowPaths')).toBe(true);
@@ -258,11 +260,12 @@ test('an annotation editor stays open through its own swatch, compass and chip c
     '#inspector details.anno-group[data-agroup="zones"]',
   );
   await group.locator('> summary').click();
-  await page
-    .locator('#inspector details.anno[data-acol="policyMarkers"]')
-    .first()
-    .locator('[data-aswatch="color"] [data-color="#65aef9"]')
-    .click();
+  await chooseSwatch(
+    page
+      .locator('#inspector details.anno[data-acol="policyMarkers"]')
+      .first()
+      .locator('[data-aswatch="color"] [data-color="#65aef9"]'),
+  );
   expect(await group.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(
     false,
   );
@@ -406,9 +409,9 @@ test('an annotation source reference is shown, never edited as text', async ({
     await expect(editor.locator('[data-akey="source"]')).toHaveCount(0);
 
     // Editing something else in the editor leaves the reference whole.
-    await editor
-      .locator('[data-aswatch="color"] [data-color="#7764fc"]')
-      .click();
+    await chooseSwatch(
+      editor.locator('[data-aswatch="color"] [data-color="#7764fc"]'),
+    );
     const saved = await savedElement(page, collection, id);
     expect(saved.color).toBe('#7764fc');
     expect(saved.source).toEqual(

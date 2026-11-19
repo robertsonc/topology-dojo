@@ -114,7 +114,14 @@ import {
 import { boundsAttrs, findField, numberBounds } from './ui/number-field.js';
 import { isImeKey } from './ui/ime.js';
 import type { SelectionCounts } from './ui/inspector-tabs.js';
+import {
+  SWATCHES,
+  closeColourPopover,
+  colourRowHtml,
+  wireColourControls,
+} from './ui/inspector/color-control.js';
 import type { InspectorContext } from './ui/inspector/context.js';
+import { adoptSharedControls } from './ui/inspector/controls.js';
 import {
   documentTabHtml,
   wireDocumentTab,
@@ -128,12 +135,21 @@ import {
 } from './ui/inspector/field-groups.js';
 import { linkAttachSummary } from './ui/inspector/link-attachment.js';
 import { wireNumberInput } from './ui/inspector/number-input.js';
-import { pageTabHtml, wirePageTab } from './ui/inspector/page-tab.js';
+import {
+  leavePageTab,
+  pageTabHtml,
+  wirePageTab,
+} from './ui/inspector/page-tab.js';
 import {
   SectionMemory,
   sectionHtml,
   wireSections,
 } from './ui/inspector/sections.js';
+import {
+  selectionHeaderHtml,
+  wireSelectionHeader,
+  type SelectionHeader,
+} from './ui/inspector/selection-header.js';
 import { browserStorage } from './ui/inspector/storage.js';
 import { mountInspectorTabs } from './ui/inspector/tabs.js';
 import {
@@ -2467,13 +2483,15 @@ window
  * A left-edge grip resizes its width (persisted). */
 const inspectorResizer = app.querySelector<HTMLElement>('#inspector-resizer')!;
 const INSPECTOR_W_KEY = 'tds-inspector-width';
-const INSPECTOR_W_MIN = 200;
-const INSPECTOR_W_MAX = 560;
+// The default width (300px) is the stylesheet's; a stored width wins.
+const INSPECTOR_W_MIN = 240;
+const INSPECTOR_W_MAX = 480;
 
 try {
   const w = Number(localStorage.getItem(INSPECTOR_W_KEY));
-  if (w >= INSPECTOR_W_MIN && w <= INSPECTOR_W_MAX)
-    inspector.style.width = `${w}px`;
+  // A width stored under the old limits is brought inside the new ones.
+  if (w > 0)
+    inspector.style.width = `${Math.min(INSPECTOR_W_MAX, Math.max(INSPECTOR_W_MIN, w))}px`;
 } catch {
   /* storage unavailable — use the default width */
 }
@@ -2557,49 +2575,9 @@ alignGroup
   );
 
 /* ── Inspector ──────────────────────────────────────────────────── */
-const SWATCHES = [
-  '#01a982',
-  '#05cc93',
-  '#65aef9',
-  '#7764fc',
-  '#deb146',
-  '#fc6161',
-  '#00a4b3',
-  '#d25f4b',
-  '#b1b9be',
-];
-
 // One snapshot per edit "session": reset on each focus into the inspector.
 let editing = false;
 inspector.addEventListener('focusin', () => (editing = false));
-
-function swatchRow(key: string, current: string | undefined): string {
-  return (
-    `<div class="swatches" data-swatch="${key}">` +
-    SWATCHES.map(
-      (c) =>
-        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === current}"></button>`,
-    ).join('') +
-    `</div>`
-  );
-}
-
-/**
- * The hex field of a colour row, with a live preview dot. `attrs` carries the
- * data-* binding (node/link fields vs annotation fields use different keys).
- */
-function hexInput(attrs: string, current: string | undefined): string {
-  const c = current ?? '';
-  return (
-    `<span class="hexwrap"><i class="hexdot" style="background:${esc(c) || 'transparent'}"></i>` +
-    `<input class="hex" ${attrs} value="${esc(c)}" placeholder="auto"/></span>`
-  );
-}
-
-/** Colour row: label + hex on one line, the swatch grid beneath. */
-function colorRow(label: string, hex: string, swatches: string): string {
-  return `<div class="insp-row color"><span>${label}</span>${hex}${swatches}</div>`;
-}
 
 /* ── Compass placement picker ───────────────────────────────────────
  * The 3×3 grid classic Topology Studio had for label placement. Cells are
@@ -2669,9 +2647,9 @@ function compassControl(
       `<button type="button" class="cc${code === cur ? ' on' : ''}" data-cval="${code}" title="${COMPASS_TITLES[code]}${code ? ' — click to place; double-click to nudge 1 unit' : ' — reset placement and fine tuning'}" aria-label="${COMPASS_TITLES[code]}" aria-pressed="${code === cur}">${icon(cellIcon)}</button>`,
   ).join('');
   return (
-    `<div class="insp-row"><span>${f.label}</span>` +
-    `<div class="compass" ${attr}="${f.key}" data-ckind="${f.kind}" role="group" aria-label="${f.label}" aria-describedby="label-placement-hint">${cells}</div></div>` +
-    `<div class="insp-hint" id="label-placement-hint">Click to place · double-click to nudge 1 unit.</div>`
+    `<div class="insp-row"><span>${f.label}</span><span class="compass-ctl">` +
+    `<div class="compass" ${attr}="${f.key}" data-ckind="${f.kind}" role="group" aria-label="${f.label}" aria-describedby="label-placement-hint">${cells}</div>` +
+    `<span class="insp-hint" id="label-placement-hint">Click to place · double-click to nudge 1 unit.</span></span></div>`
   );
 }
 
@@ -2694,6 +2672,15 @@ function rowClass(f: FieldSpec, nested = false): string {
 }
 
 /**
+ * Row class for an on/off field: a long label takes the row's width with the
+ * switch at its end, rather than stacking above a switch.
+ */
+function switchRowClass(f: FieldSpec, nested = false): string {
+  const length = f.label.length + (nested ? 2 : 0);
+  return length > 16 ? 'insp-row wide' : 'insp-row';
+}
+
+/**
  * A control for one catalog field, bound to the element's current value.
  * `nested` marks a sub-field of an object field, shown under its parent.
  */
@@ -2708,7 +2695,7 @@ function fieldControl(
   const label = nested ? `${labelMark('nested')} ${f.label}` : f.label;
   switch (f.kind) {
     case 'boolean':
-      return `<label class="insp-row"><span>${label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}/></label>`;
+      return `<label class="${switchRowClass(f, nested)}"><span>${label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}/></label>`;
     case 'enum':
       return `<label class="${row}"><span>${label}</span><select data-key="${f.key}">${(
         f.options ?? []
@@ -2719,13 +2706,10 @@ function fieldControl(
         )
         .join('')}</select></label>`;
     case 'color':
-      return colorRow(
+      return colourRowHtml(
+        { attr: 'data-key', key: f.key, label: f.label },
+        v as string | undefined,
         label,
-        hexInput(
-          `data-key="${f.key}" data-kind="color"`,
-          v as string | undefined,
-        ),
-        swatchRow(f.key, v as string | undefined),
       );
     case 'number':
       return `<label class="${row}"><span>${label}</span><input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
@@ -2735,7 +2719,7 @@ function fieldControl(
       // ("linkAttach.pad") that fieldPatch merges back into the object.
       const on = typeof v === 'object' && v !== null;
       const sub = on ? (v as Record<string, unknown>) : {};
-      let html = `<label class="${row}"><span>${label}</span><input type="checkbox" data-key="${f.key}" data-kind="object" ${on ? 'checked' : ''}/></label>`;
+      let html = `<label class="${switchRowClass(f, nested)}"><span>${label}</span><input type="checkbox" data-key="${f.key}" data-kind="object" ${on ? 'checked' : ''}/></label>`;
       if (on)
         for (const s of f.fields ?? []) {
           const key = `${f.key}.${s.key}`;
@@ -2801,16 +2785,16 @@ function metaHtml(meta?: Record<string, string | number | boolean>): string {
         `<div class="meta-row" data-mk="${esc(k)}">` +
         `<input class="meta-k" value="${esc(k)}" readonly />` +
         `<input class="meta-v" value="${esc(String(v))}" />` +
-        `<button class="meta-x" title="Remove" aria-label="Remove metadata ${esc(k)}">${icon('x')}</button></div>`,
+        `<button type="button" class="icon-btn meta-x" title="Remove" aria-label="Remove metadata ${esc(k)}">${icon('x')}</button></div>`,
     )
     .join('');
   return (
-    `<div class="insp-h meta-top">Metadata</div>` +
+    `<div class="insp-sublabel">Metadata</div>` +
     rows +
     `<div class="meta-row meta-add">` +
     `<input class="meta-nk" placeholder="key" />` +
     `<input class="meta-nv" placeholder="value" />` +
-    `<button class="meta-addbtn" title="Add" aria-label="Add metadata entry">${icon('plus')}</button></div>`
+    `<button type="button" class="icon-btn meta-addbtn" title="Add" aria-label="Add metadata entry">${icon('plus')}</button></div>`
   );
 }
 
@@ -2861,9 +2845,9 @@ function wireMeta(_meta?: Record<string, string | number | boolean>): void {
   );
 }
 
-/** The Type dropdown: types by their library label, under the library's
- * category headings (see typeOptionGroups). */
-function typeRow(current: string, choices: readonly TypeChoice[]): string {
+/** The Type dropdown of the selection header: types by their library label,
+ * under the library's category headings (see typeOptionGroups). */
+function typeSelect(current: string, choices: readonly TypeChoice[]): string {
   const option = (o: TypeOption): string =>
     `<option value="${esc(o.value)}"${o.selected ? ' selected' : ''}>${esc(o.label)}</option>`;
   const body = typeOptionGroups(current, choices)
@@ -2873,7 +2857,7 @@ function typeRow(current: string, choices: readonly TypeChoice[]): string {
         : `<optgroup label="${esc(g.group)}">${g.options.map(option).join('')}</optgroup>`,
     )
     .join('');
-  return `<label class="insp-row"><span>Type</span><select id="i-type">${body}</select></label>`;
+  return `<select id="i-type" aria-label="Type" title="Type">${body}</select>`;
 }
 
 /**
@@ -2891,7 +2875,8 @@ function groupedFieldsHtml(
 ): string {
   const item = (it: PlannedItem): string => {
     if (it.kind === 'field') return control(it.field);
-    if (it.kind === 'pair') return pairControl(it.label, it.fields, cfg);
+    if (it.kind === 'pair')
+      return pairControl(it.label, it.fields, cfg, it.placeholders);
     return sectionHtml(
       inspectorSections,
       it.title,
@@ -2916,17 +2901,36 @@ function groupedFieldsHtml(
     .join('');
 }
 
-/** Two number fields in one row ("Position: X Y"), each its own control. */
+/**
+ * Two fields in one row ("Position: X Y", "Sides: from to"), each its own
+ * control, named by its own label.
+ */
 function pairControl(
   label: string,
   fields: readonly [FieldSpec, FieldSpec],
   cfg: Record<string, unknown>,
+  placeholders?: readonly [string, string],
 ): string {
-  const input = (f: FieldSpec): string =>
-    `<input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(cfg[f.key] ?? ''))}" placeholder="auto" aria-label="${esc(f.label)}" title="${esc(f.label)}"${boundsAttrs(numberBounds(f))}/>`;
+  const input = (f: FieldSpec, i: number): string => {
+    const v = cfg[f.key];
+    const hint = esc(
+      placeholders?.[i] || (f.kind === 'number' ? 'auto' : f.label),
+    );
+    const name = `aria-label="${esc(f.label)}" title="${esc(f.label)}"`;
+    if (f.kind === 'enum')
+      return `<select data-key="${f.key}" ${name}>${(f.options ?? [])
+        .map(
+          (o) =>
+            `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${esc(f.optionLabels?.[o] ?? o)}</option>`,
+        )
+        .join('')}</select>`;
+    if (f.kind === 'number')
+      return `<input type="number" data-key="${f.key}" data-kind="number" value="${esc(String(v ?? ''))}" placeholder="${hint}" ${name}${boundsAttrs(numberBounds(f))}/>`;
+    return `<input data-key="${f.key}" value="${esc(String(v ?? ''))}" placeholder="${hint}" ${name}/>`;
+  };
   return (
     `<div class="insp-row"><span>${esc(label)}</span>` +
-    `<span class="insp-pair">${input(fields[0])}${input(fields[1])}</span></div>`
+    `<span class="insp-pair">${input(fields[0], 0)}${input(fields[1], 1)}</span></div>`
   );
 }
 
@@ -2960,11 +2964,23 @@ function nodeFieldControl(node: NodeConfig): (f: FieldSpec) => string {
   };
 }
 
-/** A link's catalog field: the source reference is shown, not edited. */
+/**
+ * A link's catalog field: the source reference is shown, not edited, and the
+ * bends count carries the Straighten button while there are bends.
+ */
 function linkFieldControl(link: LinkConfig): (f: FieldSpec) => string {
   const cfg = link as Record<string, unknown>;
-  return (f) =>
-    f.key === 'source' ? readOnlyFieldRow(f, cfg.source) : fieldControl(f, cfg);
+  return (f) => {
+    if (f.key === 'source') return readOnlyFieldRow(f, cfg.source);
+    if (f.key === 'waypoints') {
+      const n = Array.isArray(cfg.waypoints) ? cfg.waypoints.length : 0;
+      const straighten = editor.selectedLinkHasBends()
+        ? `<button type="button" class="btn btn-sm" id="i-straighten" title="Clear bends — straight line">${icon('slash')} Straighten</button>`
+        : '';
+      return `<div class="insp-row"><span>${esc(f.label)}</span><span class="insp-btns"><span class="insp-val data">${n} pt</span>${straighten}</span></div>`;
+    }
+    return fieldControl(f, cfg);
+  };
 }
 
 /**
@@ -3004,18 +3020,21 @@ const ANNOTATE_COMMANDS: Readonly<Record<string, CommandId>> = {
   policyMarker: 'selection.addPolicyMarker',
 };
 
-/** Annotate: make a zone, flow path or marker from what is selected. */
-function annotateRow(kinds: readonly AnnotationKind[]): string {
-  return (
-    `<div class="insp-row"><span>Annotate</span><span class="insp-btns">` +
-    kinds
-      .map((kind) => {
-        const id = ANNOTATE_COMMANDS[kind]!;
-        return `<button class="tbtn ab" data-annotate="${kind}" title="${tip(id)}">${icon('plus')} ${esc(commands.get(id)!.title)}</button>`;
-      })
-      .join('') +
-    `</span></div>`
-  );
+/**
+ * Annotate: make a zone, flow path or marker from what is selected. `bare`
+ * draws the buttons as a group of their own across the panel's width (a
+ * node's last row), without the plus marks, so the two fit on one line.
+ */
+function annotateRow(kinds: readonly AnnotationKind[], bare = false): string {
+  const buttons = kinds
+    .map((kind) => {
+      const id = ANNOTATE_COMMANDS[kind]!;
+      return `<button type="button" class="btn btn-sm" data-annotate="${kind}" title="${tip(id)}">${bare ? '' : `${icon('plus')} `}${esc(commands.get(id)!.title)}</button>`;
+    })
+    .join('');
+  return bare
+    ? `<div class="insp-btns" role="group" aria-label="Annotate">${buttons}</div>`
+    : `<div class="insp-row"><span>Annotate</span><span class="insp-btns">${buttons}</span></div>`;
 }
 
 /** Align and distribute, for two or more nodes (distribute needs three). */
@@ -3023,7 +3042,7 @@ function alignRows(count: number): string {
   const button = (prefix: string, attr: string, arg: string): string => {
     const spec = commandVariant(prefix, arg, ALL_COMMAND_SPECS)!;
     const off = attr === 'dist' && count < 3 ? ' disabled' : '';
-    return `<button class="tbtn ab" data-${attr}="${arg}" title="${tip(spec.id)}" aria-label="${esc(spec.title)}"${off}>${spec.icon ? icon(spec.icon) : ''}</button>`;
+    return `<button type="button" class="icon-btn" data-${attr}="${arg}" title="${tip(spec.id)}" aria-label="${esc(spec.title)}"${off}>${spec.icon ? icon(spec.icon) : ''}</button>`;
   };
   const row = (label: string, prefix: string, attr: string): string =>
     `<div class="insp-row"><span>${label}</span><span class="arrange">` +
@@ -3114,8 +3133,14 @@ function renderInspector(): void {
   } else if (node) {
     const info = getNodeType(node.type, doc.customNodes);
     html +=
-      `<div class="insp-h">Node</div>` +
-      typeRow(node.type, nodeCatalog(doc.customNodes)) +
+      headerHtml({
+        kind: 'node',
+        kindLabel: 'Node',
+        title: String(node.label ?? '').trim() || node.id,
+        id: node.id,
+        typeSelect: typeSelect(node.type, nodeCatalog(doc.customNodes)),
+        locked: editor.selectionLocked(),
+      }) +
       groupedFieldsHtml(
         info,
         node as Record<string, unknown>,
@@ -3123,52 +3148,72 @@ function renderInspector(): void {
         nodeFieldControl(node),
         { 'Position and order': arrangeRow() },
       ) +
-      annotateRow(['zone', 'policyMarker']) +
-      formatRow();
+      `<div class="insp-rows insp-foot">` +
+      annotateRow(['zone', 'policyMarker'], true) +
+      formatRow(true) +
+      `</div>`;
   } else if (link) {
     const info = getLinkType(link.type);
     const linkCount = editor.selectedLinkIds().length;
     html +=
-      `<div class="insp-h">Link</div>` +
+      headerHtml({
+        kind: 'link',
+        kindLabel: 'Link',
+        title: `${endpointLabel(link.from)} → ${endpointLabel(link.to)}`,
+        id: link.id,
+        typeSelect: typeSelect(link.type, linkCatalog()),
+        locked: editor.selectionLocked(),
+      }) +
+      `<div class="insp-rows insp-top">` +
       (linkCount > 1
         ? `<div class="insp-hint">${linkCount} links selected. Type, colour, style and layer changes apply to all; everything else edits this one.</div>`
         : '') +
-      typeRow(link.type, linkCatalog()) +
-      endpointRow('from', link.from, link.to) +
-      endpointRow('to', link.to, link.from) +
-      `<div class="insp-row"><span>Endpoints</span><span class="insp-btns"><button class="tbtn ab" id="i-swap" title="Swap from/to">${icon('reverse')} swap</button>${
-        editor.selectedLinkHasBends()
-          ? `<button class="tbtn ab" id="i-straighten" title="Clear bends — straight line">${icon('slash')} straighten</button>`
-          : ''
-      }</span></div>` +
+      `<div class="insp-ends">` +
+      endpointSelect('from', link.from, link.to) +
+      `<button type="button" class="icon-btn" id="i-swap" title="Swap from/to" aria-label="Swap from and to">${icon('reverse')}</button>` +
+      endpointSelect('to', link.to, link.from) +
+      `</div></div>` +
       groupedFieldsHtml(
         info,
         link as Record<string, unknown>,
         LINK_GROUPS,
         linkFieldControl(link),
-      ) +
-      arrangeRow() +
-      formatRow();
+      );
   } else if (anchor) {
     html +=
-      `<div class="insp-h">Anchor</div>` +
-      `<div class="insp-row"><span>Id</span><span class="insp-val">${esc(anchor.id)}</span></div>` +
+      headerHtml({ kind: 'anchor', kindLabel: 'Anchor', title: anchor.id }) +
+      `<div class="insp-rows insp-top">` +
       `<div class="insp-row"><span>Position</span><span class="insp-pair">` +
       `<input type="number" id="a-x" value="${anchor.x}" aria-label="Anchor x" title="X"/>` +
       `<input type="number" id="a-y" value="${anchor.y}" aria-label="Anchor y" title="Y"/></span></div>` +
-      `<div class="insp-row"><span>Links</span><span class="insp-val">${editor.anchorLinkCount(anchor.id)}</span></div>` +
-      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button class="tbtn ab" id="a-del" title="Delete anchor">${icon('delete')} delete</button></span></div>`;
+      `<div class="insp-row"><span>Links</span><span class="insp-val data">${editor.anchorLinkCount(anchor.id)}</span></div>` +
+      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button type="button" class="btn btn-sm btn-danger" id="a-del" title="Delete anchor">${icon('delete')} Delete</button></span></div></div>`;
   } else if (zone) {
     // A zone region was clicked on canvas — edit it directly (the same control
     // surface as the annotations list, wired by wireAnnotations()).
-    html += `<div class="insp-h">Zone</div>` + zoneEditorHtml(zone);
+    const label = String((zone as { label?: unknown }).label ?? '').trim();
+    html +=
+      headerHtml({
+        kind: 'zone',
+        kindLabel: 'Zone',
+        title: label || zone.id,
+        id: zone.id,
+      }) + `<div class="insp-rows insp-top">${zoneEditorHtml(zone)}</div>`;
   } else {
     // Several nodes: no single-element editor, but arranging, annotating and
     // the format painter apply to all of them (pasteFormat brushes every
     // selected node — #211).
     const count = editor.selectionCount();
+    const names = editor.selectedNodeIds().map(endpointLabel);
     html +=
-      `<div class="insp-h">Selection (${count} nodes)</div>` +
+      headerHtml({
+        kind: 'nodes',
+        kindLabel: `Selection (${count} nodes)`,
+        title:
+          names.slice(0, 3).join(', ') +
+          (names.length > 3 ? ` and ${names.length - 3} more` : ''),
+        locked: editor.selectionLocked(),
+      }) +
       sectionHtml(inspectorSections, 'Arrange', alignRows(count), {
         open: true,
       }) +
@@ -3180,10 +3225,13 @@ function renderInspector(): void {
       ) +
       sectionHtml(inspectorSections, 'Format', formatRow(), { open: true }) +
       (canAnalyzePath()
-        ? `<div class="insp-row"><span>Path</span><span class="insp-btns"><button class="tbtn ab" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">${icon('route')} analyze path</button></span></div>`
+        ? `<div class="insp-rows insp-top"><div class="insp-row"><span>Path</span><span class="insp-btns"><button type="button" class="btn btn-sm" id="i-path" title="Trace the routes between these two nodes over the links this frame draws">${icon('route')} Analyze path</button></span></div></div>`
         : '');
   }
+  closeColourPopover();
+  if (tab !== 'page') leavePageTab();
   inspector.innerHTML = html;
+  adoptSharedControls(inspector);
 
   if (tab === 'page') {
     wirePageTab(inspectorContext);
@@ -3289,17 +3337,24 @@ function renderInspector(): void {
       });
   wireFormatRow();
   wireSelectionActions();
+  wireSelectionHeader(inspector, commands, renderInspector);
   wireSections(inspector, inspectorSections);
   wireAnnotations();
-  wireHexDots();
+  wireColourControls(inspector);
+}
+
+/** The Selection tab's header, with the shell's command registry. */
+function headerHtml(h: SelectionHeader): string {
+  return selectionHeaderHtml(h, commands);
 }
 
 /**
- * A link endpoint picker: every node (by label) and anchor on the page, except
+ * A link endpoint picker (the two sit side by side under the header, with
+ * Swap between them): every node (by label) and anchor on the page, except
  * the link's other end (a link can't loop back onto one element). Changing it
  * re-attaches that end — the inspector twin of dragging the end handle.
  */
-function endpointRow(
+function endpointSelect(
   end: 'from' | 'to',
   current: string,
   other: string,
@@ -3327,11 +3382,7 @@ function endpointRow(
     !p.anchors.some((a) => a.id === current)
   )
     opts = opt(current, `${current} (missing)`) + opts;
-  const title = end === 'from' ? 'From' : 'To';
-  return (
-    `<label class="insp-row"><span>${title}</span>` +
-    `<select id="i-${end}" aria-label="Link ${end} endpoint" title="Re-attach the ${end} end (or drag its handle on the canvas)">${opts}</select></label>`
-  );
+  return `<select id="i-${end}" aria-label="Link ${end} endpoint" title="Re-attach the ${end} end (or drag its handle on the canvas)">${opts}</select>`;
 }
 
 /** The z-order command behind each button of the Arrange row. */
@@ -3346,23 +3397,24 @@ const Z_ORDER_COMMANDS = [
 function arrangeRow(): string {
   return (
     `<div class="insp-row"><span>Arrange</span><span class="arrange">` +
-    `<button class="tbtn ab" data-z="back" title="${tip('arrange.sendToBack')}" aria-label="Send to back">${icon('send-to-back')}</button>` +
-    `<button class="tbtn ab" data-z="backward" title="${tip('arrange.sendBackward')}" aria-label="Send backward">${icon('arrow-down')}</button>` +
-    `<button class="tbtn ab" data-z="forward" title="${tip('arrange.bringForward')}" aria-label="Bring forward">${icon('arrow-up')}</button>` +
-    `<button class="tbtn ab" data-z="front" title="${tip('arrange.bringToFront')}" aria-label="Bring to front">${icon('bring-to-front')}</button>` +
+    `<button type="button" class="icon-btn" data-z="back" title="${tip('arrange.sendToBack')}" aria-label="Send to back">${icon('send-to-back')}</button>` +
+    `<button type="button" class="icon-btn" data-z="backward" title="${tip('arrange.sendBackward')}" aria-label="Send backward">${icon('arrow-down')}</button>` +
+    `<button type="button" class="icon-btn" data-z="forward" title="${tip('arrange.bringForward')}" aria-label="Bring forward">${icon('arrow-up')}</button>` +
+    `<button type="button" class="icon-btn" data-z="front" title="${tip('arrange.bringToFront')}" aria-label="Bring to front">${icon('bring-to-front')}</button>` +
     `</span></div>`
   );
 }
 
 /** Format painter (issue #211): a touch/keyboard surface onto the same
  * `copyFormat`/`pasteFormat` commands as the context menu + shortcuts. */
-function formatRow(): string {
-  return (
-    `<div class="insp-row"><span>Format</span><span class="insp-btns">` +
-    `<button class="tbtn ab" id="i-copyfmt" title="${tip('edit.copyFormat')}"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} copy</button>` +
-    `<button class="tbtn ab" id="i-pastefmt" title="${tip('edit.pasteFormat')}"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} paste</button>` +
-    `</span></div>`
-  );
+function formatRow(bare = false): string {
+  const word = bare ? ' format' : '';
+  const buttons =
+    `<button type="button" class="btn btn-sm" id="i-copyfmt" title="${tip('edit.copyFormat')}"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} Copy${word}</button>` +
+    `<button type="button" class="btn btn-sm" id="i-pastefmt" title="${tip('edit.pasteFormat')}"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} Paste${word}</button>`;
+  return bare
+    ? `<div class="insp-btns" role="group" aria-label="Format">${buttons}</div>`
+    : `<div class="insp-row"><span>Format</span><span class="insp-btns">${buttons}</span></div>`;
 }
 
 function wireFormatRow(): void {
@@ -3527,19 +3579,6 @@ function wireCompass(
   });
 }
 
-/** Keep each colour row's preview dot in step with its hex field as typed. */
-function wireHexDots(): void {
-  inspector.querySelectorAll<HTMLInputElement>('.hexwrap .hex').forEach((i) => {
-    const dot = i.parentElement?.querySelector<HTMLElement>('.hexdot');
-    if (!dot) return;
-    i.addEventListener('input', () => {
-      dot.style.background = /^#[0-9a-f]{3,8}$/i.test(i.value.trim())
-        ? i.value.trim()
-        : 'transparent';
-    });
-  });
-}
-
 /* ── Annotations (zones / flow paths / policy markers) ──────────────
  * A page-level layer, edited from the same inspector. "Add" seeds the new
  * element from the current node selection (members / waypoints / target). */
@@ -3549,17 +3588,6 @@ const ANNO_GROUPS: { kind: AnnotationKind; col: AnnoCol }[] = [
   { kind: 'policyMarker', col: 'policyMarkers' },
 ];
 type AnnoCol = 'zones' | 'flowPaths' | 'policyMarkers';
-
-function aswatchRow(key: string, current: string | undefined): string {
-  return (
-    `<div class="swatches" data-aswatch="${key}">` +
-    SWATCHES.map(
-      (c) =>
-        `<button class="sw ${c === current ? 'on' : ''}" data-color="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}" aria-pressed="${c === current}"></button>`,
-    ).join('') +
-    `</div>`
-  );
-}
 
 /** Whether a waypoint/member ref points at a free-floating anchor. */
 function isAnchorRef(id: string): boolean {
@@ -3627,7 +3655,7 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
     case 'boolean':
       // A real checkbox: typed into a text box, "false" is stored as a string,
       // which the renderer reads as on.
-      return `<label class="${rowClass(f)}"><span>${f.label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-akey="${f.key}" ${booleanFieldChecked(f.key, v) ? 'checked' : ''}/></label>`;
+      return `<label class="${switchRowClass(f)}"><span>${f.label}${f.animation ? ` ${labelMark('motion')}` : ''}</span><input type="checkbox" data-akey="${f.key}" ${booleanFieldChecked(f.key, v) ? 'checked' : ''}/></label>`;
     case 'enum':
       return `<label class="insp-row"><span>${f.label}${req}</span><select data-akey="${f.key}">${enumFieldOptions(
         f,
@@ -3639,13 +3667,9 @@ function annoFieldControl(f: FieldSpec, cfg: Record<string, unknown>): string {
         )
         .join('')}</select></label>`;
     case 'color':
-      return colorRow(
-        f.label,
-        hexInput(
-          `data-akey="${f.key}" data-akind="color"`,
-          v as string | undefined,
-        ),
-        aswatchRow(f.key, v as string | undefined),
+      return colourRowHtml(
+        { attr: 'data-akey', key: f.key, label: f.label },
+        v as string | undefined,
       );
     case 'number':
       return `<label class="insp-row"><span>${f.label}</span><input type="number" data-akey="${f.key}" data-akind="number" value="${esc(String(v ?? ''))}" placeholder="auto"${boundsAttrs(numberBounds(f))}/></label>`;
@@ -3697,9 +3721,9 @@ function zoneEditorHtml(zone: { id: string }): string {
   return (
     `<details class="anno selected" data-acol="zones" data-aid="${esc(zone.id)}" open>` +
     `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>` +
-    `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
-    `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>` +
-    `<button class="anno-x" data-adel title="Delete" aria-label="Delete zone">${icon('delete')}</button></summary>` +
+    `<button type="button" class="icon-btn anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
+    `<button type="button" class="icon-btn anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>` +
+    `<button type="button" class="icon-btn anno-x" data-adel title="Delete" aria-label="Delete zone">${icon('delete')}</button></summary>` +
     info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
     `</details>`
   );
@@ -3722,12 +3746,12 @@ function annotationsHtml(): string {
   // Each plus is an icon, which a screen reader skips: the names say "Add".
   let html =
     `<div class="anno-add">` +
-    `<button class="tbtn" data-add="zone" title="Group selected nodes into a zone" aria-label="Add zone">${icon('plus')} zone</button>` +
-    `<button class="tbtn" data-add="flowPath" title="Route a flow path through selected nodes" aria-label="Add flow path">${icon('plus')} flow</button>` +
-    `<button class="tbtn" data-add="policyMarker" title="Badge the selected node" aria-label="Add marker">${icon('plus')} marker</button>` +
+    `<button type="button" class="btn btn-sm" data-add="zone" title="Group selected nodes into a zone" aria-label="Add zone">${icon('plus')} zone</button>` +
+    `<button type="button" class="btn btn-sm" data-add="flowPath" title="Route a flow path through selected nodes" aria-label="Add flow path">${icon('plus')} flow</button>` +
+    `<button type="button" class="btn btn-sm" data-add="policyMarker" title="Badge the selected node" aria-label="Add marker">${icon('plus')} marker</button>` +
     `</div>`;
   if (counts === 0)
-    html += `<div class="muted anno-empty">Select node(s), then add a zone, flow path, or marker.</div>`;
+    html += `<div class="insp-hint anno-empty">Select node(s), then add a zone, flow path, or marker.</div>`;
   // Group by type into collapsible sections with counts, so a frame with many
   // zones/flows/markers stays scannable instead of one long flat list.
   for (const g of ANNO_GROUPS) {
@@ -3743,12 +3767,12 @@ function annotationsHtml(): string {
       // Zones are containers (C.2): offer move-members + duplicate-with-contents.
       const zoneBtns =
         g.col === 'zones'
-          ? `<button class="anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
-            `<button class="anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>`
+          ? `<button type="button" class="icon-btn anno-x" data-azmove title="Select members (then drag to move the zone)" aria-label="Select zone members">${icon('select-members')}</button>` +
+            `<button type="button" class="icon-btn anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>`
           : '';
       html +=
         `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
-        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button class="anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
+        `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button type="button" class="icon-btn anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
         info.fields.map((f) => annoFieldControl(f, cfg)).join('') +
         `</details>`;
     }

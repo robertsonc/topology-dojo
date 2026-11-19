@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -241,4 +241,16 @@ export async function inspectorSection(
   if (!(await section.evaluate((d) => (d as HTMLDetailsElement).open)))
     await section.locator('> summary').click();
   await expect(section).toHaveAttribute('open', '');
+}
+
+/**
+ * Pick a swatch of a colour control in the properties panel: open the
+ * popover the swatch is in (from the control's button), then click it.
+ */
+export async function chooseSwatch(swatch: Locator): Promise<void> {
+  const control = swatch.locator(
+    'xpath=ancestor::*[contains(concat(" ", @class, " "), " colour-ctl ")][1]',
+  );
+  await control.locator('[data-colour-open]').click();
+  await swatch.click();
 }

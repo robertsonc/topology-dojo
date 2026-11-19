@@ -7,6 +7,7 @@
  * closed after the panel redraws and after a reload. That is a view
  * preference only; nothing about sections is written in the document.
  */
+import { icon } from '../icons.js';
 import { esc } from './html.js';
 
 export const INSPECTOR_SECTIONS_KEY = 'topology-dojo:inspector-sections';
@@ -55,6 +56,9 @@ export class SectionMemory {
   }
 }
 
+/** The disclosure caret of a section's title; it turns while open. */
+const CARET = `<span class="insp-caret">${icon('chevron-right', { size: 12 })}</span>`;
+
 export interface SectionOptions {
   /** Open unless the user closed it before. */
   open: boolean;
@@ -79,15 +83,14 @@ export function sectionHtml(
   const count =
     opts.count === undefined
       ? ''
-      : ` <span class="insp-count">${opts.count}</span>`;
+      : ` <span class="badge insp-count">${opts.count}</span>`;
   const hint = opts.hint
     ? `<div class="insp-hint">${esc(opts.hint)}</div>`
     : '';
   return (
     `<details class="insp-group" data-group="${esc(title)}"${open ? ' open' : ''}>` +
-    `<summary class="insp-h">${esc(title)}${count}</summary>` +
-    hint +
-    body +
+    `<summary class="insp-h">${CARET}${esc(title)}${count}</summary>` +
+    `<div class="insp-rows">${hint}${body}</div>` +
     `</details>`
   );
 }

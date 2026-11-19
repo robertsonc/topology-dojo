@@ -48,7 +48,7 @@ function pageRows(ctx: InspectorContext): string {
     `<div class="insp-row"><span>Canvas</span><span class="insp-pair">` +
     `<input type="number" id="p-w" min="1" value="${w || 0}" aria-label="Canvas width" title="Width"/>` +
     `<input type="number" id="p-h" min="1" value="${h || 0}" aria-label="Canvas height" title="Height"/></span></div>` +
-    `<div class="insp-row"><span>Size</span><span class="insp-btns"><button class="tbtn ab" id="p-fit" title="Resize the page to wrap all content (Tidy/Balance grow it automatically)">${icon('fit-page')} fit to content</button></span></div>`
+    `<div class="insp-row"><span>Size</span><span class="insp-btns"><button type="button" class="btn btn-sm" id="p-fit" title="Resize the page to wrap all content (Tidy/Balance grow it automatically)">${icon('fit-page')} Fit to content</button></span></div>`
   );
 }
 
@@ -73,13 +73,40 @@ function linkRows(ctx: InspectorContext): string {
   );
 }
 
+/**
+ * The emphasis picker's state for this visit of the Page tab. It is closed
+ * by default; once opened it stays open while it has focus, and for the rest
+ * of the visit once something was ticked in it (each tick draws the panel
+ * again). A visit ends when another tab shows or another page does.
+ */
+const picker = {
+  open: false,
+  pageId: '',
+  ticked: false,
+  filter: '',
+  /** The element whose box was just ticked, to give focus back to. */
+  focus: '' as string,
+};
+
+/** The Page tab stopped showing: the picker starts closed next time. */
+export function leavePageTab(): void {
+  picker.open = false;
+  picker.ticked = false;
+  picker.filter = '';
+  picker.focus = '';
+}
+
 /** Caption and emphasis (frame storytelling, 2.1 / 2.2 / 2.4). */
 function storyRows(ctx: InspectorContext): string {
   const page = ctx.editor.page;
+  if (picker.pageId !== page.id) {
+    leavePageTab();
+    picker.pageId = page.id;
+  }
   const emph = new Set(page.emphasis ?? []);
   const total = page.nodes.length + page.links.length;
   const item = (id: string, label: string, type: string): string =>
-    `<label class="emph-row"><input type="checkbox" class="emph-cb" data-eid="${esc(id)}"${emph.has(id) ? ' checked' : ''}/>` +
+    `<label class="emph-row" data-text="${esc(`${label || id} ${type}`.toLowerCase())}"><input type="checkbox" class="emph-cb" data-eid="${esc(id)}"${emph.has(id) ? ' checked' : ''}/>` +
     `<span class="emph-label">${esc(label || id)}</span><span class="emph-type">${esc(type)}</span></label>`;
   const nodeRows = page.nodes
     .map((n) => item(n.id, n.label ?? n.type, n.type))
@@ -87,18 +114,23 @@ function storyRows(ctx: InspectorContext): string {
   const linkRows = page.links
     .map((l) => item(l.id, l.label ?? `${l.from}→${l.to}`, l.type))
     .join('');
-  const picker =
+  const list =
     total === 0
       ? `<div class="insp-hint">No elements on this frame.</div>`
-      : `<div class="emph-list scroll-slim">${nodeRows}${linkRows}</div>`;
+      : `<input type="search" id="p-emph-filter" value="${esc(picker.filter)}" placeholder="Filter" aria-label="Filter the elements" autocomplete="off"/>` +
+        `<div class="emph-list" role="group" aria-label="Elements to emphasize">${nodeRows}${linkRows}</div>`;
   return (
     `<label class="insp-row"><span>Caption</span>` +
     `<input id="p-caption" value="${esc(page.caption ?? '')}" placeholder="what this frame shows"/></label>` +
-    `<div class="insp-row"><span>Emphasis</span><span class="insp-val">${emph.size} of ${total}</span></div>` +
+    `<div class="insp-row"><span>Emphasis</span><span class="insp-btns">` +
+    `<span class="insp-val data" id="p-emph-count">${emph.size} of ${total}</span>` +
+    `<button type="button" class="btn btn-sm" id="p-emph-choose" aria-expanded="${picker.open}" aria-controls="p-emph-picker">Choose…</button>` +
+    `<button type="button" class="btn btn-sm btn-ghost" id="p-emph-clear"${emph.size ? '' : ' disabled'}>Clear</button>` +
+    `</span></div>` +
+    `<div class="emph-picker" id="p-emph-picker"${picker.open ? '' : ' hidden'}>` +
     `<div class="insp-hint">Tick elements to spotlight; the rest dim. Or right-click a selection → “Emphasize on this frame”.</div>` +
-    `<div class="emph-actions">` +
-    `<button class="insp-btn" id="p-emph-clear"${emph.size ? '' : ' disabled'}>Clear emphasis</button></div>` +
-    picker
+    list +
+    `</div>`
   );
 }
 
@@ -221,10 +253,49 @@ function wireStory(ctx: InspectorContext): void {
   root
     .querySelector('#p-emph-clear')
     ?.addEventListener('click', () => ctx.run('page.emphasis.clear'));
+  const choose = root.querySelector<HTMLButtonElement>('#p-emph-choose');
+  const box = root.querySelector<HTMLElement>('#p-emph-picker');
+  const filter = root.querySelector<HTMLInputElement>('#p-emph-filter');
+  if (!choose || !box) return;
+  const setOpen = (open: boolean): void => {
+    picker.open = open;
+    box.hidden = !open;
+    choose.setAttribute('aria-expanded', String(open));
+  };
+  choose.addEventListener('click', () => {
+    setOpen(!picker.open);
+    if (picker.open) (filter ?? box).focus();
+  });
+  // Focus leaving the picker (and its button) closes it, unless something
+  // was ticked during this visit.
+  const inside = (n: EventTarget | null): boolean =>
+    n instanceof Node && (box.contains(n) || choose.contains(n));
+  for (const el of [box, choose])
+    el.addEventListener('focusout', (e) => {
+      if (!picker.ticked && !inside(e.relatedTarget) && box.isConnected)
+        setOpen(false);
+    });
+  const applyFilter = (): void => {
+    const q = picker.filter.trim().toLowerCase();
+    box.querySelectorAll<HTMLElement>('.emph-row').forEach((row) => {
+      row.hidden = q !== '' && !row.dataset.text!.includes(q);
+    });
+  };
+  applyFilter();
+  filter?.addEventListener('input', () => {
+    picker.filter = filter.value;
+    applyFilter();
+  });
   root.querySelectorAll<HTMLInputElement>('.emph-cb').forEach((cb) => {
     cb.addEventListener('change', () => {
+      picker.ticked = true;
+      picker.focus = cb.dataset.eid!;
       editor.toggleEmphasis(cb.dataset.eid!);
       ctx.rerender();
     });
+    if (picker.focus === cb.dataset.eid) {
+      picker.focus = '';
+      cb.focus();
+    }
   });
 }

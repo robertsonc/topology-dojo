@@ -7,6 +7,7 @@ import {
   type FieldSpec,
 } from '../../api/catalog.js';
 import {
+  HEADER_KEYS,
   LINK_GROUPS,
   NODE_GROUPS,
   planSections,
@@ -51,7 +52,10 @@ describe('the sections of a node', () => {
     for (const { type } of nodeCatalog()) {
       const info = getNodeType(type)!;
       const shown = keysOf(planSections(info.fields, NODE_GROUPS, info.label));
-      expect(shown.slice().sort(), type).toEqual(
+      const inHeader = info.fields
+        .map((f) => f.key)
+        .filter((k) => HEADER_KEYS.includes(k));
+      expect([...shown, ...inHeader].sort(), type).toEqual(
         info.fields.map((f) => f.key).sort(),
       );
     }
@@ -69,18 +73,11 @@ describe('the sections of a node', () => {
     );
   });
 
-  it('draw the label offsets as one row in a nested "Fine tune" section', () => {
+  it('draw the label offsets as one row, with the label width, in a nested "Fine tune" section', () => {
     const text = nodePlan('router').find((s) => s.title === 'Text')!;
     expect(
       text.items.map((it) => (it.kind === 'field' ? it.field.key : it.kind)),
-    ).toEqual([
-      'label',
-      'sublabel',
-      'labelPlacement',
-      'nested',
-      'labelWidth',
-      'labelColor',
-    ]);
+    ).toEqual(['label', 'sublabel', 'labelPlacement', 'nested', 'labelColor']);
     const nested = text.items[3]!;
     expect(nested).toMatchObject({ kind: 'nested', title: 'Fine tune' });
     expect(nested.kind === 'nested' && nested.items).toEqual([
@@ -92,6 +89,7 @@ describe('the sections of a node', () => {
           expect.objectContaining({ key: 'labelOffset' }),
         ],
       },
+      { kind: 'field', field: expect.objectContaining({ key: 'labelWidth' }) },
     ]);
   });
 
@@ -138,11 +136,31 @@ describe('the sections of a link', () => {
     );
   });
 
+  it('draw the two ends of a link side by side', () => {
+    const info = getLinkType('line')!;
+    const plan = planSections(info.fields, LINK_GROUPS, info.label);
+    const pairs = plan
+      .flatMap((s) => s.items)
+      .filter((it) => it.kind === 'pair')
+      .map((it) => it.kind === 'pair' && it.fields.map((f) => f.key));
+    expect(pairs).toEqual([
+      ['fromLabel', 'toLabel'],
+      ['labelScale', 'labelWidth'],
+      ['strokeWidth', 'opacity'],
+      ['lineStyle', 'cornerRadius'],
+      ['fromPort', 'toPort'],
+      ['fromPortOffset', 'toPortOffset'],
+    ]);
+  });
+
   it('show every field of every type exactly once', () => {
     for (const { type } of linkCatalog()) {
       const info = getLinkType(type)!;
       const shown = keysOf(planSections(info.fields, LINK_GROUPS, info.label));
-      expect(shown.slice().sort(), type).toEqual(
+      const inHeader = info.fields
+        .map((f) => f.key)
+        .filter((k) => HEADER_KEYS.includes(k));
+      expect([...shown, ...inHeader].sort(), type).toEqual(
         info.fields.map((f) => f.key).sort(),
       );
     }
@@ -154,5 +172,15 @@ describe('the sections of a link', () => {
     expect(plan.find((s) => s.title === 'Blocked options')?.fields).toEqual([
       expect.objectContaining({ key: 'reason' }),
     ]);
+  });
+});
+
+describe('the header', () => {
+  it('shows the lock, which no section takes', () => {
+    const node = nodePlan('router');
+    const link = planSections(getLinkType('line')!.fields, LINK_GROUPS, 'Line');
+    expect(keysOf(node)).not.toContain('locked');
+    expect(keysOf(link)).not.toContain('locked');
+    expect(getNodeType('router')!.fields.map((f) => f.key)).toContain('locked');
   });
 });

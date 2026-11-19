@@ -13,11 +13,16 @@
  */
 import type { FieldSpec } from '../../api/catalog.js';
 
-/** Two number fields drawn side by side in one row. */
+/**
+ * Two fields (numbers, text or choices) drawn side by side in one row, each
+ * named by its own label for assistive technology.
+ */
 export interface FieldPair {
   /** The row's label. */
   label: string;
   keys: readonly [string, string];
+  /** What an empty text or number field of the pair shows. */
+  placeholders?: readonly [string, string];
 }
 
 export interface FieldGroup {
@@ -26,13 +31,19 @@ export interface FieldGroup {
   keys: readonly string[];
   /** Whether the section starts open (defaults to closed). */
   open?: boolean;
-  /** Number fields drawn two to a row. */
+  /** Fields drawn two to a row. */
   pairs?: readonly FieldPair[];
   /** Fields of this section kept in a nested section, closed at first. */
   nested?: { title: string; keys: readonly string[] };
   /** The section for every field no section names; titled by the type. */
   rest?: true;
 }
+
+/**
+ * Fields the Selection tab's header shows instead of a section: the lock is
+ * the header's toggle. No section takes them, the type's own neither.
+ */
+export const HEADER_KEYS: readonly string[] = ['locked'];
 
 /** The section that takes every field no other section names. */
 const REST: FieldGroup = { title: '', keys: [], rest: true };
@@ -51,7 +62,10 @@ export const NODE_GROUPS: readonly FieldGroup[] = [
       'labelColor',
     ],
     pairs: [{ label: 'Offset', keys: ['labelOffsetX', 'labelOffset'] }],
-    nested: { title: 'Fine tune', keys: ['labelOffsetX', 'labelOffset'] },
+    nested: {
+      title: 'Fine tune',
+      keys: ['labelOffsetX', 'labelOffset', 'labelWidth'],
+    },
     open: true,
   },
   { title: 'Style', keys: ['color', 'status', 'opacity'], open: true },
@@ -60,7 +74,7 @@ export const NODE_GROUPS: readonly FieldGroup[] = [
   REST,
   {
     title: 'Position and order',
-    keys: ['x', 'y', 'locked'],
+    keys: ['x', 'y'],
     pairs: [{ label: 'Position', keys: ['x', 'y'] }],
   },
   { title: 'Data', keys: ['meta', 'href', 'tooltip', 'layer', 'source'] },
@@ -78,11 +92,16 @@ export const LINK_GROUPS: readonly FieldGroup[] = [
       'labelScale',
       'labelWidth',
     ],
+    pairs: [
+      { label: 'Ports', keys: ['fromLabel', 'toLabel'] },
+      { label: 'Size, width', keys: ['labelScale', 'labelWidth'] },
+    ],
     open: true,
   },
   {
     title: 'Style',
     keys: ['color', 'strokeWidth', 'dashed', 'opacity'],
+    pairs: [{ label: 'Width, opacity', keys: ['strokeWidth', 'opacity'] }],
     open: true,
   },
   {
@@ -97,6 +116,12 @@ export const LINK_GROUPS: readonly FieldGroup[] = [
       'waypoints',
     ],
     pairs: [
+      {
+        label: 'Routing',
+        keys: ['lineStyle', 'cornerRadius'],
+        placeholders: ['', 'radius'],
+      },
+      { label: 'Sides', keys: ['fromPort', 'toPort'] },
       { label: 'Side offsets', keys: ['fromPortOffset', 'toPortOffset'] },
     ],
     open: true,
@@ -123,13 +148,18 @@ export const LINK_GROUPS: readonly FieldGroup[] = [
     keys: ['dots', 'flowSpeed', 'flowParticles', 'reverseFlow'],
   },
   REST,
-  { title: 'Data', keys: ['href', 'tooltip', 'locked', 'layer', 'source'] },
+  { title: 'Data', keys: ['href', 'tooltip', 'layer', 'source'] },
 ];
 
 /** One thing in a section: a field, a two-up row, or a nested section. */
 export type PlannedItem =
   | { kind: 'field'; field: FieldSpec }
-  | { kind: 'pair'; label: string; fields: readonly [FieldSpec, FieldSpec] }
+  | {
+      kind: 'pair';
+      label: string;
+      fields: readonly [FieldSpec, FieldSpec];
+      placeholders?: readonly [string, string];
+    }
   | { kind: 'nested'; title: string; items: PlannedItem[] };
 
 export interface PlannedSection {
@@ -149,15 +179,16 @@ export function typeOptionsTitle(typeLabel: string): string {
 /**
  * Lay a type's fields out in `groups`. Sections with none of their fields
  * on this type are left out; every field of the type lands in exactly one
- * section.
+ * section, apart from those the header shows (`header`).
  */
 export function planSections(
   fields: readonly FieldSpec[],
   groups: readonly FieldGroup[],
   typeLabel: string,
+  header: readonly string[] = HEADER_KEYS,
 ): PlannedSection[] {
   const byKey = new Map(fields.map((f) => [f.key, f] as const));
-  const named = new Set(groups.flatMap((g) => g.keys));
+  const named = new Set([...header, ...groups.flatMap((g) => g.keys)]);
   const sections: PlannedSection[] = [];
   for (const g of groups) {
     const specs = g.rest
@@ -200,25 +231,33 @@ function firstField(item: PlannedItem): FieldSpec {
   return firstField(item.items[0]!);
 }
 
-/** Fields in order, a pair in one row where both of its fields are numbers. */
+/** The kinds of field a two-up row can hold: one plain control each. */
+const PAIRABLE = new Set(['number', 'string', 'enum']);
+
+/**
+ * Fields in order, a pair in one row where both of its fields are here and
+ * each has a plain control (no compass, no textarea).
+ */
 function itemsOf(
   list: readonly FieldSpec[],
   pairs: readonly FieldPair[],
 ): PlannedItem[] {
   const out: PlannedItem[] = [];
   const done = new Set<string>();
-  const number = (key: string): FieldSpec | undefined =>
-    list.find((f) => f.key === key && f.kind === 'number');
+  const field = (key: string): FieldSpec | undefined =>
+    list.find(
+      (f) => f.key === key && PAIRABLE.has(f.kind) && !f.widget && !f.multiline,
+    );
+  const pairable = (p: FieldPair): boolean => p.keys.every((k) => field(k));
   for (const f of list) {
     if (done.has(f.key)) continue;
-    const pair = pairs.find(
-      (p) => p.keys.includes(f.key) && p.keys.every((k) => number(k)),
-    );
+    const pair = pairs.find((p) => p.keys.includes(f.key) && pairable(p));
     if (pair) {
       out.push({
         kind: 'pair',
         label: pair.label,
-        fields: [number(pair.keys[0])!, number(pair.keys[1])!],
+        fields: [field(pair.keys[0])!, field(pair.keys[1])!],
+        ...(pair.placeholders ? { placeholders: pair.placeholders } : {}),
       });
       pair.keys.forEach((k) => done.add(k));
     } else {

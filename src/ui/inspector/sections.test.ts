@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { icon } from '../icons.js';
 import {
   INSPECTOR_SECTIONS_KEY,
   SectionMemory,
@@ -60,6 +61,7 @@ describe('which sections are open', () => {
 
 describe('a section', () => {
   const memory = new SectionMemory(null);
+  const CARET = `<span class="insp-caret">${icon('chevron-right', { size: 12 })}</span>`;
 
   it('is a details element keyed by its title, with its count and hint', () => {
     const html = sectionHtml(memory, 'Annotations', '<p>rows</p>', {
@@ -69,8 +71,8 @@ describe('a section', () => {
     });
     expect(html).toBe(
       '<details class="insp-group" data-group="Annotations">' +
-        '<summary class="insp-h">Annotations <span class="insp-count">3</span></summary>' +
-        '<div class="insp-hint">What it is for.</div><p>rows</p></details>',
+        `<summary class="insp-h">${CARET}Annotations <span class="badge insp-count">3</span></summary>` +
+        '<div class="insp-rows"><div class="insp-hint">What it is for.</div><p>rows</p></div></details>',
     );
   });
 
@@ -90,7 +92,7 @@ describe('a section', () => {
     expect(
       sectionHtml(memory, '<b>"x"</b> options', 'x', { open: true }),
     ).toContain(
-      'data-group="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" open><summary class="insp-h">&lt;b&gt;&quot;x&quot;&lt;/b&gt; options</summary>',
+      `data-group="&lt;b&gt;&quot;x&quot;&lt;/b&gt; options" open><summary class="insp-h">${CARET}&lt;b&gt;&quot;x&quot;&lt;/b&gt; options</summary>`,
     );
   });
 });

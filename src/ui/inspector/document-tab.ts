@@ -112,7 +112,7 @@ function layerRows(ctx: InspectorContext): string {
   // The plus is an icon, which a screen reader skips: the name says "Add".
   return (
     (rows || `<div class="insp-hint">No layers declared.</div>`) +
-    `<button class="insp-btn" id="p-layer-add" aria-label="Add layer">${icon('plus')} Layer</button>`
+    `<div class="insp-btns"><button type="button" class="btn btn-sm" id="p-layer-add" aria-label="Add layer">${icon('plus')} Layer</button></div>`
   );
 }
 
