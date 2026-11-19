@@ -750,7 +750,8 @@ remembered. Under 300px the **Hide** button shows only its icon. In a window
 narrower than 1,024px the panel is a drawer over the canvas. It always leaves
 at least 72px of canvas showing, so a drawer can be narrower than the width
 you set. On a phone (640px wide or less) the drawer starts 240px wide and is
-never wider than 280px.
+never wider than 280px, and a drop-down list such as **Status** sits under
+its label, across the drawer, so its words show in full.
 
 **Tabs.** A row of three tabs heads the panel: the Selection tab, **Page** and
 **Document**. The first tab is named for what is selected: **Node**, **Link**,

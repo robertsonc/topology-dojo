@@ -375,6 +375,20 @@
   gap: 4px;
   min-width: 0;
 }
+/* A choice beside a number (Routing and its corner radius): the choice's
+   words take the larger share, so "orthogonal" reads in full. */
+.insp-pair:has(> select:first-child + input) {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+/* On a phone the control column is too narrow for a choice's longer words
+   ("None (no indicator)", "chip beside the wire"): a choice takes the row's
+   width under its label. */
+@media (max-width: 640px) {
+  .insp-row:has(> select:last-child) {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 4px;
+  }
+}
 /* A node's own link attachment: its padding and its ends in one row. */
 .insp-attach-pair {
   display: flex;

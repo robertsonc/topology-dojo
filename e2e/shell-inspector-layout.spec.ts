@@ -383,3 +383,73 @@ for (const width of [320, 390]) {
     }
   });
 }
+
+/** The chosen words of a select, and the room its box leaves them beside
+ * the arrow (Chromium draws the arrow in about 20px at the right). */
+async function selectRoom(
+  page: Page,
+  selector: string,
+): Promise<{ words: string; text: number; inner: number }> {
+  return page.locator(selector).evaluate((el) => {
+    const select = el as HTMLSelectElement;
+    const cs = getComputedStyle(select);
+    const probe = document.createElement('span');
+    probe.style.font = cs.font;
+    probe.style.position = 'absolute';
+    probe.style.whiteSpace = 'pre';
+    probe.textContent = select.selectedOptions[0]?.text ?? '';
+    document.body.append(probe);
+    const text = probe.getBoundingClientRect().width;
+    probe.remove();
+    const inner =
+      select.clientWidth -
+      parseFloat(cs.paddingLeft) -
+      parseFloat(cs.paddingRight) -
+      20;
+    return { words: probe.textContent, text, inner };
+  });
+}
+
+// A choice that shares its row with a number keeps room for its words: the
+// link's Routing read "orthogon" beside its corner radius.
+test('a link’s Routing choice shows its words in full', async ({ page }) => {
+  await openFixture(page, 'zone-orthogonal.json');
+  await clickLink(page, 'orth');
+  const room = await selectRoom(
+    page,
+    '#inspector select[data-key="lineStyle"]',
+  );
+  expect(room.words).toBe('orthogonal');
+  expect(room.text).toBeLessThanOrEqual(room.inner);
+  // Its corner radius still sits beside it.
+  const radius = (await page
+    .locator('#inspector input[data-key="cornerRadius"]')
+    .boundingBox())!;
+  const routing = (await page
+    .locator('#inspector select[data-key="lineStyle"]')
+    .boundingBox())!;
+  expect(Math.abs(radius.y - routing.y)).toBeLessThan(1);
+});
+
+// On a phone a choice takes the drawer's width under its label: a node's
+// Status read "None (no indica" in the control column.
+test('on a phone a choice in the properties drawer shows its words in full', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  await page.locator('#inspector-toggle').click();
+  await inspectorTab(page, 'page');
+  const ports = await selectRoom(page, '#p-portlabels');
+  expect(ports.text, ports.words).toBeLessThanOrEqual(ports.inner);
+  await page.locator('#inspector-toggle').click();
+  await clickNode(page, 'fw');
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#insp-tab-selection')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  const status = await selectRoom(page, '#inspector select[data-key="status"]');
+  expect(status.words).toBe('None (no indicator)');
+  expect(status.text).toBeLessThanOrEqual(status.inner);
+});
