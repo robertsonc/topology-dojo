@@ -104,3 +104,28 @@ test('a link: z-order and lock', async ({ page }) => {
   await button(page, 'edit.toggleLock').click();
   expect((await savedElement(page, 'links', 'lan')).locked).toBe(true);
 });
+
+// A narrow canvas (a 1,024px window with both panels open, or a phone): the
+// bar for every node takes a second row rather than run past the canvas.
+for (const viewport of [
+  { width: 1024, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`the bar stays inside the canvas at ${viewport.width}×${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await bootEditor(page);
+    await page.locator('.canvas-host').click({ position: { x: 8, y: 8 } });
+    await page.keyboard.press('Control+a');
+    await expect(bar(page)).toBeVisible();
+    await expect(button(page, 'edit.toggleLock')).toBeVisible();
+    const host = (await page.locator('.canvas-host').boundingBox())!;
+    const box = (await bar(page).boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(host.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(host.x + host.width);
+    // Its last button is on screen, inside the bar.
+    const lock = (await button(page, 'edit.toggleLock').boundingBox())!;
+    expect(lock.x + lock.width).toBeLessThanOrEqual(box.x + box.width);
+  });
+}

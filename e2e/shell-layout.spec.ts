@@ -270,3 +270,72 @@ for (const viewport of [
     expect(leftWithout).toBeLessThan(leftWithPalette);
   });
 }
+
+// The pages bar in a canvas column of every size: 720px is a 1,440px window
+// at 200% zoom (both panels still docked), 1,024px the narrowest desktop,
+// 390px a phone. Its page controls are on screen, nothing in it is drawn
+// over, and the canvas options keep the right end.
+for (const viewport of [
+  { width: 720, height: 450 },
+  { width: 1024, height: 900 },
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  const size = `${viewport.width}×${viewport.height}`;
+  test(`the pages bar keeps its controls on screen at ${size}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await bootEditor(page);
+    // Enough pages that the chips must scroll.
+    for (let i = 0; i < 12; i++) await page.locator('#addPage').click();
+    await expect(page.locator('#frames-ind')).toHaveText('13/13');
+
+    const b = await boxes(page, {
+      bar: '#pagesBar',
+      dock: '#frames-dock',
+      toggle: '#frames-toggle',
+      strip: '#filmstrip',
+      play: '#playFlip',
+      add: '#addPage',
+      opts: '.view-opts',
+      minimap: '#minimap-toggle',
+    });
+    // Play and Add page sit either side of the chips, not in their scroller:
+    // with the chips scrolled to the last page, both are still in view.
+    for (const name of ['toggle', 'play', 'add'] as const) {
+      expectInside(b[name]!, b.dock!);
+      expect(overlaps(b[name]!, b.strip!), name).toBe(false);
+    }
+    expect(b.play!.right).toBeLessThanOrEqual(b.strip!.left + 0.5);
+    expect(b.add!.left).toBeGreaterThanOrEqual(b.strip!.right - 0.5);
+    // The canvas options are inside the bar and clear of the pages.
+    expectInside(b.opts!, b.bar!);
+    expectInside(b.minimap!, b.viewport!);
+    expect(overlaps(b.opts!, b.dock!)).toBe(false);
+    const dock = await page
+      .locator('#frames-dock')
+      .evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(dock).toBeLessThanOrEqual(0);
+  });
+}
+
+test('on a phone the status bar keeps the problems indicator on screen', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  const problems = page.locator('#sb-problems');
+  await expect(problems).toBeVisible();
+  const box = (await problems.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  // Nothing in the bar is cut off: what does not fit has stepped aside.
+  const bar = await page
+    .locator('#statusbar')
+    .evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(bar).toBeLessThanOrEqual(0);
+  await expect(
+    page.locator('#statusbar span', { hasText: 'nodes' }).first(),
+  ).toBeVisible();
+});

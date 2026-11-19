@@ -48,6 +48,26 @@ test('an anonymous visitor is offered sign-in, never forced', async ({
   await expect(prompt).toBeVisible();
 });
 
+test('on a phone the sign-in chip still says sign in', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(
+    (url) => url.pathname === '/api/me',
+    (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: '{}',
+      }),
+  );
+  await bootEditor(page);
+  const chip = page.locator('#userChip');
+  await expect(chip).toBeVisible();
+  // The words are on screen, not only in the markup.
+  expect((await chip.innerText()).trim()).toBe('sign in');
+  const box = (await chip.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+});
+
 test('no sign-in chip without the hosted backend', async ({ page }) => {
   await bootEditor(page);
   await expect(page.locator('#userChip')).toBeHidden();

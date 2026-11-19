@@ -346,11 +346,13 @@ app.innerHTML = `
        node library docked beside it, the canvas over the pages bar, and the
        properties panel. Only the page chips scroll. -->
   <div class="stage">
-    <div class="rail" id="rail" role="group" aria-label="Tools">
+    <div class="rail" id="rail">
+      <div class="rail-tools" role="group" aria-label="Tools">
       <button type="button" class="icon-btn icon-btn-lg on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool" aria-pressed="true">${icon('tool-select')}</button>
       <button type="button" class="icon-btn icon-btn-lg" id="ccHand" title="${tip('tool.hand')} — or hold Space to pan anytime" aria-label="Hand / pan tool" aria-pressed="false">${icon('hand')}</button>
       <button type="button" class="icon-btn icon-btn-lg" id="tLink" title="${tip('tool.link')}" aria-label="Draw link tool" aria-pressed="false">${icon('tool-link')}</button>
       <button type="button" class="icon-btn icon-btn-lg" id="tAnchor" title="${tip('tool.anchor')} — free-floating link endpoints" aria-label="Drop anchor tool" aria-pressed="false">${icon('anchor')}</button>
+      </div>
       <span class="rail-sep" aria-hidden="true"></span>
       <button type="button" class="icon-btn icon-btn-lg" id="palette-toggle" title="${tip('view.toggleLibrary', 'Hide node library')}" aria-label="Node library" aria-pressed="true">${icon('panel-left-close')}</button>
       <span class="rail-space"></span>
@@ -359,7 +361,7 @@ app.innerHTML = `
     </div>
     <aside class="palette" id="palette" aria-label="Node library">
       <div class="palette-head">Library</div>
-      <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
+      <input id="palette-search" class="field palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
       <div class="palette-list scroll-slim" id="palette-list"></div>
     </aside>
     <div class="canvas-col">
@@ -388,9 +390,13 @@ app.innerHTML = `
            chips, then the canvas options at the right end. -->
       <div class="pages-bar" id="pagesBar">
         <div class="frames-dock" id="frames-dock" role="region" aria-label="Pages">
-          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="${tip('view.toggleFrames', 'Hide pages')}">Pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
+          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="${tip('view.toggleFrames', 'Hide pages')}"><span class="frames-word">Pages</span> <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
+          <!-- Play, the chips, then duplicate, add and undo delete. Only the
+               chips scroll; the buttons on either side stay put. -->
           <div class="frames-reveal">
+            <span class="pages-lead" id="pagesLead"></span>
             <div class="filmstrip scroll-slim" id="filmstrip"></div>
+            <span class="pages-tail" id="pagesTail"></span>
           </div>
         </div>
         <div class="view-opts" role="group" aria-label="Canvas options">
@@ -435,6 +441,10 @@ app.querySelector<SVGSVGElement>('#tds-defs-sprite')!.innerHTML = engineDefs();
 const artSvg = app.querySelector<SVGSVGElement>('#page-canvas')!;
 const overlaySvg = app.querySelector<SVGSVGElement>('#overlay')!;
 const strip = app.querySelector<HTMLElement>('#filmstrip')!;
+// The pages bar's buttons on either side of the chips (play; duplicate, add,
+// undo delete), outside the strip so that they never scroll away.
+const pagesLead = app.querySelector<HTMLElement>('#pagesLead')!;
+const pagesTail = app.querySelector<HTMLElement>('#pagesTail')!;
 const framesDock = app.querySelector<HTMLDivElement>('#frames-dock')!;
 const framesToggle = app.querySelector<HTMLButtonElement>('#frames-toggle')!;
 const framesInd = app.querySelector<HTMLElement>('#frames-ind')!;
@@ -1000,12 +1010,17 @@ function updateMiniBar(): void {
   syncMiniBarCommands();
   miniBar.hidden = false;
   const hostRect = host.getBoundingClientRect();
+  // Measured from the canvas's left edge, so the room to its right does not
+  // decide whether the bar wraps onto a second row.
+  miniBar.style.left = '0px';
   const w = miniBar.offsetWidth || 200;
+  const h = miniBar.offsetHeight || 34;
   const left = Math.max(
     4,
     Math.min(anchor.x - hostRect.left - w / 2, hostRect.width - w - 4),
   );
-  const top = Math.max(4, anchor.y - hostRect.top - 46);
+  // Clear of the selection, by the bar's own height (one row or two).
+  const top = Math.max(4, anchor.y - hostRect.top - h - 12);
   miniBar.style.left = `${Math.round(left)}px`;
   miniBar.style.top = `${Math.round(top)}px`;
   const emph = miniBar.querySelector<HTMLButtonElement>('#mbEmph');
@@ -1759,9 +1774,14 @@ redoBtn.addEventListener('click', () => commands.run('edit.redo'));
 /* On-canvas controls: hand/pan, zoom +/−, zoom %, fit. */
 const handBtn = app.querySelector<HTMLButtonElement>('#ccHand')!;
 const ccZoom = app.querySelector<HTMLButtonElement>('#ccZoom')!;
+/** Hand mode sits on top of the current tool: while it is on, Hand is the
+ * one tool shown pressed; when it goes off, the tool underneath is again. */
 function setHand(on: boolean): void {
   editor.setHandTool(on);
   setPressed(handBtn, on);
+  setPressed(selectBtn, !on && editor.tool === 'select');
+  setPressed(linkBtn, !on && editor.tool === 'link');
+  setPressed(anchorBtn, !on && editor.tool === 'anchor');
 }
 handBtn.addEventListener('click', () => commands.run('tool.hand'));
 app
@@ -1806,13 +1826,13 @@ function renderStatus(): void {
   const cur = cursor ? `${cursor.x}, ${cursor.y}` : '–';
   statusbar.innerHTML =
     `<span><span class="sb-k">tool</span> ${editor.tool}</span>` +
-    `<span><span class="sb-k">x,y</span> ${cur}</span>` +
+    `<span class="sb-minor"><span class="sb-k">x,y</span> ${cur}</span>` +
     `<span><span class="sb-k">nodes</span> ${p.nodes.length}</span>` +
     `<span><span class="sb-k">links</span> ${p.links.length}</span>` +
-    `<span><span class="sb-k">anchors</span> ${p.anchors.length}</span>` +
-    `<span><span class="sb-k">zones</span> ${p.zones.length}</span>` +
+    `<span class="sb-minor"><span class="sb-k">anchors</span> ${p.anchors.length}</span>` +
+    `<span class="sb-minor"><span class="sb-k">zones</span> ${p.zones.length}</span>` +
     `<span><span class="sb-k">selected</span> ${sel}</span>` +
-    `<span><span class="sb-k">history</span> ${editor.historyDepth()}</span>` +
+    `<span class="sb-minor"><span class="sb-k">history</span> ${editor.historyDepth()}</span>` +
     `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>` +
     statusProblemsHTML() +
     `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ? shortcuts</span>`;
@@ -4646,15 +4666,24 @@ async function downscaleImage(
 
 let dragFrom = -1;
 
-/* A just-deleted frame, held so the strip can offer "undo delete" until the
+/* A just-deleted page, held so the bar can offer "Undo delete" until the
  * chip times out or another frame is deleted. Its stashed editor history is
  * kept alive with it, so restoring the frame restores its undo stack too. */
 let pendingFrameDelete: { page: Page; index: number; timer: number } | null =
   null;
 
-/** What the strip's play button shows while playing, or while stopped. */
+/** What the pages bar's play button shows while playing, or while stopped. */
 function playFlipLabel(playing: boolean): string {
-  return playing ? `${icon('pause')} pause` : `${icon('play')} play`;
+  return playing
+    ? `${icon('pause')}<span class="pages-label">Pause</span>`
+    : `${icon('play')}<span class="pages-label">Play</span>`;
+}
+/** Show on the play button whether the player is running. */
+function setPlayFlip(playing: boolean): void {
+  const b = pagesLead.querySelector<HTMLButtonElement>('#playFlip');
+  if (!b) return;
+  b.innerHTML = playFlipLabel(playing);
+  b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
 }
 
 /* Flipbook playback: step through pages on their durations (loop). The same
@@ -4663,8 +4692,7 @@ function stopPlayback(): void {
   if (playTimer === null) return;
   clearTimeout(playTimer);
   playTimer = null;
-  const b = strip.querySelector('#playFlip');
-  if (b) b.innerHTML = playFlipLabel(false);
+  setPlayFlip(false);
 }
 function startPlayback(): void {
   if (doc.pages.length < 2) return;
@@ -4680,8 +4708,7 @@ function startPlayback(): void {
     playTimer = window.setTimeout(advance, pageDuration(doc.pages[next]!));
   };
   playTimer = window.setTimeout(advance, pageDuration(doc.pages[current]!));
-  const b = strip.querySelector('#playFlip');
-  if (b) b.innerHTML = playFlipLabel(true);
+  setPlayFlip(true);
 }
 
 /** Keep the frames pill's "current/total" readout live (playback included). */
@@ -4700,6 +4727,10 @@ function scrollActiveFrameIntoView(): void {
   const pad = 12; // keep a sliver of the neighbour chip visible
   const left = el.offsetLeft;
   const right = left + el.offsetWidth;
+  // A chip already wholly in view stays put: a press on it must not slide
+  // it from under the pointer between the two presses of a double-click.
+  if (left >= strip.scrollLeft && right <= strip.scrollLeft + strip.clientWidth)
+    return;
   if (left - pad < strip.scrollLeft) {
     strip.scrollLeft = Math.max(0, left - pad);
   } else if (right + pad > strip.scrollLeft + strip.clientWidth) {
@@ -4709,27 +4740,28 @@ function scrollActiveFrameIntoView(): void {
 
 function renderFilmstrip(): void {
   const canDelete = doc.pages.length > 1;
-  strip.innerHTML = `
-    ${
-      doc.pages.length > 1
-        ? `<button class="frame add" id="playFlip" title="Play the pages on the canvas (each page holds for its duration)">${playFlipLabel(playTimer !== null)}</button>`
-        : ''
-    }
-    ${doc.pages
-      .map(
-        (p, i) => `
+  const playing = playTimer !== null;
+  pagesLead.innerHTML =
+    doc.pages.length > 1
+      ? `<button type="button" class="btn btn-ghost" id="playFlip" title="Play the pages on the canvas (each page holds for its duration)" aria-label="${playing ? 'Pause' : 'Play'}">${playFlipLabel(playing)}</button>`
+      : '';
+  // Each chip is a button that goes to its page (Enter or a click; F2 or a
+  // double-click renames it), with its delete button beside it, not in it.
+  strip.innerHTML = doc.pages
+    .map(
+      (p, i) => `
       <div class="frame ${i === current ? 'on' : ''}" data-page="${i}" draggable="true" title="${esc(p.name)} — double-click to rename, drag to reorder">
-        <span class="frame-n">${i + 1}</span>
-        <span class="frame-name" data-name="${i}">${esc(p.name)}</span>
-        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete page" aria-label="Delete page ${esc(p.name)}">${icon('x')}</button>` : ''}
+        <button type="button" class="frame-sel"${i === current ? ' aria-current="page"' : ''}><span class="visually-hidden">Page </span><span class="frame-n">${i + 1}</span> <span class="frame-name" data-name="${i}">${esc(p.name)}</span></button>
+        ${canDelete ? `<button type="button" class="frame-x" data-del="${i}" title="Delete page" aria-label="Delete page ${esc(p.name)}">${icon('x')}</button>` : ''}
       </div>`,
-      )
-      .join('')}
-    <button class="frame add" id="dupPage" title="Duplicate current page">${icon('duplicate')} duplicate</button>
-    <button class="frame add" id="addPage" title="Add blank page" aria-label="Add page">${icon('plus')} page</button>
+    )
+    .join('');
+  pagesTail.innerHTML = `
+    <button type="button" class="btn btn-ghost" id="dupPage" title="Duplicate current page" aria-label="Duplicate page">${icon('duplicate')}<span class="pages-label">Duplicate page</span></button>
+    <button type="button" class="btn btn-ghost" id="addPage" title="Add blank page" aria-label="Add page">${icon('plus')}<span class="pages-label">Add page</span></button>
     ${
       pendingFrameDelete
-        ? `<button class="frame add" id="undoDel" title="Restore the deleted frame &quot;${esc(pendingFrameDelete.page.name)}&quot;">${icon('restore')} undo delete</button>`
+        ? `<button type="button" class="btn btn-ghost" id="undoDel" title="Restore the deleted page &quot;${esc(pendingFrameDelete.page.name)}&quot;" aria-label="Undo delete">${icon('restore')}<span class="pages-label">Undo delete</span></button>`
         : ''
     }
   `;
@@ -4758,22 +4790,33 @@ function renderFilmstrip(): void {
         startRename(Number(el.dataset.name), el),
       ),
     );
+  // F2 renames the focused chip: the keyboard's double-click.
+  strip.querySelectorAll<HTMLButtonElement>('.frame-sel').forEach((b) =>
+    b.addEventListener('keydown', (e) => {
+      if (e.key !== 'F2' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const name = b.querySelector<HTMLElement>('[data-name]');
+      if (!name) return;
+      e.preventDefault();
+      e.stopPropagation();
+      startRename(Number(name.dataset.name), name, true);
+    }),
+  );
   strip.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((b) =>
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       commands.run('page.delete', Number(b.dataset.del));
     }),
   );
-  strip
+  pagesLead
     .querySelector('#playFlip')
     ?.addEventListener('click', () => commands.run('page.playPause'));
-  strip
+  pagesTail
     .querySelector('#addPage')
     ?.addEventListener('click', () => commands.run('page.add'));
-  strip
+  pagesTail
     .querySelector('#dupPage')
     ?.addEventListener('click', () => commands.run('page.duplicate'));
-  strip
+  pagesTail
     .querySelector('#undoDel')
     ?.addEventListener('click', () => commands.run('page.undoDelete'));
 
@@ -4820,31 +4863,56 @@ function gotoPage(i: number): void {
   renderProblems();
 }
 
-function startRename(i: number, span: HTMLElement): void {
+/**
+ * Rename page `i` in place: its name becomes a field. `refocus` (a rename
+ * started from the keyboard): Enter or Escape puts focus back on the chip.
+ */
+function startRename(i: number, span: HTMLElement, refocus = false): void {
   const page = doc.pages[i];
   if (!page) return;
   const input = document.createElement('input');
   input.className = 'frame-rename';
   input.value = page.name;
-  span.replaceWith(input);
+  input.setAttribute('aria-label', `Rename page ${i + 1}`);
+  // A field cannot sit inside the chip's button: while it is open, the
+  // number and the field take the button's place.
+  const chip = span.closest<HTMLElement>('.frame-sel');
+  if (chip) {
+    const box = document.createElement('span');
+    box.className = 'frame-sel frame-editing';
+    const n = chip.querySelector('.frame-n');
+    if (n) box.append(n.cloneNode(true), ' ');
+    box.append(input);
+    chip.replaceWith(box);
+  } else span.replaceWith(input);
   input.focus();
   input.select();
   // Once only: redrawing the strip removes this input, and a removed input
   // that had focus fires blur — which would save the text Escape just
   // cancelled.
   let done = false;
+  let byKey = false;
   const commit = (save: boolean): void => {
     if (done) return;
     done = true;
     if (save) page.name = input.value.trim() || page.name;
     renderFilmstrip();
     if (save) markDirty();
+    if (refocus && byKey)
+      strip
+        .querySelector<HTMLElement>(`[data-page="${i}"] .frame-sel`)
+        ?.focus();
   };
   input.addEventListener('blur', () => commit(true));
   input.addEventListener('keydown', (e) => {
     if (isImeKey(e)) return; // the key belongs to an IME composition
-    if (e.key === 'Enter') input.blur();
-    else if (e.key === 'Escape') commit(false);
+    if (e.key === 'Enter') {
+      byKey = true;
+      input.blur();
+    } else if (e.key === 'Escape') {
+      byKey = true;
+      commit(false);
+    }
   });
 }
 
@@ -4856,7 +4924,7 @@ function finalizeFrameDelete(): void {
   pendingFrameDelete = null;
 }
 
-/** Restore the just-deleted frame at its old position (the strip's undo chip). */
+/** Restore the just-deleted page at its old position (the bar's Undo delete). */
 function undoFrameDelete(): void {
   if (!pendingFrameDelete) return;
   const { page, index, timer } = pendingFrameDelete;
@@ -4925,9 +4993,13 @@ function selectPage(i: number): void {
   // Report the new page to the workspace presence socket (Packet S1).
   workspacePanelHandle.notifyPageChanged();
   // Update highlight without rebuilding the strip (so dblclick-rename survives).
-  strip
-    .querySelectorAll<HTMLElement>('[data-page]')
-    .forEach((el) => el.classList.toggle('on', Number(el.dataset.page) === i));
+  strip.querySelectorAll<HTMLElement>('[data-page]').forEach((el) => {
+    const on = Number(el.dataset.page) === i;
+    el.classList.toggle('on', on);
+    const chip = el.querySelector('.frame-sel');
+    if (on) chip?.setAttribute('aria-current', 'page');
+    else chip?.removeAttribute('aria-current');
+  });
   updateFramesIndicator();
   scrollActiveFrameIntoView();
 }
@@ -6143,15 +6215,15 @@ bind('page.fitToContent', {
 // Tools
 bind('tool.select', {
   run: () => setTool('select'),
-  checked: () => editor.tool === 'select',
+  checked: () => editor.tool === 'select' && !editor.isHandActive(),
 });
 bind('tool.link', {
   run: () => setTool('link'),
-  checked: () => editor.tool === 'link',
+  checked: () => editor.tool === 'link' && !editor.isHandActive(),
 });
 bind('tool.anchor', {
   run: () => setTool('anchor'),
-  checked: () => editor.tool === 'anchor',
+  checked: () => editor.tool === 'anchor' && !editor.isHandActive(),
 });
 bind('tool.hand', {
   run: () => setHand(!editor.isHandActive()),

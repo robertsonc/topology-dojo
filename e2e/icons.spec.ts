@@ -469,7 +469,7 @@ test('a button whose plus is an icon still says "add"', async ({ page }) => {
     ['.anno-add [data-add="zone"]', 'Add zone', 'zone'],
     ['.anno-add [data-add="flowPath"]', 'Add flow path', 'flow'],
     ['.anno-add [data-add="policyMarker"]', 'Add marker', 'marker'],
-    ['#addPage', 'Add page', 'page'],
+    ['#addPage', 'Add page', 'Add page'],
   ] as const) {
     const button = page.locator(selector);
     await expect(button).toHaveAccessibleName(name);

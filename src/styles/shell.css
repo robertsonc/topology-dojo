@@ -161,13 +161,9 @@
   cursor: pointer;
 }
 
-/* A little tighter than the controls' defaults, so that signed in, with
-   every chip showing, the bar fits a 1,101px window with its menus out. */
+/* Dividers a little tighter than the shared .vr. */
 .topbar .vr {
   margin: 0 4px;
-}
-.topbar .btn {
-  padding: 0 10px;
 }
 
 /* Tidy and the menu of the other layout commands beside it. */
@@ -175,12 +171,6 @@
   display: inline-flex;
   flex: none;
   align-items: center;
-}
-.split > .btn {
-  padding-right: 6px;
-}
-.split > .icon-btn {
-  width: 22px;
 }
 
 /* The result of the last export (#222): what it was and how it went. It
@@ -207,9 +197,13 @@
   margin-left: -2px;
 }
 
-/* The workspace and account chips. */
+/* The workspace and account chips. When the bar runs short (a long login,
+   a narrow window) their names give way with an ellipsis rather than push
+   the bar past the window. */
 .workspace-chip,
 .user-chip {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 180px;
 }
 .uc-name,
@@ -279,6 +273,14 @@
   border-right: 1px solid var(--line);
   background: var(--surface-back);
 }
+/* The four tools, one of them pressed. */
+.rail-tools {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
 .rail-sep {
   flex: none;
   width: 20px;
@@ -314,24 +316,26 @@
   color: var(--fg-strong);
   font: 600 13px/1 var(--font-ui);
 }
+/* The search field is the shared .field; here it only takes its place. */
 .palette > .palette-search {
   flex: none;
   width: auto;
-  height: 28px;
   margin: 0 10px 8px;
-  font-family: var(--font-ui);
 }
 .palette > .palette-list {
   gap: 6px;
   padding: 0 10px 10px;
 }
 
-/* ── The canvas column: the canvas over the pages bar ───────────────── */
+/* ── The canvas column: the canvas over the pages bar ─────────────────
+   A container, so the pages bar can fold its words by the room the column
+   has (the library and the properties panel take theirs first). */
 .canvas-col {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 44px;
+  grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
+  container: canvas-col / inline-size;
 }
 .canvas-area {
   position: relative;
@@ -417,14 +421,16 @@
 }
 
 /* ── The pages bar, docked under the canvas ───────────────────────────
-   The pages toggle and the page chips (play, the chips, duplicate, add),
-   then at the right end grid, snap, calm, display settings and the minimap.
-   The chips are the one thing in it that scrolls, and they never push the
-   right end out. */
+   The pages toggle, play, the page chips, then duplicate, add page and undo
+   delete; at the right end grid, snap, calm, display settings and the
+   minimap. The chips are the one thing in it that scrolls: the buttons on
+   either side of them never scroll away, and the right end is never pushed
+   out or drawn over. */
 .pages-bar {
   display: flex;
   align-items: center;
   gap: 6px;
+  height: 44px;
   min-width: 0;
   padding: 0 10px;
   overflow: hidden;
@@ -438,6 +444,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
 }
 .frames-toggle {
   display: inline-flex;
@@ -467,37 +474,47 @@
   display: inline-flex;
 }
 .frames-reveal {
+  display: flex;
   flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
   min-width: 0;
 }
 .frames-dock.collapsed .frames-reveal {
   display: none;
 }
+.pages-lead,
+.pages-tail {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
 .filmstrip {
   position: relative; /* the chips' offsetParent: strip-local scroll math */
   display: flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 2px;
   min-width: 0;
-  padding: 4px 0;
+  padding: 4px 2px;
   overflow-x: auto;
   overflow-y: hidden;
 }
-/* A page chip: its number, then its name. */
+/* A page chip: a button with its number and name, then its delete button. */
 .frame {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   height: 28px;
-  padding: 0 8px 0 5px;
+  padding: 0 8px 0 0;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg-weak);
   font: 400 12px/1 var(--font-ui);
   white-space: nowrap;
-  cursor: pointer;
 }
 .frame:hover {
   background: var(--surface-hover);
@@ -507,6 +524,23 @@
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--fg-strong);
+}
+.frame-sel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 0 0 5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.frame[draggable='true'] .frame-sel {
+  cursor: grab;
 }
 .frame-n {
   display: inline-flex;
@@ -525,16 +559,6 @@
 .frame.on .frame-n {
   background: var(--accent);
   color: var(--on-accent);
-}
-.frame[draggable='true'] {
-  cursor: grab;
-}
-/* The strip's own buttons: play, duplicate, add, undo delete. */
-.frame.add {
-  padding: 0 8px;
-}
-.frame.add > .icon {
-  margin: 0;
 }
 .frame-x {
   display: inline-flex;
@@ -579,6 +603,65 @@
   color: var(--accent-fg);
 }
 
+/* In a narrow canvas column the bar's buttons keep their icons and names
+   and give up their words, then the toggle its word. */
+@container canvas-col (max-width: 820px) {
+  .pages-lead .pages-label,
+  .pages-tail .pages-label {
+    display: none;
+  }
+}
+/* Too narrow for the pages and the canvas options side by side (a narrow
+   window with both panels docked, or a phone): the bar takes two rows, the
+   pages over the options, so that nothing is clipped or drawn over. */
+@container canvas-col (max-width: 420px) {
+  .pages-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    height: auto;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .frames-dock {
+    flex: 1 1 100%;
+  }
+  .view-opts {
+    margin-left: auto;
+  }
+}
+@container canvas-col (max-width: 360px) {
+  .frames-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+/* Narrower still (a window zoomed to 200%): the toggle is its count, and
+   Duplicate page leaves the chips their room (it stays in the command
+   palette). */
+@container canvas-col (max-width: 300px) {
+  .frames-chev,
+  .pages-tail #dupPage {
+    display: none;
+  }
+}
+/* A canvas column narrower than the five options themselves: they wrap
+   too, rather than be cut off at the edge. */
+@container canvas-col (max-width: 200px) {
+  .view-opts {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 4px;
+    min-width: 0;
+  }
+  .view-opts .vr {
+    display: none;
+  }
+}
 /* ── Status bar ───────────────────────────────────────────────────────
    Live tool, cursor, counts and zoom. 24px, one line, never scrolls. The
    values are data; the keys are labels. */
@@ -602,6 +685,8 @@
   font-family: var(--font-ui);
 }
 .statusbar .sb-hint {
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
   overflow: hidden;
   color: var(--fg-weak);
@@ -611,6 +696,7 @@
 /* Always-visible problems indicator; a click opens the Problems section. */
 .statusbar .sb-problems {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 4px;
   height: 18px;
@@ -655,11 +741,26 @@
   .topbar .btn-label {
     display: none;
   }
-  .topbar .btn {
-    padding: 0 8px;
-  }
   .menubar-more-label {
     display: none;
+  }
+}
+/* Room for the document's own controls: the chips' words and the layout
+   menu (it is also Arrange ▸ in the menu) give way. An anonymous visitor's
+   chip keeps its words: they are the offer to sign in. */
+@media (max-width: 760px) {
+  #tTidyMenu,
+  #workspaceLabel,
+  .uc-name {
+    display: none;
+  }
+  .workspace-chip,
+  .user-chip {
+    flex: none;
+    min-width: auto;
+  }
+  .user-chip.signed-out .uc-name {
+    display: inline;
   }
 }
 @media (max-width: 640px) {
@@ -670,18 +771,15 @@
   .topbar .vr {
     display: none;
   }
+  /* A phone's bar only fits with its icon buttons this tight. */
   .topbar .btn {
     padding: 0 6px;
   }
   .doc-title {
     min-width: 40px;
   }
-  /* Room for the document's own controls: the logo, the chips' words and
-     the layout menu (it is also Arrange ▸ in the menu) give way. */
-  .brand,
-  #tTidyMenu,
-  #workspaceLabel,
-  .uc-name {
+  /* Room for the document's own controls: the logo gives way too. */
+  .brand {
     display: none;
   }
   /* The node library opens as a drawer over the canvas instead of taking a
@@ -713,5 +811,21 @@
   }
   .view-opts .vr {
     display: none;
+  }
+}
+/* The status bar keeps what a narrow window needs: the problems first, then
+   the tool, the counts, the selection and the zoom. The cursor, the anchor,
+   zone and history counts and the hint step aside. */
+@media (max-width: 700px) {
+  .statusbar {
+    gap: 10px;
+    padding: 0 6px;
+  }
+  .statusbar .sb-minor,
+  .statusbar .sb-hint {
+    display: none;
+  }
+  .statusbar .sb-problems {
+    order: -1;
   }
 }

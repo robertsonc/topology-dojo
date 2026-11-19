@@ -252,8 +252,13 @@ html.palette-dragging * {
   position: absolute;
   z-index: var(--z-selection-ui);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  /* Never wider than the canvas: in a narrow one the buttons take a second
+     row instead of running off its edge. */
+  max-width: calc(100% - 8px);
+  box-sizing: border-box;
   padding: 3px 5px;
   background: var(--surface-float);
   border: 1px solid var(--line);

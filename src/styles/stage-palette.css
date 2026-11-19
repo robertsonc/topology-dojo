@@ -1,24 +1,7 @@
-/* The node library's contents: the search field, the list and its tiles.
+/* The node library's contents: the list and its tiles (the search field is
+   the shared .field).
    Where the library sits (docked beside the rail, a drawer on a phone) is
    in shell.css. */
-.palette-search {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--surface-field);
-  border: 1px solid transparent;
-  color: var(--fg);
-  border-radius: var(--radius-md);
-  padding: 5px 8px;
-  font-size: 12px;
-  font-family: var(--font);
-  margin-bottom: 4px;
-}
-.palette-search:focus {
-  border-color: var(--accent);
-}
-.palette-search::placeholder {
-  color: var(--fg-weak);
-}
 .palette-list {
   display: grid;
   /* minmax(0,1fr) lets tracks shrink below their content so the two
