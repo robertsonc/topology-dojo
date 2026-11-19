@@ -1,7 +1,8 @@
 /**
  * The chrome's icon set: what `icon()` and `iconSprite()` emit, that the
  * checked-in drawings are the ones the generator builds from the pinned
- * Lucide package, and that they hold shapes and nothing else.
+ * Lucide package, that they hold shapes and nothing else, and that the
+ * chrome's sources draw their icons from the set rather than from glyphs.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -221,3 +222,44 @@ function chromeUiFiles(): string[] {
     .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
     .sort();
 }
+
+describe('the chrome sources', () => {
+  /**
+   * The symbols and emoji the chrome used as icons (each drawn by whatever
+   * fallback font the OS had). Punctuation that is also ordinary text (the
+   * ellipsis, the middle dot, the arrows of key legends) is not listed.
+   */
+  const GLYPH_ICONS =
+    '↶↷⤓⤧🔗◇▦⌗◓⚠⚙☀⤢▶🗑✦⚖⛶⇤⇔⇥⤒⇕↔↕●▾◂✋▸★👁✓＋↺✕↖↗↙↘⟳↳🚫⇄╱⇢⌖⧉⤹⚓‹›✎⏸↩🌙⤴◎◌◈';
+
+  /**
+   * Glyphs that stay, by file: the save chip's text, which the e2e suite
+   * reads as its "saved" signal and which the next phase redesigns.
+   */
+  const KEPT: Readonly<Record<string, string>> = {
+    'main.ts': '👁✓', // okText: "👁 shared copy" / "✓ synced"
+    'ui/save-status.ts': '⚠✓', // "✓ saved", "⚠ not saved — download JSON", …
+    'ui/workspace-panel.ts': '✓', // "✓ synced", written to the same chip
+  };
+
+  it('draw icons from the set, not from glyphs', () => {
+    const files = [
+      'main.ts',
+      'nodes/designer.ts',
+      ...chromeUiFiles().map((file) => `ui/${file}`),
+    ];
+    const found: Record<string, string> = {};
+    for (const file of files) {
+      const text = source(`../${file}`);
+      const glyphs = [...new Set(GLYPH_ICONS)].filter((g) => text.includes(g));
+      if (glyphs.length) found[file] = glyphs.sort().join('');
+    }
+    const kept = Object.fromEntries(
+      Object.entries(KEPT).map(([file, glyphs]) => [
+        file,
+        [...glyphs].sort().join(''),
+      ]),
+    );
+    expect(found).toEqual(kept);
+  });
+});

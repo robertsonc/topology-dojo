@@ -41,6 +41,7 @@ import {
   type WorkspacePanelState,
 } from './workspace-panel.js';
 import { computeProposalPreview } from '../workspace/preview.js';
+import { icon } from './icons.js';
 import type {
   ChangesResult,
   CheckpointSummary,
@@ -696,7 +697,11 @@ describe('renderTimelineHtml', () => {
         ]),
       }),
     );
-    expect(html).toContain('✓ accepted proposal');
+    // The note is the check icon and the words, on the proposal's revision.
+    expect(html).toContain(
+      `<div class="ws-note">${icon('check')} accepted proposal</div>`,
+    );
+    expect(html.match(/accepted proposal/g)).toHaveLength(1);
     expect(html).toContain('ws-src-restore');
     expect(html).toContain('ws-src-proposal');
   });
@@ -717,7 +722,9 @@ describe('renderTimelineHtml', () => {
         timeline: timeline([change({ revision: 2 })], { historyFloor: 5 }),
       }),
     );
-    expect(html).toContain('◈ checkpoint “Baseline”');
+    expect(html).toContain(
+      `<div class="ws-note">${icon('checkpoint')} checkpoint “Baseline”</div>`,
+    );
     expect(html).toContain('Older revisions compacted (floor r5)');
   });
 

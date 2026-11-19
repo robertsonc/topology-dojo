@@ -76,7 +76,14 @@ test('the Problems dock opens when asked, and keeps hidden problems in reach', a
   await page.locator('.pitem[data-type="router"]').first().click();
   await expect(count).not.toHaveText('0');
   const total = Number(await count.innerText());
-  await expect(page.locator('#sb-problems')).toHaveText(`⚠ ${total}`);
+  // The status bar: the warning icon and the count, named in words.
+  const indicator = page.locator('#sb-problems');
+  await expect(indicator).toHaveText(String(total));
+  await expect(indicator.locator('.icon use')).toHaveAttribute(
+    'href',
+    '#i-warning',
+  );
+  await expect(indicator).toHaveAttribute('aria-label', / — open Problems$/);
   expect(await collapsed()).toBe(true);
   await expect(page.locator('#problems .prob').first()).toBeHidden();
 
@@ -96,7 +103,15 @@ test('the Problems dock opens when asked, and keeps hidden problems in reach', a
   await expect(page.locator('#problems-toggle')).toContainText(
     `${total} hidden`,
   );
-  await expect(page.locator('#sb-problems')).toHaveText(`✓ ${total} hidden`);
+  await expect(indicator).toHaveText(`${total} hidden`);
+  await expect(indicator.locator('.icon use')).toHaveAttribute(
+    'href',
+    '#i-check',
+  );
+  await expect(indicator).toHaveAttribute(
+    'aria-label',
+    `No problems shown, ${total} hidden — open Problems to show or restore them`,
+  );
   await expect(page.locator('.prob-foot')).toBeVisible();
 
   // "show" lists the hidden problems instead of closing the dock.

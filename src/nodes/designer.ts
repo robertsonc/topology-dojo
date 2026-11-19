@@ -22,6 +22,7 @@ import { renderCustomNode } from './render.js';
 import { nodeSpecToCode } from './codegen.js';
 import { engineDefs } from '../vendor/topology-ds.js';
 import { registerOverlay } from '../ui/overlay.js';
+import { icon } from '../ui/icons.js';
 import {
   DEFAULT_TYPE_NAME,
   replaceTypeQuestion,
@@ -306,7 +307,8 @@ export function openNodeDesigner(
     };
     const code = nodeSpecToCode(named);
     const done = (ok: boolean): void => {
-      btn.textContent = ok ? '✓ Copied' : 'Copy failed';
+      if (ok) btn.innerHTML = `${icon('check')} Copied`;
+      else btn.textContent = 'Copy failed';
       setTimeout(() => (btn.textContent = 'Copy as code'), 1400);
     };
     const clip = navigator.clipboard;

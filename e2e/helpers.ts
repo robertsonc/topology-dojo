@@ -125,6 +125,17 @@ export async function savedDocument(
   };
 }
 
+/**
+ * The toolbar's export chip says that export `name` finished: in words, with
+ * the check icon before them, and in the state it is styled by.
+ */
+export async function expectExported(page: Page, name: string): Promise<void> {
+  const status = page.locator('#exportStatus');
+  await expect(status).toHaveText(`exported ${name}`);
+  await expect(status.locator('.icon use')).toHaveAttribute('href', '#i-check');
+  await expect(status).toHaveClass(/export-ok/);
+}
+
 /** One element of the first saved page, by collection and id. */
 export async function savedElement(
   page: Page,

@@ -28,6 +28,7 @@ import {
 import { documentRefOf } from '../profile/learner.js';
 import { staleForReview } from '../profile/refinement.js';
 import { registerOverlay } from './overlay.js';
+import { icon } from './icons.js';
 import type { AuthoringPreference, PreferenceScope } from '../profile/model.js';
 
 // Local copy of main.ts's `esc()` — the codebase's established pattern for
@@ -126,20 +127,20 @@ function renderPreferenceCardHtml(
   let callout = '';
   if (pref.needsReview) {
     callout = confirmed
-      ? `<div class="ws-note pref-review">⚠ Overridden ${pref.contradictingOutcomes}× by your corrections — review it: re-confirm, rescope, or reject.</div>`
-      : `<div class="ws-note pref-review">⚠ Conflicting evidence (${pref.contradictingOutcomes} contradiction${pref.contradictingOutcomes === 1 ? '' : 's'}) — confirm the direction you want, or forget it.</div>`;
+      ? `<div class="ws-note pref-review">${icon('warning')} Overridden ${pref.contradictingOutcomes}× by your corrections — review it: re-confirm, rescope, or reject.</div>`
+      : `<div class="ws-note pref-review">${icon('warning')} Conflicting evidence (${pref.contradictingOutcomes} contradiction${pref.contradictingOutcomes === 1 ? '' : 's'}) — confirm the direction you want, or forget it.</div>`;
   } else if (shouldAskToConfirm(pref)) {
-    callout = `<div class="ws-note pref-ask">◎ You have made this correction ${pref.supportingOutcomes} times across ${pref.evidenceDocuments} documents. Should Topology Dojo prefer it in future agent-authored diagrams?</div>`;
+    callout = `<div class="ws-note pref-ask">${icon('question')} You have made this correction ${pref.supportingOutcomes} times across ${pref.evidenceDocuments} documents. Should Topology Dojo prefer it in future agent-authored diagrams?</div>`;
   } else if (pref.status === 'candidate' && pref.supportingOutcomes >= 2) {
-    callout = `<div class="ws-note pref-observed">◎ Observed ${pref.supportingOutcomes}× — a repeated pattern. It changes nothing until you confirm it.</div>`;
+    callout = `<div class="ws-note pref-observed">${icon('observed')} Observed ${pref.supportingOutcomes}× — a repeated pattern. It changes nothing until you confirm it.</div>`;
   } else if (confirmed) {
-    callout = `<div class="ws-note pref-confirmed-note">✓ Confirmed${pref.confirmedAt ? ` ${pref.confirmedAt.slice(0, 10)}` : ''} — supplied to agents when it applies.</div>`;
+    callout = `<div class="ws-note pref-confirmed-note">${icon('confirmed')} Confirmed${pref.confirmedAt ? ` ${pref.confirmedAt.slice(0, 10)}` : ''} — supplied to agents when it applies.</div>`;
   } else if (rejected) {
-    callout = `<div class="ws-note pref-rejected-note">✕ Rejected — this pattern will not be learned again. Forget it to clear the record.</div>`;
+    callout = `<div class="ws-note pref-rejected-note">${icon('rejected')} Rejected — this pattern will not be learned again. Forget it to clear the record.</div>`;
   }
   const stale =
     now && staleForReview(pref, now)
-      ? `<div class="ws-note pref-stale">◌ Not observed since ${pref.lastObservedAt.slice(0, 10)} — stale. Keep, pause, or forget it.</div>`
+      ? `<div class="ws-note pref-stale">${icon('stale')} Not observed since ${pref.lastObservedAt.slice(0, 10)} — stale. Keep, pause, or forget it.</div>`
       : '';
   const exceptions = pref.exceptionWorkspaceIds?.length
     ? `<div class="ws-note pref-exceptions">Except in: ${pref.exceptionWorkspaceIds.map((id) => esc(id)).join(', ')}</div>`
@@ -373,7 +374,7 @@ export function mountProfilePanel(host: ProfilePanelHost): ProfilePanelHandle {
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Authoring Preferences');
     panel.innerHTML =
-      `<div class="ws-head"><h3>Authoring Preferences</h3><button class="tbtn ticon" id="prefClose" title="Close" aria-label="Close">✕</button></div>` +
+      `<div class="ws-head"><h3>Authoring Preferences</h3><button class="tbtn ticon" id="prefClose" title="Close" aria-label="Close">${icon('x')}</button></div>` +
       `<div id="prefBody"></div>`;
     document.body.appendChild(panel);
     panel

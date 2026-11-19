@@ -9,6 +9,7 @@
  * accounted for: the header and the indicator say how many, so the way to
  * bring them back is never out of sight.
  */
+import type { IconName } from './icons.js';
 
 export interface ProblemsSummary {
   /** Problems that are shown (not hidden). */
@@ -33,7 +34,9 @@ export interface ProblemsDockView {
   hiddenNote: string;
   /** The worst level among the shown problems. */
   severity: 'error' | 'warn' | 'none';
-  /** The status-bar indicator's text. */
+  /** The status-bar indicator's mark: problems are shown, or none are. */
+  statusIcon: Extract<IconName, 'warning' | 'check'>;
+  /** The status-bar indicator's text after the mark; empty when clean. */
   statusLabel: string;
   /** The status-bar indicator's tooltip and accessible name. */
   statusTitle: string;
@@ -53,19 +56,23 @@ export function problemsDockView(p: ProblemsSummary): ProblemsDockView {
   const collapsed =
     p.visible === 0 && p.hidden === 0 ? true : (p.collapsedPref ?? true);
 
+  let statusIcon: ProblemsDockView['statusIcon'];
   let statusLabel: string;
   let statusTitle: string;
   if (p.visible > 0) {
-    statusLabel = `⚠ ${p.visible}`;
+    statusIcon = 'warning';
+    statusLabel = String(p.visible);
     statusTitle =
       `${counted(p.errors, 'error')}, ${counted(warnings, 'warning')}` +
       (hiddenNote ? `, ${hiddenNote}` : '') +
       ' — open Problems';
   } else if (p.hidden > 0) {
-    statusLabel = `✓ ${hiddenNote}`;
+    statusIcon = 'check';
+    statusLabel = hiddenNote;
     statusTitle = `No problems shown, ${hiddenNote} — open Problems to show or restore them`;
   } else {
-    statusLabel = '✓';
+    statusIcon = 'check';
+    statusLabel = '';
     statusTitle = 'No problems';
   }
   return {
@@ -73,6 +80,7 @@ export function problemsDockView(p: ProblemsSummary): ProblemsDockView {
     count: String(p.visible),
     hiddenNote,
     severity: p.errors > 0 ? 'error' : warnings > 0 ? 'warn' : 'none',
+    statusIcon,
     statusLabel,
     statusTitle,
   };

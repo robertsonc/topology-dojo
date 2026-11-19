@@ -21,6 +21,7 @@ import {
 } from '../connect/generate.js';
 import type { TopologyDocument } from '../pages/model.js';
 import { registerOverlay } from './overlay.js';
+import { icon } from './icons.js';
 
 export interface SdwanWizardHost {
   /** Element the backdrop is appended to (the app root). */
@@ -115,7 +116,7 @@ export function openSdwanWizard(host: SdwanWizardHost): void {
   root.innerHTML =
     `<div class="help-card sdw-card scroll-slim" role="dialog" aria-modal="true" aria-labelledby="sdwTitle">` +
     `<div class="help-head"><h3 id="sdwTitle">Generate SD-WAN topology</h3>` +
-    `<button class="tbtn ticon" data-act="close" title="Close (Esc)" aria-label="Close">✕</button></div>` +
+    `<button class="tbtn ticon" data-act="close" title="Close (Esc)" aria-label="Close">${icon('x')}</button></div>` +
     `<div class="sdw-body"><div class="sdw-form"></div>` +
     `<div class="sdw-side"><div class="sdw-preview" aria-hidden="true"></div>` +
     `<div class="sdw-stats" role="status" aria-live="polite"></div>` +

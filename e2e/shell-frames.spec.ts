@@ -37,6 +37,19 @@ test('Escape cancels a frame rename; Enter and clicking away keep it', async ({
   await expect(frameName(page, 1)).toHaveText('Edge');
 });
 
+/** The strip's play button offers `action`: its icon, then the word. */
+async function expectPlayButton(
+  page: Page,
+  action: 'play' | 'pause',
+): Promise<void> {
+  const button = page.locator('#playFlip');
+  await expect(button).toHaveText(action);
+  await expect(button.locator('.icon use')).toHaveAttribute(
+    'href',
+    `#i-${action}`,
+  );
+}
+
 /** Two frames that each hold for 150ms, with the player running. */
 async function startFastPlayback(page: Page): Promise<void> {
   await page.locator('#addPage').click();
@@ -47,7 +60,7 @@ async function startFastPlayback(page: Page): Promise<void> {
     await page.locator('#p-dur').press('Tab');
   }
   await page.locator('#playFlip').click();
-  await expect(page.locator('#playFlip')).toHaveText('⏸ pause');
+  await expectPlayButton(page, 'pause');
   // It really is flipping: both frames come up.
   await expect(page.locator('#frames-ind')).toHaveText('2/2');
   await expect(page.locator('#frames-ind')).toHaveText('1/2');
@@ -55,7 +68,7 @@ async function startFastPlayback(page: Page): Promise<void> {
 
 /** The player has stopped: the button offers play, and the frame stays put. */
 async function expectStopped(page: Page): Promise<void> {
-  await expect(page.locator('#playFlip')).toHaveText('▶ play');
+  await expectPlayButton(page, 'play');
   const frame = await page.locator('#frames-ind').innerText();
   await page.waitForTimeout(600); // four hold times
   expect(await page.locator('#frames-ind').innerText()).toBe(frame);
