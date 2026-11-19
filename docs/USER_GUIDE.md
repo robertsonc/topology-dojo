@@ -561,7 +561,10 @@ editing does not leave avoidable dangling references.
 Undo and redo are available from the top bar, **Edit**, or with **Ctrl/Cmd+Z**
 and **Ctrl/Cmd+Shift+Z**. Each page keeps its own edit history when switching
 between pages. Page deletion has its own short-lived **Undo delete** action in
-the pages bar.
+the pages bar. While a menu, the context menu, a popover such as **Display
+settings**, or a dialog such as the shortcut sheet is open, the undo and redo
+keys do nothing outside a text field: close it first. (In a text field of a
+dialog they undo and redo the typing in that field.)
 
 ### Context menus
 

@@ -14,6 +14,7 @@ import {
   CONTEXT_MENU,
   contextItem,
   nodeBox,
+  readAutosave,
   savedDocument,
   savedElement,
   statusCount,
@@ -472,4 +473,53 @@ test('the context menus list the same commands in the same order', async ({
   ]);
   await contextItem(page, 'Select all').click();
   expect(await statusCount(page, 'selected')).toBeGreaterThan(1);
+});
+
+test('with a menu, a popover or a dialog open, the undo and redo keys leave the title alone', async ({
+  page,
+}) => {
+  const title = page.locator('#docTitle');
+  await title.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('XY');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await readAutosave(page))?.title)
+    .toBe('UntitledXY');
+  const canvas = (await page.locator('#page-canvas').boundingBox())!;
+  const empty = { x: canvas.x + canvas.width - 260, y: canvas.y + 120 };
+
+  const overlays: [string, () => Promise<void>, string][] = [
+    ['the shortcut sheet', () => page.keyboard.press('Shift+?'), '.help-card'],
+    [
+      'Display settings',
+      () => page.locator('#tDisplay').click(),
+      '.display-pop',
+    ],
+    [
+      'the Edit menu',
+      () => page.locator('#menubar [data-menu="edit"]').click(),
+      '.menu-layer .menu',
+    ],
+    [
+      'the context menu',
+      () => page.mouse.click(empty.x, empty.y, { button: 'right' }),
+      CONTEXT_MENU,
+    ],
+  ];
+  for (const [name, open, root] of overlays) {
+    await page.mouse.click(empty.x, empty.y);
+    await open();
+    await expect(page.locator(root).first(), name).toBeVisible();
+    for (const key of ['Control+z', 'Control+Shift+z', 'Control+y'])
+      await page.keyboard.press(key);
+    await expect(title, name).toHaveValue('UntitledXY');
+    expect(
+      await page.evaluate(() => document.activeElement?.id),
+      `${name}: the focus stays in the overlay`,
+    ).not.toBe('docTitle');
+    expect((await readAutosave(page))?.title, name).toBe('UntitledXY');
+    await page.keyboard.press('Escape');
+    await expect(page.locator(root).first(), name).toBeHidden();
+  }
 });
