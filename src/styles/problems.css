@@ -66,7 +66,9 @@
   display: none;
 }
 .problems-dock.has-warn .problems-toggle {
-  color: var(--status-warn);
+  /* The text in the warning colour for text; the fill colour stays the
+     border's and the badge's. */
+  color: var(--status-warn-fg);
   border-color: var(--status-warn);
 }
 .problems-dock.has-warn .prob-count {

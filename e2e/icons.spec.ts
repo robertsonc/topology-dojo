@@ -176,9 +176,17 @@ test('every chrome icon is a symbol of the one sprite', async ({ page }) => {
   ).toBeGreaterThan(50);
 
   // The shell as it boots: toolbar, canvas controls, panel toggles, frames,
-  // the page inspector (its annotations list opened) and the status bar.
+  // the page inspector and the status bar. The Page tab starts with its
+  // annotations list closed (the list's eight icons drew at boot before the
+  // panel had tabs), so the boot count is the shell's icons without them.
+  expect(await shownIcons(page), 'icons on screen at boot').toBeGreaterThan(32);
+  expect(await iconProblems(page)).toEqual([]);
+  // With the annotations list opened, the screen holds as many as it did.
   await inspectorSection(page, 'Annotations');
-  expect(await shownIcons(page), 'icons on screen at boot').toBeGreaterThan(40);
+  expect(
+    await shownIcons(page),
+    'icons on screen with the annotations list open',
+  ).toBeGreaterThan(40);
   expect(await iconProblems(page)).toEqual([]);
 
   // A selected node: the mini style bar, arrange and format rows, metadata.

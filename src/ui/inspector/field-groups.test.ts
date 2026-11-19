@@ -153,6 +153,21 @@ describe('the sections of a link', () => {
     ]);
   });
 
+  it('stack the two sides under their label, at the row’s full width', () => {
+    const info = getLinkType('line')!;
+    const plan = planSections(info.fields, LINK_GROUPS, info.label);
+    const sides = plan
+      .flatMap((s) => s.items)
+      .find((it) => it.kind === 'pair' && it.fields[0].key === 'fromPort');
+    expect(sides).toEqual(
+      expect.objectContaining({
+        label: 'Sides',
+        stack: true,
+        shortOptions: { '': 'Auto (facing)' },
+      }),
+    );
+  });
+
   it('show every field of every type exactly once', () => {
     for (const { type } of linkCatalog()) {
       const info = getLinkType(type)!;

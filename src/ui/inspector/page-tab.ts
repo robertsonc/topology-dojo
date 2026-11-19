@@ -122,11 +122,15 @@ function storyRows(ctx: InspectorContext): string {
   return (
     `<label class="insp-row"><span>Caption</span>` +
     `<input id="p-caption" value="${esc(page.caption ?? '')}" placeholder="what this frame shows"/></label>` +
-    `<div class="insp-row"><span>Emphasis</span><span class="insp-btns">` +
+    `<div class="insp-row emph-ctl"><span>Emphasis</span><span class="insp-btns">` +
     `<span class="insp-val data" id="p-emph-count">${emph.size} of ${total}</span>` +
-    `<button type="button" class="btn btn-sm" id="p-emph-choose" aria-expanded="${picker.open}" aria-controls="p-emph-picker">Choose…</button>` +
-    `<button type="button" class="btn btn-sm btn-ghost" id="p-emph-clear"${emph.size ? '' : ' disabled'}>Clear</button>` +
-    `</span></div>` +
+    // The two buttons are one item of the row: they wrap under the count
+    // together, not one by one.
+    `<span class="insp-btns">` +
+    // The short words are what shows; the names say what they act on.
+    `<button type="button" class="btn btn-sm" id="p-emph-choose" aria-label="Choose emphasized elements" aria-describedby="p-emph-count" aria-expanded="${picker.open}" aria-controls="p-emph-picker">Choose…</button>` +
+    `<button type="button" class="btn btn-sm btn-ghost" id="p-emph-clear" aria-label="Clear emphasis"${emph.size ? '' : ' disabled'}>Clear</button>` +
+    `</span></span></div>` +
     `<div class="emph-picker" id="p-emph-picker"${picker.open ? '' : ' hidden'}>` +
     `<div class="insp-hint">Tick elements to spotlight; the rest dim. Or right-click a selection → “Emphasize on this frame”.</div>` +
     list +

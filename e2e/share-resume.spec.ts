@@ -54,7 +54,15 @@ test('the editor starts up on / after a share link was opened', async ({
   await expect(
     page.locator('.pitem[data-type="router"]').first(),
   ).toBeAttached();
-  await expect(page.locator('#inspector .insp-h').first()).toBeAttached();
+  // The panel draws its tab: a section heading at the top level of the tab
+  // panel, not one nested anywhere inside it.
+  await expect(
+    page
+      .locator(
+        '#inspector[role="tabpanel"] > details.insp-group > summary.insp-h',
+      )
+      .first(),
+  ).toBeAttached();
   await expect(page.locator('#filmstrip [data-page]')).toHaveCount(1);
   await expect(page.locator('#filmstrip')).toContainText('Shared frame');
   expect(errors).toEqual([]);

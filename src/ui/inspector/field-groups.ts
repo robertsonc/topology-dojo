@@ -23,6 +23,11 @@ export interface FieldPair {
   keys: readonly [string, string];
   /** What an empty text or number field of the pair shows. */
   placeholders?: readonly [string, string];
+  /** The label above the two fields, which then take the row's width. */
+  stack?: true;
+  /** Shorter words for some of a choice's options, by value (the catalog's
+   * wording stays as the option's tooltip; the value is the same). */
+  shortOptions?: Readonly<Record<string, string>>;
 }
 
 export interface FieldGroup {
@@ -121,7 +126,14 @@ export const LINK_GROUPS: readonly FieldGroup[] = [
         keys: ['lineStyle', 'cornerRadius'],
         placeholders: ['', 'radius'],
       },
-      { label: 'Sides', keys: ['fromPort', 'toPort'] },
+      // Under its label, so each side has half the panel's width: in half
+      // the control column "Auto (facing other end)" was cut short.
+      {
+        label: 'Sides',
+        keys: ['fromPort', 'toPort'],
+        stack: true,
+        shortOptions: { '': 'Auto (facing)' },
+      },
       { label: 'Side offsets', keys: ['fromPortOffset', 'toPortOffset'] },
     ],
     open: true,
@@ -159,6 +171,8 @@ export type PlannedItem =
       label: string;
       fields: readonly [FieldSpec, FieldSpec];
       placeholders?: readonly [string, string];
+      stack?: true;
+      shortOptions?: Readonly<Record<string, string>>;
     }
   | { kind: 'nested'; title: string; items: PlannedItem[] };
 
@@ -258,6 +272,8 @@ function itemsOf(
         label: pair.label,
         fields: [field(pair.keys[0])!, field(pair.keys[1])!],
         ...(pair.placeholders ? { placeholders: pair.placeholders } : {}),
+        ...(pair.stack ? { stack: true as const } : {}),
+        ...(pair.shortOptions ? { shortOptions: pair.shortOptions } : {}),
       });
       pair.keys.forEach((k) => done.add(k));
     } else {

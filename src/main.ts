@@ -2667,7 +2667,7 @@ function compassControl(
   return (
     `<div class="insp-row"><span>${f.label}</span><span class="compass-ctl">` +
     `<div class="compass" ${attr}="${f.key}" data-ckind="${f.kind}" role="group" aria-label="${f.label}" aria-describedby="label-placement-hint">${cells}</div>` +
-    `<span class="insp-hint" id="label-placement-hint">Click to place · double-click to nudge 1 unit.</span></span></div>`
+    `<span class="insp-hint compass-hint" id="label-placement-hint">Click to place · double-click to nudge 1 unit.</span></span></div>`
   );
 }
 
@@ -2801,8 +2801,8 @@ function metaHtml(meta?: Record<string, string | number | boolean>): string {
     .map(
       ([k, v]) =>
         `<div class="meta-row" data-mk="${esc(k)}">` +
-        `<input class="meta-k" value="${esc(k)}" readonly />` +
-        `<input class="meta-v" value="${esc(String(v))}" />` +
+        `<input class="meta-k" value="${esc(k)}" readonly aria-label="Metadata key ${esc(k)}" />` +
+        `<input class="meta-v" value="${esc(String(v))}" aria-label="Metadata value of ${esc(k)}" />` +
         `<button type="button" class="icon-btn meta-x" title="Remove" aria-label="Remove metadata ${esc(k)}">${icon('x')}</button></div>`,
     )
     .join('');
@@ -2810,8 +2810,8 @@ function metaHtml(meta?: Record<string, string | number | boolean>): string {
     `<div class="insp-sublabel">Metadata</div>` +
     rows +
     `<div class="meta-row meta-add">` +
-    `<input class="meta-nk" placeholder="key" />` +
-    `<input class="meta-nv" placeholder="value" />` +
+    `<input class="meta-nk" placeholder="key" aria-label="New metadata key" />` +
+    `<input class="meta-nv" placeholder="value" aria-label="New metadata value" />` +
     `<button type="button" class="icon-btn meta-addbtn" title="Add" aria-label="Add metadata entry">${icon('plus')}</button></div>`
   );
 }
@@ -2894,7 +2894,7 @@ function groupedFieldsHtml(
   const item = (it: PlannedItem): string => {
     if (it.kind === 'field') return control(it.field);
     if (it.kind === 'pair')
-      return pairControl(it.label, it.fields, cfg, it.placeholders);
+      return pairControl(it.label, it.fields, cfg, it.placeholders, it);
     return sectionHtml(
       inspectorSections,
       it.title,
@@ -2912,7 +2912,11 @@ function groupedFieldsHtml(
         s.items.map(item).join('') + (extras[s.title] ?? ''),
         {
           open: s.open,
-          count: s.title === 'Data' ? setValueCount(s.fields, cfg) : undefined,
+          // How many values are set; no count while none is.
+          count:
+            s.title === 'Data'
+              ? setValueCount(s.fields, cfg) || undefined
+              : undefined,
         },
       ),
     )
@@ -2928,6 +2932,10 @@ function pairControl(
   fields: readonly [FieldSpec, FieldSpec],
   cfg: Record<string, unknown>,
   placeholders?: readonly [string, string],
+  look: {
+    stack?: boolean;
+    shortOptions?: Readonly<Record<string, string>>;
+  } = {},
 ): string {
   const input = (f: FieldSpec, i: number): string => {
     const v = cfg[f.key];
@@ -2937,9 +2945,10 @@ function pairControl(
     const name = `aria-label="${esc(f.label)}" title="${esc(f.label)}"`;
     if (f.kind === 'enum')
       return `<select data-key="${f.key}" ${name}>${(f.options ?? [])
-        .map(
-          (o) =>
-            `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${esc(f.optionLabels?.[o] ?? o)}</option>`,
+        .map((o) =>
+          look.shortOptions?.[o] !== undefined
+            ? `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''} title="${esc(f.optionLabels?.[o] ?? o)}">${esc(look.shortOptions[o])}</option>`
+            : `<option value="${o}" ${String(v ?? '') === o ? 'selected' : ''}>${esc(f.optionLabels?.[o] ?? o)}</option>`,
         )
         .join('')}</select>`;
     if (f.kind === 'number')
@@ -2947,7 +2956,7 @@ function pairControl(
     return `<input data-key="${f.key}" value="${esc(String(v ?? ''))}" placeholder="${hint}" ${name}/>`;
   };
   return (
-    `<div class="insp-row"><span>${esc(label)}</span>` +
+    `<div class="insp-row${look.stack ? ' col' : ''}"><span>${esc(label)}</span>` +
     `<span class="insp-pair">${input(fields[0], 0)}${input(fields[1], 1)}</span></div>`
   );
 }
@@ -3075,7 +3084,10 @@ function alignRows(count: number): string {
     `</span></div>`;
   return (
     row('Align', 'arrange.align', 'align') +
-    row('Distribute', 'arrange.distribute', 'dist')
+    row('Distribute', 'arrange.distribute', 'dist') +
+    (count < 3
+      ? `<div class="insp-hint">Select three or more nodes to distribute.</div>`
+      : '')
   );
 }
 
@@ -3210,7 +3222,7 @@ function renderInspector(): void {
       `<input type="number" id="a-x" value="${anchor.x}" aria-label="Anchor x" title="X"/>` +
       `<input type="number" id="a-y" value="${anchor.y}" aria-label="Anchor y" title="Y"/></span></div>` +
       `<div class="insp-row"><span>Links</span><span class="insp-val data">${editor.anchorLinkCount(anchor.id)}</span></div>` +
-      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button type="button" class="btn btn-sm btn-danger" id="a-del" title="Delete anchor">${icon('delete')} Delete</button></span></div></div>`;
+      `<div class="insp-row"><span>Anchor</span><span class="insp-btns"><button type="button" class="btn btn-sm btn-danger" id="a-del" title="Delete anchor" aria-label="Delete anchor">${icon('delete')} Delete</button></span></div></div>`;
   } else if (zone) {
     // A zone region was clicked on canvas — edit it directly (the same control
     // surface as the annotations list, wired by wireAnnotations()).
@@ -3439,9 +3451,10 @@ function arrangeRow(): string {
  * `copyFormat`/`pasteFormat` commands as the context menu + shortcuts. */
 function formatRow(): string {
   const buttons =
-    `<button type="button" class="btn btn-sm" id="i-copyfmt" title="${tip('edit.copyFormat')}"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} Copy</button>` +
-    `<button type="button" class="btn btn-sm" id="i-pastefmt" title="${tip('edit.pasteFormat')}"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} Paste</button>`;
-  return `<div class="insp-row"><span>Format</span><span class="insp-btns">${buttons}</span></div>`;
+    `<button type="button" class="btn btn-sm" id="i-copyfmt" title="${tip('edit.copyFormat')}" aria-label="Copy format"${editor.canCopyFormat() ? '' : ' disabled'}>${icon('copy-format')} Copy</button>` +
+    `<button type="button" class="btn btn-sm" id="i-pastefmt" title="${tip('edit.pasteFormat')}" aria-label="Paste format"${editor.canPasteFormat() ? '' : ' disabled'}>${icon('paste-format')} Paste</button>`;
+  // Across the panel: the Format section's title is the row's label.
+  return `<div class="insp-btns" role="group" aria-label="Format">${buttons}</div>`;
 }
 
 function wireFormatRow(): void {
@@ -3802,7 +3815,9 @@ function annotationsHtml(): string {
             `<button type="button" class="icon-btn anno-x" data-azdup title="Duplicate zone with its contents" aria-label="Duplicate zone with its contents">${icon('duplicate')}</button>`
           : '';
       html +=
-        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
+        // Named for its annotation, so its controls (several "Label" fields
+        // on one tab) are told apart by the group they are in.
+        `<details class="anno" data-acol="${g.col}" data-aid="${esc(item.id)}" aria-label="${esc(info.label)} ${esc(title)}"${annoOpen.has(annoKey(g.col, item.id)) ? ' open' : ''}>` +
         `<summary><span class="anno-k">${info.label}</span><span class="anno-t">${esc(title)}</span>${zoneBtns}<button type="button" class="icon-btn anno-x" data-adel title="Delete" aria-label="Delete ${esc(info.label)} ${esc(title)}">${icon('delete')}</button></summary>` +
         // The rows in their own column, so they keep the panel's row gap
         // (a gap set on a <details> does not reach its content).

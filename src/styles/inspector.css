@@ -236,12 +236,10 @@
   display: flex;
   gap: 2px;
 }
-/* The type picker under the title: the shared field, a size down. */
+/* The type picker under the title: the shared field, at its full height. */
 .insp-sub > select {
   flex: 1;
   width: auto;
-  height: 24px;
-  padding: 0 4px;
 }
 /* Rows under the header that belong to no section (a link's ends). */
 .insp-top {
@@ -282,6 +280,11 @@
 }
 .insp-group[open] > summary > .insp-caret {
   transform: rotate(90deg);
+}
+/* A section's title is flush with the panel's scroll box, which would cut
+   off the left of a ring drawn outside it: the ring is drawn inside. */
+.insp-group > summary:focus-visible {
+  outline-offset: -2px;
 }
 /* How many things a section holds (annotations, layers, set values). */
 .insp-count {
@@ -510,6 +513,18 @@
   color: var(--accent-fg);
 }
 
+/* Under the default width the hint beside the picker would run to five
+   lines: it is kept for screen readers (the picker names it) and each
+   cell's tooltip says the same. */
+.inspector-wrap.narrow .compass-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ── Layers ────────────────────────────────────────────────────────────── */
 .layer-row {
   display: flex;
@@ -541,6 +556,13 @@
 .layer-op {
   flex: 0 0 84px;
   accent-color: var(--accent);
+}
+
+/* Under the default width the count and its two buttons do not fit beside
+   the label column: the label goes above them, so they stay on one line. */
+.inspector-wrap.narrow .emph-ctl {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 4px;
 }
 
 /* ── Emphasis picker ──────────────────────────────────────────────────── */

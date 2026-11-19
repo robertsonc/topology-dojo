@@ -15,7 +15,10 @@
  * goes away with it when the panel redraws. While open it is placed beside
  * its button with the menu component's placement helper and registered with
  * the overlay primitive (Escape closes it, Tab stays inside it, the shell's
- * shortcuts stand down, focus goes back to the button).
+ * shortcuts stand down, focus goes back to the button). A swatch redraws
+ * the panel: while the keyboard drives, the panel then focuses the new
+ * drawing's button (`focus-keep.ts`); after a pointer pick focus is let go,
+ * as after any other control the pointer used.
  */
 import { placeMenu } from '../menu.js';
 import { icon } from '../icons.js';

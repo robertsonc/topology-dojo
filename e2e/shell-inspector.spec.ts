@@ -732,3 +732,167 @@ test('a zone picked on the canvas is edited on the panel grid, without a card', 
     );
   expect(Math.round(offset)).toBe(104);
 });
+
+test('a link’s “more” menu steps it backward and forward', async ({ page }) => {
+  await bootEditor(page);
+  await clickLink(page, 'ec-fw');
+  await page.locator('#inspector [data-head="more"]').click();
+  await expect(page.locator('.menu-item')).toContainText([
+    'Bring to front',
+    'Bring forward',
+    'Send backward',
+    'Send to back',
+  ]);
+  // The canvas draws links in the document's order.
+  const order = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('#page-canvas g[data-tds-link]')].map(
+        (g) => (g as SVGGElement).dataset.tdsLink,
+      ),
+    );
+  const before = await order();
+  expect(before.indexOf('ec-fw')).toBeGreaterThan(0);
+  await page.locator('.menu-item', { hasText: 'Send backward' }).click();
+  await expect
+    .poll(async () => (await order()).indexOf('ec-fw'))
+    .toBe(before.indexOf('ec-fw') - 1);
+  await expect
+    .poll(async () =>
+      (await savedDocument(page)).pages[0]!.links.map((l) => l.id),
+    )
+    .toEqual(await order());
+});
+
+test('controls the panel shows more than once have names of their own', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // The Story buttons say what they act on; the count describes Choose….
+  const choose = page.locator('#p-emph-choose');
+  await expect(choose).toHaveAccessibleName('Choose emphasized elements');
+  await expect(choose).toHaveText('Choose…');
+  await expect(choose).toHaveAccessibleDescription(/^\d+ of \d+$/);
+  await expect(page.locator('#p-emph-clear')).toHaveAccessibleName(
+    'Clear emphasis',
+  );
+  // Each annotation editor is a group named for its annotation.
+  await inspectorSection(page, 'Annotations');
+  for (const editor of await page.locator('#inspector details.anno').all())
+    await expect(editor).toHaveAccessibleName(
+      /^(Zone|Flow path|Policy marker) /,
+    );
+
+  // Two nodes: the format buttons, across their section with no row label.
+  await clickNode(page, 'fw');
+  await page.keyboard.down('Shift');
+  await clickNode(page, 'ec');
+  await page.keyboard.up('Shift');
+  await expect(page.locator('#i-copyfmt')).toHaveAccessibleName('Copy format');
+  await expect(page.locator('#i-pastefmt')).toHaveAccessibleName(
+    'Paste format',
+  );
+  await expect(
+    page.locator('#inspector details[data-group="Format"] .insp-row'),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('#inspector details[data-group="Arrange"]'),
+  ).toContainText('Select three or more nodes to distribute.');
+
+  // A node's metadata fields are named for what they hold.
+  await page.keyboard.press('Escape');
+  await clickNode(page, 'fw');
+  await inspectorSection(page, 'Data');
+  await expect(page.locator('#inspector .meta-nk')).toHaveAccessibleName(
+    'New metadata key',
+  );
+  await expect(page.locator('#inspector .meta-nv')).toHaveAccessibleName(
+    'New metadata value',
+  );
+});
+
+test('the Data count shows only once a value is set', async ({ page }) => {
+  await bootEditor(page);
+  // A new node from the library: nothing in its Data section is set.
+  await page.locator('.pitem').first().click();
+  const data = page.locator('#inspector details[data-group="Data"]');
+  await expect(data).toHaveCount(1);
+  await expect(data.locator('.insp-count')).toHaveCount(0);
+  await inspectorSection(page, 'Data');
+  const tooltip = data.locator('input[data-key="tooltip"]');
+  await tooltip.fill('core firewall');
+  await tooltip.press('Tab');
+  // Drawn again for the node, the section counts the value.
+  const id = (await page
+    .locator('#page-canvas [data-tds-node]')
+    .last()
+    .getAttribute('data-tds-node'))!;
+  await page.keyboard.press('Escape');
+  await clickNode(page, id);
+  await expect(data.locator('.insp-count')).toHaveText('1');
+});
+
+test('a link’s two sides take the row under their label', async ({ page }) => {
+  await bootEditor(page);
+  await clickLink(page, 'ec-fw');
+  const from = page.locator('#inspector select[data-key="fromPort"]');
+  const row = page.locator('#inspector .insp-row.col', {
+    has: page.locator('select[data-key="fromPort"]'),
+  });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator('select[data-key="toPort"]')).toHaveCount(1);
+  await expect(from).toHaveAccessibleName('From side');
+  // The automatic choice in short; its value, and so what it writes, is the
+  // same.
+  const auto = from.locator('option[value=""]');
+  await expect(auto).toHaveText('Auto (facing)');
+  await expect(auto).toHaveAttribute('title', 'Auto (facing other end)');
+  // Nothing of the shown choice is cut off.
+  expect(
+    await from.evaluate((el) => {
+      const s = el as HTMLSelectElement;
+      const probe = document.createElement('span');
+      probe.style.font = getComputedStyle(s).font;
+      probe.textContent = s.selectedOptions[0]!.text;
+      document.body.append(probe);
+      const width = probe.getBoundingClientRect().width;
+      probe.remove();
+      const cs = getComputedStyle(s);
+      const room =
+        s.clientWidth -
+        parseFloat(cs.paddingLeft) -
+        parseFloat(cs.paddingRight);
+      return width <= room;
+    }),
+  ).toBe(true);
+  await from.selectOption('n');
+  await expect
+    .poll(async () => (await savedElement(page, 'links', 'ec-fw')).fromPort)
+    .toBe('n');
+});
+
+test('a Problems label with warnings is readable in the light theme', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('topology-dojo:theme', 'light'),
+  );
+  await bootEditor(page);
+  await expect(page.locator('html')).toHaveClass(/light/);
+  await page.locator('.pitem').first().click();
+  await page.keyboard.press('Control+d');
+  await expect(page.locator('#problems-dock')).toHaveClass(/has-warn/);
+  // The label is in the warning colour for text, not the fill colour.
+  const [label, token] = await page.evaluate(() => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--status-warn-fg)';
+    document.body.append(probe);
+    const want = getComputedStyle(probe).color;
+    probe.remove();
+    return [
+      getComputedStyle(document.querySelector('#problems-toggle .pt-label')!)
+        .color,
+      want,
+    ];
+  });
+  expect(label).toBe(token);
+});

@@ -6,7 +6,6 @@
 }
 .anno-add > .btn {
   flex: 1;
-  padding: 0 6px;
 }
 /* Per-type collapsible section grouping the annotation rows. */
 .anno-group {
@@ -80,11 +79,7 @@ details.anno .insp-row:not(.col):not(.wide) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The shared icon button, a size down to sit in the editor's title row. */
-.anno-x {
-  width: 24px;
-  height: 24px;
-}
+/* The shared icon button in the editor's title row. */
 .anno-x[data-adel]:hover {
   color: var(--status-error-fg);
 }

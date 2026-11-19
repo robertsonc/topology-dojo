@@ -252,3 +252,29 @@ test('at the minimum width the tabs read in full and nothing runs off the side',
   expect(await clippedTabs(page), 'a zone').toEqual([]);
   await expectNoSideScroll(page, 'a zone');
 });
+
+test('a section header’s focus ring is drawn inside the panel’s scroll box', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const summary = page.locator(
+    '#inspector > details.insp-group[data-group="Page"] > summary',
+  );
+  // From the tab row with the keyboard, so the ring shows.
+  await page.locator('#insp-tab-page').focus();
+  while (!(await summary.evaluate((el) => el === document.activeElement)))
+    await page.keyboard.press('Tab');
+  const ring = await summary.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const box = el.getBoundingClientRect();
+    const panel = el.closest('#inspector')!.getBoundingClientRect();
+    const out = parseFloat(cs.outlineOffset) + parseFloat(cs.outlineWidth);
+    return {
+      style: cs.outlineStyle,
+      left: box.left - Math.max(0, out),
+      panelLeft: panel.left,
+    };
+  });
+  expect(ring.style).not.toBe('none');
+  expect(ring.left).toBeGreaterThanOrEqual(ring.panelLeft);
+});
