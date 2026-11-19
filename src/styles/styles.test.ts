@@ -283,6 +283,9 @@ describe('editor stylesheet', () => {
       ['--status-info', [], 4.5],
       // 1.4.11: an outline that is the only edge of a control.
       ['--line-strong', [], 3],
+      // A colour swatch's fill can match the panel (a grey, a pale yellow):
+      // its edge is then the only thing that shows the control.
+      ['--swatch-edge', [], 3],
       ['--focus', TINTS, 3],
     ];
 

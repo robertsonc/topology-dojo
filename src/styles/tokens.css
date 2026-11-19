@@ -92,8 +92,9 @@
   /* ── Elevation ─────────────────────────────────────────────────────── */
   --shadow-raised: 0 2px 10px rgba(0, 0, 0, 0.35); /* cards over the canvas */
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.5); /* menus, popovers, dialogs */
-  /* Hairline around colour swatches so dark swatches read on dark panels. */
-  --swatch-edge: rgba(255, 255, 255, 0.18);
+  /* The edge of a colour swatch, at 3:1 on every surface: a swatch whose
+     fill matches the panel still shows where it is. */
+  --swatch-edge: rgba(255, 255, 255, 0.36);
 
   /* ── Type ──────────────────────────────────────────────────────────────
      `--font` is the data and canvas face: IDs, addresses, coordinates,
@@ -171,7 +172,7 @@
 
   --shadow-raised: 0 2px 10px rgba(31, 41, 55, 0.14);
   --shadow-float: 0 12px 32px rgba(31, 41, 55, 0.2);
-  --swatch-edge: rgba(0, 0, 0, 0.18);
+  --swatch-edge: rgba(0, 0, 0, 0.45);
 
   --scrollbar-thumb: rgba(0, 0, 0, 0.3);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.48);
