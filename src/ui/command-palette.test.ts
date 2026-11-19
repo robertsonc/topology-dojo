@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MATCH_SCORE,
   PALETTE_LIMIT,
+  createRanker,
   firstEnabledIndex,
   mergeRanges,
   moveActive,
@@ -39,6 +40,29 @@ function titles(
 function scoreOf(query: string, e: PaletteEntry): number | null {
   return rankEntries(query, [e])[0]?.score ?? null;
 }
+
+// Text spelled out by code point where its encoding is what a test is about:
+// whether a letter and its mark are one character or two does not show.
+/** が (ga): one character. */
+const GA = '\u304c';
+/** か (ka). */
+const KA = '\u304b';
+/** The combining voicing mark: after ka, the two are ga. */
+const VOICING = '\u3099';
+/** ガイド ("guide"), in composed katakana. */
+const GUIDE = '\u30ac\u30a4\u30c9';
+/** The same with each voiced kana as a kana and a combining mark. */
+const GUIDE_DECOMPOSED = '\u30ab\u3099\u30a4\u30c8\u3099';
+/** The same in half-width katakana, where the voicing mark is a letter. */
+const GUIDE_HALF_WIDTH = '\uff76\uff9e\uff72\uff84\uff9e';
+/** "shalom" in Hebrew, with its vowel points. */
+const SHALOM_POINTED = '\u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd';
+/** "Muhammad" in Arabic, with its vowel points. */
+const MUHAMMAD_POINTED = '\u0645\u064f\u062d\u064e\u0645\u0651\u064e\u062f';
+/** "Ahmad" in Arabic, its alef carrying a hamza. */
+const AHMAD = '\u0623\u062d\u0645\u062f';
+/** The trade mark sign with the selector that asks for its emoji form. */
+const TRADEMARK_EMOJI = '\u2122\ufe0f';
 
 /** The matched pieces of a title, as text. */
 function marked(query: string, title: string): string[] {
@@ -91,10 +115,17 @@ describe('normalise', () => {
   });
 
   it('agrees with whole-string Unicode normalisation', () => {
+    // The definition, applied the slow way to the whole string. The accents
+    // are listed here by code point (those of Latin, Greek and Cyrillic, the
+    // points of Hebrew and of Arabic, the variation selectors), not by the
+    // Unicode properties the module finds them by.
+    const accents =
+      /[\u0300-\u036f\u0591-\u05bd\u05bf\u05c1\u05c2\u05c4\u05c5\u05c7\u0610-\u061a\u064b-\u065f\u0670\ufe00-\ufe0f]/g;
     const reference = (s: string): string =>
       s
         .normalize('NFKD')
-        .replace(/\p{M}+/gu, '')
+        .replace(accents, '')
+        .replace(/\P{M}?\p{M}+/gu, (kept) => kept.normalize('NFC'))
         .toLowerCase()
         .replace(/ß/g, 'ss')
         .replace(/\s+/g, ' ')
@@ -108,13 +139,103 @@ describe('normalise', () => {
       '東京 データセンター',
       'x̣́ y',
       'Ａ\tＢ',
+      `${GA}いど ${GUIDE} ${GUIDE_HALF_WIDTH} ${GUIDE_DECOMPOSED}`,
+      'हिंदी सर्वर',
+      'ไทย ก่อน น้ำ',
+      `${SHALOM_POINTED} ${MUHAMMAD_POINTED} ${AHMAD}`,
+      'Ёлка, йод',
+      'Ελλάδα',
+      `${TRADEMARK_EMOJI} \u2764\ufe0f`,
     ])
       expect(normalise(s), s).toBe(reference(s));
   });
 
+  it('strips the accents of Greek and Cyrillic as it does those of Latin', () => {
+    expect(normalise('Ελλάδα')).toBe('ελλαδα');
+    expect(normalise('Ёлка')).toBe('елка');
+    // A stress mark, as a dictionary writes it.
+    expect(normalise('за\u0301мок')).toBe('замок');
+    // The breve of й is an accent by the same rule as the dots of ё, and
+    // as the tilde of ñ: и finds й.
+    expect(normalise('Йод')).toBe('иод');
+  });
+
+  it('strips the points of Hebrew and Arabic', () => {
+    expect(normalise(SHALOM_POINTED)).toBe('\u05e9\u05dc\u05d5\u05dd');
+    expect(normalise(MUHAMMAD_POINTED)).toBe('\u0645\u062d\u0645\u062f');
+    // Alef with a hamza is typed as a plain alef.
+    expect(normalise(AHMAD)).toBe('\u0627\u062d\u0645\u062f');
+  });
+
+  it('strips variation selectors', () => {
+    expect(normalise(TRADEMARK_EMOJI)).toBe('tm');
+    expect(normalise('\u2764\ufe0f')).toBe('\u2764');
+    // Those of one script too: a Mongolian letter and the selector of one
+    // of its shapes.
+    expect(normalise('\u1820\u180b')).toBe('\u1820');
+  });
+
+  it('keeps the marks that spell', () => {
+    // Kana voicing: ga is not ka, pa is not ha.
+    expect(normalise(GA)).toBe(GA);
+    expect(normalise(GA)).not.toBe(normalise(KA));
+    expect(normalise('\u3071')).not.toBe(normalise('\u306f'));
+    expect(normalise(GUIDE)).toBe(GUIDE);
+    // The vowel signs of Devanagari, the vowels and tones of Thai.
+    expect(normalise('हिंदी')).toBe('हिंदी');
+    expect(normalise('हिंदी')).not.toBe(normalise('हद'));
+    expect(normalise('ก่อน')).toBe('ก่อน');
+    expect(normalise('ก่อน')).not.toBe(normalise('กอน'));
+  });
+
+  it('gives text one normal form, however Unicode encodes it', () => {
+    // A voiced kana as one character, as a kana and a combining mark, and
+    // in half width.
+    expect(normalise(KA + VOICING)).toBe(GA);
+    expect(normalise(GUIDE_DECOMPOSED)).toBe(GUIDE);
+    expect(normalise(GUIDE_HALF_WIDTH)).toBe(GUIDE);
+    // Two Thai marks on one consonant, typed in either order.
+    expect(normalise('ก\u0e48\u0e38')).toBe(normalise('ก\u0e38\u0e48'));
+    // Accents in either order, with a mark that stays between them.
+    expect(normalise(`${KA}\u0301${VOICING}\u0323`)).toBe(GA);
+    for (const s of [
+      'Crème brûlée, Việt Nam',
+      `${GA}いど ${GUIDE} ${GUIDE_HALF_WIDTH}`,
+      'हिंदी क़िला',
+      'বাংলো கொடி',
+      'ไทย ก่อน น้ำ',
+      '\ud55c\uad6d topology',
+      `${SHALOM_POINTED} ${AHMAD}`,
+      'Ёлка, йод, Ελλάδα',
+    ])
+      for (const form of ['NFC', 'NFD', 'NFKC', 'NFKD'] as const)
+        expect(normalise(s.normalize(form)), `${s} as ${form}`).toBe(
+          normalise(s),
+        );
+  });
+
+  it('compares Hangul by its jamo: a syllable being typed finds the finished one', () => {
+    const korea = '\ud55c\uad6d'; // han-guk
+    // "ha", and the lone consonant before it, are how "han" starts.
+    expect(normalise(korea).startsWith(normalise('\ud558'))).toBe(true);
+    expect(normalise(korea).startsWith(normalise('\u314e'))).toBe(true);
+    expect(normalise('\ud55c')).toBe('\u1112\u1161\u11ab');
+  });
+
   it('is idempotent', () => {
-    for (const s of ['Straße', '  Éclair  au CAFÉ ', 'ﬁnd Ａ', 'Go to page 2'])
-      expect(normalise(normalise(s))).toBe(normalise(s));
+    for (const s of [
+      'Straße',
+      '  Éclair  au CAFÉ ',
+      'ﬁnd Ａ',
+      'Go to page 2',
+      `${GUIDE_HALF_WIDTH} ${GUIDE_DECOMPOSED} ${KA}\u0301${VOICING}`,
+      'हिंदी ไทย ก่อน น้ำ বাংলো',
+      // A mark with no letter to sit on, after whitespace and at the start.
+      ' \u09cb x',
+      `${VOICING}${KA}`,
+      `${SHALOM_POINTED} ${TRADEMARK_EMOJI} \ud55c\uad6d`,
+    ])
+      expect(normalise(normalise(s)), s).toBe(normalise(s));
   });
 });
 
@@ -167,6 +288,32 @@ describe('rankEntries: what matches', () => {
       'Align right',
       'Tidy layout',
     ]);
+  });
+
+  it('does not take one letter for another that a mark makes of it', () => {
+    const guide = entry(GUIDE);
+    // "kaito" is not "gaido", and "ka" is not how "gaido" starts.
+    expect(titles('\u30ab\u30a4\u30c8', [guide])).toEqual([]);
+    expect(titles('\u30ab', [guide])).toEqual([]);
+    expect(titles('\u30ac', [guide])).toEqual([GUIDE]);
+    // However the query is encoded, it is the same word.
+    expect(titles(GUIDE_DECOMPOSED, [guide])).toEqual([GUIDE]);
+    expect(titles(GUIDE_HALF_WIDTH, [guide])).toEqual([GUIDE]);
+    expect(titles(GUIDE, [entry(GUIDE_HALF_WIDTH)])).toEqual([
+      GUIDE_HALF_WIDTH,
+    ]);
+    // Devanagari without its vowel signs is another word.
+    expect(titles('हद', [entry('हिंदी')])).toEqual([]);
+    expect(titles('हिं', [entry('हिंदी')])).toEqual(['हिंदी']);
+    // Accents still do not matter, in any script that has them.
+    expect(titles('елка', [entry('Ёлка')])).toEqual(['Ёлка']);
+    expect(titles('ελλαδα', [entry('Ελλάδα')])).toEqual(['Ελλάδα']);
+  });
+
+  it('finds a Hangul syllable by the part of it typed so far', () => {
+    const korea = entry('\ud55c\uad6d');
+    expect(titles('\ud558', [korea])).toEqual([korea.title]);
+    expect(titles('\u314e', [korea])).toEqual([korea.title]);
   });
 
   it('does not search the shortcut hint or the id', () => {
@@ -530,6 +677,88 @@ describe('rankEntries: ranges', () => {
     ]);
   });
 
+  it('takes the marks on a character with it, whichever part of what it became matched', () => {
+    // ß with an acute accent becomes "ss": a match that ends on the first s
+    // takes the accent too.
+    const sharp = 'ß\u0301';
+    expect(rankEntries('s', [entry(sharp)])[0]!.ranges).toEqual([[0, 2]]);
+    expect(rankEntries('ss', [entry(sharp)])[0]!.ranges).toEqual([[0, 2]]);
+    // ™ with its emoji selector becomes "tm".
+    expect(rankEntries('t', [entry(TRADEMARK_EMOJI)])[0]!.ranges).toEqual([
+      [0, 2],
+    ]);
+    expect(rankEntries('m', [entry(TRADEMARK_EMOJI)])[0]!.ranges).toEqual([
+      [0, 2],
+    ]);
+    // Æ with an acute becomes "ae", ﬁ with a diaeresis "fi".
+    expect(marked('a', 'Æ\u0301ther')).toEqual(['Æ\u0301']);
+    expect(marked('f', 'ﬁ\u0308x')).toEqual(['ﬁ\u0308']);
+    expect(marked('ix', 'ﬁ\u0308x')).toEqual(['ﬁ\u0308x']);
+  });
+
+  it('never parts a letter from a mark it keeps', () => {
+    // The consonant alone is typed; its vowel signs are marked with it.
+    expect(marked('ह', 'हिंदी')).toEqual(['हिं']);
+    expect(marked('ก', 'ก่อน')).toEqual(['ก่']);
+    // ga as a kana and a combining mark: two code units, one letter.
+    expect(marked(GA, `${KA}${VOICING}き`)).toEqual([KA + VOICING]);
+    expect(rankEntries(GA, [entry(`${KA}${VOICING}き`)])[0]!.ranges).toEqual([
+      [0, 2],
+    ]);
+  });
+
+  it('ends no range between a character and the marks on it', () => {
+    // Every way of matching one or two characters of what a title becomes,
+    // for titles made of characters that expand, vanish or keep their marks.
+    const bases = [
+      'a',
+      'e',
+      'x',
+      ' ',
+      'ß',
+      'Æ',
+      'ﬁ',
+      '\u2122',
+      KA,
+      'ह',
+      '\ud55c',
+    ];
+    const marks = ['\u0301', '\u0308', '\ufe0f', VOICING, '\u093f'];
+    const mark = /^\p{M}/u;
+    let seed = 7;
+    const below = (n: number): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed % n;
+    };
+    let checked = 0;
+    for (let n = 0; n < 300; n++) {
+      let title = '';
+      for (let units = 1 + below(5); units > 0; units--) {
+        title += bases[below(bases.length)]!;
+        for (let m = below(3); m > 0; m--) title += marks[below(marks.length)]!;
+      }
+      const form = normalise(title);
+      for (let from = 0; from < form.length; from++)
+        for (const to of [from + 1, from + 2]) {
+          const token = form.slice(from, to);
+          // Only a token that is one token, and already in normal form.
+          if (to > form.length || normalise(token) !== token) continue;
+          if (token.includes(' ')) continue;
+          const where = `"${token}" in ${JSON.stringify(title)}`;
+          const hit = rankEntries(token, [entry(title)])[0];
+          expect(hit, where).toBeDefined();
+          expect(hit!.ranges.length, where).toBeGreaterThan(0);
+          for (const [start, end] of hit!.ranges) {
+            expect(mark.test(title.slice(start)), where).toBe(false);
+            expect(mark.test(title.slice(end)), where).toBe(false);
+            expect(normalise(title.slice(start, end)), where).toContain(token);
+          }
+          checked++;
+        }
+    }
+    expect(checked).toBeGreaterThan(1000);
+  });
+
   it('accounts for whitespace the normal form collapsed', () => {
     const title = '  Go   to \t page  ';
     expect(marked('page', title)).toEqual(['page']);
@@ -660,6 +889,98 @@ describe('rankEntries: speed', () => {
     }
     expect(rankEntries('go to', entries)).toHaveLength(50);
     expect(rankEntries('zzzz', entries)).toHaveLength(0);
+  });
+});
+
+describe('createRanker', () => {
+  const entries = [
+    entry('Align left', { group: 'Arrange' }),
+    entry('Tidy layout', { group: 'Arrange', hint: 'T' }),
+    entry('Balance layout', { group: 'Arrange', disabled: true }),
+    entry('Toggle grid', { group: 'View', keywords: ['dots', 'snap'] }),
+    entry('Große Straße', { group: 'Element on page 2' }),
+    entry('Relay layout'),
+  ];
+
+  it('ranks as rankEntries does, whatever it was asked before', () => {
+    const rank = createRanker(entries);
+    const queries = [
+      '',
+      'lay',
+      'arrange',
+      'dots',
+      'lay arr',
+      'zzz',
+      'strasse 2',
+      'GRID view',
+      '',
+      'lay',
+    ];
+    for (const query of queries) {
+      expect(rank(query), query).toEqual(rankEntries(query, entries));
+      expect(rank(query, 2), query).toEqual(rankEntries(query, entries, 2));
+    }
+    expect(rank('lay')).toHaveLength(3);
+    expect(rank('', NaN)).toEqual([]);
+  });
+
+  it('normalises each entry once, however many queries follow', () => {
+    // Entries that count how often each searched field is read.
+    const reads = { title: 0, keywords: 0, group: 0 };
+    const counted = Array.from({ length: 40 }, (_, i): PaletteEntry => {
+      return {
+        id: `e${i}`,
+        get title() {
+          reads.title++;
+          return `Entry ${i}`;
+        },
+        get keywords() {
+          reads.keywords++;
+          return ['node'];
+        },
+        get group() {
+          reads.group++;
+          return 'Element';
+        },
+        run,
+      };
+    });
+    const rank = createRanker(counted);
+    // Nothing is read until a query needs it; the empty query needs nothing.
+    rank('');
+    expect(reads).toEqual({ title: 0, keywords: 0, group: 0 });
+    // A token found in every title: no keyword or group is looked at.
+    rank('entry', 0);
+    expect(reads).toEqual({ title: 40, keywords: 0, group: 0 });
+    // One found nowhere: now they are, once each.
+    rank('zz');
+    expect(reads).toEqual({ title: 40, keywords: 40, group: 40 });
+    // The keystrokes after that read nothing again.
+    for (const query of ['zzz', 'qq', 'x y', 'node zz', 'element q'])
+      expect(rank(query), query).toEqual([]);
+    expect(reads).toEqual({ title: 40, keywords: 40, group: 40 });
+    // A hit's title is read once more, to say where in it the match is.
+    expect(rank('entry 39')).toHaveLength(1);
+    expect(reads).toEqual({ title: 41, keywords: 40, group: 40 });
+
+    // rankEntries, by contrast, starts from the entries every time.
+    rankEntries('zz', counted);
+    rankEntries('zzz', counted);
+    expect(reads).toEqual({ title: 121, keywords: 120, group: 120 });
+  });
+
+  it('keeps the list it was made with', () => {
+    const list = [entry('Alpha'), entry('Beta')];
+    const rank = createRanker(list);
+    list.push(entry('Alpine'));
+    list.reverse();
+    expect(rank('al').map((r) => r.entry.title)).toEqual(['Alpha']);
+    expect(rank('').map((r) => r.entry.title)).toEqual(['Alpha', 'Beta']);
+    // A new ranker sees the list as it is now.
+    expect(createRanker(list)('al').map((r) => r.entry.title)).toEqual([
+      'Alpha',
+      'Alpine',
+    ]);
   });
 });
 
@@ -846,6 +1167,40 @@ describe('paletteKeyAction', () => {
     ).toBeNull();
     expect(
       paletteKeyAction({ key: 'k', ctrlKey: true, shiftKey: true }),
+    ).toBeNull();
+  });
+
+  it('runs and toggles once per press: a held key does nothing more', () => {
+    // Still the palette's key (not null, so it goes no further), with
+    // nothing to do.
+    expect(paletteKeyAction({ key: 'Enter', repeat: true })).toBe('none');
+    expect(paletteKeyAction({ key: 'k', ctrlKey: true, repeat: true })).toBe(
+      'none',
+    );
+    expect(paletteKeyAction({ key: 'K', metaKey: true, repeat: true })).toBe(
+      'none',
+    );
+    // The press itself, and a key that is not held, act.
+    expect(paletteKeyAction({ key: 'Enter', repeat: false })).toBe('run');
+    expect(paletteKeyAction({ key: 'k', ctrlKey: true, repeat: false })).toBe(
+      'toggle',
+    );
+  });
+
+  it('keeps moving while a key is held', () => {
+    expect(paletteKeyAction({ key: 'ArrowDown', repeat: true })).toBe('next');
+    expect(paletteKeyAction({ key: 'ArrowUp', repeat: true })).toBe('previous');
+    expect(paletteKeyAction({ key: 'PageDown', repeat: true })).toBe(
+      'pageDown',
+    );
+    expect(paletteKeyAction({ key: 'PageUp', repeat: true })).toBe('pageUp');
+    expect(paletteKeyAction({ key: 'End', ctrlKey: true, repeat: true })).toBe(
+      'last',
+    );
+    // A held key that was never the palette's stays the text field's.
+    expect(paletteKeyAction({ key: 'a', repeat: true })).toBeNull();
+    expect(
+      paletteKeyAction({ key: 'Enter', shiftKey: true, repeat: true }),
     ).toBeNull();
   });
 

@@ -5,7 +5,8 @@
  * Two halves:
  *
  * - Pure, DOM-free logic: `normalise` and `rankEntries` (what matches a query
- *   and in which order), and the small index, key and geometry helpers the
+ *   and in which order; `createRanker` is `rankEntries` for a list that is
+ *   ranked many times), and the small index, key and geometry helpers the
  *   list uses. Unit-tested under node.
  * - `openCommandPalette`, which builds the dialog, keeps it in step with the
  *   query and tears it down again. It does not know what a command is: the
@@ -26,6 +27,10 @@
  * - Ctrl / Cmd + K closes the palette again, so the key that opens it is a
  *   toggle. The shell's shortcut handler stands down while an overlay is
  *   open, so the palette has to take this key itself.
+ * - Enter and Ctrl / Cmd + K act once per press. Held down, their repeats do
+ *   nothing: a press that opens the palette (Enter on its button, Ctrl + K)
+ *   and lasts a moment too long must not run the first option or close the
+ *   palette again. The keys that move the active option do repeat.
  * - A disabled option can be the active one, so a screen reader reads it as
  *   unavailable, but Enter and a click do nothing on it.
  * - A polite live region reports the number of results once typing settles.
@@ -114,8 +119,29 @@ const FOLDS: Readonly<Record<string, string>> = {
   ς: 'σ',
 };
 const FOLD_RE = /[ßæœøđðþłħıς]/g;
-/** Combining marks: what is left of an accent once a letter is decomposed. */
-const MARKS_RE = /\p{M}+/gu;
+/**
+ * Accents: the combining marks a search drops, because the letter under one
+ * is still that letter to someone typing a query.
+ *
+ * They are the marks Unicode ties to no one script (the accents of Latin,
+ * Greek and Cyrillic), the points of Hebrew and Arabic, which everyday
+ * writing leaves out, and the variation selectors, such as the one that
+ * makes ™ an emoji.
+ *
+ * Every other mark is spelling and stays: the vowel signs of the Indic
+ * scripts, of Thai and of Lao, and the two voicing marks of kana (が is not
+ * か), which Unicode files with the first group and are excepted here.
+ */
+const ACCENT_RE =
+  /(?![\u3099\u309a])(?=\p{M})[\p{Script=Inherited}\p{Script=Hebrew}\p{Script=Arabic}\p{Variation_Selector}]/gu;
+/** The marks that were kept, with the letter under them when there is one. */
+const KEPT_RE = /\P{M}?\p{M}+/gu;
+/**
+ * What belongs with the character before it: a combining mark, or one of the
+ * two half-width voicing marks of katakana, which are letters to Unicode but
+ * combining marks once normalised (ｶﾞ is ガ). Sticky: it tests at `lastIndex`.
+ */
+const JOINER_RE = /[\p{M}\uff9e\uff9f]/uy;
 const SPACE_RE = /\s/;
 /** Printable ASCII words with single spaces between them and none around:
  * text whose normal form is just its lower case, character for character. */
@@ -125,41 +151,77 @@ const foldCache = new Map<string, string>();
 /** Enough for every script a document mixes; a guard, not a tuning knob. */
 const FOLD_CACHE_MAX = 4096;
 
-/** One character (a whole code point), folded: lower case, no diacritics. */
-function foldChar(ch: string): string {
-  const code = ch.charCodeAt(0);
-  if (code < 0x80)
-    return code >= 0x41 && code <= 0x5a ? String.fromCharCode(code + 32) : ch;
-  let out = foldCache.get(ch);
+const compose = (kept: string): string => kept.normalize('NFC');
+
+/**
+ * One unit of text, folded: a character (a whole code point) with the
+ * combining marks on it. Lower case, no accents.
+ *
+ * The marks that stay are put back on their letter, as the one character
+ * Unicode has for the two where it has one: が, not か and a voicing mark, or
+ * か would find が. Only marks are put back. Hangul stays in the jamo that
+ * decomposition leaves it in, so that a syllable still being typed (하) finds
+ * the finished one (한).
+ */
+function foldUnit(unit: string): string {
+  const code = unit.charCodeAt(0);
+  if (code < 0x80 && unit.length === 1)
+    return code >= 0x41 && code <= 0x5a ? String.fromCharCode(code + 32) : unit;
+  let out = foldCache.get(unit);
   if (out === undefined) {
-    out = ch
+    out = unit
       .normalize('NFKD')
-      .replace(MARKS_RE, '')
+      .replace(ACCENT_RE, '')
+      .replace(KEPT_RE, compose)
       .toLowerCase()
       .replace(FOLD_RE, (c) => FOLDS[c] ?? c);
     if (foldCache.size >= FOLD_CACHE_MAX) foldCache.clear();
-    foldCache.set(ch, out);
+    foldCache.set(unit, out);
   }
   return out;
+}
+
+/** `JOINER_RE` remembered per UTF-16 code unit: 1 when it is one, 2 when it
+ * is not, 0 until asked. */
+const joiners = new Uint8Array(0x10000);
+
+/** Whether the character at `i` belongs with the one before it. */
+function joinsAt(text: string, i: number): boolean {
+  const code = text.charCodeAt(i);
+  // No mark is below U+0300, which settles most text at once.
+  if (code < 0x300) return false;
+  // Half of a surrogate pair does not say which character it is: those are
+  // asked every time.
+  const half = code >= 0xd800 && code <= 0xdfff;
+  let known = half ? 0 : joiners[code]!;
+  if (known === 0) {
+    JOINER_RE.lastIndex = i;
+    known = JOINER_RE.test(text) ? 1 : 2;
+    if (!half) joiners[code] = known;
+  }
+  return known === 1;
 }
 
 /** A normalised string, and which stretch of the source each of its
  * characters came from. */
 interface Folded {
   text: string;
-  /** Per character of `text`: where its source character starts… */
+  /** Per character of `text`: where its source unit starts… */
   starts: number[];
   /** …and ends (exclusive), in UTF-16 code units of the source. */
   ends: number[];
 }
 
 /**
- * Normalise `text` one source character at a time, keeping the way back.
+ * Normalise `text` one unit at a time, keeping the way back. A unit is a
+ * character and the combining marks on it: they are folded together, and
+ * whatever the unit becomes maps back to all of it, so a highlight never
+ * parts a letter from its marks, dropped or kept.
  *
- * A source character can become several (ß → ss, ﬁ → fi), none (a combining
- * accent, which then counts as part of the letter before it) or share one
- * with its neighbours (a run of whitespace → one space), which is why the
- * map is per output character and holds a range.
+ * A unit can become several characters (ß → ss, ﬁ → fi), none (an accent
+ * with no letter before it) or share one with its neighbours (a run of
+ * whitespace → one space), which is why the map is per output character and
+ * holds a range.
  */
 function fold(text: string): Folded {
   let out = '';
@@ -171,16 +233,13 @@ function fold(text: string): Folded {
   let gapEnd = 0;
   let i = 0;
   while (i < text.length) {
-    const size = text.codePointAt(i)! > 0xffff ? 2 : 1;
     const start = i;
-    const end = i + size;
-    const folded = foldChar(size === 1 ? text[i]! : text.slice(start, end));
-    i = end;
-    if (folded === '') {
-      if (gap) gapEnd = end;
-      else if (ends.length > 0) ends[ends.length - 1] = end;
-      continue;
-    }
+    do i += text.codePointAt(i)! > 0xffff ? 2 : 1;
+    while (i < text.length && joinsAt(text, i));
+    const end = i;
+    const folded = foldUnit(
+      end - start === 1 ? text[start]! : text.slice(start, end),
+    );
     for (const c of folded) {
       if (SPACE_RE.test(c)) {
         if (!gap) {
@@ -210,13 +269,22 @@ function fold(text: string): Folded {
 }
 
 /**
- * The form text is compared in: lower case, diacritics stripped, whitespace
+ * The form text is compared in: lower case, accents stripped, whitespace
  * collapsed to single spaces and trimmed.
  *
+ * An accent is a mark on a letter that someone searching leaves off: those
+ * of Latin, Greek and Cyrillic (é → e, ά → α, ё → е and, by the same rule,
+ * й → и), the points of Hebrew and Arabic, and variation selectors. A mark
+ * that spells is kept: the vowel signs of the Indic scripts and of Thai, and
+ * the voicing marks of kana, so が is not か and हिंदी is not हद. Text that
+ * differs only in how Unicode encodes it (composed or decomposed, marks in
+ * either order) has one normal form.
+ *
  * Beyond accents this folds compatibility forms (full-width letters,
- * ligatures such as ﬁ) and a few letters that have no accent to strip but
- * are typed as plain ones: ß → ss, æ → ae, œ → oe, ø → o, đ / ð → d, þ → th,
- * ł → l, ħ → h, ı → i. The result can be longer or shorter than the input.
+ * half-width katakana, ligatures such as ﬁ) and a few letters that have no
+ * accent to strip but are typed as plain ones: ß → ss, æ → ae, œ → oe,
+ * ø → o, đ / ð → d, þ → th, ł → l, ħ → h, ı → i. The result can be longer or
+ * shorter than the input.
  */
 export function normalise(text: string): string {
   return SIMPLE_RE.test(text) ? text.toLowerCase() : fold(text).text;
@@ -245,9 +313,9 @@ export function mergeRanges(
 
 /**
  * Ranges found in a title's normalised form, as ranges of the title itself.
- * A range grows to whole source characters: a match on half of the "ss" that
- * ß became covers the ß, and a matched letter takes its combining accents
- * with it.
+ * A range grows to whole source units: a match on half of the "ss" that ß
+ * became covers the ß, and a matched letter takes its combining marks with
+ * it, whichever part of what it became was matched.
  */
 function titleRanges(title: string, spans: readonly Span[]): Span[] {
   if (spans.length === 0) return [];
@@ -316,6 +384,89 @@ function matchRest(
 
 const NO_KEYWORDS: readonly string[] = [];
 
+/** What a query is compared with for one entry, in normal form. */
+interface Prepared {
+  title: string;
+  /** Null until a token is not in the title: most entries never need them. */
+  keywords: readonly string[] | null;
+  group: string;
+}
+
+/** `rankEntries` for one list: see `createRanker`. */
+export type PaletteRanker = (query: string, limit?: number) => RankedEntry[];
+
+/**
+ * A ranker for one list of entries: `rankEntries` with the list fixed, for
+ * ranking the same entries again and again, as the palette does on every
+ * keystroke.
+ *
+ * The normal form of what a query is compared with (each title, and the
+ * keywords and group of an entry whose title did not have a token) is worked
+ * out the first time it is needed and kept, so the rankings after the first
+ * cost the matching alone. The list is copied when the ranker is made and
+ * each entry is read as it is when first needed: make a new ranker when the
+ * list, or an entry in it, changes.
+ */
+export function createRanker(entries: readonly PaletteEntry[]): PaletteRanker {
+  const list = entries.slice();
+  const prepared: Prepared[] = [];
+  return (query, limit = PALETTE_LIMIT) => {
+    const max = Number.isNaN(limit) ? 0 : Math.max(0, Math.floor(limit));
+    const q = normalise(query);
+    if (q === '')
+      return list
+        .slice(0, max)
+        .map((entry) => ({ entry, score: 0, ranges: [] }));
+    const tokens = q.split(' ');
+    const whole = tokens.length === 1;
+
+    const hits: {
+      entry: PaletteEntry;
+      index: number;
+      score: number;
+      length: number;
+      spans: Span[];
+    }[] = [];
+    for (let index = 0; index < list.length; index++) {
+      const entry = list[index]!;
+      const fields = (prepared[index] ??= {
+        title: normalise(entry.title),
+        keywords: null,
+        group: '',
+      });
+      let score = 0;
+      const spans: Span[] = [];
+      for (const token of tokens) {
+        let s = matchTitle(fields.title, token, whole);
+        if (s > 0) spans.push([matchAt, matchAt + token.length]);
+        else {
+          if (fields.keywords === null) {
+            const group = entry.group;
+            fields.keywords = entry.keywords?.map(normalise) ?? NO_KEYWORDS;
+            fields.group = group ? normalise(group) : '';
+          }
+          s = matchRest(fields.keywords, fields.group, token);
+        }
+        if (s === 0) {
+          score = 0;
+          break;
+        }
+        score += s;
+      }
+      if (score > 0)
+        hits.push({ entry, index, score, length: fields.title.length, spans });
+    }
+    hits.sort(
+      (a, b) => b.score - a.score || a.length - b.length || a.index - b.index,
+    );
+    return hits.slice(0, max).map((hit) => ({
+      entry: hit.entry,
+      score: hit.score,
+      ranges: titleRanges(hit.entry.title, hit.spans),
+    }));
+  };
+}
+
 /**
  * The entries that match `query`, best first, at most `limit`
  * (`PALETTE_LIMIT` by default).
@@ -330,63 +481,16 @@ const NO_KEYWORDS: readonly string[] = [];
  *
  * An empty query returns the entries as given. Disabled entries are ranked
  * like any other; showing them inert is the list's job.
+ *
+ * Every call normalises the entries afresh. To rank one list many times,
+ * use `createRanker`.
  */
 export function rankEntries(
   query: string,
   entries: readonly PaletteEntry[],
   limit: number = PALETTE_LIMIT,
 ): RankedEntry[] {
-  const max = Number.isNaN(limit) ? 0 : Math.max(0, Math.floor(limit));
-  const q = normalise(query);
-  if (q === '')
-    return entries
-      .slice(0, max)
-      .map((entry) => ({ entry, score: 0, ranges: [] }));
-  const tokens = q.split(' ');
-  const whole = tokens.length === 1;
-
-  const hits: {
-    entry: PaletteEntry;
-    index: number;
-    score: number;
-    length: number;
-    spans: Span[];
-  }[] = [];
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index]!;
-    const title = normalise(entry.title);
-    // Normalised only once a token is not in the title.
-    let keywords: readonly string[] | null = null;
-    let group = '';
-    let score = 0;
-    const spans: Span[] = [];
-    for (const token of tokens) {
-      let s = matchTitle(title, token, whole);
-      if (s > 0) spans.push([matchAt, matchAt + token.length]);
-      else {
-        if (keywords === null) {
-          keywords = entry.keywords?.map(normalise) ?? NO_KEYWORDS;
-          group = entry.group ? normalise(entry.group) : '';
-        }
-        s = matchRest(keywords, group, token);
-      }
-      if (s === 0) {
-        score = 0;
-        break;
-      }
-      score += s;
-    }
-    if (score > 0)
-      hits.push({ entry, index, score, length: title.length, spans });
-  }
-  hits.sort(
-    (a, b) => b.score - a.score || a.length - b.length || a.index - b.index,
-  );
-  return hits.slice(0, max).map((hit) => ({
-    entry: hit.entry,
-    score: hit.score,
-    ranges: titleRanges(hit.entry.title, hit.spans),
-  }));
+  return createRanker(entries)(query, limit);
 }
 
 // ── List helpers ───────────────────────────────────────────────────────────
@@ -469,15 +573,25 @@ export interface PaletteKey {
   metaKey?: boolean;
   altKey?: boolean;
   shiftKey?: boolean;
+  /** Whether the key is being held down: an auto-repeat of an earlier press. */
+  repeat?: boolean;
 }
 
-/** What a key press does in the palette. */
-export type PaletteAction = PaletteMove | 'run' | 'toggle';
+/**
+ * What a key press does in the palette. `none` is a key the palette keeps to
+ * itself and does nothing with: Enter or Ctrl / Cmd + K held down.
+ */
+export type PaletteAction = PaletteMove | 'run' | 'toggle' | 'none';
 
 /**
  * What a key does, or null when it is the text field's own (typing, moving
  * the caret, selecting, plain Home and End). Escape and Tab are not here:
  * the overlay primitive owns them.
+ *
+ * Running and toggling happen once per press, so a held key's repeats are
+ * `none`: otherwise the press that opened the palette would, held a moment
+ * too long, run its first option (Enter on the button that opens it) or
+ * close it again (Ctrl / Cmd + K). Moving does repeat.
  */
 export function paletteKeyAction(e: PaletteKey): PaletteAction | null {
   const command = e.ctrlKey === true || e.metaKey === true;
@@ -486,7 +600,7 @@ export function paletteKeyAction(e: PaletteKey): PaletteAction | null {
     if (e.shiftKey) return null;
     if (e.key === 'Home') return 'first';
     if (e.key === 'End') return 'last';
-    if (e.key === 'k' || e.key === 'K') return 'toggle';
+    if (e.key === 'k' || e.key === 'K') return e.repeat ? 'none' : 'toggle';
     return null;
   }
   if (e.shiftKey) return null;
@@ -500,7 +614,7 @@ export function paletteKeyAction(e: PaletteKey): PaletteAction | null {
     case 'PageUp':
       return 'pageUp';
     case 'Enter':
-      return 'run';
+      return e.repeat ? 'none' : 'run';
     default:
       return null;
   }
@@ -620,6 +734,9 @@ export function openCommandPalette(options: PaletteOptions): PaletteHandle {
   }
 
   const entries = options.entries();
+  // Kept for as long as the palette is open: a keystroke re-ranks the same
+  // entries, and should not normalise every one of them again.
+  const rank = createRanker(entries);
   const hasIcons = entries.some((entry) => entry.iconHtml);
   const limit = PALETTE_LIMIT;
   const uid = `cmdk-${++serial}`;
@@ -751,7 +868,7 @@ export function openCommandPalette(options: PaletteOptions): PaletteHandle {
   const refresh = (): void => {
     shownQuery = input.value;
     // One past the limit, to know whether the list is cut off.
-    const ranked = rankEntries(input.value, entries, limit + 1);
+    const ranked = rank(input.value, limit + 1);
     more = ranked.length > limit;
     results = more ? ranked.slice(0, limit) : ranked;
     active = -1;
@@ -821,6 +938,7 @@ export function openCommandPalette(options: PaletteOptions): PaletteHandle {
       // least of all after it has closed the palette.
       e.preventDefault();
       e.stopPropagation();
+      if (action === 'none') return;
       if (action === 'toggle') close();
       else if (action === 'run') run(active);
       else {

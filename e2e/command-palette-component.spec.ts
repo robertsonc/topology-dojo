@@ -8,7 +8,8 @@
  * tree; it is the same module instance the shell would import, so the palette
  * registers with the same overlay stack the editor's shortcut handler reads.
  *
- * The fixture (a button to give focus back to, and the entries) is mounted
+ * The fixture (the entries, a button to give focus back to and, where a test
+ * needs them, a button and a key listener that open the palette) is mounted
  * into document.body from page.evaluate and removed after each test.
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -50,8 +51,15 @@ interface Fixture {
     handleOpen: boolean;
     focus: string;
   }[];
+  /** Removes what `mountOpeners` added to window. */
+  listeners?: AbortController;
 }
-type FixtureWindow = Window & { __paletteTest?: Fixture; __pwned?: number };
+type FixtureWindow = Window & {
+  __paletteTest?: Fixture;
+  __pwned?: number;
+  /** How often the title of a counting entry has been read. */
+  __titleReads?: number;
+};
 
 interface OpenOptions {
   /** Where focus is when the palette opens: on the fixture's button (the
@@ -142,6 +150,53 @@ async function openPalette(
   );
 }
 
+/**
+ * Mount what the shell will open the palette from: a button (`#test-opener`)
+ * and a Ctrl / Cmd + K listener on window, where the shell's shortcut handler
+ * sits. Each logs `open` and opens the palette on `entries`.
+ */
+async function mountOpeners(page: Page, entries: EntrySpec[]): Promise<void> {
+  await page.evaluate(
+    async ({ modulePath, entries }) => {
+      const palette = (await import(modulePath)) as PaletteModule;
+      const w = window as FixtureWindow;
+      const fixture = (w.__paletteTest ??= { handles: [], log: [], runs: [] });
+      const open = (): void => {
+        fixture.log.push('open');
+        fixture.handles.push(
+          palette.openCommandPalette({
+            entries: () =>
+              entries.map((spec) => ({
+                ...spec,
+                run: () => {
+                  fixture.log.push(`run:${spec.id}`);
+                },
+              })),
+            onClose: () => fixture.log.push('close'),
+          }),
+        );
+      };
+      const opener = document.createElement('button');
+      opener.id = 'test-opener';
+      opener.textContent = 'Command palette';
+      opener.style.cssText = 'position:fixed;left:4px;bottom:4px';
+      opener.addEventListener('click', open);
+      document.body.append(opener);
+      fixture.listeners = new AbortController();
+      window.addEventListener(
+        'keydown',
+        (e) => {
+          if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k') return;
+          e.preventDefault();
+          open();
+        },
+        { signal: fixture.listeners.signal },
+      );
+    },
+    { modulePath: MODULE_PATH, entries },
+  );
+}
+
 /** What the fixture has recorded so far. */
 async function recorded(
   page: Page,
@@ -199,7 +254,9 @@ test.afterEach(async ({ page }) => {
   await page.evaluate(() => {
     const w = window as FixtureWindow;
     for (const handle of w.__paletteTest?.handles ?? []) handle.close();
+    w.__paletteTest?.listeners?.abort();
     document.querySelector('#test-invoker')?.remove();
+    document.querySelector('#test-opener')?.remove();
     delete w.__paletteTest;
   });
 });
@@ -549,6 +606,61 @@ test('Escape closes without running anything and gives focus back', async ({
   await expect(page.locator('#test-invoker')).toBeFocused();
 });
 
+test('a key held down does not run or toggle a second time', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await mountOpeners(page, COMMANDS);
+  const scrim = page.locator('.cmdk-scrim');
+  const input = page.locator('.cmdk-input');
+  const log = async (): Promise<string[]> => (await recorded(page)).log;
+  // Playwright sends a key that is already down again as its auto-repeat.
+  const hold = async (key: string, repeats: number): Promise<void> => {
+    for (let i = 0; i <= repeats; i++) await page.keyboard.down(key);
+    await page.keyboard.up(key);
+  };
+
+  // The Enter that opens the palette from its button, held a moment too
+  // long: its repeats arrive in the field and must not run the first entry.
+  await page.locator('#test-opener').focus();
+  await page.keyboard.down('Enter');
+  await expect(input).toBeFocused();
+  await hold('Enter', 3);
+  await expect(scrim).toHaveCount(1);
+  expect(await log()).toEqual(['open']);
+
+  // Enter held on an option runs it once. Focus is back on the button by
+  // then, which takes the next repeat as a press of its own and opens the
+  // palette again, as a button does; the repeats after that do nothing.
+  await hold('Enter', 6);
+  await expect(input).toBeFocused();
+  expect(await log()).toEqual(['open', 'close', 'run:tidy', 'open']);
+  await page.keyboard.press('Escape');
+  await expect(scrim).toHaveCount(0);
+
+  // Ctrl+K held, with the shell listening for it on window: the palette
+  // opens once and stays open, instead of flickering open and closed.
+  await page.evaluate(() => {
+    (window as FixtureWindow).__paletteTest!.log.length = 0;
+    (document.activeElement as HTMLElement).blur();
+  });
+  await page.keyboard.down('Control');
+  await hold('k', 5);
+  await page.keyboard.up('Control');
+  await expect(input).toBeFocused();
+  expect(await log()).toEqual(['open']);
+
+  // Pressed again, each key still does its work.
+  await page.keyboard.press('Control+k');
+  await expect(scrim).toHaveCount(0);
+  expect(await log()).toEqual(['open', 'close']);
+  // Held arrows do repeat: that is how a long list is travelled.
+  await page.keyboard.press('Control+k');
+  await expect(input).toBeFocused();
+  await hold('ArrowDown', 2);
+  expect(await activeId(page)).toBe('grid');
+});
+
 test('a press on the scrim closes; a press inside the dialog does not', async ({
   page,
 }) => {
@@ -682,6 +794,101 @@ test('a title is rendered as text, never as markup', async ({ page }) => {
   );
 });
 
+test('marks a letter with the marks on it, and tells apart letters that a mark tells apart', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // Spelled out by code point: the encoding is what is under test.
+  const sharp = 'ß\u0301 line'; // ß with a combining acute accent
+  const trademark = '\u2122\ufe0f mark'; // ™ with its emoji selector
+  const guide = '\u30ac\u30a4\u30c9'; // "gaido" in katakana
+  await openPalette(page, [
+    { id: 'sharp', title: sharp },
+    { id: 'trademark', title: trademark },
+    { id: 'guide', title: guide },
+    { id: 'hindi', title: 'हिंदी' },
+  ]);
+  const input = page.locator('.cmdk-input');
+  /** The titles listed and the text marked in them, code unit for code unit. */
+  const shown = async (
+    query: string,
+  ): Promise<{ titles: string[]; marks: string[] }> => {
+    await input.fill(query);
+    return page.evaluate(() => ({
+      titles: [...document.querySelectorAll('.cmdk-title')].map(
+        (el) => el.textContent ?? '',
+      ),
+      marks: [...document.querySelectorAll('.cmdk-title mark')].map(
+        (el) => el.textContent ?? '',
+      ),
+    }));
+  };
+
+  // "s" is half of what ß becomes, "t" half of what ™ does: the mark takes
+  // the whole character and the combining mark after it.
+  expect(await shown('s')).toEqual({ titles: [sharp], marks: ['ß\u0301'] });
+  expect(await shown('t')).toEqual({
+    titles: [trademark],
+    marks: ['\u2122\ufe0f'],
+  });
+  // "ka" is not "ga": the voicing mark of kana is spelling, not an accent.
+  // Half-width "ga" is "ga".
+  expect(await shown('\u30ab')).toEqual({ titles: [], marks: [] });
+  expect(await shown('\uff76\uff9e')).toEqual({
+    titles: [guide],
+    marks: ['\u30ac'],
+  });
+  // A Devanagari consonant is marked with its vowel signs; without them it
+  // is another word.
+  expect(await shown('ह')).toEqual({ titles: ['हिंदी'], marks: ['हिं'] });
+  expect(await shown('हद')).toEqual({ titles: [], marks: [] });
+});
+
+test('a keystroke re-ranks without reading every entry again', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  // Entries that count how often their titles are read.
+  await page.evaluate(async (modulePath) => {
+    const palette = (await import(modulePath)) as PaletteModule;
+    const w = window as FixtureWindow;
+    const fixture = (w.__paletteTest ??= { handles: [], log: [], runs: [] });
+    fixture.handles.push(
+      palette.openCommandPalette({
+        entries: () =>
+          Array.from({ length: 300 }, (_, i) => ({
+            id: `e${i}`,
+            get title() {
+              w.__titleReads = (w.__titleReads ?? 0) + 1;
+              return `Entry ${i}`;
+            },
+            run: () => {},
+          })),
+      }),
+    );
+    // What opening read, to draw the first options, is not what is counted.
+    w.__titleReads = 0;
+  }, MODULE_PATH);
+  const reads = (): Promise<number | undefined> =>
+    page.evaluate(() => (window as FixtureWindow).__titleReads);
+  const input = page.locator('.cmdk-input');
+
+  // The first keystroke normalises every title. The ones after it rank what
+  // was kept: nothing matches here, so no title is read to be drawn either.
+  await page.keyboard.type('q');
+  await expect(page.locator('.cmdk-empty')).toBeVisible();
+  expect(await reads()).toBe(300);
+  await page.keyboard.type('qq');
+  await expect(input).toHaveValue('qqq');
+  await expect(page.locator('.cmdk-empty')).toBeVisible();
+  expect(await reads()).toBe(300);
+
+  // What was kept ranks as before: only the options drawn are read again.
+  await input.fill('entry 299');
+  await expect(page.locator('.cmdk-title')).toHaveText(['Entry 299']);
+  expect(await reads()).toBeLessThan(310);
+});
+
 test("the editor's shortcuts stand down while the palette is open", async ({
   page,
 }) => {
@@ -707,6 +914,20 @@ test("the editor's shortcuts stand down while the palette is open", async ({
   for (const key of ['Backspace', 'Delete', 'ArrowDown', 'ArrowRight'])
     await page.keyboard.press(key);
   await page.keyboard.type('?');
+  await expect(input).toHaveValue('?');
+  await expect(page.locator('.help-backdrop')).toHaveCount(0);
+  expect(await statusCount(page, 'nodes')).toBe(nodes);
+  expect(await statusCount(page, 'selected')).toBe(1);
+  expect(await nodeBox(page, 'fw')).toEqual(where);
+  expect(await statusText(page, 'tool')).toBe('select');
+
+  // All of the above the shell grants any text field. What only an open
+  // overlay gets: with focus out of the field (on the page body, where a key
+  // is the canvas's), the shortcuts still stand down.
+  await input.evaluate((el: HTMLElement) => el.blur());
+  await expect(input).not.toBeFocused();
+  for (const key of ['l', 'Delete', 'ArrowRight', '?'])
+    await page.keyboard.press(key);
   await expect(input).toHaveValue('?');
   await expect(page.locator('.help-backdrop')).toHaveCount(0);
   expect(await statusCount(page, 'nodes')).toBe(nodes);
