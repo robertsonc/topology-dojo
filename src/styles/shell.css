@@ -841,11 +841,11 @@
 }
 .statusbar .sb-problems.has-warn {
   border-color: var(--status-warn);
-  color: var(--status-warn);
+  color: var(--status-warn-fg);
 }
 .statusbar .sb-problems.has-error {
   border-color: var(--status-error);
-  color: var(--status-error);
+  color: var(--status-error-fg);
 }
 
 /* ── Narrow windows ───────────────────────────────────────────────── */

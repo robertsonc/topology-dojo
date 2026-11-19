@@ -183,6 +183,19 @@ describe('editor stylesheet', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('draws warning and error text in their text tokens, not the canvas fills', () => {
+    // --status-warn and --status-error are fills (they are also drawn on the
+    // canvas) and are too pale for text in the light theme. Their text
+    // colours are --status-warn-fg and --status-error-fg.
+    const offenders = all
+      .filter(
+        (d) =>
+          d.prop === 'color' && /var\(--status-(?:warn|error)\)/.test(d.value),
+      )
+      .map((d) => `${d.file}: ${d.prop}: ${d.value}`);
+    expect(offenders).toEqual([]);
+  });
+
   describe('token contrast (WCAG 2.1)', () => {
     type Rgba = [number, number, number, number];
     const block = (selector: string): Map<string, string> => {
