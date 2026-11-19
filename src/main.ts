@@ -167,6 +167,7 @@ import {
   type NodeTypeInfo,
 } from './api/catalog.js';
 import { SHARE_PUBLIC_WARNING } from './share/copy.js';
+import { readableInkOn } from './ui/contrast.js';
 
 // Restore the last session from localStorage, else start from the sample.
 const restoredDoc = loadLocal();
@@ -256,7 +257,7 @@ app.innerHTML = `
         <button class="tbtn ticon on" id="tSnap" title="Toggle snap (G)" aria-label="Toggle snap">⌗</button>
         <button class="tbtn ticon" id="tCalm" title="Calm canvas — pause animations (C)" aria-label="Calm canvas — pause animations">◓</button>
         <button class="tbtn ticon on" id="tBadges" title="Toggle on-canvas problem badges" aria-label="Toggle on-canvas problem badges">⚠</button>
-        <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient, glass" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">⚙</button>
+        <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">⚙</button>
         <button class="tbtn ticon" id="tTheme" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">☀</button>
         <button class="tbtn ticon" id="tFit" title="Fit view (0)" aria-label="Fit view">⤢</button>
         <button class="tbtn ticon" id="tPresent" title="Present — full-screen playback of all frames" aria-label="Present full-screen">▶</button>
@@ -4823,6 +4824,16 @@ function currentTheme(): RenderTheme {
 }
 function applyTheme(light: boolean): void {
   document.documentElement.classList.toggle('light', light);
+  // The browser's own UI (a phone's address bar, an installed app's title
+  // bar) follows the chrome: the theme's back surface, read from the tokens.
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute(
+      'content',
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--surface-back')
+        .trim(),
+    );
   themeBtn.classList.toggle('on', light);
   themeBtn.textContent = light ? '🌙' : '☀';
   themeBtn.title = light ? 'Switch to dark theme' : 'Switch to light theme';
@@ -4843,12 +4854,11 @@ themeBtn.addEventListener('click', () =>
   applyTheme(!document.documentElement.classList.contains('light')),
 );
 
-/* Display settings — embellishment controls (ambient backdrop level + panel
- * glass blur), separate from the document and persisted as view preferences.
+/* Display settings — embellishment controls (ambient backdrop level),
+ * separate from the document and persisted as view preferences.
  * Decouples the decorative ambient from the meaningful flow particles. */
 const displayBtn = app.querySelector<HTMLButtonElement>('#tDisplay')!;
 const AMBIENT_KEY = 'tds-ambient';
-const GLASS_KEY = 'tds-glass';
 const displayPop = document.createElement('div');
 displayPop.className = 'display-pop';
 displayPop.setAttribute('role', 'dialog');
@@ -4859,7 +4869,6 @@ displayPop.innerHTML =
   `<label class="dp-row">Ambient backdrop<select id="dpAmbient">` +
   `<option value="animated">Animated</option><option value="static">Static</option><option value="off">Off</option>` +
   `</select></label>` +
-  `<label class="dp-row dp-check"><input type="checkbox" id="dpGlass"/><span>Panel blur (glass)</span></label>` +
   `<div class="dp-note">“Off” removes the drifting bits, scan lines &amp; radar. Flow particles are separate — Calm (C) pauses those.</div>` +
   `<label class="dp-row">Wheel<select id="dpWheel">` +
   `<option value="auto">Auto</option><option value="zoom">Always zoom</option><option value="pan">Always pan</option>` +
@@ -4873,7 +4882,6 @@ displayPop.innerHTML =
   `<div class="dp-note">Recolours the canvas accents and the app chrome to match your brand. Saved with the document.</div>`;
 document.body.appendChild(displayPop);
 const dpAmbient = displayPop.querySelector<HTMLSelectElement>('#dpAmbient')!;
-const dpGlass = displayPop.querySelector<HTMLInputElement>('#dpGlass')!;
 const dpWheel = displayPop.querySelector<HTMLSelectElement>('#dpWheel')!;
 const dpPresets = displayPop.querySelector<HTMLDivElement>('#dpPresets')!;
 const dpAccent = displayPop.querySelector<HTMLInputElement>('#dpAccent')!;
@@ -4889,15 +4897,6 @@ function applyAmbient(level: 'off' | 'static' | 'animated'): void {
     // storage unavailable — non-fatal
   }
 }
-function applyGlass(on: boolean): void {
-  document.documentElement.classList.toggle('no-glass', !on);
-  dpGlass.checked = on;
-  try {
-    localStorage.setItem(GLASS_KEY, on ? '1' : '0');
-  } catch {
-    // storage unavailable — non-fatal
-  }
-}
 const storedAmbient = localStorage.getItem(AMBIENT_KEY);
 applyAmbient(
   storedAmbient === 'off' ||
@@ -4906,11 +4905,9 @@ applyAmbient(
     ? storedAmbient
     : 'animated',
 );
-applyGlass(localStorage.getItem(GLASS_KEY) !== '0');
 dpAmbient.addEventListener('change', () =>
   applyAmbient(dpAmbient.value as 'off' | 'static' | 'animated'),
 );
-dpGlass.addEventListener('change', () => applyGlass(dpGlass.checked));
 
 /* What a plain wheel event does on the canvas. The default guesses the device
  * (a mouse wheel zooms, a trackpad's two-finger slide pans); the guess cannot
@@ -4966,8 +4963,15 @@ const presetBtns = PALETTE_PRESETS.map((p) => {
 });
 
 function setChromeAccent(hex: string | undefined): void {
-  if (hex) document.documentElement.style.setProperty('--accent', hex);
-  else document.documentElement.style.removeProperty('--accent');
+  const style = document.documentElement.style;
+  // Text and icons drawn on the accent (a primary button's label, a switch's
+  // knob) take whichever ink reads on the brand colour; with no brand colour
+  // both properties fall back to the theme's own values in tokens.css.
+  const ink = hex ? readableInkOn(hex) : null;
+  if (hex) style.setProperty('--accent', hex);
+  else style.removeProperty('--accent');
+  if (ink) style.setProperty('--on-accent', ink);
+  else style.removeProperty('--on-accent');
 }
 
 function syncPaletteInputs(p: BrandPalette | undefined): void {

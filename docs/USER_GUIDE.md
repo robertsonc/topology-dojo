@@ -1267,8 +1267,7 @@ These controls are local view preferences:
 - grid and snap;
 - **Calm canvas**;
 - on-canvas problem badges;
-- **Display settings** for **Ambient backdrop**, **Panel blur (glass)** and
-  what the **Wheel** does;
+- **Display settings** for **Ambient backdrop** and what the **Wheel** does;
 - panel visibility and sizing.
 
 In **Display settings**, Ambient backdrop can be **Animated**, **Static**, or
@@ -1306,8 +1305,11 @@ The same Display settings panel includes document-level brand palettes:
 **Default**, **Azure**, **Violet**, **Amber**, **Crimson**, **Teal**, and
 **Slate**, plus custom **Accent**, **Secondary**, and **Chrome (UI)** colors.
 
-Unlike ambient, glass, and light/dark settings, a non-default brand palette is
-saved in the document and travels with it.
+Unlike ambient and light/dark settings, a non-default brand palette is saved
+in the document and travels with it. It also recolours the app chrome: the
+accent, its tints on selected controls, and the ink drawn on accent-filled
+buttons, which switches between dark and light to stay readable on the brand
+colour.
 
 ### Keyboard and focus behavior
 

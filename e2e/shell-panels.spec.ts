@@ -15,7 +15,7 @@ test('pressing the canvas closes Display settings and the shortcuts work again',
   await page.locator('#tDisplay').click();
   await expect(pop).toBeVisible();
   // Using the popover's own controls keeps it open.
-  await page.locator('#dpGlass').click();
+  await page.locator('#dpAmbient').selectOption('static');
   await expect(pop).toBeVisible();
 
   // Pressing a node on the canvas is working on the canvas: the popover

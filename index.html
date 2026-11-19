@@ -3,6 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!-- Both themes are supported; src/main.ts keeps theme-color in step with
+         the light/dark toggle (the value is --surface-back of the theme). -->
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#1d1f27" />
     <title>Topology Dojo</title>
     <!-- JetBrains Mono is self-hosted via @fontsource (imported in main.ts) so
          the app renders identically offline / on Cloudflare with no external fetch. -->
