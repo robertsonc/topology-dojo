@@ -2,7 +2,8 @@
 
 **Status:** Accepted (2026-11-19). P0 (foundations), P1 (shell) and P2
 (properties panel) are merged. P3 (skin sweep) and P4 (guardrails) are built
-for PR #328 (not merged) on the integration branch `wip/int2`, not yet pushed: the pull request's own head is still `01c21db`, and are not in `main`. Two pull requests merged into
+in PR #328. A merge to `main` is a release; the Release workflow run for
+PR #328's merge commit is the record of whether it deployed. Two pull requests merged into
 `main` on 2026-11-19. PR #326 merged as `e9d0d7f` (its Release run completed
 with success the same day): the stylesheet move, the token layer, the flat
 skin, the docked chrome, the neutral scrollbars and the icon sprite. PR #327
@@ -17,7 +18,7 @@ workspace, preferences and admin panels and the node designer. The Release
 run for `d224979` (run 44554032473) failed in CI's browser job, so its
 `stage` and `production` jobs were skipped: that run deployed nothing.
 
-PR #328 (not merged) adds the compact layout (below 1,024 px the node library
+PR #328 adds the compact layout (below 1,024 px the node library
 and the properties panel are drawers over the canvas,
 `src/ui/compact-layout.ts`), brings the browser tests back inside CI's
 30-second limit (`menuCommand` in `e2e/helpers.ts` goes straight to a menu
@@ -36,7 +37,7 @@ section "What P0 changed from this text" and the section "What P1 to P4
 changed from this text" record where the implementation departed from the
 proposal as first written; each phase's "Status" line says what is done, with
 the files and tests. Checked 2026-11-19 against the code at `d224979` and, for
-what PR #328 adds, against its branch.
+what PR #328 adds, against its branch at `61e4d7e`.
 
 **Captured:** 2026-11-18
 
@@ -320,7 +321,7 @@ can run now, by title, group and shortcut"). That the palette finds a command
 by its old label (the Risks table) is not asserted by a test and was not
 checked.
 
-PR #328 (not merged) changes the narrow layout: below 1,024 px the node
+PR #328 changes the narrow layout: below 1,024 px the node
 library and the properties panel are drawers over the canvas
 (`src/ui/compact-layout.ts`, `e2e/shell-layout.spec.ts`).
 
@@ -361,16 +362,15 @@ panel is under 12px" in the same spec.
 
 _Done when:_ no surface uses the old tokens; text meets 4.5 : 1 in both themes.
 
-_Status (2026-11-19): built for PR #328 (not merged) on the integration
-branch `wip/int2`, not yet pushed: the pull request's own head is still `01c21db`; in `main`, P3 is
-partly done as PR #327 left it._ In `main` (PR #327), the top bar, rail, pages bar,
+_Status (2026-11-19): built in PR #328; before it, P3 was partly done, as
+PR #327 left it._ As PR #327 left `main`, the top bar, rail, pages bar,
 status bar, menus, command palette, properties panel, the shared-copy banner,
 both wizards, the workspace, preferences and admin panels and the node
 designer were on the shared controls (`src/styles/controls.css`); the Share
 dialog, the presentation controls, the shortcut sheet's close button and the
 path bar used `.tbtn`, seven `font-size` rules under 12 px were left
 (`NOT_YET` in `src/styles/styles.test.ts`), and several surfaces set
-`color: var(--accent)` as a text colour. The integration branch for PR #328
+`color: var(--accent)` as a text colour. PR #328
 changes this: `grep -rn tbtn
 src e2e` finds nothing and `src/styles/toolbar.css` is deleted (the shared-copy
 banner and the sign-in prompt moved into `shell.css`); the library's tiles, the
@@ -406,10 +406,10 @@ the rendered output (PR #289), not the chrome: it does not cover this pass.
 
 _Done when:_ the toolbar cannot grow past its budget without a failing test.
 
-_Status (2026-11-19): built for PR #328 (not merged) on the integration
-branch `wip/int2`, not yet pushed; in `main`, mostly not done._ In `main` there is the 12 px ratchet, the panel's layout spec
+_Status (2026-11-19): built in PR #328; before it, mostly not done._ Before
+PR #328, `main` had the 12 px ratchet, the panel's layout spec
 (`e2e/shell-inspector-layout.spec.ts`), the top bar's width test and the list
-of former toolbar controls. The branch adds:
+of former toolbar controls. PR #328 adds:
 
 - the control budgets (`e2e/shell-budget.spec.ts`, "the top bar, the rail and
   the pages bar hold no more controls than their budgets", and
@@ -507,7 +507,7 @@ pass); both changes were undone.
 Read against the tree at `d224979` ("Target layout", "Where every toolbar
 control goes" and "Properties panel"), with the running app for what a
 control looks like and where it is; the lines about P3 and P4 and the ones
-marked PR #328 (not merged) were read against that branch. Each line is a place where the
+marked PR #328 were read against PR #328's branch at `61e4d7e`. Each line is a place where the
 implementation differs from the text above; a reason is given where a commit
 message gives one, and "no reason recorded" where none does. Where the text
 and the tree agree, nothing is listed. Short hashes name the commit.
@@ -586,13 +586,13 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   bottom; it wraps onto a second row in a narrow canvas
   (`src/ui/selection-bar-place.ts`; reason in `f9c873e`: it had sat on the
   route of a link and taken the presses meant for its handles). In PR #328
-  (not merged) it also keeps clear of the four quick-connect arrows around a
+  it also keeps clear of the four quick-connect arrows around a
   selected node (`Editor.quickConnectBox()`), which it had covered.
 - **The minimap starts closed.** The text does not say. With nothing stored it
   is closed, so the canvas keeps its room (`f70720c`, "as in the approved
   mock").
-- **"Page" is everywhere a person reads it, from PR #328 (not merged).** The
-  text says "'Page' everywhere". In `main` (PR #327) the menus, the pages bar,
+- **"Page" is everywhere a person reads it, from PR #328.** The
+  text says "'Page' everywhere". As PR #327 left `main`, the menus, the pages bar,
   the command titles and the shortcut sheet's command rows said page, and
   these still said frame: the Find box, the presentation bar's buttons and the
   shortcut sheet's Presentation rows, the path bar's "new frame" button and
@@ -605,21 +605,20 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   document data), and command ids (`path.newFrame`, `view.toggleFrames`), CSS
   classes, a stored key (`tds-frames-collapsed`) and code comments keep the
   old word.
-- **Below 1,024 px the panels are drawers (PR #328, not merged).** The text
+- **Below 1,024 px the panels are drawers (PR #328).** The text
   leaves the narrow layouts to be "re-verified in P1". In PR #327 only a phone
   (640 px and below) had a library drawer; PR #328 moves the breakpoint to
   1,023 px for both panels (`src/ui/compact-layout.ts`). Also in PR #328: on
   a phone, and wherever the two open drawers would leave under 160 px of
   canvas, opening one drawer closes the other (`drawersCrowd` in the same
   file); the closed drawer's remembered setting is not changed.
-- **Find and the path bar sit over the canvas (PR #328, not merged).** Not in
+- **Find and the path bar sit over the canvas (PR #328).** Not in
   the text. They were fixed at a distance from the top of the window, and the
   path bar could run under the library and the properties panel; they are now
   centred over the canvas, a little below its top edge, never wider than it,
   and follow it as the panels open and close (`overCanvas` in
   `src/main.ts`).
-- **The properties toggle says whether the panel is open (PR #328, not
-  merged).** `#inspector-toggle` has `aria-controls` and `aria-expanded`, as
+- **The properties toggle says whether the panel is open (PR #328).** `#inspector-toggle` has `aria-controls` and `aria-expanded`, as
   the library's toggle does.
 
 **The properties panel**
@@ -643,7 +642,7 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   Distribute ends are visible on selecting a node with no clicks. The section
   is open by default and opens with a line such as "From page: off. Links meet
   the icon edge."; **Override for this node** is a switch, and **Box padding**
-  and **Distribute ends** appear only while it is on (in PR #328, not merged,
+  and **Distribute ends** appear only while it is on (in PR #328,
   the two share one row, so the state fits a 1,440 x 900 window). On the Page
   tab,
   **Box padding** and **Distribute ends** appear only while **Anchor box** is
@@ -664,11 +663,11 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   ("EC-Hub → App"), the kind with the type picker, the lock and the "more"
   menu; the two end pickers with Swap between them follow it as their own row.
 - **Problems entries open the tab, and the field only from PR #328.** The
-  text says they "open the tab and field they refer to". In `main` (PR #327)
-  a jump selected the element and showed the Selection tab even when the Page
+  text says they "open the tab and field they refer to". As PR #327 left
+  `main`, a jump selected the element and showed the Selection tab even when the Page
   or Document tab had been picked by hand (`966b231`); it did not open the
   section or focus the field, and nothing called the tabs' `reveal`. PR #328
-  (not merged) does: a problem about a field opens the section that holds it
+  does: a problem about a field opens the section that holds it
   and focuses it (`problemField` in `src/ui/problems-dock.ts`), and a problem
   about a page or the document shows the Page or Document tab
   (`InspectorTabs.reveal`).
@@ -685,7 +684,7 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   it has focus, or for the rest of the visit once something is ticked
   (`be6cdc3`).
 
-**The look, P3 and P4 (PR #328, not merged)**
+**The look, P3 and P4 (PR #328)**
 
 - **Motion tokens are 120 and 180 ms, with two longer ones.** The text says
   "150 ms colour and opacity only". `--dur-fast` is 120 ms and `--dur` 180 ms;

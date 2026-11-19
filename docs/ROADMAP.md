@@ -12,7 +12,7 @@ corrected). The active implementation plan is
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md); its predecessor is
 preserved at [`archive/IMPLEMENTATION_PLAN_2026-07-12.md`](archive/IMPLEMENTATION_PLAN_2026-07-12.md).
 The passages on proposal 0013 were updated 2026-11-19 for PR #327 (merged as
-`d224979`) and for PR #328 (not merged); nothing else was re-checked then._
+`d224979`) and for PR #328; nothing else was re-checked then._
 
 ## Current production baseline
 
@@ -182,20 +182,19 @@ accepted it re-cuts _Now/Next_.
 chrome: placement first, then a flat skin) was **accepted 2026-11-19**. Its
 phase P0 (foundations), P1 (shell) and P2 (properties panel) are merged, and
 P3 (skin sweep) is partly merged; the rest of P3 and P4 (guardrails) are built
-for PR #328 (not merged) on the integration branch `wip/int2`, not yet pushed. PR #326 merged the same
+in PR #328. PR #326 merged the same
 day as `e9d0d7f` (see "UI overhaul foundations" under "Completed historical
 milestones"), and PR #327 merged as `d224979` with the command registry
 (`src/ui/commands.ts`: one table of every command and its keys), the top bar
 with its menus, the left rail, the docked library, the pages bar, the command
 palette on Ctrl/Cmd+K and the tabbed properties panel (see "UI overhaul:
-command registry, shell and properties panel"). In `main`, the Share dialog, the presentation controls, the shortcut sheet's
-close button and the path bar are still in the old skin, seven rules under
-12 px remain, and P4's top-bar budget test and "what moved" note are not
-built. The integration branch for PR #328 (not merged, not yet pushed)
-finishes those (no `.tbtn`, no text under 12 px,
+command registry, shell and properties panel"). Before PR #328, the Share dialog, the presentation controls, the shortcut sheet's
+close button and the path bar in `main` were still in the old skin, seven rules under
+12 px remained, and P4's top-bar budget test and "what moved" note were not
+built. PR #328 finishes those (no `.tbtn`, no text under 12 px,
 accent text, motion tokens, a dark scope for present mode, "page" for "frame"
 in the shell's labels, the control and text-size budgets, the one-time "what
-moved" note); the pull request itself adds the compact layout (below 1,024 px
+moved" note) and adds the compact layout (below 1,024 px
 the node library and the properties panel are drawers over the canvas). What stays open after it:
 Find and quick-add are not folded into the palette, and two or more nodes have
 no shared fields in the panel (QA-2026-11-14-UI-04). P0–P4 are that
@@ -749,7 +748,7 @@ Plan and per-phase status: [`futures/hw-catalog.md`](futures/hw-catalog.md).
 PR #327 (the command registry, the shell and the properties panel) merged
 2026-11-19 as `d224979`. Its Release run (44554032473) failed in CI's browser
 job, so the `stage` and `production` jobs were skipped and it deployed nothing;
-PR #328 (not merged) carries the fixes. Merged:
+PR #328 carries the fixes. Merged:
 
 - **The command registry** (`src/ui/commands.ts`): every command with its key
   bindings as data, bound once in `src/main.ts`; the window key handler, the
@@ -788,22 +787,22 @@ PR #328 (not merged) carries the fixes. Merged:
   `e2e/command-surfaces.spec.ts`. The three canvas screenshot baselines were
   regenerated for the narrower canvas column.
 
-Not done in `main`: the Share dialog, the presentation controls, the shortcut
-sheet's close button and the path bar still use `.tbtn`; seven `font-size`
-rules under 12 px remain (`NOT_YET` in `src/styles/styles.test.ts`); no test
-caps the top bar's controls and there is no "what moved" note; Find and
+Not done by PR #327: the Share dialog, the presentation controls, the shortcut
+sheet's close button and the path bar still used `.tbtn`; seven `font-size`
+rules under 12 px remained (`NOT_YET` in `src/styles/styles.test.ts`); no test
+capped the top bar's controls and there was no "what moved" note; Find and
 quick-add were not folded into the palette; the Find box, the presentation
 controls and the shortcut sheet's Presentation rows, the path bar and the path
 analysis messages, the Page tab's Story hint, Caption placeholder and
 empty-list line, the Analyze path tooltip and the delete-page confirmation
-still say "frame"; and two or more nodes have no shared fields in the panel
+still said "frame"; and two or more nodes had no shared fields in the panel
 (QA-2026-11-14-UI-04). The proposal's section "What P1 to P4 changed from this
 text" lists each departure. The compact layout, below 1,024 px, and the items
-in the next entry are PR #328 and are not merged.
+in the next entry are PR #328's.
 
-### UI overhaul: finish the skin, guardrails and the "what moved" note (proposal 0013, rest of P3 and P4; PR #328, not merged, 2026-11-19)
+### UI overhaul: finish the skin, guardrails and the "what moved" note (proposal 0013, rest of P3 and P4; PR #328, 2026-11-19)
 
-Not in `main`, not released. Built for PR #328 on the integration branch `wip/int2`, not yet pushed: the pull request's own head is still `01c21db`:
+Built in PR #328:
 
 - **No `.tbtn`, no text under 12 px.** The library's tiles, the canvas overlays
   (Find, the path bar, quick-add, the rename editor, the drag ghost, the

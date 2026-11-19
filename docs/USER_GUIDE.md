@@ -1,11 +1,11 @@
 # Topology Dojo User Guide
 
-**Last reviewed:** 2026-11-19, for PR #328 (not merged), against the
-integration branch `wip/int2` at `61e4d7e` (not yet pushed: the pull request's own head is still `01c21db`). Earlier the same day PR #326 (the first part of
+**Last reviewed:** 2026-11-19, for PR #328, against PR #328's branch at
+`61e4d7e`. Earlier the same day PR #326 (the first part of
 [proposal 0013](proposals/0013-ui-overhaul.md)) merged as `e9d0d7f`, and
 pull request #327 (the command registry, the rebuilt shell and the properties
-panel) merged as `d224979`; neither the compact layout nor anything described
-below as new in this review is in `main`. The first review of the day (at
+panel) merged as `d224979`; the compact layout and everything described below
+as new in this review are PR #328's work, not #326's or #327's. The first review of the day (at
 `d24f6a4`) checked the editor's chrome against the running app and the code:
 "Editor anatomy", the properties panel, the context menus, the keyboard table
 and every sentence that names where a field or a button now is. This review
@@ -22,7 +22,7 @@ account menu, workspace and admin surfaces), anything on a touch screen, the
 matching rules and ranking of Find, how long **Undo delete** stays, the node
 designer and the wizards, the generated diagrams, import and export output,
 the MCP sections, and the rest of the guide since the first review of the day.
-A later pass the same day, after review fixes on the same branch, re-checked
+A later pass the same day, after review fixes in PR #328, re-checked, at `f85fc5f`,
 against the code and the running app (the dev server, both themes): the
 properties toggle's words (**Hide**, **Properties**), the **Sign in** chip,
 the names of the properties panel's sections, the keyboard reference's tooltip

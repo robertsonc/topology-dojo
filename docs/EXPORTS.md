@@ -9,8 +9,8 @@ editor's top bar (the **Export** button, which opens the same menu as
 column says which side has each format. Imports go through **File → Open…** and
 `import_topology`.
 
-_Last reviewed 2026-11-13 against `main` at `e99b012`. On 2026-11-19, in PR #328
-(not merged), the opening paragraph's names for where exports and imports are in
+_Last reviewed 2026-11-13 against `main` at `e99b012`. On 2026-11-19, in PR #328,
+the opening paragraph's names for where exports and imports are in
 the editor were corrected against the code; nothing else was re-read._
 
 | Format                      | Direction | Editable in the target tool | Fidelity                                      | Where it runs                    |

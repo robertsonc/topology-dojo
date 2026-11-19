@@ -230,7 +230,7 @@ Still open from earlier follow-ups, re-checked this run: the
 ## Follow-up: 2026-11-19
 
 Documentation pass for PRs #326 and #327 (both merged 2026-11-19, as `e9d0d7f`
-and `d224979`) and for PR #328, which is not merged. Checked against the tree
+and `d224979`) and for PR #328. Checked against the tree
 at `d224979` and, for the compact layout, at `d24f6a4`. Each item says how it
 is known; **Confirmed** means read in the code, in `git log` or in the running
 app this run.
@@ -273,15 +273,14 @@ proposal's status lines carry the detail):
   page"), its Caption placeholder and empty-list line, the Analyze path
   tooltip and the delete-page confirmation say "frame".
 
-## Follow-up: 2026-11-19, second pass (PR #328, not merged)
+## Follow-up: 2026-11-19, second pass (PR #328)
 
-The documents were checked again against the integration branch `wip/int2`
-at `61e4d7e` (the code of the later slices for PR #328, not yet pushed: the pull request's own head is still `01c21db`), which is not merged and is not in
-`main`. "Closed" below means closed on that branch only: until #328 merges,
-`main` still has what the first pass of 2026-11-19 recorded. Each item says how
-it is known.
+The documents were checked again against PR #328's branch at `61e4d7e` (the
+code of the later slices for PR #328). "Closed" below means closed by PR #328's
+code at that commit: before PR #328, `main` had what the first pass of
+2026-11-19 recorded. Each item says how it is known.
 
-Closed on the branch of PR #328:
+Closed by PR #328:
 
 - Row 27 (`docs/EXPORTS.md`, UAT-PR-01 step 7 naming the toolbar): both
   corrected in this pass; `grep -n -i toolbar docs/EXPORTS.md

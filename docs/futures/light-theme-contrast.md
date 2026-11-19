@@ -178,9 +178,9 @@ var(--accent)` as text (listed in the proposal's P3 status line; the token's own
 comment in `tokens.css` says `--accent` as text can fall under 4.5 : 1 on a tint); and the motion and reduced-motion pass. The
 items under "Out of scope" above are unchanged.
 
-### Update, 2026-11-19, PR #328 (not merged)
+### Update, 2026-11-19, PR #328
 
-On the integration branch `wip/int2` for PR #328 (not in `main`, and not yet pushed: the pull request's own head is still `01c21db`) the chrome's pass was done in part:
+In PR #328 the chrome's pass was done in part:
 the surfaces that set `color: var(--accent)` as text now use `--accent-fg`
 (no stylesheet sets text or an icon in `color: var(--accent)`:
 `grep -rnE "(^|[^-])color: var\(--accent\)" src/styles` finds nothing; what

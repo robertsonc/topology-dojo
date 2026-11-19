@@ -84,7 +84,7 @@ not a packet series of this plan either: its phases stay in
 (foundations), P1 (shell) and P2 (properties panel) are merged, P3 (skin
 sweep) in part: PR #326 merged 2026-11-19 as `e9d0d7f` and PR #327 as
 `d224979` (the command registry, the shell, the properties panel). PR #328
-(not merged) adds the compact layout (drawers below 1,024 px), the rest of P3
+adds the compact layout (drawers below 1,024 px), the rest of P3
 and P4 (the guardrails and the one-time "what moved" note) and brings the
 documentation up to date; the proposal's status header says what remains. Those labels are unrelated to proposal 0003's packets P1–P5.
 
