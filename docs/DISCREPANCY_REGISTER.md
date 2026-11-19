@@ -275,8 +275,8 @@ proposal's status lines carry the detail):
 
 ## Follow-up: 2026-11-19, second pass (PR #328, not merged)
 
-The documents were checked again against the branch of PR #328 at `61e4d7e`
-(the code of the later slices of that PR), which is not merged and is not in
+The documents were checked again against the integration branch `wip/int2`
+at `61e4d7e` (the code of the later slices for PR #328, not yet pushed: the pull request's own head is still `01c21db`), which is not merged and is not in
 `main`. "Closed" below means closed on that branch only: until #328 merges,
 `main` still has what the first pass of 2026-11-19 recorded. Each item says how
 it is known.

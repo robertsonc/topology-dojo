@@ -2,7 +2,7 @@
 
 **Status:** Accepted (2026-11-19). P0 (foundations), P1 (shell) and P2
 (properties panel) are merged. P3 (skin sweep) and P4 (guardrails) are built
-in PR #328 (not merged) and are not in `main`. Two pull requests merged into
+for PR #328 (not merged) on the integration branch `wip/int2`, not yet pushed: the pull request's own head is still `01c21db`, and are not in `main`. Two pull requests merged into
 `main` on 2026-11-19. PR #326 merged as `e9d0d7f` (its Release run completed
 with success the same day): the stylesheet move, the token layer, the flat
 skin, the docked chrome, the neutral scrollbars and the icon sprite. PR #327,
@@ -361,8 +361,9 @@ panel is under 12px" in the same spec.
 
 _Done when:_ no surface uses the old tokens; text meets 4.5 : 1 in both themes.
 
-_Status (2026-11-19): built in PR #328 (not merged); in `main`, P3 is partly
-done as PR #327 left it._ In `main` (PR #327), the top bar, rail, pages bar,
+_Status (2026-11-19): built for PR #328 (not merged) on the integration
+branch `wip/int2`, not yet pushed: the pull request's own head is still `01c21db`; in `main`, P3 is
+partly done as PR #327 left it._ In `main` (PR #327), the top bar, rail, pages bar,
 status bar, menus, command palette, properties panel, the shared-copy banner,
 both wizards, the workspace, preferences and admin panels and the node
 designer were on the shared controls (`src/styles/controls.css`); the Share
@@ -381,7 +382,7 @@ under 12 px ("sets no text under 12px"); accent as text or an icon is
 Present mode has a dark scope (`.dark-scope` in `src/styles/tokens.css`) so its
 bar reads in the light theme. A document's brand accent no longer has to be
 readable by luck: `readableAccentText` (`src/ui/contrast.ts`) mixes it toward
-the theme's foreground until it reaches 4.5 : 1 on the front surface and
+the theme's foreground until it reaches 4.5 : 1 on every surface of the chrome and on every tint laid over one (a hovered or pressed control, `--accent-soft`, `--accent-soft-strong`) and
 `setChromeAccent` sets `--accent-fg` from it (`src/ui/contrast.test.ts`). The
 motion pass: every `transition` and `animation` takes a duration token
 (`--dur-fast`, `--dur`, `--dur-slow`, `--dur-flash`), asserted by "times every
@@ -420,7 +421,9 @@ of former toolbar controls. PR #328 adds:
   both wizards, the node designer, the workspace, preferences and admin panels
   and present mode, at 1,440 x 900 and 390 x 844, in both themes (16 tests);
 - the sideways-scroll test, every 40 px from 360 to 1,920, signed out and
-  under a 30-character login;
+  under a 30-character login: the document, and the top bar, the status bar,
+  the pages bar and the stage each within its box, and every visible control
+  outside the canvas inside the window;
 - no scroll container inside the properties panel, now for every state the
   panel draws (`e2e/shell-inspector-layout.spec.ts`);
 - the one-time "what moved" note (`src/ui/shell-note.ts`,
@@ -686,7 +689,8 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   says the accent is "kept for the primary action and selected state only".
   Accent-coloured text and icons use `--accent-fg`, a lighter mix of the
   accent; for a document's own brand colour the editor works the mix out so it
-  reaches 4.5 : 1 on the front surface (`readableAccentText`).
+  reaches 4.5 : 1 on every surface and on the tints over them
+  (`readableAccentText`, `accentTextGrounds`).
 - **Present mode has a dark scope.** Not in the text. The presentation's bar
   sits on a stage that is dark in both themes, so its root takes the dark
   foreground, line and fill tokens (`.dark-scope`) and reads in the light

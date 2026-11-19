@@ -802,7 +802,7 @@ in the next entry are PR #328 and are not merged.
 
 ### UI overhaul: finish the skin, guardrails and the "what moved" note (proposal 0013, rest of P3 and P4; PR #328, not merged, 2026-11-19)
 
-Not in `main`, not released. Built on the branch of PR #328:
+Not in `main`, not released. Built for PR #328 on the integration branch `wip/int2`, not yet pushed: the pull request's own head is still `01c21db`:
 
 - **No `.tbtn`, no text under 12 px.** The library's tiles, the canvas overlays
   (Find, the path bar, quick-add, the rename editor, the drag ghost, the

@@ -180,13 +180,17 @@ items under "Out of scope" above are unchanged.
 
 ### Update, 2026-11-19, PR #328 (not merged)
 
-On the branch of PR #328 (not in `main`) the chrome's pass was done in part:
+On the integration branch `wip/int2` for PR #328 (not in `main`, and not yet pushed: the pull request's own head is still `01c21db`) the chrome's pass was done in part:
 the surfaces that set `color: var(--accent)` as text now use `--accent-fg`
-(`grep -rn "color: var(--accent)" src/styles` finds nothing); for a document's
+(no stylesheet sets text or an icon in `color: var(--accent)`:
+`grep -rnE "(^|[^-])color: var\(--accent\)" src/styles` finds nothing; what
+remains of `var(--accent)` is `border-color` and `accent-color`); for a document's
 brand accent, `readableAccentText` in `src/ui/contrast.ts` mixes the accent
-toward the theme's foreground until it reaches 4.5 : 1 on the front surface and
-`setChromeAccent` sets `--accent-fg` from it (unit tests with a dark, a pale and
-a mid accent in both themes, `src/ui/contrast.test.ts`); present mode has a dark
+toward the theme's foreground until it reaches 4.5 : 1 on every surface of the chrome and on every tint laid over one (a hovered or pressed control, `--accent-soft`, `--accent-soft-strong`) and
+`setChromeAccent` sets `--accent-fg` from it (unit tests with a dark, a pale, a
+mid and a mid-pale accent in both themes, `src/ui/contrast.test.ts`; at first
+it measured the front surface alone, and a review found #7fd1ff at 3.89 : 1 on
+the compass's chosen side in the light theme); present mode has a dark
 scope so its bar reads in the light theme (`.dark-scope`, `src/styles/tokens.css`);
 and every transition and animation in the stylesheets takes a duration token
 (`src/styles/styles.test.ts`, "times every transition and animation with the

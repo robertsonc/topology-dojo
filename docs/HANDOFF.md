@@ -149,9 +149,10 @@ implementation program", the `docs/proposals/0005`-`0013` entry and the "Key
 files" rows for the editor chrome were written for it; nothing else in this
 file was re-checked._
 
-_2026-11-19 (the end of the day; `main` at `d224979`, and the branch of PR
-#328, not merged, at `61e4d7e` for the code): PR #328 now also holds the rest
-of proposal 0013's P3 and the guardrails of P4, so the statements above that
+_2026-11-19 (the end of the day; `main` at `d224979`, and the integration
+branch `wip/int2` at `61e4d7e` for the code): the rest of proposal 0013's P3
+and the guardrails of P4 are built on `wip/int2` for PR #328 (not merged), and
+are not yet pushed: the pull request's own head is still `01c21db`. So the statements above that
 say what is "not done" (the `.tbtn` buttons, the seven font-size rules, the
 missing top-bar budget, the missing "what moved" note, "frame" in the shell's
 labels) describe `main` and are out of date for the branch. None of this is in
@@ -166,8 +167,11 @@ shows the Page or Document tab; opening a drawer closes the other on a phone
 and where under 160 px of canvas would be left; the budgets
 (`e2e/shell-budget.spec.ts`, `src/ui/shell-budget.test.ts`) count the top
 bar's, the rail's and the pages bar's controls, walk the shell's text for
-anything under 12 px, and check the document never scrolls sideways from 360
-to 1,920 px; and the one-time "what moved" note (`src/ui/shell-note.ts`) is
+anything under 12 px, and check from 360 to 1,920 px that neither the
+document nor the top bar, the status bar, the pages bar or the stage is wider
+than its box and that no control outside the canvas runs past the window (the
+body clips what overflows, so the document's width alone could not show a
+bar that runs off); and the one-time "what moved" note (`src/ui/shell-note.ts`) is
 shown to a browser that used the editor before, with **Help → What moved** to
 show it again. Only this note, the "Recently completed" entry for PR #328, the
 paragraph dated 2026-11-19 under "Active implementation program", and the "Key
@@ -342,11 +346,13 @@ from `git log --first-parent`):
   this file. PR #328 (not merged): the compact layout (below 1,024 px the
   panels are drawers), the user guide, the README image and these documents.
 - **UI overhaul: finish the skin, guardrails and the "what moved" note**
-  (proposal 0013, the rest of P3 and P4; PR #328, **not merged**, so not in
-  `main` and not released). On the branch: the surfaces still on the old
-  `.tbtn` skin (the library's tiles, the canvas overlays, Display settings,
-  Share, present mode, the shortcut sheet, the Problems dock and the annotation
-  editors) are on the shared controls and `toolbar.css` is deleted;
+  (proposal 0013, the rest of P3 and P4; for PR #328, **not merged**, so not in
+  `main` and not released; built on the integration branch `wip/int2` and not yet pushed: the pull request's own head is still `01c21db`). On the branch: the Share dialog, the presentation
+  controls, the shortcut sheet's close button and the path bar, the last
+  surfaces on `.tbtn`, are on the shared controls, and so are the library's
+  tiles, the canvas overlays, Display settings, the Problems dock and the
+  annotation editors (restyled from their own rules); `toolbar.css` is
+  deleted;
   `--accent-fg` for accent text, computed for a brand accent; a dark scope for
   present mode (`.dark-scope`); duration tokens (`--dur-slow`, `--dur-flash`)
   and a test that no transition or animation has a literal time;

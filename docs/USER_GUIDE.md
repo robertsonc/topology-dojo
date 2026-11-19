@@ -1,7 +1,7 @@
 # Topology Dojo User Guide
 
-**Last reviewed:** 2026-11-19, in PR #328 (not merged), against the branch at
-`61e4d7e`. Earlier the same day PR #326 (the first part of
+**Last reviewed:** 2026-11-19, for PR #328 (not merged), against the
+integration branch `wip/int2` at `61e4d7e` (not yet pushed: the pull request's own head is still `01c21db`). Earlier the same day PR #326 (the first part of
 [proposal 0013](proposals/0013-ui-overhaul.md)) merged as `e9d0d7f`, and
 pull request #327 (the command registry, the rebuilt shell and the properties
 panel) merged as `d224979`; neither the compact layout nor anything described
@@ -22,6 +22,13 @@ account menu, workspace and admin surfaces), anything on a touch screen, the
 matching rules and ranking of Find, how long **Undo delete** stays, the node
 designer and the wizards, the generated diagrams, import and export output,
 the MCP sections, and the rest of the guide since the first review of the day.
+A later pass the same day, after review fixes on the same branch, re-checked
+against the code and the running app (the dev server, both themes): the
+properties toggle's words (**Hide**, **Properties**), the **Sign in** chip,
+the names of the properties panel's sections, the keyboard reference's tooltip
+sentence, the undo and redo keys while a menu or a dialog is open, where the
+focus goes in the pages bar, the drawers on a phone at load, a window under
+480px tall (360 × 225 and 320 × 256), and the brand accent's text colour.
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
 edit a diagram directly on the canvas, or an MCP-capable agent can author the
@@ -626,8 +633,6 @@ After those come four more groups: Mouse and touch, Dialogs and menus,
 Presentation, and Find and the node library. The table below is a summary;
 where the two differ, the sheet is right. Most buttons and every menu item whose
 command has a key name its first shortcut in the tooltip or beside the item.
-The zoom control's **Zoom in** and **Zoom out** buttons do not; their keys are
-**+** and **-**.
 
 | Keys                               | Action                                                                            |
 | ---------------------------------- | --------------------------------------------------------------------------------- |

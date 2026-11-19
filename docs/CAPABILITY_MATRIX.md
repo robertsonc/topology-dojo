@@ -22,7 +22,7 @@ export, the SD-WAN wizard, the anchor box, align and distribute, the light
 theme, the browser exports and the Share button) were corrected for it. In
 those rows the classification is the capability's, made before PR #327; a
 control introduced "since PR #327 (merged as `d224979`)" is in the merged
-tree and is not part of that classification. On the same day, against the branch of PR #328 (not merged) at `61e4d7e`,
+tree and is not part of that classification. On the same day, against the integration branch `wip/int2` for PR #328 (not merged; not yet pushed: the pull request's own head is still `01c21db`) at `61e4d7e`,
 the Share dialog row, the Present mode row and the chrome row were corrected
 for it and three rows were added, all marked "Not merged (PR #328)". No other
 row was re-checked. Every row cites the code evidence used to classify it.
