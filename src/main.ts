@@ -325,21 +325,6 @@ app.innerHTML = `
     <button class="chip user-chip" id="userChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Account" aria-label="Account menu" hidden><span class="uc-dot" aria-hidden="true">${icon('account')}</span><span class="uc-name" id="userName"></span><span class="uc-caret" aria-hidden="true">${icon('chevron-down')}</span></button>
     <input type="file" id="fInput" accept="application/json,.json,.drawio,.xml,.mmd,.mermaid,.csv,.txt" hidden />
   </header>
-  <!-- The tools and view toggles, until they move to the rail and the pages
-       bar. -->
-  <div class="tool-strip" id="toolStrip" role="group" aria-label="Tools and view">
-    <button class="tbtn ticon on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool">${icon('tool-select')}</button>
-    <button class="tbtn ticon" id="tLink" title="${tip('tool.link')}" aria-label="Draw link tool">${icon('tool-link')}</button>
-    <button class="tbtn ticon" id="tAnchor" title="${tip('tool.anchor')} — free-floating link endpoints" aria-label="Drop anchor tool">${icon('anchor')}</button>
-    <span class="vr"></span>
-    <button class="tbtn ticon on" id="tGrid" title="${tip('view.toggleGrid')}" aria-label="Toggle grid">${icon('grid')}</button>
-    <button class="tbtn ticon on" id="tSnap" title="${tip('view.toggleSnap')}" aria-label="Toggle snap">${icon('snap')}</button>
-    <button class="tbtn ticon" id="tCalm" title="${tip('view.toggleCalm', 'Calm canvas — pause animations')}" aria-label="Calm canvas — pause animations">${icon('calm')}</button>
-    <button class="tbtn ticon" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">${icon('settings')}</button>
-    <span class="vr"></span>
-    <button class="tbtn ticon" id="tHelp" title="${tip('help.shortcuts')}" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
-  </div>
-
   <!-- Shown while the document on canvas is a /v/<id> shared snapshot: edits
        autosave to a separate slot so the user's own document stays intact
        until they explicitly adopt the copy (#202). -->
@@ -350,41 +335,64 @@ app.innerHTML = `
     <button class="tbtn" id="sharedUnpublish" title="Remove the public snapshot so this link stops working" hidden>unpublish link</button>
   </div>
 
+  <!-- The stage, by scope: the rail (making: the tools, the library), the
+       node library docked beside it, the canvas over the pages bar, and the
+       properties panel. Only the page chips scroll. -->
   <div class="stage">
-    <div class="canvas-area" id="canvas-area">
-      <aside class="palette" id="palette">
-        <button class="palette-toggle" id="palette-toggle" title="${tip('view.toggleLibrary', 'Hide node library')}">nodes ${icon('panel-left-close')}</button>
-        <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
-        <div class="palette-list scroll-slim" id="palette-list"></div>
-        <div class="minimap-dock" id="minimap-dock">
-          <button class="minimap-toggle" id="minimap-toggle" title="${tip('view.toggleMinimap', 'Hide minimap')}">map ${icon('chevron-down')}</button>
-          <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet"></svg>
-        </div>
-      </aside>
-      <div class="tds-root">
-        <div class="tds-canvas-row">
-          <div class="tds-canvas canvas-host">
-            <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
-            <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="rail" id="rail" role="group" aria-label="Tools">
+      <button type="button" class="icon-btn icon-btn-lg on" id="tSelect" title="${tip('tool.select')}" aria-label="Select/move tool" aria-pressed="true">${icon('tool-select')}</button>
+      <button type="button" class="icon-btn icon-btn-lg" id="ccHand" title="${tip('tool.hand')} — or hold Space to pan anytime" aria-label="Hand / pan tool" aria-pressed="false">${icon('hand')}</button>
+      <button type="button" class="icon-btn icon-btn-lg" id="tLink" title="${tip('tool.link')}" aria-label="Draw link tool" aria-pressed="false">${icon('tool-link')}</button>
+      <button type="button" class="icon-btn icon-btn-lg" id="tAnchor" title="${tip('tool.anchor')} — free-floating link endpoints" aria-label="Drop anchor tool" aria-pressed="false">${icon('anchor')}</button>
+      <span class="rail-sep" aria-hidden="true"></span>
+      <button type="button" class="icon-btn icon-btn-lg" id="palette-toggle" title="${tip('view.toggleLibrary', 'Hide node library')}" aria-label="Node library" aria-pressed="true">${icon('panel-left-close')}</button>
+      <span class="rail-space"></span>
+      <button type="button" class="icon-btn icon-btn-lg" id="tCommand" title="${tip('help.commandPalette')}" aria-label="Command palette">${icon('search')}</button>
+      <button type="button" class="icon-btn icon-btn-lg" id="tHelp" title="${tip('help.shortcuts')}" aria-label="Keyboard shortcuts">${icon('shortcuts')}</button>
+    </div>
+    <aside class="palette" id="palette" aria-label="Node library">
+      <div class="palette-head">Library</div>
+      <input id="palette-search" class="palette-search" type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search node library">
+      <div class="palette-list scroll-slim" id="palette-list"></div>
+    </aside>
+    <div class="canvas-col">
+      <div class="canvas-area" id="canvas-area">
+        <div class="tds-root">
+          <div class="tds-canvas-row">
+            <div class="tds-canvas canvas-host">
+              <svg id="page-canvas" preserveAspectRatio="xMidYMid meet"></svg>
+              <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+            </div>
           </div>
         </div>
+        <!-- What floats over the canvas: the minimap card, and under it the
+             zoom control in the bottom-right corner. -->
+        <div class="minimap-dock" id="minimap-dock">
+          <svg id="minimap" class="minimap" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Minimap: click or drag to move the view"></svg>
+        </div>
+        <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Zoom">
+          <button type="button" class="icon-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
+          <button type="button" class="cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom level — fit view">100%</button>
+          <button type="button" class="icon-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
+          <button type="button" class="icon-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
+        </div>
       </div>
-      <!-- The canvas's bottom band, floating over it to the right of the node
-           library: the frames strip, then the view controls. They share one
-           row while both fit; otherwise the controls sit above the strip. -->
-      <div class="canvas-dock" id="canvas-dock">
-        <div class="frames-dock" id="frames-dock" role="region" aria-label="Frames">
-          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="${tip('view.toggleFrames', 'Hide frames')}">pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
+      <!-- The pages bar, docked under the canvas: the pages toggle and its
+           chips, then the canvas options at the right end. -->
+      <div class="pages-bar" id="pagesBar">
+        <div class="frames-dock" id="frames-dock" role="region" aria-label="Pages">
+          <button class="frames-toggle" id="frames-toggle" type="button" aria-expanded="true" title="${tip('view.toggleFrames', 'Hide pages')}">Pages <span class="frames-ind" id="frames-ind">1/1</span> <span class="frames-chev" aria-hidden="true">${icon('chevron-left')}</span></button>
           <div class="frames-reveal">
             <div class="filmstrip scroll-slim" id="filmstrip"></div>
           </div>
         </div>
-        <div class="canvas-ctrls" id="canvasCtrls" role="group" aria-label="Canvas view">
-          <button class="cc-btn" id="ccHand" title="Hand / pan tool (hold Space to pan anytime)" aria-label="Hand / pan tool">${icon('hand')}</button>
-          <button class="cc-btn" id="ccZoomIn" title="Zoom in" aria-label="Zoom in">${icon('zoom-in')}</button>
-          <button class="cc-btn cc-zoom" id="ccZoom" title="${tip('view.fit')}" aria-label="Zoom level — fit view">100%</button>
-          <button class="cc-btn" id="ccZoomOut" title="Zoom out" aria-label="Zoom out">${icon('zoom-out')}</button>
-          <button class="cc-btn" id="ccFit" title="${tip('view.fit', 'Fit to content')}" aria-label="Fit to content">${icon('fit-view')}</button>
+        <div class="view-opts" role="group" aria-label="Canvas options">
+          <button type="button" class="icon-btn on" id="tGrid" title="${tip('view.toggleGrid')}" aria-label="Toggle grid" aria-pressed="true">${icon('grid')}</button>
+          <button type="button" class="icon-btn on" id="tSnap" title="${tip('view.toggleSnap')}" aria-label="Toggle snap" aria-pressed="true">${icon('snap')}</button>
+          <button type="button" class="icon-btn" id="tCalm" title="${tip('view.toggleCalm', 'Calm canvas — pause animations')}" aria-label="Calm canvas — pause animations" aria-pressed="false">${icon('calm')}</button>
+          <button type="button" class="icon-btn" id="tDisplay" title="Display settings — ambient backdrop, wheel, brand palette" aria-label="Display settings" aria-haspopup="dialog" aria-expanded="false">${icon('settings')}</button>
+          <span class="vr"></span>
+          <button type="button" class="icon-btn" id="minimap-toggle" title="${tip('view.toggleMinimap', 'Hide minimap')}" aria-label="Minimap" aria-pressed="true">${icon('minimap')}</button>
         </div>
       </div>
     </div>
@@ -408,7 +416,7 @@ app.innerHTML = `
     </div>
   </div>
 
-  <footer class="statusbar scroll-slim" id="statusbar"></footer>
+  <footer class="statusbar" id="statusbar"></footer>
 `;
 
 // Populate the root defs sprite once. These are the engine's static shared
@@ -991,10 +999,10 @@ editor.setConnectEmptyHandler((req) =>
 );
 
 /*
- * Tell the editor how much of the canvas the floating panels cover, so
- * fit-to-content frames the *visible* area and never tucks edge content behind
- * the node library, the bottom band or the properties drawer. Recomputed on
- * each fit (panels collapse/expand).
+ * Tell the editor how much of the canvas the panels cover, so fit-to-content
+ * frames the *visible* area and never tucks edge content behind the node
+ * library, the zoom control and minimap in the canvas's corner, or the
+ * properties drawer. Recomputed on each fit (panels collapse/expand).
  */
 /** A floating panel's box, or null while it is collapsed or not laid out. */
 const openPanelBox = (id: string): PanelBox | null => {
@@ -1003,6 +1011,16 @@ const openPanelBox = (id: string): PanelBox | null => {
   const r = el.getBoundingClientRect();
   return r.width > 0 && r.height > 0 ? r : null;
 };
+/** The smallest box that holds both, or the one that is there. */
+function unionBox(a: PanelBox | null, b: PanelBox | null): PanelBox | null {
+  if (!a || !b) return a ?? b;
+  return {
+    left: Math.min(a.left, b.left),
+    top: Math.min(a.top, b.top),
+    right: Math.max(a.right, b.right),
+    bottom: Math.max(a.bottom, b.bottom),
+  };
+}
 /** The left inset the editor's latest fit was computed with (see fitView). */
 let fitLeftInset = 0;
 editor.setViewInsets(() => {
@@ -1010,9 +1028,9 @@ editor.setViewInsets(() => {
     canvas: overlaySvg.getBoundingClientRect(),
     palette: openPanelBox('palette'),
     inspector: openPanelBox('inspector-wrap'),
-    // The view controls are always in the bottom band, so it is reserved
-    // with the frames strip collapsed too.
-    dock: openPanelBox('canvas-dock'),
+    // The zoom control is always there; the minimap card above it only
+    // while it is open.
+    corner: unionBox(openPanelBox('canvasCtrls'), openPanelBox('minimap-dock')),
   });
   fitLeftInset = insets.left;
   return editorInsets(insets);
@@ -1628,6 +1646,12 @@ fileInput.addEventListener('change', async () => {
   loadDoc(parsed);
 });
 
+/** Show a toggle button's state: its `on` class and `aria-pressed`. */
+function setPressed(button: HTMLElement, on: boolean): void {
+  button.classList.toggle('on', on);
+  button.setAttribute('aria-pressed', String(on));
+}
+
 /* Tool toggle (select / link) */
 const selectBtn = app.querySelector<HTMLButtonElement>('#tSelect')!;
 const linkBtn = app.querySelector<HTMLButtonElement>('#tLink')!;
@@ -1635,9 +1659,9 @@ const anchorBtn = app.querySelector<HTMLButtonElement>('#tAnchor')!;
 function setTool(t: 'select' | 'link' | 'anchor'): void {
   editor.setTool(t);
   if (editor.isHandActive()) setHand(false); // picking a tool exits Hand mode
-  selectBtn.classList.toggle('on', t === 'select');
-  linkBtn.classList.toggle('on', t === 'link');
-  anchorBtn.classList.toggle('on', t === 'anchor');
+  setPressed(selectBtn, t === 'select');
+  setPressed(linkBtn, t === 'link');
+  setPressed(anchorBtn, t === 'anchor');
   renderStatus();
 }
 selectBtn.addEventListener('click', () => commands.run('tool.select'));
@@ -1655,7 +1679,7 @@ const handBtn = app.querySelector<HTMLButtonElement>('#ccHand')!;
 const ccZoom = app.querySelector<HTMLButtonElement>('#ccZoom')!;
 function setHand(on: boolean): void {
   editor.setHandTool(on);
-  handBtn.classList.toggle('on', on);
+  setPressed(handBtn, on);
 }
 handBtn.addEventListener('click', () => commands.run('tool.hand'));
 app
@@ -1764,18 +1788,22 @@ function renderMinimap(): void {
   const mx = (x: number): number => ox + (x - px) * s;
   const my = (y: number): number => oy + (y - py) * s;
   const dots = p.nodes
-    .map(
-      (n) =>
-        `<circle cx="${mx(n.x)}" cy="${my(n.y)}" r="2" fill="${n.color || '#7d8a92'}"/>`,
+    .map((n) =>
+      // A node's own colour is the document's; the rest is the theme's
+      // (the mm-* rules in shell.css), so it follows light and dark and
+      // the brand accent.
+      n.color
+        ? `<circle class="mm-node" cx="${mx(n.x)}" cy="${my(n.y)}" r="2" fill="${esc(n.color)}"/>`
+        : `<circle class="mm-node" cx="${mx(n.x)}" cy="${my(n.y)}" r="2"/>`,
     )
     .join('');
   const v = editor.getView();
   minimap.setAttribute('viewBox', `0 0 ${MM_W} ${MM_H}`);
   const html =
-    `<rect x="${ox}" y="${oy}" width="${pw * s}" height="${ph * s}" fill="none" stroke="#7d8a92" stroke-opacity="0.5" stroke-width="1"/>` +
+    `<rect class="mm-page" x="${ox}" y="${oy}" width="${pw * s}" height="${ph * s}"/>` +
     dots +
-    `<rect x="${mx(v.x)}" y="${my(v.y)}" width="${v.w * s}" height="${v.h * s}" fill="#01a982" fill-opacity="0.12" stroke="#01a982" stroke-width="1.5"/>`;
-  // Mirror the canvas brand remap so the minimap dots + viewport box match (#7).
+    `<rect class="mm-view" x="${mx(v.x)}" y="${my(v.y)}" width="${v.w * s}" height="${v.h * s}"/>`;
+  // Mirror the canvas brand remap so a node's own colour matches (#7).
   minimap.innerHTML = doc.palette ? applyPalette(html, doc.palette) : html;
 }
 // Click / drag the minimap to recenter the view there.
@@ -1795,12 +1823,13 @@ minimap.addEventListener('pointermove', (e) => {
   if (e.buttons === 1) minimapPanTo(e);
 });
 
-// Collapse / restore the minimap section docked at the bottom of the left rail.
+// Show / hide the minimap card above the zoom control. Its toggle is at the
+// right end of the pages bar.
 const minimapDock = app.querySelector<HTMLDivElement>('#minimap-dock')!;
 const minimapToggle = app.querySelector<HTMLButtonElement>('#minimap-toggle')!;
 function setMinimapCollapsed(collapsed: boolean): void {
   minimapDock.classList.toggle('collapsed', collapsed);
-  minimapToggle.innerHTML = `map ${icon(collapsed ? 'chevron-right' : 'chevron-down')}`;
+  minimapToggle.setAttribute('aria-pressed', String(!collapsed));
   minimapToggle.title = commands.titleWithShortcut(
     'view.toggleMinimap',
     collapsed ? 'Show minimap' : 'Hide minimap',
@@ -1814,14 +1843,20 @@ function setMinimapCollapsed(collapsed: boolean): void {
 minimapToggle.addEventListener('click', () =>
   commands.run('view.toggleMinimap'),
 );
-setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') === '1');
+// Closed until asked for: open, the card floats over the canvas's corner and
+// every fit gives up a strip of the canvas to it.
+setMinimapCollapsed(localStorage.getItem('tds-minimap-collapsed') !== '0');
 
-// Collapse / restore the node palette so it stops crowding the left edge.
+// Collapse / restore the node library docked beside the rail (a drawer over
+// the canvas on a phone). Its toggle is the rail's Library button.
 const paletteEl = app.querySelector<HTMLElement>('#palette')!;
 const paletteToggle = app.querySelector<HTMLButtonElement>('#palette-toggle')!;
 function setPaletteCollapsed(collapsed: boolean, persist = true): void {
   paletteEl.classList.toggle('collapsed', collapsed);
-  paletteToggle.innerHTML = `nodes ${icon(collapsed ? 'panel-left-open' : 'panel-left-close')}`;
+  paletteToggle.innerHTML = icon(
+    collapsed ? 'panel-left-open' : 'panel-left-close',
+  );
+  paletteToggle.setAttribute('aria-pressed', String(!collapsed));
   paletteToggle.title = commands.titleWithShortcut(
     'view.toggleLibrary',
     collapsed ? 'Show node library' : 'Hide node library',
@@ -1837,10 +1872,10 @@ paletteToggle.addEventListener('click', () =>
   commands.run('view.toggleLibrary'),
 );
 
-/* Collapse / restore the frames strip — a floating overlay at the canvas's
- * bottom-left, so toggling never resizes the canvas or moves the viewport.
- * Collapsed it shrinks to a pill whose current/total readout stays live
- * (playback keeps running and updating it without forcing the strip open). */
+/* Collapse / restore the page chips in the pages bar. The bar itself stays,
+ * so toggling never resizes the canvas or moves the viewport. Collapsed, the
+ * toggle's current/total readout stays live (playback keeps running and
+ * updating it without forcing the chips open). */
 function setFramesCollapsed(collapsed: boolean): void {
   framesDock.classList.toggle('collapsed', collapsed);
   framesToggle.setAttribute('aria-expanded', String(!collapsed));
@@ -1848,7 +1883,7 @@ function setFramesCollapsed(collapsed: boolean): void {
   if (chev) chev.innerHTML = icon(collapsed ? 'chevron-right' : 'chevron-left');
   framesToggle.title = commands.titleWithShortcut(
     'view.toggleFrames',
-    collapsed ? 'Show frames' : 'Hide frames',
+    collapsed ? 'Show pages' : 'Hide pages',
   );
   try {
     localStorage.setItem('tds-frames-collapsed', collapsed ? '1' : '0');
@@ -4595,7 +4630,7 @@ function renderFilmstrip(): void {
   strip.innerHTML = `
     ${
       doc.pages.length > 1
-        ? `<button class="frame add" id="playFlip" title="Play the flipbook (each frame holds for its duration)">${playFlipLabel(playTimer !== null)}</button>`
+        ? `<button class="frame add" id="playFlip" title="Play the pages on the canvas (each page holds for its duration)">${playFlipLabel(playTimer !== null)}</button>`
         : ''
     }
     ${doc.pages
@@ -4604,12 +4639,12 @@ function renderFilmstrip(): void {
       <div class="frame ${i === current ? 'on' : ''}" data-page="${i}" draggable="true" title="${esc(p.name)} — double-click to rename, drag to reorder">
         <span class="frame-n">${i + 1}</span>
         <span class="frame-name" data-name="${i}">${esc(p.name)}</span>
-        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete frame" aria-label="Delete frame ${esc(p.name)}">${icon('x')}</button>` : ''}
+        ${canDelete ? `<button class="frame-x" data-del="${i}" title="Delete page" aria-label="Delete page ${esc(p.name)}">${icon('x')}</button>` : ''}
       </div>`,
       )
       .join('')}
-    <button class="frame add" id="dupPage" title="Duplicate current frame">${icon('duplicate')} duplicate</button>
-    <button class="frame add" id="addPage" title="Add blank frame" aria-label="Add frame">${icon('plus')} frame</button>
+    <button class="frame add" id="dupPage" title="Duplicate current page">${icon('duplicate')} duplicate</button>
+    <button class="frame add" id="addPage" title="Add blank page" aria-label="Add page">${icon('plus')} page</button>
     ${
       pendingFrameDelete
         ? `<button class="frame add" id="undoDel" title="Restore the deleted frame &quot;${esc(pendingFrameDelete.page.name)}&quot;">${icon('restore')} undo delete</button>`
@@ -4820,11 +4855,11 @@ const gridBtn = app.querySelector<HTMLButtonElement>('#tGrid')!;
 const snapBtn = app.querySelector<HTMLButtonElement>('#tSnap')!;
 function toggleGrid(): void {
   editor.toggleGrid();
-  gridBtn.classList.toggle('on', editor.gridVisible);
+  setPressed(gridBtn, editor.gridVisible);
 }
 function toggleSnap(): void {
   editor.toggleSnap();
-  snapBtn.classList.toggle('on', editor.snap);
+  setPressed(snapBtn, editor.snap);
 }
 gridBtn.addEventListener('click', () => commands.run('view.toggleGrid'));
 snapBtn.addEventListener('click', () => commands.run('view.toggleSnap'));
@@ -4835,7 +4870,7 @@ const calmBtn = app.querySelector<HTMLButtonElement>('#tCalm')!;
 const CALM_KEY = 'topology-dojo:calm';
 function applyCalm(on: boolean): void {
   editor.setCalm(on);
-  calmBtn.classList.toggle('on', on);
+  setPressed(calmBtn, on);
   calmBtn.title = commands.titleWithShortcut(
     'view.toggleCalm',
     on
@@ -5132,8 +5167,10 @@ function closeDisplayPop(): void {
 }
 function toggleDisplayPop(): void {
   if (displayPop.hidden) {
+    // It opens upward from its button at the right end of the pages bar.
     const r = displayBtn.getBoundingClientRect();
-    displayPop.style.top = `${Math.round(r.bottom + 6)}px`;
+    displayPop.style.top = 'auto';
+    displayPop.style.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`;
     displayPop.style.right = `${Math.round(Math.max(8, window.innerWidth - r.right))}px`;
     displayPop.style.left = 'auto';
     displayPop.hidden = false;
@@ -5209,6 +5246,9 @@ function openHelp(): void {
 app
   .querySelector('#tHelp')
   ?.addEventListener('click', () => commands.run('help.shortcuts'));
+app
+  .querySelector('#tCommand')
+  ?.addEventListener('click', () => commands.run('help.commandPalette'));
 
 /* ── Present mode: full-screen playback of every frame ─────────────────
  * A human-only view feature (DESIGN #2 carve-out — nothing persisted): the

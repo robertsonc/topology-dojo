@@ -222,11 +222,11 @@ test('an icon that is on the page but not drawn is reported', async ({
 }) => {
   // The checks above are only worth something if they can fail: collapse
   // the icons of the visible chrome to nothing, as a stylesheet slip would.
-  // (The bar's icons are the top bar, the strip of tools and view toggles
-  // under it, the pages strip and the canvas controls.)
+  // (The bar's icons are the top bar, the left rail, the pages bar and the
+  // zoom control.)
   await bootEditor(page);
   const shown = await shownIcons(page);
-  const chrome = ['header.bar', '#toolStrip', '#frames-dock', '#canvasCtrls'];
+  const chrome = ['header.bar', '#rail', '#pagesBar', '#canvasCtrls'];
   await page.addStyleTag({
     content: `${chrome.map((c) => `${c} .icon`).join(', ')} { width: 0; height: 0; }`,
   });
@@ -469,7 +469,7 @@ test('a button whose plus is an icon still says "add"', async ({ page }) => {
     ['.anno-add [data-add="zone"]', 'Add zone', 'zone'],
     ['.anno-add [data-add="flowPath"]', 'Add flow path', 'flow'],
     ['.anno-add [data-add="policyMarker"]', 'Add marker', 'marker'],
-    ['#addPage', 'Add frame', 'frame'],
+    ['#addPage', 'Add page', 'page'],
   ] as const) {
     const button = page.locator(selector);
     await expect(button).toHaveAccessibleName(name);
@@ -482,7 +482,7 @@ test('a button whose plus is an icon still says "add"', async ({ page }) => {
   // The titles say what each does, as before.
   await expect(page.locator('#addPage')).toHaveAttribute(
     'title',
-    'Add blank frame',
+    'Add blank page',
   );
   await expect(page.locator('.anno-add [data-add="zone"]')).toHaveAttribute(
     'title',
@@ -524,13 +524,16 @@ test('an icon swap keeps the words and the accessible name', async ({
     ['Light', 'true'],
   ]);
 
-  // Panel toggles keep their word and change the icon beside it.
+  // Panel toggles keep their name and change the icon. The library's is an
+  // icon-only button on the rail now, so its name is its label.
   const palette = page.locator('#palette-toggle');
-  await expect(palette).toHaveText('nodes');
+  await expect(palette).toHaveAccessibleName('Node library');
   expect(await iconOf('#palette-toggle')).toBe('#i-panel-left-close');
+  await expect(palette).toHaveAttribute('aria-pressed', 'true');
   await palette.click();
-  await expect(palette).toHaveText('nodes');
+  await expect(palette).toHaveAccessibleName('Node library');
   expect(await iconOf('#palette-toggle')).toBe('#i-panel-left-open');
+  await expect(palette).toHaveAttribute('aria-pressed', 'false');
   await palette.click();
 
   const inspector = page.locator('#inspector-toggle');
@@ -541,11 +544,18 @@ test('an icon swap keeps the words and the accessible name', async ({
   expect(await iconOf('#inspector-toggle')).toBe('#i-panel-right-open');
   await inspector.click();
 
+  // The minimap's toggle at the end of the pages bar is icon-only: it keeps
+  // its name and its map, and says whether the card is open by being pressed
+  // (it starts closed).
   const minimap = page.locator('#minimap-toggle');
-  await expect(minimap).toHaveText('map');
-  expect(await iconOf('#minimap-toggle')).toBe('#i-chevron-down');
+  await expect(minimap).toHaveAccessibleName('Minimap');
+  expect(await iconOf('#minimap-toggle')).toBe('#i-minimap');
+  await expect(minimap).toHaveAttribute('aria-pressed', 'false');
   await minimap.click();
-  expect(await iconOf('#minimap-toggle')).toBe('#i-chevron-right');
+  await expect(page.locator('#minimap')).toBeVisible();
+  await expect(minimap).toHaveAccessibleName('Minimap');
+  expect(await iconOf('#minimap-toggle')).toBe('#i-minimap');
+  await expect(minimap).toHaveAttribute('aria-pressed', 'true');
 
   // The frames pill and the Problems header carry a caret of their own.
   const frames = page.locator('#frames-toggle');

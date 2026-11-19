@@ -1,6 +1,31 @@
-/* The shell (proposal 0013, P1): the top bar, and for now the strip that
-   holds the tools and view toggles. Controls come from controls.css; this
-   file lays them out. */
+/* The shell (proposal 0013, P1): the #app grid, the top bar, the left rail,
+   the docked node library, the pages bar, the zoom control and minimap over
+   the canvas, and the status bar. Controls come from controls.css; this file
+   lays them out. */
+
+/* Rows: the top bar, the shared-copy banner (when shown), the stage, the
+   status bar. One column, constrained so the wide legacy canvas cannot blow
+   the grid out past the viewport. */
+#app {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+#app > .topbar {
+  grid-row: 1;
+}
+#app > .shared-banner {
+  grid-row: 2;
+}
+#app > .stage {
+  grid-row: 3;
+}
+#app > .statusbar {
+  grid-row: 4;
+}
 
 /* ── Top bar: the document ────────────────────────────────────────────
    Logo, menus, the document title and save state, undo / redo, Tidy, then
@@ -211,19 +236,403 @@
   display: none;
 }
 
-/* ── The tools and view toggles ───────────────────────────────────────
-   A plain row under the top bar until the rail and the pages bar take them
-   (P1 slice 3). */
-.tool-strip {
+/* ── The stage ────────────────────────────────────────────────────────
+   rail | library | canvas column | properties. Collapsing the library
+   removes its column; the rail stays. Nothing here scrolls but the page
+   chips (and the panels' own lists). */
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px auto minmax(0, 1fr) auto;
+  /* One row, as tall as the stage: a tall panel scrolls inside itself
+     instead of stretching the row past the window. */
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+/* Each column by name, so a collapsed library (display: none) leaves its
+   column empty instead of the others sliding left into it. */
+.stage > .rail {
+  grid-column: 1;
+}
+.stage > .palette {
+  grid-column: 2;
+}
+.stage > .canvas-col {
+  grid-column: 3;
+}
+.stage > .inspector-wrap {
+  grid-column: 4;
+}
+
+/* ── Left rail: making ────────────────────────────────────────────────
+   The tools, the library toggle, and at the bottom the command palette and
+   the shortcut sheet. 44px wide with 32px buttons. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 8px 0;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+  background: var(--surface-back);
+}
+.rail-sep {
+  flex: none;
+  width: 20px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}
+.rail-space {
+  flex: 1 1 auto;
+}
+
+/* ── The node library, docked beside the rail ─────────────────────────
+   208px wide, full stage height: a heading, the search field, then the
+   list, which is the one part that scrolls. */
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: 208px;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+  background: var(--surface-back);
+}
+.palette.collapsed {
+  display: none;
+}
+.palette-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  color: var(--fg-strong);
+  font: 600 13px/1 var(--font-ui);
+}
+.palette > .palette-search {
+  flex: none;
+  width: auto;
+  height: 28px;
+  margin: 0 10px 8px;
+  font-family: var(--font-ui);
+}
+.palette > .palette-list {
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+/* ── The canvas column: the canvas over the pages bar ───────────────── */
+.canvas-col {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 44px;
+  min-width: 0;
+  min-height: 0;
+}
+.canvas-area {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  /* `clip`, not just `hidden`: a hidden box can still be scrolled by focus
+     moving to something outside it, which would slide the canvas and what
+     floats over it away with no way to scroll back. */
+  overflow: hidden;
+  overflow: clip;
+}
+
+/* The zoom control, floating in the canvas's bottom-right corner. */
+.canvas-ctrls {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: var(--z-canvas-ui);
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 36px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-float);
+  box-shadow: var(--shadow-raised);
+}
+.cc-zoom {
+  min-width: 48px;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font: 500 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.cc-zoom:hover {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+
+/* The minimap card, above the zoom control while it is open. Fixed aspect
+   (the MM_W:MM_H viewBox), so pointer → pan mapping stays exact. */
+.minimap-dock {
+  position: absolute;
+  right: 10px;
+  bottom: 54px;
+  z-index: var(--z-canvas-ui);
+  width: 170px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-float);
+  box-shadow: var(--shadow-raised);
+}
+.minimap-dock.collapsed {
+  display: none;
+}
+.minimap {
+  display: block;
+  width: 100%;
+  aspect-ratio: 170 / 120;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+/* Drawn from the theme: the page outline, the nodes (a node with a colour of
+   its own keeps it), and the view rectangle in the accent. */
+.minimap .mm-page {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.minimap .mm-node {
+  fill: var(--fg-weak);
+}
+.minimap .mm-view {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+/* ── The pages bar, docked under the canvas ───────────────────────────
+   The pages toggle and the page chips (play, the chips, duplicate, add),
+   then at the right end grid, snap, calm, display settings and the minimap.
+   The chips are the one thing in it that scrolls, and they never push the
+   right end out. */
+.pages-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
   padding: 0 10px;
   overflow: hidden;
-  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
   background: var(--surface-back);
+  font-family: var(--font-ui);
+}
+.frames-dock {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.frames-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-weak);
+  font: 500 12px/1 var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.frames-toggle:hover {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.frames-ind {
+  color: var(--fg);
+  font: 500 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.frames-chev {
+  display: inline-flex;
+}
+.frames-reveal {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.frames-dock.collapsed .frames-reveal {
+  display: none;
+}
+.filmstrip {
+  position: relative; /* the chips' offsetParent: strip-local scroll math */
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+/* A page chip: its number, then its name. */
+.frame {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-weak);
+  font: 400 12px/1 var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.frame:hover {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.frame.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg-strong);
+}
+.frame-n {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: var(--radius-xs);
+  background: var(--surface-field);
+  font: 500 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.frame.on .frame-n {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.frame[draggable='true'] {
+  cursor: grab;
+}
+/* The strip's own buttons: play, duplicate, add, undo delete. */
+.frame.add {
+  padding: 0 8px;
+}
+.frame.add > .icon {
+  margin: 0;
+}
+.frame-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-weak);
+  cursor: pointer;
+}
+.frame-x:hover {
+  background: var(--status-error-soft);
+  color: var(--status-error);
+}
+.frame-rename {
+  width: 120px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--surface-front);
+  color: var(--fg);
+  font: 400 12px/1 var(--font-ui);
+}
+/* Grid, snap, calm, display settings, the minimap. */
+.view-opts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.view-opts .vr {
+  margin: 0 4px;
+}
+.view-opts #tDisplay[aria-expanded='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+
+/* ── Status bar ───────────────────────────────────────────────────────
+   Live tool, cursor, counts and zoom. 24px, one line, never scrolls. The
+   values are data; the keys are labels. */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 24px;
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  background: var(--surface-back);
+  color: var(--fg);
+  font: 400 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.statusbar .sb-k {
+  color: var(--fg-weak);
+  font-family: var(--font-ui);
+}
+.statusbar .sb-hint {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--fg-weak);
+  font-family: var(--font-ui);
+  text-overflow: ellipsis;
+}
+/* Always-visible problems indicator; a click opens the Problems section. */
+.statusbar .sb-problems {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--fg-weak);
+  font: 400 12px/1 var(--font);
+  cursor: pointer;
+}
+.statusbar .sb-problems:hover {
+  border-color: var(--line-strong);
+  color: var(--fg);
+}
+.statusbar .sb-problems.has-warn {
+  border-color: var(--status-warn);
+  color: var(--status-warn);
+}
+.statusbar .sb-problems.has-error {
+  border-color: var(--status-error);
+  color: var(--status-error);
 }
 
 /* ── Narrow windows ───────────────────────────────────────────────── */
@@ -273,6 +682,36 @@
   #tTidyMenu,
   #workspaceLabel,
   .uc-name {
+    display: none;
+  }
+  /* The node library opens as a drawer over the canvas instead of taking a
+     column, and the canvas keeps a usable box. */
+  /* Both drawers are placed against the whole stage. */
+  .stage > .palette,
+  .stage > .inspector-wrap {
+    grid-column: 1 / -1;
+  }
+  .palette {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 44px;
+    z-index: var(--z-panel);
+    width: min(208px, calc(100% - 44px - 72px));
+    box-shadow: var(--shadow-float);
+  }
+  .canvas-area {
+    min-width: 160px;
+    min-height: 200px;
+  }
+  .pages-bar {
+    gap: 2px;
+    padding: 0 6px;
+  }
+  .frames-toggle {
+    padding: 0 4px;
+  }
+  .view-opts .vr {
     display: none;
   }
 }

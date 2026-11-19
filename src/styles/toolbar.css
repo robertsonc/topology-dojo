@@ -1,16 +1,5 @@
 /* Shared-snapshot banner, the .tbtn buttons still in use, and the sign-in
    prompt. The top bar is in shell.css. */
-/* Narrow windows: the floating panels shrink so the canvas stays usable. */
-@media (max-width: 700px) {
-  .palette {
-    width: 108px;
-    padding: 8px;
-  }
-  .inspector {
-    width: 184px;
-    padding: 9px;
-  }
-}
 /* Banner shown while the canvas holds a /v/<id> shared snapshot (#202).
    The explicit display beats the UA's [hidden] rule, so restate it. */
 .shared-banner[hidden] {

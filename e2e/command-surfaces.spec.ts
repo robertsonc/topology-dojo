@@ -24,8 +24,9 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
     ['#tHelp', 'Keyboard shortcuts (?)'],
     ['#tTidy', 'Tidy layout — grid-snap + de-overlap (T)'],
     ['#palette-toggle', 'Hide node library (B)'],
-    ['#minimap-toggle', 'Hide minimap (M)'],
-    ['#frames-toggle', 'Hide frames (F)'],
+    // The minimap card starts closed.
+    ['#minimap-toggle', 'Show minimap (M)'],
+    ['#frames-toggle', 'Hide pages (F)'],
     ['#inspector-toggle', 'Hide properties (P)'],
     ['#ccZoom', 'Fit view (0)'],
     ['#ccFit', 'Fit to content (0)'],
@@ -55,7 +56,7 @@ test('the tooltips name their shortcut as before', async ({ page }) => {
   await page.keyboard.press('m');
   await expect(page.locator('#minimap-toggle')).toHaveAttribute(
     'title',
-    'Show minimap (M)',
+    'Hide minimap (M)',
   );
   await page.locator('#tCalm').click();
   await expect(page.locator('#tCalm')).toHaveAttribute(

@@ -157,7 +157,7 @@ test('the single keys toggle the panels, the grid, snap, Calm and the hand', asy
   );
   await expect(page.locator('#frames-toggle')).toHaveAttribute(
     'title',
-    'Show frames (F)',
+    'Show pages (F)',
   );
 });
 
