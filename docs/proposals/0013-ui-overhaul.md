@@ -508,6 +508,10 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   nodes); Copy format and Paste format are in the header's "more" menu, in
   Edit, in the context menu and on Ctrl/Cmd+Alt+C and +V (`1268f59`,
   `be6cdc3`).
+- **Delete is not on the selection bar.** The text puts delete in Edit, the
+  selection bar and the context menu. It is in Edit, the context menu and the
+  header's **More actions** menu (and on Del); the bar has no Delete button
+  (`MINI_BAR_ORDER` in `src/main.ts`). No reason recorded.
 - **Edit ▸ Tools exists.** Not in the text. Select, Hand, Draw link and Drop
   anchor had toolbar controls before the shell was rebuilt, but no menu
   offered them (`796a763`).
@@ -521,11 +525,20 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   is closed, so the canvas keeps its room (`f70720c`, "as in the approved
   mock").
 - **"Page" is not everywhere.** The text says "'Page' everywhere". It is in the
-  menus, the pages bar, the command titles and the shortcut sheet. "Frame"
-  remains in the Find box ("... on any frame"), the presentation controls
-  ("Previous frame", "Next frame"), the path bar ("new frame"), and the
-  confirmation when deleting a page that has content ("This frame has
-  content.") (`grep -in frame src/main.ts`). A new page is still named
+  menus, the pages bar, the command titles and the shortcut sheet's command
+  rows. "Frame" remains in the Find box ("... on any frame"), the
+  presentation controls and the shortcut sheet's Presentation rows ("Previous
+  frame", "Next frame"), the path bar ("new frame", "Copy this frame with the
+  route spotlit and captioned", "Keep this spotlight on the frame") and the
+  path analysis messages ("Select two nodes on this frame to trace a path.",
+  "... no usable link on this frame."), the Page tab's Story hint (which names
+  the context-menu item "Emphasize on this frame"; the item is "Emphasize on
+  this page"), its Caption placeholder ("what this frame shows") and its
+  empty-list line ("No elements on this frame."), the Analyze path tooltip
+  ("... over the links this frame draws"), and the confirmation when deleting
+  a page that has content ("This frame has content.")
+  (`grep -rin frame src/main.ts src/ui`, read for the strings a person
+  sees). A new page is still named
   "Frame N": a page's name is document data.
 - **Below 1,024 px the panels are drawers (PR #328, not merged).** The text
   leaves the narrow layouts to be "re-verified in P1". In PR #327 only a phone
@@ -567,7 +580,10 @@ and the tree agree, nothing is listed. Short hashes name the commit.
 - **Annotations start closed, and several selections have sections of their
   own.** Not in the text. The Annotations list on the Page tab starts closed
   (`4fac2ea`). Two or more nodes get **Arrange**, **Annotate** and **Format**
-  and no shared fields, so QA-2026-11-14-UI-04 stays open. A zone picked on the canvas has the header and its rows on the panel's grid, with no card (`5ba843f`).
+  and no shared fields, so QA-2026-11-14-UI-04 stays open. A zone picked on the canvas has the header and its rows on the panel's grid, with no card (`5ba843f`). A single node's tab ends with an annotate row (zone, policy marker) after
+  Data, which the text's node list does not have (`5ba843f`). Placement rule
+  5 puts colour "at the top of its tab"; colour is in the Style section, and
+  the header holds the lock and, in **More actions**, the order commands.
 - **The emphasis picker opens in place.** The text says "a count with a
   picker". It reads "N of M" with **Choose…** and **Clear**; the list opens
   below with a filter field and no scroll area of its own, and stays open while

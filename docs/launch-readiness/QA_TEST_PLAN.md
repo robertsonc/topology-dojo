@@ -254,7 +254,10 @@ sandbox with a pre-provisioned headless Chromium, `npx playwright test` of
 `shell-layout` and `shell-menus`: 114 tests. With three workers 105 passed and
 nine hit the 30-second limit (the machine was loaded); those nine passed when
 run again one at a time with a 120-second limit. The unit tests named in
-§7.16–§7.18 (14 files, 382 tests) passed under `vitest`. `visual.spec.ts`,
+§7.16–§7.18 (10 files, 196 tests) passed under `vitest`, and so did they
+together with `src/ui/menu.test.ts` and `src/ui/command-palette.test.ts`
+(named in §7.15), `src/styles/styles.test.ts` (EDT-40) and
+`src/ui/compact-layout.test.ts` (EDT-45): 14 files, 382 tests. `visual.spec.ts`,
 `icons.spec.ts`, the two component specs and the rest of the suite were not run.
 
 ---
@@ -448,7 +451,7 @@ rows). Automated evidence ran green locally against the feature branch.
 | GAP-03 | Share dialog publishes/lists/revokes; revocation is ownership-enforced; snapshot caching drops `immutable` (M20)                                                            | Automated: `src/testing/share-api.test.ts` (10, incl. Miniflare through the real handler); UI mocked-API journey verified; Required: hosted staging journey |
 | GAP-04 | `href`/`tooltip` render as clickable `<a>`/`<title>` in exports and viewer; only http(s) is emitted; `javascript:` is a validation error                                    | Automated: `src/render/href-tooltip.test.ts` (7) + `src/api/href-tooltip.test.ts` (5)                                                                       |
 | GAP-05 | Image nodes render https/data:image sources clipped + placeholdered otherwise; ≤256KB inline cap enforced; palette upload downscales                                        | Automated: `src/render/image-node.test.ts` (8); upload journey verified via scripted browser                                                                |
-| GAP-06 | PDF (single/multi-frame), clipboard PNG, selection-only exports, and the flipbook toolbar action produce correct artifacts                                                  | Automated: `src/editor/export.test.ts` crop math + e2e PDF download; clipboard/selection verified via scripted browser                                      |
+| GAP-06 | PDF (single/multi-frame), clipboard PNG, selection-only exports, and the flipbook export (**File → Export → Flipbook HTML**) produce correct artifacts                      | Automated: `src/editor/export.test.ts` crop math + e2e PDF download; clipboard/selection verified via scripted browser                                      |
 | GAP-07 | Mermaid flowcharts and CSV import through the open dialog and `import_topology` with warnings for unsupported syntax                                                        | Automated: `src/import/mermaid.test.ts` (9), `src/import/csv.test.ts` (9), 4 MCP-level cases, e2e open-flow                                                 |
 | GAP-08 | Page `lineJumps` renders arc/gap hops (later-drawn line links hop earlier ones, exactly one of a pair), persists, validates                                                 | Automated: `src/render/line-jumps.test.ts` (5) + e2e persistence                                                                                            |
 | GAP-09 | Present mode plays frames full-screen on the shared timing model; ←/→/Space/Escape behave                                                                                   | Verified via scripted browser; Required: manual staging pass                                                                                                |

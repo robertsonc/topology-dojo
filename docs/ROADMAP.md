@@ -741,7 +741,7 @@ Plan and per-phase status: [`futures/hw-catalog.md`](futures/hw-catalog.md).
 ### UI overhaul: command registry, shell and properties panel (proposal 0013, rest of P0, P1, P2 and part of P3, 2026-11-19)
 
 PR #327, "UI overhaul: command registry, shell, properties panel", merged
-2026-11-19 as `d224979`. Shipped:
+2026-11-19 as `d224979`. Merged:
 
 - **The command registry** (`src/ui/commands.ts`): every command with its key
   bindings as data, bound once in `src/main.ts`; the window key handler, the
@@ -780,11 +780,13 @@ PR #327, "UI overhaul: command registry, shell, properties panel", merged
   `e2e/command-surfaces.spec.ts`. The three canvas screenshot baselines were
   regenerated for the narrower canvas column.
 
-Not shipped: the Share dialog, the presentation controls, the shortcut sheet's
+Not done: the Share dialog, the presentation controls, the shortcut sheet's
 close button and the path bar still use `.tbtn`; seven `font-size` rules under
 12 px remain (`NOT_YET` in `src/styles/styles.test.ts`); no test caps the top
 bar's controls and there is no "what moved" note; Find and quick-add were not
-folded into the palette; the Find box, the presentation controls, the path bar
+folded into the palette; the Find box, the presentation controls and the shortcut sheet's
+Presentation rows, the path bar and the path analysis messages, the Page tab's
+Story hint, Caption placeholder and empty-list line, the Analyze path tooltip
 and the delete-page confirmation still say "frame"; and two or more nodes have
 no shared fields in the panel (QA-2026-11-14-UI-04). The proposal's section
 "What P1 and P2 changed from this text" lists each departure. The compact

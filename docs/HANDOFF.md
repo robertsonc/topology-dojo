@@ -124,13 +124,18 @@ lock toggle and a "more" menu, a colour button that opens a popover, and a
 Link attachment section; the panel is 300 px wide at first (240 to 480 px); the
 shared controls on both wizards, the workspace, preferences and admin panels
 and the node designer. In the app's own words a page is a "page", not a
-"frame", in the menus, the pages bar and the shortcut sheet. Not done: the
+"frame", in the menus, the pages bar, the command titles and the shortcut
+sheet's command rows; the sheet's Presentation rows still say "Previous frame"
+and "Next frame". Not done: the
 Share dialog, the presentation controls, the shortcut sheet's close button and
 the path bar still use the old `.tbtn` buttons; seven font-size rules under
 12 px remain; no test caps the top bar's controls and there is no "what moved"
 note; Find and quick-add were not folded into the palette; "frame" is still in
-the Find box, the presentation controls, the path bar and the delete-page
-confirmation. PR #328 (not merged) adds the compact layout (below 1,024 px the
+the Find box, the presentation controls and the shortcut sheet's Presentation
+rows, the path bar and the path analysis messages, the Page tab's Story hint
+(which names the context-menu item "Emphasize on this frame"; the item is
+"Emphasize on this page"), its Caption placeholder and its empty-list line,
+the Analyze path tooltip, and the delete-page confirmation. PR #328 (not merged) adds the compact layout (below 1,024 px the
 library and the properties panel are drawers over the canvas;
 `src/ui/compact-layout.ts`) and brings the user guide, the README image and
 these documents up to date. Only this note, the "Recently completed" entries
@@ -291,7 +296,9 @@ from `git log --first-parent`):
   sections, header, colour popover and Link attachment line
   (`src/ui/inspector/`, `src/styles/inspector.css`); the shared controls on
   the wizards, the workspace, preferences and admin panels and the node
-  designer; "page" for "frame" in the shell's labels and the command titles.
+  designer; "page" for "frame" in the menus, the pages bar and the command
+  titles (some labels still say "frame"; proposal 0013's section "What P1 and
+  P2 changed from this text" lists them).
   Guards added: `src/ui/menus.test.ts`, `src/ui/palette-sources.test.ts`,
   `src/ui/selection-bar-place.test.ts`, `src/ui/inspector-tabs.test.ts`,
   `src/ui/inspector/sections.test.ts`, `src/ui/inspector/field-groups.test.ts`,
@@ -345,7 +352,8 @@ this date) is likewise driven from its own file, not from this table. Its P0
 registry, as `d224979`. P1 (shell) and P2 (properties panel) are merged in
 PR #327, and so is part of P3 (the skin sweep: the wizards, the workspace,
 preferences and admin panels and the node designer are on the shared controls;
-the Share dialog, the presentation controls and the path bar are not). P4
+the Share dialog, the presentation controls, the shortcut sheet's close
+button and the path bar are not). P4
 (guardrails) is partly there: the 12 px text ratchet and the properties
 panel's layout spec exist; a cap on the top bar's controls and a "what moved"
 note do not. PR #328 (not merged) adds the compact layout (drawers below
@@ -492,7 +500,7 @@ reviewed Darwin baselines are deliberately added. See `launch-readiness/QA_TEST_
 | Command registry (PR #327, merged as `d224979`) | `src/ui/commands.ts` (the command table, `matchKey`, `createCommandRegistry`, `HELP_GESTURES`; pure, no DOM), `src/ui/commands.test.ts`, `src/ui/canvas-keys.test.ts` (tests `matchKey`), `e2e/command-keys.spec.ts`, `e2e/command-surfaces.spec.ts`; bound once in `src/main.ts`; proposal 0013 P0                                                                                                                                                                                                             |
 | Shell (PR #327, merged as `d224979`)            | The shell template and its wiring in `src/main.ts` (top bar, left rail, docked library, canvas column, pages bar, zoom control, status bar), `src/styles/shell.css`, `src/ui/selection-bar-place.ts` (where the selection bar goes), `src/ui/fit-insets.ts` (fit view clears what floats over the canvas); specs `e2e/shell-layout.spec.ts`, `e2e/selection-bar.spec.ts`, `e2e/shell-frames.spec.ts`; proposal 0013 P1                                                                                          |
 | Properties panel (PR #327, merged as `d224979`) | `src/ui/inspector/` (`tabs.ts`, `sections.ts`, `field-groups.ts`, `selection-header.ts`, `color-control.ts`, `page-tab.ts`, `document-tab.ts`, `link-attachment.ts`, `focus-keep.ts`, `panel-width.ts`), `src/ui/inspector-tabs.ts` (the tab rules), `src/styles/inspector.css`; specs `e2e/shell-inspector.spec.ts`, `e2e/shell-inspector-tabs.spec.ts`, `e2e/shell-inspector-layout.spec.ts`; proposal 0013 P2                                                                                                |
-| Compact layout (PR #328, not merged)            | `src/ui/compact-layout.ts` (the one breakpoint, 1,023 px, below which the library and the properties panel are drawers), `src/ui/compact-layout.test.ts`; the drawer rules in `src/styles/shell.css` and `src/styles/inspector.css`; the compact cases of `e2e/shell-layout.spec.ts`                                                                                                                                                                                                                            |
+| Compact layout (PR #328, not merged)            | `src/ui/compact-layout.ts` (the one breakpoint: at 1,023 px and below, that is below 1,024 px, the library and the properties panel are drawers), `src/ui/compact-layout.test.ts`; the drawer rules in `src/styles/shell.css` and `src/styles/inspector.css`; the compact cases of `e2e/shell-layout.spec.ts`                                                                                                                                                                                                   |
 | Auth + landing page + showcase                  | `worker/auth.ts`, `worker/landing.ts`, `public/landing/`, `public/showcase/*.webp`                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Deployment config                               | `wrangler.jsonc`, `.github/workflows/{release,deploy-worker,deploy-staging,ci,production-verify,nightly-staging-smoke}.yml`, `scripts/{check-wrangler-env,migration-guard}.mjs`                                                                                                                                                                                                                                                                                                                                 |
 | Flags                                           | `worker/env.ts` (`workspaceEnabled`, `profilesEnabled`, `analyticsEnabled`, `liveDataEnabled`, `isAdmin`), `worker/api-keys.ts` (`apiKeysEnabled`)                                                                                                                                                                                                                                                                                                                                                              |
