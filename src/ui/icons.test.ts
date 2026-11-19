@@ -425,7 +425,6 @@ describe('the chrome sources', () => {
     'main.ts': [
       '…', // the save chip while a change waits to be saved (kept, as above)
       '–', // the status bar's pointer position while there is none
-      '←↑→↓', // the arrow keys, in the shortcut sheet
     ],
     // The arrow keys as the shortcut sheet prints them, one each.
     'ui/commands.ts': ['←', '→', '↑', '↓'],

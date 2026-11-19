@@ -127,6 +127,7 @@ import {
   COMMAND_SPECS,
   commandVariant,
   createCommandRegistry,
+  HELP_GESTURES,
   matchKey,
   type CommandHandlers,
   type CommandId,
@@ -5231,74 +5232,9 @@ app
   ?.addEventListener('click', () => commands.run('view.fit'));
 
 /* ── Keyboard-shortcut help overlay (?) ────────────────────────────── */
-const SHORTCUTS: { group: string; items: [string, string][] }[] = [
-  {
-    group: 'Tools',
-    items: [
-      ['V', 'Select / move'],
-      ['L', 'Draw link'],
-      ['A', 'Drop anchor'],
-      ['Space / H', 'Hand — drag to pan'],
-    ],
-  },
-  {
-    group: 'Edit',
-    items: [
-      ['Ctrl/Cmd+Z', 'Undo'],
-      ['Ctrl/Cmd+Shift+Z · Ctrl+Y', 'Redo'],
-      ['Ctrl/Cmd+C / X / V', 'Copy / Cut / Paste'],
-      ['Ctrl/Cmd+Shift+V', 'Paste in place (same position, any frame)'],
-      ['F2 / Enter', 'Rename the selected node, link or zone'],
-      ['Ctrl/Cmd+Alt+C', 'Copy format (format painter)'],
-      ['Ctrl/Cmd+Alt+V', 'Paste format onto selection'],
-      ['Ctrl/Cmd+D', 'Duplicate'],
-      ['Ctrl/Cmd+L', 'Lock / unlock'],
-      ['Del / Backspace', 'Delete selection'],
-      ['[ / ]', 'Send back / bring forward'],
-      ['Ctrl/Cmd+[ / ]', 'Send to back / bring to front'],
-    ],
-  },
-  {
-    group: 'Select',
-    items: [
-      ['Ctrl/Cmd+A', 'Select all'],
-      ['Shift+click', 'Add to selection'],
-      ['←↑→↓', 'Nudge (Shift = ×10)'],
-    ],
-  },
-  {
-    group: 'Canvas',
-    items: [
-      ['Wheel', 'Zoom to cursor (mouse) / pan (trackpad)'],
-      ['Pinch · Ctrl/Cmd+wheel', 'Zoom to cursor'],
-      ['Shift+wheel', 'Pan sideways'],
-      ['Space / Middle-drag', 'Pan'],
-      ['+ / -', 'Zoom in / out'],
-      ['0 · Shift+1', 'Fit to content'],
-      ['Shift+0', 'Zoom to 100%'],
-      ['Shift+2', 'Zoom to selection'],
-      ['Ctrl/Cmd+S / O', 'Download JSON / open a file'],
-      ['Ctrl/Cmd+F', 'Find a node, link or zone on any frame'],
-      ['R', 'Toggle grid'],
-      ['G', 'Toggle snap'],
-      ['M / P', 'Toggle minimap / properties'],
-      ['B', 'Toggle node library'],
-      ['F', 'Toggle frames strip'],
-      ['C', 'Calm canvas (pause animation)'],
-      ['T', 'Tidy layout'],
-      ['Shift+T', 'Balance layout'],
-      ['? ', 'This shortcut reference'],
-    ],
-  },
-  {
-    group: 'Dialogs & menus',
-    items: [
-      ['Esc', 'Close the open dialog / menu'],
-      ['Tab / Shift+Tab', 'Cycle focus inside the dialog'],
-      ['↑↓ · Enter', 'Navigate / run context-menu items'],
-    ],
-  },
-];
+/* The sheet lists every command that has a key, group by group, from the
+ * command table, then the gestures and the keys of the dialogs, menus and
+ * other surfaces (HELP_GESTURES): one source for what the keys do. */
 let helpEl: HTMLElement | null = null;
 let releaseHelpOverlay: (() => void) | null = null;
 function closeHelp(): void {
@@ -5314,17 +5250,19 @@ function openHelp(): void {
   }
   helpEl = document.createElement('div');
   helpEl.className = 'help-backdrop';
-  const cols = SHORTCUTS.map(
-    (s) =>
-      `<div class="help-col"><h4>${s.group}</h4>` +
-      s.items
-        .map(
-          ([k, d]) =>
-            `<div class="help-row"><kbd>${esc(k)}</kbd><span>${esc(d)}</span></div>`,
-        )
-        .join('') +
-      `</div>`,
-  ).join('');
+  const cols = [...commands.helpSections(), ...HELP_GESTURES]
+    .map(
+      (s) =>
+        `<div class="help-col"><h4>${esc(s.title)}</h4>` +
+        s.rows
+          .map(
+            ([k, d]) =>
+              `<div class="help-row"><kbd>${esc(k)}</kbd><span>${esc(d)}</span></div>`,
+          )
+          .join('') +
+        `</div>`,
+    )
+    .join('');
   helpEl.innerHTML =
     `<div class="help-card scroll-slim" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">` +
     `<div class="help-head"><h3>Keyboard shortcuts</h3>` +
@@ -6426,11 +6364,13 @@ function renderPathBar(): void {
 }
 
 /* Right-click context menu — adaptive to whatever is under the cursor. Every
- * item maps to an existing editor command (nothing UI-only here): the menu is a
+ * item is a command of the registry: its label is the command's title (unless
+ * the item words it for the moment, as Lock / Unlock), it is greyed out when
+ * the command is not enabled, and choosing it runs the command. The menu is a
  * second surface onto the same actions as the toolbar/keyboard/inspector. */
 type CtxItem =
   | { sep: true }
-  | { label: string; run: () => void; disabled?: boolean };
+  | { command: CommandId; label?: string; args?: unknown };
 
 let ctxMenu: HTMLDivElement | null = null;
 let releaseCtxOverlay: (() => void) | null = null;
@@ -6446,133 +6386,66 @@ function ctxItemsFor(
   kind: 'node' | 'link' | 'empty',
   at: { x: number; y: number },
 ): CtxItem[] {
+  const lock: CtxItem = {
+    command: 'edit.toggleLock',
+    label: editor.selectionLocked() ? 'Unlock' : 'Lock',
+  };
   if (kind === 'node') {
-    const lockLabel = editor.selectionLocked() ? 'Unlock' : 'Lock';
     return [
       // Rename is for one node; a multi-selection has no single label.
       ...(editor.getSelectedNode()
-        ? [{ label: 'Rename', run: () => void editor.beginRename() }]
+        ? [{ command: 'edit.rename' } as const]
         : []),
-      { label: 'Duplicate', run: () => editor.duplicateSelection() },
-      { label: 'Cut', run: () => editor.cut() },
-      { label: 'Copy', run: () => editor.copySelection() },
-      {
-        label: 'Copy as image',
-        run: () => {
-          const sp = selectionAsPage();
-          if (sp) copyImage(() => copyPagePNG(sp, '', selectionOpts()));
-        },
-      },
-      {
-        label: 'Copy format',
-        run: () => editor.copyFormat(),
-        disabled: !editor.canCopyFormat(),
-      },
-      {
-        label: 'Paste format',
-        run: () => {
-          editor.pasteFormat();
-          renderInspector();
-        },
-        disabled: !editor.canPasteFormat(),
-      },
+      { command: 'edit.duplicate' },
+      { command: 'edit.cut' },
+      { command: 'edit.copy' },
+      { command: 'edit.copyAsImage' },
+      { command: 'edit.copyFormat' },
+      { command: 'edit.pasteFormat' },
       { sep: true },
-      {
-        label: 'Emphasize on this frame',
-        run: () => editor.emphasizeSelection(),
-      },
+      { command: 'selection.emphasize' },
       // Two nodes: the routes between them (the "visual traceroute").
       ...(canAnalyzePath()
-        ? [{ label: 'Analyze path', run: analyzeSelectedPath }]
+        ? [{ command: 'selection.analyzePath' } as const]
         : []),
-      { label: 'Group into zone', run: () => addAnnotation('zone') },
-      { label: 'Save as stencil…', run: () => saveSelectionAsStencil() },
-      { label: 'Add policy marker', run: () => addAnnotation('policyMarker') },
+      { command: 'selection.groupIntoZone' },
+      { command: 'selection.saveAsStencil' },
+      { command: 'selection.addPolicyMarker' },
       { sep: true },
-      {
-        label: 'Bring to front',
-        run: () => editor.bringToFront(),
-        disabled: !editor.canArrange(),
-      },
-      {
-        label: 'Send to back',
-        run: () => editor.sendToBack(),
-        disabled: !editor.canArrange(),
-      },
+      { command: 'arrange.bringToFront' },
+      { command: 'arrange.sendToBack' },
       { sep: true },
-      { label: lockLabel, run: () => editor.toggleLock() },
-      { label: 'Delete', run: () => editor.deleteSelected() },
+      lock,
+      { command: 'edit.delete' },
     ];
   }
   if (kind === 'link') {
-    const lockLabel = editor.selectionLocked() ? 'Unlock' : 'Lock';
     return [
-      { label: 'Swap endpoints', run: () => editor.swapLink() },
-      {
-        label: 'Straighten (clear bends)',
-        run: () => editor.straightenLink(),
-        disabled: !editor.selectedLinkHasBends(),
-      },
-      {
-        label: 'Copy format',
-        run: () => editor.copyFormat(),
-        disabled: !editor.canCopyFormat(),
-      },
-      {
-        label: 'Paste format',
-        run: () => {
-          editor.pasteFormat();
-          renderInspector();
-        },
-        disabled: !editor.canPasteFormat(),
-      },
-      {
-        label: 'Emphasize on this frame',
-        run: () => editor.emphasizeSelection(),
-      },
+      { command: 'link.swapEndpoints' },
+      { command: 'link.straighten' },
+      { command: 'edit.copyFormat' },
+      { command: 'edit.pasteFormat' },
+      { command: 'selection.emphasize' },
       { sep: true },
-      { label: 'Bring to front', run: () => editor.bringToFront() },
-      { label: 'Send to back', run: () => editor.sendToBack() },
+      { command: 'arrange.bringToFront' },
+      { command: 'arrange.sendToBack' },
       { sep: true },
-      { label: lockLabel, run: () => editor.toggleLock() },
-      { label: 'Delete', run: () => editor.deleteSelected() },
+      lock,
+      { command: 'edit.delete' },
     ];
   }
   return [
     // At the point that was right-clicked, as a block centred on it.
-    {
-      label: 'Paste here',
-      run: () => editor.paste({ at }),
-      disabled: !editor.canPaste(),
-    },
+    { command: 'edit.pasteHere', args: at },
     // At the coordinates it was copied from: the same place on another frame.
-    {
-      label: 'Paste in place',
-      run: () => editor.paste({ inPlace: true }),
-      disabled: !editor.canPaste(),
-    },
-    { label: 'Select all', run: () => editor.selectAll() },
-    {
-      label: 'Copy frame as image',
-      run: () => {
-        const page = doc.pages[current]!;
-        copyImage(() => copyPagePNG(page, pageOverlay(page), pageOpts(page)));
-      },
-    },
+    { command: 'edit.pasteInPlace' },
+    { command: 'selection.all' },
+    { command: 'edit.copyFrameAsImage' },
     { sep: true },
-    { label: 'Tidy layout', run: () => editor.tidy() },
-    { label: 'Balance layout', run: () => editor.balance() },
-    {
-      label: 'Auto-place labels',
-      run: () => editor.autoLabels(doc.customNodes),
-    },
-    {
-      label: 'Fit page to content',
-      run: () => {
-        editor.fitPageToContent();
-        renderInspector();
-      },
-    },
+    { command: 'arrange.tidy' },
+    { command: 'arrange.balance' },
+    { command: 'arrange.autoPlaceLabels' },
+    { command: 'page.fitToContent' },
   ];
 }
 
@@ -6597,11 +6470,11 @@ function openCtxMenu(clientX: number, clientY: number): void {
     btn.className = 'ctx-item';
     btn.type = 'button';
     btn.setAttribute('role', 'menuitem');
-    btn.textContent = item.label;
-    btn.disabled = !!item.disabled;
+    btn.textContent = item.label ?? commands.get(item.command)!.title;
+    btn.disabled = !commands.isEnabled(item.command);
     btn.addEventListener('click', () => {
       closeCtxMenu();
-      item.run();
+      commands.run(item.command, item.args);
       renderInspector();
     });
     menu.appendChild(btn);
