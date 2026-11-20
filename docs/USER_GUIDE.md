@@ -228,13 +228,14 @@ The editor is organized into six areas and a status bar.
    still in the menus (**Arrange** and **File → Present**). The title and the
    save state beside it never run under **Undo** or anything else on the bar.
    Wherever the bar is short of room, the save state shortens first: a
-   warning to its first words (**⚠ not saved**, **⚠ newer copy**), then a
-   warning or a save to its mark alone (**⚠**, **✓**). Its tooltip, and what a
+   save to its mark alone (**✓**), a warning to its first words
+   (**⚠ not saved**, **⚠ newer copy**). Its tooltip, and what a
    screen reader says, keep the whole sentence, and pressing it still
    downloads the document or loads the other tab's copy. If the bar is still
    short, the workspace chip's name, then the account's name, the logo and
-   the account chip's caret step aside, then, on a phone, the **✓** of a
-   save (a warning always shows). On the narrowest phones (about 360px and
+   the account chip's caret step aside; a warning keeps its words until they
+   have, and only then shows its mark alone (**⚠**). On a phone the **✓** of
+   a save can go too (a warning always shows). On the narrowest phones (about 360px and
    below, signed in) the caret on **Export**, then **Tidy**, then **Redo**
    give way last, so the title keeps at least 64px; both commands stay in
    the menus (**Arrange → Tidy**, **Edit → Redo**) and on their keys.

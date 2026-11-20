@@ -531,10 +531,11 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   the layout menu
   beside Tidy and the chips' words at 760 px and below; Present and the logo
   at 640 px and below (`src/styles/shell.css`). Where the bar is still short
-  of room at any width, the save state beside the title shortens (a warning
-  to its first words, then to its mark), then the workspace chip's name, the
-  account's name, the logo, the account chip's caret and the mark of a plain
-  save step aside, and, last, Export's caret, Tidy and Redo (both also in
+  of room at any width, the save state beside the title shortens (a plain
+  save to its mark, a warning to its first words), then the workspace chip's
+  name, the account's name, the logo and the account chip's caret step
+  aside, then a warning shows its mark alone and the mark of a plain save
+  goes, and, last, Export's caret, Tidy and Redo step aside (both also in
   the menus and on their keys) (`fitSaveChip` in `src/main.ts`), so the
   title and the save state never run under Undo and the title keeps 64 px
   on a phone down to 320 px. Reason (`a0a6c42`, `59c30b0`, PR

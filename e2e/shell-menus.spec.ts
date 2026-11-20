@@ -311,6 +311,13 @@ for (const width of [1024, 1101, 1160, 1180, 1279, 1280, 1366, 1440]) {
     await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
     expect((await docTitle.boundingBox())!.width).toBeGreaterThanOrEqual(120);
     expect(await topBarOverlaps(page)).toEqual([]);
+    // The warning keeps its words here: the names beside it give way before
+    // it is left with its mark alone.
+    await expect(page.locator('#saved')).toHaveAttribute(
+      'data-fit',
+      /^(full|short)$/,
+    );
+    await expect(page.locator('#userChip')).toBeVisible();
   });
 }
 

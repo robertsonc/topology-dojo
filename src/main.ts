@@ -624,13 +624,14 @@ function showSaveText(text: string): void {
 
 /**
  * The top bar never overlaps a control: the title and the save chip keep
- * their own room. Where the bar runs short the save chip gives way first,
- * to its first words, then to its mark alone; then the workspace chip's name,
- * the account chip's name, the logo,
- * the account chip's caret and a plain save's mark step aside, before the
- * title goes under 120px (on a phone, 64px) or a chip's name under three
- * letters. On the narrowest phones, last, Export's caret, then Tidy, then
- * Redo step aside too; both commands stay in the menus and on their keys.
+ * their own room. Where the bar runs short a plain save shows only its mark,
+ * and a warning shortens to its first words. Then the workspace chip's name,
+ * the account chip's name, the logo and the account chip's caret step aside.
+ * Only if the bar is still short does a warning show its mark alone, and a
+ * plain save's mark go, before the title goes under 120px (on a phone, 64px)
+ * or a chip's name under three letters. On the narrowest phones, last,
+ * Export's caret, then Tidy, then Redo step aside too; both commands stay in
+ * the menus and on their keys.
  */
 function topBarRoomy(bar: HTMLElement): boolean {
   if (bar.scrollWidth > bar.clientWidth + 1) return false;
@@ -652,9 +653,9 @@ function topBarRoomy(bar: HTMLElement): boolean {
       return false;
   return true;
 }
-/** What steps aside, in turn, once the save chip shows only its mark. A
- * warning always shows. Only where the bar is still short of room once a
- * plain save's mark is gone do Export's caret, Tidy (Arrange ▸ Tidy) and Redo
+/** What steps aside, in turn, once the save chip has shortened. A warning
+ * always shows. Only where the bar is still short of room once a plain
+ * save's mark is gone do Export's caret, Tidy (Arrange ▸ Tidy) and Redo
  * (Edit ▸ Redo) give way. */
 const TOP_BAR_SQUEEZE = [
   'workspace',
@@ -666,24 +667,32 @@ const TOP_BAR_SQUEEZE = [
   'tidy',
   'redo',
 ] as const;
+/** How many of those steps only shorten a name or drop the logo: a warning
+ * keeps its first words until all of them have been taken. */
+const TOP_BAR_NAME_STEPS = TOP_BAR_SQUEEZE.indexOf('quiet');
 function fitSaveChip(): void {
   const bar = app.querySelector<HTMLElement>('#topbar')!;
+  /** Take the first `steps` steps one at a time; true once the bar has room. */
+  const squeezedFits = (steps: number): boolean => {
+    for (let i = 0; i <= steps; i++) {
+      if (i === 0) delete bar.dataset.squeeze;
+      else bar.dataset.squeeze = TOP_BAR_SQUEEZE.slice(0, i).join(' ');
+      if (topBarRoomy(bar)) return true;
+    }
+    return false;
+  };
   delete bar.dataset.squeeze;
-  const forms =
-    savedEl.dataset.short === undefined
-      ? []
-      : savedEl.dataset.short === savedEl.dataset.mark
-        ? ['full', 'mark']
-        : ['full', 'short', 'mark'];
-  for (const form of forms) {
-    savedEl.dataset.fit = form;
+  if (savedEl.dataset.short !== undefined) {
+    savedEl.dataset.fit = 'full';
     if (topBarRoomy(bar)) return;
+    if (savedEl.dataset.short !== savedEl.dataset.mark) {
+      // A warning: its first words outlast the names beside it.
+      savedEl.dataset.fit = 'short';
+      if (squeezedFits(TOP_BAR_NAME_STEPS)) return;
+    }
+    savedEl.dataset.fit = 'mark';
   }
-  if (topBarRoomy(bar)) return;
-  for (let i = 1; i <= TOP_BAR_SQUEEZE.length; i++) {
-    bar.dataset.squeeze = TOP_BAR_SQUEEZE.slice(0, i).join(' ');
-    if (topBarRoomy(bar)) return;
-  }
+  squeezedFits(TOP_BAR_SQUEEZE.length);
 }
 window.addEventListener('resize', fitSaveChip);
 {
