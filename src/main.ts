@@ -629,7 +629,8 @@ function showSaveText(text: string): void {
  * the account chip's name, the logo and the account chip's caret step aside.
  * Only if the bar is still short does a warning show its mark alone, and a
  * plain save's mark go, before the title goes under 120px (on a phone, 64px)
- * or a chip's name under three letters. On the narrowest phones, last,
+ * or a chip's name under three letters. Then the last export's report keeps
+ * only its icon. On the narrowest phones, last,
  * Export's caret, then Tidy, then Redo step aside too; both commands stay in
  * the menus and on their keys.
  */
@@ -654,15 +655,16 @@ function topBarRoomy(bar: HTMLElement): boolean {
   return true;
 }
 /** What steps aside, in turn, once the save chip has shortened. A warning
- * always shows. Only where the bar is still short of room once a plain
- * save's mark is gone do Export's caret, Tidy (Arrange ▸ Tidy) and Redo
- * (Edit ▸ Redo) give way. */
+ * always shows. Once a plain save's mark is gone the export's report keeps
+ * its icon alone; only where the bar is still short of room then do
+ * Export's caret, Tidy (Arrange ▸ Tidy) and Redo (Edit ▸ Redo) give way. */
 const TOP_BAR_SQUEEZE = [
   'workspace',
   'names',
   'brand',
   'caret',
   'quiet',
+  'report',
   'export-caret',
   'tidy',
   'redo',
@@ -672,9 +674,10 @@ const TOP_BAR_SQUEEZE = [
 const TOP_BAR_NAME_STEPS = TOP_BAR_SQUEEZE.indexOf('quiet');
 function fitSaveChip(): void {
   const bar = app.querySelector<HTMLElement>('#topbar')!;
-  /** Take the first `steps` steps one at a time; true once the bar has room. */
-  const squeezedFits = (steps: number): boolean => {
-    for (let i = 0; i <= steps; i++) {
+  /** Take the steps from `from` to `steps` one at a time; true once the bar
+   * has room. */
+  const squeezedFits = (steps: number, from = 0): boolean => {
+    for (let i = from; i <= steps; i++) {
       if (i === 0) delete bar.dataset.squeeze;
       else bar.dataset.squeeze = TOP_BAR_SQUEEZE.slice(0, i).join(' ');
       if (topBarRoomy(bar)) return true;
@@ -689,6 +692,11 @@ function fitSaveChip(): void {
       // A warning: its first words outlast the names beside it.
       savedEl.dataset.fit = 'short';
       if (squeezedFits(TOP_BAR_NAME_STEPS)) return;
+      // Its mark alone, with the names still aside: they never come back
+      // beside a warning that has given up its words.
+      savedEl.dataset.fit = 'mark';
+      squeezedFits(TOP_BAR_SQUEEZE.length, TOP_BAR_NAME_STEPS);
+      return;
     }
     savedEl.dataset.fit = 'mark';
   }
@@ -1643,7 +1651,7 @@ const exportStatus = app.querySelector<HTMLElement>('#exportStatus')!;
  * reader: the chip is a polite live region). */
 function reportExport(kind: string, state: ExportState, detail?: string): void {
   const report = exportReport(kind, state, detail);
-  exportStatus.innerHTML = `${icon(report.icon)} ${esc(report.message)}`;
+  exportStatus.innerHTML = `${icon(report.icon)} <span class="export-words">${esc(report.message)}</span>`;
   exportStatus.title = report.detail;
   exportStatus.classList.toggle('export-ok', state === 'ok');
   exportStatus.classList.toggle('export-pending', state === 'pending');
@@ -2074,8 +2082,39 @@ function renderStatus(): void {
     `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>` +
     statusProblemsHTML() +
     `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ? shortcuts</span>`;
+  fitStatus(
+    `${editor.tool}|${p.nodes.length}|${p.links.length}|${sel}|${editor.zoom()}|${problemsView.statusLabel}`,
+  );
   refreshChrome();
 }
+/**
+ * Besides the widths where the stylesheet always sets it aside, the
+ * selection count steps aside wherever the status bar's items would not
+ * otherwise all fit inside it, so the zoom at its end keeps its value. The
+ * bar is measured again only when its width or what it shows (but the
+ * cursor, which a narrow window hides) has changed.
+ */
+let statusWidth = 0;
+let statusFitKey = '';
+let statusShows = '';
+function fitStatus(shows = statusShows): void {
+  statusShows = shows;
+  const key = `${statusWidth}|${shows}`;
+  if (key === statusFitKey) return;
+  statusFitKey = key;
+  statusbar.classList.remove('sb-crowded');
+  if (statusbar.scrollWidth > statusbar.clientWidth)
+    statusbar.classList.add('sb-crowded');
+}
+new ResizeObserver((entries) => {
+  statusWidth = entries[0]!.contentRect.width;
+  fitStatus();
+}).observe(statusbar);
+// A web font that arrives late changes the words' widths.
+void document.fonts?.ready.then(() => {
+  statusFitKey = '';
+  fitStatus();
+});
 // Delegated: the status-bar problems indicator opens the right rail (if hidden)
 // and expands the pinned Problems section.
 function showProblems(): void {

@@ -535,13 +535,16 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   save to its mark, a warning to its first words), then the workspace chip's
   name, the account's name, the logo and the account chip's caret step
   aside, then a warning shows its mark alone and the mark of a plain save
-  goes, and, last, Export's caret, Tidy and Redo step aside (both also in
-  the menus and on their keys) (`fitSaveChip` in `src/main.ts`), so the
-  title and the save state never run under Undo and the title keeps 64 px
-  on a phone down to 320 px. Reason (`a0a6c42`, `59c30b0`, PR
-  #328): the bar never scrolls sideways, a long login had pushed the account
-  chip off the bar between 1,101 and 1,161 px, and the save state, a failed
-  save's warning above all, had been drawn over Undo, Redo and Tidy.
+  goes, then the last export's report keeps only its icon, and, last,
+  Export's caret, Tidy and Redo step aside (both also in the menus and on
+  their keys) (`fitSaveChip` in `src/main.ts`), so the title and the save
+  state never run under Undo and the title keeps 64 px on a phone down to
+  320 px, also after an export, whose report stays on the bar. Reason
+  (`a0a6c42`, `59c30b0`, PR #328): the bar never scrolls sideways, a long
+  login had pushed the account chip off the bar between 1,101 and 1,161 px,
+  the save state, a failed save's warning above all, had been drawn over
+  Undo, Redo and Tidy, and an export's report had left the title 18 px wide
+  on a 320 px phone.
 - **The top bar's controls differ from the sketch in four ways.** Tidy is a
   button with a separate menu button beside it (`#tTidy`, `#tTidyMenu`). The
   account control is a chip with a person icon, the login and a caret, not an

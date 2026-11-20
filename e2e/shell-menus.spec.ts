@@ -321,6 +321,45 @@ for (const width of [1024, 1101, 1160, 1180, 1279, 1280, 1366, 1440]) {
   });
 }
 
+// On a phone, and where the menus fold, a save warning shows its mark alone
+// only once the workspace name, the account name, the logo and the account
+// chip's caret have all stepped aside.
+for (const width of [400, 412, 430, 660]) {
+  test(`a save warning gives up its words only after the names at ${width}px, signed in`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await signIn(page, 'octocat');
+    await bootEditor(page);
+    await expect(page.locator('#userChip')).toBeVisible();
+    await page.evaluate(() => {
+      const write = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key.startsWith('topology-dojo:doc'))
+          throw new DOMException('full', 'QuotaExceededError');
+        return write.call(this, key, value);
+      };
+    });
+    const docTitle = page.locator('#docTitle');
+    await docTitle.fill('Branch B');
+    await docTitle.press('Enter');
+    await expect(page.locator('#saved')).toHaveClass(/save-failed/);
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    const saved = page.locator('#saved');
+    await expect(saved).toHaveAttribute('data-fit', /^(full|short|mark)$/);
+    if ((await saved.getAttribute('data-fit')) === 'mark') {
+      await expect(page.locator('#topbar')).toHaveAttribute(
+        'data-squeeze',
+        /^workspace names brand caret\b/,
+      );
+      for (const sel of ['.brand', '#userChip .uc-caret', '#userChip .uc-name'])
+        await expect(page.locator(sel), sel).toBeHidden();
+    }
+    expect(await topBarOverlaps(page)).toEqual([]);
+    await expect(page.locator('#userChip')).toBeVisible();
+  });
+}
+
 test('the folded menu holds the five menus as submenus', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 800 });
   await bootEditor(page);
