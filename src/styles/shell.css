@@ -1039,7 +1039,11 @@
   }
 }
 /* At 340px and less the selection count steps aside whether or not there
-   are problems, so the zoom keeps its value. */
+   are problems; at any width it steps aside where the bar's items would not
+   all fit (the shell measures them), so the zoom keeps its value. */
+.statusbar.sb-crowded .sb-sel {
+  display: none;
+}
 @media (max-width: 340px) {
   .statusbar .sb-sel {
     display: none;

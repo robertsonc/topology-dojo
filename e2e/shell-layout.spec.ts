@@ -415,6 +415,88 @@ test('on a phone the status bar keeps the problems indicator on screen', async (
   }
 });
 
+/** The status bar's visible items that end past its edge, and how far its
+ * items run past its box, once the shell has laid it out. */
+function statusBarOverrun(
+  page: Page,
+): Promise<{ past: string[]; over: number; selected: boolean }> {
+  return page.locator('#statusbar').evaluate(
+    (el) =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const edge = el.getBoundingClientRect().right;
+            const sel = el.querySelector('.sb-sel');
+            resolve({
+              past: [...el.children]
+                .filter((c) => {
+                  const r = c.getBoundingClientRect();
+                  return r.width > 0 && r.right > edge + 0.5;
+                })
+                .map((c) => c.textContent ?? ''),
+              over: el.scrollWidth - el.clientWidth,
+              selected: !!sel && sel.getBoundingClientRect().width > 0,
+            });
+          }),
+        ),
+      ),
+  );
+}
+
+test('on a phone the selection count steps aside only where the status bar would not fit', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 400, height: 700 });
+  const one = [{ id: 'a', type: 'host', x: 200, y: 200 }];
+  const many = Array.from({ length: 120 }, (_, k) => ({
+    id: `n${k}`,
+    type: 'host',
+    x: 150 + (k % 12) * 200,
+    y: 150 + Math.floor(k / 12) * 150,
+  }));
+  for (const [nodes, widths] of [
+    // One node: the fitted zoom has three digits.
+    [one, Array.from({ length: 81 }, (_, k) => 320 + k)],
+    // 120 nodes, all selected: the count has three digits too, and so has
+    // the count of problems.
+    [many, Array.from({ length: 41 }, (_, k) => 400 + k)],
+  ] as const) {
+    await bootEditor(page);
+    await page.evaluate((nodes) => {
+      localStorage.setItem(
+        'topology-dojo:doc',
+        JSON.stringify({
+          title: 'Quiet',
+          pages: [{ id: 'p1', name: 'Page 1', nodes, links: [], zones: [] }],
+        }),
+      );
+    }, nodes);
+    await page.reload();
+    if (nodes.length === 1)
+      await expect(page.locator('#sb-problems')).not.toHaveClass(
+        /has-(warn|error)/,
+      );
+    else {
+      await page.keyboard.press('Control+a');
+      await expect(page.locator('#statusbar .sb-sel')).toContainText('120');
+    }
+    let shown = 0;
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: 700 });
+      const m = await statusBarOverrun(page);
+      expect(m.past, `${width}px, ${nodes.length} nodes`).toEqual([]);
+      expect(m.over, `${width}px, ${nodes.length} nodes`).toBeLessThanOrEqual(
+        0,
+      );
+      if (m.selected) shown++;
+    }
+    // Where there is room the count is still there.
+    expect(shown, `${nodes.length} nodes`).toBeGreaterThan(0);
+    await page.setViewportSize({ width: 460, height: 700 });
+    await expect(page.locator('#statusbar .sb-sel')).toBeVisible();
+  }
+});
+
 test('with the properties panel closed the canvas column runs to the window edge', async ({
   page,
 }) => {

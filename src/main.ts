@@ -2082,8 +2082,39 @@ function renderStatus(): void {
     `<span><span class="sb-k">zoom</span> ${Math.round(editor.zoom() * 100)}%</span>` +
     statusProblemsHTML() +
     `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ? shortcuts</span>`;
+  fitStatus(
+    `${editor.tool}|${p.nodes.length}|${p.links.length}|${sel}|${editor.zoom()}|${problemsView.statusLabel}`,
+  );
   refreshChrome();
 }
+/**
+ * Besides the widths where the stylesheet always sets it aside, the
+ * selection count steps aside wherever the status bar's items would not
+ * otherwise all fit inside it, so the zoom at its end keeps its value. The
+ * bar is measured again only when its width or what it shows (but the
+ * cursor, which a narrow window hides) has changed.
+ */
+let statusWidth = 0;
+let statusFitKey = '';
+let statusShows = '';
+function fitStatus(shows = statusShows): void {
+  statusShows = shows;
+  const key = `${statusWidth}|${shows}`;
+  if (key === statusFitKey) return;
+  statusFitKey = key;
+  statusbar.classList.remove('sb-crowded');
+  if (statusbar.scrollWidth > statusbar.clientWidth)
+    statusbar.classList.add('sb-crowded');
+}
+new ResizeObserver((entries) => {
+  statusWidth = entries[0]!.contentRect.width;
+  fitStatus();
+}).observe(statusbar);
+// A web font that arrives late changes the words' widths.
+void document.fonts?.ready.then(() => {
+  statusFitKey = '';
+  fitStatus();
+});
 // Delegated: the status-bar problems indicator opens the right rail (if hidden)
 // and expands the pinned Problems section.
 function showProblems(): void {

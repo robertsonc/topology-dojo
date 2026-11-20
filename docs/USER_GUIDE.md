@@ -308,8 +308,9 @@ many are selected, history, zoom and the current error and warning counts.
 In a narrow window the cursor location, the anchor, zone and history counts
 and the hint step aside, and on the narrowest phones (400px and below) the
 selection count steps aside too while there are problems to show. At 340px
-and below it steps aside whether or not there are problems, so the zoom
-keeps its value.
+and below it steps aside whether or not there are problems, and at any width
+it steps aside where the bar is too short for it, so the zoom keeps its
+value.
 
 Many buttons show an icon and no text. This guide names such a button by its
 tooltip, which appears when the pointer rests on it: **Undo** is the top bar
