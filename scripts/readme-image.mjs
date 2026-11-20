@@ -16,14 +16,17 @@
  * site", three regions, two independent hubs per region, four branches per
  * region, one Internet WAN link per branch, a single edge at each branch, and
  * the region-continents map backdrop. The hubs of the regions are meshed (the
- * wizard's default). The page is fitted to the content, the node library and
- * the properties panel are closed, the view is fitted to the page, and
- * nothing is selected.
+ * wizard's default). The wizard places the third region under the first; the
+ * script then moves it to sit centred under the other two, so the three pairs
+ * of hubs are the points of a triangle. That move is the one thing in the
+ * image the wizard did not do. The page is fitted to the content, the node
+ * library and the properties panel are closed, the view is fitted to the
+ * page, and nothing is selected.
  *
  * Set CHROMIUM_PATH to a Chromium executable to use that browser instead of
  * the one Playwright installed.
  */
-/* global console, process, URL, localStorage */
+/* global console, process, URL, localStorage, document */
 import { chromium } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,6 +92,45 @@ try {
   await choose('Map backdrop', 'Region continents');
   await dialog.getByRole('button', { name: 'Create diagram' }).click();
   await dialog.waitFor({ state: 'hidden' });
+
+  // The wizard lays three regions out two across, the third under the
+  // first. Move the third to sit centred under the other two, so the three
+  // pairs of hubs are the points of a triangle: shift its nodes in the
+  // autosaved document, then load that document.
+  await page.waitForFunction(() =>
+    document.querySelector('#saved')?.textContent?.includes('saved'),
+  );
+  const moved = await page.evaluate(() => {
+    const KEY = 'topology-dojo:doc';
+    const doc = JSON.parse(localStorage.getItem(KEY));
+    const pg = doc.pages[0];
+    const regions = pg.zones.filter((z) => z.id.startsWith('region_'));
+    if (regions.length !== 3) return null;
+    const xs = (zones) =>
+      pg.nodes
+        .filter((n) => zones.some((z) => z.nodes.includes(n.id)))
+        .map((n) => n.x);
+    const mid = (v) => (Math.min(...v) + Math.max(...v)) / 2;
+    const [first, second, third] = regions;
+    // A whole number of grid steps, so the nodes stay on the grid.
+    const dx =
+      Math.round((mid(xs([first, second])) - mid(xs([third]))) / 10) * 10;
+    for (const n of pg.nodes) if (third.nodes.includes(n.id)) n.x += dx;
+    localStorage.setItem(KEY, JSON.stringify(doc));
+    return { dx, at: mid(xs([third])) };
+  });
+  if (!moved) throw new Error('expected three region zones to arrange');
+  await page.reload();
+  await page.waitForSelector('#topbar');
+  const kept = await page.evaluate((want) => {
+    const pg = JSON.parse(localStorage.getItem('topology-dojo:doc')).pages[0];
+    const third = pg.zones.filter((z) => z.id.startsWith('region_'))[2];
+    const x = pg.nodes
+      .filter((n) => third.nodes.includes(n.id))
+      .map((n) => n.x);
+    return (Math.min(...x) + Math.max(...x)) / 2 === want;
+  }, moved.at);
+  if (!kept) throw new Error('the moved region did not survive the reload');
 
   // Fit the page to its content. Then close the node library and the
   // properties panel, so the diagram, which is what the image is for, gets
