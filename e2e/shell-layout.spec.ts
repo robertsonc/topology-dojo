@@ -378,6 +378,41 @@ test('on a phone the status bar keeps the problems indicator on screen', async (
       page.locator('#statusbar span', { hasText: 'zoom' }).first(),
     ).toBeVisible();
   }
+
+  // With no problems to show, at 320 and 340px the zoom's value still ends
+  // inside the bar.
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'topology-dojo:doc',
+      JSON.stringify({
+        title: 'Quiet',
+        pages: [
+          {
+            id: 'p1',
+            name: 'Page 1',
+            nodes: [{ id: 'a', type: 'host', x: 200, y: 200 }],
+            links: [],
+            zones: [],
+          },
+        ],
+      }),
+    );
+  });
+  await page.reload();
+  await expect(problems).not.toHaveClass(/has-(warn|error)/);
+  for (const width of [320, 340, 360]) {
+    await page.setViewportSize({ width, height: 640 });
+    const past = await page.locator('#statusbar').evaluate((el) => {
+      const edge = el.getBoundingClientRect().right;
+      return [...el.children]
+        .filter((c) => c.getBoundingClientRect().right > edge + 0.5)
+        .map((c) => c.textContent);
+    });
+    expect(past, `${width}px, no problems`).toEqual([]);
+    await expect(
+      page.locator('#statusbar span', { hasText: /zoom\s*\d+%/ }).first(),
+    ).toBeVisible();
+  }
 });
 
 test('with the properties panel closed the canvas column runs to the window edge', async ({

@@ -1021,6 +1021,13 @@
     display: none;
   }
 }
+/* At 340px and less the selection count steps aside whether or not there
+   are problems, so the zoom keeps its value. */
+@media (max-width: 340px) {
+  .statusbar .sb-sel {
+    display: none;
+  }
+}
 
 /* A window under 480px tall (a laptop or a phone zoomed to 300% or 400%):
    the canvas gives up its least height, so it shrinks above the pages bar
