@@ -603,8 +603,11 @@ between pages. Page deletion has its own short-lived **Undo delete** action in
 the pages bar. While a menu, the context menu, a popover such as **Display
 settings**, or a dialog such as the shortcut sheet is open, the undo and redo
 keys do nothing outside a text field: close it first. In a text field, here
-or anywhere else, they undo and redo only the typing in that field; a field
-with nothing of its own to undo leaves every other field as it is.
+or anywhere else, they undo and redo the typing in that field, or else in
+another field of the same place: type in **Label**, press Tab and then
+Ctrl/Cmd+Z in the next field, and the label goes back. They never reach a
+field somewhere else, such as the document title from the properties panel,
+a dialog or the command palette.
 
 ### Context menus
 

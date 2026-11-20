@@ -6161,16 +6161,38 @@ window.addEventListener(
 // The browser keeps one text-undo history for the whole page. Ctrl/Cmd+Z in
 // a field with no edits of its own would otherwise undo the last field typed
 // in elsewhere (the document title, say): that field reverts outside the
-// editor's history, is saved, and takes the focus. Only the focused field's
-// own undo and redo go ahead.
+// editor's history, is saved, and takes the focus. The undo and redo go ahead
+// only within the focused field's own surface: the field itself, or another
+// field of the same properties panel, dialog, library or title. So Tab from
+// Label to Sublabel, then Ctrl+Z, still undoes the typing in Label.
+const UNDO_SURFACES = [
+  '[aria-modal="true"]',
+  '#inspector',
+  '[role="dialog"]',
+  '#palette',
+  '.doc-title',
+];
+function undoSurface(el: Element): Element {
+  for (const sel of UNDO_SURFACES) {
+    const found = el.closest(sel);
+    if (found) return found;
+  }
+  return el;
+}
 document.addEventListener(
   'beforeinput',
   (e) => {
+    if (e.inputType !== 'historyUndo' && e.inputType !== 'historyRedo') return;
+    const target = e.target;
+    const active = document.activeElement;
+    if (target === active) return;
     if (
-      (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') &&
-      e.target !== document.activeElement
+      target instanceof Element &&
+      active instanceof Element &&
+      undoSurface(target) === undoSurface(active)
     )
-      e.preventDefault();
+      return;
+    e.preventDefault();
   },
   true,
 );

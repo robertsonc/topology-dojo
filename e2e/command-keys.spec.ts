@@ -568,4 +568,26 @@ test('with a menu, a popover or a dialog open, the undo and redo keys leave the 
   await page.keyboard.press('Control+z');
   await expect(label).toHaveValue(before);
   await expect(title).toHaveValue('UntitledXY');
+  // As before the shell was rebuilt, typing in Label, then Tab to the next
+  // field of the same panel and Ctrl+Z there, undoes the typing in Label,
+  // and the undone label is what is saved. The title stays.
+  await page.keyboard.press('End');
+  await page.keyboard.type('Q');
+  await expect(label).toHaveValue(`${before}Q`);
+  await page.keyboard.press('Tab');
+  await expect(label).not.toBeFocused();
+  const next = page.locator('#inspector input[data-key="sublabel"]');
+  const savedLabel = async (): Promise<string | undefined> =>
+    (
+      (await readAutosave(page))?.pages[0].nodes as {
+        id: string;
+        label?: string;
+      }[]
+    ).find((n) => n.id === 'user')?.label;
+  await expect(next).toBeFocused();
+  await expect.poll(savedLabel).toBe(`${before}Q`);
+  await page.keyboard.press('Control+z');
+  await expect(label).toHaveValue(before);
+  await expect.poll(savedLabel).toBe(before);
+  await expect(title).toHaveValue('UntitledXY');
 });
