@@ -5,7 +5,12 @@
  * the panels around it.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { bootEditor, menuCommand } from './helpers.js';
+import {
+  bootEditor,
+  inspectorTab,
+  menuCommand,
+  statusCount,
+} from './helpers.js';
 
 interface Box {
   left: number;
@@ -277,8 +282,8 @@ for (const viewport of [
 }
 
 // The pages bar in a canvas column of every size: 720px is a 1,440px window
-// at 200% zoom (both panels still docked), 1,024px the narrowest desktop,
-// 390px a phone. Its page controls are on screen, nothing in it is drawn
+// at 200% zoom (both panels are drawers there, closed), 1,024px the
+// narrowest desktop (both docked), 390px a phone. Its page controls are on screen, nothing in it is drawn
 // over, and the canvas options keep the right end.
 for (const viewport of [
   { width: 720, height: 450 },
@@ -343,6 +348,185 @@ test('on a phone the status bar keeps the problems indicator on screen', async (
   await expect(
     page.locator('#statusbar span', { hasText: 'nodes' }).first(),
   ).toBeVisible();
+
+  // With a three-digit count of problems on the narrowest phones, the zoom
+  // at the bar's end still shows whole.
+  await page.evaluate(() => {
+    const nodes = [];
+    for (let k = 0; k < 120; k++)
+      nodes.push({ id: `off${k}`, type: 'host', x: -2000 - k * 300, y: 200 });
+    localStorage.setItem(
+      'topology-dojo:doc',
+      JSON.stringify({
+        title: 'Far away',
+        pages: [{ id: 'p1', name: 'Page 1', nodes, links: [], zones: [] }],
+      }),
+    );
+  });
+  await page.reload();
+  await expect(problems).toContainText(/\d{3}/);
+  for (const width of [360, 380, 400]) {
+    await page.setViewportSize({ width, height: 844 });
+    const past = await page.locator('#statusbar').evaluate((el) => {
+      const edge = el.getBoundingClientRect().right;
+      return [...el.children]
+        .filter((c) => c.getBoundingClientRect().right > edge + 0.5)
+        .map((c) => c.textContent);
+    });
+    expect(past, `${width}px`).toEqual([]);
+    await expect(
+      page.locator('#statusbar span', { hasText: 'zoom' }).first(),
+    ).toBeVisible();
+  }
+
+  // With no problems to show, at 320 and 340px the zoom's value still ends
+  // inside the bar.
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'topology-dojo:doc',
+      JSON.stringify({
+        title: 'Quiet',
+        pages: [
+          {
+            id: 'p1',
+            name: 'Page 1',
+            nodes: [{ id: 'a', type: 'host', x: 200, y: 200 }],
+            links: [],
+            zones: [],
+          },
+        ],
+      }),
+    );
+  });
+  await page.reload();
+  await expect(problems).not.toHaveClass(/has-(warn|error)/);
+  for (const width of [320, 340, 360]) {
+    await page.setViewportSize({ width, height: 640 });
+    const past = await page.locator('#statusbar').evaluate((el) => {
+      const edge = el.getBoundingClientRect().right;
+      return [...el.children]
+        .filter((c) => c.getBoundingClientRect().right > edge + 0.5)
+        .map((c) => c.textContent);
+    });
+    expect(past, `${width}px, no problems`).toEqual([]);
+    await expect(
+      page.locator('#statusbar span', { hasText: /zoom\s*\d+%/ }).first(),
+    ).toBeVisible();
+  }
+});
+
+/** The status bar's visible items that end past its edge, and how far its
+ * items run past its box, once the shell has laid it out. */
+function statusBarOverrun(
+  page: Page,
+): Promise<{ past: string[]; over: number; selected: boolean }> {
+  return page.locator('#statusbar').evaluate(
+    (el) =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const edge = el.getBoundingClientRect().right;
+            const sel = el.querySelector('.sb-sel');
+            resolve({
+              past: [...el.children]
+                .filter((c) => {
+                  const r = c.getBoundingClientRect();
+                  return r.width > 0 && r.right > edge + 0.5;
+                })
+                .map((c) => c.textContent ?? ''),
+              over: el.scrollWidth - el.clientWidth,
+              selected: !!sel && sel.getBoundingClientRect().width > 0,
+            });
+          }),
+        ),
+      ),
+  );
+}
+
+const ONE_NODE = [{ id: 'a', type: 'host', x: 200, y: 200 }];
+const MANY_NODES = Array.from({ length: 120 }, (_, k) => ({
+  id: `n${k}`,
+  type: 'host',
+  x: 150 + (k % 12) * 200,
+  y: 150 + Math.floor(k / 12) * 150,
+}));
+for (const { name, nodes, widths } of [
+  {
+    name: 'one node, whose fitted zoom has three digits, from 320 to 400px',
+    nodes: ONE_NODE,
+    widths: Array.from({ length: 81 }, (_, k) => 320 + k),
+  },
+  {
+    // The count of problems has three digits too, and still leaves the zoom
+    // room at 320px.
+    name: '120 nodes selected, from 320 to 440px',
+    nodes: MANY_NODES,
+    widths: Array.from({ length: 121 }, (_, k) => 320 + k),
+  },
+]) {
+  test(`on a phone the selection count steps aside only where the status bar would not fit, with ${name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 400, height: 700 });
+    await bootEditor(page);
+    await page.evaluate((nodes) => {
+      localStorage.setItem(
+        'topology-dojo:doc',
+        JSON.stringify({
+          title: 'Quiet',
+          pages: [{ id: 'p1', name: 'Page 1', nodes, links: [], zones: [] }],
+        }),
+      );
+    }, nodes);
+    await page.reload();
+    if (nodes.length === 1)
+      await expect(page.locator('#sb-problems')).not.toHaveClass(
+        /has-(warn|error)/,
+      );
+    else {
+      await page.keyboard.press('Control+a');
+      await expect(page.locator('#statusbar .sb-sel')).toContainText('120');
+    }
+    let shown = 0;
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: 700 });
+      const m = await statusBarOverrun(page);
+      expect(m.past, `${width}px`).toEqual([]);
+      expect(m.over, `${width}px`).toBeLessThanOrEqual(0);
+      if (m.selected) shown++;
+    }
+    // Where there is room the count is still there.
+    expect(shown).toBeGreaterThan(0);
+    await page.setViewportSize({ width: 460, height: 700 });
+    await expect(page.locator('#statusbar .sb-sel')).toBeVisible();
+  });
+}
+
+// Just above 700px every item shows, and with a selection and the pointer
+// over the canvas they do not all fit: the cursor and the minor counts step
+// aside, and the selection count stays.
+test('just above 700px a crowded status bar keeps the selection count', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 700 });
+  await bootEditor(page);
+  await page.mouse.click(400, 300);
+  await page.keyboard.press('Control+a');
+  for (const width of [710, 720, 730]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.mouse.move(420, 320);
+    const m = await statusBarOverrun(page);
+    expect(m.past, `${width}px`).toEqual([]);
+    expect(m.over, `${width}px`).toBeLessThanOrEqual(0);
+    await expect(
+      page.locator('#statusbar .sb-sel'),
+      `${width}px`,
+    ).toContainText('selected 7');
+    await expect(
+      page.locator('#statusbar .sb-sel'),
+      `${width}px`,
+    ).toBeVisible();
+  }
 });
 
 test('with the properties panel closed the canvas column runs to the window edge', async ({
@@ -393,6 +577,25 @@ test('on a phone the open library ends above the pages bar', async ({
   expect(reached).toBe(true);
 });
 
+// A phone shows one drawer at a time: opening one closes the other, and the
+// closed one keeps its stored choice (closing it was not the person's).
+test('on a phone opening one drawer closes the other', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  const stored = (key: string) =>
+    page.evaluate((k) => localStorage.getItem(k), key);
+  await page.locator('#palette-toggle').click();
+  await expect(page.locator('#palette')).not.toHaveClass(/collapsed/);
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expect(page.locator('#palette')).toHaveClass(/collapsed/);
+  expect(await stored('tds-palette-collapsed')).toBe('0');
+  await page.locator('#palette-toggle').click();
+  await expect(page.locator('#palette')).not.toHaveClass(/collapsed/);
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  expect(await stored('tds-inspector-collapsed')).toBe('0');
+});
+
 test('on a phone the document title keeps room to be read', async ({
   page,
 }) => {
@@ -431,4 +634,580 @@ test('the status bar draws the focus ring of its button whole', async ({
   });
   expect(fits.above).toBeGreaterThanOrEqual(0);
   expect(fits.below).toBeGreaterThanOrEqual(0);
+});
+
+// The pages bar clips what it has no room for: the focus ring of the Pages
+// toggle at its left end, of the first page chip at the left of its scroll
+// box, and of the canvas options at its right end (on a phone, its second
+// row) is still drawn whole.
+for (const width of [1440, 720, 480, 360]) {
+  test(`the pages bar draws the focus rings at its ends whole at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await bootEditor(page);
+    for (const selector of [
+      '#frames-toggle',
+      '.frame-sel',
+      '#tGrid',
+      '#minimap-toggle',
+    ]) {
+      const control = page.locator(selector).first();
+      await control.focus();
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Tab');
+      await expect(control).toBeFocused();
+      const clipped = await control.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        const reach =
+          parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset || '0');
+        const r = el.getBoundingClientRect();
+        const cut: string[] = [];
+        // Every ancestor that clips, at the inside of its border.
+        for (let a = el.parentElement; a; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+          const b = a.getBoundingClientRect();
+          const left = b.left + parseFloat(s.borderLeftWidth);
+          const right = b.right - parseFloat(s.borderRightWidth);
+          const top = b.top + parseFloat(s.borderTopWidth);
+          const bottom = b.bottom - parseFloat(s.borderBottomWidth);
+          if (
+            r.left - reach < left - 0.5 ||
+            r.right + reach > right + 0.5 ||
+            r.top - reach < top - 0.5 ||
+            r.bottom + reach > bottom + 0.5
+          )
+            cut.push(a.id || a.className);
+        }
+        return { reach, cut };
+      });
+      expect(clipped.reach, selector).toBeGreaterThan(0);
+      expect(clipped.cut, selector).toEqual([]);
+    }
+  });
+}
+
+// The compact layout: below 1,024px the node library and the properties
+// panel are drawers over the canvas, so the canvas column always runs from
+// the rail to the window's edge (a half-screen window, a zoomed laptop, a
+// tablet). From 1,024px up both dock.
+const RAIL_W = 44;
+/** Is the panel closed? */
+const closed = (page: Page, id: string): Promise<boolean> =>
+  page.locator(`#${id}`).evaluate((el) => el.classList.contains('collapsed'));
+
+for (const width of [1023, 900, 768, 720, 641]) {
+  test(`below 1,024px the panels are drawers over the canvas at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await bootEditor(page);
+    const sel = {
+      col: '.canvas-col',
+      area: '#canvas-area',
+      bar: '#pagesBar',
+      status: '#statusbar',
+      palette: '#palette',
+      inspector: '#inspector-wrap',
+    };
+
+    // With nothing stored both drawers start closed, and the canvas column
+    // is the window less the rail.
+    expect(await closed(page, 'palette')).toBe(true);
+    expect(await closed(page, 'inspector-wrap')).toBe(true);
+    await expect(page.locator('#palette-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    const start = await boxes(page, sel);
+    expect(start.col!.right - start.col!.left).toBe(width - RAIL_W);
+    const scene = await nodeBoxes(page);
+
+    /** Open one drawer and check where it lies; the canvas never moves. */
+    const expectDrawer = async (name: 'palette' | 'inspector') => {
+      const b = await boxes(page, sel);
+      expect(b.col).toEqual(start.col);
+      expect(b.area).toEqual(start.area);
+      expect(await nodeBoxes(page)).toEqual(scene);
+      const drawer = b[name]!;
+      expectInside(drawer, b.viewport!);
+      expectInside(drawer, b.area!);
+      expect(overlaps(drawer, b.bar!)).toBe(false);
+      expect(overlaps(drawer, b.status!)).toBe(false);
+      return b;
+    };
+
+    await page.locator('#palette-toggle').click();
+    await expect(page.locator('#palette-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    let b = await expectDrawer('palette');
+    expect(b.area!.right - b.palette!.right).toBeGreaterThanOrEqual(72);
+
+    // Both open together where 160px of canvas still shows between them.
+    // Where it would not (720px and 641px), opening the properties drawer
+    // closes the library, and the library's stored choice stays as it was.
+    const roomy = width >= 768;
+    await page.locator('#inspector-toggle').click();
+    expect(await closed(page, 'inspector-wrap')).toBe(false);
+    b = await expectDrawer('inspector');
+    expect(await closed(page, 'palette')).toBe(!roomy);
+    if (roomy) {
+      expect(b.inspector!.left - b.palette!.right).toBeGreaterThanOrEqual(160);
+      // The properties drawer alone, as wide as the docked panel.
+      await page.locator('#palette-toggle').click();
+    } else
+      expect(
+        await page.evaluate(() =>
+          localStorage.getItem('tds-palette-collapsed'),
+        ),
+      ).toBe('0');
+    expect(await closed(page, 'palette')).toBe(true);
+    b = await expectDrawer('inspector');
+    expect(b.inspector!.right - b.inspector!.left).toBe(324);
+    expect(b.inspector!.left - b.area!.left).toBeGreaterThanOrEqual(72);
+
+    // However wide the panel is asked to be, 72px of canvas still shows.
+    await page.locator('#inspector').evaluate((el) => {
+      el.style.width = '600px';
+    });
+    b = await expectDrawer('inspector');
+    expect(b.inspector!.left - b.area!.left).toBeGreaterThanOrEqual(72);
+    await page.locator('#inspector').evaluate((el) => {
+      el.style.width = '';
+    });
+
+    // Closing it gives the canvas back as it was.
+    await page.locator('#inspector-toggle').click();
+    expect(await closed(page, 'inspector-wrap')).toBe(true);
+    expect((await boxes(page, sel)).col).toEqual(start.col);
+
+    // A stored choice to keep them open wins on load.
+    await page.evaluate(() => {
+      localStorage.setItem('tds-palette-collapsed', '0');
+      localStorage.setItem('tds-inspector-collapsed', '0');
+    });
+    await page.reload();
+    await expect(page.locator('#page-canvas')).toBeVisible();
+    expect(await closed(page, 'palette')).toBe(false);
+    expect(await closed(page, 'inspector-wrap')).toBe(false);
+    b = await boxes(page, sel);
+    expect(b.col!.right - b.col!.left).toBe(width - RAIL_W);
+  });
+}
+
+test('from 1,024px up both panels dock beside the canvas, open', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await bootEditor(page);
+  expect(await closed(page, 'palette')).toBe(false);
+  expect(await closed(page, 'inspector-wrap')).toBe(false);
+  const b = await boxes(page, {
+    col: '.canvas-col',
+    palette: '#palette',
+    inspector: '#inspector-wrap',
+  });
+  const library = b.palette!.right - b.palette!.left;
+  const panel = b.inspector!.right - b.inspector!.left;
+  expect(library).toBe(208);
+  expect(panel).toBe(324);
+  // Docked: the canvas column is what the panels leave, between them.
+  expect(b.col!.right - b.col!.left).toBe(1024 - RAIL_W - library - panel);
+  expect(b.col!.left).toBe(b.palette!.right);
+  expect(b.col!.right).toBe(b.inspector!.left);
+});
+
+test('fit view keeps the content clear of an open drawer', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await bootEditor(page);
+  await page.locator('#inspector-toggle').click();
+  await page.keyboard.press('0');
+  let drawer = (await boxes(page, { d: '#inspector-wrap' })).d!;
+  for (const n of await nodeBoxes(page))
+    expect(n.right).toBeLessThanOrEqual(drawer.left);
+  await page.locator('#inspector-toggle').click();
+
+  await page.locator('#palette-toggle').click();
+  await page.locator('#ccFit').click();
+  drawer = (await boxes(page, { d: '#palette' })).d!;
+  for (const n of await nodeBoxes(page))
+    expect(n.left).toBeGreaterThanOrEqual(drawer.right);
+  await expectContentVisible(page, true);
+});
+
+/** Boot the editor on clean storage that holds only `stored`. */
+async function bootStored(
+  page: Page,
+  stored: Record<string, string>,
+): Promise<void> {
+  await bootEditor(page);
+  await page.evaluate((all) => {
+    for (const [k, v] of Object.entries(all)) localStorage.setItem(k, v);
+  }, stored);
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+}
+
+/** The drawers' inner edges: the canvas they leave showing between them. */
+async function band(page: Page): Promise<{ left: number; right: number }> {
+  const b = await boxes(page, { lib: '#palette', props: '#inspector-wrap' });
+  return { left: b.lib!.right, right: b.props!.left };
+}
+
+for (const width of [641, 720]) {
+  test(`fit view keeps the content between both open drawers at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await bootStored(page, {
+      'tds-palette-collapsed': '0',
+      'tds-inspector-collapsed': '0',
+    });
+    expect(await closed(page, 'palette')).toBe(false);
+    expect(await closed(page, 'inspector-wrap')).toBe(false);
+    await page.keyboard.press('0');
+    const strip = await band(page);
+    const nodes = await nodeBoxes(page);
+    expect(nodes.length).toBeGreaterThan(0);
+    for (const n of nodes) {
+      expect(n.left).toBeGreaterThanOrEqual(strip.left);
+      expect(n.right).toBeLessThanOrEqual(strip.right);
+    }
+    // The zoom control's fit button is in reach beside the drawer.
+    expect(await hits(page, ['ccFit'])).toEqual(['ccFit']);
+  });
+}
+
+// A window under 480px tall: a phone or a small laptop zoomed to 300% or
+// 400% (360 x 225 is 1,440 x 900 at 400%). Every control outside the canvas
+// is inside the window and is what a press at its centre reaches, once it
+// is scrolled into view (the rail scrolls in a window this short), and an
+// open drawer keeps room for its list.
+for (const [width, height] of [
+  [360, 225],
+  [320, 256],
+] as const)
+  test(`in a ${width} x ${height} window every control can be reached and the drawers keep their lists`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await bootEditor(page);
+    const unreachable = await page.evaluate(() => {
+      const out: string[] = [];
+      const controls = document.querySelectorAll<HTMLElement>(
+        'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      for (const el of controls) {
+        if (el.closest('svg') || (el as HTMLButtonElement).disabled) continue;
+        if (getComputedStyle(el).visibility === 'hidden') continue;
+        if (!el.getBoundingClientRect().width) continue;
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          r.left + r.width / 2,
+          r.top + r.height / 2,
+        );
+        const inside =
+          r.left >= 0 &&
+          r.top >= 0 &&
+          r.right <= window.innerWidth + 0.5 &&
+          r.bottom <= window.innerHeight + 0.5;
+        if (!inside || !hit || !el.contains(hit))
+          out.push(
+            `${el.id ? `#${el.id}` : el.className} at ` +
+              `${Math.round(r.left)},${Math.round(r.top)} reaches ` +
+              `${hit ? hit.id || hit.getAttribute('class') || hit.tagName : 'nothing'}`,
+          );
+      }
+      return out;
+    });
+    expect(unreachable).toEqual([]);
+
+    // The canvas ends above the pages bar, and the zoom control inside it.
+    const b = await boxes(page, {
+      area: '#canvas-area',
+      bar: '#pagesBar',
+      ctrls: '#canvasCtrls',
+    });
+    expect(b.area!.bottom).toBeLessThanOrEqual(b.bar!.top);
+    expectInside(b.ctrls!, b.area!);
+
+    const height_ = (selector: string) =>
+      page
+        .locator(selector)
+        .evaluate((el) => el.getBoundingClientRect().height);
+    await page.locator('#palette-toggle').click();
+    expect(await height_('#palette-list')).toBeGreaterThanOrEqual(60);
+    await page.locator('#palette-toggle').click();
+    await page.locator('#inspector-toggle').click();
+    expect(await height_('#inspector')).toBeGreaterThanOrEqual(60);
+  });
+
+test('on a phone, two drawers stored open load as one, and their stored choices stay', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+  });
+  expect(await closed(page, 'palette')).toBe(false);
+  expect(await closed(page, 'inspector-wrap')).toBe(true);
+  // Some canvas shows beside the library.
+  const b = await boxes(page, { lib: '#palette', area: '#canvas-area' });
+  expect(b.area!.right - b.lib!.right).toBeGreaterThanOrEqual(72);
+  expect(
+    await page.evaluate(() => [
+      localStorage.getItem('tds-palette-collapsed'),
+      localStorage.getItem('tds-inspector-collapsed'),
+    ]),
+  ).toEqual(['0', '0']);
+
+  // Narrowing a window to a phone with both open does the same.
+  await page.setViewportSize({ width: 768, height: 844 });
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+  expect(await closed(page, 'palette')).toBe(false);
+  expect(await closed(page, 'inspector-wrap')).toBe(false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => closed(page, 'inspector-wrap')).toBe(true);
+  expect(await closed(page, 'palette')).toBe(false);
+  expect(
+    await page.evaluate(() => localStorage.getItem('tds-inspector-collapsed')),
+  ).toBe('0');
+
+  // Widening again shows what a load at that width shows: both open.
+  await page.setViewportSize({ width: 800, height: 844 });
+  await expect.poll(() => closed(page, 'inspector-wrap')).toBe(false);
+  expect(await closed(page, 'palette')).toBe(false);
+});
+
+test('narrowing to a phone while a properties field is typed in keeps the drawer open', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 844 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+  });
+  const node = (await nodeBoxes(page))[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  await inspectorTab(page, 'selection');
+  const label = page.locator('#inspector input[data-key="label"]');
+  await label.click();
+  await page.keyboard.press('End');
+  const before = await label.inputValue();
+  await page.keyboard.type('ab');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(100);
+  expect(await closed(page, 'inspector-wrap')).toBe(false);
+  await expect(label).toBeFocused();
+  await page.keyboard.type('cd');
+  await expect(label).toHaveValue(`${before}abcd`);
+});
+
+test('the zoom control and the minimap move left of an open properties drawer', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await bootEditor(page);
+  await page.locator('#minimap-toggle').click();
+  await page.locator('#inspector-toggle').click();
+  const b = await boxes(page, {
+    props: '#inspector-wrap',
+    ctrls: '#canvasCtrls',
+    map: '#minimap-dock',
+  });
+  expect(b.ctrls!.right).toBeLessThanOrEqual(b.props!.left);
+  expect(b.map!.right).toBeLessThanOrEqual(b.props!.left);
+  expect(await hits(page, [...CONTROL_IDS, 'minimap'])).toEqual([
+    ...CONTROL_IDS,
+    'minimap',
+  ]);
+  // Closed, the drawer gives the corner back.
+  await page.locator('#inspector-toggle').click();
+  const area = (await boxes(page, { area: '#canvas-area' })).area!;
+  const ctrls = (await boxes(page, { c: '#canvasCtrls' })).c!;
+  expect(area.right - ctrls.right).toBe(10);
+});
+
+test('the selection bar keeps to the canvas between open drawers', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 768, height: 800 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+  });
+  await page.keyboard.press('0');
+  // The rightmost node, beside the properties drawer.
+  const node = (await nodeBoxes(page)).sort((a, c) => c.right - a.right)[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  const bar = page.locator('.mini-bar');
+  await expect(bar).toBeVisible();
+  const strip = await band(page);
+  const box = (await boxes(page, { bar: '.mini-bar' })).bar!;
+  expect(box.left).toBeGreaterThanOrEqual(strip.left);
+  expect(box.right).toBeLessThanOrEqual(strip.right);
+});
+
+test('a press on the resize grip of a narrowed drawer keeps the stored width', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 641, height: 800 });
+  await bootStored(page, {
+    'tds-palette-collapsed': '0',
+    'tds-inspector-collapsed': '0',
+    'tds-inspector-width': '480',
+  });
+  const widths = () =>
+    page.evaluate(() => {
+      const panel = document.querySelector<HTMLElement>('#inspector')!;
+      return {
+        drawn: panel.offsetWidth,
+        asked: panel.style.width,
+        stored: localStorage.getItem('tds-inspector-width'),
+      };
+    });
+  // With the library open the drawer leaves 72px of canvas: the panel is
+  // drawn narrower than the 480px chosen.
+  const start = await widths();
+  expect(start.drawn).toBeLessThan(480);
+  const grip = (await page.locator('#inspector-resizer').boundingBox())!;
+  const x = grip.x + grip.width / 2;
+  const y = grip.y + grip.height / 2;
+  await page.mouse.click(x, y);
+  expect((await widths()).stored).toBe('480');
+
+  // A drag held at the drawer's limit moves nothing, and stores nothing.
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 100, y, { steps: 4 });
+  await page.mouse.up();
+  expect(await widths()).toEqual(start);
+
+  // Docked again, the panel is as wide as chosen.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.reload();
+  await expect(page.locator('#page-canvas')).toBeVisible();
+  expect((await widths()).drawn).toBe(480);
+
+  // A drag that narrows the drawer stores what it draws.
+  await page.setViewportSize({ width: 641, height: 800 });
+  const g = (await page.locator('#inspector-resizer').boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 30, g.y + g.height / 2, {
+    steps: 4,
+  });
+  await page.mouse.up();
+  const after = await widths();
+  expect(after.drawn).toBe(start.drawn - 30);
+  expect(after.asked).toBe(`${after.drawn}px`);
+  expect(after.stored).toBe(String(after.drawn));
+});
+
+test('crossing 1,024px keeps the selection, the tab and the sections', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bootEditor(page);
+  // A node selected, the Document tab showing, one of its sections toggled.
+  const host = (await page.locator('.canvas-host').boundingBox())!;
+  await page.mouse.click(host.x + 8, host.y + 8);
+  const node = (await nodeBoxes(page))[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  expect(await statusCount(page, 'selected')).toBe(1);
+  await inspectorTab(page, 'document');
+  const groups = page.locator('#inspector > details.insp-group');
+  await groups.last().locator('> summary').click();
+  const sections = (): Promise<[string, boolean][]> =>
+    groups.evaluateAll((ds) =>
+      ds.map((d) => [
+        (d as HTMLElement).dataset.group!,
+        (d as HTMLDetailsElement).open,
+      ]),
+    );
+  const before = await sections();
+  const expectKept = async () => {
+    expect(await statusCount(page, 'selected')).toBe(1);
+    await expect(page.locator('#insp-tab-document')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(await sections()).toEqual(before);
+  };
+
+  // Nothing stored: the panel closes as a drawer and opens again docked.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  await expectKept();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expectKept();
+
+  // A field being typed in is not closed under the person typing.
+  const field = page.locator('#p-title');
+  await field.fill('Data centre');
+  await field.focus();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('Data centre');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await field.blur();
+
+  // A panel that closes while a button in it has the focus hands the focus
+  // to its toggle, not to the page.
+  await page.locator('#insp-tab-document').focus();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).toHaveClass(/collapsed/);
+  await expect(page.locator('#inspector-toggle')).toBeFocused();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+
+  // Kept open by choice, it stays open across the breakpoint, both ways.
+  await page.locator('#inspector-toggle').click();
+  await page.locator('#inspector-toggle').click();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expectKept();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expectKept();
+});
+
+test('crossing 1,024px while a colour is typed keeps the panel open', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bootEditor(page);
+  const node = (await nodeBoxes(page))[0]!;
+  await page.mouse.click(
+    (node.left + node.right) / 2,
+    (node.top + node.bottom) / 2,
+  );
+  await inspectorTab(page, 'selection');
+  const colour = page.locator('#inspector .colour-btn').first();
+  await colour.click();
+  const hex = page.locator('#inspector .colour-pop:visible input.hex');
+  await hex.fill('#12ab');
+  await hex.focus();
+  // The popover closes on any resize and gives the focus back to its
+  // button; the panel it was typed in stays open, with the focus in it.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator('#inspector-wrap')).not.toHaveClass(/collapsed/);
+  await expect(colour).toBeFocused();
 });

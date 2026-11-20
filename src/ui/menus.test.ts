@@ -18,6 +18,7 @@ import {
   fileMenu,
   helpMenu,
   MENUBAR,
+  menuBarPath,
   moreMenu,
   tidyMenu,
   viewMenu,
@@ -228,6 +229,7 @@ describe('the menus', () => {
     expect(shape(helpMenu(ctx))).toEqual([
       'help.shortcuts',
       'help.commandPalette',
+      'help.whatMoved',
     ]);
     expect(shape(exportMenu(ctx))).toEqual(EXPORT_SHAPE);
     expect(shape(tidyMenu(ctx))).toEqual([
@@ -572,5 +574,88 @@ describe('the context menu', () => {
     ).find((i) => i.id === 'edit.pasteHere')!;
     paste.run!();
     expect(calls).toEqual([at]);
+  });
+});
+
+describe('menuBarPath', () => {
+  const ctx = context();
+
+  it('names the menu and the submenus on the way to a command', () => {
+    expect(menuBarPath(ctx, 'view.fit')).toEqual({
+      menu: 'view',
+      menuLabel: 'View',
+      submenus: [],
+    });
+    const theme = menuBarPath(ctx, 'view.theme.light');
+    expect(theme?.menu).toBe('view');
+    expect(theme?.submenus).toEqual(['Theme']);
+    const template = menuBarPath(ctx, `file.template.${TEMPLATES[0]!.id}`);
+    expect(template?.menu).toBe('file');
+    expect(template?.submenus).toHaveLength(1);
+  });
+
+  it('follows the path to the item it names, in every menu of the bar', () => {
+    // Every command any menu of the bar holds: walking the path the function
+    // gives, through the entries as the menu component gets them, ends at an
+    // item with that id.
+    const ids = new Set<string>();
+    const collect = (entries: readonly MenuEntry[]): void => {
+      for (const entry of entries) {
+        if (!isMenuItem(entry)) continue;
+        if (entry.id) ids.add(entry.id);
+        if (Array.isArray(entry.submenu)) collect(entry.submenu);
+      }
+    };
+    for (const menu of MENUBAR) collect(menu.entries(ctx));
+    expect(ids.size).toBeGreaterThan(40);
+    for (const id of ids) {
+      const path = menuBarPath(ctx, id);
+      expect(path, id).not.toBeNull();
+      let entries = MENUBAR.find((m) => m.id === path!.menu)!.entries(ctx);
+      for (const label of path!.submenus) {
+        const parent = entries.find(
+          (e): e is MenuItem => isMenuItem(e) && e.label === label,
+        );
+        expect(parent?.submenu, `${id}: submenu ${label}`).toBeDefined();
+        entries = parent!.submenu as MenuEntry[];
+      }
+      expect(
+        entries.some((e) => isMenuItem(e) && e.id === id),
+        id,
+      ).toBe(true);
+    }
+  });
+
+  it('is null for a command no menu of the bar offers', () => {
+    expect(menuBarPath(ctx, 'no.such.command')).toBeNull();
+    // The Tidy button's own menu is not the bar.
+    const onlyTidy = tidyMenu(ctx)
+      .filter(isMenuItem)
+      .map((e) => e.id!)
+      .find((id) => {
+        const inBar = (entries: readonly MenuEntry[]): boolean =>
+          entries.some(
+            (e) =>
+              isMenuItem(e) &&
+              (e.id === id || (Array.isArray(e.submenu) && inBar(e.submenu))),
+          );
+        return !MENUBAR.some((m) => inBar(m.entries(ctx)));
+      });
+    if (onlyTidy) expect(menuBarPath(ctx, onlyTidy)).toBeNull();
+  });
+
+  it('labels each submenu on a path once in its menu', () => {
+    // The path names submenus by their text, so two submenus of one menu
+    // must not share it.
+    const check = (entries: readonly MenuEntry[], where: string): void => {
+      const labels = entries
+        .filter((e): e is MenuItem => isMenuItem(e) && !!e.submenu)
+        .map((e) => e.label);
+      expect(new Set(labels).size, where).toBe(labels.length);
+      for (const e of entries)
+        if (isMenuItem(e) && Array.isArray(e.submenu))
+          check(e.submenu, `${where} ▸ ${e.label}`);
+    };
+    for (const menu of MENUBAR) check(menu.entries(ctx), menu.label);
   });
 });

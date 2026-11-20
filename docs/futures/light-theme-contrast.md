@@ -156,3 +156,49 @@ leave it for a follow-up issue.
   · [after](light-theme-contrast/EdgeHA_after.light.after.png).
 - **Still out of scope:** text is 7-9px in ~2000-unit viewBoxes (3-4pt on a
   fitted PDF page) — a font-floor vs export-scale decision for a follow-up.
+
+## Note, 2026-11-19: this is the rendered output, not the editor chrome
+
+Everything above is about the drawn diagram (`render_svg`, the exports, the
+flipbook; PR #289). [Proposal 0013](../proposals/0013-ui-overhaul.md) lists a
+"light theme contrast pass" under P3 and links here, but that pass is for the
+editor chrome, which this document does not cover.
+
+What exists for the chrome: semantic tokens for both themes
+(`src/styles/tokens.css`), with the contrast of text, outlines and the focus
+ring on every surface, and of ink on the accent and status fills, computed from
+them for the dark and the light theme (`src/styles/styles.test.ts`, "token
+contrast (WCAG 2.1)"); `readableInkOn` in `src/ui/contrast.ts` picks the ink on
+a brand accent. One screenshot baseline is in the light theme, of the canvas
+only (`e2e/visual.spec.ts`, "EdgeHA fixture in light theme").
+
+Not done, or not checked: a contrast check of each surface as drawn in the
+light theme, as opposed to the tokens; the surfaces that still set `color:
+var(--accent)` as text (listed in the proposal's P3 status line; the token's own
+comment in `tokens.css` says `--accent` as text can fall under 4.5 : 1 on a tint); and the motion and reduced-motion pass. The
+items under "Out of scope" above are unchanged.
+
+### Update, 2026-11-19, PR #328
+
+In PR #328 the chrome's pass was done in part:
+the surfaces that set `color: var(--accent)` as text now use `--accent-fg`
+(no stylesheet sets text or an icon in `color: var(--accent)`:
+`grep -rnE "(^|[^-])color: var\(--accent\)" src/styles` finds nothing; what
+remains of `var(--accent)` is `border-color` and `accent-color`); for a document's
+brand accent, `readableAccentText` in `src/ui/contrast.ts` mixes the accent
+toward the theme's foreground until it reaches 4.5 : 1 on every surface of the chrome and on every tint laid over one (a hovered or pressed control, `--accent-soft`, `--accent-soft-strong`) and
+`setChromeAccent` sets `--accent-fg` from it (unit tests with a dark, a pale, a
+mid and a mid-pale accent in both themes, `src/ui/contrast.test.ts`; at first
+it measured the front surface alone, and a review found #7fd1ff at 3.89 : 1 on
+the compass's chosen side in the light theme); present mode has a dark
+scope so its bar reads in the light theme (`.dark-scope`, `src/styles/tokens.css`);
+and every transition and animation in the stylesheets takes a duration token
+(`src/styles/styles.test.ts`, "times every transition and animation with the
+duration tokens"). Each converted surface was measured in a browser, in both
+themes, while it was converted.
+
+Still not done: no test asserts the contrast of a surface as drawn, in either
+theme (QA case EDT-71 is manual); the disabled Selection tab is drawn at
+`opacity: 0.4`, below 4.5 : 1, and is exempt as a disabled control; and
+animation drawn as SVG is outside the motion test. The items under "Out of
+scope" above are unchanged.

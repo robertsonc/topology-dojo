@@ -5,6 +5,58 @@
 import { expect, test } from '@playwright/test';
 import { bootEditor, clickNode, nodeBox, statusCount } from './helpers.js';
 
+// A window 450px tall is shorter than Display settings: it stays inside the
+// window, below the top bar, and scrolls inside itself, down to its last
+// control.
+test('Display settings stays inside a short window', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 450 });
+  await bootEditor(page);
+  const pop = page.locator('.display-pop');
+  await page.locator('#tDisplay').click();
+  await expect(pop).toBeVisible();
+  const box = (await pop.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  // It leaves the top bar's buttons uncovered.
+  const bar = (await page.locator('#topbar').boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(bar.y + bar.height);
+  for (const id of ['#tTidy', '#tPresent', '#fExportBtn']) {
+    const b = (await page.locator(id).boundingBox())!;
+    const hit = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.id,
+      [b.x + b.width / 2, b.y + b.height / 2] as const,
+    );
+    expect(hit, id).toBe(id.slice(1));
+  }
+  expect(box.y + box.height).toBeLessThanOrEqual(450);
+  const scroll = await pop.evaluate((el) => ({
+    content: el.scrollHeight,
+    box: el.clientHeight,
+  }));
+  expect(scroll.content).toBeGreaterThan(scroll.box);
+  // Its last control can be reached by scrolling the popover.
+  const last = page.locator('#dpChrome');
+  await last.scrollIntoViewIfNeeded();
+  const lastBox = (await last.boundingBox())!;
+  expect(lastBox.y).toBeGreaterThanOrEqual(box.y);
+  expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(box.y + box.height);
+
+  // In a window this narrow and short (a phone zoomed to 400%) it keeps its
+  // left edge inside the window too.
+  for (const size of [
+    { width: 320, height: 256 },
+    { width: 360, height: 225 },
+  ]) {
+    await page.keyboard.press('Escape');
+    await expect(pop).toBeHidden();
+    await page.setViewportSize(size);
+    await page.locator('#tDisplay').click();
+    await expect(pop).toBeVisible();
+    const small = (await pop.boundingBox())!;
+    expect(small.x, `${size.width}x${size.height}`).toBeGreaterThanOrEqual(8);
+    expect(small.x + small.width).toBeLessThanOrEqual(size.width - 8);
+  }
+});
+
 test('pressing the canvas closes Display settings and the shortcuts work again', async ({
   page,
 }) => {

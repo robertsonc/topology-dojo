@@ -1,19 +1,34 @@
 # Topology Dojo User Guide
 
-**Last reviewed:** 2026-11-13 (against `main` at `e99b012`). Updated
-2026-11-19 for PR #326, the first part of
-[proposal 0013](proposals/0013-ui-overhaul.md), merged that day as `e9d0d7f`:
-passages that named a control by a symbol now name it by its text or tooltip,
-"View preferences" no longer lists a glass setting, and "Brand palette" says
-what a palette recolours in the app chrome. Updated 2026-11-19 for PR #327
-(draft, not merged), the command registry: "Keyboard reference" now says where
-the shortcut sheet lists the keys. No key changed, and the table was checked
-against the sheet's rows in `src/ui/commands.ts`. Updated again for the rebuilt
-shell and properties panel of the same proposal: the passages on the toolbar,
-the Node library, the pages strip and the canvas controls now describe the top
-bar and its menus, the left rail, the docked library, the pages bar, the zoom
-control, the selection bar and the command palette. The rest of the guide was not
-re-checked.
+**Last reviewed:** 2026-11-19, for PR #328, against PR #328's branch at
+`61e4d7e`. Earlier the same day PR #326 (the first part of
+[proposal 0013](proposals/0013-ui-overhaul.md)) merged as `e9d0d7f`, and
+pull request #327 (the command registry, the rebuilt shell and the properties
+panel) merged as `d224979`; the compact layout and everything described below
+as new in this review are PR #328's work, not #326's or #327's. The first review of the day (at
+`d24f6a4`) checked the editor's chrome against the running app and the code:
+"Editor anatomy", the properties panel, the context menus, the keyboard table
+and every sentence that names where a field or a button now is. This review
+re-checked, against the code and the running app (the dev server, 1,440 × 900
+in both themes): the library's button names and tiles, the selection bar, the
+zoom control's tooltips, the Problems dock (its footer buttons and what a jump
+does), the drawers' closing rule, the new "what moved" note and **Help → What
+moved**, where Find and the path bar sit, the path bar's button names, present
+mode's buttons and its look in the light theme, the Share dialog's and the
+shared-copy banner's button names, Display settings in a short window, the
+brand accent's text colour, and the link-attachment override's two fields.
+Not re-checked: the hosted pieces beyond those button names (sign-in, the
+account menu, workspace and admin surfaces), anything on a touch screen, the
+matching rules and ranking of Find, how long **Undo delete** stays, the node
+designer and the wizards, the generated diagrams, import and export output,
+the MCP sections, and the rest of the guide since the first review of the day.
+A later pass the same day, after review fixes in PR #328, re-checked, at `f85fc5f`,
+against the code and the running app (the dev server, both themes): the
+properties toggle's words (**Hide**, **Properties**), the **Sign in** chip,
+the names of the properties panel's sections, the keyboard reference's tooltip
+sentence, the undo and redo keys while a menu or a dialog is open, where the
+focus goes in the pages bar, the drawers on a phone at load, a window under
+480px tall (360 × 225 and 320 × 256), and the brand accent's text colour.
 
 Topology Dojo is a studio for building network-topology diagrams. A person can
 edit a diagram directly on the canvas, or an MCP-capable agent can author the
@@ -177,13 +192,13 @@ shared, or public.
 | Data                                      | Storage location                                                               | Who can reach it                                                      | Retention and recovery                                                                                                                                                                                                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Normal browser draft                      | Browser localStorage on the current browser/profile                            | The person using that browser profile                                 | Autosaves after edits. It remains local across refresh and sign-out, subject to browser storage policy, clearing, quota, and device loss. Use **File → Download JSON** for a portable backup.                                                                                    |
-| Shared-link working copy                  | A separate browser localStorage slot                                           | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **keep this copy** to adopt it or **back to my document** to discard it from the canvas.                                                                                                   |
+| Shared-link working copy                  | A separate browser localStorage slot                                           | The person who opened the public link                                 | It does not overwrite the normal local draft. Refresh resumes the shared copy. Choose **Keep this copy** to adopt it or **Back to my document** to discard it from the canvas.                                                                                                   |
 | Downloaded JSON                           | A file chosen by the browser                                                   | Anyone who receives the file                                          | Full portable document backup under the user's control.                                                                                                                                                                                                                          |
 | Local MCP private draft                   | Memory in the local MCP process                                                | The connected local MCP client                                        | Treat as temporary. Export or retrieve the JSON before stopping the process.                                                                                                                                                                                                     |
 | Hosted MCP private draft                  | Per-user hosted registry                                                       | The authenticated GitHub owner and that owner's MCP session           | No user-facing automatic expiry is documented. The browser owner can open or hand the draft into a canonical workspace.                                                                                                                                                          |
 | Canonical Agent Workspace                 | Hosted per-document coordinator                                                | The authenticated owner and authorized tools operating for that owner | Revisioned and server-backed. Recent history can be compacted. Named checkpoints are capped at 12.                                                                                                                                                                               |
 | Workspace offline cache and pending queue | IndexedDB in the current browser plus a lightweight local workspace pointer    | The person using that browser profile                                 | Supports reload and reconnection recovery. Do not clear site data while operations are pending.                                                                                                                                                                                  |
-| Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                           | Anyone with the URL; no login to view                                 | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. The publisher can revoke with **unpublish_topology** or **unpublish link** (signed-in `DELETE /api/topology/<id>`). Public GETs may be cached for about a minute. |
+| Public share snapshot                     | Hosted KV and public **/v/<id>** URL                                           | Anyone with the URL; no login to view                                 | Each URL expires 30 days after publication. Publishing again creates a new URL; it does not renew the old one. The publisher can revoke with **unpublish_topology** or **Unpublish link** (signed-in `DELETE /api/topology/<id>`). Public GETs may be cached for about a minute. |
 | Exported file (SVG, PNG, PDF, flipbook…)  | Downloaded file or MCP result                                                  | Anyone who receives the artifact                                      | Outside Topology Dojo after export. Handle it according to the content's sensitivity.                                                                                                                                                                                            |
 | Authoring preferences                     | Hosted profile store, when enabled                                             | The owner; agents can read confirmed guidance only                    | The owner can confirm, pause, reject, or forget rules.                                                                                                                                                                                                                           |
 | Login analytics                           | Hosted analytics store, when enabled                                           | The configured deployment administrator                               | Login and workspace metadata only; no diagram contents. Collection is going-forward and best-effort.                                                                                                                                                                             |
@@ -194,46 +209,109 @@ reloaded document normally opens on its first page.
 
 ## 4. Editor anatomy
 
-The editor is organized into seven areas.
+The editor is organized into six areas and a status bar.
 
-1. **Top bar.** The document: the **File**, **Edit**, **View**, **Arrange**
-   and **Help** menus, the document title (the same title as in Properties)
-   with the save state beside it, **Undo** and **Redo**, **Tidy** with the
-   layout menu beside it, then **Present**, **Export** (every export format,
-   see [Save, import, export, and share](#11-save-import-export-and-share)),
-   **Share** on hosted deployments, and the optional workspace and account
-   chips. The account menu holds **API keys**, **Authoring preferences**,
+1. **Top bar.** From the left: the **File**, **Edit**, **View**, **Arrange**
+   and **Help** menus; the document title, an editable field (the same title as
+   **Document → Title** in the properties panel), with the save state beside it
+   after an edit; **Undo** and **Redo**; **Tidy** with the layout menu beside
+   it; **Present**; and **Export** (every export format, see
+   [Save, import, export, and share](#11-save-import-export-and-share)).
+   **Share** and the optional workspace and account chips are for hosted
+   deployments. The account menu holds **API keys**, **Authoring preferences**,
    **Admin** (for the deployment's owner), **Theme** and **Sign out**. In a
    window 1,100px wide or less the five menus fold into one **Menu** button.
-2. **Left rail.** The tools (**select**, **hand**, **draw link**, **drop
-   anchor**, also in **Edit → Tools**), the Node library toggle and, at the
-   bottom, the command palette and the shortcut reference.
-3. **Node library.** A searchable, categorized catalog docked beside the rail.
-   It also holds document custom nodes and stencils. Hiding it gives its
-   width to the canvas.
+   Below 1,280px **Tidy** and **Present** show only their icons, so the title
+   keeps room for a short name. In a narrower window the top bar gives up
+   first the words on its other buttons, then the menu beside **Tidy**, then
+   **Present**; every command it dropped is
+   still in the menus (**Arrange** and **File → Present**). The title and the
+   save state beside it never run under **Undo** or anything else on the bar.
+   Wherever the bar is short of room, the save state shortens first: a
+   save to its mark alone (**✓**), a warning to its first words
+   (**⚠ not saved**, **⚠ newer copy**). Its tooltip, and what a
+   screen reader says, keep the whole sentence, and pressing it still
+   downloads the document or loads the other tab's copy. If the bar is still
+   short, the workspace chip's name, then the account's name, the logo and
+   the account chip's caret step aside; a warning keeps its words until they
+   have, and only then shows its mark alone (**⚠**). On a phone the **✓** of
+   a save can go too (a warning always shows). Then the report of the last
+   export, beside **Export**, keeps only its icon (its tooltip, and what a
+   screen reader says, keep the words). On the narrowest phones (about
+   360px and below, signed in) the caret on **Export**, then **Tidy**, then
+   **Redo** give way last, so the title keeps at least 64px; both commands stay in
+   the menus (**Arrange → Tidy**, **Edit → Redo**) and on their keys.
+2. **Left rail.** A narrow column of icon buttons. At the top are the four
+   tools: **Select/move tool**, **Hand / pan tool**, **Draw link tool** and
+   **Drop anchor tool** (the same four are under **Edit → Tools**). Below them
+   is the **Node library** toggle. At the bottom are the **Command palette**
+   and **Keyboard shortcuts** buttons.
+3. **Node library.** A column docked beside the rail, headed **Library**, with
+   a **Search nodes…** box above the catalog's categories. The
+   document's own node types follow under **Custom**, and its stencils under
+   **Stencils**. The **Design node** and **Save stencil** buttons end the list
+   (they are hidden while you search). Each node type is a tile with its name
+   under the icon; a long name wraps onto a second line between words and is
+   never cut inside a word, and a name longer than two lines ends with an
+   ellipsis (for example **EC + Axis Connector (container)** shows "EC + Axis
+   Connector…"). That tile's tooltip describes the node, and does not
+   repeat its full name. Hiding the library gives its width to the canvas.
 4. **Canvas.** The current page, selection overlay, smart guides, link handles,
-   problem badges, and a **selection bar** floating above the selection:
-   color swatches and page emphasis for nodes (applied to every selected
-   node), link type and routing for a selected link, then **Bring to front**,
-   **Send to back** and **Lock**. With two or more nodes selected it also
-   offers the six align buttons and the two distribute buttons (distribute
-   needs three nodes). It hides during gestures; the Properties panel remains
-   the complete surface. The zoom control floats in the canvas's bottom-right
-   corner (zoom out, the zoom figure, which fits the view when clicked, zoom
-   in and fit to content), and the minimap opens in a card above it.
-5. **Pages bar.** Docked under the canvas: the pages toggle, **Play**, the page
-   chips, **Duplicate page** and **Add page**; at its right end the grid, snap and Calm
-   Canvas toggles, **Display settings** and the minimap toggle.
-6. **Properties and Problems.** A resizable right column. Properties follow the
-   selection; Problems shows validation and layout findings. Each finding names
-   elements by their label. Click one to ring every element it refers to and
-   bring them into view. Hover a finding and choose **Hide this problem** (the
-   crossed-out eye) to hide it in this browser; the footer shows how many are
-   hidden and restores them. A hidden finding is still reported by
-   `validate_topology`.
+   problem badges, and three controls that float over it:
+   - The **selection bar**, above whatever is selected (below it when there is
+     no room above). It keeps clear of the box and, for a node, of the four
+     quick-connect arrows around it. It appears for nodes and links, not for anchors or
+     zones. For a node it holds the nine colour swatches, the page-emphasis
+     star, **Bring to front**, **Send to back** and **Lock**. With two or more
+     nodes selected it also has the six align buttons and the two distribute
+     buttons (distribute needs three nodes). For a link it starts with the
+     link type and routing pickers, then the same swatches, star, stacking
+     and lock buttons. Colour changes and emphasis apply to every selected
+     node. **Bring to front** and **Send to back** are greyed out with more than
+     one node selected. The bar hides while you drag, and the properties panel remains the
+     complete surface.
+   - The **zoom control**, in the bottom-right corner: zoom out, the zoom
+     figure (clicking it fits the view), zoom in and **Fit view**, which does
+     the same as the figure. The tooltips of **Zoom in** and **Zoom out** name
+     their keys (**+** and **-**), as the tooltips of the figure and **Fit
+     view** name **0**.
+   - The **minimap**, which opens in a card above the zoom control.
 
-The status bar reports the active tool, cursor location, element counts, zoom,
-history availability, and current error/warning counts.
+   When the properties panel is hidden, a **Properties** button sits in the
+   canvas's top-right corner to bring it back.
+
+5. **Pages bar.** Docked under the canvas. At its left is the **Pages**
+   toggle with the page count (for example "Pages 2/2"); clicking it, or
+   pressing **F**, hides **Play**, the page chips and the page buttons, leaving
+   the toggle and the five buttons at the right. Next come **Play** (with
+   two or more pages), a chip for each page, **Duplicate page** and **Add
+   page**. At its right end are five buttons: grid, snap and **Calm canvas**
+   (each shows whether it is on), **Display settings**, and the minimap toggle.
+6. **Properties and Problems.** A resizable right column, described in
+   [The properties panel](#the-properties-panel). A **Problems** bar at its
+   foot shows the validation and layout findings; click it, or the problems
+   count in the status bar, to open the list. Each finding names elements by
+   their label. Click one to ring every element it refers to and bring them into
+   view; the properties panel switches to the Selection tab for the element it
+   selects, and when the finding is about one of its fields (a wrong `opacity`,
+   say) the section holding that field opens and the focus goes to it. A
+   finding about a page or about the document shows the **Page** or
+   **Document** tab instead (going to that page first when it is another one).
+   Hover a finding and choose
+   **Hide this problem** (the crossed-out eye) to hide it in this browser; the
+   list then ends with "N hidden" and the buttons **Show them** (it reads
+   **Hide them** while the hidden findings are listed) and **Restore all**. A
+   hidden finding is still reported by `validate_topology`.
+
+The status bar reports the active tool, cursor location, element counts, how
+many are selected, history, zoom and the current error and warning counts.
+In a narrow window the cursor location, the anchor, zone and history counts
+and the hint step aside, and on the narrowest phones (400px and below) the
+selection count steps aside too while there are problems to show. At 340px
+and below it steps aside whether or not there are problems. At any width
+where the bar is too short for everything it shows, the cursor location and
+the anchor, zone and history counts step aside first, then the selection
+count, so the zoom keeps its value.
 
 Many buttons show an icon and no text. This guide names such a button by its
 tooltip, which appears when the pointer rests on it: **Undo** is the top bar
@@ -243,10 +321,29 @@ path, as **File → New**.
 Use **B**, **M**, **P**, and **F** to toggle the Node library, minimap,
 Properties, and pages bar; **View** lists the same toggles with a check mark
 for each one that is showing. The Node library, pages bar, minimap, Problems
-panel, and Properties panel remember their local display state when browser
-storage is available. On a phone-width viewport (640px and below) the Node
-library and Properties panel start collapsed and open as drawers over the
-canvas, so the drawing surface stays visible and reachable.
+list, and Properties panel remember whether they were open, and the panel its
+width, when browser storage is available.
+
+In a window narrower than 1,024px (half of a laptop screen, a laptop browser
+zoomed to 150% or more, a tablet or a phone) the Node library and Properties
+panel are drawers over the canvas instead of columns beside it, so the canvas
+keeps the whole width from the rail to the window's edge. They start closed
+unless you opened them last time; **B** and **P** open and close them, and
+opening one does not resize the canvas or move the drawing. A drawer opened
+while the other is open closes the other on a phone (640px and below) and
+wherever the two would leave less than 160px of canvas between them; the one
+that closed keeps its remembered setting. On a phone this also applies when
+the editor starts or the window narrows to a phone's width: a browser that
+remembers both open shows the Node library and closes Properties, again
+without changing either remembered setting, unless you are typing in one of
+the Properties fields. Above a phone's width a browser that remembers both
+open starts with both open, and widening the window from a phone's width
+opens both again. In a window under 480px
+tall (a phone, or a laptop browser zoomed to 300% or more) the rail scrolls,
+the canvas shrinks above the pages bar, and an open drawer runs down over the
+pages bar so its list keeps some height. **Fit view** fits
+the drawing into the part of the canvas the open drawers leave showing, and
+the zoom control and the minimap move beside an open Properties drawer.
 
 Press **Ctrl/Cmd+K**, or choose the rail's **Command palette** button or
 **Help → Command palette**, to search everything the editor can do from one
@@ -256,25 +353,50 @@ label of a node, link or zone on any page, and **Go to page** followed by its
 number and name. The arrow keys move through the results, Enter runs the one
 highlighted, and Escape closes the palette and puts focus back where it was.
 
-Use **Ctrl/Cmd+F** to find a node, link or zone on any page. Nodes are
-searched by label, identifier, type, sublabel, and metadata keys/values (find
-a node by the IP address, hostname, or model stored on it); links by label,
-port label, identifier, type and metadata; zones by label. Matches on the
-current frame come first, a match on another frame names its frame, and
-choosing one goes to that frame, selects the element and centres it. With the
-box empty it lists the current frame's nodes.
+**The "what moved" note.** A browser that used the editor before it had a
+menu bar and a left rail shows, once, a small card at the bottom left of the
+canvas titled **The editor has a new layout**. Its five lines say where the old
+toolbar's controls went: the menus hold the File, Edit, View and Arrange
+commands; the tools are on the left rail; pages, grid, snap and the minimap
+are on the bar under the canvas; Properties has Selection, Page and Document
+tabs; and **Ctrl/Cmd+K** finds any command. The card does not take the focus
+or block the canvas or any key, and it is not shown in present mode. In a
+window under 480px tall it runs the canvas's height and scrolls within
+itself, and it keeps clear of the zoom control and the closed **Properties**
+toggle, so both can still be pressed. **Got it** dismisses it for good in this browser; **Show shortcuts** opens the
+shortcut sheet and leaves the card where it is. **Help → What moved** (or
+"What moved" in the command palette) shows it again at any time. A browser
+with nothing of the editor's in its storage never sees it, and a visit that
+opens a shared link does not show it, so it waits for the next visit.
+
+Two defaults changed with the new layout, and the card does not name them.
+The minimap now starts closed (open it with **M**); a browser that had shown
+or hidden it keeps that choice. The properties panel now starts 300px wide,
+and a width remembered from before that is over 480px opens at 480px.
+
+Use **Ctrl/Cmd+F** (or **Edit → Find…**) to find a node, link or zone on any
+page. Nodes are searched by label, identifier, type, sublabel, and metadata
+keys/values (find a node by the IP address, hostname, or model stored on it);
+links by label, port label, identifier, type and metadata; zones by label.
+Matches on the current page come first, a match on another page names its
+page, and choosing one goes to that page, selects the element and centres
+it. With the box empty it lists the current page's nodes.
 
 The minimap provides an overview of content outside the current viewport.
 It starts closed; open it with **M**, the minimap button at the right end of
 the pages bar, or **View → Minimap**, and it stays the way you leave it.
+
+Find and the path analysis bar sit over the canvas, centred, a little below
+its top edge, and are never wider than it, so they follow the canvas as the
+library and the properties panel open and close.
 
 ## 5. Build and edit a topology
 
 ### A practical first-diagram workflow
 
 1. Choose **File → New**, or a template from **File → New from template**.
-2. Set the document title and page name in Properties while nothing is
-   selected.
+2. Set the document title (the top bar's title field, or **Document → Title**
+   in the properties panel) and the page name (**Page → Name**).
 3. Search the Node library and click node types to add them.
 4. Move and label nodes, then connect them.
 5. Add zones, flows, markers, layers, and a legend if they help explain the
@@ -316,8 +438,11 @@ the pages bar, or **View → Minimap**, and it stays the way you leave it.
 - Grid snapping and smart alignment/spacing guides help place nodes. Toggle the
   grid with **R** and snapping with **G**.
 - Use the arrow keys for a small nudge; hold Shift for a ten-times nudge.
-- Lock important items with **Ctrl/Cmd+L** or the context menu so an accidental
-  drag does not move them. A locked node also stays put through **tidy**,
+- Lock important items with **Ctrl/Cmd+L**, the **Lock** button on the selection
+  bar or at the right of the properties panel's header, or the context menu so
+  an accidental drag does not move them. With several nodes and links selected,
+  the button locks them all, unless they are all locked already, when it
+  unlocks them. A locked node also stays put through **tidy**,
   **balance** and **Arrange → Auto-arrange**: the other nodes make room around it.
 - Use **[** and **]** for one-step stacking changes, or add Ctrl/Cmd to send an
   item fully back or front.
@@ -344,22 +469,28 @@ There are two link gestures:
 
 Select a link to edit its type, labels, endpoint/interface labels, VLAN, subnet,
 bandwidth, transport, line color and opacity, routing style, corner radius,
-ports, animation, direction, speed, lock state, layer, and source metadata when
+ports, animation, direction, speed, lock state, and layer in the properties
+panel's Selection tab (see [The properties panel](#the-properties-panel)) when
 those fields apply.
 
 Link routing supports straight, orthogonal, and curved styles. A link is
 picked where it is drawn — click anywhere on its visible route (an orthogonal
 auto-route, a curve, a fanned-out parallel link), not the straight line between
-its endpoints. Use **Swap endpoints** to reverse the endpoints and waypoint
-order. Use **Straighten (clear bends)** to remove all manual waypoints.
+its endpoints. Use **Swap endpoints** (the context menu, or the swap button
+between the **From** and **To** pickers at the top of the panel) to reverse the
+endpoints and waypoint order. Use **Straighten (clear bends)** (the context
+menu, or the **Straighten** button beside the waypoint count under **Routing**,
+shown when the link has bends) to remove all manual waypoints.
 
 ### Move a link to another node
 
 - **Drag an end:** select the link, then drag one of the round end handles
   (where the line meets the node) onto another node or anchor. The target is
   highlighted; release over empty canvas to cancel.
-- **Pick in Properties:** the **From** and **To** pickers list every node (by
-  label) and anchor on the page; choose one to re-attach that end.
+- **Pick in the panel:** the two pickers under the header of a selected link
+  (their tooltips begin "Re-attach the from end" and "Re-attach the to end")
+  list every node (by label) and anchor on the page; choose one to re-attach
+  that end.
 
 Either way, waypoints are kept and a pinned port on the moved end is cleared.
 Self-loops are refused.
@@ -368,14 +499,21 @@ Self-loops are refused.
 
 In the classic attachment a link meets the edge of the node icon, so a link
 leaving the bottom of a node runs straight through its label. The **Link
-anchor box** (page Properties, under Crossings) makes links attach to a box
+anchor box** (the **Anchor box** switch in the **Links** section of the Page
+tab, above Crossings) makes links attach to a box
 around the node instead: the icon's hit box padded by
-**Box padding** (6 px unless set) on every side, with the side that carries
+**Box padding** (6 px unless set; the field appears once the switch is on) on
+every side, with the side that carries
 the label extended past the label text. Ports pin to that box; auto endpoints
 leave through its faces (round icons keep a round outline, padded, except on
-the label side). Each node's Properties has the same switch under Advanced to
-override the page setting for that node only, and a selected node shows its
-anchor box as a faint dashed outline.
+the label side). Each node's **Link attachment** section (in the Selection tab)
+begins with a line saying what applies to that node and where it comes from,
+for example "From page: anchor box on, 6 px padding, ends distributed.", and
+has an **Override for this node** switch. Switching it on shows **Box padding**
+and **Distribute ends** for that node only, and the line then begins "This
+node:" (a value the override leaves empty still comes from the page and says
+"(from page)"). A selected node shows its anchor box as a faint dashed
+outline.
 
 The anchor box is **on, with Distribute ends, for new work**: a **new**
 document, the starter templates, the SD-WAN generator, and anything an agent
@@ -389,7 +527,7 @@ the switch on; nothing is re-routed behind your back.
 spaced slots, ordered by where the links go, so a stack of links into one side
 never crosses at the node; parallel links between the same two nodes then no
 longer fan out on that side. Each link also gets **From side offset** / **To
-side offset** (Routing group, in `-1 … 1`): a fractional shift along the side
+side offset** (the **Side offsets** row of a link's **Routing** section, in `-1 … 1`): a fractional shift along the side
 it attaches to (0 = centre, ±1 = the ends) for side ports and auto endpoints;
 corner ports ignore it. A corner port (top-left and friends) is an exact pin:
 a side port still moves along its side into a slot under Distribute, a corner
@@ -402,7 +540,7 @@ crossing at the node.
 
 The text in a port pill is the link's **Port (A)** / **Port (Z)** label, or,
 when that is empty, its **Interface (A)** / **Interface (Z)** name. Select the
-link and edit the interface (and optic) under **Wiring sheet** in Properties.
+link and edit the interface (and optic) under **Wiring** in the Selection tab.
 
 ### Anchors
 
@@ -412,7 +550,9 @@ bend somewhere other than a node.
 1. Choose **anchor** or press **A**.
 2. Click the page to place the anchor.
 3. Use the link tool to connect a node or another anchor to it.
-4. Return to **select** to move it or edit its X/Y position in Properties.
+4. Return to **select** to move it, or select it and edit its **Position** in
+   the properties panel (which also shows how many links end on it, and a
+   **Delete** button).
 
 Deleting an anchor also cleans up dependent references according to the
 document's cascade rules.
@@ -436,24 +576,30 @@ positions around its auto position; the center cell restores auto placement.
 - Shift-click or Ctrl/Cmd-click to add to or remove from the selection. (On an
   element with a hyperlink, Ctrl/Cmd-click follows the link instead.)
 - Several links can be selected the same way. The first one stays the primary:
-  Properties shows it and its bend handles. **Delete** removes them all, and
-  changes to type, colour, wire class, line style, layer, and animation apply to
-  all of them; endpoints, bends, labels, and interfaces edit the primary only.
+  the panel shows it (its tab reads "2 links", and a line under the header says
+  that type, colour, style and layer changes apply to all while everything else
+  edits this one) and the canvas shows its bend handles. **Delete** removes them
+  all, and changes to type, colour, wire class, line style, layer, and
+  animation apply to all of them; endpoints, bends, labels, and interfaces edit
+  the primary only.
 - Drag on empty canvas in **select** mode to marquee-select.
 - Use **Ctrl/Cmd+A** to select all.
 - Use **Ctrl/Cmd+C**, **X**, and **V** for copy, cut, and paste. A paste lands
   one step down and to the right of where it was copied from; repeated pastes
   step on instead of stacking. When that spot is out of view (you panned
-  away, or pasted onto another frame) it lands in the middle of the view.
+  away, or pasted onto another page) it lands in the middle of the view.
 - **Ctrl/Cmd+Shift+V** pastes **in place**: at the exact coordinates it was
   copied from. Use it to put the same device at the same position on another
-  frame of a flipbook.
+  page of a flipbook.
 - Right-click empty canvas and choose **Paste here** to place the copy,
   centred as a block, at that point.
 - Use **Ctrl/Cmd+D** to duplicate.
 - Copy only appearance with **Ctrl/Cmd+Alt+C**, then select compatible targets
-  and use **Ctrl/Cmd+Alt+V**. The Properties panel also shows **copy** and
-  **paste** buttons in its **Format** row.
+  and use **Ctrl/Cmd+Alt+V**. **Copy format** and **Paste format** are also in
+  the **More actions** menu at the right of the properties panel's header, and
+  with several nodes selected the panel's **Format** section has **Copy** and
+  **Paste** buttons (**Copy** needs a single node or link, so it is greyed out
+  there; **Paste** puts the copied format onto the whole selection).
 - Delete with Delete/Backspace or **Edit → Delete**.
 
 Format painting copies visual fields, not element identity, endpoints,
@@ -464,19 +610,27 @@ editing does not leave avoidable dangling references.
 Undo and redo are available from the top bar, **Edit**, or with **Ctrl/Cmd+Z**
 and **Ctrl/Cmd+Shift+Z**. Each page keeps its own edit history when switching
 between pages. Page deletion has its own short-lived **Undo delete** action in
-the pages bar.
+the pages bar. While a menu, the context menu, a popover such as **Display
+settings**, or a dialog such as the shortcut sheet is open, the undo and redo
+keys do nothing outside a text field: close it first. In a text field, here
+or anywhere else, they undo and redo the typing in that field, or else in
+another field of the same place: type in **Label**, press Tab and then
+Ctrl/Cmd+Z in the next field, and the label goes back. They never reach a
+field somewhere else, such as the document title from the properties panel,
+a dialog or the command palette.
 
 ### Context menus
 
 Right-click a node selection for:
 
-- **Rename** (one node), **Duplicate**, **Cut**, **Copy**, **Copy format**,
-  and **Paste format**;
+- **Rename** (one node), **Duplicate**, **Cut**, **Copy**, **Copy as image**,
+  **Copy format**, and **Paste format**;
 - **Emphasize on this page**;
 - **Analyze path**, when exactly two nodes are selected (see
   [Analyze a path between two nodes](#analyze-a-path-between-two-nodes));
 - **Group into zone**, **Save as stencil…**, and **Add policy marker**;
-- **Bring to front**, **Send to back**, **Lock** or **Unlock**, and **Delete**.
+- **Bring to front**, **Send to back** (stacking needs a single node), **Lock**
+  or **Unlock**, and **Delete**.
 
 Right-click a link for:
 
@@ -510,67 +664,67 @@ Tab closes a menu. Both restore focus when closed.
 
 ### Keyboard reference
 
-The editor itself lists its shortcuts. Press **?** or choose the toolbar
-button whose tooltip reads "Keyboard shortcuts (?)" to open the shortcut
-sheet. It has one row per command that has a key, in the groups File, Edit,
-Selection, Arrange, Tools, View, Frames and Help; each row says what the
-command does and shows each of its shortcuts as a key cap (a command with two
-shortcuts, such as redo, shows two). After those come four more groups: Mouse
-and touch, Dialogs and menus, Presentation, and Find and the node library.
-The table below is a summary; where the two differ, the sheet is right. A
-toolbar button whose command has a key names its first shortcut in brackets in
-its tooltip. (This describes the sheet as of PR #327, not yet merged; until it
-merges, the sheet's groups are Tools, Edit, Select, Canvas, and Dialogs & menus.)
+The editor itself lists its shortcuts. Press **?**, choose the left rail's
+**Keyboard shortcuts** button (tooltip "Keyboard shortcuts (?)") or **Help →
+Keyboard shortcuts** to open the shortcut sheet. It has one row per command
+that has a key, in the groups File, Edit, Selection, Arrange, Tools, View,
+Pages and Help; each row says what the command does and shows each of its
+shortcuts as a key cap (a command with two shortcuts, such as redo, shows two).
+After those come four more groups: Mouse and touch, Dialogs and menus,
+Presentation, and Find and the node library. The table below is a summary;
+where the two differ, the sheet is right. Most buttons and every menu item whose
+command has a key name its first shortcut in the tooltip or beside the item.
 
-| Keys                               | Action                                                                        |
-| ---------------------------------- | ----------------------------------------------------------------------------- |
-| V                                  | Select / move                                                                 |
-| L                                  | Draw link                                                                     |
-| A                                  | Drop anchor                                                                   |
-| Space or H                         | Hand tool; drag to pan                                                        |
-| Ctrl/Cmd+Z                         | Undo                                                                          |
-| Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y     | Redo                                                                          |
-| Ctrl/Cmd+C, X, V                   | Copy, cut, paste                                                              |
-| Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any page)                                |
-| F2 or Enter                        | Rename the selected node, link or zone                                        |
-| Ctrl/Cmd+Alt+C                     | Copy format                                                                   |
-| Ctrl/Cmd+Alt+V                     | Paste format onto the selection                                               |
-| Ctrl/Cmd+D                         | Duplicate                                                                     |
-| Ctrl/Cmd+L                         | Lock or unlock                                                                |
-| Delete or Backspace                | Delete selection                                                              |
-| [ or ]                             | Send back or bring forward                                                    |
-| Ctrl/Cmd+[ or Ctrl/Cmd+]           | Send to back or bring to front                                                |
-| Ctrl/Cmd+A                         | Select all                                                                    |
-| Shift-click or Ctrl/Cmd-click      | Add to or remove from the selection (nodes, anchors, links)                   |
-| Arrow keys                         | Nudge; Shift makes the step ten times larger                                  |
-| Left/Right Arrow with no selection | Move to the previous or next frame (page)                                     |
-| Mouse wheel                        | Zoom toward the cursor                                                        |
-| Two-finger slide (trackpad)        | Pan                                                                           |
-| Pinch (trackpad), Ctrl/Cmd+wheel   | Zoom toward the cursor                                                        |
-| Shift+wheel                        | Pan sideways                                                                  |
-| Space-drag or middle-drag          | Pan                                                                           |
-| + or -                             | Zoom in or out                                                                |
-| 0 or Shift+1                       | Fit to content                                                                |
-| Shift+0                            | Zoom to 100% (one page unit per pixel)                                        |
-| Shift+2                            | Zoom to the selection (fit to content when nothing is selected)               |
-| Ctrl/Cmd+S                         | Download the document as JSON                                                 |
-| Ctrl/Cmd+O                         | Open a file                                                                   |
-| Ctrl/Cmd+F                         | Find a node, link or zone on any page and jump to it                          |
-| Ctrl/Cmd+K                         | Open the command palette                                                      |
-| Double-click node/link/zone        | Rename in place (Enter commits, Escape cancels)                               |
-| Double-click empty canvas          | Quick-add: type to pick a node type, Enter places it                          |
-| Ctrl/Cmd+click                     | Follow an element's hyperlink (when `href` is set)                            |
-| Pinch / two-finger drag (touch)    | Zoom about and pan with the gesture                                           |
-| R                                  | Toggle grid                                                                   |
-| G                                  | Toggle snap                                                                   |
-| M or P                             | Toggle minimap or Properties                                                  |
-| B                                  | Toggle Node library                                                           |
-| F                                  | Toggle pages bar                                                              |
-| C                                  | Calm Canvas                                                                   |
-| T                                  | Tidy layout                                                                   |
-| Shift+T                            | Balance layout                                                                |
-| ?                                  | Open the shortcut reference                                                   |
-| Escape                             | Close the topmost dialog/menu; otherwise clear selection and return to Select |
+| Keys                               | Action                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| V                                  | Select / move                                                                     |
+| L                                  | Draw link                                                                         |
+| A                                  | Drop anchor                                                                       |
+| Space or H                         | Hand tool; drag to pan                                                            |
+| Ctrl/Cmd+Z                         | Undo                                                                              |
+| Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y     | Redo                                                                              |
+| Ctrl/Cmd+C, X, V                   | Copy, cut, paste                                                                  |
+| Ctrl/Cmd+Shift+V                   | Paste in place (same coordinates, on any page)                                    |
+| F2 or Enter                        | Rename the selected node, link or zone                                            |
+| Ctrl/Cmd+Alt+C                     | Copy format                                                                       |
+| Ctrl/Cmd+Alt+V                     | Paste format onto the selection                                                   |
+| Ctrl/Cmd+D                         | Duplicate                                                                         |
+| Ctrl/Cmd+L                         | Lock or unlock                                                                    |
+| Delete or Backspace                | Delete selection                                                                  |
+| [ or ]                             | Send back or bring forward                                                        |
+| Ctrl/Cmd+[ or Ctrl/Cmd+]           | Send to back or bring to front                                                    |
+| Ctrl/Cmd+A                         | Select all                                                                        |
+| Shift-click or Ctrl/Cmd-click      | Add to or remove from the selection (nodes, anchors, links)                       |
+| Arrow keys                         | Nudge; Shift makes the step ten times larger                                      |
+| Left/Right Arrow with no selection | Move to the previous or next page                                                 |
+| Mouse wheel                        | Zoom toward the cursor (a trackpad's two-finger slide pans)                       |
+| Two-finger slide (trackpad)        | Pan                                                                               |
+| Pinch (trackpad), Ctrl/Cmd+wheel   | Zoom toward the cursor                                                            |
+| Shift+wheel                        | Pan sideways                                                                      |
+| Space-drag or middle-drag          | Pan                                                                               |
+| + or = / - or \_                   | Zoom in / zoom out                                                                |
+| 0 or Shift+1                       | Fit view                                                                          |
+| Shift+0                            | Zoom to 100% (one page unit per pixel)                                            |
+| Shift+2                            | Zoom to the selection (fit to content when nothing is selected)                   |
+| Ctrl/Cmd+S                         | Download the document as JSON                                                     |
+| Ctrl/Cmd+O                         | Open a file                                                                       |
+| Ctrl/Cmd+F                         | Find a node, link or zone on any page and jump to it                              |
+| Ctrl/Cmd+K                         | Open the command palette                                                          |
+| Double-click node/link/zone        | Rename in place (Enter commits, Escape cancels)                                   |
+| Double-click empty canvas          | Quick-add: type to pick a node type, Enter places it                              |
+| Ctrl/Cmd+click                     | Follow an element's hyperlink (when `href` is set)                                |
+| Pinch / two-finger drag (touch)    | Zoom about and pan with the gesture                                               |
+| R                                  | Toggle grid                                                                       |
+| G                                  | Toggle snap                                                                       |
+| M or P                             | Toggle minimap or Properties                                                      |
+| B                                  | Toggle Node library                                                               |
+| F                                  | Toggle pages bar                                                                  |
+| C                                  | Calm canvas                                                                       |
+| T                                  | Tidy layout                                                                       |
+| Shift+T                            | Balance layout                                                                    |
+| ?                                  | Open the shortcut reference                                                       |
+| Shift+F10 or the menu key          | Open the context menu for the selection (or the empty canvas)                     |
+| Escape                             | Close the open dialog or menu; otherwise clear the selection and return to Select |
 
 Canvas shortcuts are suppressed while typing in an input and while a dialog or
 menu owns focus.
@@ -590,7 +744,7 @@ The built-in library covers:
   databases, identity cards, and text boxes;
 - a **Callout** sticky note — a tinted folded-corner note whose text wraps
   at its width, with an optional dashed leader line pointing at a target
-  element (set **Points at** in Properties; deleting the target keeps the
+  element (set **Points at** in its **Callout options** section; deleting the target keeps the
   note and clears the pointer). Both callouts and text boxes take an
   optional **Body** — a long-form paragraph (up to 2000 characters, line
   breaks kept) that wraps at the note's width between the label and the
@@ -618,45 +772,120 @@ The built-in library covers:
 - generic geometric shapes;
 - an **Image** entry that opens a file picker: the picture is downscaled to a
   compact data URI (≤256KB), embedded in the document, and placed sized to its
-  aspect ratio (https image URLs can also be set directly in Properties);
+  aspect ratio (https image URLs can also be set directly in the properties panel);
 - cloud-specific gateway/router symbols for AWS, Azure, and Google Cloud;
 - an **EC + Axis Connector (container)** variant.
 
 Built-in link types include line, tunnel, WireGuard, flow, packet, blocked,
 Wi-Fi, PoE, and optical.
 
-### Selection-aware Properties
+### The properties panel
 
-With nothing selected, Properties shows the document and page settings:
+The panel is the right-hand column (**P** shows and hides it; **Hide** at the
+right of its tab row does the same). It is 300px wide at first. Drag the grip
+on its left edge to resize it between 240px and 480px; the width is
+remembered. Under 300px the **Hide** button shows only its icon. In a window
+narrower than 1,024px the panel is a drawer over the canvas. It always leaves
+at least 72px of canvas showing, so a drawer can be narrower than the width
+you set. On a phone (640px wide or less) the drawer starts 240px wide and is
+never wider than 280px. In a panel under 300px wide (a phone's drawer, or
+the narrowest docked panel) a drop-down list such as **Status** sits under
+its label, across the panel, a pair of fields takes a row each, a link's two
+ends take a row each with **Swap** beside them, and the selection's type
+list takes its own row under the name, so their words show in full.
 
-- **Title**, **Name**, **Canvas** (width × height), and
-  **fit to content**;
-- playback **Hold (ms)** and **Transition**;
-- **Crossings** — draw a hop (arc or gap) where standard line links
-  cross links drawn earlier, the classic "these wires aren't joined"
-  notation;
-- frame **Caption** and **Emphasis**;
-- legend **Show key** and **Position**;
-- document layers.
+**Tabs.** A row of three tabs heads the panel: the Selection tab, **Page** and
+**Document**. The first tab is named for what is selected: **Node**, **Link**,
+**Anchor**, **Zone**, "3 nodes" for several of one kind, "5 items" for a mix.
+With nothing selected it reads **Selection** and is greyed out, and the panel
+shows **Page** or **Document**, whichever you last used (the choice is
+remembered in this browser). Selecting something shows the Selection tab;
+clearing the selection goes back to Page or Document. A tab you pick by hand
+stays while the selection stays the same, so you can edit a page setting with a
+node still selected. The Left and Right arrow keys, Home and End move between
+the tabs.
 
-With a node selected, Properties is catalog-driven. Common fields include
-label, sublabel, type, color, opacity, **status** (an operational LED at the
-node's corner: OK, warning, down — with an attention ring —, maintenance, or
-unknown; in-use statuses join the legend), label **Placement** (a 3×3 compass:
-above, below, left, right, or a corner of the node — the center cell is the
-default below-node label; on basic shapes it is the label inside the shape),
-**Label X** / **Label Y** (absolute offsets from the node center that
-fine-tune a placement; blank = the placement's default — double-clicking a
-compass cell nudges the label one pixel that way without changing the
-placement), label color, lock,
-metadata,
-**Link** (`href` — Ctrl/Cmd+click follows it in the editor, and SVG
-exports and public share views render it as a real clickable link; a link of
-the form `#page=<page id>` jumps to another page of the same document instead,
-and draw.io export keeps it as a draw.io page link) and
-**Tooltip** (shown on hover), layer, and source identity. Type-specific controls add settings such as device variant,
-managed/agent state, SaaS logo, switch ports, or text-box typography, fill,
-border, alignment, padding, and width.
+**Sections.** Each tab is divided into sections, each a heading with a small
+caret. Click the heading to open or close it. The panel remembers, for each
+section title, whether you left it open or closed, and keeps that after it
+redraws and after a reload; only the title decides, so **Style** is open or
+closed the same way for a node and for a link. A section that would be empty
+is left out, and a count after a title (**Annotations**, **Layers**) says how
+many it holds.
+
+#### Nothing selected: the Page and Document tabs
+
+The **Page** tab edits the page on show:
+
+- **Page**: **Name**, **Canvas** (width × height) and **Fit to content** (it resizes the page; the zoom control's **Fit view** fits the view, and each is named within its group for a screen reader: the section, and **Zoom**).
+- **Links**: how links meet nodes on this page. **Anchor box** (with **Box
+  padding** and **Distribute ends** once it is on; see
+  [Link anchor box](#link-anchor-box)), **Crossings** (draw a hop, an arc or a
+  gap, where standard line links cross links drawn earlier, the classic "these
+  wires aren't joined" notation; the choices are overlap, jump — arc and
+  jump — gap) and **Port labels** (a chip beside the wire or a pill on the
+  node edge).
+- **Story**: the **Caption** and the **Emphasis** (see
+  [Captions and emphasis](#captions-and-emphasis)).
+- **Playback** (closed at first): **Hold (ms)** and **Transition**.
+- **Annotations** (closed at first, with a count): the **zone**, **flow** and
+  **marker** buttons and the editors for the page's zones, flow paths and
+  policy markers (see [section 7](#7-zones-flows-markers-layers-and-legend)).
+
+The **Document** tab edits the whole document:
+
+- **Document**: the **Title**.
+- **Legend**: **Show key** and **Position**, then **Columns** and **Key title**
+  once the key is on.
+- **Sheet** (closed at first): **Sheet frame**, and once it is on its size,
+  orientation, border, top title and title block.
+- **Layers**, with a count.
+
+The brand palette is not here; it is in **Display settings**.
+
+#### The Selection tab
+
+The tab opens with a header. At its left is an icon for the kind of element and
+its name (its label, or its identifier when it has none); under the name come
+the kind and, for a node or a link, the **Type** picker. At its right are the
+**Lock** button (nodes and links; **Unlock** while it is locked, and with
+several selected it locks all of them unless all are locked) and **More
+actions**, a menu of **Copy format**, **Paste format**, **Bring to front**,
+**Bring forward**, **Send backward**, **Send to back**, **Duplicate** and
+**Delete**, each with its shortcut and greyed out where it cannot run. An
+anchor or zone has **More actions** and no lock button.
+
+**One node.** The sections, in order:
+
+- **Text**: **Label**, **Sublabel** and the **Placement** compass (a 3×3 grid:
+  above, below, left, right, or a corner of the node; the centre cell is the
+  default below-node label, and on basic shapes it is the label inside the
+  shape; click a cell to place, double-click it to nudge the label one pixel
+  that way without changing the placement). Inside it, **Fine tune** (closed
+  at first) holds **Offset** (absolute X and Y offsets from the node centre
+  that fine-tune a placement; blank is the placement's default) and **Label
+  width**; **Label color** follows.
+- **Style**: **Color**, **Status** (an operational LED at the node's corner:
+  OK, warning, down — with an attention ring —, maintenance, or unknown;
+  in-use statuses join the legend) and **Opacity**.
+- **Link attachment**: see below.
+- **Wiring** (closed): **Tier**, **Port labels** and **Port table**.
+- A section named for the node's type (for example **Ec options**; closed):
+  the settings only that type has, such as device variant, managed/agent
+  state, SaaS logo, switch ports, or text-box typography, fill, border,
+  alignment, padding, and width.
+- **Position and order** (closed): **Position** (X and Y) and **Arrange**, four
+  buttons for **Send to back**, **Send backward**, **Bring forward** and
+  **Bring to front**.
+- **Data** (closed): **Metadata** (key and value, with a plus button to add
+  an entry), **Link** (`href` — Ctrl/Cmd+click follows it in the editor, and SVG
+  exports and public share views render it as a real clickable link; a link of
+  the form `#page=<page id>` jumps to another page of the same document
+  instead, and draw.io export keeps it as a draw.io page link), **Tooltip**
+  (shown on hover) and **Layer**.
+
+Under the sections are the **Group into zone** and **Add policy marker**
+buttons.
 
 A node's sublabel wraps to up to two lines at about 26 characters (longer text
 is cut with an ellipsis on the second line); the label itself is cut at 24
@@ -668,19 +897,68 @@ used (a west-placed label with a long sublabel pulls the zone's left edge out
 to cover it), so `validate_topology` and `inspect_render` agree with the
 drawn rectangle.
 
-With a link selected, Properties exposes the link-specific fields described in
-[Create links](#create-links), plus **Swap endpoints** and **straighten** where
-applicable.
+**Colour.** Every colour field is one button showing a swatch and the value
+("Auto" while unset). It opens a small popover with the nine palette swatches,
+a hex field and an **Auto** button that clears the colour. Typing a hex value
+updates the swatches as you go. Escape, or a click outside, closes the popover
+and focus goes back to the button.
 
-With an anchor or zone selected, Properties focuses its coordinates or zone
-membership/settings. All page annotations remain available below the main
-selection editor.
+**Link attachment.** The section opens with a line saying what applies to this
+node's link ends and where it comes from: "From page: off. Links meet the icon
+edge." or "From page: anchor box on, 6 px padding, ends not distributed." Under
+it, **Override for this node** is a switch. Turning it on makes the line begin
+"This node:" and shows **Box padding** and **Distribute ends**, side by side on one row,
+for the node alone; turning it off returns the node to the page's setting. The page's
+setting is the **Anchor box** switch on the Page tab (see
+[Link anchor box](#link-anchor-box)).
+
+**One link.** Under the header, two pickers name the link's two ends (**From**
+and **To**) with a swap button between them. The sections:
+
+- **Label**: **Label**, the **Placement** compass, **Ports** (the two end
+  labels, A and Z) and **Size, width**.
+- **Style**: **Color**, **Width, opacity** and **Dashed**.
+- **Routing**: the routing style (straight, orthogonal or curved) with the
+  corner radius, **Sides** (the side each end leaves from, or auto),
+  **Side offsets** and **Waypoints** with the bend count and, when there are
+  bends, **Straighten**.
+- **Wiring** (closed): **Wire class (style)**, **Interface (A)** and **(Z)**,
+  **Optic (A)** and **(Z)**, **Bundle (A)** and **(Z)**, **Bandwidth**,
+  **Transport**, **VLAN**, **Subnet** and **Show metadata on wire**.
+- **Animation** (closed): **Animated particles**, **Flow speed (s)**,
+  **Flow particles** and **Reverse flow**.
+- **Data** (closed): **Link**, **Tooltip** and **Layer**.
+
+A selected link also takes the fields described in
+[Create links](#create-links). With several links selected the tab reads "2
+links" and a line under the header says which changes apply to all.
+
+**One anchor** shows its **Position**, how many links end on it and a
+**Delete** button. **One zone** shows a row of three buttons (select the
+zone's members, duplicate the zone with its contents, delete it) and then its
+fields: **Label**, **Sublabel**, **Description**, **Member nodes**, **Color**,
+**Border**, **Padding**, **Label align**, **Label edge**, **Parent zone**,
+**Map backdrop**, **Link**, **Tooltip** and **Layer**.
+
+**Several nodes.** The header names them by their labels ("User, EC-Branch")
+over the line "Selection (2 nodes)", with **Lock** and **More actions** at its
+right, and the sections are:
+
+- **Arrange**: the six **Align** buttons and the two **Distribute** buttons
+  (distribute needs three nodes; the panel says so).
+- **Annotate**: **Group into zone** and **Add flow path**.
+- **Format**: **Copy** (greyed out: it needs a single node or link) and
+  **Paste**.
+
+With exactly two nodes (and nothing else) selected, a **Path** row under the
+sections holds the **Analyze path** button (see
+[Analyze a path between two nodes](#analyze-a-path-between-two-nodes)).
 
 ## 7. Zones, flows, markers, layers, and legend
 
 ### Add annotations
 
-The **Annotations** section in Properties has three buttons, each a plus icon
+The **Annotations** section of the Page tab has three buttons, each a plus icon
 and a word:
 
 - **zone** — seeds a zone from all currently selected nodes;
@@ -688,7 +966,9 @@ and a word:
 - **marker** — attaches a policy marker to the first selected node.
 
 Select the nodes before creating the annotation. A marker requires a selected
-node. A useful flow normally requires at least two ordered waypoints.
+node. With nodes selected the Selection tab has the same actions: **Group into
+zone** and **Add policy marker** for one node, **Group into zone** and **Add
+flow path** for several. A useful flow normally requires at least two ordered waypoints.
 
 ### Zones
 
@@ -762,7 +1042,7 @@ Built-in marker vocabulary includes:
   and geo-block.
 
 Edit the marker label, color, icon, target node, flow path, and alignment around
-the target in Properties. The label hangs under the badge in a pill, up to two
+the target in the Page tab's **Annotations** section. The label hangs under the badge in a pill, up to two
 lines (wrapped at **Label width** or ~26 characters; longer text is cut with
 an ellipsis), and slides sideways off the node when it would cover it.
 
@@ -774,11 +1054,12 @@ outside declared layers.
 
 While nothing is selected:
 
-1. Open **Layers** in Properties.
-2. Choose **Layer** (the button with a plus icon) to declare a new layer.
+1. Open **Layers** on the Document tab.
+2. Choose **+ Layer** to declare a new layer.
 3. Use the eye control to show or hide it.
 4. Use the opacity slider to dim the layer.
-5. Assign nodes, links, or annotations to the layer from their Properties.
+5. Assign nodes, links, or annotations to the layer with the **Layer** field
+   (a node's or link's **Data** section, an annotation's own editor).
 
 Layer visibility and opacity are document settings and affect rendering.
 
@@ -797,21 +1078,21 @@ A print-grade physical wiring diagram (the kind a cabling crew works from)
 uses conventions a plain topology does not: devices in role tiers, port
 names on the device edge, LAG rings, cables coloured by media and speed with
 a Key, a port table beside each device, and a title block. Every one of
-them is a document field an agent can set over MCP and a human can set in
-Properties; nothing is drawn that the document does not say.
+them is a document field an agent can set over MCP and a human can set in the
+properties panel; nothing is drawn that the document does not say.
 
-1. **Sheet frame** (Document panel → _Sheet_). Turn on **Sheet frame**, pick a
+1. **Sheet frame** (Document tab → _Sheet_). Turn on **Sheet frame**, pick a
    paper size (ANSI A–E or A4–A1; every page's canvas becomes that size at
    96 dpi, or keep _custom_), and choose border, top title and the title
    block (subtitle, Drawn by, Revision, Date, an https logo URL). PDF export
    uses the paper size. MCP: `set_sheet`.
-2. **Wire classes** (link Properties → _Wiring sheet_ → **Wire class**). A
+2. **Wire classes** (link → _Wiring_ → **Wire class (style)**). A
    document declares its classes once — colour, optional width and dash —
    and each link names one; an explicit link colour still wins. The legend
    keys the classes in use. MCP: `define_link_style`, with
    `preset: "ethernet-media"` for the eleven Ethernet media classes
    (10G/25G/40G/50G/100G × DAC/SR/LR, NBASE-T).
-3. **Tiers** (node Properties → _Wiring sheet_ → **Tier**). Declare the role
+3. **Tiers** (node → _Wiring_ → **Tier**). Declare the role
    rows top → bottom (gateways / distribution / core) and tag each node.
    The **tiered** layout (MCP `layout_topology` algorithm `tiered`; the
    editor's **Arrange → Auto-arrange** menu does not offer it) rows nodes by tier, keeps nodes that share a zone together as a group, orders each
@@ -821,20 +1102,20 @@ Properties; nothing is drawn that the document does not say.
    tables need, and can emit one zone per tier captioned at its bottom edge
    (`tierZones`; zones gain **Label edge** top / bottom). Problems warns on
    an undeclared tier and on a link that skips a tier.
-4. **Port pills** (Page panel → **Port labels → pill on the node edge**).
+4. **Port pills** (Page tab → _Links_ → **Port labels → pill on the node edge**).
    Each endpoint label (the link's Port A / Port Z) draws as a dark pill on
    the node edge at the attach point, rotated to the side, instead of a
    glass chip beside the wire. Pair it with the link anchor box's
    **Distribute ends** so pills take even slots; a node's own **Port
    labels** overrides the page. Problems warns on pills that overlap or land
    on another node. MCP: `set_page_properties` `portLabels`.
-5. **Bundles** (link Properties → _Wiring sheet_ → **Bundle (A) / (Z)**). A
+5. **Bundles** (link → _Wiring_ → **Bundle (A) / (Z)**). A
    LAG is a per-device object, so each END of a link names its bundle
    (`ae0` on each switch of an ESI-LAG; `lacp0` for both legs on a
    gateway). Two or more pills of one bundle on one node get a ring (solid
    LAG, dashed ECMP); an ICL draws no ring. MCP: `define_bundle` declares a
    name's kind (undeclared = LAG).
-6. **Port tables** (node Properties → _Wiring sheet_ → **Port table**). A
+6. **Port tables** (node → _Wiring_ → **Port table**). A
    derived `Port | LAG | PHY | Peer|Port` table beside the node, built from
    the links that touch it (port names, bundle names, the wire class's Key
    label or bandwidth, the far device and port), sorted naturally and
@@ -865,7 +1146,10 @@ values, overlap, crowding, and off-page content.
 
 - Expand **Problems** to see details.
 - Select a problem to switch to its page and focus the related element when one
-  is available.
+  is available. The properties panel shows the tab where it is fixed, opens the
+  section that holds the field at fault and puts the focus on that field; for a
+  problem about a page or the document it shows the **Page** or **Document**
+  tab.
 - Turn on-canvas problem badges on or off with **View → Problem badges**.
 - Click a badge to open the related problem.
 
@@ -893,7 +1177,7 @@ The top bar's **Tidy** button runs tidy; the menu beside it, and
   render the page frame; if drawn content still extends past it, the export is
   widened to include it. A document with a **Sheet frame** always exports
   exactly its frame.
-- **View → Fit to content**, the zoom control's fit button, or **0**: change
+- **View → Fit view**, the zoom control's **Fit view** button, or **0**: change
   only the viewport so content is visible.
 
 Tidy/Balance can grow the page when needed. Layout operations are undoable.
@@ -916,6 +1200,10 @@ The pages bar under the canvas shows the current page number and total.
   asks for confirmation.
 - After deletion, **Undo delete** remains available for about eight seconds.
   Only the most recent deleted page is recoverable this way.
+- From the keyboard, the focus stays in the pages bar: **Add page** and
+  **Duplicate page** keep it, deleting a page moves it to the chip that takes
+  the deleted one's place, and **Undo delete** hands it to the current page's
+  chip.
 
 ### Playback
 
@@ -923,28 +1211,32 @@ When a document has multiple pages, choose **Play** in the pages bar (it
 reads **Pause** while playing). Playback loops through the pages. For each
 page, set:
 
-- **Hold (ms)** — how long the frame remains visible;
+- **Hold (ms)** — how long the page remains visible;
 - **Transition** — **cut** or **fade**.
 
 Manual page selection stops playback. During playback, a fade uses a short
-visual transition; page hold duration controls when the next frame starts.
+visual transition; page hold duration controls when the next page starts.
 
 ### Present mode
 
-Choose **Present** in the top bar (or **File → Present**) to play the document full-screen: every frame
+Choose **Present** in the top bar (or **File → Present**) to play the document full-screen: every page
 renders exactly as exports do (caption, legend, emphasis, fade transitions),
-looping on each page's hold time. Use **←/→** to step manually, **Space** to
-pause/resume autoplay, and **Escape** to exit.
+looping on each page's hold time. Use **←/→** (or **PageUp/PageDown**) to step manually, **Space** to
+pause/resume autoplay, and **Escape** to exit. The bar at the foot of the
+screen has **Previous page**, **Play or pause**, **Next page** and **Exit**
+buttons, and its stage is dark in both themes, so the bar reads the same in the
+light theme.
 
 ### Captions and emphasis
 
-With nothing selected, use the **Frame** section:
+With nothing selected, open the Page tab's **Story** section:
 
-- Enter a **Caption** describing what the frame shows. It appears at the bottom
-  of the frame and travels with supported exports.
-- Tick nodes and links under **Emphasis** to spotlight them while other elements
-  dim.
-- Use **Clear emphasis** to restore equal prominence.
+- Enter a **Caption** describing what the page shows. It appears at the bottom
+  of the page and travels with supported exports.
+- **Emphasis** reads "N of M": how many of the page's elements are
+  spotlighted. **Choose…** opens a filtered checklist of the page's nodes and
+  links; tick the ones to spotlight while other elements dim.
+- **Clear** restores equal prominence.
 
 You can also select elements, right-click, and choose
 **Emphasize on this page**.
@@ -952,13 +1244,13 @@ You can also select elements, right-click, and choose
 ### Analyze a path between two nodes
 
 Select two nodes (click one, then Shift-click or Ctrl-click the other) and
-choose **Analyze path** from the right-click menu, or **analyze path** under
-**Selection** in Properties. The editor traces the routes between them over
-the links the frame draws and spotlights the shortest: its nodes and links at
+choose **Analyze path** from the right-click menu, or the **Analyze path**
+button in the **Path** row at the foot of the Selection tab. The editor traces the
+routes between them over the links the page draws and spotlights the shortest: its nodes and links at
 full strength, everything else dimmed. The first node you selected is the
 start.
 
-A bar under the top bar says what was found, for example
+A bar over the top of the canvas says what was found, for example
 `Path: User -> App · 3 hops via EC-Branch, EC-Hub`, and offers the controls
 below. Those that show only an icon are named by their tooltip:
 
@@ -966,9 +1258,9 @@ below. Those that show only an icon are named by their tooltip:
 | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | **Previous route** / **Next route** (the two chevrons)                            | Step through the alternative routes, shortest first (shown when there is more than one).    |
 | **Trace the other way** (the opposed arrows; the tooltip begins with these words) | Trace the other way round. The route is the same; a flow added from it runs from the start. |
-| **emphasize**                                                                     | Keep the spotlight as this frame's emphasis (one undo step).                                |
-| **add flow**                                                                      | Add a flow path along the route, labelled with its ends and hop count.                      |
-| **new frame**                                                                     | Copy the frame, with the route emphasized and captioned, as the next frame of the flipbook. |
+| **Emphasize**                                                                     | Keep the spotlight as this page's emphasis (one undo step).                                 |
+| **Add flow**                                                                      | Add a flow path along the route, labelled with its ends and hop count.                      |
+| **New page**                                                                      | Copy the page, with the route emphasized and captioned, as the next page of the flipbook.   |
 | **Close path analysis** (the x) or Escape                                         | Close the bar. The spotlight goes with it.                                                  |
 
 Tracing is a read: until you choose one of the three keep actions nothing in
@@ -978,7 +1270,7 @@ shows at once what the route becomes, or that there no longer is one.
 
 What counts as a path:
 
-- Only what the frame draws. A link on a hidden layer is not part of any
+- Only what the page draws. A link on a hidden layer is not part of any
   route; when the two nodes are joined only through hidden layers the bar
   names the layers to show.
 - Links run both ways, whatever their from and to. Several links between the
@@ -1043,8 +1335,8 @@ size:
 - **Wide fans are pinned.** In a larger diagram the links of a fan or mesh
   leave from the facing sides of their nodes (a spine's bottom edge to a leaf's
   top edge) so they do not run under neighbouring nodes. They are ordinary
-  links with **From side** and **To side** set; change or clear the sides in
-  Properties like any other link.
+  links with their two sides set; change or clear them under **Sides** in the
+  link's **Routing** section, like any other link.
 
 An agent passes the same parameters to **create_from_template** (see
 [MCP and agent workflows](#16-mcp-and-agent-workflows)) and gets the same
@@ -1124,8 +1416,11 @@ the full JSON immediately.
 
 Use the **File** menu:
 
-- **New** creates a blank one-page document after confirmation;
+- **New** creates a blank one-page document after confirmation, and **New from
+  template** starts one of the starter templates or **Generate SD-WAN…**;
 - **Download JSON** saves the full document as JSON;
+- **Export** holds every export format, and **Share…** (hosted deployments)
+  opens the share dialog; **Present** plays the document full-screen;
 - **Open…** loads a Topology Dojo JSON file, a recognized legacy Topology
   Studio save, a draw.io file, a Mermaid flowchart, or CSV data (see
   [draw.io, Mermaid, and CSV import](#drawio-mermaid-and-csv-import)).
@@ -1152,8 +1447,8 @@ they can be repaired.
 
 Choose **Export → SVG** in the top bar to download the current page as
 standalone vector SVG. The
-export includes the current layer presentation, frame emphasis, legend, and
-caption. Calm Canvas affects animated presentation in the SVG.
+export includes the current layer presentation, page emphasis, legend, and
+caption. Calm canvas affects animated presentation in the SVG.
 
 ### Light and dark exports
 
@@ -1203,7 +1498,7 @@ three office formats are editable and deliberately lossy; what each keeps and
 drops is specified in the [export fidelity contract](EXPORTS.md).
 
 - **draw.io** downloads a `.drawio` file (one draw.io page per
-  frame) for draw.io / diagrams.net / Confluence users. Geometry, labels,
+  page) for draw.io / diagrams.net / Confluence users. Geometry, labels,
   waypoints, colors, declared layers (as draw.io layers), zones (as
   containers), and node metadata survive; a `.drawio` file can be opened
   again with **File → Open…**.
@@ -1254,8 +1549,9 @@ The MCP **import_topology** tool accepts the same text formats via
 On a hosted deployment, the top bar's **Share** button (shown after sign-in,
 and also **File → Share…**)
 opens the Share dialog: publish the current document, copy the fresh link,
-and see every live link you have published — each with **copy** and
-**revoke**. Revoking deletes the public snapshot; edge caches can serve it
+and see every live link you have published — each with **Copy link** and
+**Revoke link**. The dialog's one primary button is **Publish this
+document**. Revoking deletes the public snapshot; edge caches can serve it
 for up to about a minute. Links published before owner metadata existed
 cannot be listed or revoked and expire on their original schedule.
 
@@ -1280,7 +1576,7 @@ The link:
 - may remain in browser or edge caches for about a minute;
 - can be revoked by the publisher from the Share dialog, with the
   **unpublish_topology** MCP tool (**list_shares** enumerates live links), or
-  via **unpublish link** on the shared-viewer banner
+  via **Unpublish link** on the shared-viewer banner
   (`DELETE /api/topology/<id>`, signed in as the same GitHub user).
 
 Do not publish internal addresses, credentials, sensitive metadata, or policy
@@ -1290,14 +1586,14 @@ When a recipient opens the link, the banner says
 **Viewing a shared copy — your own document is untouched.** Their edits
 autosave separately. They can:
 
-- choose **keep this copy** to replace their normal browser-local draft after
+- choose **Keep this copy** to replace their normal browser-local draft after
   confirmation;
-- choose **back to my document** to return to their prior local draft;
+- choose **Back to my document** to return to their prior local draft;
 - choose **File → Download JSON** first to keep both as files.
 
-A recipient does not need an account. Without one, a **sign in** chip sits at
+A recipient does not need an account. Without one, a **Sign in** chip sits at
 the right end of the top bar, and starting a **new** document or choosing
-**keep this copy** opens a prompt: _Sign in to save your copy to your
+**Keep this copy** opens a prompt: _Sign in to save your copy to your
 workspace._ It can be dismissed; the editor keeps working and saving to the
 browser. Signing in returns to the same document.
 
@@ -1305,7 +1601,7 @@ browser. Signing in returns to the same document.
 
 ### Node Designer
 
-Choose **design node** at the bottom of the unfiltered Node library. The Node
+Choose **Design node** at the bottom of the unfiltered Node library. The Node
 Designer provides a live preview and supports:
 
 - type name and base shape/icon;
@@ -1333,7 +1629,7 @@ A stencil is a reusable group of selected nodes and the links internal to that
 selection.
 
 1. Select one or more nodes.
-2. Choose **save stencil** in the Node library or
+2. Choose **Save stencil** in the Node library or
    **Save as stencil…** in the context menu.
 3. Name the stencil.
 4. Click its thumbnail under **Stencils** to stamp a fresh copy centered on the
@@ -1360,6 +1656,8 @@ These controls are local view preferences:
 In **Display settings**, Ambient backdrop can be **Animated**, **Static**, or
 **Off**. Turning it off removes decorative drifting bits, scan lines, and radar.
 Flow particles are separate; **Calm canvas** pauses glow and flow animation.
+In a short window (for example 450px tall) the Display settings panel stays
+inside the window, below the top bar, and scrolls inside itself.
 
 If no Calm preference has been stored, the editor follows the operating
 system's reduced-motion preference. The user can still toggle Calm afterward.
@@ -1396,12 +1694,17 @@ Unlike ambient and light/dark settings, a non-default brand palette is saved
 in the document and travels with it. It also recolours the app chrome: the
 accent, its tints on selected controls, and the ink drawn on accent-filled
 buttons, which switches between dark and light to stay readable on the brand
-colour.
+colour. Where the accent is used as the colour of text or an icon, the editor
+mixes it toward the theme's foreground until it reaches a contrast of 4.5:1
+on every panel and bar, and on a selected or pressed control, so a very dark brand colour on the dark theme, or a pale one
+on the light theme, still reads.
 
 ### Keyboard and focus behavior
 
-All principal top bar, rail and pages bar actions have accessible names, and
-every command they hold is also in a menu. Dialogs, panels, menus,
+All principal top bar, rail and pages bar actions have accessible names. Every
+command on the top bar and the rail is also in a menu. The pages bar's **Add
+page**, **Duplicate page**, **Play** and **Undo delete** are not in a menu,
+but the command palette (Ctrl/Cmd+K) lists each of them whenever it can run. Dialogs, panels, menus,
 and popovers:
 
 - move focus into the opened surface;
@@ -1883,8 +2186,8 @@ There is no recovery from the public URL alone after expiry.
 ### Opening a shared link seems to replace my canvas
 
 The canvas changes, but the banner indicates that the shared copy is in a
-separate autosave slot. Choose **back to my document** to return. Choose
-**File → Download JSON** before **keep this copy** if both versions are needed.
+separate autosave slot. Choose **Back to my document** to return. Choose
+**File → Download JSON** before **Keep this copy** if both versions are needed.
 
 ### The editor reports an invalid JSON file
 

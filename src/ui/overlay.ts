@@ -16,8 +16,10 @@
  * The app shell's global shortcut handler checks `overlayActive()` and bails
  * while any overlay is open, so canvas shortcuts (Delete/T/L/V/…) can never
  * mutate the hidden document behind a dialog. The primitive's own listener is
- * capture-phase and touches ONLY Escape and Tab — every other key still
- * reaches the overlay's own controls (inputs, menus, arrows).
+ * capture-phase and touches ONLY Escape, Tab and, outside a text field, the
+ * undo and redo keys (so the browser's own text undo cannot reach a field
+ * behind the overlay) — every other key still reaches the overlay's own
+ * controls (inputs, menus, arrows).
  */
 
 import { isImeKey } from './ime.js';
@@ -88,6 +90,24 @@ export function registerOverlay(
   };
 }
 
+/** Undo or redo: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y. */
+function isHistoryKey(e: KeyboardEvent): boolean {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return false;
+  const key = e.key.toLowerCase();
+  return key === 'z' || key === 'y';
+}
+
+/** A control the browser's own text undo belongs to. */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement)
+    return true;
+  if (!(target instanceof HTMLInputElement)) return false;
+  return !/^(?:button|checkbox|color|file|hidden|image|radio|range|reset|submit)$/.test(
+    target.type,
+  );
+}
+
 function onKeydown(e: KeyboardEvent): void {
   const top = stack[stack.length - 1];
   if (!top) return;
@@ -98,6 +118,17 @@ function onKeydown(e: KeyboardEvent): void {
     e.preventDefault();
     e.stopPropagation();
     top.close();
+    return;
+  }
+  if (isHistoryKey(e) && !isTextEntry(e.target)) {
+    // Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y on a menu, a dialog's
+    // button or a popover's switch. The editor's own handler stands aside
+    // while an overlay is open, so left alone the browser would run its own
+    // text undo on the last field typed in (the document title, say): the
+    // field reverts outside the editor's history and takes the focus out of
+    // the overlay. In a text field of the overlay the browser's undo is the
+    // field's own and stays.
+    e.preventDefault();
     return;
   }
   if (e.key !== 'Tab') return;

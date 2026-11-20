@@ -18,7 +18,12 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${port}`,
-    trace: 'retain-on-failure',
+    // Recording a trace of every test doubles what each one costs (the same
+    // nine tests: 34s without, 72s with), and CI's machines then ran the
+    // longer tests past the 30s limit. CI records one when it retries a
+    // failed test, which still leaves a trace of every failure it reports;
+    // a local run, which never retries, keeps the trace of what failed.
+    trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
     screenshot: 'only-on-failure',
     // Sandboxed dev environments can point at a pre-provisioned Chromium
     // instead of downloading one (`npx playwright install` stays the default).

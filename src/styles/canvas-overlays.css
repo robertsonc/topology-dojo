@@ -1,32 +1,28 @@
-/* Find, drag ghost, path bar, inline label edit, quick-add, mini style bar. */
-/* Find / jump-to-element overlay (Ctrl+F). */
+/* What floats over the canvas: Find, the library drag ghost, the path
+   analysis bar, the in-place rename editor, quick-add and the selection bar.
+   Inputs are the shared .field, buttons .btn and .icon-btn; this file lays
+   them out. Accent as text or an icon is --accent-fg. */
+
+/* ── Find (Ctrl/Cmd+F) ─────────────────────────────────────────────────────
+   Centred under the top bar (44px), over the canvas column. */
 .find {
   position: fixed;
-  top: 64px;
+  top: 56px;
   left: 50%;
   transform: translateX(-50%);
   z-index: var(--z-overlay);
-  width: 340px;
+  width: min(360px, calc(100vw - 32px));
   padding: 6px;
-  background: var(--surface-float);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
+  background: var(--surface-float);
   box-shadow: var(--shadow-float);
-  font-family: var(--font);
-}
-.find input {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--surface-field);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
   color: var(--fg);
-  font-family: var(--font);
-  font-size: 13px;
-  padding: 7px 9px;
+  font: 400 13px/1.3 var(--font-ui);
 }
-.find input:focus {
-  border-color: var(--accent);
+.find-input {
+  height: 32px;
+  font-size: 13px;
 }
 .find-results {
   margin-top: 6px;
@@ -36,29 +32,37 @@
 .find-item {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
-  padding: 6px 9px;
+  padding: 6px 8px;
   border-radius: var(--radius-sm);
-  font-size: 12px;
   color: var(--fg);
   cursor: pointer;
 }
-.find-item.on,
 .find-item:hover {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.find-item.on {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--fg-strong);
 }
 .find-item .fi-type {
+  flex: none;
   color: var(--fg-weak);
+  font: 400 12px/1.3 var(--font);
+}
+.find-item.on .fi-type {
+  color: var(--fg);
 }
 .find-empty {
-  padding: 6px 9px;
-  font-size: 12px;
+  padding: 6px 8px;
   color: var(--fg-weak);
+  font-size: 12px;
 }
 
-/* A library tile being dragged onto the canvas: a ghost of the tile
-   under the pointer. Dimmed where a drop would add nothing. */
+/* ── A library tile being dragged onto the canvas ──────────────────────────
+   A ghost of the tile under the pointer, dimmed where a drop adds nothing. */
 .pdrag-ghost {
   position: fixed;
   z-index: var(--z-popover);
@@ -69,13 +73,12 @@
   align-items: center;
   gap: 2px;
   padding: 6px 8px;
-  background: var(--surface-float);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
+  background: var(--surface-float);
   box-shadow: var(--shadow-float);
-  font-family: var(--font);
-  font-size: 11px;
   color: var(--fg);
+  font: 400 12px/1.25 var(--font-ui);
   opacity: 0.5;
 }
 .pdrag-ghost.can-drop {
@@ -88,7 +91,7 @@
 }
 .pdrag-hint {
   display: none;
-  color: var(--accent);
+  color: var(--accent-fg);
 }
 .pdrag-ghost.on-link .pdrag-hint {
   display: block;
@@ -98,11 +101,12 @@ html.palette-dragging * {
   cursor: grabbing !important;
 }
 
-/* Path analysis bar: the route between two nodes, and what to do
-   with it. Sits under the toolbar, over the canvas. */
+/* ── Path analysis bar ─────────────────────────────────────────────────────
+   The route between two nodes, and what to do with it: under the top bar,
+   over the canvas, one below Find in the layer order. */
 .path-bar {
   position: fixed;
-  top: 64px;
+  top: 56px;
   left: 50%;
   transform: translateX(-50%);
   z-index: calc(var(--z-overlay) - 1);
@@ -114,15 +118,13 @@ html.palette-dragging * {
      text wraps. */
   width: max-content;
   max-width: min(860px, calc(100vw - 32px));
-  box-sizing: border-box;
-  padding: 6px 8px 6px 12px;
-  background: var(--surface-float);
-  border: 1px solid var(--accent);
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--accent-line);
   border-radius: var(--radius-md);
+  background: var(--surface-float);
   box-shadow: var(--shadow-float);
-  font-family: var(--font);
-  font-size: 12px;
   color: var(--fg);
+  font: 400 13px/1.35 var(--font-ui);
 }
 .path-bar.none {
   border-color: var(--line);
@@ -132,11 +134,13 @@ html.palette-dragging * {
   min-width: 0;
 }
 .path-title {
+  color: var(--fg-strong);
   overflow-wrap: anywhere;
 }
 .path-notes {
   margin-top: 2px;
   color: var(--fg-weak);
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 .path-actions {
@@ -146,59 +150,45 @@ html.palette-dragging * {
   gap: 2px;
 }
 .path-count {
-  color: var(--fg-weak);
   padding: 0 2px;
+  color: var(--fg-weak);
+  font: 400 12px/1 var(--font);
   white-space: nowrap;
 }
-.path-bar .tbtn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 
-/* Inline label editing — a floating input anchored over the canvas
-   element being renamed (double-click a node / link / zone). */
+/* ── In-place rename ───────────────────────────────────────────────────────
+   A field over the canvas element being renamed (double-click a node, link
+   or zone). The name is drawn on the canvas, so it keeps the data face. */
 .inline-label-edit {
   position: absolute;
   z-index: var(--z-canvas-pop);
-  box-sizing: border-box;
-  background: var(--surface-float);
+  padding: 5px 8px;
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
-  color: var(--fg);
-  font-family: var(--font);
-  font-size: 13px;
-  text-align: center;
-  padding: 5px 8px;
+  background: var(--surface-float);
   box-shadow: var(--shadow-raised);
+  color: var(--fg-strong);
+  font: 400 13px/1.2 var(--font);
+  text-align: center;
   outline: none;
 }
 
-/* Quick-add popover (double-click empty canvas → type-to-place). */
+/* ── Quick-add (double-click empty canvas, type to place a node) ─────────── */
 .quick-add {
   position: absolute;
   z-index: var(--z-canvas-pop);
   width: 260px;
   padding: 6px;
-  background: var(--surface-float);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
+  background: var(--surface-float);
   box-shadow: var(--shadow-float);
-  font-family: var(--font);
+  color: var(--fg);
+  font: 400 13px/1.3 var(--font-ui);
 }
 .qa-input {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--surface-field);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  color: var(--fg);
-  font-family: var(--font);
+  height: 32px;
   font-size: 13px;
-  padding: 7px 9px;
-}
-.qa-input:focus {
-  border-color: var(--accent);
-  outline: none;
 }
 .qa-list {
   margin-top: 6px;
@@ -213,14 +203,14 @@ html.palette-dragging * {
   align-items: center;
   gap: 8px;
   width: 100%;
-  text-align: left;
-  background: none;
+  min-height: 30px;
+  padding: 3px 8px;
   border: 0;
   border-radius: var(--radius-sm);
-  padding: 4px 8px;
-  font-family: var(--font);
-  font-size: 12px;
+  background: none;
   color: var(--fg);
+  font: 400 13px/1.25 var(--font-ui);
+  text-align: left;
   cursor: pointer;
 }
 .qa-item .ppreview {
@@ -233,18 +223,23 @@ html.palette-dragging * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.qa-item.active,
 .qa-item:hover {
+  background: var(--surface-hover);
+  color: var(--fg-strong);
+}
+.qa-item.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--fg-strong);
 }
 .qa-none {
-  padding: 6px 9px;
-  font-size: 12px;
+  padding: 6px 8px;
   color: var(--fg-weak);
+  font-size: 12px;
 }
 
-/* Mini style bar — floats above the selection with quick actions. */
+/* ── Selection bar ─────────────────────────────────────────────────────────
+   Floats beside the selection (src/ui/selection-bar-place.ts) with its
+   colours, emphasis and arrange commands. */
 .mini-bar[hidden] {
   display: none !important;
 }
@@ -258,56 +253,41 @@ html.palette-dragging * {
   /* Never wider than the canvas: in a narrow one the buttons take a second
      row instead of running off its edge. */
   max-width: calc(100% - 8px);
-  box-sizing: border-box;
   padding: 3px 5px;
-  background: var(--surface-float);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
+  background: var(--surface-float);
   box-shadow: var(--shadow-raised);
-  font-family: var(--font);
+  font-family: var(--font-ui);
 }
 .mb-sw {
   width: 14px;
   height: 14px;
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--swatch-edge);
-  cursor: pointer;
   padding: 0;
+  border: 1px solid var(--swatch-edge);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
 }
 .mb-sw:hover {
-  transform: scale(1.15);
+  border-color: var(--fg-strong);
 }
 .mb-div {
   width: 1px;
   align-self: stretch;
-  background: var(--line);
   margin: 0 2px;
+  background: var(--line);
 }
-.mb-btn {
-  background: none;
-  border: 0;
-  color: var(--fg-weak);
-  font-size: 13px;
-  cursor: pointer;
-  padding: 0 3px;
-}
-.mb-btn:hover,
-.mb-btn.on {
-  color: var(--accent);
-}
-/* The bar's command buttons (align, distribute, z-order, lock): the shared
-   icon button, a little smaller to sit with the swatches. */
+/* The bar's buttons (emphasis, align, distribute, z-order, lock): the
+   shared icon button, a little smaller to sit with the swatches. */
+.mini-bar .mb-btn,
 .mini-bar .mb-cmd {
   width: 26px;
   height: 26px;
 }
-.mb-sel {
-  background: var(--surface-field);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  color: var(--fg);
-  font-family: var(--font);
-  font-size: 11px;
-  padding: 2px 4px;
-  max-width: 92px;
+/* The link's type and routing: shared fields, sized to the bar. */
+.mini-bar .mb-sel {
+  width: auto;
+  max-width: 112px;
+  height: 26px;
+  padding: 0 4px;
 }

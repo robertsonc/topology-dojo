@@ -266,6 +266,40 @@ test('with a node selected, the page’s link settings are one click away', asyn
   }
 });
 
+// "Group into zone" is one button wherever it is: the same markup at the
+// foot of one node's tab and in the Annotate section of two nodes.
+test('Group into zone looks the same for one node and for two', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const zone = page.locator('#inspector [data-annotate="zone"]');
+  const look = () =>
+    zone.evaluate((b) => ({
+      classes: b.className,
+      icons: b.querySelectorAll('.icon').length,
+      text: b.textContent,
+    }));
+  await clickNode(page, 'fw');
+  await expect(tab(page, 'selection')).toHaveText('Node');
+  const one = await look();
+  const second = (await page
+    .locator('#page-canvas [data-tds-node="ec"]')
+    .boundingBox())!;
+  await page.keyboard.down('Shift');
+  await page.mouse.click(
+    second.x + second.width / 2,
+    second.y + second.height / 2,
+  );
+  await page.keyboard.up('Shift');
+  await expect(tab(page, 'selection')).toHaveText('2 nodes');
+  expect(await look()).toEqual(one);
+  expect(one).toEqual({
+    classes: 'btn btn-sm',
+    icons: 0,
+    text: 'Group into zone',
+  });
+});
+
 test('two nodes can be arranged and annotated from the Selection tab', async ({
   page,
 }) => {
@@ -366,4 +400,58 @@ test('focus meets the tabs before the hide toggle drawn at their end', async ({
   await expect(toggle).toHaveAccessibleName('Show properties');
   await toggle.click();
   await expect(page.locator('.insp-tabs')).toBeVisible();
+});
+
+test('the hide toggle exposes whether the panel is open', async ({ page }) => {
+  await bootEditor(page);
+  const toggle = page.locator('#inspector-toggle');
+  await expect(toggle).toHaveAttribute('aria-controls', 'inspector-wrap');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  // The key does the same as the button, and the state follows it.
+  await page.locator('.canvas-host').click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press('p');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('each section is a group named for its title, so a button is found within its group', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await inspectorTab(page, 'page');
+  // The Page section's Fit to content resizes the page; the zoom control's
+  // Fit view fits the view. Each is found by its group's name.
+  const pageFit = page
+    .getByRole('group', { name: 'Page', exact: true })
+    .getByRole('button', { name: 'Fit to content' });
+  await expect(pageFit).toHaveId('p-fit');
+  const viewFit = page
+    .getByRole('group', { name: 'Zoom', exact: true })
+    .getByRole('button', { name: 'Fit view', exact: true });
+  await expect(viewFit).toHaveId('ccFit');
+  await expect(section(page, 'Links')).toHaveAccessibleName('Links');
+});
+
+// A section's toggle event comes a moment after the press on its title. A
+// redraw that lands in between (here a switch to Page and back, in the same
+// task as the press) must not lose the press.
+test('a section opened just before the panel redraws stays open', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await clickNode(page, 'fw');
+  const group = 'Position and order';
+  expect(await isOpen(page, group)).toBe(false);
+  await page.evaluate((title) => {
+    document
+      .querySelector<HTMLElement>(
+        `#inspector details[data-group="${title}"] > summary`,
+      )!
+      .click();
+    document.querySelector<HTMLElement>('#insp-tab-page')!.click();
+    document.querySelector<HTMLElement>('#insp-tab-selection')!.click();
+  }, group);
+  await expect(section(page, group)).toHaveAttribute('open', '');
+  await expect(page.locator('#inspector input[data-key="x"]')).toBeVisible();
 });

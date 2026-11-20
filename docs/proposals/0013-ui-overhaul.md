@@ -1,26 +1,43 @@
 # Proposal 0013 — UI overhaul: placement first, then a flat skin
 
-**Status:** Accepted (2026-11-19). P0 (foundations) is merged except the command
-registry, which is draft PR #327 (not merged). PR #326 merged into `main` on 2026-11-19 as
-`e9d0d7f` (its Release run completed with success the same day): the
-stylesheet move, the token layer, the flat skin, the docked chrome, the
-neutral scrollbars and the icon sprite are on `main`. PR #327, "Command
-registry: one table for keys, context menu and shortcut sheet", adds the rest
-of P0 on its own branch: `src/ui/commands.ts`, which holds every command with
-its key bindings as data, and the window key handler, the toolbar and canvas
-controls, the context menu and the shortcut sheet read it. Until #327 merges,
-`src/ui/commands.ts` is not on `main`. P1 (shell), P2 (properties panel), P3
-(skin sweep) and P4 (guardrails) have not changed a surface: none has been
-relocated as P1 and P2 describe, or converted to the shared control classes.
-The 12 px text ratchet in `src/styles/styles.test.ts`, a first form of P4's
-budget test, is already on `main`. Some building blocks of the other phases
-are on `main` but used by no surface yet: the shared control classes
-(`src/styles/controls.css`), the menu component and the command palette (both
-listed under P1) and the rules for properties-panel tabs
-(`src/ui/inspector-tabs.ts`, under P2). The section "What P0 changed from this
-text" records where the implementation departed from the proposal as first
-written. Checked against `main` at `e9d0d7f`, and, for the registry, against
-the branch of PR #327 at `1ebbccb`.
+**Status:** Accepted (2026-11-19). P0 (foundations), P1 (shell) and P2
+(properties panel) are merged. P3 (skin sweep) and P4 (guardrails) are built
+in PR #328. A merge to `main` is a release; the Release workflow run for
+PR #328's merge commit is the record of whether it deployed. Two pull requests merged into
+`main` on 2026-11-19. PR #326 merged as `e9d0d7f` (its Release run completed
+with success the same day): the stylesheet move, the token layer, the flat
+skin, the docked chrome, the neutral scrollbars and the icon sprite. PR #327
+(the command registry, the shell and the properties panel: the rest of P0,
+P1, P2 and part of P3) merged as `d224979`: the command registry
+(`src/ui/commands.ts`), the top bar with its menus, the left rail, the docked
+library, the pages bar, the zoom control, the selection bar's align,
+distribute, order and lock buttons, the command palette on Ctrl/Cmd+K, the
+context menu on the shared menu component, the properties panel's three tabs
+and regrouped sections, and the shared controls on the wizards, the
+workspace, preferences and admin panels and the node designer. The Release
+run for `d224979` (run 44554032473) failed in CI's browser job, so its
+`stage` and `production` jobs were skipped: that run deployed nothing.
+
+PR #328 adds the compact layout (below 1,024 px the node library
+and the properties panel are drawers over the canvas,
+`src/ui/compact-layout.ts`), brings the browser tests back inside CI's
+30-second limit (`menuCommand` in `e2e/helpers.ts` goes straight to a menu
+item, and CI records a trace only when it retries a failed test), finishes the
+rest of P3 (no `.tbtn` is left, `toolbar.css` is deleted, `NOT_YET` in
+`src/styles/styles.test.ts` is gone so no stylesheet sets text under 12 px,
+accent text uses `--accent-fg`, a dark scope for present mode, duration
+tokens for motion) and the guardrails of P4 (budget tests for the top bar, the
+rail and the pages bar, a text-size walk of the shell's surfaces in both
+themes at two window sizes, a no-sideways-scroll test from 360 to 1,920 px,
+and the one-time "what moved" note), and brings the documentation up to date.
+What is not done: Find and quick-add were not folded into the command palette,
+and the light-theme contrast of each surface was measured while the surfaces
+were converted but no test asserts it (the tokens' contrast is asserted). The
+section "What P0 changed from this text" and the section "What P1 to P4
+changed from this text" record where the implementation departed from the
+proposal as first written; each phase's "Status" line says what is done, with
+the files and tests. Checked 2026-11-19 against the code at `d224979` and, for
+what PR #328 adds, against its branch at `61e4d7e`.
 
 **Captured:** 2026-11-18
 
@@ -259,6 +276,13 @@ skin; existing surfaces convert as each phase touches them.
 _Done when:_ the end-to-end suite passes; no hex colour appears outside the
 tokens file; every shortcut is unique, checked by a unit test.
 
+_Status (2026-11-19): done._ PR #326 (`e9d0d7f`) moved the stylesheet into
+`src/styles/`, added the tokens, the scrollbars and the icon sprite; PR #327
+(`d224979`) added the command registry. No colour outside the tokens file is
+checked by `src/styles/styles.test.ts` ("names every colour in tokens.css and
+nowhere else"); unique shortcuts by `src/ui/commands.test.ts` ("never put two
+commands on one key"). The end-to-end suite was not run for this note.
+
 ### P1 — Shell (large; fixes the top bar)
 
 - Menu component with full keyboard support, reused for Export, Tidy, account
@@ -274,6 +298,33 @@ _Done when:_ the top bar has no horizontal overflow at 1,024 px and up,
 asserted in a test; every former toolbar control is reachable from a menu and
 from Ctrl+K.
 
+_Status (2026-11-19): merged in PR #327, apart from what the next two
+paragraphs name._ Built: `src/ui/menu.ts` (the menu component) and
+`src/ui/menus.ts` (File, Edit, View, Arrange, Help, the folded menu, Export,
+Tidy, the account menu and the context menu, as data); the top bar, the left
+rail, the docked library, the pages bar, the zoom control and the status bar
+(`src/styles/shell.css`, the shell template in `src/main.ts`); the selection
+bar's align, distribute, order and lock buttons and its placement
+(`src/ui/selection-bar-place.ts`); the command palette
+(`src/ui/command-palette.ts`, `src/ui/palette-sources.ts`), opened by
+Ctrl/Cmd+K. Not built as the text says: Ctrl+K does not absorb Find or
+quick-add, which remain (see "What P1 to P4 changed from this text").
+_Done when_, checked: the top bar's width is asserted at 1,024, 1,280, 1,440
+and 1,920 px signed in, and at 700, 1,101 and 1,160 px with a long login
+(`e2e/shell-menus.spec.ts`, "the top bar never scrolls sideways at ${width}px,
+signed in" and "... with a long login"); every former toolbar control is in a
+menu (`src/ui/former-toolbar.ts` is the list, used by `src/ui/menus.test.ts`,
+"has every command it ran in at least one menu", and by `e2e/shell-menus.spec.ts`,
+"every command the old toolbar ran is in a menu"); the palette lists every
+command that can run now (`src/ui/palette-sources.test.ts`, "every command that
+can run now, by title, group and shortcut"). That the palette finds a command
+by its old label (the Risks table) is not asserted by a test and was not
+checked.
+
+PR #328 changes the narrow layout: below 1,024 px the node
+library and the properties panel are drawers over the canvas
+(`src/ui/compact-layout.ts`, `e2e/shell-layout.spec.ts`).
+
 ### P2 — Properties (large; fixes the panel)
 
 - Selection, Page and Document tabs with the rules above.
@@ -283,6 +334,23 @@ from Ctrl+K.
 _Done when:_ the default view of each state fits a 900 px window without
 scrolling, asserted in a test; the anchor box and Distribute ends are visible
 on selecting a node, with no clicks.
+
+_Status (2026-11-19): merged in PR #327; one "Done when" is met in part._
+Built: `src/ui/inspector-tabs.ts` and `src/ui/inspector/tabs.ts` (the tabs and
+their rules), `src/ui/inspector/field-groups.ts` (the sections of a node and of
+a link), `src/ui/inspector/sections.ts` (each section remembers whether it is
+open), `src/ui/inspector/selection-header.ts` (the header with its lock and
+"more" menu), `src/ui/inspector/color-control.ts` (the colour button and its
+popover), `src/ui/inspector/page-tab.ts` and `document-tab.ts`,
+`src/ui/inspector/link-attachment.ts`, `src/styles/inspector.css`. Fit is
+asserted at 1,440 x 900 for the Page tab, the Document tab, one node, one node
+with type options, one link and two nodes (`e2e/shell-inspector-layout.spec.ts`,
+"nothing selected: the Page tab fits without scrolling" and the five tests
+after it). The anchor box and Distribute ends are not visible with no clicks:
+a node shows what the page gives it as a line of text and the override switch,
+and the override's two fields only once the switch is on (see "What P1 to P4
+changed from this text"). That no text in the panel is under 12 px is asserted by "no text in the
+panel is under 12px" in the same spec.
 
 ### P3 — Skin sweep (medium)
 
@@ -294,6 +362,42 @@ on selecting a node, with no clicks.
 
 _Done when:_ no surface uses the old tokens; text meets 4.5 : 1 in both themes.
 
+_Status (2026-11-19): built in PR #328; before it, P3 was partly done, as
+PR #327 left it._ As PR #327 left `main`, the top bar, rail, pages bar,
+status bar, menus, command palette, properties panel, the shared-copy banner,
+both wizards, the workspace, preferences and admin panels and the node
+designer were on the shared controls (`src/styles/controls.css`); the Share
+dialog, the presentation controls, the shortcut sheet's close button and the
+path bar used `.tbtn`, seven `font-size` rules under 12 px were left
+(`NOT_YET` in `src/styles/styles.test.ts`), and several surfaces set
+`color: var(--accent)` as a text colour. PR #328
+changes this: `grep -rn tbtn
+src e2e` finds nothing and `src/styles/toolbar.css` is deleted (the shared-copy
+banner and the sign-in prompt moved into `shell.css`); the library's tiles, the
+canvas overlays (Find, the path bar, quick-add, the rename editor, the drag
+ghost, the selection bar), Display settings, the Share dialog, the shortcut
+sheet, the Problems dock and the annotation editors are on the shared controls;
+`NOT_YET` is gone and `styles.test.ts` asserts that no stylesheet sets text
+under 12 px ("sets no text under 12px"); accent as text or an icon is
+`--accent-fg` and `--accent-fg` is no longer on the "reserved, unused" list.
+Present mode has a dark scope (`.dark-scope` in `src/styles/tokens.css`) so its
+bar reads in the light theme. A document's brand accent no longer has to be
+readable by luck: `readableAccentText` (`src/ui/contrast.ts`) mixes it toward
+the theme's foreground until it reaches 4.5 : 1 on every surface of the chrome and on every tint laid over one (a hovered or pressed control, `--accent-soft`, `--accent-soft-strong`) and
+`setChromeAccent` sets `--accent-fg` from it (`src/ui/contrast.test.ts`). The
+motion pass: every `transition` and `animation` takes a duration token
+(`--dur-fast`, `--dur`, `--dur-slow`, `--dur-flash`), asserted by "times every
+transition and animation with the duration tokens"; under reduced motion the
+slider thumb's halo no longer animates. Contrast of the tokens in both
+themes is asserted (`src/styles/styles.test.ts`, "dark: text, outlines and
+the focus ring read on every surface" and the light twin). Contrast of each
+surface was measured in the browser in both themes while it was converted;
+no test asserts it, and the "Done when" line ("text meets 4.5 : 1 in both
+themes") is therefore met by measurement, not by a test. SVG animation drawn
+by `src/render-svg` and by the editor's pulses is outside the stylesheets and
+not covered by the motion test. The light-theme page linked above is about
+the rendered output (PR #289), not the chrome: it does not cover this pass.
+
 ### P4 — Guardrails (small)
 
 - Budget tests: a cap on top-bar controls, no text under 12 px, no nested
@@ -301,6 +405,44 @@ _Done when:_ no surface uses the old tokens; text meets 4.5 : 1 in both themes.
 - User guide and screenshots updated. A one-time "what moved" note in the app.
 
 _Done when:_ the toolbar cannot grow past its budget without a failing test.
+
+_Status (2026-11-19): built in PR #328; before it, mostly not done._ Before
+PR #328, `main` had the 12 px ratchet, the panel's layout spec
+(`e2e/shell-inspector-layout.spec.ts`), the top bar's width test and the list
+of former toolbar controls. PR #328 adds:
+
+- the control budgets (`e2e/shell-budget.spec.ts`, "the top bar, the rail and
+  the pages bar hold no more controls than their budgets", and
+  `src/ui/shell-budget.test.ts` without a browser): 15 controls in the top
+  bar signed in with every chip showing, 7 in the rail, 5 at the right end of
+  the pages bar. Each says in a comment that raising it is a design decision;
+- the text-size walk in the same spec: every visible text node outside SVG
+  drawings is 12 px or more at boot, with a node or a link selected, in each
+  menu, the palette, Display settings, the shortcut sheet, the note, Share,
+  both wizards, the node designer, the workspace, preferences and admin panels
+  and present mode, at 1,440 x 900 and 390 x 844, in both themes (16 tests);
+- the sideways-scroll test, every 40 px from 360 to 1,920, signed out and
+  under a 30-character login: the document, and the top bar, the status bar,
+  the pages bar and the stage each within its box, and every visible control
+  outside the canvas inside the window;
+- no scroll container inside the properties panel, now for every state the
+  panel draws (`e2e/shell-inspector-layout.spec.ts`);
+- the one-time "what moved" note (`src/ui/shell-note.ts`,
+  `src/ui/shell-note.test.ts`, `e2e/shell-note.spec.ts`) and the command
+  `help.whatMoved` ("What moved") in the Help menu and the palette;
+- the user guide, the QA plan and the README image, brought up to date.
+
+_Done when_ ("the toolbar cannot grow past its budget without a failing
+test") is met. Checked on 2026-11-19 by trying it: an extra button in the top
+bar's markup fails `src/ui/shell-budget.test.ts`, and a rule setting text at
+11 px fails "sets no text under 12px" in `src/styles/styles.test.ts`; both
+changes were undone. The browser versions were tried the same way on
+2026-11-19, against the browser suite with CI's settings: an extra button
+beside Present fails "the top bar, the rail and the pages bar hold no more
+controls than their budgets" in `e2e/shell-budget.spec.ts` (at most 15,
+found 16), and `.hint` set at 11 px fails 12 of its 16 "no text under 12px"
+walks (the four "menus, each open, and present mode" walks show no hint and
+pass); both changes were undone.
 
 ## Risks
 
@@ -341,9 +483,10 @@ _Done when:_ the toolbar cannot grow past its budget without a failing test.
 - **Docking came with the fold.** The glass layer was also what floated the
   toolbar, the properties panel and the status bar on 12 px margins. Without
   it they sit docked, as the base rules always had them. The node library and
-  the pages dock still float over the canvas until P1.
-- **The command registry splits the table from the handlers (PR #327, draft,
-  not merged).** The proposal listed "id, title, group, shortcut, icon,
+  the pages dock still floated over the canvas until P1 (PR #327, `f70720c`)
+  docked them.
+- **The command registry splits the table from the handlers (PR #327, merged
+  as `d224979`).** The proposal listed "id, title, group, shortcut, icon,
   enabled, checked, run" as one record. In `src/ui/commands.ts` the table
   (`COMMAND_SPECS`) is pure data: id, title, group, icon and the key bindings;
   `enabled`, `checked` and `run` are bound once in `src/main.ts` through
@@ -358,6 +501,242 @@ _Done when:_ the toolbar cannot grow past its budget without a failing test.
   and the sheet. Two inspector tooltips were wrong and are corrected: "Send to
   back ([Ctrl+[)" is now "Send to back (Ctrl/Cmd+[)", and "Bring to front
   (Ctrl+])" is now "Bring to front (Ctrl/Cmd+])".
+
+## What P1 to P4 changed from this text
+
+Read against the tree at `d224979` ("Target layout", "Where every toolbar
+control goes" and "Properties panel"), with the running app for what a
+control looks like and where it is; the lines about P3 and P4 and the ones
+marked PR #328 were read against PR #328's branch at `61e4d7e`. Each line is a place where the
+implementation differs from the text above; a reason is given where a commit
+message gives one, and "no reason recorded" where none does. Where the text
+and the tree agree, nothing is listed. Short hashes name the commit.
+
+**The shell**
+
+- **On a phone the rail stays a left column.** The text says it "becomes a
+  bottom strip". At 390 px the rail is the same 44 px column (checked in the
+  app; no rule in `src/styles/shell.css` moves it). No reason recorded.
+- **A tool strip came and went.** Not in the text. The commit that built the
+  top bar (`a0a6c42`) added a strip of tools and view toggles under it
+  (`#toolStrip`, `.tool-strip`); the commit that built the rail, the docked
+  library and the pages bar (`f70720c`) removed it, and the tools went to the
+  rail and the toggles to the pages bar and the View menu. It was never in
+  `main`: PR #327 merged after both commits, with no strip in the tree.
+- **The menus fold at 1,100 px and below, in steps.** The text says "below
+  1,100 px". The bar gives way in this order: the wordmark at 1,360 px and
+  below; the words on Tidy and Present at 1,279 px and below, so the
+  document title keeps 120 px; the five menus into one **Menu** button at
+  1,100 px and below; the words on Export and Share at 1,023 px and below;
+  the layout menu
+  beside Tidy and the chips' words at 760 px and below; Present and the logo
+  at 640 px and below (`src/styles/shell.css`). Where the bar is still short
+  of room at any width, the save state beside the title shortens (a plain
+  save to its mark, a warning to its first words), then the workspace chip's
+  name, the account's name, the logo and the account chip's caret step
+  aside, then a warning shows its mark alone and the mark of a plain save
+  goes, then the last export's report keeps only its icon, and, last,
+  Export's caret, Tidy and Redo step aside (both also in the menus and on
+  their keys) (`fitSaveChip` in `src/main.ts`), so the title and the save
+  state never run under Undo and the title keeps 64 px on a phone down to
+  320 px, also after an export, whose report stays on the bar. Reason
+  (`a0a6c42`, `59c30b0`, PR #328): the bar never scrolls sideways, a long
+  login had pushed the account chip off the bar between 1,101 and 1,161 px,
+  the save state, a failed save's warning above all, had been drawn over
+  Undo, Redo and Tidy, and an export's report had left the title 18 px wide
+  on a 320 px phone.
+- **The top bar's controls differ from the sketch in four ways.** Tidy is a
+  button with a separate menu button beside it (`#tTidy`, `#tTidyMenu`). The
+  account control is a chip with a person icon, the login and a caret, not an
+  avatar. Share is hidden until the deployment offers sharing. The save state
+  appears beside the title after an edit, not before. No reason recorded.
+- **The agent chip's pending-proposal count is not new.** The text says the
+  chip "gains" it; the label `agent · N proposals` was already in
+  `computeWorkspaceChipState` (`src/ui/workspace-panel.ts`) before P1.
+- **The status bar has no page count.** The sketch shows "Page 4 of 5" and
+  "1 problem" at its left. The bar keeps the spans it had (tool, cursor,
+  counts, selected, history, zoom; `f70720c` says "the same spans and text"),
+  with the problems indicator, an icon at rest, after the zoom (first in a
+  window 700 px wide or less); the page count is in the pages bar's toggle
+  ("Pages 1/1"). The Problems list stays where it was, at the foot of the
+  right-hand column.
+- **Properties and Display settings keep a button as well as a menu entry.**
+  The text puts "Properties in View" and Display settings under View. Both
+  entries are there (View ▸ Properties, View ▸ Display…), and so are a
+  **Hide** button at the end of the tab row (a **Properties** button in the
+  canvas's top-right corner while the panel is hidden) and a gear button at
+  the right of the pages bar. Reason for the corner button (`2bdb496`): with
+  the panel closed its column stayed and left a notch.
+- **Problem badges are in View only.** The text also puts the toggle in the
+  Problems panel's header; the header has none (`src/main.ts`, the Problems
+  dock).
+- **Authoring preferences are not linked from the agent panel.** The text says
+  "linked from the agent panel". Only the account menu opens them
+  (`account.preferences`); `src/ui/workspace-panel.ts` has no link.
+- **Ctrl/Cmd+K does not absorb Find or quick-add.** The text says it
+  "absorbs" them. **Edit ▸ Find…** (Ctrl/Cmd+F) and quick-add (a double-click
+  on empty canvas) are unchanged; the palette also offers "Go to <label>" and
+  "Add <node type>" entries that do the same jobs (`4068b49`). Ctrl/Cmd+K is
+  the one key that changed meaning: before, the browser had it, and
+  `src/ui/commands.test.ts` lists it as an intended change (`INTENDED_CHANGES`).
+- **A format painter is not on the selection bar.** The text puts "order, lock,
+  format painter" on the bar and in the header. The bar has Bring to front,
+  Send to back and Lock (and the align and distribute buttons for two or more
+  nodes); Copy format and Paste format are in the header's "more" menu, in
+  Edit, in the context menu and on Ctrl/Cmd+Alt+C and +V (`1268f59`,
+  `be6cdc3`).
+- **Delete is not on the selection bar.** The text puts delete in Edit, the
+  selection bar and the context menu. It is in Edit, the context menu and the
+  header's **More actions** menu (and on Del); the bar has no Delete button
+  (`MINI_BAR_ORDER` in `src/main.ts`). No reason recorded.
+- **Edit ▸ Tools exists.** Not in the text. Select, Hand, Draw link and Drop
+  anchor had toolbar controls before the shell was rebuilt, but no menu
+  offered them (`796a763`).
+- **The selection bar is placed from what is drawn.** The text only says
+  "floating". It sits above the selection's box, below it when there is no
+  room above, and on it only when the selection fills the canvas from top to
+  bottom; it wraps onto a second row in a narrow canvas
+  (`src/ui/selection-bar-place.ts`; reason in `f9c873e`: it had sat on the
+  route of a link and taken the presses meant for its handles). In PR #328
+  it also keeps clear of the four quick-connect arrows around a
+  selected node (`Editor.quickConnectBox()`), which it had covered.
+- **The minimap starts closed.** The text does not say. With nothing stored it
+  is closed, so the canvas keeps its room (`f70720c`, "as in the approved
+  mock").
+- **"Page" is everywhere a person reads it, from PR #328.** The
+  text says "'Page' everywhere". As PR #327 left `main`, the menus, the pages bar,
+  the command titles and the shortcut sheet's command rows said page, and
+  these still said frame: the Find box, the presentation bar's buttons and the
+  shortcut sheet's Presentation rows, the path bar's "new frame" button and
+  its tooltips, the path analysis messages, the Page tab's Caption
+  placeholder, empty-list line and Story hint (which named the context-menu
+  item "Emphasize on this frame", an item titled "Emphasize on this page"),
+  the Analyze path tooltip and the confirmation when deleting a page that has
+  content. PR #328 changes each of them to page. What still says frame is not
+  read by a person as a label: a new page is named "Frame N" (a page's name is
+  document data), and command ids (`path.newFrame`, `view.toggleFrames`), CSS
+  classes, a stored key (`tds-frames-collapsed`) and code comments keep the
+  old word.
+- **Below 1,024 px the panels are drawers (PR #328).** The text
+  leaves the narrow layouts to be "re-verified in P1". In PR #327 only a phone
+  (640 px and below) had a library drawer; PR #328 moves the breakpoint to
+  1,023 px for both panels (`src/ui/compact-layout.ts`). Also in PR #328: on
+  a phone, and wherever the two open drawers would leave under 160 px of
+  canvas, opening one drawer closes the other (`drawersCrowd` in the same
+  file); the closed drawer's remembered setting is not changed.
+- **Find and the path bar sit over the canvas (PR #328).** Not in
+  the text. They were fixed at a distance from the top of the window, and the
+  path bar could run under the library and the properties panel; they are now
+  centred over the canvas, a little below its top edge, never wider than it,
+  and follow it as the panels open and close (`overCanvas` in
+  `src/main.ts`).
+- **The properties toggle says whether the panel is open (PR #328).** `#inspector-toggle` has `aria-controls` and `aria-expanded`, as
+  the library's toggle does.
+
+**The properties panel**
+
+- **Rows are on a 4 px gap.** The text says rows are 28 px; the stylesheet
+  also fixes the gap between rows at 4 px, a 32 px pitch
+  (`src/styles/inspector.css`).
+- **Section titles are 13 px, not 14 px.** The text says "14 px section
+  titles". `src/styles/inspector.css` sets them at 13 px, weight 600
+  (`06dd40b`). No reason recorded. Rows are 28 px, labels 12 px, the default
+  width 300 px (stored width 240 to 480 px) and swatches a fixed 20 px, as
+  the text says.
+- **A field is marked by a line under it at rest.** The text says fields are
+  "bordered only on hover and focus". `.field` draws its bottom edge in
+  `--line-strong` at rest (`src/styles/controls.css`). Reason (`2345e95`): a
+  field's fill is 1.1 to 1.2 : 1 against the panel, and nothing marked it as a
+  field when it was not hovered.
+- **Link attachment shows the page's value as a line, and the node's fields
+  only under the override switch.** The text says it holds the inherited
+  value, the override, padding and distribute, and that the anchor box and
+  Distribute ends are visible on selecting a node with no clicks. The section
+  is open by default and opens with a line such as "From page: off. Links meet
+  the icon edge."; **Override for this node** is a switch, and **Box padding**
+  and **Distribute ends** appear only while it is on (in PR #328,
+  the two share one row, so the state fits a 1,440 x 900 window). On the Page
+  tab,
+  **Box padding** and **Distribute ends** appear only while **Anchor box** is
+  on. So the "Done when" line for P2 is met for the fit test and not for the
+  two fields.
+- **Label offsets are under "Fine tune", closed at first.** The text lists
+  one Text section for a node. In it **Label**, **Sublabel** and the
+  **Placement** compass come first; the label offsets and **Label width** are
+  in a nested section titled **Fine tune** that starts closed, and **Label
+  color** follows it (`NODE_GROUPS` in `src/ui/inspector/field-groups.ts`).
+- **A header's contents depend on what is selected.** The text gives one
+  header, "name, type, lock, more". A node's or link's header has the lock and
+  **More actions**; an anchor's or a zone's has **More actions** and no lock;
+  with several nodes selected the header names them by their labels over the
+  line "Selection (2 nodes)".
+- **A link's ends and Swap are a row under the header.** The text puts the
+  endpoints, type and swap in the header. The header has the icon, the title
+  ("EC-Hub → App"), the kind with the type picker, the lock and the "more"
+  menu; the two end pickers with Swap between them follow it as their own row.
+- **Problems entries open the tab, and the field only from PR #328.** The
+  text says they "open the tab and field they refer to". As PR #327 left
+  `main`, a jump selected the element and showed the Selection tab even when the Page
+  or Document tab had been picked by hand (`966b231`); it did not open the
+  section or focus the field, and nothing called the tabs' `reveal`. PR #328
+  does: a problem about a field opens the section that holds it
+  and focuses it (`problemField` in `src/ui/problems-dock.ts`), and a problem
+  about a page or the document shows the Page or Document tab
+  (`InspectorTabs.reveal`).
+- **Annotations start closed, and several selections have sections of their
+  own.** Not in the text. The Annotations list on the Page tab starts closed
+  (`4fac2ea`). Two or more nodes get **Arrange**, **Annotate** and **Format**
+  and no shared fields, so QA-2026-11-14-UI-04 stays open. A zone picked on the canvas has the header and its rows on the panel's grid, with no card (`5ba843f`). A single node's tab ends with an annotate row (zone, policy marker) after
+  Data, which the text's node list does not have (`5ba843f`). Placement rule
+  5 puts colour "at the top of its tab"; colour is in the Style section, and
+  the header holds the lock and, in **More actions**, the order commands.
+- **The emphasis picker opens in place.** The text says "a count with a
+  picker". It reads "N of M" with **Choose…** and **Clear**; the list opens
+  below with a filter field and no scroll area of its own, and stays open while
+  it has focus, or for the rest of the visit once something is ticked
+  (`be6cdc3`).
+
+**The look, P3 and P4 (PR #328)**
+
+- **Motion tokens are 120 and 180 ms, with two longer ones.** The text says
+  "150 ms colour and opacity only". `--dur-fast` is 120 ms and `--dur` 180 ms;
+  `--dur-slow` (500 ms, a page fading in, a highlight's pulse) and
+  `--dur-flash` (600 ms, one beat of an attention flash) keep the two long
+  motions the app already had. Nothing says why 120 and 180 were chosen: no
+  reason recorded.
+- **Accent as text is its own token, computed for a brand colour.** The text
+  says the accent is "kept for the primary action and selected state only".
+  Accent-coloured text and icons use `--accent-fg`, a lighter mix of the
+  accent; for a document's own brand colour the editor works the mix out so it
+  reaches 4.5 : 1 on every surface and on the tints over them
+  (`readableAccentText`, `accentTextGrounds`).
+- **Present mode has a dark scope.** Not in the text. The presentation's bar
+  sits on a stage that is dark in both themes, so its root takes the dark
+  foreground, line and fill tokens (`.dark-scope`) and reads in the light
+  theme.
+- **`--on-status` is gone.** The token had no user once the Problems count
+  became a badge (`.badge-warn`, `.badge-error`).
+- **Display settings keeps two selects.** The convention for a choice of two
+  to four is `.seg`. **Ambient backdrop** and **Wheel** are `select.field`:
+  specs drive them with `selectOption` and the code writes their value, and
+  the rule that a control keeps its id and what it writes won. There is no
+  on/off setting in the popover, so no `.switch`.
+- **The note is shown only to a browser that has used the editor.** The text
+  says "a one-time 'what moved' note" and no more. It shows when some
+  `topology-dojo:` or `tds-` key is in storage and the note has not been
+  dismissed; a first-time visitor never sees it, and a visit that opens a
+  shared link does not show it.
+- **The 16 text-size tests mock the server.** The walk is run with a mocked
+  `/api/me` for an admin and empty lists, so it does not need a deployment;
+  nothing in it looks at an SVG drawing, which scales with zoom.
+
+What the text and the tree agree on, checked: the five menus and their
+contents by name; the three tabs, the Selection tab named for what is
+selected, and the tab rules (`src/ui/inspector-tabs.ts`); the sections of a
+node, a link, the Page tab and the Document tab (`NODE_GROUPS`,
+`LINK_GROUPS`, `src/ui/inspector/page-tab.ts`, `document-tab.ts`); and the
+place each toolbar control went, apart from the departures above
+(`src/ui/former-toolbar.ts` lists the old controls).
 
 ## Non-goals
 

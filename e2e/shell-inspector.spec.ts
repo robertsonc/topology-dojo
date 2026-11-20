@@ -92,9 +92,14 @@ test('a number outside what the field allows is clamped or refused', async ({
   expect((await savedElement(page, 'nodes', 'fw')).labelWidth).toBe(600);
   await field(page, 'labelWidth').fill('-50');
   expect((await savedElement(page, 'nodes', 'fw')).labelWidth).toBe(40);
+});
+
+test('a size that is not positive is refused for a shape and a text node', async ({
+  page,
+}) => {
+  await bootEditor(page);
 
   // A shape's size must be positive: zero and negatives are not stored.
-  await page.keyboard.press('Escape');
   await page.locator('.pitem[data-type="shape:rectangle"]').first().click();
   await inspectorSection(page, 'Rectangle options');
   await field(page, 'shapeWidth').fill('80');
@@ -881,18 +886,25 @@ test('a Problems label with warnings is readable in the light theme', async ({
   await page.locator('.pitem').first().click();
   await page.keyboard.press('Control+d');
   await expect(page.locator('#problems-dock')).toHaveClass(/has-warn/);
-  // The label is in the warning colour for text, not the fill colour.
-  const [label, token] = await page.evaluate(() => {
+  // The label is in the warning colour for text, not the fill colour. Its
+  // colour changes over a short transition, so the value is read until it
+  // settles.
+  const token = await page.evaluate(() => {
     const probe = document.createElement('span');
     probe.style.color = 'var(--status-warn-fg)';
     document.body.append(probe);
     const want = getComputedStyle(probe).color;
     probe.remove();
-    return [
-      getComputedStyle(document.querySelector('#problems-toggle .pt-label')!)
-        .color,
-      want,
-    ];
+    return want;
   });
-  expect(label).toBe(token);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          getComputedStyle(
+            document.querySelector('#problems-toggle .pt-label')!,
+          ).color,
+      ),
+    )
+    .toBe(token);
 });

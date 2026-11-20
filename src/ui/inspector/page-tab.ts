@@ -116,12 +116,12 @@ function storyRows(ctx: InspectorContext): string {
     .join('');
   const list =
     total === 0
-      ? `<div class="insp-hint">No elements on this frame.</div>`
+      ? `<div class="insp-hint">No elements on this page.</div>`
       : `<input type="search" id="p-emph-filter" value="${esc(picker.filter)}" placeholder="Filter" aria-label="Filter the elements" autocomplete="off"/>` +
         `<div class="emph-list" role="group" aria-label="Elements to emphasize">${nodeRows}${linkRows}</div>`;
   return (
     `<label class="insp-row"><span>Caption</span>` +
-    `<input id="p-caption" value="${esc(page.caption ?? '')}" placeholder="what this frame shows"/></label>` +
+    `<input id="p-caption" value="${esc(page.caption ?? '')}" placeholder="what this page shows"/></label>` +
     `<div class="insp-row emph-ctl"><span>Emphasis</span><span class="insp-btns">` +
     `<span class="insp-val data" id="p-emph-count">${emph.size} of ${total}</span>` +
     // The two buttons are one item of the row: they wrap under the count
@@ -132,7 +132,7 @@ function storyRows(ctx: InspectorContext): string {
     `<button type="button" class="btn btn-sm btn-ghost" id="p-emph-clear" aria-label="Clear emphasis"${emph.size ? '' : ' disabled'}>Clear</button>` +
     `</span></span></div>` +
     `<div class="emph-picker" id="p-emph-picker"${picker.open ? '' : ' hidden'}>` +
-    `<div class="insp-hint">Tick elements to spotlight; the rest dim. Or right-click a selection → “Emphasize on this frame”.</div>` +
+    `<div class="insp-hint">Tick elements to spotlight; the rest dim. Or right-click a selection → “Emphasize on this page”.</div>` +
     list +
     `</div>`
   );

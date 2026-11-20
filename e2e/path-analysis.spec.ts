@@ -82,7 +82,7 @@ test('tracing a path spotlights it without changing the document', async ({
   expect(await spotlit(page)).toEqual([]);
 });
 
-test('the route can be kept as emphasis, as a flow, or as a new frame', async ({
+test('the route can be kept as emphasis, as a flow, or as a new page', async ({
   page,
 }) => {
   await bootEditor(page);
@@ -122,9 +122,9 @@ test('the route can be kept as emphasis, as a flow, or as a new frame', async ({
   expect(doc.pages[1]!.name).toBe('Path: User -> App · 3 hops');
   expect(doc.pages[1]!.caption).toBe(TITLE);
   expect([...(doc.pages[1]!.emphasis as string[])].sort()).toEqual(ROUTE);
-  // The frame it was made from is as it was.
+  // The page it was made from is as it was.
   expect(doc.pages[0]!.emphasis ?? null).toBeNull();
-  // The new frame is the one on show, drawn with its own emphasis.
+  // The new page is the one on show, drawn with its own emphasis.
   expect(await spotlit(page)).toEqual(ROUTE);
 });
 
@@ -137,7 +137,7 @@ test('two nodes with no drawn path between them say why', async ({ page }) => {
     'No drawn path joins User and Sensor.',
   );
   await expect(bar(page).locator('.path-notes')).toHaveText(
-    'Sensor has no usable link on this frame.',
+    'Sensor has no usable link on this page.',
   );
   // Nothing to keep: only "trace the other way" and close are offered.
   for (const key of ['keep', 'flow', 'frame'])
@@ -198,4 +198,36 @@ test('the context menu offers it for two nodes, and only for two', async ({
   await expect(bar(page).locator('.path-title')).toHaveText(
     'Path: Internet -> User · 3 hops via SRX, EC-Branch',
   );
+});
+
+// Find and the path bar float over the canvas: under the top bar, and never
+// over the rail, the node library or the properties panel.
+test('Find and the path bar sit over the canvas, clear of the panels', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const clear = async (selector: string): Promise<void> => {
+    const box = (await page.locator(selector).boundingBox())!;
+    const lib = (await page.locator('#palette').boundingBox())!;
+    const props = (await page.locator('#inspector-wrap').boundingBox())!;
+    const top = (await page.locator('.topbar').boundingBox())!;
+    expect(box.y, `${selector} under the top bar`).toBeGreaterThanOrEqual(
+      top.y + top.height,
+    );
+    expect(box.x, `${selector} clear of the library`).toBeGreaterThanOrEqual(
+      lib.x + lib.width,
+    );
+    expect(
+      box.x + box.width,
+      `${selector} clear of the properties panel`,
+    ).toBeLessThanOrEqual(props.x);
+  };
+  await selectPair(page, 'user', 'app');
+  await page.locator('#i-path').click();
+  await expect(bar(page)).toBeVisible();
+  await clear('.path-bar');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+f');
+  await expect(page.locator('.find')).toBeVisible();
+  await clear('.find');
 });

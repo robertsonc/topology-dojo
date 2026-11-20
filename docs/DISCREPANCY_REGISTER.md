@@ -226,3 +226,116 @@ Still open from earlier follow-ups, re-checked this run: the
 `worker/env.ts` and `worker/workspace-tools.ts` comments (and the test helper
 `src/testing/worker-fixtures.ts`) still say "the eight workspace MCP tools";
 `WORKSPACE_TOOL_NAMES` has 11. Code comments, not edited.
+
+## Follow-up: 2026-11-19
+
+Documentation pass for PRs #326 and #327 (both merged 2026-11-19, as `e9d0d7f`
+and `d224979`) and for PR #328. Checked against the tree
+at `d224979` and, for the compact layout, at `d24f6a4`. Each item says how it
+is known; **Confirmed** means read in the code, in `git log` or in the running
+app this run.
+
+| #   | Document                                                                                                                                                                                                            | Section                                                                          | Current claim                                                                                                                                                                                                                                                                                                                                      | Actual repository state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Required correction                                                                                                                                                                                                                                                                                                                                                                                                             | Severity   | Evidence                                                                                                                                                        |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 21  | `docs/proposals/0013-ui-overhaul.md`                                                                                                                                                                                | Status header                                                                    | "P1 (shell), P2 (properties panel), P3 (skin sweep) and P4 (guardrails) have not changed a surface"; PR #327 is a draft                                                                                                                                                                                                                            | Confirmed: `git log` has PR #327 merged as `d224979`; the tree has the top bar and menus (`src/ui/menus.ts`), the rail, pages bar and zoom control (`src/styles/shell.css`), the palette (`src/ui/palette-sources.ts`) and the tabbed panel (`src/ui/inspector/`).                                                                                                                                                                                                                                                                                                                                         | Header rewritten 2026-11-19 with a status line for each phase.                                                                                                                                                                                                                                                                                                                                                                  | **High**   | `git log --oneline e9d0d7f..d224979`; `ls src/ui/inspector`                                                                                                     |
+| 22  | `docs/HANDOFF.md`, `docs/ROADMAP.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/launch-readiness/QA_TEST_PLAN.md` §7.15–§7.16, `TRACEABILITY_MATRIX.md` REQ-032, REQ-033, `docs/CAPABILITY_MATRIX.md` row for the chrome | Status passages for proposal 0013                                                | PR #327 is a draft and not merged; until it merges `main` has no command registry; no surface of P1–P4 has changed                                                                                                                                                                                                                                 | Confirmed: merged as `d224979` (a given fact of this pass, and `git log`). `src/ui/commands.ts` and the shell are on the tree.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Corrected 2026-11-19. HANDOFF keeps its older dated notes and marks them superseded in a new note; the roadmap, plan, QA plan, traceability and matrix passages were edited in place.                                                                                                                                                                                                                                           | **High**   | `git log --oneline d224979 -1`; `grep -rn "draft" docs/HANDOFF.md docs/ROADMAP.md`                                                                              |
+| 23  | `docs/launch-readiness/QA_TEST_PLAN.md` EDT-40, EDT-43, EDT-44; `TRACEABILITY_MATRIX.md` REQ-032, REQ-033; `docs/CAPABILITY_MATRIX.md`                                                                              | Rows that name controls                                                          | "The toolbar … docked"; "the toolbar button" opens the shortcut sheet; the sheet is grouped "… View, Frames, Help"; the flipbook export is a `#fExport` option of the browser toolbar                                                                                                                                                              | Confirmed: the toolbar is gone (`src/main.ts` builds `#topbar`); the sheet is opened by the rail's `#tHelp` and its group is "Pages" (`e2e/command-surfaces.spec.ts`); `#fExport` does not exist and `file.export.flipbook` is a menu command; test counts in EDT-34, EDT-35 and EDT-43 were older than the specs.                                                                                                                                                                                                                                                                                         | Corrected 2026-11-19; the counts are `test(` declarations at `d24f6a4`. In `CAPABILITY_MATRIX.md` the rows for PDF, copy-as-image, draw.io, Visio, PowerPoint and Mermaid export and the Share dialog still cited `#fExport` or a `#fShare` toolbar button; they were corrected later the same day to name `#fExport` as the control before PR #327 and the Export button, **File → Export** and the top bar's `#fShare` since. | **Medium** | `grep -n fExport src/main.ts`; `grep -cE "^\s*test\(" e2e/*.spec.ts`                                                                                            |
+| 24  | `docs/proposals/0013-ui-overhaul.md`                                                                                                                                                                                | Target layout; "Where every toolbar control goes"; Properties panel; "Done when" | The text as first written: Ctrl+K absorbs Find and quick-add; "page" everywhere; the anchor box and Distribute ends are visible on selecting a node with no clicks; Problems entries open the tab and field; preferences are linked from the agent panel; the problem-badge toggle is in the Problems header; on phones the rail is a bottom strip | Confirmed: none of these holds on the tree (Find and quick-add are unchanged; "frame" remains in the Find box, the presentation controls and the shortcut sheet's Presentation rows, the path bar and the path analysis messages, the Page tab's Story hint, Caption placeholder and empty-list line, the Analyze path tooltip and the delete-page confirmation; the node override's fields need the switch on; a jump shows the Selection tab only; the preferences are in the account menu only; badges are in View only; the rail stays a left column at 390 px). The proposal text is kept as written. | Recorded in the proposal's section "What P1 and P2 changed from this text". No code changed.                                                                                                                                                                                                                                                                                                                                    | **Medium** | The section's own evidence lines; `grep -rin frame src/main.ts src/ui`                                                                                          |
+| 25  | `docs/proposals/0013-ui-overhaul.md` (P3) and `docs/futures/light-theme-contrast.md`                                                                                                                                | P3: "Light theme contrast pass (see …)"                                          | The linked document is the plan for the light-theme contrast pass of the chrome                                                                                                                                                                                                                                                                    | Confirmed: the document is about the rendered output (`render_svg`, exports; PR #289) and its outcome says nothing of the editor chrome. The chrome's contrast is guarded by token tests (`src/styles/styles.test.ts`, "token contrast"), not by a per-surface check.                                                                                                                                                                                                                                                                                                                                      | A dated note on the futures document says so; the proposal's P3 status line says what is and is not checked.                                                                                                                                                                                                                                                                                                                    | **Low**    | `docs/futures/light-theme-contrast.md` "Outcome"                                                                                                                |
+| 26  | `docs/launch-readiness/FINDINGS_REGISTER.md`                                                                                                                                                                        | November 2026 review: QA-2026-11-14-UI-01, A11Y-01, A11Y-02                      | UI-01 open: the toolbar is wider than the window below about 1,850 px; A11Y-01 open: the context menu has no keyboard trigger; A11Y-02 open: toggles expose no pressed state                                                                                                                                                                       | Confirmed: the toolbar is replaced by a 44 px top bar that does not scroll sideways at 1,024 to 1,920 px (`e2e/shell-menus.spec.ts`; measured in the dev server 2026-11-19); Shift+F10 and the menu key open the context menu (`e2e/shell-menus.spec.ts`); the tool, grid, snap, Calm, library and minimap toggles expose `aria-pressed` and the pages toggle `aria-expanded` (measured). Still open: the properties toggle has neither; canvas elements still cannot be reached from the keyboard (not re-tested); placeholders of the title and palette fields were not measured.                        | Closure notes added to the findings register 2026-11-19: UI-01 closed; A11Y-01 and A11Y-02 part closed.                                                                                                                                                                                                                                                                                                                         | **Medium** | `e2e/shell-menus.spec.ts` ("the top bar never scrolls sideways at ${width}px, signed in"; "Shift+F10 and the menu key open the context menu from the keyboard") |
+| 27  | `docs/EXPORTS.md`; `docs/launch-readiness/UAT_PLAN.md` UAT-PR-01 step 7                                                                                                                                             | Prose that names the old toolbar                                                 | "the editor toolbar (**svg**, **png**, and the **export…** menu)"; "the **sign in** chip in the toolbar"                                                                                                                                                                                                                                           | Confirmed: there is no toolbar; exports are in **File → Export** and the Export button, and the sign-in chip is in the top bar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Not edited in this pass (outside the documents it covered). Open.                                                                                                                                                                                                                                                                                                                                                               | **Low**    | `grep -n toolbar docs/EXPORTS.md docs/launch-readiness/UAT_PLAN.md`                                                                                             |
+
+Resolved since an earlier follow-up: none of the open items of 2026-11-16 was
+touched by this pass. The "nine Chromium spec files as of `e99b012`" claim
+(row 20) is still a dated claim; `e2e/` holds 37 spec files at `d24f6a4`.
+
+Open in the product, found while writing these documents (code not changed; the
+proposal's status lines carry the detail):
+
+- Surfaces still in the old skin: the Share dialog, the presentation controls,
+  the shortcut sheet's close button and the path bar use `.tbtn`; seven
+  `font-size` rules under 12 px remain (`NOT_YET` in
+  `src/styles/styles.test.ts`); several surfaces set `color: var(--accent)` as
+  text instead of `--accent-fg` (`grep -rn "color: var(--accent)" src/styles`).
+  Whether those fall under 4.5 : 1 was not measured.
+- Guardrails not built: a cap on the top bar's controls, and the one-time "what
+  moved" note. What exists is the 12 px ratchet and the properties panel's
+  layout spec.
+- A jump from a Problems entry shows the Selection tab but does not open the
+  section or focus the field; the tabs' `reveal` function is not called by the
+  shell.
+- Two or more nodes have no shared fields in the panel (QA-2026-11-14-UI-04,
+  re-checked: still open).
+- A new page is still named "Frame N", and the Find box, the presentation
+  controls and the shortcut sheet's Presentation rows, the path bar and the
+  path analysis messages, the Page tab's Story hint (which names the
+  context-menu item "Emphasize on this frame"; the item is "Emphasize on this
+  page"), its Caption placeholder and empty-list line, the Analyze path
+  tooltip and the delete-page confirmation say "frame".
+
+## Follow-up: 2026-11-19, second pass (PR #328)
+
+The documents were checked again against PR #328's branch at `61e4d7e` (the
+code of the later slices for PR #328). "Closed" below means closed by PR #328's
+code at that commit: before PR #328, `main` had what the first pass of
+2026-11-19 recorded. Each item says how it is known.
+
+Closed by PR #328:
+
+- Row 27 (`docs/EXPORTS.md`, UAT-PR-01 step 7 naming the toolbar): both
+  corrected in this pass; `grep -n -i toolbar docs/EXPORTS.md
+docs/launch-readiness/UAT_PLAN.md` finds nothing in them.
+- "Surfaces still in the old skin": `grep -rn tbtn src e2e` finds nothing,
+  `src/styles/toolbar.css` is deleted, `NOT_YET` is gone from
+  `src/styles/styles.test.ts`, and no stylesheet sets text or an icon in
+  `color: var(--accent)` (what remains of `var(--accent)` is borders and
+  `accent-color`). Confirmed by those commands this pass. Whether each surface
+  reaches 4.5 : 1 was measured in a browser while it was converted; the token
+  contrast is asserted, the surfaces' is not (see below).
+- "Guardrails not built": the control budgets, the text-size walk and the
+  sideways-scroll test are `e2e/shell-budget.spec.ts` and
+  `src/ui/shell-budget.test.ts`; the "what moved" note is
+  `src/ui/shell-note.ts`. Confirmed in the tree; an extra top-bar button and a
+  rule setting text at 11 px each fail a unit test (tried this pass).
+- "A jump from a Problems entry ... does not open the section or focus the
+  field": `problemField` and `revealProblemField` do, and a page or document
+  problem calls `InspectorTabs.reveal` (`e2e/problems-panel.spec.ts`, "a jump
+  to a problem about a field opens its section and focuses it").
+- Row 24, "page everywhere": the Find box, the presentation bar and the
+  shortcut sheet's Presentation rows, the path bar and its messages, the Page
+  tab's hints, the Analyze path tooltip and the delete-page confirmation say
+  page (`grep -rn -i frame src/main.ts src/ui` finds code comments, command
+  ids, CSS classes, a storage key and the default page name "Frame N").
+- `docs/futures/light-theme-contrast.md` keeps its body about the rendered
+  output; a dated update for the chrome was added at its end.
+- A11Y-02's "panel toggles expose no expanded state": the properties toggle has
+  `aria-controls` and `aria-expanded` (`e2e/shell-inspector-tabs.spec.ts`).
+  The register row itself is not edited: its other parts (tool toggles'
+  pressed state, the muted-text token) were not re-checked.
+- The user guide said the shared-copy banner's buttons were "keep this copy",
+  "back to my document" and "unpublish link", and the Share dialog's "copy"
+  and "revoke"; the banner's text had been sentence case since `4fd8ed1`.
+  Corrected to the labels in the tree.
+
+Open, found in this pass and not fixed:
+
+- No test asserts the contrast of the surfaces in the light theme or of the
+  present bar; EDT-71 is manual.
+- The disabled Selection tab is drawn at `opacity: 0.4`
+  (`.tab[aria-disabled='true']` in `src/styles/controls.css`), which puts its
+  text below 4.5 : 1. It is `aria-disabled`, and WCAG exempts a disabled
+  control from the text contrast rule; the text-size walk does not check
+  contrast, so nothing flags it.
+- The Display settings popover keeps its two choices (Ambient backdrop and
+  Wheel) as selects, not as `.seg`, because specs drive them with
+  `selectOption`.
+- The workspace-sync spec "a commit the server refuses stops retrying and
+  shows the reason" took 19.6 s in this pass's CI-settings run (19.7 s in the
+  earlier slice's), within 0.4 s of the 20 s limit the QA plan now sets
+  (§10.2); the ten slowest tests are in the QA plan's §4.4.
+- SVG animation drawn by `src/render-svg` and the editor's pulses is outside
+  the stylesheets, so the new duration test does not cover it.
+- Code comments in `src/main.ts` still say "frame" for what the shell calls a
+  page (for example the Find section's header comment); not edited.
+- Rows 21 to 26 above keep their first-pass text: they record what the
+  documents said and what `main` had then.

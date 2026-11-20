@@ -9,6 +9,7 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  inspectorSection,
   inspectorTab,
   nodeBox,
   openFixture,
@@ -89,6 +90,27 @@ test('one node with type options fits on a page with the anchor box on', async (
   }
 });
 
+test('a node with its own link attachment fits without scrolling', async ({
+  page,
+}) => {
+  // The override adds the node's padding and ends under its switch; with a
+  // type options section too (ec, user) this is a node's longest default
+  // view.
+  for (const id of ['fw', 'ec', 'user']) {
+    await clickNode(page, id);
+    const override = page.locator('#inspector input[data-key="linkAttach"]');
+    await override.check();
+    await expect(
+      page.locator('#inspector input[data-key="linkAttach.pad"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('#inspector input[data-key="linkAttach.distribute"]'),
+    ).toBeVisible();
+    await expectFits(page, `node ${id}, its own link attachment`);
+    await page.keyboard.press('Escape');
+  }
+});
+
 test('one link fits without scrolling', async ({ page }) => {
   await clickLink(page, 'ec-fw');
   await expect(page.locator('#insp-tab-selection')).toHaveText('Link');
@@ -133,6 +155,48 @@ test('nothing inside the panel scrolls on its own, the emphasis list included', 
   expect(await nestedScrollers(page)).toEqual([]);
   await clickLink(page, 'ec-fw');
   expect(await nestedScrollers(page)).toEqual([]);
+});
+
+test('nothing inside the panel scrolls on its own for the other selections', async ({
+  page,
+}) => {
+  // The states the test above does not reach: two nodes, a node with its
+  // own link attachment and its colour popover open, an anchor, and a zone
+  // with its member picker. Every state the panel draws is then covered.
+  await selectTwoNodes(page);
+  expect(await nestedScrollers(page), 'two nodes').toEqual([]);
+  await page.keyboard.press('Escape');
+
+  await clickNode(page, 'ec');
+  await page.locator('#inspector input[data-key="linkAttach"]').check();
+  await page.locator('#inspector [data-colour-open]').first().click();
+  await expect(page.locator('#inspector .colour-pop:visible')).toHaveCount(1);
+  expect(
+    await nestedScrollers(page),
+    'a node, its link attachment and colour popover',
+  ).toEqual([]);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  // An anchor, dropped with the anchor tool on an empty part of the canvas.
+  const canvas = (await page.locator('#page-canvas').boundingBox())!;
+  await page.keyboard.press('A');
+  await page.mouse.click(canvas.x + canvas.width / 2, canvas.y + 40);
+  await expect(page.locator('#insp-tab-selection')).toHaveText('Anchor');
+  expect(await nestedScrollers(page), 'an anchor').toEqual([]);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  await openFixture(page, 'zone-orthogonal.json');
+  const z = await page.evaluate(() => {
+    const svg = document.querySelector('#overlay') as SVGSVGElement;
+    const p = new DOMPoint(400, 280).matrixTransform(svg.getScreenCTM()!);
+    return { x: p.x, y: p.y };
+  });
+  await page.mouse.click(z.x, z.y);
+  await expect(page.locator('#insp-tab-selection')).toHaveText('Zone');
+  await expect(page.locator('#inspector .refadd')).toBeVisible();
+  expect(await nestedScrollers(page), 'a zone').toEqual([]);
 });
 
 /**
@@ -218,7 +282,7 @@ test('at the minimum width the tabs read in full and nothing runs off the side',
     )
     .toBe(240);
   // The toggle keeps its word as its name, and its tooltip.
-  await expect(page.locator('#inspector-toggle')).toHaveText('hide');
+  await expect(page.locator('#inspector-toggle')).toHaveText('Hide');
   await expect(page.locator('#inspector-toggle')).toHaveAttribute(
     'title',
     'Hide properties (P)',
@@ -278,3 +342,245 @@ test('a section header’s focus ring is drawn inside the panel’s scroll box',
   expect(ring.style).not.toBe('none');
   expect(ring.left).toBeGreaterThanOrEqual(ring.panelLeft);
 });
+
+// A phone's properties drawer is narrow: a number keeps every digit (the
+// canvas width read "105" for 1050). On a phone the spin buttons step aside;
+// where they show, they take 15px of the field.
+for (const width of [320, 390]) {
+  test(`on a phone the canvas size fields show every digit at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await bootEditor(page);
+    await page.locator('#inspector-toggle').click();
+    await inspectorTab(page, 'page');
+    for (const id of ['#p-w', '#p-h']) {
+      const field = page.locator(id);
+      await field.hover();
+      await field.focus();
+      const room = await field.evaluate((el) => {
+        const input = el as HTMLInputElement;
+        const cs = getComputedStyle(input);
+        const probe = document.createElement('span');
+        probe.style.font = cs.font;
+        probe.style.position = 'absolute';
+        probe.style.whiteSpace = 'pre';
+        probe.textContent = input.value;
+        document.body.append(probe);
+        const text = probe.getBoundingClientRect().width;
+        probe.remove();
+        const spin = cs.appearance === 'textfield' ? 0 : 15;
+        const inner =
+          input.clientWidth -
+          parseFloat(cs.paddingLeft) -
+          parseFloat(cs.paddingRight) -
+          spin;
+        return { value: input.value, text, inner };
+      });
+      expect(room.value.length).toBeGreaterThan(0);
+      expect(room.text, `${id} "${room.value}"`).toBeLessThanOrEqual(
+        room.inner,
+      );
+    }
+  });
+}
+
+/** The chosen words of a select, and the room its box leaves them beside
+ * the arrow (Chromium draws the arrow in about 20px at the right). */
+async function selectRoom(
+  page: Page,
+  selector: string,
+): Promise<{ words: string; text: number; inner: number }> {
+  return page.locator(selector).evaluate((el) => {
+    const select = el as HTMLSelectElement;
+    const cs = getComputedStyle(select);
+    const probe = document.createElement('span');
+    probe.style.font = cs.font;
+    probe.style.position = 'absolute';
+    probe.style.whiteSpace = 'pre';
+    probe.textContent = select.selectedOptions[0]?.text ?? '';
+    document.body.append(probe);
+    const text = probe.getBoundingClientRect().width;
+    probe.remove();
+    const inner =
+      select.clientWidth -
+      parseFloat(cs.paddingLeft) -
+      parseFloat(cs.paddingRight) -
+      20;
+    return { words: probe.textContent, text, inner };
+  });
+}
+
+// A choice that shares its row with a number keeps room for its words: the
+// link's Routing read "orthogon" beside its corner radius.
+test('a link’s Routing choice shows its words in full', async ({ page }) => {
+  await openFixture(page, 'zone-orthogonal.json');
+  await clickLink(page, 'orth');
+  const room = await selectRoom(
+    page,
+    '#inspector select[data-key="lineStyle"]',
+  );
+  expect(room.words).toBe('orthogonal');
+  expect(room.text).toBeLessThanOrEqual(room.inner);
+  // Its corner radius still sits beside it.
+  const radius = (await page
+    .locator('#inspector input[data-key="cornerRadius"]')
+    .boundingBox())!;
+  const routing = (await page
+    .locator('#inspector select[data-key="lineStyle"]')
+    .boundingBox())!;
+  expect(Math.abs(radius.y - routing.y)).toBeLessThan(1);
+});
+
+// On a phone a choice takes the drawer's width under its label: a node's
+// Status read "None (no indica" in the control column.
+test('on a phone a choice in the properties drawer shows its words in full', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootEditor(page);
+  await page.locator('#inspector-toggle').click();
+  await inspectorTab(page, 'page');
+  const ports = await selectRoom(page, '#p-portlabels');
+  expect(ports.text, ports.words).toBeLessThanOrEqual(ports.inner);
+  await page.locator('#inspector-toggle').click();
+  await clickNode(page, 'fw');
+  await page.locator('#inspector-toggle').click();
+  await expect(page.locator('#insp-tab-selection')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  const status = await selectRoom(page, '#inspector select[data-key="status"]');
+  expect(status.words).toBe('None (no indicator)');
+  expect(status.text).toBeLessThanOrEqual(status.inner);
+});
+
+// The last tab ran 4px under Hide: a press on its right edge closed the
+// panel.
+for (const width of [240, 300, 480]) {
+  test(`no tab runs under the Hide button at a ${width}px panel`, async ({
+    page,
+  }) => {
+    await page.evaluate(
+      (w) => localStorage.setItem('tds-inspector-width', String(w)),
+      width,
+    );
+    await page.reload();
+    await expect(page.locator('#page-canvas')).toBeVisible();
+    const hide = (await page.locator('#inspector-toggle').boundingBox())!;
+    for (const tab of await page.locator('.insp-tabs > .tab').all()) {
+      const box = (await tab.boundingBox())!;
+      expect(box.x + box.width, await tab.innerText()).toBeLessThanOrEqual(
+        hide.x,
+      );
+    }
+  });
+}
+
+/** Each choice and number named, by the words it shows (a field's
+ * placeholder when it is empty), whose words its box cuts short. */
+async function cutChoices(page: Page, selectors: string[]): Promise<string[]> {
+  const cut: string[] = [];
+  for (const selector of selectors) {
+    const found = await page.locator(selector).evaluate((el) => {
+      const field = el as HTMLSelectElement | HTMLInputElement;
+      const cs = getComputedStyle(field);
+      const words =
+        field instanceof HTMLSelectElement
+          ? (field.selectedOptions[0]?.text ?? '')
+          : field.value || field.placeholder;
+      const probe = document.createElement('span');
+      probe.style.font = cs.font;
+      probe.style.position = 'absolute';
+      probe.style.whiteSpace = 'pre';
+      probe.textContent = words;
+      document.body.append(probe);
+      const text = probe.getBoundingClientRect().width;
+      probe.remove();
+      // A select draws its arrow in about 20px at the right.
+      const inner =
+        field.clientWidth -
+        parseFloat(cs.paddingLeft) -
+        parseFloat(cs.paddingRight) -
+        (field instanceof HTMLSelectElement ? 20 : 0);
+      return text <= inner
+        ? ''
+        : `"${words}" (${Math.round(text)}px in ${Math.round(inner)}px)`;
+    });
+    if (found) cut.push(`${selector}: ${found}`);
+  }
+  return cut;
+}
+
+// In a narrow panel (the 240px docked minimum, and the phone drawers) no
+// choice is cut short: the selection header's type picker with the longest
+// type name, a node's Status, the Page tab's Port labels, a link's two ends,
+// its Routing and its corner radius.
+for (const size of [
+  { width: 1440, height: 900, panel: 240 },
+  { width: 390, height: 844 },
+  { width: 320, height: 640 },
+]) {
+  const where = size.panel
+    ? `a ${size.panel}px panel`
+    : `a ${size.width}px phone`;
+  test(`in ${where} no choice in the properties panel is cut short`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    if (size.panel)
+      await page.evaluate(
+        (w) => localStorage.setItem('tds-inspector-width', String(w)),
+        size.panel,
+      );
+    await page.reload();
+    await expect(page.locator('#page-canvas')).toBeVisible();
+    const phone = !size.panel;
+    const panel = page.locator('#inspector-wrap');
+    const setPanel = async (open: boolean) => {
+      const shut = await panel.evaluate((el) =>
+        el.classList.contains('collapsed'),
+      );
+      if (shut === open) await page.locator('#inspector-toggle').click();
+    };
+
+    // The longest type name in the catalogue.
+    if (phone) {
+      await setPanel(false);
+      await page.locator('#palette-toggle').click();
+    }
+    await page.locator('.pitem[data-type="switchEnterprise"]').first().click();
+    if (phone) {
+      await page.locator('#palette-toggle').click();
+      await setPanel(true);
+    }
+    await inspectorTab(page, 'selection');
+    await expect(page.locator('#i-type')).toHaveValue('switchEnterprise');
+    await inspectorSection(page, 'Style');
+    const cut = await cutChoices(page, [
+      '#i-type',
+      '#inspector select[data-key="status"]',
+    ]);
+    // The lock and More buttons stay in the header, in reach.
+    await expect(page.locator('#inspector [data-head="more"]')).toBeVisible();
+
+    await inspectorTab(page, 'page');
+    cut.push(...(await cutChoices(page, ['#p-portlabels'])));
+
+    if (phone) await setPanel(false);
+    await openFixture(page, 'zone-orthogonal.json');
+    await clickLink(page, 'orth');
+    if (phone) await setPanel(true);
+    await inspectorTab(page, 'selection');
+    await inspectorSection(page, 'Routing');
+    cut.push(
+      ...(await cutChoices(page, [
+        '#i-from',
+        '#i-to',
+        '#inspector select[data-key="lineStyle"]',
+        '#inspector input[data-key="cornerRadius"]',
+      ])),
+    );
+    expect(cut).toEqual([]);
+  });
+}

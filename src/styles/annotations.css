@@ -26,14 +26,6 @@
 .anno-group > summary.anno-group-h::-webkit-details-marker {
   display: none;
 }
-.anno-count {
-  padding: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-full);
-  background: var(--surface-front);
-  color: var(--fg);
-  font: 500 12px/16px var(--font-ui);
-}
 details.anno {
   display: flex;
   flex-direction: column;
@@ -65,13 +57,8 @@ details.anno > .anno-rows {
 details.anno .insp-row:not(.col):not(.wide) {
   grid-template-columns: calc(96px - 9px) minmax(0, 1fr);
 }
-.anno-k {
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  background: var(--surface-field);
-  color: var(--fg-weak);
-  font-size: 12px;
-}
+/* The kind of an annotation (zone, flow, policy) and the count of a group
+   are the shared .badge. */
 .anno-t {
   flex: 1;
   min-width: 0;

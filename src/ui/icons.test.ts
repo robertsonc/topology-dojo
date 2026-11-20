@@ -411,9 +411,14 @@ describe('the chrome sources', () => {
    */
   const KEPT_GLYPHS: Readonly<Record<string, string[]>> = {
     'main.ts': ['👁 shared copy', '✓ synced'],
+    // Each warning with the shorter forms the chip shows in a short bar.
     'ui/save-status.ts': [
       '⚠ not saved — download JSON',
+      '⚠ not saved',
+      '⚠',
       '⚠ changed in another tab — load it',
+      '⚠ newer copy',
+      '⚠',
       '✓ saved · shared copy',
       '✓ saved',
     ],
@@ -428,6 +433,8 @@ describe('the chrome sources', () => {
     ],
     // The arrow keys as the shortcut sheet prints them, one each.
     'ui/commands.ts': ['←', '→', '↑', '↓'],
+    // A warning's mark alone, where the top bar is shortest (kept, as above).
+    'ui/save-status.ts': ['⚠', '⚠'],
   };
 
   it('finds a glyph in a string, and nothing in a comment', () => {

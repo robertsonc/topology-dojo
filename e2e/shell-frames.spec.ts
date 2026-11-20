@@ -147,3 +147,126 @@ test('the page chips work from the keyboard', async ({ page }) => {
   await expect(frameName(page, 1)).toHaveText('Core');
   await expect(chip(1)).toBeFocused();
 });
+
+test('adding, duplicating and deleting a page from the keyboard keeps the focus in the pages bar', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const chip = (index: number) =>
+    page.locator(`#filmstrip [data-page="${index}"] .frame-sel`);
+  // Add page and Duplicate page keep the focus on themselves, so the next
+  // Tab moves on in the bar's order.
+  await page.locator('#addPage').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('2/2');
+  await expect(page.locator('#addPage')).toBeFocused();
+  await page.locator('#dupPage').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('3/3');
+  await expect(page.locator('#dupPage')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#addPage')).toBeFocused();
+
+  // Deleting a page moves the focus to the chip that takes its place.
+  await page.locator('[data-del="1"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText(/\/2$/);
+  await expect(chip(1)).toBeFocused();
+  // Undo delete, once used, gives way to the current page's chip.
+  await page.locator('#undoDel').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText(/\/3$/);
+  await expect(page.locator('#undoDel')).toHaveCount(0);
+  await expect(
+    page.locator('#pagesBar .frame-sel[aria-current="page"]'),
+  ).toBeFocused();
+});
+
+test('after a pointer press on Add page or Duplicate page, Enter does not press it again', async ({
+  page,
+}) => {
+  await bootEditor(page);
+  const focusedTag = () => page.evaluate(() => document.activeElement?.tagName);
+  await page.locator('#addPage').click();
+  await expect(page.locator('#frames-ind')).toHaveText('2/2');
+  expect(await focusedTag()).toBe('BODY');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('2/2');
+  expect(await focusedTag()).toBe('BODY');
+
+  await page.locator('#dupPage').click();
+  await expect(page.locator('#frames-ind')).toHaveText('3/3');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#frames-ind')).toHaveText('3/3');
+  expect(await focusedTag()).toBe('BODY');
+});
+
+test('a page chip reached by Tab scrolls wholly into the strip, and a press does not scroll it', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await bootEditor(page);
+  for (let i = 1; i < 12; i++) await page.locator('#addPage').click();
+  await expect(page.locator('#frames-ind')).toHaveText('12/12');
+  await page.locator('#filmstrip [data-page="0"] .frame-sel').click();
+  await page.locator('#playFlip').focus();
+  const hidden: string[] = [];
+  for (let stop = 0; stop < 24; stop++) {
+    await page.keyboard.press('Tab');
+    // As it is drawn: a frame after the key.
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => done(null))),
+    );
+    const seen = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement;
+      const strip = document.getElementById('filmstrip')!;
+      if (!strip.contains(el)) return null;
+      const r = el.getBoundingClientRect();
+      const s = strip.getBoundingClientRect();
+      const left = s.left + strip.clientLeft;
+      const right = left + strip.clientWidth;
+      // The focus ring (2px, 2px out) included.
+      return r.left - 4 >= left - 0.5 && r.right + 4 <= right + 0.5
+        ? ''
+        : (el.getAttribute('aria-label') ?? el.textContent ?? '');
+    });
+    if (seen === null) break;
+    if (seen) hidden.push(seen);
+  }
+  expect(hidden).toEqual([]);
+
+  // Only the keyboard scrolls the strip. A pointer press on the visible edge
+  // of a delete button that is partly scrolled out, at either end, deletes
+  // that page: the strip does not move under the pointer before the release.
+  await page.locator('#filmstrip [data-page="0"] .frame-sel').click();
+  await expect(page.locator('#frames-ind')).toHaveText('1/12');
+  let count = 12;
+  for (const [side, nth] of [
+    ['right', 5],
+    ['left', 3],
+  ] as const) {
+    const at = await page.evaluate(
+      ([side, nth]) => {
+        const strip = document.getElementById('filmstrip')!;
+        const s = strip.getBoundingClientRect();
+        const left = s.left + strip.clientLeft;
+        const right = left + strip.clientWidth;
+        const x = strip.querySelectorAll<HTMLElement>('.frame-x')[nth]!;
+        // 12px of the button shows at that end of the strip.
+        const r0 = x.getBoundingClientRect();
+        if (side === 'right') strip.scrollLeft += r0.left + 12 - right;
+        else strip.scrollLeft += r0.right - 12 - left;
+        const r = x.getBoundingClientRect();
+        return {
+          x: side === 'right' ? right - 2 : left + 2,
+          y: r.top + r.height / 2,
+        };
+      },
+      [side, nth] as const,
+    );
+    await page.mouse.click(at.x, at.y);
+    count -= 1;
+    await expect(page.locator('#frames-ind'), side).toHaveText(`1/${count}`);
+  }
+});

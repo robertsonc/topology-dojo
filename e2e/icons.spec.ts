@@ -304,7 +304,7 @@ async function openAnnotatedDocument(page: Page): Promise<void> {
   await expect(page.locator('.layer-eye')).toHaveCount(2);
 }
 
-test('icons in the rest of the inspector, the bars and the frames strip', async ({
+test('icons in the rest of the inspector, the Arrange menu and the path bar', async ({
   page,
 }) => {
   await openAnnotatedDocument(page);
@@ -393,6 +393,19 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
   ).toBeVisible();
   expect(await iconProblems(page)).toEqual([]);
   await page.keyboard.press('Escape');
+});
+
+test('icons of a selected link, emphasis, the pages bar and the presentation', async ({
+  page,
+}) => {
+  await openAnnotatedDocument(page);
+  const iconOf = (selector: string): Promise<string | null> =>
+    page.locator(`${selector} .icon use`).first().getAttribute('href');
+  const colour = (selector: string): Promise<string> =>
+    page
+      .locator(selector)
+      .first()
+      .evaluate((el) => getComputedStyle(el).color);
 
   // A selected link: its mini bar, label compass and format row.
   await page.keyboard.press('Escape');
@@ -411,13 +424,17 @@ test('icons in the rest of the inspector, the bars and the frames strip', async 
   expect(await starFill()).toBe('none');
   await page.locator('#mbEmph').click();
   await expect(page.locator('#mbEmph')).toHaveClass(/\bon\b/);
-  expect(await starFill()).toBe(await colour('#mbEmph'));
+  // The button is the shared icon button, whose colour eases in: compare the
+  // two once it has settled.
+  await expect
+    .poll(async () => (await starFill()) === (await colour('#mbEmph')))
+    .toBe(true);
   expect(await iconProblems(page)).toEqual([]);
   await page.locator('#mbEmph').click();
   await expect(page.locator('#mbEmph')).not.toHaveClass(/\bon\b/);
   expect(await starFill()).toBe('none');
 
-  // The frames strip: a second frame brings the play button and the delete
+  // The pages bar: a second page brings the play button and the delete
   // crosses; deleting it leaves the undo chip.
   await page.locator('#addPage').click();
   await expect(page.locator('.frame-x .icon')).toHaveCount(2);
@@ -571,10 +588,10 @@ test('an icon swap keeps the words and the accessible name', async ({
   await palette.click();
 
   const inspector = page.locator('#inspector-toggle');
-  await expect(inspector).toHaveText('hide');
+  await expect(inspector).toHaveText('Hide');
   expect(await iconOf('#inspector-toggle')).toBe('#i-panel-right-close');
   await inspector.click();
-  await expect(inspector).toHaveText('props');
+  await expect(inspector).toHaveText('Properties');
   expect(await iconOf('#inspector-toggle')).toBe('#i-panel-right-open');
   await inspector.click();
 

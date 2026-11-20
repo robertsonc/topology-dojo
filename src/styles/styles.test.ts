@@ -88,7 +88,6 @@ describe('editor stylesheet', () => {
       '--status-info',
       '--surface-press',
       '--fg-disabled',
-      '--accent-fg',
     ]);
     const unused = declarations(TOKENS)
       .map((d) => d.prop)
@@ -159,25 +158,42 @@ describe('editor stylesheet', () => {
     expect(light).toMatch(/color-scheme: light;/);
   });
 
-  it('sets no text under 12px, outside the surfaces not converted yet', () => {
-    // The stylesheets that still carry small text, with how many
-    // declarations each has. A phase of the overhaul that converts a surface
-    // takes its file off this list; the count can only go down.
-    const NOT_YET: Record<string, number> = {
-      'canvas-overlays.css': 2,
-      'popovers.css': 2,
-      'present-share.css': 1,
-      'stage-palette.css': 2,
-    };
-    const small: Record<string, number> = {};
+  it('sets no text under 12px', () => {
+    const small: string[] = [];
     for (const d of all) {
       if (d.prop !== 'font-size' && d.prop !== 'font') continue;
       // In the shorthand the size is what comes before the line height.
       const size = d.prop === 'font' ? d.value.split('/')[0]! : d.value;
       for (const px of size.matchAll(/(?<![\w.-])(\d+(?:\.\d+)?)px/g))
-        if (Number(px[1]) < 12) small[d.file] = (small[d.file] ?? 0) + 1;
+        if (Number(px[1]) < 12) small.push(`${d.file}: ${d.prop}: ${d.value}`);
     }
-    expect(small).toEqual(NOT_YET);
+    expect(small).toEqual([]);
+  });
+
+  it('times every transition and animation with the duration tokens', () => {
+    // A literal time (`0.2s`, `150ms`) in a transition or an animation would
+    // drift from the motion scale in tokens.css.
+    const offenders = all
+      .filter(
+        (d) =>
+          /^(?:transition|animation)(?:-duration|-delay)?$/.test(d.prop) &&
+          /(?<![\w-])\d*\.?\d+m?s\b/.test(d.value),
+      )
+      .map((d) => `${d.file}: ${d.prop}: ${d.value}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it('draws warning and error text in their text tokens, not the canvas fills', () => {
+    // --status-warn and --status-error are fills (they are also drawn on the
+    // canvas) and are too pale for text in the light theme. Their text
+    // colours are --status-warn-fg and --status-error-fg.
+    const offenders = all
+      .filter(
+        (d) =>
+          d.prop === 'color' && /var\(--status-(?:warn|error)\)/.test(d.value),
+      )
+      .map((d) => `${d.file}: ${d.prop}: ${d.value}`);
+    expect(offenders).toEqual([]);
   });
 
   describe('token contrast (WCAG 2.1)', () => {
@@ -267,6 +283,9 @@ describe('editor stylesheet', () => {
       ['--status-info', [], 4.5],
       // 1.4.11: an outline that is the only edge of a control.
       ['--line-strong', [], 3],
+      // A colour swatch's fill can match the panel (a grey, a pale yellow):
+      // its edge is then the only thing that shows the control.
+      ['--swatch-edge', [], 3],
       ['--focus', TINTS, 3],
     ];
 
@@ -294,16 +313,10 @@ describe('editor stylesheet', () => {
         expect(low).toEqual([]);
       });
 
-      it(`${name}: ink on the accent and status fills reads`, () => {
-        for (const [ink, fill] of [
-          ['--on-accent', '--accent'],
-          ['--on-status', '--status-warn'],
-          ['--on-status', '--status-error'],
-        ] as const)
-          expect(
-            contrastRatio(hex(get(ink)), hex(get(fill)))!,
-            `${ink} on ${fill}`,
-          ).toBeGreaterThanOrEqual(4.5);
+      it(`${name}: ink on the accent fill reads`, () => {
+        expect(
+          contrastRatio(hex(get('--on-accent')), hex(get('--accent')))!,
+        ).toBeGreaterThanOrEqual(4.5);
       });
     }
   });

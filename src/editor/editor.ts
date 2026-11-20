@@ -1947,6 +1947,30 @@ export class Editor {
     return dot === null ? null : { id: dot };
   }
 
+  /**
+   * The box a sole selected node's quick-connect chevrons are drawn and
+   * pressed in, in user units, or null when the node shows none. The shell's
+   * selection bar keeps clear of it, so the bar never covers a chevron.
+   */
+  quickConnectBox(): {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  } | null {
+    if (this.tool !== 'select' || this.sel.size !== 1) return null;
+    const marks = this.chevrons([...this.sel][0]!);
+    if (marks.length === 0) return null;
+    // The glyph's halo and its press area, whichever reaches further.
+    const r = Math.max(this.chevronGrab(), this.dotRadius() * 2.25);
+    return {
+      left: Math.min(...marks.map((c) => c.x)) - r,
+      top: Math.min(...marks.map((c) => c.y)) - r,
+      right: Math.max(...marks.map((c) => c.x)) + r,
+      bottom: Math.max(...marks.map((c) => c.y)) + r,
+    };
+  }
+
   /** Nodes that show chevrons: the hovered node + a sole selected node. */
   private chevronNodeIds(): string[] {
     const ids = new Set<string>();
@@ -1965,7 +1989,7 @@ export class Editor {
       for (const c of this.chevrons(id)) {
         const rot = { n: 0, e: 90, s: 180, w: 270 }[c.dir];
         out +=
-          `<g transform="translate(${c.x},${c.y}) rotate(${rot})" opacity="0.85">` +
+          `<g data-qc="${c.dir}" transform="translate(${c.x},${c.y}) rotate(${rot})" opacity="0.85">` +
           `<circle r="${s * 1.5}" fill="${ACCENT}" fill-opacity="0.10"/>` +
           `<path d="M0,${-s} L${s * 0.85},${s * 0.6} L${-s * 0.85},${s * 0.6} Z" fill="${ACCENT}"/>` +
           `</g>`;

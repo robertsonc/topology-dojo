@@ -1530,8 +1530,8 @@ describe("the presentation's keys", () => {
     });
     const rows = HELP_GESTURES.find((s) => s.title === 'Presentation')!.rows;
     expect(rows).toEqual([
-      ['← / PageUp', 'Previous frame'],
-      ['→ / PageDown', 'Next frame'],
+      ['← / PageUp', 'Previous page'],
+      ['→ / PageDown', 'Next page'],
       ['Space', 'Play / pause'],
       ['Esc', 'Exit'],
     ]);
