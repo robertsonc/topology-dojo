@@ -443,24 +443,31 @@ function statusBarOverrun(
   );
 }
 
-test('on a phone the selection count steps aside only where the status bar would not fit', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 400, height: 700 });
-  const one = [{ id: 'a', type: 'host', x: 200, y: 200 }];
-  const many = Array.from({ length: 120 }, (_, k) => ({
-    id: `n${k}`,
-    type: 'host',
-    x: 150 + (k % 12) * 200,
-    y: 150 + Math.floor(k / 12) * 150,
-  }));
-  for (const [nodes, widths] of [
-    // One node: the fitted zoom has three digits.
-    [one, Array.from({ length: 81 }, (_, k) => 320 + k)],
-    // 120 nodes, all selected: the count has three digits too, and so has
-    // the count of problems.
-    [many, Array.from({ length: 41 }, (_, k) => 400 + k)],
-  ] as const) {
+const ONE_NODE = [{ id: 'a', type: 'host', x: 200, y: 200 }];
+const MANY_NODES = Array.from({ length: 120 }, (_, k) => ({
+  id: `n${k}`,
+  type: 'host',
+  x: 150 + (k % 12) * 200,
+  y: 150 + Math.floor(k / 12) * 150,
+}));
+for (const { name, nodes, widths } of [
+  {
+    name: 'one node, whose fitted zoom has three digits, from 320 to 400px',
+    nodes: ONE_NODE,
+    widths: Array.from({ length: 81 }, (_, k) => 320 + k),
+  },
+  {
+    // The count of problems has three digits too, and still leaves the zoom
+    // room at 320px.
+    name: '120 nodes selected, from 320 to 440px',
+    nodes: MANY_NODES,
+    widths: Array.from({ length: 121 }, (_, k) => 320 + k),
+  },
+]) {
+  test(`on a phone the selection count steps aside only where the status bar would not fit, with ${name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 400, height: 700 });
     await bootEditor(page);
     await page.evaluate((nodes) => {
       localStorage.setItem(
@@ -484,18 +491,16 @@ test('on a phone the selection count steps aside only where the status bar would
     for (const width of widths) {
       await page.setViewportSize({ width, height: 700 });
       const m = await statusBarOverrun(page);
-      expect(m.past, `${width}px, ${nodes.length} nodes`).toEqual([]);
-      expect(m.over, `${width}px, ${nodes.length} nodes`).toBeLessThanOrEqual(
-        0,
-      );
+      expect(m.past, `${width}px`).toEqual([]);
+      expect(m.over, `${width}px`).toBeLessThanOrEqual(0);
       if (m.selected) shown++;
     }
     // Where there is room the count is still there.
-    expect(shown, `${nodes.length} nodes`).toBeGreaterThan(0);
+    expect(shown).toBeGreaterThan(0);
     await page.setViewportSize({ width: 460, height: 700 });
     await expect(page.locator('#statusbar .sb-sel')).toBeVisible();
-  }
-});
+  });
+}
 
 test('with the properties panel closed the canvas column runs to the window edge', async ({
   page,

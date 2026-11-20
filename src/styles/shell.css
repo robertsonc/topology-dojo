@@ -1048,6 +1048,10 @@
   .statusbar .sb-sel {
     display: none;
   }
+  /* A three-digit count of problems still leaves the zoom its value. */
+  .statusbar .sb-problems {
+    padding: 0 4px;
+  }
 }
 
 /* A window under 480px tall (a laptop or a phone zoomed to 300% or 400%):
