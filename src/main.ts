@@ -672,9 +672,10 @@ const TOP_BAR_SQUEEZE = [
 const TOP_BAR_NAME_STEPS = TOP_BAR_SQUEEZE.indexOf('quiet');
 function fitSaveChip(): void {
   const bar = app.querySelector<HTMLElement>('#topbar')!;
-  /** Take the first `steps` steps one at a time; true once the bar has room. */
-  const squeezedFits = (steps: number): boolean => {
-    for (let i = 0; i <= steps; i++) {
+  /** Take the steps from `from` to `steps` one at a time; true once the bar
+   * has room. */
+  const squeezedFits = (steps: number, from = 0): boolean => {
+    for (let i = from; i <= steps; i++) {
       if (i === 0) delete bar.dataset.squeeze;
       else bar.dataset.squeeze = TOP_BAR_SQUEEZE.slice(0, i).join(' ');
       if (topBarRoomy(bar)) return true;
@@ -689,6 +690,11 @@ function fitSaveChip(): void {
       // A warning: its first words outlast the names beside it.
       savedEl.dataset.fit = 'short';
       if (squeezedFits(TOP_BAR_NAME_STEPS)) return;
+      // Its mark alone, with the names still aside: they never come back
+      // beside a warning that has given up its words.
+      savedEl.dataset.fit = 'mark';
+      squeezedFits(TOP_BAR_SQUEEZE.length, TOP_BAR_NAME_STEPS);
+      return;
     }
     savedEl.dataset.fit = 'mark';
   }
