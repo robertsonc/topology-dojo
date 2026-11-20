@@ -318,6 +318,16 @@ in 8.7 minutes, with none reported flaky. The slowest test took 10.0 seconds
 (`shell-inspector.spec.ts` "clearing a number field removes the property
 instead of storing 0"); the next, 8.8 seconds.
 
+The last run before the pull request was called complete, on 2026-11-20, on
+the code at `3f55102` (after three further rounds of review of the fixes
+themselves; the commit that follows it changes documentation only), with the
+same settings and nothing else using the machine: `npm run check:wrangler`,
+`npm run typecheck`, `npm run catalog:check`, `npm run lint` and
+`npm run build` passed; `npm test` passed, 216 files and 3,415 tests; and the
+browser suite passed all 384 tests in 9.3 minutes, with none reported flaky.
+The slowest test took 10.3 seconds (the same test as above); the next, 9.4
+seconds.
+
 ## 5. Exact automated release gates and commands
 
 From a clean checkout with Node 22:
