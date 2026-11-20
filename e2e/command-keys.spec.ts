@@ -579,7 +579,7 @@ test('with a menu, a popover or a dialog open, the undo and redo keys leave the 
   const next = page.locator('#inspector input[data-key="sublabel"]');
   const savedLabel = async (): Promise<string | undefined> =>
     (
-      (await readAutosave(page))?.pages[0].nodes as {
+      ((await readAutosave(page))?.pages[0]?.nodes ?? []) as {
         id: string;
         label?: string;
       }[]

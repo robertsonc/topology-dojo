@@ -252,7 +252,7 @@ test('a page chip reached by Tab scrolls wholly into the strip, and a press does
         const s = strip.getBoundingClientRect();
         const left = s.left + strip.clientLeft;
         const right = left + strip.clientWidth;
-        const x = strip.querySelectorAll<HTMLElement>('.frame-x')[nth];
+        const x = strip.querySelectorAll<HTMLElement>('.frame-x')[nth]!;
         // 12px of the button shows at that end of the strip.
         const r0 = x.getBoundingClientRect();
         if (side === 'right') strip.scrollLeft += r0.left + 12 - right;
