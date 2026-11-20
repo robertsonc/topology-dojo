@@ -502,6 +502,33 @@ for (const { name, nodes, widths } of [
   });
 }
 
+// Just above 700px every item shows, and with a selection and the pointer
+// over the canvas they do not all fit: the cursor and the minor counts step
+// aside, and the selection count stays.
+test('just above 700px a crowded status bar keeps the selection count', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 700 });
+  await bootEditor(page);
+  await page.mouse.click(400, 300);
+  await page.keyboard.press('Control+a');
+  for (const width of [710, 720, 730]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.mouse.move(420, 320);
+    const m = await statusBarOverrun(page);
+    expect(m.past, `${width}px`).toEqual([]);
+    expect(m.over, `${width}px`).toBeLessThanOrEqual(0);
+    await expect(
+      page.locator('#statusbar .sb-sel'),
+      `${width}px`,
+    ).toContainText('selected 7');
+    await expect(
+      page.locator('#statusbar .sb-sel'),
+      `${width}px`,
+    ).toBeVisible();
+  }
+});
+
 test('with the properties panel closed the canvas column runs to the window edge', async ({
   page,
 }) => {

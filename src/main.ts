@@ -2083,16 +2083,16 @@ function renderStatus(): void {
     statusProblemsHTML() +
     `<span class="sb-hint">drag move · wheel zoom · space/middle-drag pan · ? shortcuts</span>`;
   fitStatus(
-    `${editor.tool}|${p.nodes.length}|${p.links.length}|${sel}|${editor.zoom()}|${problemsView.statusLabel}`,
+    `${editor.tool}|${cur.length}|${p.nodes.length}|${p.links.length}|${p.anchors.length}|${p.zones.length}|${sel}|${editor.historyDepth()}|${editor.zoom()}|${problemsView.statusLabel}`,
   );
   refreshChrome();
 }
 /**
- * Besides the widths where the stylesheet always sets it aside, the
- * selection count steps aside wherever the status bar's items would not
- * otherwise all fit inside it, so the zoom at its end keeps its value. The
- * bar is measured again only when its width or what it shows (but the
- * cursor, which a narrow window hides) has changed.
+ * Where the status bar's items would not all fit inside it, some step aside
+ * so the zoom at its end keeps its value: first the ones a narrow window
+ * always hides (the cursor, the anchor, zone and history counts), then, if
+ * the bar is still short, the selection count. The bar is measured again
+ * only when its width or the size of what it shows has changed.
  */
 let statusWidth = 0;
 let statusFitKey = '';
@@ -2102,9 +2102,11 @@ function fitStatus(shows = statusShows): void {
   const key = `${statusWidth}|${shows}`;
   if (key === statusFitKey) return;
   statusFitKey = key;
-  statusbar.classList.remove('sb-crowded');
-  if (statusbar.scrollWidth > statusbar.clientWidth)
-    statusbar.classList.add('sb-crowded');
+  statusbar.classList.remove('sb-tight', 'sb-crowded');
+  const short = (): boolean => statusbar.scrollWidth > statusbar.clientWidth;
+  if (!short()) return;
+  statusbar.classList.add('sb-tight');
+  if (short()) statusbar.classList.add('sb-crowded');
 }
 new ResizeObserver((entries) => {
   statusWidth = entries[0]!.contentRect.width;

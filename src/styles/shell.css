@@ -1039,8 +1039,10 @@
   }
 }
 /* At 340px and less the selection count steps aside whether or not there
-   are problems; at any width it steps aside where the bar's items would not
-   all fit (the shell measures them), so the zoom keeps its value. */
+   are problems. At any width where the bar's items would not all fit (the
+   shell measures them), the cursor and the anchor, zone and history counts
+   step aside first, then the selection count, so the zoom keeps its value. */
+.statusbar.sb-tight .sb-minor,
 .statusbar.sb-crowded .sb-sel {
   display: none;
 }
