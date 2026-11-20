@@ -629,7 +629,8 @@ function showSaveText(text: string): void {
  * the account chip's name, the logo and the account chip's caret step aside.
  * Only if the bar is still short does a warning show its mark alone, and a
  * plain save's mark go, before the title goes under 120px (on a phone, 64px)
- * or a chip's name under three letters. On the narrowest phones, last,
+ * or a chip's name under three letters. Then the last export's report keeps
+ * only its icon. On the narrowest phones, last,
  * Export's caret, then Tidy, then Redo step aside too; both commands stay in
  * the menus and on their keys.
  */
@@ -654,15 +655,16 @@ function topBarRoomy(bar: HTMLElement): boolean {
   return true;
 }
 /** What steps aside, in turn, once the save chip has shortened. A warning
- * always shows. Only where the bar is still short of room once a plain
- * save's mark is gone do Export's caret, Tidy (Arrange ▸ Tidy) and Redo
- * (Edit ▸ Redo) give way. */
+ * always shows. Once a plain save's mark is gone the export's report keeps
+ * its icon alone; only where the bar is still short of room then do
+ * Export's caret, Tidy (Arrange ▸ Tidy) and Redo (Edit ▸ Redo) give way. */
 const TOP_BAR_SQUEEZE = [
   'workspace',
   'names',
   'brand',
   'caret',
   'quiet',
+  'report',
   'export-caret',
   'tidy',
   'redo',
@@ -1649,7 +1651,7 @@ const exportStatus = app.querySelector<HTMLElement>('#exportStatus')!;
  * reader: the chip is a polite live region). */
 function reportExport(kind: string, state: ExportState, detail?: string): void {
   const report = exportReport(kind, state, detail);
-  exportStatus.innerHTML = `${icon(report.icon)} ${esc(report.message)}`;
+  exportStatus.innerHTML = `${icon(report.icon)} <span class="export-words">${esc(report.message)}</span>`;
   exportStatus.title = report.detail;
   exportStatus.classList.toggle('export-ok', state === 'ok');
   exportStatus.classList.toggle('export-pending', state === 'pending');

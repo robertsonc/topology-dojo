@@ -15,6 +15,7 @@ import {
   bootEditor,
   clickLink,
   clickNode,
+  expectExported,
   menuCommand,
   newFromTemplate,
 } from './helpers.js';
@@ -513,6 +514,15 @@ async function failSave(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
 }
 
+/** Export the page as SVG from the command palette: the top bar then shows
+ * the export's report until the page is reloaded. */
+async function exportSvg(page: Page): Promise<void> {
+  await page.keyboard.press('Control+k');
+  await page.keyboard.type('Export page as SVG');
+  await page.keyboard.press('Enter');
+  await expectExported(page, 'svg');
+}
+
 // Each walk runs in three parts, so none takes long.
 for (const range of [
   { name: '320 to 999px', widths: WIDTHS.filter((w) => w < 1000) },
@@ -563,3 +573,40 @@ for (const range of [
     );
   });
 }
+
+// The last export's report stays on the top bar: where the bar is short it
+// keeps its icon, and the title still keeps its room.
+test('the document never scrolls sideways from 320 to 999px after an export, signed in under a long login', async ({
+  page,
+}) => {
+  await signIn(page, LONG_LOGIN);
+  await bootEditor(page);
+  await expect(page.locator('#userName')).toHaveText(LONG_LOGIN);
+  await saveTitle(page);
+  await exportSvg(page);
+  expect(
+    await overflowing(
+      page,
+      WIDTHS.filter((w) => w < 1000),
+    ),
+  ).toEqual([]);
+});
+
+test('the document never scrolls sideways from 320 to 999px after an export, signed in under a long login, with a save warning', async ({
+  page,
+}) => {
+  await signIn(page, LONG_LOGIN);
+  await bootEditor(page);
+  await expect(page.locator('#userName')).toHaveText(LONG_LOGIN);
+  await failSave(page);
+  await exportSvg(page);
+  expect(
+    await overflowing(
+      page,
+      WIDTHS.filter((w) => w < 1000),
+    ),
+  ).toEqual([]);
+  // Its words are still there for a screen reader where it shows its icon.
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(page.locator('#exportStatus')).toHaveText('exported svg');
+});

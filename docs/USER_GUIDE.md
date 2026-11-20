@@ -235,9 +235,11 @@ The editor is organized into six areas and a status bar.
    short, the workspace chip's name, then the account's name, the logo and
    the account chip's caret step aside; a warning keeps its words until they
    have, and only then shows its mark alone (**⚠**). On a phone the **✓** of
-   a save can go too (a warning always shows). On the narrowest phones (about 360px and
-   below, signed in) the caret on **Export**, then **Tidy**, then **Redo**
-   give way last, so the title keeps at least 64px; both commands stay in
+   a save can go too (a warning always shows). Then the report of the last
+   export, beside **Export**, keeps only its icon (its tooltip, and what a
+   screen reader says, keep the words). On the narrowest phones (about
+   360px and below, signed in) the caret on **Export**, then **Tidy**, then
+   **Redo** give way last, so the title keeps at least 64px; both commands stay in
    the menus (**Arrange → Tidy**, **Edit → Redo**) and on their keys.
 2. **Left rail.** A narrow column of icon buttons. At the top are the four
    tools: **Select/move tool**, **Hand / pan tool**, **Draw link tool** and
