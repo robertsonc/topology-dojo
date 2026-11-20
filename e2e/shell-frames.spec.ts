@@ -202,7 +202,7 @@ test('after a pointer press on Add page or Duplicate page, Enter does not press 
   expect(await focusedTag()).toBe('BODY');
 });
 
-test('a page chip reached by Tab scrolls wholly into the strip', async ({
+test('a page chip reached by Tab scrolls wholly into the strip, and a press does not scroll it', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -235,4 +235,38 @@ test('a page chip reached by Tab scrolls wholly into the strip', async ({
     if (seen) hidden.push(seen);
   }
   expect(hidden).toEqual([]);
+
+  // Only the keyboard scrolls the strip. A pointer press on the visible edge
+  // of a delete button that is partly scrolled out, at either end, deletes
+  // that page: the strip does not move under the pointer before the release.
+  await page.locator('#filmstrip [data-page="0"] .frame-sel').click();
+  await expect(page.locator('#frames-ind')).toHaveText('1/12');
+  let count = 12;
+  for (const [side, nth] of [
+    ['right', 5],
+    ['left', 3],
+  ] as const) {
+    const at = await page.evaluate(
+      ([side, nth]) => {
+        const strip = document.getElementById('filmstrip')!;
+        const s = strip.getBoundingClientRect();
+        const left = s.left + strip.clientLeft;
+        const right = left + strip.clientWidth;
+        const x = strip.querySelectorAll<HTMLElement>('.frame-x')[nth];
+        // 12px of the button shows at that end of the strip.
+        const r0 = x.getBoundingClientRect();
+        if (side === 'right') strip.scrollLeft += r0.left + 12 - right;
+        else strip.scrollLeft += r0.right - 12 - left;
+        const r = x.getBoundingClientRect();
+        return {
+          x: side === 'right' ? right - 2 : left + 2,
+          y: r.top + r.height / 2,
+        };
+      },
+      [side, nth] as const,
+    );
+    await page.mouse.click(at.x, at.y);
+    count -= 1;
+    await expect(page.locator('#frames-ind'), side).toHaveText(`1/${count}`);
+  }
 });

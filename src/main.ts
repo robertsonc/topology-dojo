@@ -2237,9 +2237,13 @@ strip.addEventListener(
 );
 
 // A chip's button that takes the keyboard focus scrolls wholly into the
-// strip, its focus ring with it, as the current page's chip does.
+// strip, its focus ring with it, as the current page's chip does. Only for the
+// keyboard: a press on the visible edge of a button that is partly scrolled
+// out must not move the strip under the pointer before the release, or the
+// click would land on the chip beside it.
 strip.addEventListener('focusin', (e) => {
   const el = e.target as HTMLElement;
+  if (!keyboardNav && !el.matches(':focus-visible')) return;
   const pad = 4; // the focus ring
   const reveal = (): void => {
     if (document.activeElement !== el) return;
