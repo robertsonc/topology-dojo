@@ -533,9 +533,11 @@ and the tree agree, nothing is listed. Short hashes name the commit.
   at 640 px and below (`src/styles/shell.css`). Where the bar is still short
   of room at any width, the save state beside the title shortens (a warning
   to its first words, then to its mark), then the workspace chip's name, the
-  account's name, the logo, the account chip's caret and, last, the mark of
-  a plain save step aside (`fitSaveChip` in `src/main.ts`), so the title and
-  the save state never run under Undo. Reason (`a0a6c42`, `59c30b0`, PR
+  account's name, the logo, the account chip's caret and the mark of a plain
+  save step aside, and, last, Export's caret, Tidy and Redo (both also in
+  the menus and on their keys) (`fitSaveChip` in `src/main.ts`), so the
+  title and the save state never run under Undo and the title keeps 64 px
+  on a phone down to 320 px. Reason (`a0a6c42`, `59c30b0`, PR
   #328): the bar never scrolls sideways, a long login had pushed the account
   chip off the bar between 1,101 and 1,161 px, and the save state, a failed
   save's warning above all, had been drawn over Undo, Redo and Tidy.

@@ -623,13 +623,14 @@ function showSaveText(text: string): void {
 }
 
 /**
- * The top bar never overlaps or drops a control: the title and the save chip
- * keep their own room. Where the bar runs short the save chip gives way first,
+ * The top bar never overlaps a control: the title and the save chip keep
+ * their own room. Where the bar runs short the save chip gives way first,
  * to its first words, then to its mark alone; then the workspace chip's name,
  * the account chip's name, the logo,
  * the account chip's caret and a plain save's mark step aside, before the
  * title goes under 120px (on a phone, 64px) or a chip's name under three
- * letters.
+ * letters. On the narrowest phones, last, Export's caret, then Tidy, then
+ * Redo step aside too; both commands stay in the menus and on their keys.
  */
 function topBarRoomy(bar: HTMLElement): boolean {
   if (bar.scrollWidth > bar.clientWidth + 1) return false;
@@ -651,14 +652,19 @@ function topBarRoomy(bar: HTMLElement): boolean {
       return false;
   return true;
 }
-/** What steps aside, in turn, once the save chip shows only its mark. A plain
- * save's mark is the last: a warning always shows. */
+/** What steps aside, in turn, once the save chip shows only its mark. A
+ * warning always shows. Only where the bar is still short of room once a
+ * plain save's mark is gone do Export's caret, Tidy (Arrange ▸ Tidy) and Redo
+ * (Edit ▸ Redo) give way. */
 const TOP_BAR_SQUEEZE = [
   'workspace',
   'names',
   'brand',
   'caret',
   'quiet',
+  'export-caret',
+  'tidy',
+  'redo',
 ] as const;
 function fitSaveChip(): void {
   const bar = app.querySelector<HTMLElement>('#topbar')!;

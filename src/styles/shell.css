@@ -935,12 +935,16 @@
 /* Where the bar is still short, the shell steps these aside in turn: the
    workspace chip's name, then the account's (as below 760px), then the logo, then the account chip's
    caret, then the mark of a plain save (a warning always shows). The chips
-   keep their icons, names and tooltips. */
+   keep their icons, names and tooltips. On the narrowest phones Export's
+   caret, Tidy and Redo give way last (Arrange and Edit hold them). */
 .topbar[data-squeeze~='workspace'] #workspaceLabel,
 .topbar[data-squeeze~='names'] .user-chip:not(.signed-out) .uc-name,
 .topbar[data-squeeze~='brand'] .brand,
 .topbar[data-squeeze~='caret'] .user-chip:not(.signed-out) .uc-caret,
-.topbar[data-squeeze~='quiet'] .saved:not([role='button']) {
+.topbar[data-squeeze~='quiet'] .saved:not([role='button']),
+.topbar[data-squeeze~='export-caret'] #fExportBtn .btn-caret,
+.topbar[data-squeeze~='tidy'] .split,
+.topbar[data-squeeze~='redo'] #tRedo {
   display: none;
 }
 .topbar[data-squeeze~='workspace'] .workspace-chip,

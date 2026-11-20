@@ -345,12 +345,16 @@ for (const vp of VIEWPORTS)
 /* ── Horizontal overflow ───────────────────────────────────────────────── */
 
 // The document never scrolls sideways, at any width from 360 to 1,920px,
-// sampled every 40px: signed out, and signed in under a 30-character login.
+// sampled every 40px, and on the narrowest phones (320 and 340px): signed
+// out, and signed in under a 30-character login. The document title keeps
+// at least 120px, and on a phone (640px or less) at least 64px.
 // The body clips what overflows, so the document's own scroll width cannot
 // show a bar that runs past the window: each bar is measured too, and every
 // visible control outside the canvas must end inside the window.
 // Plus the widths where the shell's own rules change, each side of them.
 const WIDTHS = [
+  320,
+  340,
   ...Array.from({ length: 40 }, (_, i) => 360 + i * 40),
   ...[640, 641, 700, 701, 760, 761, 1023, 1024, 1100, 1101, 1279, 1280],
   ...[1359, 1360, 1366, 1520],
@@ -384,6 +388,13 @@ async function overflowing(
                     `${selector} is ${bar.scrollWidth - bar.clientWidth}px too wide`,
                   );
               }
+              const title = document.getElementById('docTitle')!;
+              const least = window.innerWidth <= 640 ? 64 : 120;
+              const titleWidth = title.getBoundingClientRect().width;
+              if (titleWidth < least - 0.5)
+                over.push(
+                  `the title is ${Math.round(titleWidth)}px, under ${least}px`,
+                );
               const controls = document.querySelectorAll<HTMLElement>(
                 'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
               );
@@ -504,7 +515,7 @@ async function failSave(page: Page): Promise<void> {
 
 // Each walk runs in three parts, so none takes long.
 for (const range of [
-  { name: '360 to 999px', widths: WIDTHS.filter((w) => w < 1000) },
+  { name: '320 to 999px', widths: WIDTHS.filter((w) => w < 1000) },
   {
     name: '1,000 to 1,399px',
     widths: WIDTHS.filter((w) => w >= 1000 && w < 1400),
