@@ -1,0 +1,35 @@
+name: Staging UI QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Full commit SHA already deployed to staging
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    env:
+      E2E_DEPLOYED_URL: https://topology-dojo-staging.robertson-corey.workers.dev
+      E2E_DEPLOYED_SHA: ${{ inputs.expected_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:deployed
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-ui-qa
+          path: playwright-deployed/
+          retention-days: 7

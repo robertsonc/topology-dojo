@@ -20,6 +20,7 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test:e2e": "playwright test",
+    "test:e2e:deployed": "playwright test --config playwright.deployed.config.ts",
     "build:export-fonts": "tsx scripts/build-export-fonts.ts",
     "build:backdrops": "tsx scripts/build-backdrops.ts",
     "build:icons": "tsx scripts/build-icons.ts",

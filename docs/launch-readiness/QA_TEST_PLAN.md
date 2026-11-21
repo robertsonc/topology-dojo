@@ -26,6 +26,7 @@ Authoritative companion documents:
 - [Capability Matrix](../CAPABILITY_MATRIX.md) — shipped, flagged, partial, and deferred capabilities
 - [User Guide](../USER_GUIDE.md) — user-visible behavior and operating instructions
 - [UAT Plan](UAT_PLAN.md) — persona-based business acceptance
+- [Revamped editor UI acceptance](REVAMPED_UI_ACCEPTANCE.md) — deployed browser QA and participant checklist
 - [Traceability Matrix](TRACEABILITY_MATRIX.md) — capability/requirement → risk → test → evidence mapping
 - [Deployment Runbook](../DEPLOYMENT_RUNBOOK.md), [Rollback](../ROLLBACK.md), and [Game Day](../GAME_DAY.md) — release and recovery controls
 - [Findings Register](FINDINGS_REGISTER.md) — historical defects and remaining known risks; verify status against current code before treating an entry as open or closed

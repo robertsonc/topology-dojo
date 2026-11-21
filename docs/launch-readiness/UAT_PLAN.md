@@ -18,6 +18,9 @@ The plan is updated whenever a user-visible capability, feature flag, supported
 environment, material residual risk, or acceptance threshold changes. Every UAT
 cycle records the tested source SHA and the version of this plan.
 
+Use the [revamped editor UI checklist](./REVAMPED_UI_ACCEPTANCE.md) to run
+focused staging acceptance for the new shell.
+
 ---
 
 ## 1. Acceptance purpose and business outcomes
