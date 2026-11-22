@@ -325,6 +325,22 @@ sourcedOnly:true` list what an importer owns; there's no surface yet for
     pages.
   - Not done: weighting (cost, bandwidth, policy), and anything live — see
     "Reverse agentic dispatch — live path discovery" under Later.
+- **Survivability analysis, dependency vocabulary and catalog breadth** —
+  [proposal 0014](proposals/0014-survivability-and-catalog-breadth.md),
+  **Draft, not accepted** (captured and reviewed 2026-11-22). Extends the
+  path analysis above from "what connects A and B" to "what single failure
+  separates them". Optional document fields: `doc.riskGroups`, `srlg`,
+  `capacityMbps`, `ridesOn` / `ridesOnMode`. A pure engine,
+  `src/api/survive.ts`, works on the same graph as `analyzePath`. Agents
+  reach it through an `analyze_path` `fail` argument and an
+  `export_topology` `survivability` report, with no new MCP tool. The
+  SD-WAN generator writes the dependency fields. Separately, it proposes
+  the NetBox device-type library as a community-tier source for hw-catalog
+  Phase 6 (never GA-eligible, panels always schematic). Packets G0 (lint,
+  headless and file-size guardrails), S1–S5 and C1–C4. On acceptance it
+  adds parked one-liners under Later (IaC and cloud importers, BOM and
+  power export, policy-aware reachability, a CI action, derived Logical /
+  Overlay pages).
 
 ## Later
 
