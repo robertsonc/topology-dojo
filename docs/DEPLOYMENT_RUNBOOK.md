@@ -450,23 +450,24 @@ gate fails **closed** if it is ever unset.
 environment at any time. The full check list (locked by
 `src/testing/smoke-checks.test.ts`; update both together):
 
-| Check               | Request                                       | Expected                                                                                              |
-| ------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `healthz`           | `GET /healthz`                                | `200 { ok: true, sha, workspaceEnabled }`, no secret data; with `--sha`, the deployed-commit assert   |
-| `readyz-unauth`     | `GET /readyz`                                 | `401` — the deep probe must never run unauthenticated                                                 |
-| `app`               | `GET /` without session                       | Redirect to `/login`                                                                                  |
-| `login`             | `GET /login`                                  | `200`, login page with the GitHub affordance                                                          |
-| `me-unauth`         | `GET /api/me`                                 | `401`                                                                                                 |
-| `oauth-metadata`    | `GET /.well-known/oauth-authorization-server` | `200`, valid metadata                                                                                 |
-| `mcp-unauth`        | `POST /mcp` without credentials               | `401`                                                                                                 |
-| `mcp-apikey-unauth` | `POST /mcp` with an unknown `tdk_` API key    | `401` (proposal 0005: unknown keys are rejected like missing credentials, flag on or off)             |
-| `workspaces-unauth` | `GET /api/workspaces`                         | `401`; with `--expect-workspace-disabled`, exactly `503 {"error":"workspace_disabled"}`               |
-| `profile-unauth`    | `GET /api/profile/preferences`                | `401`; with `--expect-profiles-disabled`, exactly `503 {"error":"profiles_disabled"}`                 |
-| `admin-unauth`      | `GET /api/admin/summary`                      | `401`; with `--expect-analytics-disabled`, exactly `503 {"error":"admin_disabled"}`                   |
-| `share-404`         | `GET /api/topology/nonexistent`               | `404`, controlled JSON error                                                                          |
-| `viewer-shell`      | `GET /v/<nonexistent>` as navigation          | `200` app shell **without** sign-in (public share view stays ungated)                                 |
-| `showcase`          | `GET /showcase/hub-spoke.webp`                | `200` image, ungated (login-page filmstrip asset)                                                     |
-| `fault-inert`       | `GET /__staging/fault` (no token)             | Anything **except** a synthetic fault — proves the staging-only fault gate never fires uncredentialed |
+| Check               | Request                                       | Expected                                                                                                 |
+| ------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `healthz`           | `GET /healthz`                                | `200 { ok: true, sha, workspaceEnabled }`, no secret data; with `--sha`, the deployed-commit assert      |
+| `readyz-unauth`     | `GET /readyz`                                 | `401` — the deep probe must never run unauthenticated                                                    |
+| `app`               | `GET /` without session                       | `200` landing page with guest entry (`/try`); a pre-guest-mode deploy's redirect to `/login` also passes |
+| `guest-entry`       | `GET /try`, then `GET /` with `tdg_guest=1`   | `302 /` setting `tdg_guest`, then `200` app shell without a session; skip on a pre-guest-mode deploy     |
+| `login`             | `GET /login`                                  | `200`, login page with the GitHub affordance                                                             |
+| `me-unauth`         | `GET /api/me`                                 | `401`                                                                                                    |
+| `oauth-metadata`    | `GET /.well-known/oauth-authorization-server` | `200`, valid metadata                                                                                    |
+| `mcp-unauth`        | `POST /mcp` without credentials               | `401`                                                                                                    |
+| `mcp-apikey-unauth` | `POST /mcp` with an unknown `tdk_` API key    | `401` (proposal 0005: unknown keys are rejected like missing credentials, flag on or off)                |
+| `workspaces-unauth` | `GET /api/workspaces`                         | `401`; with `--expect-workspace-disabled`, exactly `503 {"error":"workspace_disabled"}`                  |
+| `profile-unauth`    | `GET /api/profile/preferences`                | `401`; with `--expect-profiles-disabled`, exactly `503 {"error":"profiles_disabled"}`                    |
+| `admin-unauth`      | `GET /api/admin/summary`                      | `401`; with `--expect-analytics-disabled`, exactly `503 {"error":"admin_disabled"}`                      |
+| `share-404`         | `GET /api/topology/nonexistent`               | `404`, controlled JSON error                                                                             |
+| `viewer-shell`      | `GET /v/<nonexistent>` as navigation          | `200` app shell **without** sign-in (public share view stays ungated)                                    |
+| `showcase`          | `GET /showcase/hub-spoke.webp`                | `200` image, ungated (login-page filmstrip asset)                                                        |
+| `fault-inert`       | `GET /__staging/fault` (no token)             | Anything **except** a synthetic fault — proves the staging-only fault gate never fires uncredentialed    |
 
 `GET /readyz` with a signed-in session is the deeper readiness check (a
 `TOPOLOGY_KV` round-trip, a `TOPOLOGY_REGISTRY` DO echo, and — when

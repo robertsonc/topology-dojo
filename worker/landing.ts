@@ -1,8 +1,12 @@
 /**
- * Public cinematic sign-in page, separated from the authenticated editor.
+ * Public cinematic landing page. Two doors share it: the front door at `/`
+ * for a first-time anonymous visitor (primary CTA enters the editor as a
+ * guest; signing in is the secondary path), and `/login` (primary CTA is
+ * GitHub sign-in; continuing as a guest is the secondary path).
  * This is a static, illustrative network scene: no live network telemetry,
- * agent data, or document mutations. Only the already-validated authHref is
- * interpolated, preserving the existing OAuth return-path protections.
+ * agent data, or document mutations. Only the already-validated authHref and
+ * the fixed tryHref are interpolated, preserving the existing OAuth
+ * return-path protections.
  * Assets under /landing/ are served by Workers ASSETS to anonymous visitors.
  */
 const TEMPLATE = `<!doctype html>
@@ -23,7 +27,7 @@ const TEMPLATE = `<!doctype html>
 </header>
 <main id="top">
 <div class="wrap hero">
-<section class="intro"><div class="eyebrow"><span class="spark"></span><span class="bar"></span>THE NETWORK, REIMAGINED</div><h1>Give the<br>invisible<br><span class="gradient">a shape.</span></h1><p class="subtitle">Networks are complex. Understanding them shouldn't be. <b>Design, reason about, and bring topology to life</b> on one canvas built for engineers and AI agents.</p><div class="actions"><a class="primary" href="__AUTH_HREF__" aria-label="Sign in with GitHub to enter Topology Dojo">ENTER THE DOJO&nbsp; &#8594;<span class="cta-caption">Sign in with GitHub</span></a><button class="secondary" type="button" id="replay" aria-label="Replay the network formation animation"><span class="play">&#9654;</span> WATCH IT FORM</button></div><div class="intro-foot"><b>HUMAN + AGENT</b><span class="t"> / </span>ONE CANVAS<span class="t"> / </span>SHARED AUTHORING CONTRACT<br>DIAGRAMS THAT DON'T JUST SHOW A NETWORK. <b>THEY EXPLAIN IT.</b></div></section>
+<section class="intro"><div class="eyebrow"><span class="spark"></span><span class="bar"></span>THE NETWORK, REIMAGINED</div><h1>Give the<br>invisible<br><span class="gradient">a shape.</span></h1><p class="subtitle">Networks are complex. Understanding them shouldn't be. <b>Design, reason about, and bring topology to life</b> on one canvas built for engineers and AI agents.</p><div class="actions">__PRIMARY_CTA__<button class="secondary" type="button" id="replay" aria-label="Replay the network formation animation"><span class="play">&#9654;</span> WATCH IT FORM</button></div>__ALT_CTA__<div class="intro-foot"><b>HUMAN + AGENT</b><span class="t"> / </span>ONE CANVAS<span class="t"> / </span>SHARED AUTHORING CONTRACT<br>DIAGRAMS THAT DON'T JUST SHOW A NETWORK. <b>THEY EXPLAIN IT.</b></div></section>
 <section class="visual" aria-label="Illustrative animated network topology sequence">
 <div class="scene-shell" id="scene" data-phase="3">
 <div class="orbit-1"></div><div class="orbit-2"></div>
@@ -71,8 +75,39 @@ const TEMPLATE = `<!doctype html>
 </body>
 </html>`;
 
-export function cinematicLoginPage(authHref: string): Response {
-  return new Response(TEMPLATE.replaceAll('__AUTH_HREF__', authHref), {
+/** Which door the page is: the public front door at `/` (enter as a guest,
+ * sign in optional) or the explicit `/login` page (sign in first). */
+export type LandingMode = 'front' | 'login';
+
+export interface LandingOptions {
+  /** Validated `/auth/github?go=…` href (see `loginPage`). */
+  authHref: string;
+  /** Guest entry: the editor without an account (`/try`). */
+  tryHref: string;
+  mode: LandingMode;
+}
+
+/** What signing in adds over a guest visit, said the same way on both doors. */
+const ACCOUNT_ADDS =
+  'Sign in with GitHub for a saved workspace, share links, agent (MCP) access and API keys.';
+
+function primaryCta(o: LandingOptions): string {
+  return o.mode === 'front'
+    ? `<a class="primary" href="${o.tryHref}" aria-label="Enter Topology Dojo without signing up">ENTER THE DOJO&nbsp; &#8594;<span class="cta-caption">No sign-up needed</span></a>`
+    : `<a class="primary" href="${o.authHref}" aria-label="Sign in with GitHub to enter Topology Dojo">ENTER THE DOJO&nbsp; &#8594;<span class="cta-caption">Sign in with GitHub</span></a>`;
+}
+
+function altCta(o: LandingOptions): string {
+  return o.mode === 'front'
+    ? `<p class="alt-cta">Drawing, templates and exports work right away, saved in this browser. <a href="${o.authHref}">${ACCOUNT_ADDS}</a></p>`
+    : `<p class="alt-cta">${ACCOUNT_ADDS} <a href="${o.tryHref}">Or continue without an account.</a></p>`;
+}
+
+export function cinematicLoginPage(o: LandingOptions): Response {
+  const html = TEMPLATE.replace('__PRIMARY_CTA__', primaryCta(o))
+    .replace('__ALT_CTA__', altCta(o))
+    .replaceAll('__AUTH_HREF__', o.authHref);
+  return new Response(html, {
     headers: {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',

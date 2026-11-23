@@ -7,7 +7,9 @@
  *   /connections, /api/connections → list / revoke the user's MCP grants
  *   GET /api/topology/:id    → a published share snapshot (public, from KV)
  *   DELETE /api/topology/:id → owner-only revoke of that snapshot
- *   /v/:id and everything else → the static SPA (env.ASSETS)
+ *   GET /try                → enter the editor as a guest (no account)
+ *   GET /  (first anonymous visit) → the landing page
+ *   /v/:id and everything else → the static SPA (env.ASSETS), signed in or not
  *
  * GitHub is the upstream identity provider. GitHub's own screen only covers
  * our GitHub app, not which MCP client receives the grant, so the MCP flow
@@ -23,12 +25,17 @@ import {
 import {
   completeWebLogin,
   currentUser,
+  frontDoorPage,
+  guestCookie,
   handleLogout,
   handleMe,
+  handleTry,
   isDocumentNavigation,
+  isReturningGuest,
   isWebCallback,
   loginPage,
   startWebLogin,
+  TRY_PATH,
 } from './auth.js';
 import { handleWorkspaceApi } from './workspace-api.js';
 import { handleProfileApi } from './profile-api.js';
@@ -135,7 +142,7 @@ function methodNotAllowed(): Response {
  * `GET /healthz` — unauthenticated liveness. Proves the Worker script is
  * running and reports its build identity, nothing more: no KV, no Durable
  * Object, no `ASSETS` fetch, no session check. That is what lets it live
- * outside the `isDocumentNavigation` login gate below (see `route()`) and
+ * ahead of the `isDocumentNavigation` front-door check below (see `route()`) and
  * why `scripts/smoke.mjs` can call it with zero credentials against
  * production at any time.
  */
@@ -494,12 +501,13 @@ async function route(
   // Browser login flow (separate from the MCP OAuth flow below).
   if (pathname === '/login')
     return loginPage(url.searchParams.get('go') ?? '/');
+  if (pathname === TRY_PATH) return handleTry();
   if (pathname === '/auth/github') return startWebLogin(request, env);
   if (pathname === '/logout') return handleLogout();
   if (pathname === '/api/me') return handleMe(request, env);
-  // Health/readiness: handled before the document-navigation login gate
-  // below so a direct browser visit to /healthz (which does send an
-  // `accept: text/html` document navigation) never redirects to /login —
+  // Health/readiness: handled before the document-navigation front-door
+  // check below so a direct browser visit to /healthz (which does send an
+  // `accept: text/html` document navigation) never gets the landing page —
   // it must stay reachable, unauthenticated, from outside at all times.
   if (pathname === '/healthz') return handleHealthz(request, env);
   if (pathname === '/readyz') return handleReadyz(request, env);
@@ -591,16 +599,37 @@ async function route(
   if (isCatalogAssetPath(pathname))
     return new Response('Not Found\n', { status: 404 });
 
-  // Gate the editor: a top-level navigation to the app needs a signed-in
-  // session. Read-only shared views (/v/:id) stay public; sub-resource
-  // fetches (scripts/styles/fonts) are served so the login + shared pages
-  // work. Local Vite dev never hits the Worker, so dev is unauthenticated.
-  const isSharedView = pathname === '/v' || pathname.startsWith('/v/');
-  if (isDocumentNavigation(request) && !isSharedView) {
-    const user = await currentUser(request, env);
-    if (!user) {
-      const go = encodeURIComponent(pathname + url.search);
-      return Response.redirect(new URL(`/login?go=${go}`, url).href, 302);
+  // The editor is open to anonymous visitors (guest mode: the document lives
+  // in this browser's storage). What needs an account is gated where it is
+  // served, not here: /api/workspaces, /api/share, /api/profile, /api/admin,
+  // /api/keys, /api/connections and DELETE /api/topology/:id all 401 without
+  // a session, /keys and /connections redirect to /login, and /mcp sits
+  // behind the OAuth provider. The SPA reveals those surfaces only after
+  // /api/me answers with a user.
+  //
+  // Only the front door differs: a first-time anonymous navigation to `/`
+  // gets the landing page, whose primary action (/try) sets the guest cookie
+  // and comes back here to the editor. Anyone who has entered once — as a
+  // guest, through a share link, or by signing in — goes straight to the
+  // editor. Local Vite dev never hits the Worker, so dev is the editor.
+  if (isDocumentNavigation(request)) {
+    const isSharedView = pathname === '/v' || pathname.startsWith('/v/');
+    if (pathname === '/' && !isReturningGuest(request)) {
+      const user = await currentUser(request, env);
+      if (!user) return frontDoorPage();
+    }
+    // A share link drops the visitor into the editor (the app then rewrites
+    // the URL to `/`), so remember them as a guest: a refresh must reopen
+    // the editor, not the landing page.
+    if (isSharedView && !isReturningGuest(request)) {
+      const resp = await env.ASSETS.fetch(request);
+      const headers = new Headers(resp.headers);
+      headers.append('set-cookie', guestCookie());
+      return new Response(resp.body, {
+        status: resp.status,
+        statusText: resp.statusText,
+        headers,
+      });
     }
   }
 

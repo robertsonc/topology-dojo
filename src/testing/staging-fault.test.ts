@@ -118,7 +118,7 @@ describe('production posture — token secret present but no DIAGNOSTICS_ENV', (
     expect(res.status).toBe(404);
   });
 
-  it('redirects an unauthenticated document navigation to /login like any unknown path', async () => {
+  it('serves an unauthenticated document navigation the SPA like any unknown path', async () => {
     const res = await handle.fetch(STAGING_FAULT_PATH, {
       headers: {
         accept: 'text/html',
@@ -127,8 +127,10 @@ describe('production posture — token secret present but no DIAGNOSTICS_ENV', (
       },
       redirect: 'manual',
     });
-    expect(res.status).toBe(302);
-    expect(res.headers.get('location') ?? '').toContain('/login');
+    // The editor is open to guests, so an unknown path falls through to
+    // ASSETS (stubbed here as a bare "Not Found"), never a fault response.
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('Not Found');
   });
 
   it('keeps /healthz serving normally', async () => {

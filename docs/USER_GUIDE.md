@@ -51,7 +51,7 @@ Topology Dojo has several related but distinct surfaces.
 
 | Audience                    | Surface                 | Best for                                                                    | Important distinction                                                                                                                                                              |
 | --------------------------- | ----------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Diagram author              | Hosted browser editor   | Interactive drawing, review, export, and shared-workspace ownership         | The main editor requires GitHub sign-in. A normal browser draft still autosaves locally until it is handed off to a workspace.                                                     |
+| Diagram author              | Hosted browser editor   | Interactive drawing, review, export, and shared-workspace ownership         | Drawing and export work as a guest; the workspace, sharing, MCP and API keys need GitHub sign-in. A browser draft autosaves locally until it is handed off to a workspace.         |
 | Diagram author or developer | Local browser editor    | Local editing and development                                               | Runs through Vite without hosted authentication or Worker-backed workspace, profile, admin, and share services.                                                                    |
 | Link recipient              | Public shared-copy view | Reviewing or adapting an agent-published snapshot                           | No sign-in is required. The link is public, and edits go to a separate browser-local copy.                                                                                         |
 | Agent operator              | Local MCP server        | Local or development-time agent authoring                                   | Uses stdio. Its private draft state is process-local, and it cannot publish hosted share links.                                                                                    |
@@ -79,22 +79,43 @@ the page so it can be edited independently.
 
 ## 2. Getting started
 
-### Hosted editor and GitHub sign-in
+### Hosted editor: guest or signed in
 
-1. Open the deployment's base URL.
-2. Select **Sign in with GitHub**.
-3. Complete GitHub authorization. Topology Dojo requests the **read:user**
+The editor needs no account. Opening the deployment's base URL for the first
+time shows the landing page; **Enter the Dojo** (_No sign-up needed_) opens
+the editor as a guest. Later visits from the same browser open the editor
+directly, and so does arriving through a public **/v/** share link.
+
+As a guest you can draw, use templates and the SD-WAN generator, validate,
+lay out and export. The document autosaves to this browser only. A **Sign in**
+chip sits at the right end of the top bar.
+
+Signing in with GitHub adds the per-user features, which stay hidden (and
+whose server routes refuse requests) until you do:
+
+| Needs sign-in                     | Why                                         |
+| --------------------------------- | ------------------------------------------- |
+| Shared workspace (human + agent)  | Server-side document owned by your account  |
+| **Share** links                   | Published snapshots are owned and revocable |
+| Hosted MCP server (`/mcp`)        | OAuth grant tied to your GitHub identity    |
+| **API keys** and **/connections** | Credentials and grants issued to you        |
+| **Authoring preferences**         | Per-owner profile                           |
+
+To sign in:
+
+1. Select **Sign in** (top bar chip or the landing page link), then
+   **Sign in with GitHub**.
+2. Complete GitHub authorization. Topology Dojo requests the **read:user**
    scope to identify the owner of drafts and workspaces.
-4. After the editor opens, the account chip shows the GitHub login. Open it to
-   see **Signed in as**, **API keys**, **Authoring preferences**, **Theme**
-   and **Sign out**.
+3. You return to the editor with the guest document still open. The account
+   chip shows the GitHub login. Open it to see **Signed in as**, **API keys**,
+   **Authoring preferences**, **Theme** and **Sign out**.
 
 Signing out clears the hosted browser session but does not intentionally erase
 the document autosaved in that browser.
 
-The hosted login page is open to GitHub accounts unless a particular deployment
-adds an external access policy. Public **/v/** share links bypass the main
-editor login gate.
+Sign-in is open to GitHub accounts unless a particular deployment adds an
+external access policy.
 
 ### Local browser editor
 
@@ -1593,8 +1614,8 @@ autosave separately. They can:
 
 A recipient does not need an account. Without one, a **Sign in** chip sits at
 the right end of the top bar, and starting a **new** document or choosing
-**Keep this copy** opens a prompt: _Sign in to save your copy to your
-workspace._ It can be dismissed; the editor keeps working and saving to the
+**Keep this copy** opens a prompt: _Sign in to save to your workspace, share
+links and connect AI agents._ It can be dismissed; the editor keeps working and saving to the
 browser. Signing in returns to the same document.
 
 ## 12. Custom nodes and stencils

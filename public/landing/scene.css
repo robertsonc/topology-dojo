@@ -62,3 +62,4 @@ body:after{content:"";position:fixed;inset:0;z-index:10;pointer-events:none;opac
 /* Clip visual-stage parallax on narrow viewports, without horizontal scrolling. */
 html{max-width:100%;overflow-x:clip}
 html:not(.js-active) .packet,html:not(.js-active) .pulse-ring{opacity:0!important}
+.alt-cta{max-width:520px;margin-top:18px;font:500 11px/1.7 var(--mono);letter-spacing:.03em;color:#8aa3a8}.alt-cta a{color:#9df5d4;text-decoration:underline;text-underline-offset:3px}.alt-cta a:hover{color:#c9ffe9}

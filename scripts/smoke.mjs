@@ -328,11 +328,23 @@ async function checkHealthzOnce(base, sha) {
   );
 }
 
+/** True for a 200 HTML body that is the SPA's app shell. */
+function looksLikeAppShell(body) {
+  return body.includes('id="app"') && body.includes('Topology Dojo');
+}
+
+/** True for the landing page's guest front door (primary CTA → /try). */
+function looksLikeFrontDoor(body) {
+  return body.includes('href="/try"') && body.includes('Sign in with GitHub');
+}
+
 /**
- * GET / → an unauthenticated document navigation. Production gates the SPA
- * behind sign-in, so the expected shape is a redirect to /login; some
- * deployments may instead serve the SPA directly (ungated). Both are
- * accepted; the check records which one this deployment did.
+ * GET / → an unauthenticated, first-visit document navigation. The editor is
+ * open to guests, so the current shape is the landing page (guest entry via
+ * /try, sign-in secondary). A deployment from before guest mode answered a
+ * redirect to /login, and an ungated one the SPA itself; both still pass so
+ * the check can run against either side of a release. The check records
+ * which one this deployment did.
  */
 async function checkApp(base) {
   const name = 'app';
@@ -340,7 +352,7 @@ async function checkApp(base) {
   try {
     // `accept: text/html` mimics a real document navigation — Node's fetch
     // does not send Sec-Fetch-Dest, and worker/auth.ts's isDocumentNavigation
-    // falls back to an HTML-accepting GET to decide whether to gate.
+    // falls back to an HTML-accepting GET.
     res = await request(new URL('/', base), {
       headers: { accept: 'text/html' },
     });
@@ -369,17 +381,71 @@ async function checkApp(base) {
       );
     }
     const body = await res.text();
-    if (body.includes('id="app"') && body.includes('Topology Dojo')) {
+    if (looksLikeFrontDoor(body)) {
+      return pass(name, '200 landing page with guest entry (/try)');
+    }
+    if (looksLikeAppShell(body)) {
       return pass(
         name,
         '200 HTML containing the app bundle (SPA served ungated)',
       );
     }
-    return fail(name, '200 HTML response did not look like the app bundle');
+    return fail(
+      name,
+      '200 HTML response was neither the landing page nor the app bundle',
+    );
   }
   return fail(
     name,
-    `expected a redirect to /login or 200 HTML, got ${res.status}`,
+    `expected the landing page, a redirect to /login or 200 HTML, got ${res.status}`,
+  );
+}
+
+/**
+ * Guest entry: GET /try → 302 to `/` setting `tdg_guest`, then GET / with that
+ * cookie and no session → the app shell (the editor, unauthenticated). A
+ * deployment from before guest mode serves /try as the SPA or redirects it to
+ * /login — skipped, not failed, so the check can run across the release.
+ */
+async function checkGuestEntry(base) {
+  const name = 'guest-entry';
+  let res;
+  try {
+    res = await request(new URL('/try', base), {
+      headers: { accept: 'text/html' },
+    });
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  const location = res.headers.get('location') ?? '';
+  if (res.status !== 302 || location.includes('/login')) {
+    return skip(
+      name,
+      `/try answered ${res.status}${location ? ` → "${location}"` : ''} (no guest mode on this deployment)`,
+    );
+  }
+  if (new URL(location, base).pathname !== '/') {
+    return fail(name, `/try redirected to unexpected location "${location}"`);
+  }
+  if (!/(^|,\s*)tdg_guest=1;/.test(res.headers.get('set-cookie') ?? '')) {
+    return fail(name, '/try did not set the tdg_guest cookie');
+  }
+  try {
+    res = await request(new URL('/', base), {
+      headers: { accept: 'text/html', cookie: 'tdg_guest=1' },
+    });
+  } catch (err) {
+    return fail(name, `request failed: ${describeError(err)}`);
+  }
+  if (res.status !== 200) {
+    return fail(name, `returning guest GET / expected 200, got ${res.status}`);
+  }
+  if (!looksLikeAppShell(await res.text())) {
+    return fail(name, 'returning guest GET / did not serve the app bundle');
+  }
+  return pass(
+    name,
+    '/try → 302 / with tdg_guest; returning guest gets the editor unauthenticated',
   );
 }
 
@@ -845,6 +911,7 @@ export async function runSmoke(
     ['healthz', () => checkHealthz(baseUrl, sha, shaSettleSeconds)],
     ['readyz-unauth', () => checkReadyzUnauth(baseUrl)],
     ['app', () => checkApp(baseUrl)],
+    ['guest-entry', () => checkGuestEntry(baseUrl)],
     ['login', () => checkLogin(baseUrl)],
     ['me-unauth', () => checkMeUnauth(baseUrl)],
     ['oauth-metadata', () => checkOAuthMetadata(baseUrl)],

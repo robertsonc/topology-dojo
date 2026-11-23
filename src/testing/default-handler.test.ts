@@ -102,6 +102,103 @@ describe('GET /login', () => {
   });
 });
 
+describe('guest mode: the editor without an account', () => {
+  const nav = (cookie?: string) => ({
+    headers: {
+      accept: 'text/html',
+      'sec-fetch-dest': 'document',
+      ...(cookie ? { cookie } : {}),
+    },
+    redirect: 'manual' as const,
+  });
+
+  it('serves the landing page at / on a first anonymous visit', async () => {
+    const res = await handle.fetch('/', nav());
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    // Primary CTA enters as a guest; sign-in is the secondary path.
+    expect(body).toContain('href="/try"');
+    expect(body).toContain('No sign-up needed');
+    expect(body).toContain('/auth/github?go=%2F');
+    expect(body).toContain('agent (MCP) access');
+  });
+
+  it('/try sets the guest cookie and returns to /', async () => {
+    const res = await handle.fetch('/try', nav());
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/');
+    const setCookie = res.headers.get('set-cookie') ?? '';
+    expect(setCookie).toMatch(/^tdg_guest=1;/);
+    expect(setCookie).toContain('HttpOnly');
+    expect(setCookie).toContain('Secure');
+    expect(setCookie).toContain('SameSite=Lax');
+  });
+
+  it('a returning guest gets the editor at /, not the landing page', async () => {
+    const res = await handle.fetch('/', nav('tdg_guest=1'));
+    // This harness stubs ASSETS with a bare "Not Found": reaching it proves
+    // the request fell through to the SPA instead of the landing page.
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('Not Found');
+  });
+
+  it('a signed-in user gets the editor at / without the guest cookie', async () => {
+    const token = await signSession(
+      { uid: '7', login: 'octocat' },
+      GITHUB_CLIENT_SECRET,
+    );
+    const res = await handle.fetch('/', nav(`tdg_session=${token}`));
+    expect(await res.text()).toBe('Not Found');
+  });
+
+  it('never redirects an anonymous editor navigation to /login', async () => {
+    for (const path of ['/anything', '/v/abc123']) {
+      const res = await handle.fetch(path, nav());
+      expect(res.status, path).not.toBe(302);
+      expect(await res.text(), path).toBe('Not Found');
+    }
+  });
+
+  it('remembers a share-link visitor as a guest', async () => {
+    const res = await handle.fetch('/v/abc123', nav());
+    expect(res.headers.get('set-cookie') ?? '').toMatch(/^tdg_guest=1;/);
+    const again = await handle.fetch('/v/abc123', nav('tdg_guest=1'));
+    expect(again.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('the guest cookie unlocks no per-user surface', async () => {
+    const cookie = 'tdg_guest=1';
+    for (const [path, method] of [
+      ['/api/me', 'GET'],
+      ['/api/share', 'GET'],
+      ['/api/share', 'POST'],
+      ['/api/connections', 'GET'],
+      ['/api/topology/abc123', 'DELETE'],
+      ['/readyz', 'GET'],
+    ] as const) {
+      const res = await handle.fetch(path, {
+        method,
+        headers: { cookie, accept: 'application/json' },
+        redirect: 'manual',
+      });
+      expect(res.status, `${method} ${path}`).toBe(401);
+    }
+    for (const path of ['/keys', '/connections']) {
+      const res = await handle.fetch(path, nav(cookie));
+      expect(res.status, path).toBe(302);
+      expect(res.headers.get('location') ?? '', path).toContain('/login');
+    }
+  });
+
+  it('/login still leads with GitHub sign-in and offers guest entry', async () => {
+    const res = await handle.fetch('/login');
+    const body = await res.text();
+    expect(body).toContain('Sign in with GitHub to enter Topology Dojo');
+    expect(body).toContain('Or continue without an account.');
+    expect(body).toContain('href="/try"');
+  });
+});
+
 describe('hardware catalog bundles', () => {
   it('are never served over public HTTP, however the path is spelled', async () => {
     // The ASSETS stub answers "Not Found" (no newline); the handler's own

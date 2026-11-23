@@ -90,6 +90,7 @@ describe('smoke suite against a fully-enabled deployment', () => {
       'healthz',
       'readyz-unauth',
       'app',
+      'guest-entry',
       'login',
       'me-unauth',
       'oauth-metadata',
