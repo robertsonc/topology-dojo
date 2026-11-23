@@ -32,7 +32,7 @@ test('an anonymous visitor is offered sign-in, never forced', async ({
   await menuCommand(page, 'file.new');
   await expect(prompt).toBeVisible();
   await expect(prompt).toContainText(
-    'Sign in to save your copy to your workspace.',
+    'Sign in to save to your workspace, share links and connect AI agents.',
   );
   await expect(prompt.locator('#signInGo')).toHaveAttribute(
     'href',

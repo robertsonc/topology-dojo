@@ -1636,7 +1636,7 @@ function newDocument(): void {
     ],
     customNodes: [],
   });
-  // An anonymous visitor (in from a share link) has just started a document
+  // An anonymous visitor (a guest, or in from a share link) has just started a document
   // of their own: say, without blocking, what signing in would add.
   promptSignIn();
 }
@@ -6039,8 +6039,8 @@ attachMenuButton(
   { placement: 'below-end' },
 );
 
-/* Account menu. The Worker gates the app behind GitHub sign-in and reports the
- * current user at /api/me; when that succeeds we reveal the account chip, whose
+/* Account menu. Sign-in is optional for the editor; the Worker reports the
+ * current user at /api/me (401 for a guest); when that succeeds we reveal the account chip, whose
  * menu says who is signed in and holds API keys, Authoring preferences, Admin
  * (the owner only), Theme and Sign out. In Vite dev there's no Worker (auth is
  * bypassed) so the fetch 404s and the chip stays hidden — no login UI in dev. All
@@ -6066,7 +6066,8 @@ function wireAccountMenu(login: string): void {
   });
 }
 /** Default line in the anonymous sign-in prompt. */
-const SIGN_IN_PROMPT = 'Sign in to save your copy to your workspace.';
+const SIGN_IN_PROMPT =
+  'Sign in to save to your workspace, share links and connect AI agents.';
 /**
  * Open the sign-in prompt under the account chip with `message`. A no-op
  * until the hosted Worker has said the visitor is anonymous (so never in Vite
@@ -6075,10 +6076,13 @@ const SIGN_IN_PROMPT = 'Sign in to save your copy to your workspace.';
 let promptSignIn: (message?: string) => void = () => {};
 
 /**
- * Anonymous visitor on the hosted app (they arrived through a public share
- * link, which needs no account): put a "sign in" chip where the account chip
- * goes. Nothing is forced — the editor keeps working and autosaving to this
- * browser — but the chip, and the prompt it opens, say what an account adds.
+ * Anonymous visitor on the hosted app (a guest from the landing page's "no
+ * sign-up" door, or in from a public share link): put a "sign in" chip where
+ * the account chip goes. Nothing is forced — the editor keeps working and
+ * autosaving to this browser — but the chip, and the prompt it opens, say
+ * what an account adds: the workspace, share links, MCP access for agents,
+ * API keys and authoring preferences. Those stay hidden until /api/me names
+ * a user, and their Worker routes refuse a request without a session.
  * Signing in returns here, where the autosaved document is waiting.
  */
 function wireSignInChip(): void {

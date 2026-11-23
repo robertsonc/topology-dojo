@@ -127,11 +127,16 @@ test('narrow layout keeps drawers, fit view, and keyboard presentation usable', 
 test('signed-out navigation preserves local work when a public link is missing', async ({
   page,
 }) => {
+  // A first-time anonymous visit to `/` is the landing page, not a redirect;
+  // its primary action enters the editor with no account.
   await page.goto('/');
-  await expect(page).toHaveURL(/\/login\?go=%2F$/);
+  await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole('link', { name: 'Sign in with GitHub', exact: true }),
-  ).toBeVisible();
+    page.getByRole('link', {
+      name: 'Enter Topology Dojo without signing up',
+      exact: true,
+    }),
+  ).toHaveAttribute('href', '/try');
   await openPublicEditor(page);
   await title(page).fill('My disposable topology');
   await title(page).press('Enter');

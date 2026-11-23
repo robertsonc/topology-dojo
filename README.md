@@ -19,8 +19,11 @@ browser.
 
 ## Use it
 
-**Hosted editor:** <https://topology-dojo.harnessed.cloud> — sign in with
-GitHub.
+**Hosted editor:** <https://topology-dojo.harnessed.cloud> — no sign-up
+needed to draw, template, validate and export (the document stays in your
+browser). Sign in with GitHub for the per-user features: the shared
+human/agent workspace, share links, the hosted MCP server, API keys and
+authoring preferences.
 
 **Hosted MCP server:** add `https://topology-dojo.harnessed.cloud/mcp` to your
 MCP client as a remote (Streamable HTTP) server. Sign-in is GitHub OAuth in the

@@ -1,10 +1,12 @@
 /**
- * Browser login flow (gates the SPA), reusing the same GitHub OAuth App as the
+ * Browser login flow (optional for the editor, required for per-user
+ * surfaces: workspaces, sharing, profiles, API keys, MCP grants), reusing the same GitHub OAuth App as the
  * MCP auth — but a separate, parallel flow: instead of issuing an MCP grant it
  * sets a signed session cookie (see src/server/session). The MCP authorization
  * endpoints (`/authorize`, the MCP `/callback` branch) are untouched.
  *
  *   GET /login          → branded "Sign in with GitHub" page
+ *   GET /try            → enter the editor as a guest (sets tdg_guest)
  *   GET /auth/github    → start: set a state nonce, bounce to GitHub
  *   GET /callback?state=web… → finish: set the session cookie (handled here)
  *   GET /logout         → clear the session, back to /login
@@ -239,8 +241,58 @@ export function isDocumentNavigation(request: Request): boolean {
   return (request.headers.get('accept') ?? '').includes('text/html');
 }
 
-/** Public cinematic landing page; editor, OAuth flow and redirects stay unchanged. */
+/** Guest entry route: the landing page's "enter without signing up" door. */
+export const TRY_PATH = '/try';
+
+function authHref(go: string): string {
+  return `/auth/github?go=${encodeURIComponent(safePath(go))}`;
+}
+
+/** `/login`: the cinematic page with GitHub sign-in as the primary action. */
 export function loginPage(go = '/'): Response {
-  const auth = `/auth/github?go=${encodeURIComponent(safePath(go))}`;
-  return cinematicLoginPage(auth);
+  return cinematicLoginPage({
+    authHref: authHref(go),
+    tryHref: TRY_PATH,
+    mode: 'login',
+  });
+}
+
+/** `/` for a first-time anonymous visitor: the same page, guest entry first. */
+export function frontDoorPage(): Response {
+  return cinematicLoginPage({
+    authHref: authHref('/'),
+    tryHref: TRY_PATH,
+    mode: 'front',
+  });
+}
+
+/**
+ * Remembers that this browser has entered the editor without an account, so
+ * later visits to `/` open the editor instead of the landing page. It is a
+ * routing preference, not a credential: it grants nothing, every per-user
+ * surface still checks the signed session cookie. One year; HttpOnly because
+ * the app never reads it.
+ */
+export const GUEST_COOKIE = 'tdg_guest';
+const GUEST_MAX_AGE_SEC = 365 * 24 * 60 * 60;
+
+export function guestCookie(): string {
+  return cookie(GUEST_COOKIE, '1', GUEST_MAX_AGE_SEC);
+}
+
+/** Has this browser entered as a guest before? */
+export function isReturningGuest(request: Request): boolean {
+  return parseCookies(request.headers.get('cookie'))[GUEST_COOKIE] === '1';
+}
+
+/** `GET /try`: mark this browser as a guest and open the editor. */
+export function handleTry(): Response {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: '/',
+      'set-cookie': guestCookie(),
+      'cache-control': 'no-store',
+    },
+  });
 }
