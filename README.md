@@ -42,6 +42,27 @@ The server is described for MCP directories in [`server.json`](server.json).
 Tool reference, local stdio setup and auth details:
 [`src/mcp/README.md`](src/mcp/README.md).
 
+## Get a useful diagram in two minutes
+
+### Browser: template → explain → export
+
+1. Open the [hosted editor](https://topology-dojo.harnessed.cloud/try) — no account required.
+2. Choose **File → New from template** and start with a spine-leaf fabric, hub-and-spoke WAN, SD-WAN branch, ZTNA path, DMZ, or three-tier application.
+3. Add or adjust network-specific nodes from the Library; select an element to refine its properties in the inspector.
+4. Use **Tidy** to snap and de-overlap the layout, then open **Problems** to check the page.
+5. Choose **Export** for SVG, PNG, PDF, PowerPoint, a self-playing HTML flipbook, draw.io, Visio, or Mermaid.
+
+The editor is deliberately usable before sign-in: your draft stays in that browser. Sign in when you want a persistent workspace, sharing, or an agent on the same document.
+
+### Agent: request → inspect → refine
+
+1. Connect the hosted MCP server with the command above.
+2. Ask for the topology in network language — for example: “Create a two-spine, four-leaf data-center fabric and label the uplinks.”
+3. Ask the agent to run the quality loop: `validate_topology`, `tidy_topology`, then `inspect_render`.
+4. Open the result with `view_topology`, revise it in the editor, or export it in the format your team already uses.
+
+That loop is the product’s core promise: human edits and agent edits are the same diagram, not two lossy translations.
+
 ## Run it locally
 
 Needs Node.js 22 (the version CI uses).
